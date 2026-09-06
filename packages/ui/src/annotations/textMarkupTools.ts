@@ -4,6 +4,7 @@ import { toPdf } from '@monstera/shared';
 
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
+import type { AnnotationStyle } from './annotationStyle.js';
 
 /**
  * Highlight, underline and strikethrough — a drag across text.
@@ -59,7 +60,8 @@ const MINIMUM_DRAG = 4;
 function markupTool(
   id: string,
   type: 'highlight' | 'underline' | 'strikeout',
-  colour: AnnotationColour,
+  own: AnnotationColour,
+  style: AnnotationStyle,
 ): UiTool {
   const moved = (gesture: Gesture): boolean => {
     const from = startOf(gesture);
@@ -84,7 +86,11 @@ function markupTool(
           type,
           from: { x: from.x, y: from.y },
           to: { x: to.x, y: to.y },
-          colour,
+          // THE HIGHLIGHTER'S YELLOW IS ITS OWN, resolved through the style: a
+          // person who has chosen nothing gets a highlighter that highlights,
+          // and one who has chosen gets what they chose on all three.
+          colour: style.colour(own),
+          opacity: style.opacity,
         },
       };
     },
@@ -100,8 +106,10 @@ function markupTool(
 }
 
 /** The three text markups, in the order their controls appear. */
-export const textMarkupTools: readonly UiTool[] = [
-  markupTool(HIGHLIGHT_TOOL_ID, 'highlight', HIGHLIGHT_COLOUR),
-  markupTool(UNDERLINE_TOOL_ID, 'underline', MARKUP_COLOUR),
-  markupTool(STRIKEOUT_TOOL_ID, 'strikeout', MARKUP_COLOUR),
-];
+export function textMarkupTools(style: AnnotationStyle): readonly UiTool[] {
+  return [
+    markupTool(HIGHLIGHT_TOOL_ID, 'highlight', HIGHLIGHT_COLOUR, style),
+    markupTool(UNDERLINE_TOOL_ID, 'underline', MARKUP_COLOUR, style),
+    markupTool(STRIKEOUT_TOOL_ID, 'strikeout', MARKUP_COLOUR, style),
+  ];
+}

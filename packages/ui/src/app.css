@@ -272,6 +272,31 @@ body {
   border-block-start: 1px solid var(--border); /* decorative: separates a panel from the document area; each row carries its own focus ring */
 }
 
+/*
+ * The style controls — what the NEXT annotation is drawn in.
+ *
+ * No `max-block-size` and no scroll, unlike the panels above it: this is a fixed
+ * set of five controls rather than a list of whatever the document holds, so a
+ * scroll region here would be furniture around content that never overflows.
+ */
+.m-style-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  background: var(--bg2);
+  border-block-start: 1px solid var(--border); /* decorative: separates a panel from the document area; each control carries its own focus ring */
+}
+
+.m-style-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  color: var(--text);
+  font-size: var(--font-chrome-11);
+}
+
 .m-destinations-list,
 .m-layers-list,
 .m-annotations-list,

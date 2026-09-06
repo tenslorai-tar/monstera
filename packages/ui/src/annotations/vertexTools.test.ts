@@ -11,11 +11,24 @@ import {
   POLYGON_TOOL_ID,
   POLYLINE_TOOL_ID,
   SEPARATE_VERTICES,
-  cloudTool,
-  polygonTool,
-  polylineTool,
-  vertexTools,
+  cloudTool as buildCloud,
+  polygonTool as buildPolygon,
+  polylineTool as buildPolyline,
+  vertexTools as buildVertexTools,
 } from './vertexTools.js';
+import { PLAIN_STYLE } from './annotationStyle.js';
+
+/**
+ * The three tools, built with the style that chooses nothing.
+ *
+ * Aliased on import for `shapeTools.test.ts`' reason: these cases are about the
+ * gesture and the geometry, and the style is a parameter that arrived on
+ * 2026-09-07 and changes neither.
+ */
+const polygonTool = buildPolygon(PLAIN_STYLE);
+const polylineTool = buildPolyline(PLAIN_STYLE);
+const cloudTool = buildCloud(PLAIN_STYLE);
+const vertexTools = buildVertexTools(PLAIN_STYLE);
 
 /**
  * The vertex tools, driven without a DOM.
@@ -182,6 +195,7 @@ describe('polygonTool', () => {
         ],
         border: 'solid',
         colour: [0.85, 0.15, 0.15],
+        opacity: 1,
         borderWidth: 2,
       },
     });
@@ -311,6 +325,7 @@ describe('polylineTool', () => {
           { x: 110, y: 360 },
         ],
         colour: [0.85, 0.15, 0.15],
+        opacity: 1,
         borderWidth: 2,
       },
     });

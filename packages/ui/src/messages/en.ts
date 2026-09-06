@@ -307,6 +307,13 @@ export const ANNOTATION_NOTE_TOO_LONG = messageKey('dialog.annotation-note.too-l
 export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
+export const EDITING_COLOUR_TITLE = messageKey('setting.editing.annotation-colour');
+export const EDITING_OPACITY_TITLE = messageKey('setting.editing.annotation-opacity');
+export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-line-width');
+export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
+export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
+export const STYLE_COLOUR_AUTO = messageKey('surface.style.colour-auto');
+export const STYLE_COLOUR_CHOOSE = messageKey('surface.style.colour-choose');
 export const ANNOTATIONS_KIND_CALLOUT = messageKey('surface.annotations.kind.callout');
 export const ANNOTATIONS_KIND_TYPEWRITER = messageKey('surface.annotations.kind.typewriter');
 export const TYPEWRITER_TOOL_TITLE = messageKey('command.annotate.typewriter');
@@ -559,6 +566,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // vocabulary applied to a document somebody else wrote.
   [ANNOTATIONS_KIND_POLYGON]: 'Shape',
   [ANNOTATIONS_KIND_POLYLINE]: 'Connected lines',
+  [EDITING_COLOUR_TITLE]: 'Annotation colour',
+  [EDITING_OPACITY_TITLE]: 'Annotation opacity',
+  [EDITING_LINE_WIDTH_TITLE]: 'Annotation line width',
+  [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
+  [STYLE_PANEL_LABEL]: 'Annotation style',
+  // *EACH TOOL'S OWN* rather than *Automatic*, because that is what the state
+  // means: a highlighter stays yellow and a caret stays red. *Automatic* would
+  // suggest something is being worked out from the page.
+  [STYLE_COLOUR_AUTO]: 'Each tool’s own',
+  [STYLE_COLOUR_CHOOSE]: 'Choose a colour',
   [ANNOTATIONS_KIND_CALLOUT]: 'Callout',
   [ANNOTATIONS_KIND_TYPEWRITER]: 'Typed text',
   [TYPEWRITER_TOOL_TITLE]: 'Typewriter',

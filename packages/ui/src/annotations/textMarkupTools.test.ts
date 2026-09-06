@@ -8,8 +8,12 @@ import {
   HIGHLIGHT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
   UNDERLINE_TOOL_ID,
-  textMarkupTools,
+  textMarkupTools as buildMarkupTools,
 } from './textMarkupTools.js';
+import { PLAIN_STYLE } from './annotationStyle.js';
+
+/** The three tools, built with the style that chooses nothing. */
+const textMarkupTools = buildMarkupTools(PLAIN_STYLE);
 
 /**
  * The three text markups' controllers, driven without a DOM.
@@ -55,6 +59,7 @@ describe('textMarkupTools', () => {
         from: { x: 60, y: 390 },
         to: { x: 100, y: 385 },
         colour: [1, 0.9, 0.2],
+        opacity: 1,
       },
     });
   });

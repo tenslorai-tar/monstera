@@ -904,6 +904,31 @@ export const annotationColourSchema = z.tuple([
 export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
 /**
+ * How opaque an annotation is drawn — `/CA`, from 0.1 to 1.
+ *
+ * ## On EVERY member, because it is a property of an annotation
+ *
+ * `/CA` is defined on the annotation dictionary rather than on any subtype, so a
+ * field on some drafts and not others would be this schema deciding which marks
+ * a person may fade — a rule the format does not have. It is written by one
+ * call at the one creation site for the same reason the `srcRef` mark is: a
+ * per-kind line is twelve chances to omit one, and the omission's symptom is a
+ * mark that ignores the control.
+ *
+ * ## The floor is 0.1 and not 0
+ *
+ * A fully transparent annotation is in the file, is selectable by nothing a
+ * person can see, and looks exactly like a tool that did not fire — the
+ * display-only defect with a slider in front of it. Ten percent is faint and
+ * still visibly there. A person who wants a mark gone deletes it, which is what
+ * the eraser is for.
+ */
+export const annotationOpacitySchema = z.number().min(0.1).max(1);
+
+/** How opaque an annotation is. See {@link annotationOpacitySchema}. */
+export type AnnotationOpacity = z.infer<typeof annotationOpacitySchema>;
+
+/**
  * One point in PDF user space, for an annotation whose shape is not a box.
  *
  * The same frame and the same bounds as {@link annotationRectSchema}, which is
@@ -994,6 +1019,7 @@ function textMarkupDraft<T extends 'highlight' | 'underline' | 'strikeout'>(
   from: typeof annotationPointSchema;
   to: typeof annotationPointSchema;
   colour: typeof annotationColourSchema;
+  opacity: typeof annotationOpacitySchema;
 }> {
   return z
     .object({
@@ -1008,6 +1034,7 @@ function textMarkupDraft<T extends 'highlight' | 'underline' | 'strikeout'>(
        * `/StrikeOut` draw their rule in it.
        */
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
     })
     .strict();
 }
@@ -1021,6 +1048,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       rect: annotationRectSchema,
       /** The stroke colour. */
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       /**
        * The stroke width in points. Zero is legal and means a hairline.
        *
@@ -1047,6 +1075,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       /** The box the ellipse is inscribed in, in PDF user space. */
       rect: annotationRectSchema,
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
@@ -1073,6 +1102,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       /** How the `to` end is drawn. `'none'` for a plain line. */
       ending: lineEndingSchema,
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
@@ -1103,6 +1133,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
        */
       points: z.array(annotationPointSchema).min(2).max(MAX_INK_POINTS),
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
@@ -1130,6 +1161,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       rect: annotationRectSchema,
       /** What the mark is outlined in until it is applied. */
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
     })
     .strict(),
   z
@@ -1165,6 +1197,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
       /** The colour the text is drawn in. */
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       /**
        * Point size.
        *
@@ -1235,6 +1268,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
        * would ever set.
        */
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
     })
     .strict(),
   z
@@ -1267,6 +1301,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       at: annotationPointSchema,
       /** What the wedge is drawn in. */
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
     })
     .strict(),
   z
@@ -1304,6 +1339,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       /** Solid, or the cloud's scalloped border. */
       border: borderEffectSchema,
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
@@ -1334,6 +1370,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
        */
       points: z.array(annotationPointSchema).min(2).max(MAX_POLYGON_POINTS),
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
@@ -1381,6 +1418,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       /** What it says. `text-box`' field and its rules. */
       text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
     })
     .strict(),
@@ -1411,6 +1449,7 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       /** What it says. `text-box`' field and its rules. */
       text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
       colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
     })
     .strict(),

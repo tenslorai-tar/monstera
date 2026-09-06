@@ -7,6 +7,7 @@ import { TYPEWRITER_DIALOG_ID } from '../dialogs/typewriter.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
+import type { AnnotationStyle } from './annotationStyle.js';
 
 /**
  * The text tools — the first that cannot answer from the gesture alone.
@@ -43,12 +44,13 @@ import { draggedRect } from './annotationSpace.js';
 const TEXT_COLOUR: AnnotationColour = [0.1, 0.1, 0.1];
 
 /**
- * Point size, until the style controls own it.
+ * The point size moved out on 2026-09-07, to `editing.annotation-font-size`.
  *
  * Twelve is the size a document's own body text usually is, so a box added to
- * one sits with it rather than beside it.
+ * one sits with it rather than beside it — which is now the setting's fallback,
+ * with that reasoning beside it. Deleted here rather than kept unread, for
+ * `shapeTools.ts`' reason.
  */
-const FONT_SIZE = 12;
 
 /**
  * The smallest box worth treating as a text box, in CSS pixels.
@@ -82,6 +84,15 @@ export interface TextToolDeps {
    * caller narrows with the dialog's own result schema.
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /**
+   * The style a new annotation is drawn in.
+   *
+   * A VALUE rather than a reader, and the registry is rebuilt when it moves —
+   * `annotationStyle.ts` has the argument. Every tool that writes a colour, a
+   * width or a size takes it, which is why it sits on the deps every tool
+   * already receives rather than on a second interface.
+   */
+  readonly style: AnnotationStyle;
 }
 
 /** The registry ids, shared with the commands that select these tools. */
@@ -154,8 +165,9 @@ function boxTextTool(
           type,
           rect,
           text: answered.data.text,
-          colour: TEXT_COLOUR,
-          fontSize: FONT_SIZE,
+          colour: deps.style.colour(TEXT_COLOUR),
+          opacity: deps.style.opacity,
+          fontSize: deps.style.fontSize,
         },
       };
     },

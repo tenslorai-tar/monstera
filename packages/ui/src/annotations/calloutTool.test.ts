@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { CALLOUT_DIALOG_ID } from '../dialogs/callout.js';
 import type { Gesture, UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
+import { PLAIN_STYLE } from './annotationStyle.js';
 import { CALLOUT_TOOL_ID, calloutTool } from './calloutTool.js';
 
 /**
@@ -29,6 +30,7 @@ function built(answer: unknown): { readonly tool: UiTool; readonly asked: string
       asked.push(id);
       return Promise.resolve(answer);
     },
+    style: PLAIN_STYLE,
   });
   return { tool, asked };
 }
@@ -91,6 +93,7 @@ describe('calloutTool', () => {
         rect: { x0: 100, y0: 350, x1: 140, y1: 330 },
         text: 'see this',
         colour: [0.85, 0.15, 0.15],
+        opacity: 1,
         fontSize: 12,
       },
     });

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { LINK_ADDRESS_DIALOG_ID, LINK_PAGE_DIALOG_ID } from '../dialogs/annotationLink.js';
 import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
+import { PLAIN_STYLE } from './annotationStyle.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID, linkTools } from './linkTools.js';
 
 /**
@@ -30,6 +31,7 @@ function built(answer: unknown): {
       asked.push(id);
       return Promise.resolve(answer);
     },
+    style: PLAIN_STYLE,
   });
   return { tools, asked };
 }

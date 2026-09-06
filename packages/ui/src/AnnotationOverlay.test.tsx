@@ -5,8 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
-import { rectangleTool } from './annotations/shapeTools.js';
-import { polygonTool } from './annotations/vertexTools.js';
+import { PLAIN_STYLE } from './annotations/annotationStyle.js';
+import { rectangleTool as buildRectangle } from './annotations/shapeTools.js';
+
+/** The two tools these cases drive, built with the style that chooses nothing. */
+const rectangleTool = buildRectangle(PLAIN_STYLE);
+const polygonTool = buildPolygon(PLAIN_STYLE);
+import { polygonTool as buildPolygon } from './annotations/vertexTools.js';
 import type { UiTool } from './registries/tools.js';
 import { pointerPath } from './registries/tools.js';
 
@@ -145,6 +150,7 @@ describe('AnnotationOverlay', () => {
           type: 'square',
           rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
           colour: [0.85, 0.15, 0.15],
+          opacity: 1,
           borderWidth: 2,
         },
       },

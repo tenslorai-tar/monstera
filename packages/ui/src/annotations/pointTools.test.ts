@@ -5,13 +5,23 @@ import { describe, expect, it } from 'vitest';
 import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
 import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
+import { PLAIN_STYLE } from './annotationStyle.js';
 import {
   CARET_TOOL_ID,
   STICKY_NOTE_TOOL_ID,
-  caretTool,
+  caretTool as buildCaret,
   pointTools,
   stickyNoteTool,
 } from './pointTools.js';
+
+/**
+ * The caret, built with the style that chooses nothing.
+ *
+ * It became a factory on 2026-09-07 — `pointTools.ts` says why the note calling
+ * it *a value, unlike every tool beside it* stopped being true. These cases are
+ * about where it puts the mark, which the style does not touch.
+ */
+const caretTool = buildCaret({ style: PLAIN_STYLE });
 
 /**
  * The point tools' controllers, driven without a DOM.
@@ -41,6 +51,7 @@ function noteAnswering(answer: unknown): {
       asked.push({ id, props });
       return Promise.resolve(answer);
     },
+    style: PLAIN_STYLE,
   });
   return { tool, asked };
 }
@@ -85,6 +96,7 @@ describe('stickyNoteTool', () => {
         at: { x: 60, y: 390 },
         text: 'check this figure',
         colour: [1, 0.8, 0.2],
+        opacity: 1,
       },
     });
   });
@@ -163,7 +175,7 @@ describe('stickyNoteTool', () => {
   });
 
   it('claims the id its command selects', () => {
-    expect(stickyNoteTool({ ask: () => Promise.resolve(undefined) }).id).toBe(STICKY_NOTE_TOOL_ID);
+    expect(stickyNoteTool({ ask: () => Promise.resolve(undefined), style: PLAIN_STYLE }).id).toBe(STICKY_NOTE_TOOL_ID);
   });
 });
 
@@ -176,7 +188,12 @@ describe('caretTool', () => {
     expect(await click(caretTool, [20, 20])).toStrictEqual({
       kind: 'addAnnotation',
       page: 3,
-      annotation: { type: 'caret', at: { x: 60, y: 390 }, colour: [0.85, 0.15, 0.15] },
+      annotation: {
+        type: 'caret',
+        at: { x: 60, y: 390 },
+        colour: [0.85, 0.15, 0.15],
+        opacity: 1,
+      },
     });
   });
 
@@ -221,7 +238,7 @@ describe('pointTools', () => {
     // file and missing from it is code nothing mounts. The command-side join
     // in `annotationCommands.test.ts` would catch that too — this catches it
     // one step earlier and names the list rather than the pair.
-    const registered = pointTools({ ask: () => Promise.resolve(undefined) });
+    const registered = pointTools({ ask: () => Promise.resolve(undefined), style: PLAIN_STYLE });
     expect(registered.map((tool) => tool.id)).toStrictEqual([
       STICKY_NOTE_TOOL_ID,
       CARET_TOOL_ID,

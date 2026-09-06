@@ -11,14 +11,33 @@ import {
   LINE_TOOL_ID,
   RECTANGLE_TOOL_ID,
   REDACT_TOOL_ID,
-  arrowTool,
-  ellipseTool,
-  inkAnnotationTool,
-  lineAnnotationTool,
-  rectangleTool,
-  redactTool,
-  shapeTools,
+  arrowTool as buildArrow,
+  ellipseTool as buildEllipse,
+  inkAnnotationTool as buildInk,
+  lineAnnotationTool as buildLine,
+  rectangleTool as buildRectangle,
+  redactTool as buildRedact,
+  shapeTools as buildShapeTools,
 } from './shapeTools.js';
+import { PLAIN_STYLE } from './annotationStyle.js';
+
+/**
+ * The tools, built with the style that chooses nothing.
+ *
+ * ALIASED ON IMPORT rather than threaded through twenty call sites: what these
+ * cases are about is the geometry each tool produces, and the style is a
+ * parameter that arrived on 2026-09-07 and changes none of it. `PLAIN_STYLE`
+ * resolves to each tool's own colour and the settings' own defaults, which is
+ * what these cases asserted before there was a setting — so every expectation
+ * below still names the number it always named.
+ */
+const rectangleTool = buildRectangle(PLAIN_STYLE);
+const ellipseTool = buildEllipse(PLAIN_STYLE);
+const lineAnnotationTool = buildLine(PLAIN_STYLE);
+const arrowTool = buildArrow(PLAIN_STYLE);
+const inkAnnotationTool = buildInk(PLAIN_STYLE);
+const redactTool = buildRedact(PLAIN_STYLE);
+const shapeTools = buildShapeTools(PLAIN_STYLE);
 
 /**
  * The four shape tools' controllers, driven without a DOM.
@@ -95,6 +114,7 @@ describe('the box tools', () => {
         // box's top-left corner (50, 400).
         rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
         colour: [0.85, 0.15, 0.15],
+        opacity: 1,
         borderWidth: 2,
       },
     });
@@ -126,6 +146,7 @@ describe('the box tools', () => {
         type: 'redact',
         rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
         colour: [0.85, 0.15, 0.15],
+        opacity: 1,
       },
     });
   });
@@ -185,6 +206,7 @@ describe('the line tools', () => {
         to: { x: 110, y: 360 },
         ending: 'none',
         colour: [0.85, 0.15, 0.15],
+        opacity: 1,
         borderWidth: 2,
       },
     });
@@ -265,6 +287,7 @@ describe('the ink tool', () => {
           { x: 110, y: 390 },
         ],
         colour: [0.85, 0.15, 0.15],
+        opacity: 1,
         borderWidth: 2,
       },
     });

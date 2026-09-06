@@ -10,6 +10,7 @@ import { toPdf } from '@monstera/shared';
 
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, lastPress, pointerPath } from '../registries/tools.js';
+import type { AnnotationStyle } from './annotationStyle.js';
 
 /**
  * The vertex tools — polygon, connected lines and cloud, and the first callers
@@ -46,11 +47,15 @@ import { endOf, lastPress, pointerPath } from '../registries/tools.js';
  * ends it.
  */
 
-/** The stroke every vertex shape is drawn in until a picker exists. */
+/**
+ * The stroke every vertex shape is drawn in when the person has chosen nothing.
+ *
+ * A PICKER NOW EXISTS, as of 2026-09-07, and this stopped being *until* one: it
+ * is these tools' own colour, which `editing.annotation-colour`'s `'auto'`
+ * resolves to. The width moved out entirely — `shapeTools.ts` says where and
+ * why a constant nothing reads is worse than none.
+ */
 const STROKE: AnnotationColour = [0.85, 0.15, 0.15];
-
-/** The border width in points, `shapeTools`' constant and its argument. */
-const BORDER_WIDTH = 2;
 
 /**
  * How near the first vertex a press must land to close the shape, in CSS
@@ -195,28 +200,48 @@ export const POLYGON_TOOL_ID = 'annotate.polygon';
 export const POLYLINE_TOOL_ID = 'annotate.polyline';
 export const CLOUD_TOOL_ID = 'annotate.cloud';
 
+/**
+ * These three tools' own colour and width, as the style resolves them.
+ *
+ * `shapeTools.ts`' `styled`, restated rather than shared: the two files' `own`
+ * colour happens to be the same red today and they are different tools'
+ * identities, which is what `annotationStyle.ts` keeps apart from a person's
+ * preference. A shared helper would make one tool's default the other's by
+ * accident the first time either changed.
+ */
+function styled(style: AnnotationStyle): {
+  readonly colour: AnnotationColour;
+  readonly opacity: number;
+  readonly borderWidth: number;
+} {
+  return { colour: style.colour(STROKE), opacity: style.opacity, borderWidth: style.lineWidth };
+}
+
 /** A closed shape, solid or clouded — one draft, two tools, as a line and an arrow are. */
-function polygonDraft(border: BorderEffect) {
+function polygonDraft(border: BorderEffect, style: AnnotationStyle) {
   return (points: AnnotationPoint[]): AnnotationDraft => ({
     type: 'polygon',
     points,
     border,
-    colour: STROKE,
-    borderWidth: BORDER_WIDTH,
+    ...styled(style),
   });
 }
 
-export const polygonTool = vertexTool(POLYGON_TOOL_ID, 3, true, polygonDraft('solid'));
-export const cloudTool = vertexTool(CLOUD_TOOL_ID, 3, true, polygonDraft('cloudy'));
-export const polylineTool = vertexTool(POLYLINE_TOOL_ID, 2, false, (points) => ({
-  type: 'polyline',
-  points,
-  colour: STROKE,
-  borderWidth: BORDER_WIDTH,
-}));
+export const polygonTool = (style: AnnotationStyle): UiTool =>
+  vertexTool(POLYGON_TOOL_ID, 3, true, polygonDraft('solid', style));
+export const cloudTool = (style: AnnotationStyle): UiTool =>
+  vertexTool(CLOUD_TOOL_ID, 3, true, polygonDraft('cloudy', style));
+export const polylineTool = (style: AnnotationStyle): UiTool =>
+  vertexTool(POLYLINE_TOOL_ID, 2, false, (points) => ({
+    type: 'polyline',
+    points,
+    ...styled(style),
+  }));
 
 /** Every vertex tool, in the order their controls appear. */
-export const vertexTools: readonly UiTool[] = [polygonTool, polylineTool, cloudTool];
+export function vertexTools(style: AnnotationStyle): readonly UiTool[] {
+  return [polygonTool(style), polylineTool(style), cloudTool(style)];
+}
 
 /**
  * The two distances, exported so the cases assert against the tool's own

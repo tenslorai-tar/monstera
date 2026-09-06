@@ -6,6 +6,7 @@ import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { pointerPath, startOf } from '../registries/tools.js';
+import type { AnnotationStyle } from './annotationStyle.js';
 import type { TextToolDeps } from './textTools.js';
 
 /**
@@ -106,7 +107,7 @@ function clickedAt(
  *   `ask`* is the platform's shape, and a second interface with the same one
  *   member would be a second statement of it
  */
-export function stickyNoteTool(deps: TextToolDeps): UiTool {
+export function stickyNoteTool(deps: TextToolDeps & { readonly style: AnnotationStyle }): UiTool {
   const controller: ToolController = {
     ...pointerPath,
     commit: async (
@@ -138,7 +139,12 @@ export function stickyNoteTool(deps: TextToolDeps): UiTool {
           type: 'sticky-note',
           at,
           text: answered.data.text,
-          colour: NOTE_COLOUR,
+          // NOTE_COLOUR IS NOW WHAT THE TOOL WOULD USE ON ITS OWN, which is the
+          // yellow every viewer draws a comment marker in. A person who has
+          // chosen a colour gets theirs; one who has not gets a note that still
+          // looks like a note.
+          colour: deps.style.colour(NOTE_COLOUR),
+          opacity: deps.style.opacity,
         },
       };
     },
@@ -151,30 +157,39 @@ export function stickyNoteTool(deps: TextToolDeps): UiTool {
 /**
  * The caret — a mark that says something belongs here, and asks nothing.
  *
- * A VALUE rather than a factory, unlike every tool beside it, and that is the
- * difference worth seeing rather than smoothing over: a factory exists to
- * capture dependencies, and this tool has none. It is the only annotation this
- * build writes whose whole intent is the gesture, so its `commit` answers now
- * and the registry holds one instance of it.
+ * **A FACTORY since 2026-09-07, and it was a value.** The note beside it used to
+ * say a factory exists to capture dependencies and this tool has none, which was
+ * true and stopped being true the day a person could choose what colour a mark
+ * is drawn in. Its `commit` still answers now rather than later — that is the
+ * property that made it different, and it survives.
  */
-export const caretTool: UiTool = {
-  id: CARET_TOOL_ID,
-  controller: {
-    ...pointerPath,
-    commit: (
-      gesture: Gesture,
-      page: number,
-      transform: PageTransform,
-    ): RenderableCommand | undefined => ({
-      kind: 'addAnnotation',
-      page,
-      annotation: { type: 'caret', at: clickedAt(gesture, transform), colour: CARET_COLOUR },
-    }),
-    preview: noPreview,
-  },
-};
+export function caretTool(deps: { readonly style: AnnotationStyle }): UiTool {
+  return {
+    id: CARET_TOOL_ID,
+    controller: {
+      ...pointerPath,
+      commit: (
+        gesture: Gesture,
+        page: number,
+        transform: PageTransform,
+      ): RenderableCommand | undefined => ({
+        kind: 'addAnnotation',
+        page,
+        annotation: {
+          type: 'caret',
+          at: clickedAt(gesture, transform),
+          colour: deps.style.colour(CARET_COLOUR),
+          opacity: deps.style.opacity,
+        },
+      }),
+      preview: noPreview,
+    },
+  };
+}
 
 /** Every point tool, in the order their controls appear. */
-export function pointTools(deps: TextToolDeps): readonly UiTool[] {
-  return [stickyNoteTool(deps), caretTool];
+export function pointTools(
+  deps: TextToolDeps & { readonly style: AnnotationStyle },
+): readonly UiTool[] {
+  return [stickyNoteTool(deps), caretTool(deps)];
 }

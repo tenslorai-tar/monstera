@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
 import { overlayTransform } from './annotationSpace.js';
+import { PLAIN_STYLE } from './annotationStyle.js';
 import { TEXT_BOX_TOOL_ID, textBoxTool } from './textTools.js';
 
 /**
@@ -35,6 +36,7 @@ function toolAnswering(answer: unknown): {
       asked.push({ id, props });
       return Promise.resolve(answer);
     },
+    style: PLAIN_STYLE,
   });
   return { tool, asked };
 }
@@ -74,6 +76,7 @@ describe('textBoxTool', () => {
         rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
         text: 'see figure 3',
         colour: [0.1, 0.1, 0.1],
+        opacity: 1,
         fontSize: 12,
       },
     });
@@ -139,6 +142,6 @@ describe('textBoxTool', () => {
 
   it('claims the id its command selects', () => {
     // A tool's id is its command's, and the two are written in different files.
-    expect(textBoxTool({ ask: () => Promise.resolve(undefined) }).id).toBe(TEXT_BOX_TOOL_ID);
+    expect(textBoxTool({ ask: () => Promise.resolve(undefined), style: PLAIN_STYLE }).id).toBe(TEXT_BOX_TOOL_ID);
   });
 });

@@ -258,6 +258,7 @@ const SQUARE: Extract<AnnotationDraft, { type: 'square' }> = {
   type: 'square',
   rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
   colour: [1, 0, 0],
+  opacity: 1,
   borderWidth: 2,
 };
 
@@ -266,6 +267,7 @@ const REDACT: Extract<AnnotationDraft, { type: 'redact' }> = {
   type: 'redact',
   rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
   colour: [1, 0, 0],
+  opacity: 1,
 };
 
 /** A three-point stroke, so *the middle point survives* is observable. */
@@ -277,6 +279,7 @@ const INK: Extract<AnnotationDraft, { type: 'ink' }> = {
     { x: 70, y: 20 },
   ],
   colour: [1, 0, 0],
+  opacity: 1,
   borderWidth: 2,
 };
 
@@ -287,6 +290,7 @@ const LINE: Extract<AnnotationDraft, { type: 'line' }> = {
   to: { x: 110, y: 70 },
   ending: 'none',
   colour: [1, 0, 0],
+  opacity: 1,
   borderWidth: 2,
 };
 
@@ -400,6 +404,7 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
     text: 'see figure 3',
     colour: [0.1, 0.1, 0.1],
+    opacity: 1,
     fontSize: 12,
   };
 
@@ -501,6 +506,7 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     at: { x: 40, y: 200 },
     text: 'check this figure',
     colour: [1, 0.8, 0.2],
+    opacity: 1,
   };
 
   const CARET: Extract<AnnotationDraft, { type: 'caret' }> = {
@@ -510,6 +516,7 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     // table entries: one clamps and one does not, from one input.
     at: { x: 40, y: 200 },
     colour: [0.85, 0.15, 0.15],
+    opacity: 1,
   };
 
   /** `/Name`, which is the icon a `/Text` draws. Absent on every other subtype. */
@@ -718,6 +725,7 @@ describe('applyAddAnnotation writes the vertex shapes the format defines', () =>
     points: CORNERS,
     border: 'solid',
     colour: [1, 0, 0],
+    opacity: 1,
     borderWidth: 2,
   };
 
@@ -727,6 +735,7 @@ describe('applyAddAnnotation writes the vertex shapes the format defines', () =>
     type: 'polyline',
     points: CORNERS,
     colour: [1, 0, 0],
+    opacity: 1,
     borderWidth: 2,
   };
 
@@ -1561,7 +1570,15 @@ describe('readAnnotations reports where an annotation is', () => {
     const listed = await onSession(
       await drawnOn(
         await fixture({ rotate: 90 }),
-        command({ annotation: { type: 'sticky-note', at: { x: 30, y: 40 }, text: 'x', colour: [1, 0.8, 0.2] } }),
+        command({
+          annotation: {
+            type: 'sticky-note',
+            at: { x: 30, y: 40 },
+            text: 'x',
+            colour: [1, 0.8, 0.2],
+            opacity: 1,
+          },
+        }),
       ),
       (session) => readAnnotations(session),
     );
@@ -1678,6 +1695,7 @@ describe('applyAddAnnotation tells a typewriter from a text box', () => {
     rect: { x0: 10, y0: 200, x1: 90, y1: 240 },
     text: 'in a box',
     colour: [0.1, 0.1, 0.1],
+    opacity: 1,
     fontSize: 12,
   };
   const TYPED: AnnotationDraft = {
@@ -1685,6 +1703,7 @@ describe('applyAddAnnotation tells a typewriter from a text box', () => {
     rect: { x0: 100, y0: 200, x1: 180, y1: 240 },
     text: 'on the page',
     colour: [0.1, 0.1, 0.1],
+    opacity: 1,
     fontSize: 12,
   };
 
@@ -1748,6 +1767,7 @@ describe('applyAddAnnotation writes a callout the format recognises', () => {
     rect: { x0: 80, y0: 100, x1: 180, y1: 140 },
     text: 'see this',
     colour: [0.85, 0.15, 0.15],
+    opacity: 1,
     fontSize: 12,
   };
 
@@ -1805,6 +1825,7 @@ describe('applyAddAnnotation writes a callout the format recognises', () => {
       rect: { x0: 10, y0: 200, x1: 60, y1: 240 },
       text: 'plain',
       colour: [0, 0, 0],
+      opacity: 1,
       fontSize: 12,
     };
     const both = await drawnOn(
@@ -1872,6 +1893,7 @@ describe('applyAddAnnotation writes text markup as runs of text', () => {
     from: { x: 22, y: 256 },
     to: { x: 100, y: 252 },
     colour: [1, 0.9, 0.2],
+    opacity: 1,
   };
 
   it('stores ONE quad for a drag across one line', async () => {

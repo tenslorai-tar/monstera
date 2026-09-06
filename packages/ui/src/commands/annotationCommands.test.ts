@@ -1,6 +1,7 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { PLAIN_STYLE } from '../annotations/annotationStyle.js';
 import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
 import {
@@ -165,6 +166,7 @@ describe('rectangleToolCommand', () => {
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,
+      style: PLAIN_STYLE,
     }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,

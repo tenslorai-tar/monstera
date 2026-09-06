@@ -1371,6 +1371,7 @@ describe('CommandBus and the targets axis', () => {
         type: 'square',
         rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
         colour: [1, 0, 0],
+        opacity: 1,
         borderWidth: 2,
       },
     });

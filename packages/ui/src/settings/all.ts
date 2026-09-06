@@ -2,6 +2,12 @@ import type { SettingDefinition } from '../registries/settings.js';
 import { ACCENT_SETTING } from './accent.js';
 import { THEME_SETTING } from './appearance.js';
 import {
+  ANNOTATION_COLOUR_SETTING,
+  ANNOTATION_FONT_SIZE_SETTING,
+  ANNOTATION_LINE_WIDTH_SETTING,
+  ANNOTATION_OPACITY_SETTING,
+} from './editing.js';
+import {
   DARK_PAGE_SETTING,
   GRID_SETTING,
   LOUPE_SETTING,
@@ -47,4 +53,8 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   DARK_PAGE_SETTING,
   LOUPE_SETTING,
   SPLIT_VIEW_SETTING,
+  ANNOTATION_COLOUR_SETTING,
+  ANNOTATION_OPACITY_SETTING,
+  ANNOTATION_LINE_WIDTH_SETTING,
+  ANNOTATION_FONT_SIZE_SETTING,
 ];

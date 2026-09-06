@@ -10,6 +10,7 @@ import { toPdf } from '@monstera/shared';
 
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
+import type { AnnotationStyle } from './annotationStyle.js';
 import { draggedRect } from './annotationSpace.js';
 
 /**
@@ -64,18 +65,40 @@ import { draggedRect } from './annotationSpace.js';
  * every reviewing hand reaches for, and it is stated once so the picker
  * replaces one value rather than hunting for several.
  */
-const STROKE: AnnotationColour = [0.85, 0.15, 0.15];
+export const STROKE: AnnotationColour = [0.85, 0.15, 0.15];
 
 /**
- * The stroke width, in points.
+ * These six tools' own colour and width, as the style resolves them.
  *
- * Points and not pixels, and that is why it is a constant rather than something
- * derived from the zoom: a border is a property of the annotation, so it stays
- * two points at every magnification and prints as two points. A width in screen
- * pixels would be an annotation whose thickness depended on how the person who
- * drew it happened to be zoomed.
+ * `STROKE` and {@link BORDER_WIDTH} are now what a tool would use *if nobody has
+ * chosen* — `annotationStyle.ts` has the argument for the tri-state. They stay
+ * constants rather than becoming settings' defaults restated, because the
+ * setting's fallback is a person's preference and this is the tool's identity.
  */
-const BORDER_WIDTH = 2;
+function styled(style: AnnotationStyle): {
+  readonly colour: AnnotationColour;
+  readonly opacity: number;
+  readonly borderWidth: number;
+} {
+  return {
+    colour: style.colour(STROKE),
+    opacity: style.opacity,
+    borderWidth: style.lineWidth,
+  };
+}
+
+/**
+ * The stroke width moved out on 2026-09-07, and where it went matters.
+ *
+ * It was a constant here — two points, in points and not pixels, because a
+ * border is a property of the annotation and stays two points at every
+ * magnification. It is now `editing.annotation-line-width`'s fallback, with that
+ * reasoning beside it, because a person setting it is setting exactly this.
+ *
+ * **Deleted rather than kept unread.** A constant nothing reads is a number that
+ * agrees with the setting until somebody edits one of them, and the disagreement
+ * would be invisible: both would look like the stroke width.
+ */
 
 /**
  * How far the pointer must travel before a drag is a shape.
@@ -167,7 +190,7 @@ function boxTool(
  * @param ending how the `to` end is drawn — the only thing separating a line
  *   from an arrow, because that is what the format says separates them
  */
-function lineTool(id: string, ending: LineEnding): UiTool {
+function lineTool(id: string, ending: LineEnding, style: AnnotationStyle): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     const from = startOf(gesture);
     const to = endOf(gesture);
@@ -201,8 +224,7 @@ function lineTool(id: string, ending: LineEnding): UiTool {
           from: { x: from.x, y: from.y },
           to: { x: to.x, y: to.y },
           ending,
-          colour: STROKE,
-          borderWidth: BORDER_WIDTH,
+          ...styled(style),
         },
       };
     },
@@ -227,7 +249,7 @@ function lineTool(id: string, ending: LineEnding): UiTool {
  *
  * @param id the registry id, shared with the command that selects it
  */
-function inkTool(id: string): UiTool {
+function inkTool(id: string, style: AnnotationStyle): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     // THE PATH'S OWN EXTENT, not its two ends: a scribble that returns to where
     // it started is a stroke, and the box tools' end-to-end test would call it
@@ -262,8 +284,7 @@ function inkTool(id: string): UiTool {
             const placed = toPdf(point, transform);
             return { x: placed.x, y: placed.y };
           }),
-          colour: STROKE,
-          borderWidth: BORDER_WIDTH,
+          ...styled(style),
         },
       };
     },
@@ -287,36 +308,40 @@ export const ARROW_TOOL_ID = 'annotate.arrow';
 export const INK_TOOL_ID = 'annotate.ink';
 export const REDACT_TOOL_ID = 'annotate.redact';
 
-export const rectangleTool = boxTool(RECTANGLE_TOOL_ID, 'rect', (rect) => ({
-  type: 'square',
-  rect,
-  colour: STROKE,
-  borderWidth: BORDER_WIDTH,
-}));
-export const ellipseTool = boxTool(ELLIPSE_TOOL_ID, 'ellipse', (rect) => ({
-  type: 'circle',
-  rect,
-  colour: STROKE,
-  borderWidth: BORDER_WIDTH,
-}));
-export const redactTool = boxTool(REDACT_TOOL_ID, 'rect', (rect) => ({
-  // NO BORDER WIDTH, and it is measured rather than forgotten: MuPDF refuses
-  // `setBorderWidth` on a Redact. The schema has no field for one, so this is
-  // a compile error away from being written by mistake.
-  type: 'redact',
-  rect,
-  colour: STROKE,
-}));
-export const lineAnnotationTool = lineTool(LINE_TOOL_ID, 'none');
-export const arrowTool = lineTool(ARROW_TOOL_ID, 'closed-arrow');
-export const inkAnnotationTool = inkTool(INK_TOOL_ID);
+export const rectangleTool = (style: AnnotationStyle): UiTool =>
+  boxTool(RECTANGLE_TOOL_ID, 'rect', (rect) => ({ type: 'square', rect, ...styled(style) }));
+export const ellipseTool = (style: AnnotationStyle): UiTool =>
+  boxTool(ELLIPSE_TOOL_ID, 'ellipse', (rect) => ({ type: 'circle', rect, ...styled(style) }));
+export const redactTool = (style: AnnotationStyle): UiTool =>
+  boxTool(REDACT_TOOL_ID, 'rect', (rect) => {
+    // NO BORDER WIDTH, and it is measured rather than forgotten: MuPDF refuses
+    // `setBorderWidth` on a Redact. The schema has no field for one, so the
+    // spread is taken apart here rather than dropping a field the type would
+    // reject — which is the compile error doing its job.
+    const { colour, opacity } = styled(style);
+    return { type: 'redact', rect, colour, opacity };
+  });
+export const lineAnnotationTool = (style: AnnotationStyle): UiTool =>
+  lineTool(LINE_TOOL_ID, 'none', style);
+export const arrowTool = (style: AnnotationStyle): UiTool =>
+  lineTool(ARROW_TOOL_ID, 'closed-arrow', style);
+export const inkAnnotationTool = (style: AnnotationStyle): UiTool => inkTool(INK_TOOL_ID, style);
 
-/** Every shape tool, in the order their controls appear. */
-export const shapeTools: readonly UiTool[] = [
-  rectangleTool,
-  ellipseTool,
-  lineAnnotationTool,
-  arrowTool,
-  inkAnnotationTool,
-  redactTool,
-];
+/**
+ * Every shape tool, in the order their controls appear.
+ *
+ * A FUNCTION as of 2026-09-07, where it was a value: a tool's colour, opacity
+ * and stroke width are now a person's to set, so the set of tools is built from
+ * the style rather than constructed once at module load. The registry is
+ * rebuilt when the style moves, which is six entries in a `Map`.
+ */
+export function shapeTools(style: AnnotationStyle): readonly UiTool[] {
+  return [
+    rectangleTool(style),
+    ellipseTool(style),
+    lineAnnotationTool(style),
+    arrowTool(style),
+    inkAnnotationTool(style),
+    redactTool(style),
+  ];
+}

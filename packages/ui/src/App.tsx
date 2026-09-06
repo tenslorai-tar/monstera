@@ -93,6 +93,8 @@ import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
+import type { AnnotationStyle } from './annotations/annotationStyle.js';
+import { colourFromHex } from './annotations/annotationStyle.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID } from './annotations/selectTool.js';
 import {
@@ -121,6 +123,13 @@ import {
   SPLIT_VIEW_SETTING,
   applyDarkPage,
 } from './settings/viewing.js';
+import {
+  ANNOTATION_COLOUR_SETTING,
+  ANNOTATION_FONT_SIZE_SETTING,
+  ANNOTATION_LINE_WIDTH_SETTING,
+  ANNOTATION_OPACITY_SETTING,
+} from './settings/editing.js';
+import { StylePanel } from './StylePanel.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -817,6 +826,38 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
   const readSelection = useCallback(() => selection, [selection]);
 
+  /**
+   * What a new annotation is drawn in — the four editing settings, resolved.
+   *
+   * ## Resolved HERE and not in each tool
+   *
+   * Twelve tools reading four settings would be twelve implementations of *what
+   * colour is a new mark*, agreeing today. This is the one answer, and the tool
+   * registry is rebuilt when it moves — fourteen entries in a `Map`, which is
+   * what the memo below already costs when the selection changes.
+   *
+   * `'auto'` is unpacked here for the same reason: the tri-state has one reader,
+   * and a tool asks for a colour by handing over the one it would use itself.
+   */
+  const styleColour = useSetting(settings, ANNOTATION_COLOUR_SETTING);
+  const styleOpacity = useSetting(settings, ANNOTATION_OPACITY_SETTING);
+  const styleLineWidth = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
+  const styleFontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
+  const style = useMemo<AnnotationStyle>(() => {
+    // A STORED VALUE THIS CANNOT PARSE FALLS BACK TO THE TOOL'S OWN, which is
+    // the same outcome as `'auto'`. The setting's schema refuses a malformed
+    // hex on the way in, so reaching this means a stored value from a build
+    // whose regex was different — and each tool's own colour is a mark a person
+    // recognises, where black would be a silent restyle.
+    const chosen = styleColour === 'auto' ? undefined : colourFromHex(styleColour);
+    return {
+      colour: (own) => chosen ?? own,
+      opacity: styleOpacity,
+      lineWidth: styleLineWidth,
+      fontSize: styleFontSize,
+    };
+  }, [styleColour, styleFontSize, styleLineWidth, styleOpacity]);
+
   /** What the selection commands need, composed once so nine entries share it. */
   const selectionDeps = useMemo(
     () => ({ selection: readSelection, onDelete: removeSelection, onPlace: dispatch }),
@@ -841,9 +882,10 @@ export function App({ client, settings }: AppProps): ReactElement {
           annotations: listAnnotations,
           onSelect: setPicked,
           selected: readSelection,
+          style,
         }),
       ),
-    [ask, listAnnotations, readSelection],
+    [ask, listAnnotations, readSelection, style],
   );
 
   const rulers = useSetting(settings, RULERS_SETTING);
@@ -1181,6 +1223,11 @@ export function App({ client, settings }: AppProps): ReactElement {
           its own toggle moves the version — a command, not a view preference,
           so what it shows is re-read from the document after every mutation
           including an undo of its own. */}
+      {/* THE STYLE CONTROLS, which take no document at all: they set what the
+          NEXT annotation is drawn in, so they are useful before anything is
+          open and they do not change when the version moves. That is what makes
+          them settings rather than document state. */}
+      <StylePanel settings={settings} />
       <LayersPanel client={client} docId={open?.docId} version={open?.version} />
       {/* THE ANNOTATIONS PANEL, keyed on the version for the layers panel's
           reason: every drawing tool moves it, so the list is re-read after the

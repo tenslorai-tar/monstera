@@ -226,6 +226,7 @@ describe('a plain save and an annotation this build did not author', () => {
           type: 'square',
           rect: { x0: 100, y0: 100, x1: 150, y1: 150 },
           colour: [0, 0, 1],
+          opacity: 1,
           borderWidth: 1,
         },
       }),

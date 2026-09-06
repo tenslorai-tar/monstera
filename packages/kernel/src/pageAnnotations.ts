@@ -987,6 +987,11 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
       loaded.deleteAnnotation(annotation);
       throw thrown;
     }
+    // THE OPACITY — one call at the one creation site, for the mark's reason
+    // below: `/CA` is a property of an annotation rather than of any subtype, so
+    // a line in each of twelve `kinds` entries would be twelve chances to omit
+    // one, and the omission's symptom is a mark that ignores the control.
+    annotation.setOpacity(draft.opacity);
     // THE MARK — one call at the one creation site, rather than a line every
     // entry in `kinds` has to remember. A per-kind mark would be eleven chances
     // to omit one, and the omission's symptom is an annotation of ours that

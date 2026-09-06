@@ -76,6 +76,7 @@ export {
   LINK_SCHEMES,
   MAX_ANNOTATION_TEXT,
   MAX_LINK_URI,
+  type AnnotationOpacity,
   type LinkTarget,
   MIN_ANNOTATION_FONT,
   MAX_INK_POINTS,

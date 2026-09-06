@@ -42,12 +42,12 @@ import { vertexTools } from './vertexTools.js';
  */
 export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
   return [
-    ...shapeTools,
+    ...shapeTools(deps.style),
     textBoxTool(deps),
     typewriterTool(deps),
     ...pointTools(deps),
-    ...vertexTools,
-    ...textMarkupTools,
+    ...vertexTools(deps.style),
+    ...textMarkupTools(deps.style),
     ...linkTools(deps),
     calloutTool(deps),
     eraserTool(deps),

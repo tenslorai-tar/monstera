@@ -44,8 +44,6 @@ import type { TextToolDeps } from './textTools.js';
 /** A reviewing hand's red, matching the caret and the strike. */
 const CALLOUT_COLOUR: AnnotationColour = [0.85, 0.15, 0.15];
 
-/** The size a callout's words are set in, until the style controls own it. */
-const CALLOUT_FONT_SIZE = 12;
 
 /** The id, shared with the command that selects this tool. */
 export const CALLOUT_TOOL_ID = 'annotate.callout';
@@ -103,8 +101,9 @@ export function calloutTool(deps: TextToolDeps): UiTool {
           at: { x: at.x, y: at.y },
           rect,
           text: answered.data.text,
-          colour: CALLOUT_COLOUR,
-          fontSize: CALLOUT_FONT_SIZE,
+          colour: deps.style.colour(CALLOUT_COLOUR),
+          opacity: deps.style.opacity,
+          fontSize: deps.style.fontSize,
         },
       };
     },
