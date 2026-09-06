@@ -117,3 +117,35 @@ not preferences.
 - The Stage 7 security work inherits item 5 as a required proof, with a control
   case: the same redaction on a document *without* prior revisions must pass
   the same xref-chain check, so the check is proven to be looking at something.
+
+## Correction, 2026-09-06 — item 4 has been executed, and its answer is no
+
+Item 4 above still reads *"L5 is currently assumed, not measured"*, and it was
+run on 2026-09-06. The body is left as written, because what was believed then
+is the record; this is what the run found.
+
+**A full save does not preserve foreign annotations byte-identically.** Against
+MuPDF 1.28.0, on a plain save of an untouched document, two entries out of ten
+come back re-encoded: a literal with balanced parens `(see (this))` becomes
+`(see \(this\))`, and an ASCII hex string `<414243>` becomes `(ABC)`. Names,
+numbers, arrays, already-escaped literals and UTF-16BE hex strings are all
+untouched — the last being the form a producer uses for anything a person typed,
+which is what decides the cost. `foreignAnnotations.test.ts` holds the
+measurement and **pins the divergence set exactly**, so a version that stops
+re-encoding, or starts re-encoding something else, is a red build.
+
+**It does not invert this decision, which is the outcome item 4 was written to
+allow for.** Both readings of what it would mean were on the table: byte-identity
+holding would have confirmed the full-rewrite default, and a wholesale
+re-serialisation would have made incremental the only mode that can honour L5.
+The answer is neither. No foreign annotation loses a key, a value or a character,
+so the property L5 exists to protect survives a full rewrite; the two spelling
+changes are still byte changes, so anything covering those bytes breaks — and
+this ADR already routes a signature-bearing save to an incremental one for
+exactly that reason. Items 1, 2, 3 and 5 remain unexecuted and the default
+remains full rewrite on their account, not on item 4's.
+
+**L5's own text has been corrected** in `docs/ARCHITECTURE.md` §4, in the commit
+that also defines the `srcRef` marking scheme the invariant had always named and
+never had
+([ADR-0043](0043-an-annotation-this-build-wrote-carries-a-private-mark.md)).
