@@ -9,6 +9,7 @@ import {
   RECTANGLE_TOOL_ID,
   REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
+import { CALLOUT_TOOL_ID } from '../annotations/calloutTool.js';
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
@@ -27,6 +28,7 @@ import {
 } from '../annotations/vertexTools.js';
 import {
   ARROW_TOOL_TITLE,
+  CALLOUT_TOOL_TITLE,
   CLOUD_TOOL_TITLE,
   DELETE_SELECTION_TITLE,
   ELLIPSE_TOOL_TITLE,
@@ -252,6 +254,18 @@ export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
  * `addAnnotation` — which reaches this file as nothing, for the eleventh time.
  * What a tool does with its gesture has never been this table's business.
  */
+/**
+ * The callout's command.
+ *
+ * The tool behind this is the first whose gesture genuinely spans two presses,
+ * and the registration is one line — which is ADR-0042's claim paid rather than
+ * stated. The lifecycle lives on the controller, so a command that turns a tool
+ * on never learns how many presses it takes.
+ */
+export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 55, deps);
+}
+
 export function linkAddressToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(LINK_ADDRESS_TOOL_ID, LINK_ADDRESS_TOOL_TITLE, 53, deps);
 }
@@ -466,5 +480,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     strikeoutToolCommand(deps),
     linkAddressToolCommand(deps),
     linkPageToolCommand(deps),
+    calloutToolCommand(deps),
   ];
 }

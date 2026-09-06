@@ -1340,6 +1340,50 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
   textMarkupDraft('highlight'),
   textMarkupDraft('underline'),
   textMarkupDraft('strikeout'),
+  z
+    .object({
+      /**
+       * `/Subtype /FreeText` with `/IT /FreeTextCallout` — a note with a line
+       * pointing at what it is about.
+       *
+       * ## Its own member rather than a field on `text-box`
+       *
+       * The two write the same subtype, and that is where the resemblance ends.
+       * A text box is placed by one drag; a callout is a point AND a box, and
+       * an optional `at` on the text-box member would be a field legal for half
+       * its values with a tool that can never fill it — the shape this schema
+       * rejected for the cloud's border effect and for the same reason.
+       *
+       * ## MEASURED: `/IT` is what makes it a callout, and MuPDF does not write
+       * it
+       *
+       * 2026-09-06, MuPDF 1.28.0. `setCalloutPoint` and `setCalloutLine` store
+       * `/CL` and nothing else — no `/IT` — and the annotation's `/Rect` stays
+       * the text box's. Written by hand through the object API, `/IT
+       * /FreeTextCallout` makes MuPDF **expand `/Rect` to cover the leader
+       * line** and record the inset back to the box in `/RD`. So the key is
+       * load-bearing rather than decorative: without it the rectangle a reader
+       * hit-tests against excludes the line, and PDF 32000 says `/CL` applies
+       * only where `/IT` names a callout.
+       *
+       * ## Two points of leader, and the elbow is OWED
+       *
+       * The payload carries where it points and where the note sits, and MuPDF
+       * computes which edge of the box the line meets. A three-point leader with
+       * a knee needs a press the gesture can tell apart from the box's corner,
+       * which is a tool question rather than a payload one.
+       */
+      type: z.literal('callout'),
+      /** What it points AT, in PDF user space. */
+      at: annotationPointSchema,
+      /** The box the note sits in. */
+      rect: annotationRectSchema,
+      /** What it says. `text-box`' field and its rules. */
+      text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+      colour: annotationColourSchema,
+      fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
+    })
+    .strict(),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */
@@ -1399,6 +1443,12 @@ export const annotationKindNameSchema = z.enum([
   'highlight',
   'underline',
   'strikeout',
+  // A NAME OF ITS OWN, although a callout is a `/FreeText` like a text box —
+  // and this is the pair the polygon/cloud rule does NOT cover. What separates
+  // them is `/IT /FreeTextCallout`, a key in the file rather than a tool's
+  // vocabulary, so a reader looking at a callout is looking at something the
+  // document itself distinguishes.
+  'callout',
   'other',
 ]);
 

@@ -7,6 +7,7 @@ import {
   ANNOTATIONS_EMPTY,
   ANNOTATIONS_FOREIGN,
   ANNOTATIONS_KIND_CARET,
+  ANNOTATIONS_KIND_CALLOUT,
   ANNOTATIONS_KIND_CIRCLE,
   ANNOTATIONS_KIND_HIGHLIGHT,
   ANNOTATIONS_KIND_INK,
@@ -246,6 +247,10 @@ const KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
   caret: ANNOTATIONS_KIND_CARET,
   polygon: ANNOTATIONS_KIND_POLYGON,
   polyline: ANNOTATIONS_KIND_POLYLINE,
+  // ITS OWN LABEL, although a callout and a text box are both `/FreeText`: the
+  // document itself distinguishes them with `/IT`, so a reader told *Text box*
+  // for a callout would be told something the file disagrees with.
+  callout: ANNOTATIONS_KIND_CALLOUT,
   highlight: ANNOTATIONS_KIND_HIGHLIGHT,
   underline: ANNOTATIONS_KIND_UNDERLINE,
   strikeout: ANNOTATIONS_KIND_STRIKEOUT,

@@ -384,9 +384,13 @@ interface AnnotationKind<D> {
   /**
    * Writes everything but the appearance stream.
    *
-   * **The page is a parameter**, and it arrived with the text markups: *which
-   * characters lie between these two points* is a question only the page can
-   * answer, through `StructuredText`. Eight entries ignore it.
+   * **What it is written ON is a parameter**, and it arrived with the text
+   * markups: *which characters lie between these two points* is a question only
+   * the page can answer, and a callout needs the document to mint a `/Name`.
+   * Most entries ignore both.
+   *
+   * An object rather than two more positions, so the entry that needs a third
+   * thing adds a field instead of a parameter every other entry has to accept.
    *
    * **It may throw**, which the three markups do when a drag selected no text.
    * {@link applyAddAnnotation} deletes the annotation it had just created
@@ -397,7 +401,7 @@ interface AnnotationKind<D> {
     annotation: PDFAnnotation,
     draft: D,
     transform: PageTransform,
-    page: PDFPage,
+    on: { readonly page: PDFPage; readonly document: PDFDocument },
   ) => void;
 }
 
@@ -493,9 +497,9 @@ function markupKind(subtype: PDFAnnotationType): AnnotationKind<MarkupDraft> {
     // A CLICK SELECTS NOTHING, which is the same refusal as an empty run and is
     // made here so the common case never reaches the engine.
     degenerate: (draft) => draft.from.x === draft.to.x && draft.from.y === draft.to.y,
-    write: (annotation, draft, transform, page): void => {
+    write: (annotation, draft, transform, on): void => {
       const [from, to] = ends(draft, transform);
-      const quads = page.toStructuredText().highlight(from, to, MAX_MARKUP_QUADS);
+      const quads = on.page.toStructuredText().highlight(from, to, MAX_MARKUP_QUADS);
       if (quads.length === 0) {
         throw new RangeError(
           'that drag selected no text, so there is nothing to mark. A highlight, an underline ' +
@@ -641,12 +645,57 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // pins the whole key set so a version that writes a different one is a
       // red build.
       //
-      // `/CL` is the callout line, and its presence is why the callout tool is
-      // a smaller job than it looks: the key is already there, and what a
-      // callout adds is `/IT /FreeTextCallout` plus the three points. It is
-      // also why this is pinned rather than ignored — a `/CL` nothing set is a
-      // key a viewer may honour, and finding it here is cheaper than finding it
-      // as a stray line on somebody's page.
+      // AND THE `/CL` IS DELETED, as of 2026-09-06. That paragraph used to end
+      // by calling the stray callout line the reason the callout tool would be
+      // a small job. Building it produced the opposite finding: `/IT
+      // /FreeTextCallout` is what makes a `/CL` mean anything, MuPDF writes no
+      // `/IT` at all, and PDF 32000 §12.5.6.6 says `/CL` applies only where
+      // `/IT` names a callout.
+      //
+      // So every text box this build has written carries a leader line from the
+      // page's corner that a conforming viewer ignores and a lenient one draws.
+      // Measured: `createAnnotation('FreeText')` with nothing else called
+      // stores `/CL [0 300 80 275.3846]`. That is the *stray line on somebody's
+      // page* this comment predicted, and removing it is cheaper than hoping
+      // every reader checks `/IT`.
+      annotation.getObject().delete('CL');
+    },
+  },
+  callout: {
+    subtype: 'FreeText',
+    // THE BOX ONLY. MuPDF expands `/Rect` itself once `/IT` is written, so a
+    // bound including the leader would be this build predicting an expansion
+    // the engine performs — and the point it leads from is refused separately
+    // below, where the message can say which of the two was off the page.
+    bounds: (draft, transform) => placedRect(draft.rect, transform),
+    degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
+    write: (annotation, draft, transform, on): void => {
+      annotation.setRect(placedRect(draft.rect, transform));
+      annotation.setContents(draft.text);
+      annotation.setDefaultAppearance('Helv', draft.fontSize, [...draft.colour]);
+      const [at] = placedPoints([draft.at], transform);
+      if (at === undefined) throw new Error('a callout has a point it leads from');
+      // `setCalloutPoint` RATHER THAN `setCalloutLine`, and the difference is a
+      // rule this build does not have to hold: which edge of the box the line
+      // meets is geometry MuPDF works out from the rectangle it was given.
+      // Measured 2026-09-06 — a point at (10, 120) against a box spanning x
+      // 80–180 stored `/CL [10 180 100 240]`, whose second point is on the box
+      // rather than at a corner this file chose.
+      annotation.setCalloutPoint(at);
+      // `/IT`, WRITTEN BY HAND BECAUSE MuPDF DOES NOT. Measured the same day:
+      // `setCalloutPoint` and `setCalloutLine` store `/CL` and no `/IT`, and
+      // PDF 32000 §12.5.6.6 says `/CL` applies only where `/IT` names a
+      // callout — so without this the annotation is a text box carrying a key
+      // a conforming reader ignores.
+      //
+      // IT IS LOAD-BEARING RATHER THAN DECLARATIVE, which is the assertion
+      // worth having: with `/IT` present MuPDF expands `/Rect` to cover the
+      // leader and records the inset back to the box in `/RD`, so the rectangle
+      // the eraser and the select tool hit-test against includes the line. A
+      // case asserts that expansion rather than the key, for the cloud's
+      // reason — a stored key that changes nothing is what an inert write looks
+      // like.
+      annotation.getObject().put('IT', on.document.newName('FreeTextCallout'));
     },
   },
   'sticky-note': {
@@ -898,7 +947,7 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
 
     const annotation = loaded.createAnnotation(kind.subtype);
     try {
-      kind.write(annotation, draft, transform, loaded);
+      kind.write(annotation, draft, transform, { page: loaded, document });
     } catch (thrown) {
       // A REFUSED COMMAND LEAVES NOTHING BEHIND, which is this module's stated
       // invariant and was free until a `write` could fail. The text markups can:
@@ -1028,6 +1077,10 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   // tool writes that kind, and from that day every document's FreeText stops
   // being `other`. So the panel starts naming text boxes this build did not
   // write, which is right — the label says what the object is, not who made it.
+  // A FOREIGN `/FreeText` IS A TEXT BOX unless it says otherwise, and `NAMED`
+  // cannot see that it does: the walk keys on `getType()`, which answers
+  // `FreeText` for a callout too. `calloutNamed` below is what separates them,
+  // because the difference is `/IT` rather than the subtype.
   FreeText: 'text-box',
   Text: 'sticky-note',
   Caret: 'caret',
@@ -1043,6 +1096,28 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   Underline: 'underline',
   StrikeOut: 'strikeout',
 };
+
+/**
+ * What a surface may call this annotation.
+ *
+ * `?? 'other'` IS THE WHOLE POINT of the closed union: a subtype this build
+ * cannot name is listed rather than dropped, because a panel that silently
+ * omitted a document's own comments would be worse than one that names them
+ * vaguely.
+ *
+ * **`/FreeText` is the one subtype that is two kinds**, and the difference is a
+ * key rather than the subtype: `/IT /FreeTextCallout` is what makes one a
+ * callout, and `getType()` answers `FreeText` either way. So the table cannot
+ * separate them and this reads the key — which is also why the check is on the
+ * key's VALUE rather than its presence, since `/IT` has other legal values
+ * (`FreeTextTypeWriter` among them) that are not this.
+ */
+function kindOf(annotation: PDFAnnotation): AnnotationKindName {
+  const named = NAMED[annotation.getType()] ?? 'other';
+  if (named !== 'text-box') return named;
+  const intent = annotation.getObject().get('IT');
+  return intent.isName() && intent.asName() === 'FreeTextCallout' ? 'callout' : 'text-box';
+}
 
 /**
  * How many annotations may be listed.
@@ -1098,7 +1173,7 @@ export function readAnnotations(
           // build cannot name is listed rather than dropped, because a panel
           // that silently omitted a document's own comments would be worse than
           // one that names them vaguely.
-          kind: NAMED[annotation.getType()] ?? 'other',
+          kind: kindOf(annotation),
           contents: annotation.getContents().slice(0, MAX_LISTED_CONTENTS),
           authored: authoredHere(annotation),
         });

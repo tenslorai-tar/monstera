@@ -307,6 +307,13 @@ export const ANNOTATION_NOTE_TOO_LONG = messageKey('dialog.annotation-note.too-l
 export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
+export const ANNOTATIONS_KIND_CALLOUT = messageKey('surface.annotations.kind.callout');
+export const CALLOUT_TOOL_TITLE = messageKey('command.annotate.callout');
+export const CALLOUT_DIALOG_TITLE = messageKey('dialog.callout.title');
+export const CALLOUT_LABEL = messageKey('dialog.callout.label');
+export const CALLOUT_APPLY = messageKey('dialog.callout.apply');
+export const CALLOUT_EMPTY = messageKey('dialog.callout.empty');
+export const CALLOUT_TOO_LONG = messageKey('dialog.callout.too-long');
 export const ANNOTATIONS_KIND_HIGHLIGHT = messageKey('surface.annotations.kind.highlight');
 export const ANNOTATIONS_KIND_UNDERLINE = messageKey('surface.annotations.kind.underline');
 export const ANNOTATIONS_KIND_STRIKEOUT = messageKey('surface.annotations.kind.strikeout');
@@ -545,6 +552,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // vocabulary applied to a document somebody else wrote.
   [ANNOTATIONS_KIND_POLYGON]: 'Shape',
   [ANNOTATIONS_KIND_POLYLINE]: 'Connected lines',
+  [ANNOTATIONS_KIND_CALLOUT]: 'Callout',
+  [CALLOUT_TOOL_TITLE]: 'Callout',
+  [CALLOUT_DIALOG_TITLE]: 'Callout',
+  [CALLOUT_LABEL]: 'Note',
+  [CALLOUT_APPLY]: 'Add callout',
+  [CALLOUT_EMPTY]: 'Type what this callout should say.',
+  [CALLOUT_TOO_LONG]: 'That note is too long to store.',
   [ANNOTATIONS_KIND_HIGHLIGHT]: 'Highlight',
   [ANNOTATIONS_KIND_UNDERLINE]: 'Underline',
   [ANNOTATIONS_KIND_STRIKEOUT]: 'Strikethrough',

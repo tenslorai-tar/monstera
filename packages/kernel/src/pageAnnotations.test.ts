@@ -453,9 +453,16 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     // pin keeps them together deliberately — the case's subject is *what ends
     // up in the dictionary*, and a key this build writes going missing is worth
     // exactly as much as one the engine stops writing.
+    //
+    // AND `/CL` IS NO LONGER AMONG THEM, which is what the callout row found.
+    // MuPDF writes a callout line on every `/FreeText` it creates; PDF 32000
+    // §12.5.6.6 says `/CL` applies only where `/IT` names a callout, and MuPDF
+    // writes no `/IT` at all. So a text box shipped a leader line from the
+    // page's corner that a conforming viewer ignores and a lenient one draws.
+    // The writer deletes it, and this line is where that is asserted.
     const drawn = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
     expect((await freeTextIn(drawn)).keys.sort().join(' ')).toBe(
-      '/AP /BS /CL /Contents /DA /F /Monstera_Authored /P /RD /Rect /Subtype /Type',
+      '/AP /BS /Contents /DA /F /Monstera_Authored /P /RD /Rect /Subtype /Type',
     );
   });
 
@@ -1651,6 +1658,102 @@ describe('the srcRef mark', () => {
     // `false`.
     const stored = await readBack(await fixture({ foreign: true, claimsAuthored: true }));
     expect(stored[0]?.keys).toContain('/Monstera_Authored');
+  });
+});
+
+/**
+ * The callout — a `/FreeText` that the file itself says is one.
+ *
+ * ## The assertions are on `/IT`'s CONSEQUENCE, not on `/IT`
+ *
+ * Writing a key and having it take effect are two facts, and the cloud already
+ * paid for the difference: `setBorderEffect` stored `/BE` and drew nothing until
+ * the intensity was set with it. So the load-bearing case here is that `/Rect`
+ * EXPANDS to cover the leader once `/IT` is present — a consequence an inert
+ * key cannot produce — and the key itself is asserted beside it.
+ */
+describe('applyAddAnnotation writes a callout the format recognises', () => {
+  const CALLOUT: AnnotationDraft = {
+    type: 'callout',
+    // Points at the lower left; the note sits to the upper right of it.
+    at: { x: 10, y: 30 },
+    rect: { x0: 80, y0: 100, x1: 180, y1: 140 },
+    text: 'see this',
+    colour: [0.85, 0.15, 0.15],
+    fontSize: 12,
+  };
+
+  /** The `/FreeText`'s raw entries, read with pdf-lib. */
+  async function freeText(bytes: Uint8Array): Promise<PDFDict> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const first = annots.asArray()[0];
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the /Annots entry is not a dictionary');
+    return dict;
+  }
+
+  it('EXPANDS the rectangle to cover the leader, which is what /IT does', async () => {
+    // THE CASE THAT SEPARATES A CALLOUT FROM A TEXT BOX CARRYING /CL. Measured
+    // 2026-09-06: with `/IT /FreeTextCallout` present MuPDF grows `/Rect` to
+    // include the line and records the inset back to the box in `/RD`; without
+    // it the rectangle stays the box's. So this asserts a number the engine
+    // computed rather than a key this file put there.
+    const drawn = await drawnOn(await fixture(), command({ annotation: CALLOUT }));
+    const dict = await freeText(drawn);
+    const rect = dict.lookup(PDFName.of('Rect'));
+    if (!(rect instanceof PDFArray)) throw new Error('no /Rect');
+    const [x0] = rect.asArray().map((v) => (v instanceof PDFNumber ? v.asNumber() : NaN));
+    // The box starts at x 80 and the point is at x 10, so a rectangle that
+    // covers the leader starts at 10 and one that does not starts at 80.
+    expect(x0).toBeCloseTo(10, 0);
+
+    const inset = dict.lookup(PDFName.of('RD'));
+    expect(inset instanceof PDFArray ? inset.asArray().length : 0).toBe(4);
+    expect(dict.lookup(PDFName.of('IT'))?.toString()).toBe('/FreeTextCallout');
+  });
+
+  it('stores a /CL whose FAR end is the point that was named', async () => {
+    // The near end is MuPDF's to compute from the box, which is why the payload
+    // does not carry it. The far end is the person's, and it is the half a
+    // wrong conversion would move — in the displayed frame a PDF y of 30 on a
+    // 300-high page is 270, so a missing flip shows here as 30.
+    const dict = await freeText(await drawnOn(await fixture(), command({ annotation: CALLOUT })));
+    const line = dict.lookup(PDFName.of('CL'));
+    if (!(line instanceof PDFArray)) throw new Error('no /CL');
+    const numbers = line.asArray().map((v) => (v instanceof PDFNumber ? v.asNumber() : NaN));
+    expect(numbers[0]).toBeCloseTo(10, 0);
+    expect(numbers[1]).toBeCloseTo(30, 0);
+  });
+
+  it('is LISTED as a callout, where a plain text box is not', async () => {
+    // The walk keys on `getType()`, which answers `FreeText` for both — so the
+    // reader has to look at `/IT`. Both kinds in one document, because a reader
+    // that answered `callout` for everything and one that answered `text-box`
+    // for everything each satisfy half of this.
+    const plain: AnnotationDraft = {
+      type: 'text-box',
+      rect: { x0: 10, y0: 200, x1: 60, y1: 240 },
+      text: 'plain',
+      colour: [0, 0, 0],
+      fontSize: 12,
+    };
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: plain })),
+      command({ annotation: CALLOUT }),
+    );
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.kind)).toStrictEqual(['text-box', 'callout']);
+  });
+
+  it('refuses a note box with no extent', async () => {
+    await expect(
+      drawnOn(
+        await fixture(),
+        command({ annotation: { ...CALLOUT, rect: { x0: 80, y0: 100, x1: 80, y1: 140 } } }),
+      ),
+    ).rejects.toThrow(/no extent/u);
   });
 });
 

@@ -81,6 +81,7 @@ import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
 import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
 import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from './dialogs/annotationLink.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
+import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
@@ -249,6 +250,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         ANNOTATION_NOTE_DIALOG,
         LINK_ADDRESS_DIALOG,
         LINK_PAGE_DIALOG,
+        CALLOUT_DIALOG,
         CROP_PAGES_DIALOG,
         WATERMARK_PAGES_DIALOG,
         HEADER_FOOTER_DIALOG,
