@@ -146,7 +146,7 @@ planner counting a table of rows as a table of untouched work.
 | In-place text editing: region replacement | — |
 | Object-level edit (move / scale / recolor / delete any page object) | — |
 | Document-wide replace-all | — |
-| Typewriter | — |
+| **Typewriter — THE SAME FEATURE as D3's row, built there on 2026-09-07.** This row is a duplicate and always was: a typewriter is a `/FreeText` annotation, which is Stage 3's subject, where every other row in this table operates on content the document already has. `BUILD-PROMPT.md`:615 settles it from the other side by pairing *font & size (textbox/typewriter)* as one setting — one style control for one pair, and the text box is D3's. **Kept rather than deleted**, because a row that vanishes is a decision nobody can see was taken; the body says where it went. | **done — built in D3 on 2026-09-07; this row is the duplicate** |
 | Find and replace | — |
 | Spell check (nspell + dictionary management) | — |
 | Translate document text | — |
