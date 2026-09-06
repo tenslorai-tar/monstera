@@ -13,18 +13,44 @@
  * 4 checkLocal case(s) FAILED:
  * ```
  *
- * Measured 2026-09-06 over `scripts/proofs/*.mjs` and `scripts/lib/*.mjs`:
- * **61 files** carry the first, **25** the second, and of the 86 header lines
- * between them exactly **one** contains `FAIL`, `Error` or `error` as a word.
- * `FAILED` does not match `\bFAIL\b`, which is why the second spelling was
- * invisible too.
+ * Measured at **`e4ac590~1`**, the tree the reader was wrong against, over
+ * `scripts/proofs/*.mjs` and `scripts/lib/*.mjs`: **60 files** carry the first,
+ * **25** the second, and of the 85 header lines between them exactly **one**
+ * contains `FAIL`, `Error` or `error` as a word. `FAILED` does not match
+ * `\bFAIL\b`, which is why the second spelling was invisible too.
  *
  * ```
- * grep -rlE "failure\(s\):" scripts/proofs/*.mjs scripts/lib/*.mjs | wc -l
- * grep -rlE "case\(s\) FAILED:" scripts/proofs/*.mjs scripts/lib/*.mjs | wc -l
- * grep -rhE "failure\(s\):|case\(s\) FAILED:" scripts/proofs/*.mjs scripts/lib/*.mjs \
+ * git grep -lE "failure\(s\):" e4ac590~1 -- 'scripts/proofs/*.mjs' 'scripts/lib/*.mjs' | wc -l
+ * git grep -lE "case\(s\) FAILED:" e4ac590~1 -- 'scripts/proofs/*.mjs' 'scripts/lib/*.mjs' | wc -l
+ * git grep -hE "failure\(s\):|case\(s\) FAILED:" e4ac590~1 -- 'scripts/proofs/*.mjs' 'scripts/lib/*.mjs' \
  *   | grep -cE "\b(FAIL|Error|error)\b"
  * ```
+ *
+ * ## THOSE FIGURES READ 61/25/86 FIRST, AND NO TREE HOLDS THEM
+ *
+ * They were taken from the working tree while this file was being written, so
+ * the count included a docstring that was not finished. The finished one
+ * carries **four** matching lines of its own — the two spellings quoted above
+ * and the two grep patterns naming them — and the same commands answer 62/26/95
+ * from `e4ac590` onwards. The instrument was inside the set it counted, and
+ * completing it moved the number it states.
+ *
+ * So the citation is a **rev**, not a date. A date identifies a moment on one
+ * machine; for a count over tracked files, *where it was read* is a commit, and
+ * only that spelling can be read again. Re-running the original commands today
+ * answers neither figure and looks like drift in the subject rather than in the
+ * frame.
+ *
+ * ## THE ROOT DECIDES THE LAST FIGURE, WHICH IS THE LOAD-BEARING ONE
+ *
+ * The single matching line is `scripts/lib/reportError.proof.mjs:200`, a proof
+ * whose subject *is* error reporting, so its header reads
+ * `${n} error-report failure(s):`. Under `scripts/proofs/` alone the answer is
+ * **zero**, of 51 files and 25; across all of `scripts/` it is **one**, of 76
+ * and 29 — the same line either way, since `scripts/lib` is inside the second
+ * root and not the first. A reader told *no header ever matches* would conclude
+ * the fallback below is unreachable. It is reachable, from exactly one file,
+ * and that file is named for the word it contains.
  *
  * So the sweep's per-step diagnostic only ever surfaced **throws**. The
  * ordinary way a proof fails — a case that did not hold — reported
