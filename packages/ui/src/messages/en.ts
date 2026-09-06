@@ -254,6 +254,17 @@ export const LINKS_EMPTY = messageKey('surface.links.empty');
 export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
 export const LINKS_TO_PAGE = messageKey('surface.links.to-page');
 export const LINKS_EXTERNAL = messageKey('surface.links.external');
+export const ANNOTATIONS_LABEL = messageKey('surface.annotations.label');
+export const ANNOTATIONS_EMPTY = messageKey('surface.annotations.empty');
+export const ANNOTATIONS_UNAVAILABLE = messageKey('surface.annotations.unavailable');
+export const ANNOTATIONS_TRUNCATED = messageKey('surface.annotations.truncated');
+export const ANNOTATIONS_ROW = messageKey('surface.annotations.row');
+export const ANNOTATIONS_KIND_SQUARE = messageKey('surface.annotations.kind.square');
+export const ANNOTATIONS_KIND_CIRCLE = messageKey('surface.annotations.kind.circle');
+export const ANNOTATIONS_KIND_LINE = messageKey('surface.annotations.kind.line');
+export const ANNOTATIONS_KIND_INK = messageKey('surface.annotations.kind.ink');
+export const ANNOTATIONS_KIND_REDACT = messageKey('surface.annotations.kind.redact');
+export const ANNOTATIONS_KIND_OTHER = messageKey('surface.annotations.kind.other');
 export const STATUS_GO_TO = messageKey('surface.status.go-to');
 export const STATUS_GO_TO_OUTSIDE = messageKey('surface.status.go-to-outside');
 export const GO_TO_TITLE = messageKey('command.go-to.title');
@@ -452,6 +463,27 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',
   [LINKS_TO_PAGE]: 'Go to page {page}',
   [LINKS_EXTERNAL]: 'Opens {uri}',
+  [ANNOTATIONS_LABEL]: 'Annotations in this document',
+  [ANNOTATIONS_EMPTY]: 'This document has no annotations.',
+  [ANNOTATIONS_UNAVAILABLE]: 'The annotations in this document could not be read.',
+  // NAMES THE BOUND rather than saying "and more". A reader deciding whether
+  // the list is complete needs the number, and a panel headed *the annotations
+  // in this document* that quietly showed some of them is the display-only sin
+  // in a list.
+  [ANNOTATIONS_TRUNCATED]: 'Only the first 4,096 annotations are listed.',
+  [ANNOTATIONS_ROW]: '{kind} on page {page}',
+  // THE CONTROL'S WORDS, not the format's. `/Square` and `/Circle` are terms of
+  // art; a person drew a rectangle and an ellipse, and the labels match the
+  // tools that made them.
+  [ANNOTATIONS_KIND_SQUARE]: 'Rectangle',
+  [ANNOTATIONS_KIND_CIRCLE]: 'Ellipse',
+  [ANNOTATIONS_KIND_LINE]: 'Line',
+  [ANNOTATIONS_KIND_INK]: 'Freehand',
+  [ANNOTATIONS_KIND_REDACT]: 'Redaction mark',
+  // WHAT IT IS RATHER THAN WHAT IT IS NOT. A row reading *Unknown* tells a
+  // reader the application is confused; *Annotation* tells them a comment is
+  // there and which page to look at, which is what the panel is for.
+  [ANNOTATIONS_KIND_OTHER]: 'Annotation',
   [STATUS_GO_TO]: 'Go to page',
   // NAMES THE RANGE. "That page does not exist" leaves a reader guessing where
   // the document ends, and the count is on screen a few pixels away only while

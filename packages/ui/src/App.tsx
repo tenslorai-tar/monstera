@@ -57,6 +57,7 @@ import { StatusBar } from './StatusBar.js';
 import { LinksPanel } from './LinksPanel.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
+import { AnnotationsPanel } from './AnnotationsPanel.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
@@ -987,6 +988,17 @@ export function App({ client, settings }: AppProps): ReactElement {
           so what it shows is re-read from the document after every mutation
           including an undo of its own. */}
       <LayersPanel client={client} docId={open?.docId} version={open?.version} />
+      {/* THE ANNOTATIONS PANEL, keyed on the version for the layers panel's
+          reason: every drawing tool moves it, so the list is re-read after the
+          rectangle that was just drawn and after an undo of it. Keyed on the
+          document rather than the page, unlike the links, because it lists the
+          whole document and the page number is what a row carries. */}
+      <AnnotationsPanel
+        client={client}
+        docId={open?.docId}
+        onJump={navigator.jumpTo}
+        version={open?.version}
+      />
       {/* E2's substrate, reached by a person. It renders nothing with no
           document open, for `QuickToolbar`'s reason: a find field over no
           document is a control that cannot work. */}

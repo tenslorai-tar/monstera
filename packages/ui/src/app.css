@@ -263,7 +263,8 @@ body {
  */
 .m-destinations,
 .m-layers,
-.m-links-panel {
+.m-links-panel,
+.m-annotations-panel {
   max-block-size: 40vh;
   overflow-y: auto;
   padding: var(--space-8);
@@ -273,6 +274,7 @@ body {
 
 .m-destinations-list,
 .m-layers-list,
+.m-annotations-list,
 .m-links-list {
   list-style: none;
   margin: 0;
@@ -280,6 +282,7 @@ body {
 }
 
 .m-destination,
+.m-annotations-item,
 .m-links-item {
   inline-size: 100%;
   display: flex;
@@ -296,9 +299,28 @@ body {
 
 .m-destination:hover,
 .m-destination:focus-visible,
+.m-annotations-item:hover,
+.m-annotations-item:focus-visible,
 .m-links-item:hover,
 .m-links-item:focus-visible {
   background: var(--surface2);
+}
+
+/*
+ * An annotation's own note, beside the kind and the page.
+ *
+ * TRUNCATED BY CSS rather than by cutting the string: the channel already
+ * bounds it, and a second bound in the renderer would be two answers to how
+ * much of a note there is — the one on screen and the one in the payload.
+ */
+.m-annotations-note {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* A flex item's default minimum is its content, so without this the note
+     refuses to shrink and pushes the page number out of the row. */
+  min-inline-size: 0;
 }
 
 .m-destination-page {
@@ -339,6 +361,7 @@ body {
 
 .m-destinations-empty,
 .m-layers-empty,
+.m-annotations-empty,
 .m-links-empty {
   margin: 0;
   padding: var(--space-4);
