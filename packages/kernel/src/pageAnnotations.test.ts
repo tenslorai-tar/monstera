@@ -7,6 +7,7 @@ import {
   PDFRef,
   PDFStream,
   PDFString,
+  StandardFonts,
 } from '@cantoo/pdf-lib';
 import type { AnnotationDraft, CommandOfKind } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
@@ -72,14 +73,27 @@ async function fixture({
   rotate,
   foreign,
   content,
+  field,
 }: {
   readonly crop?: readonly number[];
   readonly rotate?: number;
   readonly foreign?: boolean;
   readonly content?: boolean;
+  readonly field?: boolean;
 } = {}): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([...MEDIA]);
+  if (field === true) {
+    // A WIDGET, WHICH IS AN ANNOTATION THE WALK DOES NOT RETURN. It goes on the
+    // page FIRST so that every index below it shifts — a field added after the
+    // squares would leave the two numbering schemes agreeing, which is the
+    // fixture the defect also handles correctly.
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    document
+      .getForm()
+      .createTextField('applicant.name')
+      .addToPage(page, { x: 10, y: 200, width: 60, height: 16, font });
+  }
   if (content === true) {
     // SOMETHING UNDER THE MARK. A page with no content stream cannot show that
     // a redaction was not applied — nothing would have changed either way,
@@ -601,8 +615,8 @@ describe('readAnnotations', () => {
 
     expect(listed.truncated).toBe(false);
     expect(listed.annotations).toStrictEqual([
-      { page: 0, kind: 'square', contents: '' },
-      { page: 0, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'square', contents: '' },
+      { page: 0, index: 1, kind: 'ink', contents: '' },
     ]);
   });
 
@@ -627,8 +641,43 @@ describe('readAnnotations', () => {
       readAnnotations(session),
     );
     expect(listed.annotations).toStrictEqual([
-      { page: 0, kind: 'square', contents: 'written by another application' },
+      { page: 0, index: 0, kind: 'square', contents: 'written by another application' },
     ]);
+  });
+
+  it('numbers by the WALK, not by /Annots — a widget takes no index', async () => {
+    // THE MEASUREMENT ADR-0041 RESTS ON, pinned as a case so a MuPDF release
+    // that starts returning widgets is a red build rather than an eraser that
+    // deletes the annotation after the one that was clicked.
+    //
+    // The page carries a text field and then two squares. `/Annots` holds three
+    // entries with the widget first; the walk yields two, numbered 0 and 1. An
+    // implementation that had taken the `/Annots` position would say 1 and 2,
+    // and every index would be in range on a document that renders correctly.
+    const drawn = await drawnOn(
+      await drawnOn(await fixture({ field: true }), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'square', contents: '' },
+      { page: 0, index: 1, kind: 'ink', contents: '' },
+    ]);
+
+    // THE CONTROL, and without it the case above is satisfied by a fixture
+    // whose field never arrived: two annotations numbered 0 and 1 is exactly
+    // what a page with no widget produces. This reads the stored array with
+    // pdf-lib and requires the widget to be there, first, and uncounted.
+    const loaded = await PDFDocument.load(drawn, { updateMetadata: false });
+    const page = loaded.getPages()[0];
+    const annots = page?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('the fixture wrote no /Annots at all');
+    const subtypes = annots.asArray().map((entry) => {
+      const dict = entry instanceof PDFRef ? loaded.context.lookup(entry, PDFDict) : undefined;
+      const subtype = dict?.lookup(PDFName.of('Subtype'));
+      return subtype instanceof PDFName ? subtype.asString() : '?';
+    });
+    expect(subtypes).toStrictEqual(['/Widget', '/Square', '/Ink']);
   });
 
   it('reports an empty document as empty rather than refusing', async () => {

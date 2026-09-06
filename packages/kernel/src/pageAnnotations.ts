@@ -403,6 +403,27 @@ export type AnnotationKindName = AnnotationDraft['type'] | 'other';
 export interface ListedAnnotation {
   /** Zero-based, so a caller can hand it straight to a jump. */
   readonly page: number;
+  /**
+   * Its position in THIS WALK, on its own page — the half of a handle that says
+   * which annotation ([ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)).
+   *
+   * **Not an index into the page's `/Annots` array**, and the difference is not
+   * academic. Measured 2026-09-06 on one page carrying a text field and three
+   * squares: this walk yields **three** entries and `/Annots` holds **four**,
+   * because MuPDF filters widgets out of `getAnnotations()`. So the two indices
+   * differ by the number of form fields above the annotation — on exactly the
+   * documents Stage 4 exists for, and silently, since both are in range.
+   *
+   * Which makes {@link readAnnotations} the one place either index is derived,
+   * and the resolver its inverse rather than a second walk written elsewhere:
+   * *which objects on this page are annotations* is MuPDF's rule, and a second
+   * opinion about it agrees on every document without a form (B3a).
+   *
+   * It is meaningful only against the `DocVersion` this answer carried. Across
+   * versions it is not an identity at all, which is why a command naming an
+   * annotation carries that version and is refused when the document has moved.
+   */
+  readonly index: number;
   readonly kind: AnnotationKindName;
   /**
    * The annotation's `/Contents`, or the empty string.
@@ -459,10 +480,16 @@ export function readAnnotations(
     const found: ListedAnnotation[] = [];
     const pages = document.countPages();
     for (let page = 0; page < pages; page += 1) {
+      // RESET PER PAGE, and counted from the walk rather than from `found`. The
+      // two agree today and would diverge the moment anything here skips an
+      // entry — at which point a handle would name the annotation after the one
+      // the caller was shown, which is the failure mode with no symptom.
+      let index = 0;
       for (const annotation of document.loadPage(page).getAnnotations()) {
         if (found.length >= MAX_LISTED) return { annotations: found, truncated: true };
         found.push({
           page,
+          index: index++,
           // `?? 'other'` IS THE WHOLE POINT of the closed union: a subtype this
           // build cannot name is listed rather than dropped, because a panel
           // that silently omitted a document's own comments would be worse than

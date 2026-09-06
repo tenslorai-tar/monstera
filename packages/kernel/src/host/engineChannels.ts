@@ -256,6 +256,12 @@ export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
 const engineAnnotationSchema = z
   .object({
     page: z.number().int().nonnegative(),
+    /**
+     * Its position in the reader's walk on that page, not in `/Annots`.
+     * See `pageAnnotations.ts` and ADR-0041 — it crosses because a handle is
+     * useless if the host answers with a list nothing can point into.
+     */
+    index: z.number().int().nonnegative(),
     kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'other']),
     contents: z.string().max(ENGINE_ANNOTATION_CONTENTS_MAX),
   })

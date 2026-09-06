@@ -1290,6 +1290,21 @@ export const channels = {
             /** Zero-based, so a panel can hand it straight to a jump. */
             page: z.number().int().nonnegative(),
             /**
+             * Its position among the annotations on that page, in the walk that
+             * produced this answer — the half of a handle that says which one
+             * ([ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)).
+             *
+             * **Not an index into the page's `/Annots` array.** MuPDF filters
+             * widgets out of the walk, so on a page carrying form fields the
+             * two differ by the number of fields above the annotation, and both
+             * are in range. Nothing outside the kernel's reader derives either.
+             *
+             * Valid only against the `version` beside it. A command naming an
+             * annotation carries that version and is refused if the document
+             * has moved, because across versions this is not an identity.
+             */
+            index: z.number().int().nonnegative(),
+            /**
              * **A closed union, not the document's `/Subtype`.**
              *
              * A subtype is a `/Name` a hostile document chooses, and a renderer

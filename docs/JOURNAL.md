@@ -961,6 +961,50 @@ proof whose subject *is* error reporting, so its header reads
 which is why the same question has two honest answers. A reader told that no
 header ever matches would take the throw fallback for unreachable code.
 
+### The handle, and the walk that is not the array
+
+`document.annotations` deliberately carried no identity, so four D3 rows had
+nothing to point with. ADR-0041 and the §6 amendment landed first, in a commit
+with no code, because naming existing state is the first thing a command in this
+build has ever wanted to do: `grep -n docVersionSchema` over the command schemas
+returns nothing, so a payload cannot say *at this version* at all.
+
+The measurement that decided the schema was worth the ten minutes. On one page
+carrying a text field and three squares, MuPDF's `getAnnotations()` answers
+**three** entries and the page's `/Annots` holds **four**, widget first — the
+walk filters form fields out. An index into one is not an index into the other,
+they differ by the number of fields above the annotation, and both are in range
+on a document that renders correctly. Had the handle been minted from `/Annots`,
+the eraser would have deleted the annotation *after* the one that was clicked, on
+exactly the documents Stage 4 exists for, and every test written on a
+field-less fixture would have passed.
+
+So the case that pins it carries a control that reads the stored array with
+pdf-lib and requires the widget to be present and first. Removing `field: true`
+from the fixture leaves the index assertion green and reddens only the control,
+which is the separation the case exists for — two annotations numbered 0 and 1
+is exactly what a page with no widget produces.
+
+Two things fall out that are worth having written down. The `?? 'other'`
+fallback on the kind union was built to be what catches an unanticipated
+subtype, and the subtype it would most obviously catch — `/Widget` — never
+reaches it, because the engine filtered it upstream. And the read is described as
+*every annotation in the document* while a widget is an annotation in the file;
+the behaviour is right, and it is MuPDF's choice rather than ours.
+
+### The jump was blocked on something else entirely
+
+The handoff said the owed *jump to the annotation rather than its page* was
+waiting on the handle. It is not. **No panel in this application can jump to a
+position**: `jumpTo` takes a page number in the outline, the thumbnails, the
+destinations panel, the links panel and the find bar, and `destinations.ts` does
+not read a `/XYZ` point at all, so there is nothing to discard. The capability is
+shared with destinations and belongs to neither row's tail.
+
+One `grep -rn "onJump\|jumpTo"` settles it, and the claim had stood for a day
+next to a table of what everything is blocked on — which is what a plausible
+attribution costs when the thing it names is also real and also missing.
+
 ### A grep that could not see a compiler error
 
 Recorded because it nearly produced the wrong conclusion about a check written
