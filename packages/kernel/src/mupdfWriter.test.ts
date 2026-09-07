@@ -1,4 +1,5 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
+import * as mupdf from 'mupdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
@@ -81,5 +82,62 @@ describe('mupdfWriter — session lifecycle', () => {
     // a fault inside the engine rather than an error in the caller's hands.
     await expect(mupdfWriter.close(session)).rejects.toThrow(/already been closed/);
     await expect(mupdfWriter.serialise(session)).rejects.toThrow(/already been closed/);
+  });
+});
+
+/**
+ * The serialised bytes are the caller's, not the engine's.
+ *
+ * ## Found by the stage audit of `909c388..9608a39`, from a real failure
+ *
+ * `saveToBuffer().asUint8Array()` answers `HEAPU8.subarray(...)` — a window onto
+ * the wasm heap. When the heap grows, `HEAPU8` is replaced and every earlier
+ * view is **detached**; `pageAnnotations.test.ts` reached that while holding a
+ * serialised document across later engine work, and handing those bytes back to
+ * `openDocument` threw *"Cannot perform Construct on a detached ArrayBuffer"*.
+ *
+ * `ByteImage` is what the service holds across commands and what the save
+ * pipeline writes to disk, so this is the one array that must not be a window
+ * onto somebody else's allocator.
+ *
+ * ## The assertion is OWNERSHIP, not survival
+ *
+ * A case that grew the heap and then read the bytes would depend on how much
+ * growth this machine's engine happens to need — it passed a probe that opened
+ * twelve documents and failed inside a test file, which makes it a threshold
+ * nobody can state. What is exact is the property itself: a copy owns its
+ * `ArrayBuffer`, so `byteLength` and `buffer.byteLength` agree, and a subarray
+ * of a multi-megabyte heap cannot.
+ */
+describe('mupdfWriter — the bytes it hands out', () => {
+  it('answers an array that OWNS its buffer, rather than a view into the engine', async () => {
+    const session = await mupdfWriter.open(pdf);
+    try {
+      const written = await mupdfWriter.serialise(session);
+      expect(written.byteLength).toBeGreaterThan(0);
+      expect(written.buffer.byteLength).toBe(written.byteLength);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: the engine’s own answer fails that test, so it can fail', () => {
+    // Without this the assertion above is one every `Uint8Array` in a test
+    // happens to satisfy, and nothing says it separates a copy from a view.
+    // This reaches past the adapter deliberately — it is the shape the adapter
+    // used to return, and the point is that it is distinguishable.
+    // NARROWED RATHER THAN CAST: `openDocument` is typed as returning the base
+    // `Document`, and `mupdfWriter.ts` narrows the same way for the same reason
+    // — a non-PDF opens successfully and answers a document with no
+    // `saveToBuffer` on it.
+    const document = mupdf.PDFDocument.openDocument(pdf, 'application/pdf');
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('the fixture is not a PDF');
+    try {
+      const view = document.saveToBuffer('').asUint8Array();
+      expect(view.byteLength).toBeGreaterThan(0);
+      expect(view.buffer.byteLength).toBeGreaterThan(view.byteLength);
+    } finally {
+      document.destroy();
+    }
   });
 });

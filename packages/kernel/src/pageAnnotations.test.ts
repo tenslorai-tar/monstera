@@ -1679,6 +1679,62 @@ describe('the srcRef mark', () => {
 });
 
 /**
+ * The opacity — `/CA`, and it was UNPROVEN when the control shipped.
+ *
+ * Found by the stage audit of `909c388..9608a39`, by mutation: deleting
+ * `setOpacity` from the apply left all 710 kernel cases green. The style panel's
+ * slider wrote a setting, the tools put it in the payload, and the kernel
+ * dropped it — which is the wired-tools rule's own blind spot, a UI half that
+ * dispatches and a kernel half that does not act, each green in its own frame.
+ *
+ * The load-bearing case reads the stored `/CA` with pdf-lib, and reads it for
+ * TWO values: a case on one number passes a writer that hard-codes it, and the
+ * default of 1 is the number MuPDF would produce with nothing called at all.
+ */
+describe('applyAddAnnotation writes the opacity it was given', () => {
+  /** `/CA` on the first annotation, or `null` when the key is absent. */
+  async function opacityOf(bytes: Uint8Array): Promise<number | null> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const first = annots.asArray()[0];
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    const value = dict?.lookup(PDFName.of('CA'));
+    return value instanceof PDFNumber ? value.asNumber() : null;
+  }
+
+  it('stores a FADED annotation as faded', async () => {
+    const drawn = await drawnOn(
+      await fixture(),
+      command({ annotation: { ...SQUARE, opacity: 0.25 } }),
+    );
+    expect(await opacityOf(drawn)).toBeCloseTo(0.25, 3);
+  });
+
+  it('and a fully opaque one differently, which is what makes the first mean something', async () => {
+    // THE SECOND VALUE IS THE CASE. One reading cannot tell *the payload was
+    // written* from *the writer hard-codes 0.25*, and 1 is what an annotation
+    // nothing set an opacity on already is — so the pair is the assertion and
+    // either alone is satisfied by a build that ignores the field.
+    const drawn = await drawnOn(await fixture(), command({ annotation: { ...SQUARE, opacity: 1 } }));
+    const faded = await drawnOn(
+      await fixture(),
+      command({ annotation: { ...SQUARE, opacity: 0.25 } }),
+    );
+    expect(await opacityOf(drawn)).not.toBe(await opacityOf(faded));
+  });
+
+  it('carries it on a subtype with no rectangle, which is the other half of every draft', async () => {
+    // `/CA` went on every draft member because it is a property of the
+    // annotation rather than of a subtype, and it is written by ONE call at the
+    // creation site rather than per kind. This is the case that says the one
+    // call reaches a kind whose own `write` touches nothing like it.
+    const drawn = await drawnOn(await fixture(), command({ annotation: { ...INK, opacity: 0.4 } }));
+    expect(await opacityOf(drawn)).toBeCloseTo(0.4, 3);
+  });
+});
+
+/**
  * The typewriter, and the text box it had to be told apart from.
  *
  * ## The whole case set is ONE COMPARISON

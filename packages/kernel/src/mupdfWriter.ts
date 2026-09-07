@@ -58,6 +58,46 @@ function promised<T>(work: () => T): Promise<T> {
   }
 }
 
+/**
+ * A MuPDF buffer's bytes, **copied out of the engine's memory**, with the buffer
+ * released.
+ *
+ * ## `asUint8Array()` IS A VIEW INTO THE WASM HEAP, and the heap moves
+ *
+ * Read from `mupdf/dist/mupdf.js` on 2026-09-07: it answers
+ * `HEAPU8.subarray(data, data + size)`. So the array is a window onto memory the
+ * engine owns, and two things can happen to it — the buffer is freed and the
+ * bytes are reused, or the heap **grows**, which replaces `HEAPU8` and leaves
+ * every earlier view **detached**.
+ *
+ * The second is not theoretical. `pageAnnotations.test.ts` reached it while a
+ * case held a serialised document across later engine work, and the failure is
+ * the one this hazard produces: *"Cannot perform Construct on a detached
+ * ArrayBuffer"*, thrown when those bytes were handed back to `openDocument`.
+ * It appeared only once the file did enough work to grow the heap — which is
+ * why it had not appeared before, and why nothing about the earlier greens said
+ * the bytes were safe.
+ *
+ * `ByteImage` is the document's canonical bytes, held by the service across
+ * commands and written to disk by the save pipeline. Those are exactly the
+ * bytes that must not be a window onto somebody else's allocator.
+ *
+ * The buffer is dropped rather than left to a finaliser, for `pageLinks.ts`'
+ * reason: MuPDF's JS objects hold native memory whose finaliser runs on its own
+ * schedule.
+ */
+export function copiedOut(buffer: mupdf.Buffer): ByteImage {
+  try {
+    // `new Uint8Array(view)` COPIES, where `view.subarray()` would not: the
+    // constructor allocates and reads through, so what comes back owns its own
+    // `ArrayBuffer` — which is also the property the proof asserts, because a
+    // copy's `buffer.byteLength` equals its own and a view's does not.
+    return new Uint8Array(buffer.asUint8Array());
+  } finally {
+    buffer.destroy();
+  }
+}
+
 /** The document behind a session this adapter opened and has not closed. */
 function documentFor(session: MupdfSession): mupdf.PDFDocument {
   const document = documents.get(session);
@@ -190,7 +230,7 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
    * that quietly chose one would be a second writer of that concern.
    */
   serialise(session: MupdfSession): Promise<ByteImage> {
-    return promised(() => documentFor(session).saveToBuffer('').asUint8Array());
+    return promised(() => copiedOut(documentFor(session).saveToBuffer('')));
   },
 
   /**
