@@ -52,6 +52,7 @@
     "proof:peakrss": "node scripts/proofs/peakRss.proof.mjs",
     "proof:nativeaddon": "node scripts/proofs/nativeAddon.proof.mjs",
     "proof:perfbudget": "node scripts/proofs/perfBudget.proof.mjs",
+    "perf:byteimage": "node scripts/perf/byteImageCost.mjs",
     "perf:gate": "node scripts/perf/budgetGate.mjs",
     "probe:hook": "node scripts/hooks/recordHookProbe.mjs",
     "probe:picker": "node scripts/probes/recordPickerProbe.mjs",

@@ -264,3 +264,38 @@ the generous maximum the frame constant's header warns about, and it makes
   been designed. Row 124 keeps that half of its block and loses the other half.
 - **The 197.3s reading stands against the byte-image rows** and belongs to
   whoever next opens one.
+
+---
+
+## Addendum, 2026-09-07 — that reading has been sized, and all six rows pay it
+
+Appended rather than folded into the text above: what this ADR decided is
+unchanged, and this records what became of the finding it deliberately did not
+act on.
+
+`scripts/perf/byteImageCost.mjs` ran every pdf-lib-routed command against both
+perf fixtures, twice. **All six are affected**, and the figures are worse than
+the load-and-save reading above because these do work as well as round-trip:
+
+| command | `perf-image-200mb.pdf` | `perf-dense-127k.pdf` |
+|---|---|---|
+| `watermarkPages` | 1.72s / 1.39s | 240.30s / 246.94s |
+| `headerFooterPages` | 1.11s / 1.15s | 225.19s / 255.82s |
+| `batesNumberPages` | 1.19s / 1.39s | 309.88s / 320.19s |
+| `setPageBackground` | 0.85s / 0.73s | 276.23s / 264.53s |
+| `insertImagePage` | 0.73s / 0.70s | 263.51s / 247.00s |
+| `generateToc` | 1.46s / 0.69s | 260.42s / 231.34s |
+
+199.4 MB and 122 objects against 25.1 MB and 127,082. The smaller document costs
+between 170x and 330x more, which is this ADR's *cost tracks object count, not
+bytes* holding across every command rather than only across a load and a save.
+
+The instrument carries a **regression bound of 480s** — a fact-keeper, not a
+budget. **Nothing here decides whether the six can leave the byte-image path**,
+and this ADR's own §*Rejected alternatives* is why that is not the obvious move:
+ADR-0039 exists because MuPDF's writer cannot draw what these rows draw. That
+decision needs its own ADR and its own measurement of what a structural route
+would have to reimplement.
+
+`docs/JOURNAL.md`'s entry of the same date carries the run conditions, the
+spread, and the trigger for re-measuring.

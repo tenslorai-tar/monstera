@@ -877,6 +877,72 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-07 — All six byte-image rows pay ADR-0044's cost, and it is 225–320 seconds
+
+ADR-0044 rejected a pdf-lib route for `placeImage` on cost and recorded that
+the reading was a fact about **every** command already routed to that writer,
+without acting on it — folding a second subject into a B4 makes it
+unreviewable. This is that finding sized. `scripts/perf/byteImageCost.mjs`,
+this machine, two runs.
+
+**Every one of the six is affected. None is cheap; the worst is a third of an
+hour's worth of clock across six commands.**
+
+| command | image-heavy, run 1 / 2 | object-dense, run 1 / 2 |
+|---|---|---|
+| `watermarkPages` | 1.72s / 1.39s | 240.30s / 246.94s |
+| `headerFooterPages` | 1.11s / 1.15s | 225.19s / 255.82s |
+| `batesNumberPages` | 1.19s / 1.39s | **309.88s / 320.19s** |
+| `setPageBackground` | 0.85s / 0.73s | 276.23s / 264.53s |
+| `insertImagePage` | 0.73s / 0.70s | 263.51s / 247.00s |
+| `generateToc` | 1.46s / 0.69s | 260.42s / 231.34s |
+
+The fixtures are `perf-image-200mb.pdf` — **199.4 MB, 122 objects** — and
+`perf-dense-127k.pdf` — **25.1 MB, 127,082 objects**. So the document that is
+**eight times smaller** costs between **170x and 330x more**, per command, and
+the axis is objects rather than bytes. The parse alone is 21.1s and 21.7s on the
+dense fixture against 0.23s and 0.26s on the image one.
+
+**The comparison that makes this a defect rather than a large number is already
+in the record.** ADR-0010 measured MuPDF incremental-saving a 464 MB,
+2,038,522-object document in **4.5 seconds**. The structural writer does at two
+million objects in four and a half seconds what the byte-image writer takes four
+minutes to do at a hundred and twenty-seven thousand.
+
+**Two runs, and the distinction matters differently for the two claims.** The
+per-command figure is two samples, and this project's own rule says two samples
+that agree are still one value — the largest run-to-run difference within a
+command is 13.6%, so read each figure as *about four minutes*, not as its
+digits. The **ratio** is not in that position: 170x against a 14% spread is not
+a reading that a third run moves, and it is the ratio the decision turns on.
+
+**The memory gate could never have shown this**, and that is worth stating
+because the gate exists and is green. `budgetGate.mjs` measures **peak RSS**
+against the same two fixtures; cost in *time* on the object axis is not
+something it looks at, so both shapes passed while one of them was four hundred
+times the other on the axis that matters. A gate is evidence about what it
+measures.
+
+**What was done, and what deliberately was not.** The instrument holds a
+**regression bound of 480s** per command on the dense shape — 1.5x the worst
+observation against a spread of about a seventh, so a correct measurement cannot
+cross it and a doubling is still caught. That is a fact-keeper. It is **not** a
+budget, and no decision about whether these six can leave the byte-image path is
+taken here: ADR-0039 exists because MuPDF's writer cannot draw what they draw,
+so *route them structurally* is not a free move, and it is an ADR rather than a
+number.
+
+**It is hand-run and nothing schedules it.** One run is roughly twenty-five
+minutes, which is not a pre-commit check and not a per-push CI job — MuPDF's own
+cold build, the most expensive step this project has, is 336s. The mechanism
+that does exist is the script's derived-set refusal: a seventh command routed to
+`pdf-lib` makes it refuse to report rather than measure six of seven. **The
+trigger for re-running it is a change to the byte-image path** — a new command
+on that writer, or a change to how one of the six loads or saves — and it is
+written here because a trigger nobody wrote down is one nobody meets.
+
+---
+
 ## 2026-09-07 — Filling a form field: three mutators, no refusals, and a toggle keyed on the wrong entry
 
 `docs/FEATURES.md`'s D5 row points here. It is the measurement the fill command
