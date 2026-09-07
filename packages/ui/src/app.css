@@ -375,6 +375,97 @@ body {
   min-inline-size: 0;
 }
 
+/*
+ * The forms panel: a list of rows, each a jump and the control that fills it.
+ *
+ * The annotations panel's box, and the same argument for the height — a form is
+ * whatever the document holds, so the panel scrolls rather than growing without
+ * bound.
+ */
+.m-forms-panel {
+  max-block-size: 40vh;
+  overflow-y: auto;
+  padding: var(--space-8);
+  background: var(--bg2);
+  border-block-start: 1px solid var(--border); /* decorative: separates a panel from the document area; each row carries its own focus ring */
+}
+
+.m-forms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * A row is the jump and the control side by side.
+ *
+ * `align-items: center` rather than the annotation row's `baseline`, and it is
+ * the controls that decide it: a tick box and a `<select>` have no text baseline
+ * to share with the label beside them, so baseline alignment puts them a few
+ * pixels off the row they belong to.
+ */
+.m-forms-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding-block: var(--space-2);
+}
+
+.m-forms-jump {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-forms-jump:hover,
+.m-forms-jump:focus-visible {
+  background: var(--surface2);
+}
+
+/*
+ * The controls do not grow with the row.
+ *
+ * A text input that took the space left over would be a different width on
+ * every row, keyed on how long the field's own name happens to be — and the
+ * name is the document's, so the layout would be the document's too.
+ */
+.m-forms-text,
+.m-forms-choice {
+  flex: 0 0 auto;
+  inline-size: 12rem;
+  max-inline-size: 40%;
+}
+
+.m-forms-check {
+  flex: 0 0 auto;
+}
+
+/*
+ * Why a control is absent — read-only, or not a field anybody fills.
+ *
+ * Muted rather than warned, for the foreign-annotation badge's reason: neither
+ * is something the reader did wrong, and a danger colour on a signature row
+ * would say a document is broken when it is doing exactly what it should.
+ */
+.m-forms-locked {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.m-forms-empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--muted);
+}
+
 .m-annotations-remove {
   flex: 0 0 auto;
   padding: var(--space-2) var(--space-4);

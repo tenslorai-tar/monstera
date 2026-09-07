@@ -1,6 +1,7 @@
 import type {
   AnnotationRect,
   ContractClient,
+  FieldFill,
   MeasureScale,
   RenderableCommand,
 } from '@monstera/contract';
@@ -66,6 +67,7 @@ import { LinksPanel } from './LinksPanel.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
 import { AnnotationsPanel } from './AnnotationsPanel.js';
+import { FormsPanel } from './FormsPanel.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
@@ -396,6 +398,37 @@ export function App({ client, settings }: AppProps): ReactElement {
         // one place where *these* would have to be invented rather than
         // collected.
         indices: [handle.index],
+        version: handle.version,
+      });
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
+   * Filling one form field, from the row that names it.
+   *
+   * `removeAnnotation`'s shape on the other walk, and the same reasons: the
+   * handle is spread into the payload and nothing here is clever about a stale
+   * one — being refused is the correct outcome, and the panel re-reads on the
+   * version it is told about.
+   *
+   * **Singular where its neighbour is plural**, and that is the payload rather
+   * than this call site: nobody fills two fields with one gesture, which is
+   * also what makes the command invertible.
+   */
+  const fillFormField = useCallback(
+    (handle: {
+      page: number;
+      index: number;
+      version: DocVersion;
+      value: FieldFill;
+    }): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+        kind: 'fillFormField',
+        page: handle.page,
+        index: handle.index,
+        value: handle.value,
         version: handle.version,
       });
     },
@@ -1354,6 +1387,18 @@ export function App({ client, settings }: AppProps): ReactElement {
         docId={open?.docId}
         onJump={navigator.jumpTo}
         onRemove={removeAnnotation}
+        version={open?.version}
+      />
+      {/* THE FORMS PANEL, keyed on the version for the annotations panel's
+          reason and with one more of its own: every control on it writes, so a
+          row built from a previous version's walk would fill a field by
+          arithmetic. It lists the whole document because a form is a thing a
+          person works through rather than a property of the page they are on. */}
+      <FormsPanel
+        client={client}
+        docId={open?.docId}
+        onFill={fillFormField}
+        onJump={navigator.jumpTo}
         version={open?.version}
       />
       {/* E2's substrate, reached by a person. It renders nothing with no

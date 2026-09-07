@@ -2,6 +2,7 @@ import {
   type ChannelResult,
   type ContractClient,
   type ContractHandlers,
+  type FormFieldKind,
   type Incident,
   MAX_IMAGE_BYTES,
   channels,
@@ -159,6 +160,25 @@ export interface ShimLayer {
   readonly index: number;
   readonly name: string;
   readonly visible: boolean;
+}
+
+/**
+ * One form field, as `document.formFields` answers it.
+ *
+ * The channel's shape rather than a convenience subset, so a case cannot set up
+ * a field the real channel could not carry — which is the shim inventing a
+ * document, and it is what `document.annotations` refuses to do next door.
+ */
+export interface ShimFormField {
+  readonly page: number;
+  readonly index: number;
+  readonly kind: FormFieldKind;
+  readonly name: string;
+  readonly value: string;
+  readonly on: boolean | null;
+  readonly options: readonly string[];
+  readonly readOnly: boolean;
+  readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
 }
 
 export interface BrowserShimOptions {
@@ -328,6 +348,27 @@ export interface BrowserShimOptions {
   readonly layers?: readonly (readonly ShimLayer[])[];
 
   /**
+   * The document's form fields, as a scripted sequence.
+   *
+   * `layers`' shape for `layers`' reason, and the argument is sharper here: the
+   * obvious alternative is to hold one list and apply a `fillFormField` to it,
+   * which would be a second implementation of what filling means — and the
+   * kernel's own answer took a measurement to get right. MuPDF's `toggle()` is
+   * keyed on `/AS`, a radio group's siblings move together, and a shim
+   * assigning one boolean would agree with the kernel until it met a document
+   * where those matter.
+   *
+   * A sequence asks what a renderer case can answer: *did the panel dispatch,
+   * and did it read again and draw what it was told when the version moved?*
+   * The last entry repeats, so one list is a stable document and two describe a
+   * change.
+   *
+   * Unseeded, the shim answers with none — a document with no form is the
+   * common case, and it is the honest empty rather than an invented field.
+   */
+  readonly formFields?: readonly (readonly ShimFormField[])[];
+
+  /**
    * What a previous run stored, as `settings.load` will answer it.
    *
    * A fixture rather than something a test writes first through
@@ -450,6 +491,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const destinations = options.destinations ?? [];
   // Copied and consumed, exactly like `viewModels`.
   const layerLists = [...(options.layers ?? [])];
+  const fieldLists = [...(options.formFields ?? [])];
   const recentEntries = options.recent ?? [];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
@@ -916,15 +958,22 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     },
 
     /**
-     * EMPTY, for the annotation list's reason: the shim's kernel is stubbed and
-     * has no document to walk, and a shim inventing fields would be the shim
-     * under test. What a case about the panel asserts is that the panel renders
-     * what it is handed.
+     * The document's form fields, from the scripted sequence.
+     *
+     * SEEDED RATHER THAN EMPTY, unlike the annotation list beside it, and the
+     * difference is what a case has to be able to ask. A panel that only lists
+     * is proven by rendering what it is handed, so an empty answer costs
+     * nothing. Every control on the forms panel WRITES, and the claim owed is
+     * *this control dispatches exactly that command with the handle from the row
+     * it sits on* — which needs a row, and a row needs a field.
+     *
+     * The last entry repeats, for `document.layers`' reason.
      */
     'document.formFields': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-      return Promise.resolve(ok({ version: asDocVersion(current), fields: [], truncated: false }));
+      const fields = fieldLists.length > 1 ? (fieldLists.shift() ?? []) : (fieldLists[0] ?? []);
+      return Promise.resolve(ok({ version: asDocVersion(current), fields, truncated: false }));
     },
 
     'document.duplicatePages': ({ docId }) => {

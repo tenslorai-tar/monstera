@@ -260,6 +260,23 @@ export const ANNOTATIONS_UNAVAILABLE = messageKey('surface.annotations.unavailab
 export const ANNOTATIONS_TRUNCATED = messageKey('surface.annotations.truncated');
 export const ANNOTATIONS_REMOVE = messageKey('surface.annotations.remove');
 export const ANNOTATIONS_ROW = messageKey('surface.annotations.row');
+export const FORMS_LABEL = messageKey('surface.forms.label');
+export const FORMS_EMPTY = messageKey('surface.forms.empty');
+export const FORMS_UNAVAILABLE = messageKey('surface.forms.unavailable');
+export const FORMS_TRUNCATED = messageKey('surface.forms.truncated');
+export const FORMS_ROW = messageKey('surface.forms.row');
+export const FORMS_GO_TO_PAGE = messageKey('surface.forms.go-to-page');
+export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
+export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
+export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
+export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
+export const FORMS_KIND_CHECKBOX = messageKey('surface.forms.kind.checkbox');
+export const FORMS_KIND_RADIO = messageKey('surface.forms.kind.radio');
+export const FORMS_KIND_DROPDOWN = messageKey('surface.forms.kind.dropdown');
+export const FORMS_KIND_LISTBOX = messageKey('surface.forms.kind.listbox');
+export const FORMS_KIND_SIGNATURE = messageKey('surface.forms.kind.signature');
+export const FORMS_KIND_BUTTON = messageKey('surface.forms.kind.button');
+export const FORMS_KIND_OTHER = messageKey('surface.forms.kind.other');
 export const ANNOTATIONS_KIND_SQUARE = messageKey('surface.annotations.kind.square');
 export const ANNOTATIONS_KIND_CIRCLE = messageKey('surface.annotations.kind.circle');
 export const ANNOTATIONS_KIND_LINE = messageKey('surface.annotations.kind.line');
@@ -564,6 +581,37 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // clicks on the wrong line.
   [ANNOTATIONS_REMOVE]: 'Remove this annotation',
   [ANNOTATIONS_ROW]: '{kind} on page {page}',
+  [FORMS_LABEL]: 'Form fields in this document',
+  [FORMS_EMPTY]: 'This document has no form fields.',
+  [FORMS_UNAVAILABLE]: 'The form fields in this document could not be read.',
+  [FORMS_TRUNCATED]: 'Only the first 4,096 form fields are listed.',
+  // THE FIELD'S OWN NAME, which is document data rather than a catalogue
+  // string — a form's vocabulary belongs to whoever wrote the form. The kind
+  // is beside it because two fields can share a name: a radio group is one
+  // field with several widgets, and a reader scanning the list needs to know
+  // which is which.
+  [FORMS_ROW]: '{name} — {kind}, page {page}',
+  [FORMS_GO_TO_PAGE]: 'Go to page {page}',
+  // SAYS WHOSE DECISION IT IS. *Disabled* would read as a fault in the
+  // application; the document set this flag, and the reader can do nothing
+  // about it here.
+  [FORMS_READ_ONLY]: 'The document marks this field read-only.',
+  // AND THE OTHER REASON A CONTROL IS ABSENT, kept apart from it: a signature
+  // and a push button are not fields a person types into at all, which is a
+  // different fact from one this document happens to have locked.
+  [FORMS_NOT_FILLABLE]: 'This field is not one that can be filled here.',
+  // THE EMPTY CHOICE, which is a real value rather than a missing one:
+  // measured, clearing a dropdown stores the empty string, and a document may
+  // arrive with one already cleared.
+  [FORMS_CHOICE_EMPTY]: '(none)',
+  [FORMS_KIND_TEXT]: 'Text',
+  [FORMS_KIND_CHECKBOX]: 'Tick box',
+  [FORMS_KIND_RADIO]: 'Option',
+  [FORMS_KIND_DROPDOWN]: 'Dropdown',
+  [FORMS_KIND_LISTBOX]: 'List',
+  [FORMS_KIND_SIGNATURE]: 'Signature',
+  [FORMS_KIND_BUTTON]: 'Button',
+  [FORMS_KIND_OTHER]: 'Field',
   // THE CONTROL'S WORDS, not the format's. `/Square` and `/Circle` are terms of
   // art; a person drew a rectangle and an ellipse, and the labels match the
   // tools that made them.
