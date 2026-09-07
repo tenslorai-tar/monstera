@@ -1078,6 +1078,22 @@ export interface ListedAnnotation {
   readonly rect: AnnotationRect | null;
   readonly kind: AnnotationKindName;
   /**
+   * What it is drawn in — `/C`, `/CA` and `/BS`'s width.
+   *
+   * Carried so a styles panel can show what is there rather than only what is
+   * about to be applied. **`borderWidth` is `null` where the subtype has none**:
+   * measured 2026-09-07, `setBorderWidth` and `getBorderWidth` are refused by
+   * `Redact`, `Text`, `Caret`, `Highlight`, `Underline` and `StrikeOut` —
+   * *"X annotations have no BS property"* — and `hasBorder()` separates them.
+   * A zero here would be a width the annotation does not have, which a control
+   * would then offer to change.
+   */
+  readonly style: {
+    readonly colour: readonly number[];
+    readonly opacity: number;
+    readonly borderWidth: number | null;
+  };
+  /**
    * The annotation's `/Contents`, or the empty string.
    *
    * Carried because it is the only thing that tells two rectangles on one page
@@ -1170,6 +1186,23 @@ const INTENDED: Readonly<Record<string, AnnotationKindName>> = {
 };
 
 /**
+ * What an annotation is drawn in.
+ *
+ * `getColor` and `getOpacity` answer on every subtype this build writes;
+ * `getBorderWidth` is refused by six of them, and `hasBorder` is the question
+ * that separates them — measured 2026-09-07 across thirteen subtypes. Asking
+ * `hasBorder` first is not caution: the alternative is a `try` around a call
+ * whose refusal is a normal answer for half the kinds a page carries.
+ */
+function styleOf(annotation: PDFAnnotation): ListedAnnotation['style'] {
+  return {
+    colour: annotation.getColor(),
+    opacity: annotation.getOpacity(),
+    borderWidth: annotation.hasBorder() ? annotation.getBorderWidth() : null,
+  };
+}
+
+/**
  * How many annotations may be listed.
  *
  * A document-scaled read, bounded for the reason `document.destinations`' is:
@@ -1224,6 +1257,7 @@ export function readAnnotations(
           // that silently omitted a document's own comments would be worse than
           // one that names them vaguely.
           kind: kindOf(annotation),
+          style: styleOf(annotation),
           contents: annotation.getContents().slice(0, MAX_LISTED_CONTENTS),
           authored: authoredHere(annotation),
         });
@@ -1469,6 +1503,94 @@ export const applyPlaceAnnotation: Apply<'mupdf', 'placeAnnotation'> = (
       annotation.update();
     }
   });
+
+/**
+ * Restyles annotations that already exist — the comment styles panel's command.
+ *
+ * ## The border width is SKIPPED where the subtype has none
+ *
+ * Measured 2026-09-07: `setBorderWidth` is refused by `Redact`, `Text`,
+ * `Caret`, `Highlight`, `Underline` and `StrikeOut`. So a person who selects a
+ * highlight and a rectangle and asks for a 5-point border gets it on the
+ * rectangle and no refusal at all — which is the honest outcome rather than a
+ * command that fails because of what else was selected. `hasBorder` is asked
+ * per annotation, and the payload's width is optional so a caller that has none
+ * to give says nothing rather than sending a number.
+ *
+ * Colour and opacity are set on everything, because every subtype takes them.
+ */
+export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'styleAnnotation'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    if (new Set(command.indices).size !== command.indices.length) {
+      throw new RangeError(
+        'a restyle names the same annotation more than once, which is a handle list built from ' +
+          'something other than one walk.',
+      );
+    }
+    // RESOLVED IN FULL FIRST, `applyRemoveAnnotation`'s rule: a command that
+    // restyled two of five and then refused would leave the page in a state no
+    // undo step describes.
+    const targets = command.indices.map((index) => annotationAt(loaded, index));
+    for (const annotation of targets) {
+      annotation.setColor([...command.colour]);
+      annotation.setOpacity(command.opacity);
+      if (command.borderWidth !== undefined && annotation.hasBorder()) {
+        annotation.setBorderWidth(command.borderWidth);
+      }
+      // THE APPEARANCE IS REGENERATED, which is what makes the change visible.
+      // Without it the dictionary says one colour and the `/AP` draws another —
+      // and MuPDF's own renderer would still show the new one, so a proof that
+      // rasterised through MuPDF could not see this line missing.
+      annotation.update();
+    }
+  });
+
+/**
+ * Reports that a restyle's prior state is not recorded, and validates first.
+ *
+ * **The fourth annotation command to refuse, and its reason is the narrowest
+ * yet.** The prior state here is three numbers per annotation and is entirely
+ * expressible — this is the first of the four where nothing about the format
+ * stands in the way. What stops it is that `CommandPrior` carries one value per
+ * command and this one names several annotations, so the prior is a *list* whose
+ * length has to match the payload's; that is a shape the log has never held.
+ *
+ * The trigger is the second command that needs a per-target prior. Until then a
+ * checkpoint is honest and cheap: a restyle changes three keys and an appearance
+ * stream.
+ */
+export function captureStyleAnnotation(
+  session: MupdfSession,
+  command: CommandOfKind<'styleAnnotation'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    for (const index of command.indices) annotationAt(loaded, index);
+    return {
+      captured: false,
+      reason:
+        'a restyled annotation is not recorded as prior state yet: the prior is one style per ' +
+        'annotation named, and CommandPrior carries a single value per command rather than a ' +
+        'list whose length must match the payload',
+    };
+  });
+}
+
+/**
+ * Unreachable, and required by `CommandSpec`'s shape.
+ *
+ * `CommandPrior['styleAnnotation']` is `never`. It throws for
+ * {@link invertAddAnnotation}'s reason.
+ */
+export const invertStyleAnnotation: Invert<'mupdf', 'styleAnnotation'> = (): Promise<void> => {
+  throw new Error(
+    'a restyled annotation has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};
 
 /**
  * Reports that a placement's prior state is not recorded, and validates first.

@@ -372,6 +372,20 @@ export interface CommandPrior {
    * which is exactly where the annotations read started.
    */
   readonly addLink: never;
+  /**
+   * **`never`**, and the fourth annotation command to say so for a fourth
+   * reason — the narrowest of them.
+   *
+   * The prior state is three numbers per annotation and nothing about the format
+   * stands in the way. What does is this type's own shape: it carries ONE value
+   * per command, and a restyle names several annotations, so the prior would be
+   * a list whose length must match the payload's. Nothing in the log has ever
+   * held a per-target prior, and inventing one for the first command that wants
+   * it is the retrofit §3a exists to prevent.
+   *
+   * The trigger is the second command that needs one.
+   */
+  readonly styleAnnotation: never;
 }
 
 /**

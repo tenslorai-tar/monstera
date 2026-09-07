@@ -129,6 +129,7 @@ import {
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
 } from './settings/editing.js';
+import { CommentStylesPanel } from './CommentStylesPanel.js';
 import { StylePanel } from './StylePanel.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
@@ -858,6 +859,35 @@ export function App({ client, settings }: AppProps): ReactElement {
     };
   }, [styleColour, styleFontSize, styleLineWidth, styleOpacity]);
 
+  /**
+   * Restyling everything the select tool has picked.
+   *
+   * `removeSelection`'s shape with an appearance instead of a deletion, and the
+   * same two rules: ONE command for the whole selection, because five marks
+   * restyled is one decision; and the version comes from the selection rather
+   * than from this component's, so a document that has moved refuses instead of
+   * restyling by arithmetic.
+   *
+   * The style is the authoring controls' — `colour([0, 0, 0])` resolves the
+   * tri-state by handing over a colour used only when nobody has chosen, and
+   * black is the honest *no tool asked* here, this not being a tool.
+   */
+  const restyleSelection = useCallback(
+    (chosen: AnnotationSelection): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+        kind: 'styleAnnotation',
+        page: chosen.page,
+        indices: chosen.items.map((item) => item.index),
+        colour: style.colour([0, 0, 0]),
+        opacity: style.opacity,
+        borderWidth: style.lineWidth,
+        version: chosen.version,
+      });
+    },
+    [activeId, applied, ask, client, style],
+  );
+
   /** What the selection commands need, composed once so nine entries share it. */
   const selectionDeps = useMemo(
     () => ({ selection: readSelection, onDelete: removeSelection, onPlace: dispatch }),
@@ -1228,6 +1258,10 @@ export function App({ client, settings }: AppProps): ReactElement {
           open and they do not change when the version moves. That is what makes
           them settings rather than document state. */}
       <StylePanel settings={settings} />
+      {/* THE OTHER HALF: what the selected annotations look like now, and the
+          command that changes them. Takes the same resolved style the tools
+          take, so *Apply* writes what the controls above say. */}
+      <CommentStylesPanel onApply={restyleSelection} selection={selection} style={style} />
       <LayersPanel client={client} docId={open?.docId} version={open?.version} />
       {/* THE ANNOTATIONS PANEL, keyed on the version for the layers panel's
           reason: every drawing tool moves it, so the list is re-read after the

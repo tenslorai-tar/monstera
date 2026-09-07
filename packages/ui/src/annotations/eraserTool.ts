@@ -65,6 +65,19 @@ export interface ErasableAnnotation {
   readonly index: number;
   /** In PDF user space, or `null` for a page that displays no region. */
   readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+  /**
+   * What it is drawn in.
+   *
+   * **The eraser does not read it** — this row is shared with the select tool,
+   * whose selection carries the style through to the comment styles panel. A
+   * second row type differing by one field would be two shapes over one
+   * channel answer, and the field a tool ignores costs it nothing.
+   */
+  readonly style: {
+    readonly colour: readonly number[];
+    readonly opacity: number;
+    readonly borderWidth: number | null;
+  };
 }
 
 /** What the walk answered, and the version it answered at. */

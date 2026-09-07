@@ -26,7 +26,15 @@ const GEOMETRY = {
 const SELECTION: AnnotationSelection = {
   page: 3,
   version: asDocVersion(7),
-  items: [{ index: 1, rect: { x0: 60, y0: 350, x1: 100, y1: 390 } }],
+  items: [
+    {
+      index: 1,
+      rect: { x0: 60, y0: 350, x1: 100, y1: 390 },
+      // Carried by the selection for the comment styles panel; this layer draws
+      // the box and reads nothing of it.
+      style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+    },
+  ],
 };
 
 describe('SelectionLayer', () => {

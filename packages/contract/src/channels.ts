@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import {
+  MAX_ANNOTATION_BORDER,
   annotationKindNameSchema,
   annotationRectSchema,
   renderableCommandSchema,
@@ -1327,6 +1328,27 @@ export const channels = {
              * skips it rather than acting on an invented one.
              */
             rect: annotationRectSchema.nullable(),
+            /**
+             * What it is drawn in — `/C`, `/CA` and `/BS`'s width.
+             *
+             * Carried so a styles panel can show what an annotation IS rather
+             * than only what it is about to become. **`borderWidth` is `null`
+             * where the subtype has none**: measured 2026-09-07, six of the
+             * thirteen refuse `setBorderWidth` outright, and a zero here would
+             * be a width a control then offers to change.
+             *
+             * The colour is a bare number list rather than
+             * `annotationColourSchema` because a document may carry one, three
+             * or four components — grey, RGB or CMYK — where this build writes
+             * three. A reader is being told what is there.
+             */
+            style: z
+              .object({
+                colour: z.array(z.number().min(0).max(1)).max(4).readonly(),
+                opacity: z.number().min(0).max(1),
+                borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).nullable(),
+              })
+              .strict(),
             /**
              * **A closed union, not the document's `/Subtype`.**
              *

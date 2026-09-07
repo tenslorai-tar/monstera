@@ -1832,6 +1832,53 @@ export const addLinkSchema = z.object({
   target: linkTargetSchema,
 });
 
+/**
+ * How many annotations one restyle may name.
+ *
+ * {@link MAX_PLACED_ANNOTATIONS}' number and its argument, stated separately for
+ * the reason those two are: this is *how many a person selected and restyled*,
+ * and tying three bounds together moves all of them when one is wrong.
+ */
+export const MAX_STYLED_ANNOTATIONS = 1024;
+
+/**
+ * Changes the appearance of annotations that already exist.
+ *
+ * ## The OTHER half of the style controls
+ *
+ * `editing.annotation-colour` and its three neighbours decide what the NEXT mark
+ * looks like. This decides what an existing one looks like, which is what a
+ * comment styles panel is for — and it is a different command rather than a flag
+ * on those settings because the settings are a preference and this is a document
+ * mutation with a version, a handle and an undo entry.
+ *
+ * ## `borderWidth` is OPTIONAL, and that is measured rather than defensive
+ *
+ * Measured 2026-09-07, MuPDF 1.28.0: `getColor` and `getOpacity` answer on every
+ * subtype this build writes, and `setBorderWidth` is **refused** by six of them —
+ * *"Redact annotations have no BS property"*, and the same for `Text`, `Caret`,
+ * `Highlight`, `Underline` and `StrikeOut`. `hasBorder()` separates them exactly.
+ *
+ * So a payload that always carried a width would be asking for something the
+ * format refuses on more than half the kinds a person can select, and a caller
+ * would have to know which — the knowledge this schema exists to keep out of
+ * callers. Absent means *leave the width alone*, and the kernel skips a subtype
+ * that has none whatever it is asked.
+ */
+export const styleAnnotationSchema = z.object({
+  kind: z.literal('styleAnnotation'),
+  /** Zero-based index of the page they sit on. */
+  page: z.number().int().nonnegative(),
+  /** Their positions in the walk that produced the answer this names. */
+  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_STYLED_ANNOTATIONS).readonly(),
+  colour: annotationColourSchema,
+  opacity: annotationOpacitySchema,
+  /** Points. Absent leaves each annotation's width as it is. */
+  borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).optional(),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -1855,6 +1902,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   removeAnnotationSchema,
   placeAnnotationSchema,
   addLinkSchema,
+  styleAnnotationSchema,
 ]);
 
 /**
@@ -1926,6 +1974,10 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // FORM: a page link is written through MuPDF's own `formatLinkURI`, so the
   // `/GoTo` array is never something a surface spells.
   addLinkSchema,
+  // RENDERABLE, and its intent is a handful of numbers naming rows of an answer
+  // it was given — `removeAnnotation`'s shape with an appearance instead of a
+  // deletion.
+  styleAnnotationSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -2064,6 +2116,7 @@ void _bothNamesAreCommandKinds;
 export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'removeAnnotation') return command.version;
   if (command.kind === 'placeAnnotation') return command.version;
+  if (command.kind === 'styleAnnotation') return command.version;
   return undefined;
 }
 
@@ -2077,6 +2130,6 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
  * a real kind, and saying so is what stopped the sibling above from spending a
  * range asserting nothing.
  */
-export type NamesAnAnnotation = 'removeAnnotation' | 'placeAnnotation';
+export type NamesAnAnnotation = 'removeAnnotation' | 'placeAnnotation' | 'styleAnnotation';
 const _thatNameIsACommandKind: NamesAnAnnotation extends CommandKind ? true : never = true;
 void _thatNameIsACommandKind;

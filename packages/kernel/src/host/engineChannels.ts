@@ -1,6 +1,7 @@
 import {
   type CommandKind,
   addAnnotationSchema,
+  MAX_ANNOTATION_BORDER,
   addLinkSchema,
   annotationKindNameSchema,
   annotationRectSchema,
@@ -13,6 +14,7 @@ import {
   mergeDocumentSchema,
   movePageSchema,
   placeAnnotationSchema,
+  styleAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
   resizePagesSchema,
@@ -273,6 +275,18 @@ const engineAnnotationSchema = z
      * reason: a surface cannot point at an annotation it cannot locate.
      */
     rect: annotationRectSchema.nullable(),
+    /**
+     * What it is drawn in. `borderWidth` is null where the subtype has no
+     * `/BS` — six of the thirteen, measured — and it crosses so a styles panel
+     * can show what is there rather than only what it would apply.
+     */
+    style: z
+      .object({
+        colour: z.array(z.number().min(0).max(1)).max(4).readonly(),
+        opacity: z.number().min(0).max(1),
+        borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).nullable(),
+      })
+      .strict(),
     // THE CONTRACT'S ENUM, and this was the FIFTH place the same list of names
     // was written down — the draft union that defines them, the renderer
     // channel, the kernel's derived alias, the panel's interface, and here.
@@ -513,6 +527,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
+  styleAnnotationSchema,
   addLinkSchema,
 ]);
 

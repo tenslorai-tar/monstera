@@ -853,6 +853,29 @@ const declarations = {
     // Reads nothing through another engine.
     reads: 'none',
   },
+  styleAnnotation: {
+    kind: 'styleAnnotation',
+    // The annotation rows' classification: `/C`, `/CA` and `/BS` are keys on an
+    // object in `/Annots`, and the appearance stream MuPDF regenerates is that
+    // object's. A content writer could draw the shape again in another colour
+    // and would leave the original exactly where it was.
+    writer: 'mupdf',
+    // The prior is three numbers per annotation and is entirely expressible —
+    // the first of the four annotation commands where the format is not what
+    // stops it. What stops it is that `CommandPrior` carries one value per
+    // command and this names several. `captureStyleAnnotation` has the trigger.
+    invertible: false,
+    undo: 'checkpoint',
+    // Three keys and an appearance stream, and no clock — the same measurement
+    // `addAnnotation` records for the object it creates.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // Its payload points into an answer `document.annotations` gave at one
+    // version, as `removeAnnotation`'s and `placeAnnotation`'s do.
+    targets: 'annotation',
+    reads: 'none',
+  },
   addLink: {
     kind: 'addLink',
     // A `/Link` is an entry in `/Annots` and a page-tree write, so MuPDF owns it

@@ -409,6 +409,27 @@ const LINK_SPEC = `  addLink: {
     reads: 'none',
   },`;
 
+/**
+ * The fourth annotation entry, and the fourth `never` prior for a fourth reason.
+ *
+ * `targets: 'annotation'` is absent here for `REMOVE_SPEC`'s reason: three kinds
+ * now carry it in the declaration table and none carries it in a spec, which is
+ * the axis working rather than three gaps.
+ */
+const STYLE_SPEC = `  styleAnnotation: {
+    kind: 'styleAnnotation',
+    writer: 'mupdf',
+    apply: applyStyleAnnotation,
+    capture: captureStyleAnnotation,
+    invert: invertStyleAnnotation,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -518,6 +539,9 @@ const SPEC_IMPORTS = `import {
   applyAddLink,
   captureAddLink,
   invertAddLink,
+  applyStyleAnnotation,
+  captureStyleAnnotation,
+  invertStyleAnnotation,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -932,6 +956,7 @@ ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
+${STYLE_SPEC}
 };
 `,
   },
@@ -949,8 +974,8 @@ ${LINK_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `addLink`, `placeAnnotation` and `removeAnnotation` on
-    // 2026-09-06; `addAnnotation`,
+    // table has to grow. `styleAnnotation` on 2026-09-07; `addLink`,
+    // `placeAnnotation` and `removeAnnotation` on 2026-09-06; `addAnnotation`,
     // `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage`,
     // `resizePages`, `setPageBackground` and
     // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
@@ -964,7 +989,7 @@ ${LINK_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'addLink' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'styleAnnotation' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1005,6 +1030,7 @@ ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
+${LINK_SPEC}
 };
 `,
   },
@@ -1112,6 +1138,7 @@ ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
+${STYLE_SPEC}
 };
 `,
   },
@@ -1157,6 +1184,7 @@ ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
+${STYLE_SPEC}
 };
 `,
   },
@@ -1211,6 +1239,7 @@ ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
+${STYLE_SPEC}
 };
 `,
   },
@@ -1261,6 +1290,7 @@ ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
+${STYLE_SPEC}
 };
 `,
   },
@@ -2136,7 +2166,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 17 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 18 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

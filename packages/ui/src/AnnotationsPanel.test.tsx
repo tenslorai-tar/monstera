@@ -25,14 +25,17 @@ function clientAnswering(
   options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
 ): { client: ContractClient; asked: unknown[] } {
   const asked: unknown[] = [];
-  // THE PLACE, FILLED IN HERE RATHER THAN AT TWELVE CALL SITES. The channel
-  // carries `rect` because the eraser hit-tests against it; this panel reads it
-  // nowhere, so a rectangle in each fixture would be a number every case had to
-  // carry and no case could assert. `null` is a value the channel really
-  // answers — a page that displays no region — and it is the one that would
-  // break a panel which had quietly started depending on a place.
+  // THE PLACE AND THE STYLE, FILLED IN HERE RATHER THAN AT TWELVE CALL SITES.
+  // The channel carries `rect` because the eraser hit-tests against it and
+  // `style` because the comment styles panel shows it; THIS panel reads
+  // neither, so a rectangle and a colour in each fixture would be numbers every
+  // case had to carry and no case could assert. `null` is a value the channel
+  // really answers — a page that displays no region — and it is the one that
+  // would break a panel which had quietly started depending on a place.
   const rows = annotations.map((row) =>
-    typeof row === 'object' && row !== null ? { rect: null, ...row } : row,
+    typeof row === 'object' && row !== null
+      ? { rect: null, style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 }, ...row }
+      : row,
   );
   const client = createClient(channels, (id, params) => {
     if (id !== 'document.annotations') throw new Error(`unexpected channel ${id}`);

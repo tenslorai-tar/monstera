@@ -27,11 +27,22 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
 
 const VERSION = asDocVersion(7);
 
+/**
+ * A style the eraser does not read.
+ *
+ * The row is shared with the select tool, whose selection carries it through to
+ * the comment styles panel. Held constant across this whole file deliberately —
+ * NNN-1's tell inverted: an input the code under test never touches is the one
+ * case where a constant costs nothing.
+ */
+const PLAIN = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
+
 /** An annotation covering PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const NEAR: ErasableAnnotation = {
   page: 3,
   index: 1,
   rect: { x0: 60, y0: 350, x1: 100, y1: 390 },
+  style: PLAIN,
 };
 
 /** One covering PDF x 160–200, which is nowhere near the clicks below. */
@@ -39,6 +50,7 @@ const FAR: ErasableAnnotation = {
   page: 3,
   index: 2,
   rect: { x0: 160, y0: 150, x1: 200, y1: 190 },
+  style: PLAIN,
 };
 
 function erasing(snapshot: AnnotationSnapshot | undefined): {
@@ -140,7 +152,7 @@ describe('eraserTool', () => {
     // wherever the person clicked.
     const { click } = erasing({
       version: VERSION,
-      annotations: [{ page: 3, index: 0, rect: null }],
+      annotations: [{ page: 3, index: 0, rect: null, style: PLAIN }],
     });
     expect(await click([40, 40])).toBeUndefined();
   });

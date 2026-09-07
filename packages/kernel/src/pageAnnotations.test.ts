@@ -20,9 +20,11 @@ import {
   applyAddAnnotation,
   applyPlaceAnnotation,
   applyRemoveAnnotation,
+  applyStyleAnnotation,
   captureAddAnnotation,
   capturePlaceAnnotation,
   captureRemoveAnnotation,
+  captureStyleAnnotation,
   readAnnotations,
 } from './pageAnnotations.js';
 
@@ -315,13 +317,14 @@ async function drawnOn(
 }
 
 /**
- * A listed annotation without its rectangle.
+ * A listed annotation without its rectangle or its style.
  *
  * The place is asserted by the cases whose subject IS the place, against the
- * three fixtures that separate the transform's terms. Everywhere else it would
- * be a measured number sitting in a case about numbering, kinds or provenance —
- * read from whichever run first produced it, which is how a fixture stops being
- * a specification and becomes a recording.
+ * three fixtures that separate the transform's terms, and the style by the ones
+ * whose subject is the style. Everywhere else either would be a measured number
+ * sitting in a case about numbering, kinds or provenance — read from whichever
+ * run first produced it, which is how a fixture stops being a specification and
+ * becomes a recording.
  *
  * **The cost, stated: these cases are blind to a field added later.** The five
  * names are written out rather than spread-minus-one, so a sixth member of
@@ -331,7 +334,7 @@ async function drawnOn(
  */
 function withoutPlace(listed: {
   readonly annotations: readonly ListedAnnotation[];
-}): readonly Omit<ListedAnnotation, 'rect'>[] {
+}): readonly Omit<ListedAnnotation, 'rect' | 'style'>[] {
   return listed.annotations.map((entry) => ({
     page: entry.page,
     index: entry.index,
@@ -339,6 +342,24 @@ function withoutPlace(listed: {
     contents: entry.contents,
     authored: entry.authored,
   }));
+}
+
+/**
+ * A page with two lines of text at known places, in PDF user space.
+ *
+ * At module scope because two describes need it: the text markups, whose whole
+ * subject is which run a drag caught, and the restyle, which needs a highlight
+ * to prove that a subtype with no `/BS` is skipped rather than refused. A
+ * highlight cannot exist on a blank page.
+ */
+async function withText(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([...MEDIA]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  // The baselines are at y 250 and y 230; the glyphs sit just above each.
+  page.drawText('Hello there world', { x: 20, y: 250, size: 12, font });
+  page.drawText('second line here', { x: 20, y: 230, size: 12, font });
+  return document.save({ useObjectStreams: false });
 }
 
 /** Runs `work` against an open session, closing it whatever happens. */
@@ -1679,6 +1700,138 @@ describe('the srcRef mark', () => {
 });
 
 /**
+ * Restyling annotations that already exist — the comment styles panel's command.
+ *
+ * ## Every case reads back through the WALK, not through the setter
+ *
+ * `getColor` answers what `setColor` was given, so a case that set a colour and
+ * read it through the same object would agree with itself whether or not the
+ * command reached the annotation the handle named. These read
+ * `readAnnotations`, which resolves the handle the way the panel's own list did.
+ */
+describe('applyStyleAnnotation', () => {
+  const BLUE = [0, 0, 1] as const;
+
+  async function styled(
+    bytes: Uint8Array,
+    indices: readonly number[],
+    borderWidth?: number,
+  ): Promise<Uint8Array> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices,
+        colour: [...BLUE],
+        opacity: 0.3,
+        ...(borderWidth === undefined ? {} : { borderWidth }),
+        version: asDocVersion(1),
+      });
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('changes the colour and the opacity of the one it names', async () => {
+    const two = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    const listed = await onSession(await styled(two, [0]), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.style.colour).toStrictEqual([0, 0, 1]);
+    expect(listed.annotations[0]?.style.opacity).toBeCloseTo(0.3, 3);
+  });
+
+  it('LEAVES THE ONE BESIDE IT ALONE, which is what makes the first mean anything', async () => {
+    // Without this, a command that restyled every annotation on the page passes
+    // every case above — and *every* is what a loop over the page's annotations
+    // does when the handle is ignored.
+    const two = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    const before = await onSession(two, (session) => readAnnotations(session));
+    const after = await onSession(await styled(two, [0]), (session) =>
+      readAnnotations(session),
+    );
+    expect(after.annotations[1]?.style).toStrictEqual(before.annotations[1]?.style);
+  });
+
+  it('sets a border width where the subtype has one', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    const listed = await onSession(await styled(drawn, [0], 5), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.style.borderWidth).toBeCloseTo(5, 3);
+  });
+
+  it('SKIPS the width on a subtype that has none, rather than refusing', async () => {
+    // MEASURED 2026-09-07: `setBorderWidth` is refused by six of the thirteen
+    // subtypes — *"Highlight annotations have no BS property"* and five others.
+    // A person who selects a highlight and a rectangle and asks for a 5-point
+    // border gets it on the rectangle; a command that threw would fail because
+    // of what ELSE was selected, which is not something they can act on.
+    //
+    // The pair is the assertion: the highlight is left with no width and the
+    // rectangle beside it takes one, from the same command.
+    const both = await drawnOn(
+      await drawnOn(await withText(), command({ annotation: SQUARE })),
+      command({
+        annotation: {
+          type: 'highlight',
+          from: { x: 22, y: 256 },
+          to: { x: 100, y: 252 },
+          colour: [1, 0.9, 0.2],
+          opacity: 1,
+        },
+      }),
+    );
+    const listed = await onSession(await styled(both, [0, 1], 5), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations.map((entry) => entry.style.borderWidth)).toStrictEqual([5, null]);
+    // AND THE COLOUR REACHED BOTH, so the skip is the width alone rather than
+    // the highlight being left out of the command.
+    expect(listed.annotations.every((entry) => entry.style.colour[2] === 1)).toBe(true);
+  });
+
+  it('refuses a list naming the same annotation twice', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    await expect(styled(drawn, [0, 0])).rejects.toThrow(/more than once/u);
+  });
+
+  it('changes NOTHING when one index in the list is out of range', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    const before = await onSession(drawn, (session) => readAnnotations(session));
+    await expect(styled(drawn, [0, 9])).rejects.toThrow(/has 1 annotation\(s\)/u);
+    const after = await onSession(drawn, (session) => readAnnotations(session));
+    expect(after.annotations[0]?.style).toStrictEqual(before.annotations[0]?.style);
+  });
+
+  it('records no prior state, and its reason is not the three beside it', async () => {
+    // Four annotation commands refuse to capture now, for four different
+    // reasons, and this is the only one where the FORMAT is not what stops it.
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    const captured = await onSession(drawn, (session) =>
+      captureStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0],
+        colour: [...BLUE],
+        opacity: 0.3,
+        version: asDocVersion(1),
+      }),
+    );
+    expect(captured.captured).toBe(false);
+    expect(captured.captured ? '' : captured.reason).toMatch(/one style per annotation/u);
+  });
+});
+
+/**
  * The opacity — `/CA`, and it was UNPROVEN when the control shipped.
  *
  * Found by the stage audit of `909c388..9608a39`, by mutation: deleting
@@ -1920,17 +2073,6 @@ describe('applyAddAnnotation writes a callout the format recognises', () => {
  * all.
  */
 describe('applyAddAnnotation writes text markup as runs of text', () => {
-  /** A page with two lines of text at known places, in PDF user space. */
-  async function withText(): Promise<Uint8Array> {
-    const document = await PDFDocument.create();
-    const page = document.addPage([...MEDIA]);
-    const font = await document.embedFont(StandardFonts.Helvetica);
-    // The baselines are at y 250 and y 230; the glyphs sit just above each.
-    page.drawText('Hello there world', { x: 20, y: 250, size: 12, font });
-    page.drawText('second line here', { x: 20, y: 230, size: 12, font });
-    return document.save({ useObjectStreams: false });
-  }
-
   /** `/QuadPoints` of the first annotation, read with pdf-lib. */
   async function quadsOf(bytes: Uint8Array): Promise<readonly number[]> {
     const document = await PDFDocument.load(bytes, { updateMetadata: false });

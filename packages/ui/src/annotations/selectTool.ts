@@ -6,6 +6,7 @@ import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationSnapshot, ErasableAnnotation } from './eraserTool.js';
 
+
 /**
  * The select tool — the first whose gesture produces **no command at all**.
  *
@@ -69,6 +70,15 @@ const MINIMUM_MARQUEE = 4;
 export interface SelectedAnnotation {
   readonly index: number;
   readonly rect: AnnotationRect;
+  /**
+   * What it is drawn in, carried from the walk.
+   *
+   * The comment styles panel shows it, and it is carried rather than re-read
+   * for the version's reason: a selection is a set of handles at ONE version,
+   * and a style fetched later would describe a document the handles may no
+   * longer name.
+   */
+  readonly style: ErasableAnnotation['style'];
 }
 
 /**
@@ -132,12 +142,19 @@ function cornersOf(box: {
   ];
 }
 
-/** An annotation's box in the overlay's own pixels, or `null` if it has none. */
+/**
+ * A rectangle in the overlay's own pixels, or `null` when there is none.
+ *
+ * **Takes the RECT rather than the row**, so both callers — a listed annotation
+ * and a selected one — hand over the only field it reads. It used to take the
+ * row, and the selected side had to build a synthetic one out of three fields
+ * to call it: a fixture inside the product, which is where two shapes for one
+ * thing start.
+ */
 function boxOf(
-  annotation: ErasableAnnotation,
+  rect: AnnotationRect | null,
   transform: PageTransform,
 ): { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null {
-  const { rect } = annotation;
   if (rect === null) return null;
   const a = toViewport(pdfPoint(rect.x0, rect.y0), transform);
   const b = toViewport(pdfPoint(rect.x1, rect.y1), transform);
@@ -220,7 +237,7 @@ function placementFor(
   const to = endOf(gesture);
 
   for (const item of selection.items) {
-    const box = boxOf({ page, index: item.index, rect: item.rect }, transform);
+    const box = boxOf(item.rect, transform);
     if (box === null) continue;
     for (const [cx, cy, ox, oy] of cornersOf(box)) {
       if (Math.hypot(from.x - cx, from.y - cy) > CORNER_REACH) continue;
@@ -234,7 +251,7 @@ function placementFor(
   }
 
   const inside = selection.items.some((item) => {
-    const box = boxOf({ page, index: item.index, rect: item.rect }, transform);
+    const box = boxOf(item.rect, transform);
     return (
       box !== null && from.x >= box.x0 && from.x <= box.x1 && from.y >= box.y0 && from.y <= box.y1
     );
@@ -303,7 +320,7 @@ export function selectTool(deps: SelectDeps): UiTool {
             // different marks from the same pixel.
             [
               onPage.findLast((entry) => {
-                const box = boxOf(entry, transform);
+                const box = boxOf(entry.rect, transform);
                 return (
                   box !== null &&
                   marquee.x0 >= box.x0 &&
@@ -316,7 +333,7 @@ export function selectTool(deps: SelectDeps): UiTool {
           : // A MARQUEE: everything it touches, in walk order, so the payload a
             // removal is built from is ordered the way the document is.
             onPage.filter((entry) => {
-              const box = boxOf(entry, transform);
+              const box = boxOf(entry.rect, transform);
               return (
                 box !== null &&
                 box.x0 <= marquee.x1 &&
@@ -327,7 +344,7 @@ export function selectTool(deps: SelectDeps): UiTool {
             });
 
       const items = picked
-        .map((entry) => ({ index: entry.index, rect: entry.rect }))
+        .map((entry) => ({ index: entry.index, rect: entry.rect, style: entry.style }))
         .filter((entry): entry is SelectedAnnotation => entry.rect !== null);
 
       deps.onSelect(

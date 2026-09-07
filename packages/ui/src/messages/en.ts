@@ -312,6 +312,11 @@ export const EDITING_OPACITY_TITLE = messageKey('setting.editing.annotation-opac
 export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-line-width');
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
 export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
+export const COMMENT_STYLES_LABEL = messageKey('surface.comment-styles.label');
+export const COMMENT_STYLES_NONE = messageKey('surface.comment-styles.none');
+export const COMMENT_STYLES_CURRENT = messageKey('surface.comment-styles.current');
+export const COMMENT_STYLES_APPLY = messageKey('surface.comment-styles.apply');
+export const COMMENT_STYLES_NO_WIDTH = messageKey('surface.comment-styles.no-width');
 export const STYLE_COLOUR_AUTO = messageKey('surface.style.colour-auto');
 export const STYLE_COLOUR_CHOOSE = messageKey('surface.style.colour-choose');
 export const ANNOTATIONS_KIND_CALLOUT = messageKey('surface.annotations.kind.callout');
@@ -571,6 +576,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_LINE_WIDTH_TITLE]: 'Annotation line width',
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
   [STYLE_PANEL_LABEL]: 'Annotation style',
+  [COMMENT_STYLES_LABEL]: 'Style of the selected annotations',
+  [COMMENT_STYLES_NONE]: 'Select annotations to change how they look.',
+  // NAMES THE COUNT, because the swatch beside it shows ONE of them: a panel
+  // that showed one style as though it were all is the compound claim this
+  // project keeps paying for.
+  [COMMENT_STYLES_CURRENT]: '{count, plural, one {One annotation selected} other {# annotations selected; showing the first}}',
+  [COMMENT_STYLES_APPLY]: 'Apply the current style',
+  // SAID RATHER THAN SHOWN AS ZERO. Six subtypes have no `/BS` at all, and a 0
+  // reads as *no border* rather than *no such property* — which is what a person
+  // would then try to set.
+  [COMMENT_STYLES_NO_WIDTH]: 'This kind carries no line width.',
   // *EACH TOOL'S OWN* rather than *Automatic*, because that is what the state
   // means: a highlighter stays yellow and a caret stays red. *Automatic* would
   // suggest something is being worked out from the page.

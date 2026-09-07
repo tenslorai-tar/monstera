@@ -49,9 +49,12 @@ import {
   captureAddAnnotation,
   capturePlaceAnnotation,
   captureRemoveAnnotation,
+  captureStyleAnnotation,
   invertAddAnnotation,
   invertPlaceAnnotation,
   invertRemoveAnnotation,
+  invertStyleAnnotation,
+  applyStyleAnnotation,
 } from './pageAnnotations.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
@@ -310,6 +313,12 @@ const declared = {
     apply: applyPlaceAnnotation,
     capture: capturePlaceAnnotation,
     invert: invertPlaceAnnotation,
+  },
+  styleAnnotation: {
+    ...declaredCommands.styleAnnotation,
+    apply: applyStyleAnnotation,
+    capture: captureStyleAnnotation,
+    invert: invertStyleAnnotation,
   },
   addLink: {
     ...declaredCommands.addLink,

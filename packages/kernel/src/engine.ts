@@ -77,6 +77,9 @@ export {
 export {
   applyAddAnnotation,
   applyPlaceAnnotation,
+  applyStyleAnnotation,
+  captureStyleAnnotation,
+  invertStyleAnnotation,
   applyRemoveAnnotation,
   captureAddAnnotation,
   capturePlaceAnnotation,

@@ -2,6 +2,9 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { PLAIN_STYLE } from '../annotations/annotationStyle.js';
+
+/** The style a selected annotation carries. These cases do not read it. */
+const PLAIN_ITEM = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
 import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
 import {
@@ -202,8 +205,8 @@ describe('deleteSelectionCommand', () => {
     page: 2,
     version: asDocVersion(7),
     items: [
-      { index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 } },
-      { index: 4, rect: { x0: 0, y0: 0, x1: 10, y1: 10 } },
+      { index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, style: PLAIN_ITEM },
+      { index: 4, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, style: PLAIN_ITEM },
     ],
   };
 
@@ -276,7 +279,7 @@ describe('nudgeSelectionCommands', () => {
   const SELECTION = {
     page: 2,
     version: asDocVersion(7),
-    items: [{ index: 1, rect: { x0: 10, y0: 20, x1: 30, y1: 40 } }],
+    items: [{ index: 1, rect: { x0: 10, y0: 20, x1: 30, y1: 40 }, style: PLAIN_ITEM }],
   };
 
   function nudging(selection: typeof SELECTION | undefined): {

@@ -108,6 +108,7 @@ export {
   type NamesASecondDocument,
   placeAnnotationSchema,
   removeAnnotationSchema,
+  styleAnnotationSchema,
   renderableCommandSchema,
   targetVersionOf,
   replacePageSchema,
