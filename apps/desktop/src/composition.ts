@@ -13,6 +13,7 @@ import {
   EngineOpenFailed,
   type HostDestinationsReader,
   type HostExtract,
+  type HostSnapshot,
   type HostAnnotationsReader,
   type HostLayersReader,
   type HostPageLinksReader,
@@ -256,6 +257,8 @@ export interface ShellComposition {
   readonly pickDocument: PickDocument;
   /** Where a copy goes. Electron's save dialog, in the shipped build. */
   readonly pickDestination: PickDestination;
+  /** Where a snapshot goes. The same dialog narrowed to a PNG. */
+  readonly pickSnapshot: PickDestination;
   /**
    * Which image becomes a page. Electron's open dialog, narrowed.
    *
@@ -313,6 +316,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     appInfo,
     pickDocument,
     pickDestination,
+    pickSnapshot,
     pickImage,
     pickDirectory,
     readImage,
@@ -521,6 +525,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.extract(session, pages);
     },
+    // THE SNAPSHOT, composed the same way and with a second reason: the PNG is
+    // built in the host because rasterising reaches MuPDF, and it is written
+    // into the granted directory because §9.17's gate says no raster crosses.
+    snapshot: {
+      pick: pickSnapshot,
+      region: (docId, sessions, request) => {
+        const session = sessions.mupdf;
+        if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+        return engineHost.snapshot(session, request);
+      },
+    },
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the
     // part that arrives from `entry.ts` and this file keeps its property of
@@ -641,6 +656,8 @@ function engineSessionOpener(
    * second path from main to the host holding a session (B3a).
    */
   readonly extract: HostExtract;
+  /** Rasterises a region of a page. On this surface for {@link extract}'s reason. */
+  readonly snapshot: HostSnapshot;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -874,6 +891,18 @@ function engineSessionOpener(
       );
     }
     return writer.extract(session, pages);
+  };
+
+  /** The snapshot's half, and {@link extractThroughHost}'s reason word for word. */
+  const snapshotThroughHost: HostSnapshot = (session, request) => {
+    if (writer === null) {
+      throw new Error(
+        'A snapshot reached the engine with no host writer registered. A session was resolved ' +
+          'for this document, so one was issued by a host — the supervisor and the host ' +
+          'connection have diverged.',
+      );
+    }
+    return writer.snapshot(session, request);
   };
 
   /**
@@ -1157,6 +1186,7 @@ function engineSessionOpener(
     annotations: readAnnotationsThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
+    snapshot: snapshotThroughHost,
     closeHost,
     rebuildSessions: create,
     restoreSessions: buildSessions,

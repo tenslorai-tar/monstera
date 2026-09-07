@@ -706,6 +706,46 @@ export const engineChannels = {
     ['no-such-session', 'extract-failed'],
   ),
 
+  /**
+   * A region of one page, rasterised to a PNG in the output directory.
+   *
+   * ## THE RASTER NEVER CROSSES, which is why this is a channel at all
+   *
+   * §9.17's gate says no raster crosses the boundary, and the way this row
+   * satisfies it is the way `engine/extract` satisfies invariant 20: the bytes
+   * are built where the engine is and written into the granted directory, and
+   * what travels is a rectangle and a count. A channel answering PNG bytes
+   * would be the one payload that scales with what the user dragged.
+   *
+   * The rectangle is PDF user space, as every annotation payload is, because
+   * the drag that produced it went through the one adapter — and the kernel
+   * converts through the same `placedRect` a placement is mapped with.
+   */
+  // `snapshotRegion` AND NOT `snapshot`, for the reason `RegionRequest` carries
+  // in `pageSnapshot.ts`: `engine/open` two channels above takes a
+  // `snapshotDirectory` and a `snapshotName`, and those are the CANONICAL BYTE
+  // IMAGE. A channel called `engine/snapshot` beside them would read as the one
+  // that writes those bytes out.
+  'engine/snapshotRegion': channel(
+    'Rasterises a region of one page to a PNG in the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        /** The region in PDF user space; need not be ordered. */
+        rect: annotationRectSchema,
+        /** Device pixels per PDF point. The kernel holds the bounds. */
+        scale: z.number().positive(),
+        into: outputNameSchema,
+      })
+      .strict(),
+    // A COUNT, for `engine/serialise`'s reason, and the same one applies to a
+    // raster: main knows where it asked for the bytes and cannot know how many
+    // arrived without being told.
+    z.object({ bytes: z.number().int().nonnegative() }).strict(),
+    ['no-such-session', 'snapshot-failed'],
+  ),
+
   'engine/close': channel(
     'Releases the session’s native resources.',
     z.object({ session: sessionSchema }).strict(),
@@ -1028,4 +1068,9 @@ export type EngineFailureCode =
   // is a statement about that document — and it must not reach the supervisor
   // as evidence the host is unhealthy, because a rebuild-and-retry loop driven
   // by a request that will never succeed is the runaway Decision 9a bounds.
-  | 'extract-failed';
+  | 'extract-failed'
+  // The third of that class, and a snapshot's refusals are all of that shape: a
+  // page the document does not have, a page that displays no region, a region
+  // with no extent, a scale outside its bounds. None of them says anything
+  // about the host's health.
+  | 'snapshot-failed';

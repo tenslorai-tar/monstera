@@ -674,6 +674,23 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
+    // THE SAME OPTION A THIRD TIME, and the region is ignored for the reason the
+    // pages are: what a browser-shim case can assert about a snapshot is which
+    // channel the tool reached and with what rectangle, and whether those
+    // numbers become an image is `pageSnapshot.test.ts`' case. A shim that
+    // rasterised would be a second renderer.
+    'document.snapshotRegion': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.copyDestination;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'write-failed') return Promise.resolve(ok({ kind: 'write-failed' as const }));
+      if (typeof chosen === 'object') {
+        return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
+      }
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+    },
     // THE SAME `copyDestination` OPTION AGAIN, for the extract's reason. The
     // success answers `files` from the group count, which is the one thing a
     // shim CAN answer honestly here: it is a function of the request rather

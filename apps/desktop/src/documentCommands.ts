@@ -27,6 +27,7 @@ import {
   type SearchOptions,
   type CommandInputs,
   type SessionsByWriter,
+  type RegionRequest,
   type SnapshotWrite,
   type TextMatch,
   findInPages,
@@ -314,6 +315,22 @@ export function suggestedCopyName(name: string): string {
  */
 export function suggestedExtractName(name: string): string {
   return suffixed(name, 'pages');
+}
+
+/**
+ * The name a snapshot's picker opens with.
+ *
+ * **The EXTENSION changes, which is what makes this different from its two
+ * neighbours** rather than a third suffix. `report.pdf` becomes
+ * `report snapshot.png`: {@link suffixed} inserts before the last dot, so the
+ * suffix lands correctly and the stem is then re-extended — a snapshot named
+ * `.pdf` is a file the platform opens with the wrong application and the user
+ * cannot see why.
+ */
+export function suggestedSnapshotName(name: string): string {
+  const suffixed_ = suffixed(name, 'snapshot');
+  const dot = suffixed_.lastIndexOf('.');
+  return dot <= 0 ? `${suffixed_}.png` : `${suffixed_.slice(0, dot)}.png`;
 }
 
 /**
@@ -632,6 +649,39 @@ export type DocumentExtractReader = (
   pages: readonly number[],
 ) => Promise<ByteImage>;
 
+/**
+ * Rasterises a region of a page, through whichever host is live.
+ *
+ * {@link DocumentExtractReader}'s sibling and not a read either: it produces a
+ * PNG rather than answering a question about the document. Injected for the
+ * same reason — main holds no engine, and every one of these is how a question
+ * reaches the process that does.
+ */
+export type DocumentSnapshotReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  request: RegionRequest,
+) => Promise<ByteImage>;
+
+/**
+ * What snapshotting a region needs, bundled for {@link CopySource}'s reason.
+ *
+ * **A SECOND PICKER RATHER THAN A PARAMETER ON THE FIRST**, which is
+ * `destinationPicker.ts`'s own argument taken at its word: the two dialogs
+ * differ in the filter they offer and in the name they suggest, and a shared
+ * picker taking a format would be a branch on *which dialog* wearing the shape
+ * of an abstraction. The contested-destination check is NOT duplicated — a PNG
+ * written over an open document is the same hazard whatever its extension, so
+ * the snapshot takes `CopySource`'s `checkTarget` and the whole atomic write
+ * behind it.
+ */
+export interface SnapshotSource {
+  /** Runs the platform's save dialog, narrowed to a PNG. */
+  readonly pick: PickDestination;
+  /** How a region becomes PNG bytes. */
+  readonly region: DocumentSnapshotReader;
+}
+
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
   docId: DocId,
@@ -781,6 +831,7 @@ export interface DocumentCommandsParts {
   readonly copy: CopySource;
   readonly image: ImageSource;
   readonly extract: DocumentExtractReader;
+  readonly snapshot: SnapshotSource;
   readonly directory: PickDirectory;
 }
 
@@ -800,6 +851,7 @@ export class DocumentCommands {
   readonly #copy: CopySource;
   readonly #image: ImageSource;
   readonly #extract: DocumentExtractReader;
+  readonly #snapshot: SnapshotSource;
   readonly #directory: PickDirectory;
 
   constructor(parts: DocumentCommandsParts) {
@@ -818,6 +870,7 @@ export class DocumentCommands {
     this.#copy = parts.copy;
     this.#image = parts.image;
     this.#extract = parts.extract;
+    this.#snapshot = parts.snapshot;
     this.#directory = parts.directory;
   }
 
@@ -1507,6 +1560,62 @@ export class DocumentCommands {
         // contested-destination check, the temporary and backup naming, the
         // atomic write — is the same code on the same terms.
         () => this.#extract(docId, sessions, pages),
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /**
+   * Writes a region of one page to a PNG at a destination the user picks.
+   *
+   * ## The THIRD caller of the destination path, and it changes nothing about it
+   *
+   * `extract`'s body with two substitutions — a different picker and a
+   * different flush — which is the argument for that function's shape rather
+   * than a coincidence. The contested check, the temporary and backup naming
+   * and the atomic write are the same code on the same terms, and they should
+   * be: a PNG written over a document somebody has open destroys it exactly as
+   * a PDF would.
+   *
+   * ## The raster is built in the HOST and never in main
+   *
+   * Invariant 20 keeps MuPDF out of main, and §9.17's gate keeps a raster off
+   * the boundary. Both are satisfied by the same route: `engine/snapshot`
+   * writes the PNG into the granted output directory and main reads that file,
+   * so what crosses the pipe is a rectangle and a count.
+   *
+   * ## It does NOT touch the document
+   *
+   * A snapshot is a picture of a page, so there is no command, no log entry and
+   * no version bump — and `writeDocumentCopy` is given no `DocumentContext`,
+   * which is what makes that structural rather than a promise.
+   *
+   * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
+   *   reason: a document this service does not hold has no name to offer.
+   */
+  async snapshot(
+    docId: DocId,
+    request: RegionRequest,
+  ): Promise<CopyOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'snapshot a region');
+
+    const destination = await this.#snapshot.pick(suggestedSnapshotName(suggest));
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => this.#snapshot.region(docId, sessions, request),
         destination,
       );
     });

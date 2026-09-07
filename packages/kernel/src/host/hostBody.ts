@@ -11,6 +11,7 @@ import {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostSnapshot,
   type HostAnnotationsReader,
   type HostLayersReader,
   type HostPageLinksReader,
@@ -90,6 +91,8 @@ export interface HostBodyDependencies {
   readonly duplicates: HostDuplicatesReader;
   /** How this process builds a new document from named pages. `extractPages`. */
   readonly extract: HostExtract;
+  /** How this process rasterises a region of a page. `snapshotRegion`. */
+  readonly snapshot: HostSnapshot;
   /** Where session ids come from. `cryptoBytes`. */
   readonly tokens: TokenBytesSource;
   /**
@@ -166,6 +169,7 @@ export function startEngineHost(
       annotations: dependencies.annotations,
       duplicates: dependencies.duplicates,
       extract: dependencies.extract,
+      snapshot: dependencies.snapshot,
     }),
     transport: {
       write: stream.write,

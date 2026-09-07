@@ -143,6 +143,7 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
     'document.extract': extractHandler(deps.commands),
+    'document.snapshotRegion': snapshotRegionHandler(deps.commands),
     'document.split': splitHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
@@ -340,6 +341,44 @@ function extractHandler(commands: DocumentCommands): ContractHandlers['document.
       // is right: the renderer bounds the list against the page count it holds,
       // so reaching here means the two disagree, and that is a defect rather
       // than something to tell the user about.
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The snapshot's handler.
+ *
+ * {@link extractHandler} with a different request and the same four outcomes,
+ * written out for the reason that one is: they map the same kernel outcome to
+ * the same wire members today, and a helper over the three would make a future
+ * snapshot-only refusal a change to the copy path.
+ *
+ * A `RangeError` from the kernel — a region with no extent, a scale outside its
+ * bounds — falls through to `internal` for `extract`'s reason: the renderer's
+ * tool refuses a drag that did not travel and the contract's schema refuses a
+ * negative scale, so reaching here means two sides disagree, which is a defect
+ * rather than news for the user.
+ */
+function snapshotRegionHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.snapshotRegion'] {
+  return async ({
+    docId,
+    page,
+    rect,
+    scale,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.snapshotRegion']>>> => {
+    try {
+      const outcome = await commands.snapshot(docId, { page, rect, scale });
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
   };

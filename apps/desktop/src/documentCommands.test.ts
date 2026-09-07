@@ -28,6 +28,7 @@ import {
   readLayers,
   readPageLinks,
   readPageText,
+  snapshotRegion,
   withDocument,
 } from '@monstera/kernel/engine';
 import type { DocId } from '@monstera/shared';
@@ -56,6 +57,7 @@ import {
   type DocumentRestore,
   MissingSessionError,
   type SaveSource,
+  type SnapshotSource,
 } from './documentCommands.js';
 import { EngineSessions } from './engineSessions.js';
 
@@ -275,6 +277,23 @@ const localExtract: DocumentExtractReader = (id, sessions, pages) => {
 };
 
 /**
+ * The production composition of the snapshot, and a picker that refuses.
+ *
+ * {@link localExtract} for the reader and {@link noCopying} for the picker,
+ * each for its own reason: the raster is the real one because a case claiming
+ * a PNG describes THIS page cannot be satisfied by a stub, and the dialog
+ * refuses because a case that writes one supplies its own.
+ */
+const localSnapshot: SnapshotSource = {
+  pick: () => Promise.reject(new Error('this case does not write a snapshot')),
+  region: (id, sessions, request) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return snapshotRegion(held, request);
+  },
+};
+
+/**
  * The production composition of the duplicate report, the way `composition.ts`
  * assembles it — a session lookup and `findDuplicatePages`.
  *
@@ -392,6 +411,7 @@ const INERT = {
   copy: noCopying,
   image: noImages,
   extract: localExtract,
+  snapshot: localSnapshot,
   directory: noDirectory,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 

@@ -1,4 +1,4 @@
-import type { ContractClient, RenderableCommand } from '@monstera/contract';
+import type { AnnotationRect, ContractClient, RenderableCommand } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
 import type { z } from 'zod';
@@ -253,6 +253,41 @@ export async function applyDocumentCommand(
     void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
   }
   return true;
+}
+
+/**
+ * Writes a dragged region to a PNG the user names.
+ *
+ * ## Here rather than in the component, for {@link applyDocumentCommand}'s reason
+ *
+ * It is not a command — a snapshot changes no document, so there is no version,
+ * no `onApplied` and nothing an undo could reverse — and it still has to report
+ * a refusal, a contested destination and a failed write in the same three ways
+ * every other write does. Putting that in `App.tsx` would be a second opinion
+ * about how a save outcome is shown (B3a), and the sequence is short enough
+ * that the second one would look right.
+ *
+ * `extractPagesCommand`'s tail exactly: report a channel refusal where every
+ * other one is reported, raise the save dialog for the two outcomes a person
+ * can act on, and say nothing at all on success — a file appearing where the
+ * user asked for it is its own confirmation.
+ */
+export async function snapshotRegion(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client'>,
+  docId: DocId,
+  page: number,
+  rect: AnnotationRect,
+  scale: number,
+): Promise<void> {
+  const answer = await deps.client['document.snapshotRegion']({ docId, page, rect, scale });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return;
+  }
+  if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+  void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+    outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+  });
 }
 
 /**

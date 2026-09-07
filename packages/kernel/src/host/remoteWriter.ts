@@ -59,7 +59,7 @@ import {
  * one object that holds both.
  */
 export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
-  Pick<RemoteMupdfLifecycle, 'close' | 'extract'>;
+  Pick<RemoteMupdfLifecycle, 'close' | 'extract' | 'snapshot'>;
 
 export function remoteMupdfWriter(
   client: ClientApi<EngineChannels>,
@@ -85,6 +85,10 @@ export function remoteMupdfWriter(
   // three in one place; a separate factory would need the area surface again,
   // and the granted directory reachable from two places is the one thing the
   // pair-leak comment above was about.
-  const { serialise, close, extract } = remoteMupdfLifecycle(client, sessions, areas);
-  return { serialise, close, extract, ...remoteMupdfExecution(client, sessions) };
+  // `snapshot` JOINS FOR `extract`'s REASON, which is now a class of two rather
+  // than an exception: it is a third job needing the same client, sessions and
+  // granted areas, and putting it anywhere else is what would make the granted
+  // directory reachable from a second place.
+  const { serialise, close, extract, snapshot } = remoteMupdfLifecycle(client, sessions, areas);
+  return { serialise, close, extract, snapshot, ...remoteMupdfExecution(client, sessions) };
 }

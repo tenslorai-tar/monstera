@@ -1,6 +1,7 @@
 import type { ClientApi } from '@monstera/contract';
 
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
+import type { RegionRequest } from '../pageSnapshot.js';
 import type { EngineChannels } from './engineChannels.js';
 import type { RemoteSessions, SessionArea } from './remoteEngine.js';
 
@@ -78,6 +79,22 @@ export class EngineExtractFailed extends Error {
 
   constructor(detail: string) {
     super(`The engine host could not extract the named pages: ${detail}.`);
+  }
+}
+
+/**
+ * The host could not rasterise the region.
+ *
+ * Its own class for {@link EngineExtractFailed}'s reason: a region with no
+ * extent, a scale outside its bounds and a page that displays nothing are all
+ * refusals about the REQUEST, and a caller that could not tell them from a save
+ * failure would report the document as unwritable.
+ */
+export class EngineSnapshotFailed extends Error {
+  override readonly name = 'EngineSnapshotFailed';
+
+  constructor(detail: string) {
+    super(`The engine host could not snapshot that region: ${detail}.`);
   }
 }
 
@@ -160,6 +177,18 @@ export interface RemoteMupdfLifecycle {
    * bytes and hands them to main, which writes them where the user chose.
    */
   readonly extract: (session: MupdfSession, pages: readonly number[]) => Promise<ByteImage>;
+  /**
+   * The PNG bytes of a region of one page.
+   *
+   * {@link extract}'s reason for being here, one step stronger: a raster must
+   * not cross the pipe at all, so the four-step dance through the granted area
+   * is not merely convenient — it is the mechanism that keeps §9.17's *no
+   * raster crosses* true while a snapshot exists.
+   */
+  readonly snapshot: (
+    session: MupdfSession,
+    request: RegionRequest,
+  ) => Promise<ByteImage>;
   /** Ends the session on the host and removes its granted pair. */
   readonly close: (session: MupdfSession) => Promise<void>;
 }
@@ -210,6 +239,28 @@ export function remoteMupdfLifecycle(
       // THE SAME MISMATCH CHECK `serialise` MAKES, and it is not ceremony: the
       // host answers a count and main reads a file, so "the host wrote nothing"
       // and "the read found nothing" are otherwise the same empty buffer.
+      if (bytes.length !== answer.value.bytes) {
+        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
+      }
+      return bytes;
+    },
+
+    snapshot: async (session, request) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/snapshotRegion']({
+        session: sessions.handleFor(session),
+        page: request.page,
+        rect: request.rect,
+        scale: request.scale,
+        into,
+      });
+      if (!answer.ok) throw new EngineSnapshotFailed(answer.error.code);
+
+      const bytes = await areas.takeOutput(area, into);
+      // THE SAME MISMATCH CHECK the two above make, and it is worth more here:
+      // a PNG main never looks inside is one whose truncation nothing else
+      // would notice until somebody opened the file.
       if (bytes.length !== answer.value.bytes) {
         throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
       }

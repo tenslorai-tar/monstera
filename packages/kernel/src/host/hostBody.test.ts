@@ -142,6 +142,9 @@ function start(stream: HostByteStream) {
       extract: () => {
         throw new Error('no case here builds a document');
       },
+      snapshot: () => {
+        throw new Error('no case here rasterises a page');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

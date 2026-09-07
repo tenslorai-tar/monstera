@@ -64,3 +64,33 @@ export function createDestinationPicker(): PickDestination {
     return result.filePath.length === 0 ? null : result.filePath;
   };
 }
+
+/**
+ * The save picker for a snapshot: the same dialog, narrowed to one PNG.
+ *
+ * ## A SIBLING rather than a parameter, which is this file's own argument
+ *
+ * The paragraph above says the copy picker and the open picker are not merged
+ * because "a shared one would be a branch on *which dialog* wearing the shape
+ * of an abstraction". That reasoning applies to a format parameter just as it
+ * does to a direction one, and it is taken at its word here — the two differ in
+ * exactly one property today and there is nothing to stop them differing in a
+ * second tomorrow, at which point a parameterised picker grows a branch.
+ *
+ * Everything the paragraphs above say about `dontAddToRecent`,
+ * `showOverwriteConfirmation`, `createDirectory`, the bare filename and the two
+ * routes to a dismissal holds here unchanged, which is why none of it is
+ * restated: a snapshot is a file the user wrote, and it is as much their
+ * business as a copy.
+ */
+export function createSnapshotPicker(): PickDestination {
+  return async (suggestedName: string): Promise<string | null> => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: suggestedName,
+      properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
+      filters: [{ name: 'PNG image', extensions: ['png'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePath.length === 0 ? null : result.filePath;
+  };
+}

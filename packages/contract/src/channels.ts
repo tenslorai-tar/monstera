@@ -865,6 +865,50 @@ export const channels = {
   ),
 
   /**
+   * Writes a region of one page to a PNG at a destination the user picks.
+   *
+   * ## NO RASTER CROSSES, which is the gate this channel had to satisfy
+   *
+   * §9.17's payload gate says the only bytes that cross are a snapshot of the
+   * canonical image, once per version. A PNG of a region a person dragged
+   * scales with the drag, so it does not cross: main picks the destination, the
+   * engine host builds the image and writes it into the granted directory, and
+   * main copies the file out. What travels on this channel is a rectangle and a
+   * count.
+   *
+   * ## The rectangle is PDF USER SPACE, as every annotation payload is
+   *
+   * The tool's drag goes through the one adapter, so a snapshot and a rectangle
+   * annotation drawn over the same region carry the same numbers — and the
+   * kernel maps both out with `placedRect`. A viewport rectangle here would be
+   * a second opinion about where on the page the pointer was.
+   *
+   * ## It answers `copied`, which is what a caller can act on
+   *
+   * The same four outcomes an extract has, for the same reasons and through the
+   * same write path: a snapshot written over a document somebody has open would
+   * destroy it exactly as a PDF copy would.
+   */
+  'document.snapshotRegion': channel(
+    'Writes a region of one page to a PNG at a destination the user picks.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      /** The region in PDF user space; need not be ordered. */
+      rect: annotationRectSchema,
+      /** Device pixels per PDF point. The kernel holds and enforces the bounds. */
+      scale: z.number().positive(),
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * Writes each group of pages to its own document in a folder the user picks.
    *
    * ## A FOLDER, and that is the row's decision rather than an implementation

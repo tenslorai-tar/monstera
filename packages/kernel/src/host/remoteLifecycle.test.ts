@@ -8,6 +8,7 @@ import { type ClientApi, createClient, type Incident, wrapHandlers } from '@mons
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
+import { snapshotRegion } from '../pageSnapshot.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter } from '../mupdfWriter.js';
 import { type EngineChannels, engineChannels } from './engineChannels.js';
@@ -228,6 +229,10 @@ function joined(
       // same four steps `serialise` takes, and a stub would make the case about
       // the stub.
       extract: extractPages,
+      // AND THE REAL ONE FOR THE SAME REASON: a snapshot takes the identical
+      // round trip through the granted area, and this file is where that trip
+      // is driven end to end.
+      snapshot: snapshotRegion,
     }),
     (incident) => incidents.push(incident),
   );
@@ -430,6 +435,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         extract: () => {
           throw new Error('the byte-size case must not build a document');
+        },
+        snapshot: () => {
+          throw new Error('the byte-size case must not rasterise a page');
         },
       }),
       () => undefined,

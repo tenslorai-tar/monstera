@@ -8,6 +8,7 @@ import type { Layer } from '../layers.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
 import type { PageLink } from '../pageLinks.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
+import type { RegionRequest } from '../pageSnapshot.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import {
   ENGINE_DUPLICATE_PAGES_MAX,
@@ -100,6 +101,18 @@ export type HostDuplicatesReader = (
 export type HostExtract = (
   session: MupdfSession,
   pages: readonly number[],
+) => Promise<ByteImage>;
+
+/**
+ * A region of one page, as PNG bytes.
+ *
+ * {@link HostExtract}'s sibling and injected for its reason: it produces bytes
+ * that are not the session's document, it reaches MuPDF, and a handler proof
+ * must be able to drive the channel without rasterising anything.
+ */
+export type HostSnapshot = (
+  session: MupdfSession,
+  request: RegionRequest,
 ) => Promise<ByteImage>;
 
 /**
@@ -210,6 +223,7 @@ export interface EngineHandlerParts {
   readonly annotations: HostAnnotationsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
+  readonly snapshot: HostSnapshot;
 }
 
 export function createEngineHandlers({
@@ -226,6 +240,7 @@ export function createEngineHandlers({
   annotations,
   duplicates,
   extract,
+  snapshot,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -332,6 +347,25 @@ export function createEngineHandlers({
         // document cannot satisfy comes back as a distinguishable code so the
         // supervisor declines to count it as a host death.
         return failed('extract-failed', error);
+      }
+    },
+
+    'engine/snapshotRegion': async ({ session, page, rect, scale, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        // THE RASTER IS BUILT HERE AND STAYS HERE. `engine/extract`'s reason
+        // with a second one on top: rasterising reaches MuPDF, which invariant
+        // 20 keeps out of main, and a PNG is a payload that scales with the
+        // region a person dragged — so it goes into the granted output
+        // directory and main reads the file.
+        const bytes = await snapshot(held.session, { page, rect, scale });
+        const written = await files.writeOutput(held.outputDirectory, into, bytes);
+        return { ok: true, value: { bytes: written } };
+      } catch (error) {
+        // THE REQUEST'S FAULT rather than the host's, exactly as an extract's
+        // is: every refusal a snapshot has is about the page or the rectangle.
+        return failed('snapshot-failed', error);
       }
     },
 

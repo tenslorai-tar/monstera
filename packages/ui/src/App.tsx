@@ -1,4 +1,9 @@
-import type { ContractClient, MeasureScale, RenderableCommand } from '@monstera/contract';
+import type {
+  AnnotationRect,
+  ContractClient,
+  MeasureScale,
+  RenderableCommand,
+} from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import {
   useCallback,
@@ -12,6 +17,7 @@ import {
 
 import {
   applyDocumentCommand,
+  snapshotRegion,
   findCommand,
   fitCommand,
   deletePageCommand,
@@ -877,6 +883,27 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Where a dragged region goes.
+   *
+   * **A CHANNEL CALL AND NOT A COMMAND**, because a snapshot does not change the
+   * document — there is nothing for the log to hold and nothing an undo could
+   * reverse, a file having already been written. So this reaches
+   * `snapshotRegion` rather than `applyDocumentCommand`, and the reporting lives
+   * there beside every other write's for the same reason that one does.
+   *
+   * The region is dropped if no document is focused, which cannot happen — the
+   * tool is only reachable while one is — and is written as a return rather
+   * than an assertion for the reason `listAnnotations` is.
+   */
+  const onSnapshot = useCallback(
+    (page: number, rect: AnnotationRect, snapshotScale: number): void => {
+      if (activeId === undefined) return;
+      void snapshotRegion({ client, ask }, activeId, page, rect, snapshotScale);
+    },
+    [activeId, ask, client],
+  );
+
+  /**
    * Restyling everything the select tool has picked.
    *
    * `removeSelection`'s shape with an appearance instead of a deletion, and the
@@ -931,9 +958,10 @@ export function App({ client, settings }: AppProps): ReactElement {
           selected: readSelection,
           style,
           scale,
+          onSnapshot,
         }),
       ),
-    [ask, listAnnotations, readSelection, scale, style],
+    [ask, listAnnotations, onSnapshot, readSelection, scale, style],
   );
 
   const rulers = useSetting(settings, RULERS_SETTING);

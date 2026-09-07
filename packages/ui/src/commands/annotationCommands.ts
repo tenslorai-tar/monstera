@@ -19,6 +19,7 @@ import {
 } from '../annotations/measureTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
+import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
@@ -55,6 +56,7 @@ import {
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
   SELECT_TOOL_TITLE,
+  SNAPSHOT_TOOL_TITLE,
   STRIKEOUT_TOOL_TITLE,
   TOOL_CARET_TITLE,
   TOOL_STICKY_NOTE_TITLE,
@@ -490,6 +492,30 @@ export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The snapshot's command.
+ *
+ * **Order 29, at the end of the view block rather than among the marks**, which
+ * is the founding record's own grouping: `BUILD-PROMPT.md`:1067 lists the quick
+ * toolbar's always-needed tools as *select, hand, text selection, zoom in/out,
+ * crop, snapshot, bookmark, comment* — a snapshot is something a reader does to
+ * look at a document, not something they draw on it. Its id says the same:
+ * `view.snapshot`.
+ *
+ * **29 and not 20**, which the paragraph above wanted: `documentCommands.ts`
+ * already places four controls at 20, and adding a fifth would put this one in
+ * a slot whose occupant depends on registration order. The uniqueness case in
+ * this file's own suite covers only the commands this file builds, so that
+ * collision is one nothing would have reported.
+ *
+ * It is registered from this file regardless of not being a mark, because this
+ * is where every TOOL-selecting command lives and the alternative is a second
+ * such factory somewhere else.
+ */
+export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(SNAPSHOT_TOOL_ID, SNAPSHOT_TOOL_TITLE, 29, deps);
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -533,5 +559,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     measureDistanceToolCommand(deps),
     measureAreaToolCommand(deps),
     measurePerimeterToolCommand(deps),
+    snapshotToolCommand(deps),
   ];
 }

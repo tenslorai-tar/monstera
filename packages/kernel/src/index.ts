@@ -116,6 +116,7 @@ export {
   type HostPageTextReader,
   type HostSession,
   type HostSessions,
+  type HostSnapshot,
   createEngineHandlers,
 } from './host/engineHandlers.js';
 export {
@@ -129,6 +130,7 @@ export {
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
 export type { RemoteMupdfWriter } from './host/remoteWriter.js';
+export type { RegionRequest } from './pageSnapshot.js';
 export {
   EngineCallFailed,
   EngineSessionGone,

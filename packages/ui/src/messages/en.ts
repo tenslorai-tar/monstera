@@ -275,6 +275,7 @@ export const POLYLINE_TOOL_TITLE = messageKey('command.annotate.polyline');
 export const CLOUD_TOOL_TITLE = messageKey('command.annotate.cloud');
 export const ERASER_TOOL_TITLE = messageKey('command.annotate.eraser');
 export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
+export const SNAPSHOT_TOOL_TITLE = messageKey('command.view.snapshot');
 export const LINK_ADDRESS_TOOL_TITLE = messageKey('command.annotate.link-address');
 export const LINK_PAGE_TOOL_TITLE = messageKey('command.annotate.link-page');
 export const LINK_ADDRESS_TITLE = messageKey('dialog.link-address.title');
@@ -653,6 +654,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // a bare *Select* in a palette beside the Edit ribbon would be the wrong one
   // for the reader who most needs the right one.
   [SELECT_TOOL_TITLE]: 'Select annotations',
+  [SNAPSHOT_TOOL_TITLE]: 'Snapshot a region',
   [LINK_ADDRESS_TOOL_TITLE]: 'Link to a web address',
   [LINK_PAGE_TOOL_TITLE]: 'Link to a page',
   [LINK_ADDRESS_TITLE]: 'Link to a web address',

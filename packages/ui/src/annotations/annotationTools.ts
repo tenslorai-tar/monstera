@@ -8,6 +8,8 @@ import { measureTools } from './measureTools.js';
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
+import type { SnapshotDeps } from './snapshotTool.js';
+import { snapshotTool } from './snapshotTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
 import { shapeTools } from './shapeTools.js';
 import type { TextToolDeps } from './textTools.js';
@@ -55,6 +57,12 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     calloutTool(deps),
     eraserTool(deps),
     selectTool(deps),
+    // NOT AN ANNOTATION TOOL, and it is composed here anyway: this list is what
+    // the registry mounts and what `annotationCommands.test.ts` joins against,
+    // so a tool composed anywhere else would be a second place tools are named
+    // — which is the exact drift this file exists to have stopped. The file's
+    // name is the residual falsehood, stated rather than fixed quietly.
+    snapshotTool(deps),
   ];
 }
 
@@ -73,4 +81,8 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
  * eraser is the first tool to need the second, and the first to need anything
  * about the document at all.
  */
-export type AnnotationToolDeps = TextToolDeps & EraserDeps & SelectDeps & MeasureDeps;
+export type AnnotationToolDeps = TextToolDeps &
+  EraserDeps &
+  SelectDeps &
+  MeasureDeps &
+  SnapshotDeps;

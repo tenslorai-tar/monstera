@@ -91,6 +91,13 @@ export {
 } from './pageAnnotations.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
+export {
+  MAX_SNAPSHOT_PIXELS,
+  MAX_SNAPSHOT_SCALE,
+  MIN_SNAPSHOT_SCALE,
+  type RegionRequest,
+  snapshotRegion,
+} from './pageSnapshot.js';
 export { localMupdfWriter } from './localEngine.js';
 
 /**

@@ -200,6 +200,14 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // The extract's answer with a file count instead of a byte count, and a
   // request bounded on both axes — parts and pages-per-part — so the largest
   // honest ask is still an index per page.
+  // THE ONE CHANNEL WHOSE ANSWER COULD HAVE BEEN A RASTER, and the reason it is
+  // not is this gate's own sentence: no raster crosses. A PNG of a region a
+  // person dragged scales with the drag rather than with the document, which is
+  // a different axis from the two above and just as disqualifying — so the
+  // image is built in the engine host and written into the granted directory,
+  // and what travels here is a rectangle, a scale and a byte count. The request
+  // is four numbers whatever the document weighs.
+  'document.snapshotRegion': 'needs an engine session and a save dialog',
   'document.split': 'needs an engine session and a folder dialog',
   'document.insertImage': 'needs an engine session and an image picker',
   'document.searchPage': 'needs an engine session',
