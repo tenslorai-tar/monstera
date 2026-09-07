@@ -94,6 +94,7 @@ import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
 import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
+import { FORM_FIELD_DIALOGS } from './dialogs/formField.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
@@ -292,6 +293,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         SPLIT_DOCUMENT_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
+        ...FORM_FIELD_DIALOGS,
       ]),
     [],
   );

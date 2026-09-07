@@ -81,13 +81,83 @@ export interface Box {
 }
 
 /**
- * Normalises `/Rotate` to a quarter turn.
+ * The rotation the ENGINE applies for a raw `/Rotate` value.
+ *
+ * A **port of MuPDF's own snap**, not a tidier rule of our own, and that
+ * distinction is the whole point: a rotate command turns by quarter turns from
+ * *what the user sees*, and what the user sees is whatever the renderer
+ * decided. A separate normalisation would make the page jump on the first
+ * rotate of any document carrying a non-quarter-turn value.
+ *
+ * From `pdf_page_transform_box`, MuPDF 1.28.0 `source/pdf/pdf-page.c`:
+ *
+ * ```c
+ * if (rotate < 0)    rotate = 360 - ((-rotate) % 360);
+ * if (rotate >= 360) rotate = rotate % 360;
+ * rotate = 90*((rotate + 45)/90);
+ * if (rotate >= 360) rotate = 0;
+ * ```
+ *
+ * Two details survive the port deliberately. The `+45` rounds a half-way value
+ * **up**, so `45` snaps to `90` and not to `0` — measured against the engine,
+ * where the page bounds swap. And the trailing `>= 360` guard exists because
+ * the rounding can overshoot: a raw `340` reaches `360`, which is `0`.
+ *
+ * `Math.trunc` stands in for `pdf_dict_get_inheritable_int`, which reads the
+ * object as an integer; a real-valued `/Rotate` is truncated toward zero before
+ * any of this runs.
+ *
+ * ## It lives HERE, beside {@link normaliseRotation}, and that is B3a
+ *
+ * It was in `packages/kernel/src/rotatePages.ts` until 2026-09-08, which put the
+ * one resolver of *what quarter turn does this page display at* behind a module
+ * that value-imports `mupdfWriter.ts` — so the first byte-image command needing
+ * a page's rotation could not reach it without binding the native library in
+ * `main` (ADR-0026, measured at +40.1 MB). The alternatives were both worse: a
+ * second snap inside the pdf-lib module is the partial reimplementation B3a
+ * exists to stop, and pdf-lib's own `getRotation` answers a raw `/Rotate` rather
+ * than the engine's snap of it.
+ *
+ * Nothing about the function moved. It is a pure function of a number, and it
+ * was sitting behind a native import for no reason but where it was first
+ * needed.
+ */
+export function snapRotation(raw: number): number {
+  let rotate = Math.trunc(raw);
+  if (rotate < 0) rotate = 360 - ((-rotate) % 360);
+  if (rotate >= 360) rotate = rotate % 360;
+  rotate = 90 * Math.floor((rotate + 45) / 90);
+  if (rotate >= 360) rotate = 0;
+  return rotate;
+}
+
+/**
+ * Narrows an ALREADY-SNAPPED rotation to the four this module can convert with.
  *
  * The specification allows any multiple of 90, positive or negative, and real
- * documents carry `-90` and `450`. **A value that is not a multiple of 90 is
- * treated as 0**, which is what a viewer must do: refusing to render a page
- * because its rotation is malformed is worse than rendering it upright, and
- * this is the one place in the pipeline that can make that choice once.
+ * documents carry `-90` and `450`. A value that is not a multiple of 90 is
+ * treated as 0, which is what a viewer must do: refusing to render a page
+ * because its rotation is malformed is worse than rendering it upright.
+ *
+ * ## It is NOT the resolver, and this paragraph replaces one that said it was
+ *
+ * Until 2026-09-08 this comment ended *"and this is the one place in the
+ * pipeline that can make that choice once"*. That was false when it was
+ * written, in the direction that reads as rigour: {@link snapRotation} makes the
+ * choice upstream, from the raw `/Rotate`, and **the two answer differently** —
+ * a `/Rotate 45` page is 90 to the engine and 0 to the line below.
+ *
+ * They never meet on the live path, and that is the fact worth writing down
+ * rather than the reassurance. `pageGeometry.ts` snaps before building a
+ * transform, and the renderer's rotation is the kernel's view model rather than
+ * anything PDF.js decided (`annotationSpace.ts` records that separately). So
+ * what arrives here is always a multiple of 90 and this is the identity on it —
+ * a **guard downstream of the resolver**, which is a different job from making
+ * the choice.
+ *
+ * A claim recorded more strongly than its evidence supported was never true, so
+ * no sweep would ever have found it (AAAA-8); it was found by needing the
+ * resolver from a third place and reading both.
  */
 export function normaliseRotation(degrees: number): Rotation {
   if (!Number.isFinite(degrees) || degrees % 90 !== 0) return 0;

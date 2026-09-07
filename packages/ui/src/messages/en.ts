@@ -272,6 +272,31 @@ export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
+export const FORM_FIELD_TEXT_TOOL_TITLE = messageKey('command.forms.field-text');
+export const FORM_FIELD_CHECKBOX_TOOL_TITLE = messageKey('command.forms.field-checkbox');
+export const FORM_FIELD_RADIO_TOOL_TITLE = messageKey('command.forms.field-radio');
+export const FORM_FIELD_DROPDOWN_TOOL_TITLE = messageKey('command.forms.field-dropdown');
+export const FORM_FIELD_LISTBOX_TOOL_TITLE = messageKey('command.forms.field-listbox');
+export const FORM_FIELD_TEXT_TITLE = messageKey('dialog.form-field-text.title');
+export const FORM_FIELD_CHECKBOX_TITLE = messageKey('dialog.form-field-checkbox.title');
+export const FORM_FIELD_RADIO_TITLE = messageKey('dialog.form-field-radio.title');
+export const FORM_FIELD_DROPDOWN_TITLE = messageKey('dialog.form-field-dropdown.title');
+export const FORM_FIELD_LISTBOX_TITLE = messageKey('dialog.form-field-listbox.title');
+export const FORM_FIELD_TEXT_APPLY = messageKey('dialog.form-field-text.apply');
+export const FORM_FIELD_CHECKBOX_APPLY = messageKey('dialog.form-field-checkbox.apply');
+export const FORM_FIELD_RADIO_APPLY = messageKey('dialog.form-field-radio.apply');
+export const FORM_FIELD_DROPDOWN_APPLY = messageKey('dialog.form-field-dropdown.apply');
+export const FORM_FIELD_LISTBOX_APPLY = messageKey('dialog.form-field-listbox.apply');
+export const FORM_FIELD_NAME_LABEL = messageKey('dialog.form-field.name');
+export const FORM_FIELD_GROUP_LABEL = messageKey('dialog.form-field.group');
+export const FORM_FIELD_OPTION_LABEL = messageKey('dialog.form-field.option');
+export const FORM_FIELD_OPTIONS_LABEL = messageKey('dialog.form-field.options');
+export const FORM_FIELD_ADD_OPTION = messageKey('dialog.form-field.add-option');
+export const FORM_FIELD_REMOVE_OPTION = messageKey('dialog.form-field.remove-option');
+export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
+export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
+export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
+export const FORM_FIELD_OPTIONS_EMPTY = messageKey('dialog.form-field.options-empty');
 export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
 export const FORMS_KIND_CHECKBOX = messageKey('surface.forms.kind.checkbox');
 export const FORMS_KIND_RADIO = messageKey('surface.forms.kind.radio');
@@ -620,6 +645,44 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORMS_FLATTEN]: 'Flatten form',
   [FORMS_FLATTEN_CONFIRM]:
     'Flattening draws every field’s contents onto the page and removes the form. The fields can no longer be filled in. Comments are not affected.',
+  // THE TOOLS SAY "DRAW", which is what the gesture is and what separates them
+  // from the Forms panel's controls: those fill a field that exists, these put
+  // one on the page.
+  [FORM_FIELD_TEXT_TOOL_TITLE]: 'Draw a text field',
+  [FORM_FIELD_CHECKBOX_TOOL_TITLE]: 'Draw a tick box',
+  [FORM_FIELD_RADIO_TOOL_TITLE]: 'Draw a radio option',
+  [FORM_FIELD_DROPDOWN_TOOL_TITLE]: 'Draw a dropdown',
+  [FORM_FIELD_LISTBOX_TOOL_TITLE]: 'Draw a list box',
+  [FORM_FIELD_TEXT_TITLE]: 'New text field',
+  [FORM_FIELD_CHECKBOX_TITLE]: 'New tick box',
+  [FORM_FIELD_RADIO_TITLE]: 'New radio option',
+  [FORM_FIELD_DROPDOWN_TITLE]: 'New dropdown',
+  [FORM_FIELD_LISTBOX_TITLE]: 'New list box',
+  [FORM_FIELD_TEXT_APPLY]: 'Add text field',
+  [FORM_FIELD_CHECKBOX_APPLY]: 'Add tick box',
+  [FORM_FIELD_RADIO_APPLY]: 'Add radio option',
+  [FORM_FIELD_DROPDOWN_APPLY]: 'Add dropdown',
+  [FORM_FIELD_LISTBOX_APPLY]: 'Add list box',
+  [FORM_FIELD_NAME_LABEL]: 'Field name',
+  // THE GROUP'S NAME, not this widget's, and the label says so because a radio
+  // group is one field with several widgets — so drawing a second option means
+  // typing the SAME name again, which is the one thing about radio groups
+  // people get wrong.
+  [FORM_FIELD_GROUP_LABEL]: 'Group name — type the same name for every option in this group',
+  [FORM_FIELD_OPTION_LABEL]: 'This option’s value',
+  [FORM_FIELD_OPTIONS_LABEL]: 'Choice',
+  [FORM_FIELD_ADD_OPTION]: 'Add a choice',
+  [FORM_FIELD_REMOVE_OPTION]: 'Remove this choice',
+  // NAMES WHAT IS MISSING rather than what is wrong: the field is empty when
+  // the dialog opens, so this is the first sentence a person reads.
+  [FORM_FIELD_NAME_EMPTY]: 'Give the field a name so it can be filled in and read back.',
+  [FORM_FIELD_NAME_TOO_LONG]: 'That name is too long.',
+  // EXPLAINS THE DOT, because nothing about a trailing dot looks wrong. A dot
+  // groups fields — measured, `owner.first` and `owner.second` are two fields
+  // under one parent — so an empty piece asks for a group with no name.
+  [FORM_FIELD_NAME_SEGMENT]:
+    'A dot groups fields, so “owner.first” and “owner.second” belong together. Every piece between dots needs a name.',
+  [FORM_FIELD_OPTIONS_EMPTY]: 'Give it at least one choice, or nobody can pick anything.',
   [FORMS_KIND_TEXT]: 'Text',
   [FORMS_KIND_CHECKBOX]: 'Tick box',
   [FORMS_KIND_RADIO]: 'Option',

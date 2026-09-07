@@ -537,6 +537,31 @@ body {
   color: var(--muted);
 }
 
+/*
+ * The choice list in the create-field dialogs.
+ *
+ * THE ONLY RULE THESE FIVE DIALOGS NEED, and that is deliberate rather than
+ * minimal: every other dialog body in this application — the text box, the note,
+ * the two link dialogs — carries no CSS at all and relies on the dialog
+ * primitive's own flow. A row holding an input beside its remove button is the
+ * one thing default flow gets wrong, because the two would stack.
+ *
+ * `align-items: end` rather than `center`: the input is a labelled field, so it
+ * is taller than the button by its label, and centring would float the button
+ * into the middle of the label rather than beside the control it removes.
+ */
+.m-form-field__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-form-field__option {
+  display: flex;
+  align-items: end;
+  gap: var(--space-4);
+}
+
 .m-annotations-remove {
   flex: 0 0 auto;
   padding: var(--space-2) var(--space-4);

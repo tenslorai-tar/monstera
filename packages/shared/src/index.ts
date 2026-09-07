@@ -56,6 +56,7 @@ export {
   fromRaster,
   fromXObject,
   normaliseRotation,
+  snapRotation,
   pageTransform,
   pdfPoint,
   rasterPoint,

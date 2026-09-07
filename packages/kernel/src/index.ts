@@ -279,6 +279,16 @@ export {
   captureWatermarkPages,
   invertWatermarkPages,
 } from './pageWatermark.js';
+// ON THE BARREL for `watermarkPages`' reason, and it is the first FORM command
+// that may be: the other three route to MuPDF and live behind
+// `@monstera/kernel/engine`. The import check this file states holds —
+// `formFieldCreate.ts` reaches `@cantoo/pdf-lib`, the contract, `@monstera/shared`
+// and `pdfLibSession.ts`, and none of those binds native code.
+export {
+  applyCreateFormField,
+  captureCreateFormField,
+  invertCreateFormField,
+} from './formFieldCreate.js';
 export {
   BACKGROUND_MARKER,
   applySetPageBackground,

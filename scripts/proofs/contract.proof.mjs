@@ -505,10 +505,35 @@ const DELETE_FIELDS_SPEC = `  deleteFormFields: {
 /**
  * The newest kind, and the one the `missing a command kind` case now omits.
  *
- * The first spec whose command declares `purpose: 'removal'`. That axis is not
- * spelt in these fixtures for the reason none of the others is either: they
- * exercise `CommandSpecs`' shape, and every axis a declaration carries would
- * make each of twenty-seven fixtures a copy of the declaration table.
+ * **The first form command routed to `pdf-lib`**, which is why its three
+ * functions arrive on the second import line rather than the first: §3's matrix
+ * puts *Form fields: create* on `@cantoo/pdf-lib`, so they are on the barrel and
+ * not behind the `/engine` subpath that binds the native library. That is the
+ * property the second import block exists to hold, and this entry is the first
+ * one where a reader might expect otherwise — its three siblings on the form
+ * rows are all MuPDF's.
+ */
+const CREATE_FIELD_SPEC = `  createFormField: {
+    kind: 'createFormField',
+    writer: 'pdf-lib',
+    apply: applyCreateFormField,
+    capture: captureCreateFormField,
+    invert: invertCreateFormField,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * The first spec whose command declares `purpose: 'removal'`.
+ *
+ * That axis is not spelt in these fixtures for the reason none of the others is
+ * either: they exercise `CommandSpecs`' shape, and every axis a declaration
+ * carries would make each of twenty-eight fixtures a copy of the declaration
+ * table.
  */
 const FLATTEN_SPEC = `  flattenFormFields: {
     kind: 'flattenFormFields',
@@ -674,6 +699,9 @@ import {
   applyGenerateToc,
   captureGenerateToc,
   invertGenerateToc,
+  applyCreateFormField,
+  captureCreateFormField,
+  invertCreateFormField,
 } from '@monstera/kernel';`;
 
 /**
@@ -1079,6 +1107,7 @@ ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
+${CREATE_FIELD_SPEC}
 };
 `,
   },
@@ -1096,7 +1125,8 @@ ${FLATTEN_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `flattenFormFields`, `deleteFormFields`,
+    // table has to grow. `createFormField` on 2026-09-08;
+    // `flattenFormFields`, `deleteFormFields`,
     // `fillFormField`, `placeImage` and
     // `styleAnnotation` on 2026-09-07; `addLink`,
     // `placeAnnotation` and `removeAnnotation` on 2026-09-06; `addAnnotation`,
@@ -1113,7 +1143,7 @@ ${FLATTEN_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'flattenFormFields' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'createFormField' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1159,6 +1189,7 @@ ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
+${FLATTEN_SPEC}
 };
 `,
   },
@@ -1271,6 +1302,7 @@ ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
+${CREATE_FIELD_SPEC}
 };
 `,
   },
@@ -1321,6 +1353,7 @@ ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
+${CREATE_FIELD_SPEC}
 };
 `,
   },
@@ -1380,6 +1413,7 @@ ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
+${CREATE_FIELD_SPEC}
 };
 `,
   },
@@ -1435,6 +1469,7 @@ ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
+${CREATE_FIELD_SPEC}
 };
 `,
   },
@@ -2292,7 +2327,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
     // three since `movePage` (2026-09-03), eight since `deletePages`,
     // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`, nine
-    // since `watermarkPages` (all 2026-09-04).
+    // since `watermarkPages` (all 2026-09-04), and 23 since `createFormField`
+    // (2026-09-08).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2310,7 +2346,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 22 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 23 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

@@ -20,6 +20,11 @@ import {
   captureInsertImagePage,
   invertInsertImagePage,
 } from './pageImage.js';
+import {
+  applyCreateFormField,
+  captureCreateFormField,
+  invertCreateFormField,
+} from './formFieldCreate.js';
 import { applyGenerateToc, captureGenerateToc, invertGenerateToc } from './pageToc.js';
 import {
   applyBatesNumberPages,
@@ -133,6 +138,20 @@ export const pdfLibSpecs = {
     apply: applyInsertImagePage,
     capture: captureInsertImagePage,
     invert: invertInsertImagePage,
+  },
+  createFormField: {
+    ...declaredCommands.createFormField,
+    // THE FIRST FORM COMMAND THAT IS NOT MuPDF's, and the check this file's
+    // header names holds: `formFieldCreate.ts` imports `@cantoo/pdf-lib`,
+    // `@monstera/contract`, `@monstera/shared` and `pdfLibSession.ts`, and
+    // nothing on that path reaches MuPDF or PDFium.
+    //
+    // `snapRotation` moved to `@monstera/shared` on 2026-09-08 for exactly that
+    // reason: it was the one resolver for a page's effective rotation and it sat
+    // behind `rotatePages.ts`, which value-imports `mupdfWriter.ts`.
+    apply: applyCreateFormField,
+    capture: captureCreateFormField,
+    invert: invertCreateFormField,
   },
   generateToc: {
     ...declaredCommands.generateToc,

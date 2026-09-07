@@ -886,6 +886,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Create fields by drawing, and the guard that survived its own mutation
+
+`createFormField`, five tools, five dialogs. The measurement below decided every
+part of it; what follows is what building it found that the measurement had not.
+
+### The one resolver was behind a native import
+
+`snapRotation` answers *what quarter turn does this page display at* and lived in
+`packages/kernel/src/rotatePages.ts`, which value-imports `mupdfWriter.ts`. The
+first pdf-lib command needing a page's rotation therefore could not reach the
+resolver without binding MuPDF in `main` — ADR-0026 measured that at **+40.1 MB**,
+and `pdfLibWriter.ts`'s own header says a MuPDF import there puts the native
+library back in one line.
+
+Both alternatives were worse. A second snap inside the pdf-lib module is the
+partial reimplementation B3a exists to stop, and pdf-lib's `getRotation` answers
+the **raw** `/Rotate` rather than the engine's snap of it. So the function moved
+to `@monstera/shared`, which is where a pure function of a number belongs; it was
+behind a native import for no reason but where it was first needed.
+
+**And moving it found a false sentence.** `normaliseRotation` sits in the module
+it moved into and its comment ended *"this is the one place in the pipeline that
+can make that choice once"*. It is not, and the two **disagree**: a `/Rotate 45`
+page is **90** to `snapRotation`, which ports MuPDF's `+45` rounding, and **0** to
+`normaliseRotation`, which treats a non-multiple of 90 as upright.
+
+They never meet on the live path — `pageGeometry.ts` snaps before building a
+transform, and `annotationSpace.ts` records that the renderer's rotation is the
+kernel's view model rather than anything PDF.js decided — so what arrives is
+always a multiple of 90 and the second is the identity on it. That makes it a
+**guard downstream of the resolver**, which is a different job from making the
+choice. A claim recorded more strongly than its evidence supported was never
+true, so no sweep would have found it (AAAA-8); it was found by needing the
+resolver from a third place and reading both.
+
+### A guard that survived its own mutation
+
+Four mutations were run against the new module. Three bit exactly as intended:
+`borderWidth` 0 → 1 reddened all five rectangle cases; dropping the content
+rotation reddened the two rotated ones; breaking **only** the 90° pre-image
+reddened only the 90° case, which is what says the 180° and 270° cases are not
+satisfied by the 90° branch.
+
+The fourth is the one worth recording. Deleting the duplicate-name guard
+**entirely** left all 22 cases green, because the two refusal cases asserted
+`/already exists/` and pdf-lib's own message is *"A field already exists with the
+specified name"*. The value fell through to a different refusal whose message
+says the same words — `CLAUDE.md`'s own table has three instances of that shape
+and this is the fourth.
+
+Matching instead on a clause only this build's message carries turned the green
+into a red, and **the red was informative**: the prefix case had never been this
+build's refusal at all. `getFieldMaybe` answers *is there a field with exactly
+this name*, and `applicant` does not equal `applicant.name` — so a create of
+`applicant` beside an existing `applicant.name` was being refused by pdf-lib,
+with a message that reads like a bug in the caller's own code.
+
+The guard now compares **paths**: two names collide when either is a prefix of
+the other. Three cases cover it — equal, above, below — with a **sibling control**
+(`applicant.name` and `applicant.age` coexist), because a guard that refused any
+shared leading segment would satisfy all three and break every real form.
+
+### What the row does not ship
+
+**Signature**, and it is a measurement rather than a scoping choice: pdf-lib
+declares no signature factory, so a command would have to write a field
+dictionary itself — a second writer for the concern §3's matrix had just
+assigned. There is no signature tool and no control that renders and refuses.
+
+**A value.** `fillFormField` exists and §3 puts *Form fields: fill* on MuPDF, so a
+create that also set a value would be writing one through pdf-lib — two writers
+for one concern, in the one place it would be invisible, because the document
+would look right either way.
+
+---
+
 ## 2026-09-08 — pdf-lib writes a field's rectangle in raw user space, and a rotated page needs a pre-image
 
 `scripts/research/formFieldCreate.mjs`, before a line of the *create fields by

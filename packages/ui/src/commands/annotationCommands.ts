@@ -11,6 +11,13 @@ import {
 } from '../annotations/shapeTools.js';
 import { CALLOUT_TOOL_ID } from '../annotations/calloutTool.js';
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
+import {
+  FORM_FIELD_CHECKBOX_TOOL_ID,
+  FORM_FIELD_DROPDOWN_TOOL_ID,
+  FORM_FIELD_LISTBOX_TOOL_ID,
+  FORM_FIELD_RADIO_TOOL_ID,
+  FORM_FIELD_TEXT_TOOL_ID,
+} from '../annotations/formFieldTools.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
 import {
   MEASURE_AREA_TOOL_ID,
@@ -40,6 +47,11 @@ import {
   DELETE_SELECTION_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
+  FORM_FIELD_CHECKBOX_TOOL_TITLE,
+  FORM_FIELD_DROPDOWN_TOOL_TITLE,
+  FORM_FIELD_LISTBOX_TOOL_TITLE,
+  FORM_FIELD_RADIO_TOOL_TITLE,
+  FORM_FIELD_TEXT_TOOL_TITLE,
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
@@ -576,5 +588,29 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     measurePerimeterToolCommand(deps),
     snapshotToolCommand(deps),
     placeImageToolCommand(deps),
+    ...formFieldToolCommands(deps),
+  ];
+}
+
+/**
+ * The five create-field tools' commands.
+ *
+ * A nested list rather than five entries above, because they arrive together and
+ * leave together: the set is *what pdf-lib has a factory for*, which is a fact
+ * about the writer of record rather than a choice made here. A signature tool is
+ * absent for that reason and nothing in this file has to say so — there is no
+ * id to give a command to.
+ *
+ * Ordered after every annotation tool. They are the Forms ribbon's, and the
+ * quick toolbar orders by number rather than by group, so the numbers are what
+ * keeps them together.
+ */
+export function formFieldToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
+  return [
+    toolCommand(FORM_FIELD_TEXT_TOOL_ID, FORM_FIELD_TEXT_TOOL_TITLE, 70, deps),
+    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, FORM_FIELD_CHECKBOX_TOOL_TITLE, 71, deps),
+    toolCommand(FORM_FIELD_RADIO_TOOL_ID, FORM_FIELD_RADIO_TOOL_TITLE, 72, deps),
+    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, FORM_FIELD_DROPDOWN_TOOL_TITLE, 73, deps),
+    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, FORM_FIELD_LISTBOX_TOOL_TITLE, 74, deps),
   ];
 }

@@ -2,6 +2,7 @@ import type { UiTool } from '../registries/tools.js';
 import type { EraserDeps } from './eraserTool.js';
 import { eraserTool } from './eraserTool.js';
 import { calloutTool } from './calloutTool.js';
+import { formFieldTools } from './formFieldTools.js';
 import { linkTools } from './linkTools.js';
 import type { MeasureDeps } from './measureTools.js';
 import { measureTools } from './measureTools.js';
@@ -66,6 +67,14 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // name is the residual falsehood, stated rather than fixed quietly.
     snapshotTool(deps),
     placeImageTool(deps),
+    // NOT ANNOTATION TOOLS EITHER, and composed here for the reason the two
+    // above are: this list is what the registry mounts and what
+    // `annotationCommands.test.ts` joins against, so a tool composed anywhere
+    // else would be a second place tools are named. A field is a widget rather
+    // than a comment — measured on the fill row, the annotation walk filters
+    // widgets out entirely — so these are as far from an annotation as the
+    // snapshot is, and they draw with the same gesture.
+    ...formFieldTools(deps),
   ];
 }
 

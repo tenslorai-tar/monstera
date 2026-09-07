@@ -2319,6 +2319,158 @@ export const flattenFormFieldsSchema = z.object({
   kind: z.literal('flattenFormFields'),
 });
 
+/**
+ * How long a created field's name may be.
+ *
+ * A **path**, not a label — measured 2026-09-08
+ * (`scripts/research/formFieldCreate.mjs`): a dot in the name makes a parent
+ * node in the field tree, so `owner.first` and `owner.second` are siblings
+ * under `owner`, and creating `owner` beside `owner.first` is refused by
+ * pdf-lib outright. Generous enough that no name a person types meets it, for
+ * {@link MAX_FIELD_VALUE}'s reason.
+ */
+export const MAX_FIELD_NAME = 512;
+
+/** How many options a created choice field may offer, and how long each may be. */
+export const MAX_FIELD_OPTIONS = 256;
+/** See {@link MAX_FIELD_OPTIONS}. */
+export const MAX_FIELD_OPTION = 512;
+
+/**
+ * A field name, as this boundary defines one.
+ *
+ * **The empty-segment refusal is this boundary's opinion, not the format's** —
+ * the same standing {@link MAX_FIELD_VALUE} takes about `/MaxLen`. A dot makes
+ * a parent, so `a..b` asks for a node whose name is nothing, and a tree with an
+ * unnameable node in it is a document no reader can address a field in. Refusing
+ * it here is cheaper than every reader downstream deciding what it meant.
+ *
+ * Leading and trailing dots are the same case and are caught by the same rule,
+ * which is why it is written over segments rather than as three checks.
+ */
+const fieldNameSchema = z
+  .string()
+  .min(1)
+  .max(MAX_FIELD_NAME)
+  .refine((name) => name.split('.').every((segment) => segment.length > 0), {
+    message:
+      'a dot in a field name makes a parent in the field tree, so an empty segment asks for a ' +
+      'node with no name',
+  });
+
+/**
+ * What kind of field to create, and what that kind needs.
+ *
+ * ## Five members, and signature's absence is a MEASUREMENT
+ *
+ * `formFieldKindSchema` lists eight kinds a reader may report. This union has
+ * five, and the gap is not a scoping choice: measured 2026-09-08,
+ * `@cantoo/pdf-lib` declares `createTextField`, `createCheckBox`,
+ * `createDropdown`, `createOptionList`, `createRadioGroup` and `createButton`,
+ * and **no signature factory**. `scripts/research/formFields.mjs` built a
+ * signature field by hand out of `context.obj` to have a fixture; a command
+ * cannot, without this build writing a field dictionary itself — which is a
+ * second writer for the concern §3's matrix has just assigned to pdf-lib (B3).
+ *
+ * So *create a signature field* is a stated limit of the row, and it is stated
+ * as a fact about the writer of record rather than as a to-do.
+ *
+ * `button` is absent for a different reason and it is not a limit: the D5 row
+ * names six types and a push button is not one of them. A factory exists, so
+ * the day the row asks for it, it is a member here and nothing else moves.
+ *
+ * ## NO VALUE, and that is B3 rather than economy
+ *
+ * A created field is empty. `fillFormField` already exists and §3's matrix puts
+ * *Form fields: fill* on **MuPDF**, so a create that also set a value would be
+ * writing a value through pdf-lib — two writers for one concern, in the one
+ * command where it would be invisible, because the document would look right.
+ * A person who draws a field and then types in it sends two commands, which is
+ * also what they did.
+ */
+export const createdFieldSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text') }).strict(),
+  z.object({ type: z.literal('checkbox') }).strict(),
+  z
+    .object({
+      type: z.literal('radio'),
+      /**
+       * Which option in the group this widget is.
+       *
+       * **A radio group is one field with several widgets** — measured on the
+       * fill row, where both of a two-option group answer the same name — so a
+       * create names the group and the option separately. Drawing a second
+       * option into an existing group is this command again with the same
+       * `name` and a different `option`, which is what the gesture is.
+       */
+      option: z.string().min(1).max(MAX_FIELD_OPTION),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('dropdown'),
+      /** What it offers. At least one, or the control refuses every choice. */
+      options: z
+        .array(z.string().min(1).max(MAX_FIELD_OPTION))
+        .min(1)
+        .max(MAX_FIELD_OPTIONS)
+        .readonly(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('listbox'),
+      /** What it offers. See the dropdown beside it. */
+      options: z
+        .array(z.string().min(1).max(MAX_FIELD_OPTION))
+        .min(1)
+        .max(MAX_FIELD_OPTIONS)
+        .readonly(),
+    })
+    .strict(),
+]);
+
+/** What kind of field a create makes. See {@link createdFieldSchema}. */
+export type CreatedField = z.infer<typeof createdFieldSchema>;
+
+/**
+ * Creates one AcroForm field where a person drew it.
+ *
+ * ## The writer is pdf-lib, and the frames on the two sides of this differ
+ *
+ * `docs/ARCHITECTURE.md`:388 assigns *Form fields: create* to
+ * `@cantoo/pdf-lib` — *"the one concern MuPDF has no API for"* — so this is the
+ * only form-field command not routed to the structural writer of record.
+ *
+ * That matters here rather than being a routing note. MuPDF's `setRect` takes
+ * the page's **displayed** space, and measured 2026-09-08, pdf-lib's
+ * `addToPage` writes `/Rect` in **raw user space, verbatim** — identical on an
+ * upright page, on `/Rotate 90` and on a page cropped to `[30 70 380 560]`. So
+ * {@link annotationRectSchema}'s frame reaches this writer unchanged and the
+ * conversion is the identity, which is a fact that had to be measured on the
+ * two page shapes that could have falsified it rather than on the one where
+ * every candidate answer agrees.
+ *
+ * ## No version, like `addAnnotation` and unlike the fill beside it
+ *
+ * It carries the whole of its intent: a page, a rectangle, a name and a kind.
+ * There is no earlier answer it could be stale against, so `targets: 'none'`
+ * and there is nothing for the bus to compare. The one piece of document state
+ * it can collide with is an existing field of the same name, and that is a
+ * refusal at apply rather than staleness — the document is the only thing that
+ * knows, exactly as it is for every type rule on the fill.
+ */
+export const createFormFieldSchema = z.object({
+  kind: z.literal('createFormField'),
+  /** Zero-based index of the page to put it on. */
+  page: z.number().int().nonnegative(),
+  /** Where it goes, in PDF user space. See {@link annotationRectSchema}. */
+  rect: annotationRectSchema,
+  /** What the field is called. A path, not a label — see {@link MAX_FIELD_NAME}. */
+  name: fieldNameSchema,
+  field: createdFieldSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -2347,6 +2499,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
+  createFormFieldSchema,
 ]);
 
 /**
@@ -2436,6 +2589,18 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // owns and nothing on this side could describe.
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
+  // RENDERABLE, and the test it passes is the one `addAnnotation` passes: the
+  // intent is a page index, a rectangle in the page's own space, a name and a
+  // kind — bounded by `MAX_FIELD_NAME` and `MAX_FIELD_OPTIONS`, so the payload
+  // is the same size whatever the document weighs.
+  //
+  // What the renderer cannot express is the PLACEMENT. pdf-lib turns a widget's
+  // box about the anchor it is given, so landing a field on a rotated page
+  // needs the pre-image of that turn plus `/MK /R` — measured 2026-09-08, and a
+  // field created without it renders 3 pixels of sideways ink where 111 belong.
+  // None of that is spellable here: the surface says where the box goes and the
+  // kernel, which is the only side that knows the page's `/Rotate`, says how.
+  createFormFieldSchema,
 ]);
 
 /** A command a renderer may send. */

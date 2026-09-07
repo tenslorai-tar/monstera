@@ -1136,6 +1136,50 @@ const declarations = {
     // object count growing 49 to 55.
     purpose: 'removal',
   },
+  createFormField: {
+    kind: 'createFormField',
+    // `docs/ARCHITECTURE.md`:388 names the writer and the reason in one line:
+    // "@cantoo/pdf-lib — the one concern MuPDF has no API for". So the three
+    // form commands above route to the structural writer of record and this one
+    // does not, which is the matrix splitting a concern by OPERATION — its own
+    // granularity, not an exception to B3.
+    writer: 'pdf-lib',
+    // NOT INVERTIBLE, and the reason is NOT the byte-image family's. A drawn-on
+    // page has no bounded prior state; a create's prior state is *this field did
+    // not exist*, which would fit in four words. What rules it out is measured:
+    // a create on a document with no `/AcroForm` MINTS one, so removing the
+    // field afterwards leaves a document that is not the one handed in. An undo
+    // that restores almost the prior state is worse than none.
+    //
+    // `watermarkPages` anticipated exactly this entry in prose — "deliberately
+    // NOT a type constraint: §3's matrix assigns form-field creation to pdf-lib,
+    // and that is plausibly invertible". Plausible, and not free; the checkpoint
+    // the bus already holds costs nothing (ADR-0039).
+    invertible: false,
+    undo: 'checkpoint',
+    // `openForWriting` pins `updateMetadata: false`, which is what makes this
+    // true rather than a hope — an unpinned load rewrites `/ModDate` on save and
+    // the defect surfaces only as a flake, when two applies straddle a second.
+    // `monstera/no-unpinned-pdf-load` is the mechanism; this line is the claim
+    // that mechanism supports.
+    //
+    // Nothing else here mints an identifier or reads a clock: the font is a
+    // standard-14 embedded by name, so there is no font program whose bytes
+    // could differ between runs.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // SELF-CONTAINED, like `addAnnotation` and unlike the fill and delete above.
+    // It carries a page, a rectangle, a name and a kind — there is no earlier
+    // answer it could be stale against, which is also why its payload carries no
+    // version. The one collision it can have is with an existing field of the
+    // same name, and that is a refusal at apply: the document is the only thing
+    // that knows, exactly as it is for every type rule on the fill.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

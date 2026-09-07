@@ -453,6 +453,23 @@ export interface CommandPrior {
    * its neighbour, for this table's standing reason.
    */
   readonly flattenFormFields: never;
+
+  /**
+   * A create has no prior state, and this is the one entry here where that is
+   * **not** because the prior state is too large.
+   *
+   * It is four words: *the field called N did not exist*. What rules an inverse
+   * out is measured rather than argued — a create on a document with no
+   * `/AcroForm` mints one (2026-09-08), so *remove the field* restores the
+   * fields and not the form, and undo is the one place a person expects
+   * exactness. The checkpoint restores the bytes.
+   *
+   * Written out rather than pointed at its neighbours, for this table's standing
+   * reason, and because the difference is the interesting part: a reader who
+   * takes this for the watermark's reason would conclude that a bounded inverse
+   * is impossible here, and it is merely wrong.
+   */
+  readonly createFormField: never;
 }
 
 /**

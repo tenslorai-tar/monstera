@@ -1,6 +1,7 @@
 import type * as mupdf from 'mupdf';
 
 import type { CommandOfKind } from '@monstera/contract';
+import { snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -54,40 +55,17 @@ export interface PriorPageRotation {
 }
 
 /**
- * The rotation the engine actually applies for a raw `/Rotate` value.
+ * MOVED to `@monstera/shared`'s `geometry.ts` on 2026-09-08, and re-exported
+ * here rather than left behind.
  *
- * A **port of MuPDF's own snap**, not a tidier rule of our own, and that
- * distinction is the whole point: the forward command rotates by quarter turns
- * from *what the user sees*, and what the user sees is whatever the renderer
- * decided. A separate normalisation would make the page jump on the first
- * rotate of any document carrying a non-quarter-turn value.
- *
- * From `pdf_page_transform_box`, MuPDF 1.28.0 `source/pdf/pdf-page.c`:
- *
- * ```c
- * if (rotate < 0)    rotate = 360 - ((-rotate) % 360);
- * if (rotate >= 360) rotate = rotate % 360;
- * rotate = 90*((rotate + 45)/90);
- * if (rotate >= 360) rotate = 0;
- * ```
- *
- * Two details survive the port deliberately. The `+45` rounds a half-way value
- * **up**, so `45` snaps to `90` and not to `0` — measured against the engine,
- * where the page bounds swap. And the trailing `>= 360` guard exists because
- * the rounding can overshoot: a raw `340` reaches `360`, which is `0`.
- *
- * `Math.trunc` stands in for `pdf_dict_get_inheritable_int`, which reads the
- * object as an integer; a real-valued `/Rotate` is truncated toward zero before
- * any of this runs.
+ * It is a pure function of a number and it was sitting behind this module's
+ * value import of `mupdfWriter.ts` — so the first pdf-lib command that needed a
+ * page's effective rotation could not reach the one resolver without binding
+ * the native library in `main`. The re-export keeps `engine.ts`'s public surface
+ * and this file's own callers unchanged, because a move that renames a symbol at
+ * every call site hides what it dropped inside a large diff.
  */
-export function snapRotation(raw: number): number {
-  let rotate = Math.trunc(raw);
-  if (rotate < 0) rotate = 360 - ((-rotate) % 360);
-  if (rotate >= 360) rotate = rotate % 360;
-  rotate = 90 * Math.floor((rotate + 45) / 90);
-  if (rotate >= 360) rotate = 0;
-  return rotate;
-}
+export { snapRotation };
 
 /** The page dictionary for a validated index, or a named refusal. */
 function pageObject(
