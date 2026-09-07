@@ -1,8 +1,9 @@
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { StandardFonts } from '@cantoo/pdf-lib';
 import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import { openForWriting } from './pdfLibSession.js';
 
 /**
  * A table of contents composed from the document's own outline.
@@ -182,7 +183,7 @@ export const applyGenerateToc: Apply<'pdf-lib', 'generateToc', 'none', 'outline'
     );
   }
 
-  const document = await PDFDocument.load(image);
+  const document = await openForWriting(image);
   const existing = document.getPages();
   const at = Math.min(command.at, existing.length);
 

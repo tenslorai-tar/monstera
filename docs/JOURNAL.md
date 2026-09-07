@@ -877,6 +877,313 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-07 — Stage audit: `b156324..040be78` — a channel that could carry two of nine priors, and an amendment that arrived after its feature
+
+Twenty-two commits, 85 files: the annotation tail of Stage 3, then Stage 4's
+reader, channel, fill command, panel and delete. Ten proof files added and
+eighteen modified. Watermark advanced to `040be78`.
+
+### AAAAA-1 — `engine/capture` declared prior shapes for two of the nine invertible commands
+
+**Severity: the commands did not run.** Not degraded undo — `wrapHandler`
+validates a handler's result against the declared schema and turns a mismatch
+into `internal` plus an incident, so on a real engine host `movePage`,
+`duplicatePage`, `swapPages`, `insertBlankPage`, `cropPages`, `resizePages` and
+`setPageTransition` each answered a value the boundary rejected.
+
+Measured rather than reasoned, with `engineChannels['engine/capture'].result`:
+
+```
+rotatePages accepted: true
+swapPages   accepted: false
+movePage    accepted: false
+```
+
+**Why nothing saw it.** Every case that drives that channel uses `rotatePages` —
+the capture case and the invert case both. That is NNN-1's shape: a fixture SET
+holding one argument constant, where no individual case looks wrong. And a
+member being **absent** from the union produces exactly the green a member being
+**unexercised** produces. The compiler could not see it either: `taggedPrior`
+carries a cast, and its own comment explains the correlated-union limit that
+makes the cast necessary — so the one place the two sets meet had a cast
+standing where a check was owed.
+
+Closed in `1360cbb`. The tie derives the required set from `declaredCommands`
+and pairs each kind with `CommandPrior[K]`, so an omission **and a wrong prior
+shape** are compile errors; the runtime file drives each real capture against a
+real document through the real schema, which is what separates *the type says it
+fits* from *the value parses*.
+
+### AAAAA-2 — a comment naming cases that have never existed
+
+`remoteEngine.test.ts` registered the real annotation reader "because the
+annotation cases below ask what the HOST's document holds after a command
+crossed". That file contains no annotation case and never has. Corrected in
+`de98afa` — and the same class recurred twice more in this range, which is the
+finding worth carrying rather than the instance.
+
+### AAAAA-3 — a control claimed for a member no case names
+
+`formFieldsChannel.test.ts` said a kind leaving `formFieldKindSchema` is caught
+by `formFields.test.ts`'s cases naming their kinds as literals. Six of the eight
+were named. **`other` was named by no case anywhere**, so for that member the
+claim rested on the compiler alone. Found by grepping for the literal rather
+than by reading the sentence, which is why it is worth doing.
+
+### AAAAA-4 — and that branch turns out to be unreachable
+
+Writing the missing case produced a finding instead. Measured against MuPDF
+1.28.0: a widget whose `/FT` is `/Xx`, **and a widget with no `/FT` at all**,
+both resolve to `getFieldType() === 'button'` with `isPushButton()` true. The
+engine defaults an unknown or absent type to push button, so every widget it
+hands us matches a predicate and `kindOf`'s `'other'` is unreachable.
+
+Two consequences. A field the document does not classify is presented to a
+reader as **Button**, unfillable — MuPDF's answer passed through rather than
+this build's guess, which is why `kindOf` asks the predicates instead of reading
+`/FT` (B3a). And `'other'` is a union member and a catalogue string nothing can
+produce, which the annotations panel's own rule warns about. It is **kept**, for
+JJJ-1's reason: the fact it encodes is true, and deleting it would leave the
+function with no fallback the day a version answers with a string these
+predicates do not cover. The reading is now a case, so the claim expires with
+the version rather than sitting in a comment nobody can date.
+
+This is checklist item 4's three-way distinction paying for itself: *unreachable
+by any code*, *reachable with no case*, and *observable only one layer out* look
+identical until you ask why the mutation stayed green.
+
+### AAAAA-5 — the architecture changed underneath the feature
+
+`deleteFormFields` landed in `6ec345d` writing a document property §3's
+writer-of-record matrix does not name: it carried *fill*, *flatten* and *create*
+and no *delete*. That is audit item 6 exactly — and B4's own failure mode, in
+the range where B4 was otherwise honoured twice.
+
+The amendment landed alone in `040be78` and records its own lateness, because
+§3.1 says every row in that matrix was executed before the kernel was built on
+it and a row added afterwards reads exactly like one added before. **The
+evidence exists; its order does not.**
+
+It also flags the reading it rests on rather than settling it: if create and
+delete are one concern — the `/AcroForm` tree — B3 says they share a writer, and
+delete belongs on pdf-lib beside create at the cost measured below. The reading
+taken is that this matrix already splits form fields by **operation** rather
+than by structure, since *fill* is MuPDF and *create* is pdf-lib and both write
+field dictionaries. That is the reviewing seat's to overturn.
+
+### 1. Root cause or workaround?
+
+Every correction in this range names a mechanism. AAAAA-1 was closed by a tie
+over the whole set rather than by adding the seven members and moving on —
+adding the members alone is the repair that regenerates the moment a tenth
+command lands. `pruneEmptyFields` is a root fix for a half-state the engine
+leaves, not a special case for the field that failed. The push-button `on:
+false` reading was fixed in **both** halves — the caller no longer asks and
+`onState` no longer answers — rather than at whichever end was in front of me.
+
+No check was loosened. One was widened correctly: the targets anchor became
+`NamesAnAnnotation | NamesAFormField`, which is a second member joining an axis
+built to take one, not a type relaxed to make an error disappear.
+
+The `--shape=image` flag on `byteImageCost.mjs` deserves naming here because it
+has a workaround's silhouette: a flag that skips the expensive half. It seals
+**not measured** and exits non-zero, so it cannot stand in for a run.
+
+### 2. Verified against the easy shape only?
+
+The two hard shapes in this range both have cases now, and both were absent
+until asked for. **The merged field/widget** — one dictionary carrying `/FT`,
+`/T` and `/Subtype /Widget`, which pdf-lib never writes and real forms often
+carry — is the hard shape for deletion. **The object-dense document** is the
+hard shape for byte-image cost, and the memory gate's own fixture pair already
+had it while measuring the wrong axis.
+
+A case named for the merged shape was pointing at a split one: index 3 of the
+fill fixture is a pdf-lib dropdown. It went red under the pruning mutation,
+which is how the mislabelling surfaced — a case named for the hard shape that
+reddens for the easy one's reason is testing the easy one.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and in the strengthening direction. `capturedPrior.test.ts` replaces
+nothing, but the compile-time tie it sits beside converts *a human noticing a
+missing member* into a build error, and the runtime half converts *the type says
+it fits* into *the value parses*. Nothing moved from asserted to derived in a
+way that acquires a provisioning condition: both halves run everywhere vitest
+runs.
+
+### 3. Would CI have caught it?
+
+For AAAAA-1, **no**, and that is the finding's other half: the case that catches
+it did not exist, and every case that drove the channel used one command. It
+runs in CI now.
+
+Everything in `packages/**` and `contract.proof.mjs` runs in CI, read from the
+board rather than from the workflow file. Two things do not, and say so in their
+own headers: `scripts/perf/byteImageCost.mjs`, twenty-five minutes a run against
+a 336s cold MuPDF build, and the research instruments, hand-run by construction
+with their readings recorded here.
+
+**Is there a defect this machine cannot see?** The engine host's real containment
+path is Windows-only and the capture channel is exercised through an in-process
+shim, so AAAAA-1's *shipped* consequence — a command failing on a real host —
+is still not observed anywhere. What is now observed is the schema refusing the
+value, which is the mechanism.
+
+### 4. Are the proofs non-vacuous?
+
+Four mutation runs, each named in its commit. `on: z.boolean()` in place of the
+nullable spelling reddens four of six channel cases and leaves both controls
+green. Spelling a prior member's literal `swapPagesX` reddens the runtime case
+and the compile-time tie. Removing `pruneEmptyFields` reddens the two
+split-shape delete cases and leaves the merged one green. Passing the row's list
+position instead of `field.index` reddens four panel cases.
+
+**The branch nothing reached** is AAAAA-4, and asking produced a finding rather
+than a missing case: `kindOf`'s `'other'` is unreachable against this MuPDF, so
+it is documentation rather than a gap, and it is kept for JJJ-1's reason.
+
+### 4a. Has every instrument passed a resolution test?
+
+`byteImageCost.mjs` resolves to 0.01s against a bound of 480s and readings of
+0.6s and 320s — three orders of margin on the axis it decides. `formFieldDelete.mjs`
+proved it can see at the level that matters only after being given a tree walk:
+with the top level alone it reported *the engine leaves `/AcroForm` untouched*,
+which is the reassuring answer produced by an instrument blind to where the
+change happened.
+
+### 4b. Is the instrument a search? Then it needs a positive control.
+
+All five research and perf instruments in this range carry one that throws
+before any reading is printed. `formFieldDelete.mjs`'s **fired on its first
+run** — it required three top-level `/AcroForm` entries and read one, because
+`/T` is a *partial* name and the qualified one is the path. The control was
+right and my expectation was wrong, which is the outcome that makes a control
+worth having.
+
+`byteImageCost.mjs`'s control is the shape this item's own note asks for: its
+reassuring answer is **fast**, and a failed apply is the fastest run it can
+produce, so every timing is paired with a check that the document moved and the
+run refuses outright if none did.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Three sets added, and the direction was asked of each. The kind enumeration in
+`formFieldsChannel.test.ts` **derives**, because the feared failure makes the
+set bigger. `INVERTIBLE` in `capturedPrior.test.ts` derives **and** carries a
+hand-written anchor naming three kinds, because a derivation agrees with any
+shrink. The targets-axis control is a hand-kept literal and grew 2 → 3 → 4 → 5
+across this range, which is the direction that catches a member leaving.
+
+AAAAA-3 is this item read one level up: a comment claiming the shrink direction
+was held by cases when it was held by the compiler.
+
+### 5. Executed, or asserted?
+
+Every figure here and in the two entries below came from a run whose command is
+named beside it. Nothing in this range's commit messages states a mechanism that
+was not executed — which is the correction `b6daa6d` had to make in the previous
+range, and the reason each measurement here got its own commit before the
+feature it decided.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Underneath it, once: AAAAA-5.** B4 was honoured twice in this range —
+ADR-0044's amendment landed alone before place image, and the seam's `targets`
+axis gained its second member with the command that needed it — and missed once,
+for the delete row. Recorded in the amendment itself rather than filled in
+quietly.
+
+### 7. Do the documents still match the code?
+
+`docs/FEATURES.md`'s D5 rows were edited to be currently true rather than
+corrected underneath, which is what a live specification asks for; four rows
+moved this range. ADR-0044 gained a dated **addendum** rather than an edit,
+because an ADR records what was believed at the time. §3's matrix gained the
+row AAAAA-5 is about.
+
+**The cross-document sweep this item owes** produced a sixth finding, and the
+sentence that stood here before I ran it said the opposite — *none of them
+contradicts the new row*. Written before the sweep, which is the shape a
+correction is supposed to catch and nearly did not.
+
+### AAAAA-6 — the delete row writes `/AcroForm` by hand, and a standing obligation covers exactly that
+
+`npm run sweep:prose -- "form fields"` surfaced `docs/ENGINE-SPIKE.md` H3, which
+says of writing the `/AcroForm` tree through the low-level `PDFObject` API:
+
+> possible, unsupported, and an easy way to produce output that different
+> readers disagree about. **Adobe Acrobat and PDF-XChange must both be checked
+> against any such output**, since "renders in our own viewer" is not evidence.
+
+`pruneEmptyFields` is that write. It is narrower than what H3 was warning about
+— removing an entry that is already empty, rather than assembling a field with a
+type, a name and an appearance — but it is the same API on the same structure,
+and the obligation is stated without a size qualifier.
+
+**It has not been met.** The delete row is verified against `@cantoo/pdf-lib`,
+which is a second parser and is the strongest check available here; neither
+named viewer is available on this machine, so this is a gap rather than a
+failure. Recorded rather than reasoned away, because *renders in our own viewer*
+is precisely the argument H3 rejects and *a second library agrees* is one step
+along the same line rather than the end of it.
+
+It is queued for the reviewing seat with AAAAA-5, which it strengthens: if the
+`/AcroForm` tree turns out to be one concern with one writer, this obligation
+moves with it.
+
+### AAAAA-7 — two commands declared `reproducible: true` and stamped the clock
+
+**Found by this audit, in code this range never touched**, which is worth
+stating rather than filing quietly: `pageToc.ts` and `pageImage.ts` appear in
+neither scope column. A range-scoped audit found a defect the range did not
+contain, because the audit's own verification run exposed it — the mirror of
+NNN-4's hole, where a document is falsified by a commit that never touches it.
+
+**It surfaced as a flake.** `pageToc.test.ts`'s byte-equality reproducibility
+case failed once and passed on a re-run. That is the only way this defect can
+surface, and it is why the flake was worth diagnosing rather than re-running:
+`@cantoo/pdf-lib` defaults `updateMetadata` to **true** and rewrites `/ModDate`
+and `/Producer` on save, so two applies produce identical bytes whenever they
+land inside one clock tick and different bytes when they straddle a second.
+
+Measured, two applies 1.1 seconds apart:
+
+| command | same bytes | `/ModDate` |
+|---|---|---|
+| `generateToc` | **no** | `D:20260907172400Z` → `D:20260907172401Z` |
+| `insertImagePage` | **no** | `D:20260907172401Z` → `D:20260907172402Z` |
+| `watermarkPages` | yes | unchanged |
+
+Both declare `reproducible: true`, and `generateToc`'s declaration comment says
+*"Nothing is read from a clock and nothing is minted"*. Both were wrong.
+
+**The knowledge was already here and had already been paid for.** The watermark
+row in `docs/FEATURES.md` records that `updateMetadata: false` is what makes its
+`reproducible: true` true, **and that the byte-equality case cannot see the
+stamp**. Four call sites carried the flag and two did not: the instance was
+fixed and the class was left, which is Rule 0's own sentence about half-fixes.
+
+So the repair is the class. `openForWriting` in `packages/kernel/src/pdfLibSession.ts`
+is the one pinned load, and `monstera/no-unpinned-pdf-load` makes the bare form
+unavailable rather than discouraged — because a helper beside a legal inline
+call is the same trap one step on (QQQ-3). Each command gained the `/ModDate`
+case the watermark already had; the byte-equality cases are kept and labelled,
+since they cover the rest of reproducibility and demonstrably not this.
+
+Mutation run: unpinning the loader reddens both new cases and leaves both
+byte-equality cases **green**, which is the claim about them stated as a
+measurement.
+
+**One dead confinement removed on the way.** The rule first exempted its own
+owner, copying `no-bare-y-flip`'s exemption of `geometry.ts`. ESLint reported
+the `eslint-disable` beside it as unused — the owner's call pins the flag and
+passes on its merits. `geometry.ts` needs its exemption because the legal
+spelling there is textually identical to the banned one; here it is not, and a
+confinement that confines nothing is one more thing reading as a mechanism.
+
+---
+
 ## 2026-09-07 — All six byte-image rows pay ADR-0044's cost, and it is 225–320 seconds
 
 ADR-0044 rejected a pdf-lib route for `placeImage` on cost and recorded that

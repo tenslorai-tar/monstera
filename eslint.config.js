@@ -496,6 +496,14 @@ export default tseslint.config(
       // digest and this registration land together.
       'monstera/no-bare-y-flip': 'error',
 
+      // §3a'S REPRODUCIBILITY AXIS, made checkable. pdf-lib defaults
+      // `updateMetadata` to true and rewrites `/ModDate` on save, so a command
+      // declaring `reproducible: true` and loading with the default writes
+      // different bytes every run — measured 2026-09-07, and it surfaced as a
+      // FLAKE because a byte-equality case only fails when two saves straddle a
+      // second. Four call sites had the flag and two did not.
+      'monstera/no-unpinned-pdf-load': 'error',
+
       // ADR-0029 DECISION 4'S EXHAUSTIVENESS, WHICH WAS A COMMENT UNTIL NOW.
       // Each projection switches on `placement.surface` and ends in a `default`
       // assigning to `never`, so a fifth `Placement` variant fails to compile in

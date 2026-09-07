@@ -1,8 +1,8 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import { openForWriting } from './pdfLibSession.js';
 
 /**
  * A page made from an image.
@@ -60,7 +60,7 @@ export const applyInsertImagePage: Apply<'pdf-lib', 'insertImagePage'> = async (
   image: ByteImage,
   command: CommandOfKind<'insertImagePage'>,
 ): Promise<ByteImage> => {
-  const document = await PDFDocument.load(image);
+  const document = await openForWriting(image);
 
   // TWO CALLS AND NOT ONE, because pdf-lib offers two and the choice is the
   // caller's. A sniffer here would be a second opinion about a question the

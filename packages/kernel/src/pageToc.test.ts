@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
@@ -46,6 +46,12 @@ const PAGE_SIZE: readonly [number, number] = [400, 300];
 async function blankDocument(pages = PAGE_COUNT): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   for (let index = 0; index < pages; index += 1) document.addPage([...PAGE_SIZE]);
+  // PINNED, so a reproducibility reading cannot come out right by accident —
+  // `pageWatermark.test.ts`'s fixture and its reason. `PDFDocument.create`
+  // stamps today's date, and two runs inside one clock tick then produce the
+  // same `/ModDate` whether or not the command preserves it, which is a fixture
+  // the defect also handles correctly.
+  document.setModificationDate(new Date(Date.UTC(2001, 0, 2, 3, 4, 5)));
   return document.save();
 }
 
@@ -293,10 +299,34 @@ describe('generateToc', () => {
   });
 
   it('is reproducible: the same document and outline write the same bytes', async () => {
+    // THIS CASE WAS FLAKY AND THAT WAS THE DEFECT SPEAKING. `pageToc.ts` loaded
+    // without `updateMetadata: false`, so pdf-lib rewrote `/ModDate` on every
+    // save and two applies straddling a second produced different bytes — which
+    // is exactly how often it failed. It is kept because it covers the rest of
+    // reproducibility (a minted identifier or a counter would redden it) and
+    // because the case below is what actually holds the stamp.
     const source = await blankDocument();
     const once = await applyGenerateToc(source, AT_FRONT, OUTLINE);
     const twice = await applyGenerateToc(source, AT_FRONT, OUTLINE);
     expect(Buffer.from(twice)).toStrictEqual(Buffer.from(once));
+  });
+
+  it('preserves the document’s own /ModDate rather than stamping the clock', async () => {
+    // THE CASE THAT ACTUALLY HOLDS THE PROPERTY, and the one above does not:
+    // byte equality also holds when two runs land in the same clock tick, so it
+    // is green most of the time against a command that stamps. Reading the
+    // value is independent of the clock, because the fixture's date is pinned
+    // to 2001 and no stamp can produce it.
+    //
+    // Measured 2026-09-07 before the fix, two applies 1.1s apart: `/ModDate`
+    // moved from `D:20260907172400Z` to `D:20260907172401Z`, against
+    // `watermarkPages` — which pins the flag — holding its value across the
+    // same gap. `generateToc` declares `reproducible: true`, so it was
+    // mis-declared rather than merely untidy.
+    const built = await applyGenerateToc(await blankDocument(), AT_FRONT, OUTLINE);
+    const document = await PDFDocument.load(built, { updateMetadata: false });
+    const info = document.context.lookup(document.context.trailerInfo.Info, PDFDict);
+    expect(String(info.get(PDFName.of('ModDate')))).toBe('(D:20010102030405Z)');
   });
 
   it('CONTROL: the fixture shows nothing before the command runs', async () => {

@@ -35,8 +35,17 @@ import { createRemoteSessions, remoteMupdfFormFields } from './remoteEngine.js';
  * added to `formFieldKindSchema` with no case naming it — so the enumeration
  * below reads the schema rather than restating it (checklist 4c). A member
  * added on the day a reader can answer it arrives here with a case already
- * pointing at it. The opposite danger, a member quietly leaving, is caught by
- * `kindOf`'s own cases, which name their kinds as literals.
+ * pointing at it.
+ *
+ * **The opposite danger is held by the COMPILER, and this sentence used to
+ * claim otherwise.** It said a member leaving is caught by `kindOf`'s cases
+ * naming their kinds as literals — which was true of six of the eight and not
+ * of `other`, named by no case anywhere. Found by auditing 2026-09-07. What
+ * actually holds it is `kindOf`'s return type and `FormsPanel`'s
+ * `Record<FormFieldKind, MessageKey>`, both of which stop compiling when a
+ * member goes; the cases are corroboration rather than the mechanism. Corrected
+ * rather than left, because a comment naming a control that does not exist is
+ * the defect this range already found once in `remoteEngine.test.ts`.
  */
 
 let form: ByteImage;

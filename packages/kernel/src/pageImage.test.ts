@@ -1,6 +1,6 @@
 import { crc32, deflateSync } from 'node:zlib';
 
-import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandOfKind } from '@monstera/contract';
@@ -99,6 +99,11 @@ async function threePages(): Promise<Uint8Array> {
   for (let index = 0; index < PAGE_COUNT; index += 1) {
     document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   }
+  // PINNED, so a reproducibility reading cannot come out right by accident —
+  // `pageWatermark.test.ts`'s fixture and its reason. `PDFDocument.create`
+  // stamps today's date, and two runs inside one clock tick then produce the
+  // same `/ModDate` whether or not the command preserves it.
+  document.setModificationDate(new Date(Date.UTC(2001, 0, 2, 3, 4, 5)));
   return document.save();
 }
 
@@ -210,6 +215,26 @@ describe('insertImagePage', () => {
     expect(captured.captured).toBe(false);
     if (captured.captured) throw new Error('an insert reported recordable prior state');
     expect(captured.reason).toContain('no recordable prior state');
+  });
+
+  it('preserves the document’s own /ModDate rather than stamping the clock', async () => {
+    // `insertImagePage` declares `reproducible: true` and loaded without
+    // `updateMetadata: false` until 2026-09-07, so pdf-lib rewrote `/ModDate`
+    // and `/Producer` on every save and the command was mis-declared. Measured
+    // before the fix, two applies 1.1s apart: `D:20260907172401Z` to
+    // `D:20260907172402Z`, against `watermarkPages` holding its value across
+    // the same gap.
+    //
+    // A BYTE-EQUALITY CASE CANNOT HOLD THIS, which is why one is not written
+    // here: two saves normally land inside one clock tick, so it would be green
+    // against the defect almost every run — and the one place that shape was
+    // used, `pageToc.test.ts`, is where the whole thing surfaced as a flake.
+    // Reading the value is independent of the clock, because the fixture's date
+    // is pinned to 2001 and no stamp can produce it.
+    const built = await applyInsertImagePage(await threePages(), command(0));
+    const document = await PDFDocument.load(built, { updateMetadata: false });
+    const info = document.context.lookup(document.context.trailerInfo.Info, PDFDict);
+    expect(String(info.get(PDFName.of('ModDate')))).toBe('(D:20010102030405Z)');
   });
 });
 

@@ -62,6 +62,7 @@ import {
   PLANTED_Y_FLIP_INNOCENT,
   PLANTED_Y_FLIP_OFFENDER,
 } from '../lib/noBareYFlip.mjs';
+import { PLANTED_PINNED_LOAD, PLANTED_UNPINNED_LOAD } from '../lib/noUnpinnedPdfLoad.mjs';
 import {
   CLASS_COMPONENT_OWNER,
   PLANTED_CLASS_COMPONENT_INNOCENT,
@@ -626,6 +627,48 @@ async function main() {
           `That module holds the only y-flip in the application and rotates within the ` +
           `viewport's own box as well, where a height is genuinely the bound. Reporting it ` +
           `would force a disable comment into the one file that is right.`,
+      );
+
+      // -------------------------------------------------------------------
+      // §3a's reproducibility axis. pdf-lib rewrites `/ModDate` on save unless
+      // `updateMetadata` is pinned false, so a command declaring
+      // `reproducible: true` and loading with the default writes different
+      // bytes every run. Two of six call sites were unpinned and it surfaced as
+      // a FLAKE, which is the only way it can: a byte-equality case fails only
+      // when two saves straddle a second.
+      // -------------------------------------------------------------------
+      const PINNED = 'monstera/no-unpinned-pdf-load';
+      const loadOffender = join(shippedDirectory, 'load.ts');
+      writeFileSync(loadOffender, `${PLANTED_UNPINNED_LOAD}\n`, 'utf8');
+      const loadFound = (await eslint.lintFiles([loadOffender]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === PINNED);
+
+      check(
+        'all three unpinned spellings are reported, at error severity',
+        loadFound.filter((message) => message.severity === 2).length === 3,
+        `findings on the planted module: ${
+          loadFound.map((m) => `${m.ruleId}(${String(m.severity)})`).join(', ') || 'none'
+        }\n      THREE, because not-pinning has three shapes: no options at all — how both real ` +
+          `defects were written — a SPREAD, which hides the default behind a variable, and ` +
+          `\`true\` written out, which reads as deliberate. A fixture with only the first ` +
+          `leaves the two that are harder to see unproven.`,
+      );
+
+      const loadInnocent = join(shippedDirectory, 'pinned.ts');
+      writeFileSync(loadInnocent, `${PLANTED_PINNED_LOAD}\n`, 'utf8');
+      const pinnedFindings = (await eslint.lintFiles([loadInnocent]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === PINNED);
+
+      check(
+        'CONTROL: the pin, the pin among other options, and another object’s load are NOT reported',
+        pinnedFindings.length === 0,
+        `findings on the innocent module: ${
+          pinnedFindings.map((m) => m.message).join(' | ') || 'none'
+        }\n      A rule that reported the pinned call is one somebody disables, which costs ` +
+          `the class rather than the case — and one that reported any \`.load\` would fire on ` +
+          `every unrelated object in the tree.`,
       );
 
       // -------------------------------------------------------------------

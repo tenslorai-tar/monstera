@@ -163,6 +163,37 @@ async function fillable(): Promise<Uint8Array> {
   return document.save();
 }
 
+/**
+ * One widget whose `/FT` this build cannot name.
+ *
+ * `/Xx` is not a field type the format defines and not one MuPDF's predicates
+ * match, which is what makes it the input for `kindOf`'s `'other'` branch. A
+ * document carrying one is not hypothetical: `/FT` is a `/Name` a producer
+ * chooses, and the closed union exists because a renderer cannot label a string
+ * nobody anticipated.
+ */
+async function unclassifiable(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 600]);
+  const context = document.context;
+  const strange = context.obj({
+    Type: PDFName.of('Annot'),
+    Subtype: PDFName.of('Widget'),
+    FT: PDFName.of('Xx'),
+    T: PDFString.of('applicant.strange'),
+    Rect: context.obj([20, 260, 220, 300]),
+    F: 4,
+  });
+  const ref = context.register(strange);
+  page.node.addAnnot(ref);
+  // AND INTO `/AcroForm`, because a widget the catalog does not know about is a
+  // different defect from a field type nobody can name, and this case is about
+  // the second.
+  const acroForm = context.obj({ Fields: context.obj([ref]) });
+  document.catalog.set(PDFName.of('AcroForm'), acroForm);
+  return document.save();
+}
+
 /** A page with a square on it and no fields at all. */
 async function marked(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
@@ -202,6 +233,31 @@ describe('readFormFields', () => {
       { kind: 'dropdown', name: 'applicant.title', value: 'Dr', on: null },
       { kind: 'listbox', name: 'applicant.languages', value: 'Dutch', on: null },
       { kind: 'signature', name: 'applicant.signature', value: '', on: null },
+    ]);
+  });
+
+  it('CALLS AN UNRECOGNISED FIELD TYPE A BUTTON, because that is what the engine calls it', async () => {
+    // ITEM 4'S BRANCH NOBODY ARRIVES AT, and asking which produced a finding
+    // rather than a missing case. `kindOf` answers `'other'` when no predicate
+    // matches and the type is not `signature`, and this case was written to
+    // reach it. It cannot: measured 2026-09-07 against MuPDF 1.28.0, a widget
+    // whose `/FT` is `/Xx` — and a widget with NO `/FT` at all — resolves to
+    // `getFieldType() === 'button'` with `isPushButton()` true. The engine
+    // defaults an unknown or absent type to push button, so every widget it
+    // will hand us matches a predicate and `'other'` is unreachable.
+    //
+    // The member is KEPT rather than deleted, for JJJ-1's reason: the fact it
+    // encodes is true — a type this build cannot name needs an honest label —
+    // and removing it would leave `kindOf` with no fallback the day a version
+    // returns a string these predicates do not cover.
+    //
+    // WHAT A READER IS TOLD is the part worth stating: a widget the document
+    // does not classify is presented as *Button*, unfillable. That is MuPDF's
+    // answer passed through rather than this build's guess (B3a), which is the
+    // whole reason `kindOf` asks the predicates instead of reading `/FT`.
+    const fields = await listed(await unclassifiable());
+    expect(fields).toStrictEqual([
+      { kind: 'button', name: 'applicant.strange', value: '', on: null },
     ]);
   });
 
