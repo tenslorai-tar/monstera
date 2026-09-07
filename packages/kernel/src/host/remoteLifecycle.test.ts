@@ -221,6 +221,9 @@ function joined(
       annotations: () => {
         throw new Error('the lifecycle half must not list annotations');
       },
+      formFields: () => {
+        throw new Error('the lifecycle half must not list form fields');
+      },
       duplicates: () => {
         throw new Error('the lifecycle half must not look for duplicates');
       },
@@ -429,6 +432,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         annotations: () => {
           throw new Error('the byte-size case must not list annotations');
+        },
+        formFields: () => {
+          throw new Error('the byte-size case must not list form fields');
         },
         duplicates: () => {
           throw new Error('the byte-size case must not look for duplicates');

@@ -155,6 +155,7 @@ export function createContractHandlers(deps: {
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
+    'document.formFields': formFieldsHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -671,6 +672,26 @@ function annotationsHandler(
     try {
       const { version, annotations, truncated } = await commands.annotations(docId);
       return ok({ version, annotations, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The document's form fields. A READ, for `annotationsHandler`'s reason: what a
+ * person does with a field is fill it, and filling is a command.
+ */
+function formFieldsHandler(commands: DocumentCommands): ContractHandlers['document.formFields'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.formFields']>>> => {
+    try {
+      const { version, fields, truncated } = await commands.formFields(docId);
+      return ok({ version, fields, truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

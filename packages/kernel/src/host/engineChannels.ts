@@ -7,6 +7,7 @@ import {
   addLinkSchema,
   annotationKindNameSchema,
   annotationRectSchema,
+  formFieldKindSchema,
   channel,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -255,6 +256,21 @@ export const ENGINE_ANNOTATIONS_MAX = 4096;
 export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
 
 /**
+ * How many form fields may be listed, and how much of a value, name or option.
+ *
+ * {@link ENGINE_ANNOTATIONS_MAX}' numbers for its reason, stated rather than
+ * shared: a generated form pack carries fields in the thousands and is ordinary
+ * rather than hostile, and two bounds that happen to agree are not one bound.
+ *
+ * The text is a SLICE rather than a refusal for the note's reason — a value
+ * longer than this is still a value, and refusing the field would hide it from
+ * the list it belongs in.
+ */
+export const ENGINE_FORM_FIELDS_MAX = 4096;
+export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
+export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
+
+/**
  * One annotation, as it crosses from the host.
  *
  * **`kind` is a closed union, not the document's `/Subtype`.** A subtype is a
@@ -304,6 +320,45 @@ const engineAnnotationSchema = z
      * about to change, and it cannot derive this from anything it holds.
      */
     authored: z.boolean(),
+  })
+  .strict();
+
+/**
+ * One AcroForm field's widget, as it crosses from the host.
+ *
+ * **`kind` is the contract's enum**, for `engineAnnotationSchema`'s reason and
+ * with its history: the annotation name list was written down five times before
+ * `commands.ts` was made to own it, and a sixth spelling here would be the same
+ * defect one walk along.
+ *
+ * `on` is nullable rather than optional, and `rect` likewise, for
+ * `engineDestinationSchema`'s reason — JSON cannot carry `undefined`, so an
+ * optional property would make the wire spelling differ from the reader's.
+ */
+const engineFormFieldSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    /**
+     * Its position in the WIDGET walk on that page, which shares no entries
+     * with the annotation walk beside it — measured, seven widgets against zero
+     * annotations on one page. It crosses for the annotation handle's reason: a
+     * list nothing can point into is a list nothing can fill.
+     */
+    index: z.number().int().nonnegative(),
+    kind: formFieldKindSchema,
+    /** Not unique — a radio group is one field with several widgets. */
+    name: z.string().max(ENGINE_FORM_FIELD_TEXT_MAX),
+    /** Empty for every button kind, by construction. See `formFields.ts`. */
+    value: z.string().max(ENGINE_FORM_FIELD_TEXT_MAX),
+    /** Whether THIS widget is on, or null for a field with no on-state. */
+    on: z.boolean().nullable(),
+    options: z
+      .array(z.string().max(ENGINE_FORM_FIELD_TEXT_MAX))
+      .max(ENGINE_FORM_FIELD_OPTIONS_MAX)
+      .readonly(),
+    readOnly: z.boolean(),
+    /** PDF user space, or null for a page that displays no region. */
+    rect: annotationRectSchema.nullable(),
   })
   .strict();
 
@@ -1072,6 +1127,19 @@ export const engineChannels = {
     z
       .object({
         annotations: z.array(engineAnnotationSchema).max(ENGINE_ANNOTATIONS_MAX),
+        /** Whether the bound stopped the walk. See `engine/duplicate-pages`. */
+        truncated: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  'engine/form-fields': channel(
+    'Lists every AcroForm field in a session this host holds, in page order.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({
+        fields: z.array(engineFormFieldSchema).max(ENGINE_FORM_FIELDS_MAX),
         /** Whether the bound stopped the walk. See `engine/duplicate-pages`. */
         truncated: z.boolean(),
       })

@@ -111,6 +111,7 @@ export {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostFormFieldsReader,
   type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -144,6 +145,7 @@ export {
   remoteMupdfGeometry,
   remoteMupdfDestinations,
   remoteMupdfDuplicateReport,
+  remoteMupdfFormFields,
   remoteMupdfLayers,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -253,6 +255,9 @@ export type { Destination } from './destinations.js';
 // TYPE ONLY, for the reason above. `readAnnotations` reaches MuPDF and is on
 // `@monstera/kernel/engine`; the listed shape is a plain object.
 export type { AnnotationKindName, ListedAnnotation } from './pageAnnotations.js';
+// TYPE ONLY, for `ListedAnnotation`'s reason: `readFormFields` reaches MuPDF
+// and is on `@monstera/kernel/engine`; the listed shape is a plain object.
+export type { ListedField } from './formFields.js';
 export type { Layer, PriorLayerVisibility } from './layers.js';
 // TYPE ONLY. `findDuplicatePages` itself is on `@monstera/kernel/engine` with
 // every other value that binds the native library (ADR-0026); the group shape

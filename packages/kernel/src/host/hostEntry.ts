@@ -9,6 +9,7 @@ import { mupdfWriter } from '../mupdfWriter.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
@@ -136,6 +137,7 @@ startEngineHost(
     destinations: readDestinations,
     layers: readLayers,
     annotations: readAnnotations,
+    formFields: readFormFields,
     duplicates: findDuplicatePages,
     // RUNS HERE, which is the whole reason `engine/extract` is a channel:
     // `extractPages` reaches MuPDF, and invariant 20 keeps that out of `main`.

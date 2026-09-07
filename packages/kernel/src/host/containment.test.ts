@@ -527,6 +527,9 @@ describe('the engine host answers a containment probe', () => {
     annotations: () => {
       throw new Error('a containment probe must not list annotations');
     },
+    formFields: () => {
+      throw new Error('a containment probe must not list form fields');
+    },
     duplicates: () => {
       throw new Error('a containment probe must not look for duplicates');
     },

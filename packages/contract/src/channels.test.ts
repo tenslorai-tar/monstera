@@ -143,6 +143,42 @@ const handlers: ContractHandlers = {
     Promise.resolve(
       ok({ version: asDocVersion(1), annotations: [], truncated: false }),
     ),
+  // TWO FIELDS OF DIFFERENT KINDS, for the duplicate fixture's reason and one
+  // more of its own: a boundary that dropped everything after the first would
+  // answer correctly from a one-field fixture, and the two carry the values a
+  // transposition would swap — `on` is null on the text field and false on the
+  // checkbox, so a boundary that defaulted either would be visible.
+  'document.formFields': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        fields: [
+          {
+            page: 0,
+            index: 0,
+            kind: 'text' as const,
+            name: 'applicant.name',
+            value: 'Ada',
+            on: null,
+            options: [],
+            readOnly: false,
+            rect: { x0: 10, y0: 20, x1: 110, y1: 40 },
+          },
+          {
+            page: 1,
+            index: 0,
+            kind: 'checkbox' as const,
+            name: 'applicant.agrees',
+            value: '',
+            on: false,
+            options: [],
+            readOnly: true,
+            rect: null,
+          },
+        ],
+        truncated: false,
+      }),
+    ),
   'document.duplicatePages': () =>
     Promise.resolve(
       ok({

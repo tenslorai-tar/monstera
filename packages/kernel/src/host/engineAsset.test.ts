@@ -149,6 +149,9 @@ async function joined(): Promise<{
         throw new Error('unused');
       },
       annotations: readAnnotations,
+      formFields: () => {
+        throw new Error('unused');
+      },
       duplicates: () => {
         throw new Error('unused');
       },

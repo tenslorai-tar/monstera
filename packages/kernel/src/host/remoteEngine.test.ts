@@ -11,6 +11,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageLinks } from '../pageLinks.js';
@@ -174,9 +175,15 @@ async function joined(): Promise<{
       pageLinks: readPageLinks,
       destinations: readDestinations,
       layers: readLayers,
-      // THE REAL READER for the reason its neighbours are: the annotation cases
-      // below ask what the HOST's document holds after a command crossed.
+      // THE REAL READERS, so the parts assembled here are the production ones —
+      // and NO CASE IN THIS FILE DRIVES EITHER. The comment here used to say
+      // *the annotation cases below*, which named cases that have never
+      // existed: the annotation walk is `pageAnnotations.test.ts`' subject and
+      // its channel's crossing is `formFieldsChannel.test.ts`' sibling
+      // question, left unwritten. Corrected 2026-09-07 rather than left to read
+      // as coverage.
       annotations: readAnnotations,
+      formFields: readFormFields,
       duplicates: findDuplicatePages,
       extract: extractPages,
       snapshot: snapshotRegion,
@@ -438,6 +445,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         annotations: () => {
           throw new Error('unused');
         },
+        formFields: () => {
+          throw new Error('unused');
+        },
         duplicates: () => {
           throw new Error('unused');
         },
@@ -523,6 +533,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         annotations: () => {
           throw new Error('the rotation-refusal case must not list annotations');
+        },
+        formFields: () => {
+          throw new Error('the rotation-refusal case must not list form fields');
         },
         duplicates: () => {
           throw new Error('the rotation-refusal case must not look for duplicates');

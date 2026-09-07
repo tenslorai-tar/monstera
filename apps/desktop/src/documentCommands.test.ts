@@ -20,6 +20,7 @@ import {
 import {
   findDuplicatePages,
   readAnnotations,
+  readFormFields,
   localMupdfWriter,
   mupdfWriter,
   readPageGeometry,
@@ -51,6 +52,7 @@ import {
   type CopySource,
   type ImageSource,
   type DocumentAnnotationsReader,
+  type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
   DocumentPoisonedError,
@@ -318,6 +320,16 @@ const localAnnotations: DocumentAnnotationsReader = (id, sessions) => {
   return readAnnotations(held);
 };
 
+const noFormFields: DocumentFormFieldsReader = () =>
+  Promise.reject(new Error('this case does not list form fields'));
+
+/** The annotation list's composition, over the widget walk. */
+const localFormFields: DocumentFormFieldsReader = (id, sessions) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readFormFields(held);
+};
+
 const localDuplicates: DocumentDuplicatesReader = async (id, sessions) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
@@ -407,6 +419,7 @@ const INERT = {
   layers: noLayers,
   restore: noRestore,
   annotations: noAnnotations,
+  formFields: noFormFields,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -424,6 +437,7 @@ const LOCAL_READS = {
   destinations: localDestinations,
   layers: localLayers,
   annotations: localAnnotations,
+  formFields: localFormFields,
   duplicates: localDuplicates,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 

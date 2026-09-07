@@ -15,6 +15,7 @@ import {
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
+  type HostFormFieldsReader,
   type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -37,6 +38,7 @@ import {
   remoteMupdfDestinations,
   remoteMupdfAnnotations,
   remoteMupdfDuplicateReport,
+  remoteMupdfFormFields,
   remoteMupdfLayers,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -497,6 +499,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.annotations(session);
     },
+    // THE FORM FIELD LIST, composed here for the annotation list's reason and
+    // whole-document for its reason: a panel asks what a form asks for, which
+    // is a question about all of it.
+    formFields: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.formFields(session);
+    },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
     duplicates: (docId, sessions) => {
@@ -646,6 +656,7 @@ function engineSessionOpener(
   readonly layers: HostLayersReader;
   /** Every annotation in the document, from whichever host is live. */
   readonly annotations: HostAnnotationsReader;
+  readonly formFields: HostFormFieldsReader;
   /** The document's duplicate pages, from whichever host is live. */
   readonly duplicates: DuplicateReport;
   /**
@@ -861,6 +872,20 @@ function engineSessionOpener(
     return annotations(session);
   };
 
+  /** The form field list's half of the same registration. See {@link pageText}. */
+  let formFields: HostFormFieldsReader | null = null;
+
+  const readFormFieldsThroughHost: HostFormFieldsReader = (session) => {
+    if (formFields === null) {
+      throw new Error(
+        'A form field read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return formFields(session);
+  };
+
   /** The duplicate report's half of the same registration. See {@link pageText}. */
   let duplicates: DuplicateReport | null = null;
 
@@ -1017,6 +1042,7 @@ function engineSessionOpener(
     destinations = remoteMupdfDestinations(client, remote);
     layers = remoteMupdfLayers(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
+    formFields = remoteMupdfFormFields(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
     return live.value;
   };
@@ -1185,6 +1211,7 @@ function engineSessionOpener(
     destinations: readDestinationsThroughHost,
     layers: readLayersThroughHost,
     annotations: readAnnotationsThroughHost,
+    formFields: readFormFieldsThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
     snapshot: snapshotThroughHost,

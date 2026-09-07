@@ -136,6 +136,9 @@ function start(stream: HostByteStream) {
       annotations: () => {
         throw new Error('no case here lists annotations');
       },
+      formFields: () => {
+        throw new Error('no case here lists form fields');
+      },
       duplicates: () => {
         throw new Error('no case here looks for duplicates');
       },

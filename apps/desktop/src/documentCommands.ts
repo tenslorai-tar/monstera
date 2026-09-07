@@ -18,6 +18,7 @@ import {
   type Destination,
   type DuplicatePageGroup,
   type ListedAnnotation,
+  type ListedField,
   type Layer,
   type PageLink,
   type PageText,
@@ -732,6 +733,27 @@ export interface DocumentAnnotations {
 }
 
 /**
+ * Lists every AcroForm field, and says whether the bound stopped the walk.
+ *
+ * {@link DocumentAnnotationsReader}'s shape for its reason — and this is the
+ * first reader added since that one whose answer really does share a shape with
+ * a neighbour, which is what the named-keys move was for: `{ page, index, rect }`
+ * describes an entry in either walk, and a positional list would have made the
+ * transposition compile.
+ */
+export type DocumentFormFieldsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+) => Promise<{ readonly fields: readonly ListedField[]; readonly truncated: boolean }>;
+
+/** The form fields, stamped with the version the lane read them at. */
+export interface DocumentFormFields {
+  readonly version: DocVersion;
+  readonly fields: readonly ListedField[];
+  readonly truncated: boolean;
+}
+
+/**
  * Groups identical pages, and says whether the bound stopped the report.
  *
  * **The truncation flag rides with the groups**, rather than being a second
@@ -840,6 +862,7 @@ export interface DocumentCommandsParts {
    * nothing else moving.
    */
   readonly annotations: DocumentAnnotationsReader;
+  readonly formFields: DocumentFormFieldsReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -861,6 +884,7 @@ export class DocumentCommands {
   readonly #layers: DocumentLayersReader;
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
+  readonly #formFields: DocumentFormFieldsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -880,6 +904,7 @@ export class DocumentCommands {
     this.#layers = parts.layers;
     this.#restore = parts.restore;
     this.#annotations = parts.annotations;
+    this.#formFields = parts.formFields;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -1119,6 +1144,29 @@ export class DocumentCommands {
     });
 
     return { version, annotations: value.annotations, truncated: value.truncated };
+  }
+
+  /**
+   * Lists every AcroForm field, inside the document's lane.
+   *
+   * `annotations`' guards in `annotations`' order, and the lane matters for the
+   * same reason: this walks every page's widgets, and a walk interleaved with
+   * an `apply` would describe neither the document before the command nor the
+   * one after it — which for a form panel means a row pointing at a field whose
+   * index has just moved.
+   */
+  async formFields(docId: DocId): Promise<DocumentFormFields> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#formFields(docId, sessions);
+    });
+
+    return { version, fields: value.fields, truncated: value.truncated };
   }
 
   /**

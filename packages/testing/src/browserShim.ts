@@ -915,6 +915,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
+    /**
+     * EMPTY, for the annotation list's reason: the shim's kernel is stubbed and
+     * has no document to walk, and a shim inventing fields would be the shim
+     * under test. What a case about the panel asserts is that the panel renders
+     * what it is handed.
+     */
+    'document.formFields': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ version: asDocVersion(current), fields: [], truncated: false }));
+    },
+
     'document.duplicatePages': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

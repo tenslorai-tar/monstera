@@ -6,6 +6,7 @@ import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
 import type { Layer } from '../layers.js';
+import type { ListedField } from '../formFields.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
 import type { PageLink } from '../pageLinks.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
@@ -75,6 +76,17 @@ export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer
  */
 export type HostAnnotationsReader = (session: MupdfSession) => Promise<{
   readonly annotations: readonly ListedAnnotation[];
+  readonly truncated: boolean;
+}>;
+
+/**
+ * Lists every AcroForm field. {@link HostAnnotationsReader}'s shape and its
+ * reasons, over the walk that shares no entries with it: measured 2026-09-07, a
+ * page carrying seven widgets answers zero annotations, so this cannot be a
+ * projection of the list next to it.
+ */
+export type HostFormFieldsReader = (session: MupdfSession) => Promise<{
+  readonly fields: readonly ListedField[];
   readonly truncated: boolean;
 }>;
 
@@ -237,6 +249,7 @@ export interface EngineHandlerParts {
   readonly destinations: HostDestinationsReader;
   readonly layers: HostLayersReader;
   readonly annotations: HostAnnotationsReader;
+  readonly formFields: HostFormFieldsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
   readonly snapshot: HostSnapshot;
@@ -254,6 +267,7 @@ export function createEngineHandlers({
   destinations,
   layers,
   annotations,
+  formFields,
   duplicates,
   extract,
   snapshot,
@@ -504,6 +518,16 @@ export function createEngineHandlers({
         ok: true,
         value: { annotations: [...listed.annotations], truncated: listed.truncated },
       };
+    },
+
+    'engine/form-fields': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // BOUNDED WHERE THE WALK IS, for `engine/annotations`' reason: the reader
+      // stops rather than building the whole list and slicing it, and it is
+      // what knows there was more. Both halves are forwarded.
+      const listed = await formFields(held.session);
+      return { ok: true, value: { fields: [...listed.fields], truncated: listed.truncated } };
     },
 
     'engine/duplicate-pages': async ({ session }) => {

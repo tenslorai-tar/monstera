@@ -14,6 +14,7 @@ import {
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
+  HostFormFieldsReader,
   HostLayersReader,
   HostPageLinksReader,
   HostPageTextReader,
@@ -323,6 +324,26 @@ export function remoteMupdfAnnotations(
       await client['engine/annotations']({ session: sessions.handleFor(session) }),
     );
     return { annotations: answer.annotations, truncated: answer.truncated };
+  };
+}
+
+/**
+ * The document's form fields, over the boundary.
+ *
+ * `remoteMupdfAnnotations`' shape and its reason: both halves come back,
+ * because the truncation flag has one consumer — the panel says so — and there
+ * is no reader shape here to strip it for.
+ */
+export function remoteMupdfFormFields(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostFormFieldsReader {
+  return async (session) => {
+    const answer = answered(
+      'engine/form-fields',
+      await client['engine/form-fields']({ session: sessions.handleFor(session) }),
+    );
+    return { fields: answer.fields, truncated: answer.truncated };
   };
 }
 

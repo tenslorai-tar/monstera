@@ -664,6 +664,8 @@ export const handlers: ContractHandlers = {
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], truncated: false })),
+  'document.formFields': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), fields: [], truncated: false })),
   'document.duplicatePages': () =>
     Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
@@ -726,6 +728,8 @@ export const handlers: ContractHandlers = {
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], truncated: false })),
+  'document.formFields': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), fields: [], truncated: false })),
   'document.duplicatePages': () =>
     Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
@@ -863,6 +867,8 @@ export const shim: ContractClient = {
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
   'document.annotations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), annotations: [], truncated: false })),
+  'document.formFields': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), fields: [], truncated: false })),
   'document.duplicatePages': () =>
     Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),

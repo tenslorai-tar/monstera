@@ -231,6 +231,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.destinations': 'needs an engine session',
   'document.layers': 'needs an engine session',
   'document.annotations': 'needs an engine session',
+  'document.formFields': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

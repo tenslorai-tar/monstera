@@ -7,6 +7,7 @@ import {
   MAX_IMAGE_PAGES,
   annotationKindNameSchema,
   annotationRectSchema,
+  formFieldKindSchema,
   renderableCommandSchema,
 } from './commands.js';
 import { docIdSchema, docVersionSchema, fileHandleSchema } from './schemas.js';
@@ -255,6 +256,24 @@ export const MAX_DUPLICATE_PAGES = 4096;
  */
 export const MAX_ANNOTATIONS = 4096;
 export const MAX_ANNOTATION_CONTENTS = 512;
+
+/**
+ * How many form fields may cross, and how much of a value, name or option list.
+ *
+ * {@link MAX_ANNOTATIONS}' numbers for {@link MAX_ANNOTATIONS}' reason, stated
+ * rather than shared — two bounds that happen to agree are not one bound. The
+ * argument is the same one form along: the largest government form anyone has
+ * put in front of this build carries fields in the hundreds, and a document
+ * carrying thousands is a generated pack rather than a hostile one.
+ *
+ * **The option bound is per FIELD, not per document**, which is the one place
+ * this differs from the annotation shape: a dropdown of every country is around
+ * two hundred entries and is ordinary, so the bound sits where a list a
+ * document controls is built.
+ */
+export const MAX_FORM_FIELDS = 4096;
+export const MAX_FORM_FIELD_TEXT = 512;
+export const MAX_FORM_FIELD_OPTIONS = 512;
 
 /**
  * How long a document's name may be.
@@ -1488,6 +1507,102 @@ export const channels = {
        * many*, and a panel claiming to list a document's comments would be
        * listing some of them.
        */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Every AcroForm field in the document, in page order.
+   *
+   * `document.annotations`' shape, and **a separate channel rather than a
+   * member of it**, because the two walks share no entries: measured
+   * 2026-09-07, a page carrying seven widgets and nothing else answers **0**
+   * annotations and **7** widgets, which is
+   * [ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)'s
+   * filtering read from the other side. One list carrying both would need a
+   * discriminator and two index spaces under one `index`, which is the shape
+   * that produces a handle pointing at the wrong object.
+   *
+   * A READ, for `document.annotations`' reason: what a person does with a field
+   * is fill it, and filling is a command.
+   */
+  'document.formFields': channel(
+    'Every AcroForm field in the document, in page order, with what kind each is.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      version: docVersionSchema,
+      fields: z
+        .array(
+          z.object({
+            /** Zero-based, so a panel can hand it straight to a jump. */
+            page: z.number().int().nonnegative(),
+            /**
+             * Its position in the WIDGET walk on that page — the half of a
+             * handle that says which one, and **not** an index into `/Annots`
+             * nor into the annotation walk beside it.
+             *
+             * Valid only against the `version` beside it, for the annotation
+             * handle's reason: across versions this is not an identity.
+             */
+            index: z.number().int().nonnegative(),
+            kind: formFieldKindSchema,
+            /**
+             * The fully-qualified field name.
+             *
+             * **Not unique, and that is the format rather than this reader.** A
+             * radio group is one field with several widgets, and measured on
+             * the fixture both of its widgets answer `applicant.post`. So this
+             * is what a person reads, and `index` is what points — a surface
+             * that keyed on the name would fill both halves of a group.
+             */
+            name: z.string().max(MAX_FORM_FIELD_TEXT),
+            /**
+             * The text of a field that has text — a text field's contents, a
+             * choice field's selected option.
+             *
+             * **Empty for every button kind, by construction.** MuPDF's
+             * `getValue()` answers a checkbox's on-state name here and a
+             * radio's export value, which read like states and are not: the
+             * export value is `"0"` where the options are labels. A surface
+             * that matched one against the other would never match, so there is
+             * no string here to mistake for a tick (B5 over a comment).
+             */
+            value: z.string().max(MAX_FORM_FIELD_TEXT),
+            /**
+             * Whether THIS widget is the one that is on, or `null` for a field
+             * that has no on-state.
+             *
+             * **Not `/AS`, which is what a viewer paints.** Measured
+             * 2026-09-07: `@cantoo/pdf-lib`'s `check()` writes the field's `/V`
+             * and leaves the widget's `/AS` at `/Off`, so a reader keyed on the
+             * painted state reports a filled form as empty — on documents this
+             * build itself produces. The kernel compares the field's value with
+             * this widget's own on-state key, which answers a checkbox and a
+             * radio group alike.
+             */
+            on: z.boolean().nullable(),
+            /** A choice field's options, in the document's order. Empty for the rest. */
+            options: z
+              .array(z.string().max(MAX_FORM_FIELD_TEXT))
+              .max(MAX_FORM_FIELD_OPTIONS)
+              .readonly(),
+            /** Whether the document forbids filling it. */
+            readOnly: z.boolean(),
+            /**
+             * Where it is, in **PDF user space** — the annotation list's frame,
+             * so a surface converts it with the `PageTransform` it holds.
+             *
+             * **`null` when the page displays no region**, and the field is
+             * still listed: it is still there, and a surface that needs a place
+             * skips it rather than acting on an invented one.
+             */
+            rect: annotationRectSchema.nullable(),
+          }),
+        )
+        .max(MAX_FORM_FIELDS)
+        .readonly(),
+      /** Whether the bound stopped the walk. `document.annotations`' flag. */
       truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],

@@ -194,6 +194,7 @@ describe('browser shim', () => {
       'document.duplicatePages',
       'document.execute',
       'document.extract',
+      'document.formFields',
       'document.insertImage',
       'document.layers',
       'document.open',
