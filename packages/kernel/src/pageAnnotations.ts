@@ -260,7 +260,7 @@ function geometryBoxOf(annotation: PDFAnnotation): [number, number, number, numb
  * fixture almost nobody writes. `hasRect` is what keeps the accurate answer
  * where the format has one.
  */
-function readRect(annotation: PDFAnnotation, transform: PageTransform): AnnotationRect {
+export function readRect(annotation: PDFAnnotation, transform: PageTransform): AnnotationRect {
   const [x0, y0, x1, y1] = displayedBoxOf(annotation);
   const a = toPdf(viewportPoint(x0, y0), transform);
   const b = toPdf(viewportPoint(x1, y1), transform);

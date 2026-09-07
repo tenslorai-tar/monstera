@@ -1657,6 +1657,40 @@ const _everyNameIsWritten: Exclude<AnnotationKindName, 'other'> extends Annotati
 void _everyNameIsWritten;
 
 /**
+ * What a reader may call an AcroForm field.
+ *
+ * `annotationKindNameSchema`'s argument, one form along: `/FT` is a `/Name` and
+ * a document is hostile by invariant 25's premise, so passing the document's
+ * own string through would be an arbitrary value reaching a renderer that has
+ * to label it — and B9 bans a literal user-facing string, so there would be no
+ * key for a type nobody anticipated.
+ *
+ * **The six the row names, plus two.** `docs/FEATURES.md`'s D5 row asks for
+ * *text, checkbox, radio, dropdown, listbox, signature*. `button` is here
+ * because a push button is a widget a form carries and a panel that omitted it
+ * would be describing a document it had edited; `other` is the honest answer
+ * for the rest, and the field is listed rather than dropped for the reason its
+ * annotation counterpart is.
+ *
+ * **Named for what a person calls them**, not for what the format does:
+ * MuPDF answers `radiobutton` and `combobox`, and a reader is shown `radio` and
+ * `dropdown` because those are the words on the form the document came from.
+ */
+export const formFieldKindSchema = z.enum([
+  'text',
+  'checkbox',
+  'radio',
+  'dropdown',
+  'listbox',
+  'signature',
+  'button',
+  'other',
+]);
+
+/** What a reader may call a form field. See {@link formFieldKindSchema}. */
+export type FormFieldKind = z.infer<typeof formFieldKindSchema>;
+
+/**
  * Add one annotation to one page.
  *
  * §3's matrix at `docs/ARCHITECTURE.md`:386 puts *Annotations (all types),

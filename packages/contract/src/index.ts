@@ -111,6 +111,8 @@ export {
   movePageSchema,
   type NamesAnAnnotation,
   type NamesASecondDocument,
+  type FormFieldKind,
+  formFieldKindSchema,
   placeAnnotationSchema,
   placeImageSchema,
   MAX_IMAGE_PAGES,

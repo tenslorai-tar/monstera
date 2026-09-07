@@ -38,7 +38,7 @@
  * is pointed at a document built to carry **none**, and the script refuses to
  * report if that one comes back carrying any.
  */
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 
 /**
@@ -81,6 +81,27 @@ async function fixture() {
   listbox.addOptions(['English', 'Dutch', 'Welsh']);
   listbox.select('Dutch');
   listbox.addToPage(page, { x: 20, y: 340, width: 100, height: 60, font });
+
+  // A SIGNATURE FIELD, BY HAND. pdf-lib's form API has none, and the row names
+  // signature as one of its six — so a mapping written without this reading
+  // would have a guess in one of its six branches. Built the way a document
+  // arriving from elsewhere carries one: `/FT /Sig` on a widget in `/Annots`
+  // and in `/AcroForm` `/Fields`.
+  const context = document.context;
+  const signature = context.obj({
+    Type: PDFName.of('Annot'),
+    Subtype: PDFName.of('Widget'),
+    FT: PDFName.of('Sig'),
+    T: PDFString.of('applicant.signature'),
+    Rect: context.obj([20, 260, 220, 300]),
+    F: 4,
+  });
+  const signatureRef = context.register(signature);
+  page.node.addAnnot(signatureRef);
+  const fields = document.catalog
+    .lookup(PDFName.of('AcroForm'), PDFDict)
+    .lookup(PDFName.of('Fields'), PDFArray);
+  fields.push(signatureRef);
 
   return document.save();
 }
@@ -210,6 +231,52 @@ function filled(bytes) {
  * @param {Uint8Array} bytes
  * @returns {Record<string, string>}
  */
+/**
+ * Every button widget's four state readings at once.
+ *
+ * The four are separated deliberately: `getValue()` is the FIELD's value, `/AS`
+ * is what a viewer paints, `/V` on the widget's own dictionary is usually
+ * absent because the value lives on the field, and the `/AP` `/N` keys are this
+ * widget's own name for *on*. A reading that collapsed them could not have
+ * shown that pdf-lib's `check()` moves one and not the other.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {Record<string, unknown>[]}
+ */
+function buttonStates(bytes) {
+  return withMupdf(bytes, (document) =>
+    document
+      .loadPage(0)
+      .getWidgets()
+      .filter((widget) => widget.isCheckbox() || widget.isRadioButton())
+      .map((widget, index) => {
+        const object = widget.getObject();
+        const spell = (/** @type {mupdf.PDFObject} */ value) =>
+          value.isNull() ? '(absent)' : value.isName() ? `/${value.asName()}` : String(value);
+        // THE FIELD'S value, which for a widget that is its own field is on the
+        // same dictionary and for one in a group is on its /Parent.
+        const parent = object.get('Parent');
+        /** @type {string[]} */
+        const appearances = [];
+        const normal = object.get('AP').get('N');
+        if (normal.isDictionary()) normal.forEach((_value, key) => appearances.push(String(key)));
+        return {
+          index,
+          kind: widget.getFieldType(),
+          getValue: widget.getValue(),
+          AS: spell(object.get('AS')),
+          ownV: spell(object.get('V')),
+          parentV: parent.isNull() ? '(no parent)' : spell(parent.get('V')),
+          appearanceStates: appearances,
+        };
+      }),
+  );
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @returns {Record<string, string>}
+ */
 function checkboxState(bytes) {
   return withMupdf(bytes, (document) => {
     const widget = document
@@ -266,6 +333,10 @@ async function main() {
   console.log('4. the same values, read with pdf-lib:', JSON.stringify(await pdfLibValues(after)));
   console.log('4b. the checkbox, before:', JSON.stringify(checkboxState(document)));
   console.log('4b. the checkbox, after: ', JSON.stringify(checkboxState(after)));
+  console.log('4c. every button widget, before:');
+  for (const state of buttonStates(document)) console.log('   ', JSON.stringify(state));
+  console.log('4c. every button widget, after:');
+  for (const state of buttonStates(after)) console.log('   ', JSON.stringify(state));
   console.log('5. walk sizes, after:    ', JSON.stringify(walkSizes(after)));
   console.log('   control: a page with no fields reports 0 widgets');
 }
