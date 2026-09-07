@@ -1432,6 +1432,67 @@ it — `proof:testresolution` killed at its 485s bound, having taken 242.46s and
 243.66s on the two runs with nothing else running at all. Anything else on this
 machine is the variable. See the entry for `909c388..b156324`.
 
+### Correction to the correction, 2026-09-07 — the figure is not 165s either
+
+The block above concludes *"the figure is 165s, not 602s"* from two clean
+readings agreeing to within a second. **A third clean reading falsifies it.**
+`npm run proof:guards` run alone, with nothing else on this machine at all,
+took **1093s and passed** — exit 0, not a timeout.
+
+Both blocks are left as written. This is what eight readings say, all of the
+same command, on the same machine, in one day.
+
+| reading | seconds | outcome | what else was running |
+|---|---|---|---|
+| 1 | 602.6 | killed at the bound | `git add -A` and `check:docs` |
+| 2 | 622.64 | killed at the bound | the same |
+| 3 | 164.5 | passed | nothing |
+| 4 | 165.36 | passed | nothing |
+| 4b | 221.99 | passed | an `npm run board` poll |
+| 5 | ~198.6 | passed | a sweep |
+| 6 | 397.31 | **killed at a bound derived from reading 5** | a sweep |
+| 7 | **1093** | **passed** | **nothing** |
+
+**Three clean readings, spanning 164.5 to 1093.** They do not agree, so neither
+conclusion holds: not *it reproduces at 602s*, which the block above withdrew,
+and not *the figure is 165s*, which this one withdraws. What holds is an
+unexplained spread with no established cause.
+
+**The mistake is the same one twice, and naming it is the point.** Each block
+took the readings that happened to be available and called them the cost. The
+first had two slow ones and concluded it reproduces; the second had two fast
+ones and concluded the slow ones were contention. Neither had asked what the
+other end of the spread looked like. *One sample gives a value, not a rule* —
+and two samples that agree with each other are still one value.
+
+**The reviewing seat's withdrawal is quoted above as independent support and
+carries the same error**, having been ruled from a single low reading. It has
+since been reversed by that seat, on this reading.
+
+**So it is a queued item again — not on cost, but because the consequence is
+mechanical and verified.** `scripts/checkLocal.mjs:496` sets
+`DISCOVERY_MS = 3 * 180_000` and `:509` hands a capped script
+`Math.max(TIMEOUT_MS, DISCOVERY_MS)`. So a step recorded as **capped** is given
+540s for ever, against a real cost of 1093s: it caps, is recorded capped, is
+handed 540s, caps again. **`npm run local` can never seal `ok` on this
+machine**, and the primary pre-push instrument therefore cannot report success.
+
+That is a bound derived from the best reading, which is
+`derived-count-agrees-with-any-shrink` in the time domain: a limit computed from
+the thing it polices tracks a cost that falls and can never learn one that
+rises, because the reading that would teach it is the one it kills.
+
+**The fix is not to raise `DISCOVERY_MS`.** That is the loosened check audit
+item 1 names, and the cost is not understood: nothing has tested whether the
+spread tracks repository size, `.cache/checkLocal-runs/` growth, machine state,
+or something else. What is established is the mechanism above and the eight
+readings; everything past that is unmeasured.
+
+**Committing is unaffected** — `git commit` runs the pre-commit set and not
+`proof:guards` — so the board remains the real gate, and the workable local set
+is `npm run typecheck`, `npm run lint`, `npx vitest run packages apps` and
+`npm run check:docs` after `git add`.
+
 ---
 
 ## 2026-09-06 — The handle's command half, and an axis a type cannot hold
