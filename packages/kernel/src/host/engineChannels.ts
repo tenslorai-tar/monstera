@@ -28,7 +28,7 @@ import {
 import { z } from 'zod';
 
 import type { CommandPrior } from '../commandLog.js';
-import { declaredCommands } from '../commandDeclarations.js';
+import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 
@@ -436,6 +436,75 @@ const priorPageRotationSchema = z
   .strict();
 
 /**
+ * A box as the document held it, verbatim.
+ *
+ * `priorRotationSchema`'s shape and its argument: absence is a case rather than
+ * a sentinel, because a page that inherited its box is restored by deleting the
+ * key and no value can express that. The numbers are **unnormalised** — §3 asks
+ * for prior state restored verbatim, and a box written `[0 0 612 792]` comes
+ * back the way it went in.
+ */
+const priorBoxSchema = z.discriminatedUnion('present', [
+  z.object({ present: z.literal(false) }).strict(),
+  z.object({ present: z.literal(true), raw: z.array(z.number()).readonly() }).strict(),
+]);
+
+const priorPageCropSchema = z
+  .object({ page: z.number().int().nonnegative(), prior: priorBoxSchema })
+  .strict();
+
+/**
+ * A page's `/Contents` **shape**, not its value.
+ *
+ * `wasArray` is not cosmetic: a bare stream reference and a one-element array
+ * render identically and are two different documents, which is the same
+ * argument absence gets above.
+ */
+const priorContentsSchema = z.discriminatedUnion('present', [
+  z.object({ present: z.literal(false) }).strict(),
+  z
+    .object({
+      present: z.literal(true),
+      wasArray: z.boolean(),
+      length: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+
+const priorPageResizeSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    mediaBox: priorBoxSchema,
+    cropBox: priorBoxSchema,
+    contents: priorContentsSchema,
+  })
+  .strict();
+
+/**
+ * One entry of a page's `/Trans` dictionary, typed by what it holds.
+ *
+ * The three members are the value kinds the format uses there, and they are
+ * separated rather than carried as a string because restoring `/D 3` as the
+ * name `/3` is a different dictionary that parses.
+ */
+const priorTransitionEntrySchema = z.discriminatedUnion('kind', [
+  z.object({ key: z.string(), kind: z.literal('name'), value: z.string() }).strict(),
+  z.object({ key: z.string(), kind: z.literal('number'), value: z.number() }).strict(),
+  z.object({ key: z.string(), kind: z.literal('boolean'), value: z.boolean() }).strict(),
+]);
+
+const priorTransitionSchema = z.discriminatedUnion('present', [
+  z.object({ present: z.literal(false) }).strict(),
+  z
+    .object({ present: z.literal(true), entries: z.array(priorTransitionEntrySchema).readonly() })
+    .strict(),
+]);
+
+const priorPageTransitionSchema = z
+  .object({ page: z.number().int().nonnegative(), prior: priorTransitionSchema })
+  .strict();
+
+/**
  * Prior state, tagged by the command kind it belongs to.
  *
  * The tag is not redundant with the request's own `command.kind`. A response is
@@ -443,6 +512,30 @@ const priorPageRotationSchema = z
  * and nothing else about the request is in scope at the point the body is
  * parsed. A kernel that narrowed by the kind it *sent* would be trusting the
  * peer to have answered the question it was asked.
+ *
+ * ## THIS UNION CARRIED TWO OF NINE UNTIL 2026-09-07
+ *
+ * Measured, not reasoned: `engineChannels['engine/capture'].result.safeParse`
+ * accepted a `rotatePages` prior and **refused** `swapPages` and `movePage`.
+ * Seven of the nine invertible MuPDF commands had no member here, so on a real
+ * engine host their capture answered a value the outbound validation rejected —
+ * which `wrapHandler` turns into `internal` plus an incident, and the command
+ * fails. Undo was not degraded; the command did not run.
+ *
+ * Nothing saw it because every case that drives this channel uses
+ * `rotatePages`. That is NNN-1's shape exactly — a fixture SET that holds one
+ * argument constant, where no individual case looks wrong — and the reason it
+ * survived is that a member being absent and a member being unexercised produce
+ * the same green.
+ *
+ * ## So the set is now tied to the declarations, in both directions
+ *
+ * {@link CaptureCoversEveryInvertibleKind} and its sibling below are the
+ * mechanism. The tie is not just over the KINDS: {@link PriorPairs} pairs each
+ * kind with `CommandPrior[K]`, so a member present with the wrong shape — the
+ * version of this defect that reads as covered — is a compile error too. Both
+ * are written here rather than in a test for `MupdfChannelCoversEveryRoutedKind`'s
+ * reason: an omission should fail at the line that omitted it.
  */
 const capturedPriorSchema = z.discriminatedUnion('kind', [
   z
@@ -474,6 +567,83 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
         .strict(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('movePage'),
+      /**
+       * Where the page was and where it went.
+       *
+       * The one prior here that is not state read off the document: a single
+       * move has no prior structure to hold, because the tree it produces is a
+       * function of the tree it started from and the two indices.
+       */
+      prior: z
+        .object({
+          from: z.number().int().nonnegative(),
+          to: z.number().int().nonnegative(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('duplicatePage'),
+      /** Where the copy landed, so the inverse removes that page and not the original. */
+      prior: z.object({ at: z.number().int().nonnegative() }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('swapPages'),
+      /** The pair, as validated against the document. A transposition is its own inverse. */
+      prior: z
+        .object({
+          a: z.number().int().nonnegative(),
+          b: z.number().int().nonnegative(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('insertBlankPage'),
+      /** Where the new page landed. */
+      prior: z.object({ at: z.number().int().nonnegative() }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('cropPages'),
+      /**
+       * Each page's own `/CropBox`, including its **absence**.
+       *
+       * `present: false` is a page that inherited, and its inverse is a delete —
+       * the same §3 shape `priorRotationSchema` carries, and the same reason it
+       * is a case in a union rather than a sentinel.
+       */
+      prior: z.array(priorPageCropSchema).readonly(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('resizePages'),
+      /** Each page's two boxes and the SHAPE of its `/Contents`. */
+      prior: z.array(priorPageResizeSchema).readonly(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('setPageTransition'),
+      /**
+       * Each page's own `/Trans`, with **all** of its entries.
+       *
+       * A page may carry `/Dm`, `/M` or `/Di` from another producer, so an
+       * inverse restoring only what this command writes would leave a document
+       * neither the user nor the producer made.
+       */
+      prior: z.array(priorPageTransitionSchema).readonly(),
+    })
+    .strict(),
 ]);
 
 /**
@@ -492,6 +662,33 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
  */
 /** Prior state with its kind, as it crosses. */
 export type CapturedPrior = z.infer<typeof capturedPriorSchema>;
+
+/**
+ * The MuPDF-routed kinds that declare an inverse.
+ *
+ * Derived, and 4c's rule says why that is the right direction here: the failure
+ * feared is a kind arriving with no member above, which makes this set BIGGER.
+ * A hand-kept list would have to be edited by whoever adds the tenth invertible
+ * command, and forgetting is exactly what left seven of nine unrepresentable.
+ */
+type InvertibleMupdfKind = {
+  [K in KindsRoutedTo<'mupdf'>]: DeclaredCommands[K]['invertible'] extends true ? K : never;
+}[KindsRoutedTo<'mupdf'>];
+
+/**
+ * Each such kind paired with the prior the kernel actually captures for it.
+ *
+ * **The load-bearing half.** Tying the kinds alone would accept a member whose
+ * `prior` is the wrong shape — which is the version of this defect that reads
+ * as covered, because the union would have an entry for the kind and refuse
+ * every value of it at run time.
+ */
+type PriorPairs = {
+  [K in InvertibleMupdfKind]: { readonly kind: K; readonly prior: CommandPrior[K] };
+}[InvertibleMupdfKind];
+
+export type CaptureCoversEveryInvertibleKind = Covers<CapturedPrior, PriorPairs>;
+export type CaptureExcludesEveryOtherKind = Excludes<PriorPairs, CapturedPrior>;
 
 /**
  * Pairs a command kind with the prior state captured for it.
