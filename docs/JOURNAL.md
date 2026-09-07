@@ -876,6 +876,283 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-07 — Stage audit: `909c388..b156324` — bytes that were a window onto the engine's heap, and a control I kept contaminating
+
+Range: 14 commits, 75 files, **9 proofs added and 13 modified**, 18 new source
+files and 23 changed — from `npm run audit:scope`. Not fired by a threshold: at
+71 files it had 30 of headroom, and the next row is a large one. Taken early
+rather than at the gate, because the gate blocks the commit that would cross it
+and the remedy for that is a stash dance nobody enjoys mid-feature.
+
+The range is the whole remainder of Stage 3's markup: the `srcRef` scheme
+(ADR-0043), the eraser, select with move/resize/nudge, `placeAnnotation`, the
+three text markups, links, the callout, the typewriter and the style controls.
+Eight D3 rows. **The two findings worth the audit were in none of them** — one
+came out of a case failing for a reason that had nothing to do with the case, and
+the other out of a mutation.
+
+### 1. Root cause or workaround
+
+Eight fixes, all root. Three are worth reading.
+
+**BBBB-1 — `mupdfWriter.serialise` returned a window onto the wasm heap.**
+`saveToBuffer('').asUint8Array()` answers `HEAPU8.subarray(data, data + size)`,
+read from `mupdf/dist/mupdf.js` on 2026-09-07. So every `ByteImage` this build
+has ever produced was memory the engine owns: freed when the buffer is dropped,
+and **detached outright** when the heap grows and `HEAPU8` is replaced. That is
+the bytes `DocumentService` holds across commands and the save pipeline writes to
+disk.
+
+It was not reasoned to. `pageAnnotations.test.ts` held a serialised document
+across later engine work and `openDocument` threw *"Cannot perform Construct on a
+detached ArrayBuffer"* — a case failing for a reason that had nothing to do with
+what it asserted. The failure appeared only once the file did enough work to grow
+the heap, which is why every earlier green said nothing about it.
+
+`pageExtract.ts` carried the same finding **stopped one step short**: its comment
+said `asUint8Array` rather than the Buffer itself, *because handing out MuPDF's
+buffer would tie the bytes' lifetime to a native object this function is about to
+drop*. The hazard is named correctly and the remedy is taken half way — the view
+has that same lifetime and a detachment problem besides. A live clause vouching
+for a dead one, which is item 7's shape arriving inside a fix.
+
+**BBBB-2 — every text box shipped a `/CL` and drew no box.** Two defects in one
+object, both found by building the next feature. `createAnnotation('FreeText')`
+writes a callout line from the page's corner on every text box; PDF 32000
+§12.5.6.6 makes `/CL` meaningful only where `/IT` names a callout, and MuPDF
+writes no `/IT` at all. The text-box row's own comment had predicted the
+consequence — *a key a viewer may honour*, *cheaper to find here than as a stray
+line on somebody's page* — and then concluded that the key being there made the
+callout a smaller job. That half was wrong.
+
+The second defect is the one that could not be worked around: `/BS << /W 0 >>`
+and an appearance stream of `0 w … re W n` is a clip with no stroke, so a *text
+box* drew nothing but its text and was, on the page, exactly what a typewriter
+is. Two controls whose output nobody can tell apart is the display-only sin with
+a second button on it, and the one whose name was wrong for its appearance is the
+text box. It now draws its border.
+
+**BBBB-3 — `getRect` is refused by four of the nine subtypes this build writes.**
+*"Ink annotations have no Rect property"*, and the same for Line, Polygon and
+PolyLine — `Polygon.setRect`'s refusal family arriving on the read side. Found by
+eight cases reddening at once when `ListedAnnotation.rect` was written on
+`getRect` alone. `hasRect` separates them; `getBounds` alone would have been
+wrong **on rotated pages only**, because a `/Text` at (30, 40) stores
+`[30 40 40 50]` upright and `[20 40 30 50]` at `/Rotate 90` while bounds answers
+the first for both.
+
+**Could any regenerate?** One, and it is stated rather than mechanised: three
+draft kinds now write `/FreeText` and two of them delete the stray `/CL` while
+the callout keeps it deliberately. A fourth would have to remember. The pinned
+key set covers the text box only. **BBBB-4**, open, with the trigger being the
+fourth `/FreeText` kind.
+
+**No override, no escape hatch, no loosened check.** The one candidate is item
+2a's.
+
+### 2. Verified against the easy shape only?
+
+The rect reader: upright, `/Rotate 90`, a `/CropBox` origin, a page that displays
+no region at all, and a subtype with no `/Rect`. Five shapes.
+
+Text markup: a **two-line** page, and the load-bearing case is the drag that
+spans both — one quad against two is what separates a text selection from a
+region, and a one-line fixture is the shape a region selector also handles
+correctly.
+
+`placeAnnotation`: a Square (has a rect) and an Ink and a Line (derived from
+geometry), because a placement that only set rectangles moves nothing at all on
+the second class and passes every case built on the first.
+
+**Two gaps, both stated. BBBB-5:** every UI case for the eraser and the select
+tool uses `rotation: 0`. The hit test converts through the one adapter, whose own
+rotation cases exist, so the risk is confined to these tools' fixtures being
+uniform — NNN-1's tell, an input held constant across a whole file. **BBBB-6:**
+`addLink` is exercised on page 0 of an upright document only; its rectangle goes
+through the shared `placedRect`, which is covered elsewhere.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, once, and it is a reduction.** `withoutPlace` strips `rect` from ten
+`toStrictEqual` assertions on listed annotations. Before this range those cases
+pinned the whole shape; they now pin five fields of six.
+
+Stated here and in the helper's own comment because it is a real trade, not
+bookkeeping: the place is asserted by six cases whose subject IS the place, and
+everywhere else a rectangle would be a measured number sitting in a case about
+numbering or provenance — read from whichever run first produced it, which is how
+a fixture stops being a specification. The cost is that these cases are blind to
+a field added later, which is why the five names are written out rather than
+spread-minus-one.
+
+### 3. Would CI have caught it?
+
+Computed from a run rather than from the workflow file. Every case added here is
+vitest, which is an unconditional step on both matrix legs; `contract.proof.mjs`
+runs in Guards. The board at the range's head is quoted in the entry below.
+
+**BBBB-1 is the honest answer to this question and it is no.** CI runs the same
+suite, and the detached-buffer failure depends on how much work the file has done
+before the case that holds the bytes — it appeared on this machine, in one file,
+after enough allocation. A run that ordered its cases differently would not have
+seen it. The proof that now covers it does not depend on any of that: it asserts
+that the returned array **owns its `ArrayBuffer`**, which a copy does and a
+subarray of a multi-megabyte heap cannot.
+
+**And the other way round — a defect this machine cannot see?**
+`proof:hostrecovery` still returns UNVERIFIABLE here. Not new, not this range's.
+
+### 4. Are the proofs non-vacuous?
+
+Ten mutations run, each naming its own defect:
+
+| mutation | result |
+|---|---|
+| delete `markAuthored` | three `srcRef` cases redden, plus twelve neighbours pinning the key set |
+| read the mark's presence rather than its value | the malformed-claim case reddens **alone** |
+| `getBounds` for every subtype | four rect cases redden, including the rotated `/Text` |
+| `find` rather than `findLast` in the eraser | the topmost case reddens alone |
+| resolve removals lazily | the order-independence and the all-or-nothing cases redden |
+| drop the geometry mapping from `placeAnnotation` | three cases redden; the Square case does not, which is the point |
+| drop the `/IT` write | the rect-expansion and the listing cases redden |
+| drop the text box's border | the `[1, 0]` pair reddens alone |
+| return the view rather than a copy | the ownership case reddens alone |
+| **delete `setOpacity`** | **nothing. All 710 kernel cases green** |
+
+**BBBB-7 is that last row.** The style panel wrote a setting, the tools put it in
+the payload, and the kernel dropped it — the wired-tools rule's own blind spot
+arriving on a number rather than a button, each half correct in its own frame.
+Three cases now, and the second is the one that matters: `/CA` read back with
+pdf-lib for **two** values, because one reading cannot tell *the payload was
+written* from *the writer hard-codes 0.25*, and 1 is what an annotation nothing
+set an opacity on already is.
+
+### 4a. Has every instrument passed a resolution test?
+
+Seven probes were written this range, all measuring MuPDF, all outside the
+repository. **One of them failed and I nearly used it as evidence.**
+
+`heapProbe.mjs` opened twelve documents to force the wasm heap to grow and then
+checked whether an earlier view had detached. It reported **SAME? true** — the
+reassuring answer — and the mechanism it was testing is real and had already
+thrown inside a test file. The probe's failure was resolution: twelve documents
+of sixty pages do not grow that heap, and the threshold that does is not
+something an instrument can be built around.
+
+So the evidence for BBBB-1 is the **thrown message** and the **source of
+`asUint8Array`**, not the probe. And the proof deliberately does not test
+survival: a case that grew the heap and then read the bytes would depend on a
+threshold nobody can state — it passed my probe and failed inside a test file.
+It asserts ownership, which is exact.
+
+### 4b. Is the instrument a search? Then it needs a positive control.
+
+`kindOf` is the range's one lookup: it reads `/IT` and answers a kind. Its miss
+is `'text-box'` — a **real kind**, because the format's default for an absent
+`/IT` is `FreeText` — rather than `'other'`, which is `NAMED`'s miss. Both cases
+put two kinds in one document, so a reader that answered one name for everything
+reddens whichever name it picked.
+
+The `hasRect` branch has both sides exercised by construction: four subtypes take
+one and five take the other, and the case set names both classes.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Three rosters this range, and the direction was asked of each.
+
+- **`INTENDED`**, the `/IT` table: hand-kept, three entries. The failure that
+  matters makes it **smaller** — a value we stop recognising falls back to
+  text-box silently — so a derivation would have been wrong. The anchor is that
+  the cases name each of the three by hand.
+- **The tool-to-command set equality**: derived on **both** sides, from two
+  genuinely different registries. That is the shape AAAA-31 fixed and it holds.
+- **`ALL_SETTINGS`**: hand-kept, and `SettingsStore.get` throws for an
+  unregistered id, so growth is loud. Shrinkage is caught by the readers.
+
+### 5. Executed, or asserted?
+
+Executed: eight MuPDF measurement sessions (the private key's survival across two
+saves; `getRect`/`getBounds`/`hasRect` across nine subtypes and two rotations;
+`StructuredText.highlight` on a two-line page; `createLink` against
+`createAnnotation('Link')`; `formatLinkURI` and `resolveLink`; the callout's
+`/CL`, `/IT` and rect expansion; the FreeText appearance stream with and without
+a border; `asUint8Array`'s implementation), the ten mutations above, and two full
+sweeps.
+
+**Asserted and NOT executed — BBBB-8, and it is the whole stage's honest limit:
+nothing here has been RENDERED.** Every assertion in this range reads a stored
+dictionary. That a lenient viewer draws a stray `/CL`, that the text box's new
+border is visible, that a 0.25 opacity looks faint, that a highlight covers the
+words it names — none of it has been seen. `docs/FEATURES.md`' visual-QA row is
+where that belongs and it is Stage 10's.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before. ADR-0043 is its own commit and says *amendment only: nothing is built on
+it*; the scheme landed in the next one.
+
+**And the more useful half is the amendment that was NOT needed.** The select
+tool looks like a B4 — a selection outlives every gesture, is drawn while nothing
+is being dragged, and answers to the keyboard, none of which a controller can do.
+The check was made before the code: none of the three is the tool's. The state
+lives where the application's state lives, the drawing is a component beside the
+overlay, and the keyboard is the command registry. ADR-0042 made the same check
+one row earlier and found the opposite, which is what makes the check worth
+recording rather than the answer.
+
+`AnnotationKind.write`'s signature widened twice inside feature commits — a page
+for the text markups, then an object for the callout's document. That is a
+module-private interface with eleven implementations in one file, not
+architecture, and it is stated so the next reader does not read the precedent as
+one.
+
+### 7. Do the documents still match the code?
+
+**Not entirely, and the gap is this item's own cross-document sweep.** The style
+controls landed in `9608a39`, and three shipped D2 rows still said they were
+owed: headers and footers' *a font choice*, the watermark's *colour*, and the
+page background's *a colour control, until Stage 3's style controls own the
+picker*. Five D3 rows carried an *Owed: colour* clause the same commit satisfied.
+**BBBB-9**, closed in this commit — the rows are swept.
+
+That is NNN-4 firing as designed: a range that STATES a cross-document
+relationship must sweep every other statement of it, and the trigger here was the
+style-controls row naming the three by implication.
+
+Corrected in range: §4's L5 clause (byte-identity measured **false**), ADR-0008's
+item 4 (an appended correction — it is a record, where an invariant is a live
+specification), and eight FEATURES rows. The D4 typewriter row is `bb2012d`, its
+own commit because `check:docs` refuses two row openings changing at once and
+both typewriter rows opened with the same single word — the rule working.
+
+**And a correction to the previous entry, appended above.** `proof:guards` does
+not reproduce a 602s cost; it is 165s clean, twice, and the two readings over the
+bound both had something of mine beside them.
+
+**BBBB-10 — the rule I wrote from that was too narrow, and I broke it the same
+day.** It said *do not run `npm run local` and git commands at the same time*.
+This range's first sweep sealed **failed** with no git commands anywhere near it:
+`proof:testresolution` was killed at its 485s bound while an `npm run board` poll
+ran in the background. Alone it takes 242.46s and 243.66s and passes. The
+variable is not git — it is anything else on this machine.
+
+The kill also left its poison behind: `proof:testresolution` writes
+`MONSTERA_LOADED_FROM_DIST` into `packages/shared/dist/index.js` and restores it,
+and SIGTERM skips the restore. The instrument printed its own repair
+(`npx tsc --build --force`) at the point of rejection, which is where a
+compensation belongs — and `git status` showed the leftover `vitest.control.config.mjs`
+while saying nothing about `dist/`, because `dist/` is gitignored.
+
+**Second sweep, with genuinely nothing else running: `SEALED: ok (134 passed)`,
+zero non-zero exits.**
+
+Open from earlier ranges: `proof:hostrecovery`'s unverifiable, `proof:perfbudget`'s
+`mupdf-host-real` lines, lint into pre-commit (the reviewing seat has ruled *take
+it*; the owner has not), AA-1's granularity half, and the `cases:`-takes-names
+signature deferred on cost alone.
+
+---
+
 ## 2026-09-06 — Stage audit: `814c717..909c388` — a four-item list with three false entries, and the amendment that quoted it
 
 Range: 33 commits, 99 files. Fired by the file threshold, on the commit that
@@ -1122,6 +1399,38 @@ records the widening at all, which is the third row above. `docs/FEATURES.md`'
 platform row says *"three are members"* and was **right**: the digest was ahead
 of the law, the same direction `monstera/no-bare-y-flip` went and the opposite of
 `no-raw-hex`.
+
+### Correction, 2026-09-07 — `proof:guards` does not reproduce, and I was the variable
+
+Item 3 above ends *"`proof:guards` timed out at 602.6s, its second measurement
+after 622.64s — **it reproduces**, it is not this range's, and it stays queued."*
+The entry is left as written; this is what four readings say.
+
+| reading | seconds | what else was running |
+|---|---|---|
+| 1 | 602.6, killed at the bound | `git add -A` and `check:docs` against the index |
+| 2 | 622.64, killed at the bound | the same |
+| 3 | 164.5 | nothing |
+| 4 (2026-09-07) | **165.36** | nothing |
+| 4b (2026-09-07) | 221.99 | an `npm run board` poll |
+
+**Two clean readings agree to within a second.** The two that exceeded the bound
+both had something of mine beside them, and a fifth reading with only a network
+poll running landed between. So the figure is 165s, not 602s, and *it reproduces*
+was a claim about the wrong two readings — the ones with a variable in them.
+
+**The recommendation that rested on it is withdrawn**, and the reviewing seat
+withdrew it independently on 2026-09-07: at 165s `proof:guards` is an ordinary
+step, it stays in the sweep, and it is not queued as its own unit.
+`proof:perfbudget`'s `mupdf-host-real` lines remain the only tooling item
+standing.
+
+**And the rule I wrote from this was too narrow.** It said *do not run
+`npm run local` and git commands at the same time*. The variable is not git.
+On 2026-09-07 the same sweep sealed **failed** with only a network poll beside
+it — `proof:testresolution` killed at its 485s bound, having taken 242.46s and
+243.66s on the two runs with nothing else running at all. Anything else on this
+machine is the variable. See the entry for `909c388..b156324`.
 
 ---
 
