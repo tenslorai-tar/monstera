@@ -11,11 +11,20 @@ the fact is not a baseline, it is a rationalisation.
 | 1 — viewer core | 10 working days | **2 days worked** (2026-09-02 → 2026-09-03), 52 commits | **0.20× — continue** |
 | 2 — page management | **2 working days** (owner, 2026-09-03) | **3 days worked** (2026-09-03 → 2026-09-05), 50 commits | **1.50× — continue** |
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
-| 4 — forms | **2 working days** (owner, 2026-09-07) | not started | — (the 3× gate arms at **6 days**) |
+| 4 — forms | **2 working days** (owner, 2026-09-07) | **in progress** — began at `ecf95a9`, the commit after Stage 3 closed. **1 day worked, 19 commits**, read at `6f67306` on 2026-09-07 (`git rev-list --count fc903fe..HEAD`, `git log --format=%ad --date=short` returning one date) | — (the 3× gate arms at **6 days**) |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
 user*. A project with no defined abort condition dies slowly.
+
+**Stage 4's row read *not started* until 2026-09-08**, with four D5 rows already
+done and nineteen commits behind it. Nothing in any range touched both that cell
+and the work that falsified it, which is NNN-4's hole exactly: a stage row goes
+stale by a commit that never opens this file. The compensation is cheap and is
+now stated — **a stage's first commit updates this row**, in the commit that
+makes it, rather than at the close where the *actual* is filled in. It is edited
+rather than corrected underneath, because this table is a live specification of
+where the build is and not a record of a moment.
 
 **Stage 0's actual, and what it was counted from.** The interval runs from the
 first commit of the founding record on **2026-08-16** to the commit that closed
@@ -874,6 +883,159 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-08 — pdf-lib writes a field's rectangle in raw user space, and a rotated page needs a pre-image
+
+`scripts/research/formFieldCreate.mjs`, before a line of the *create fields by
+drawing* row was designed. `docs/ARCHITECTURE.md`:388 settles the writer —
+`@cantoo/pdf-lib`, *"the one concern MuPDF has no API for"* — so none of this is
+a B4. What it does not settle is anything the command can say, and four of these
+readings decide the payload.
+
+### 1. Five of the six types have a factory; signature has none
+
+| type | created | what MuPDF's widget walk answers |
+|---|---|---|
+| text | yes | `type: text`, the name, the value |
+| checkbox | yes | `type: checkbox`, value `Yes` |
+| radio | yes | **two widgets, one field**, `options: [first, second]` |
+| dropdown | yes | `type: combobox`, options carried |
+| listbox | yes | `type: listbox`, options carried |
+| signature | **no** | pdf-lib declares no signature factory |
+
+`formFields.mjs` built a signature field by hand out of `context.obj` to have a
+fixture. A **command** cannot do that without this build writing a field
+dictionary itself, which is a second writer for the concern the matrix has just
+assigned — so signature is a stated limit of the row rather than a gap in it.
+
+### 2. The rectangle is raw PDF user space, verbatim, on every page shape
+
+Asked with `x=40 y=500 w=120 h=24` on three pages, reading `/Rect` off the
+dictionary rather than through an API whose getter agrees with its own setter:
+
+| page | `/Rect` in the file |
+|---|---|
+| upright | `[39.5 499.5 160.5 524.5]` |
+| `/Rotate 90` | `[39.5 499.5 160.5 524.5]` |
+| `CropBox [30 70 380 560]` | `[39.5 499.5 160.5 524.5]` |
+
+**Identical.** pdf-lib is untouched by `/Rotate` and by the crop, so the frame it
+writes is exactly the one `annotationRectSchema` declares — *y up, absolute*,
+which `toPdf` already produces by adding `crop.x0` back. **The correspondence is
+the identity**, which is the answer this instrument existed to rule in or out,
+and the two shapes that could have falsified it were in the fixture set rather
+than assumed away.
+
+That contrasts with MuPDF, whose `setRect` takes the page's *displayed* space —
+so the two writers of the forms concern take **different frames**, and the row
+that knows this is the row that does not put a y-flip in a literal.
+
+### 2a. The half point is the border, and it scales
+
+`[39.5 …]` for an argument of `40` is not noise. `PDFField.js`:258 adds the
+border width to the box and `rotateRectangle` re-centres it, so the rectangle
+written is the drawn box outset by half a border. Predicted from the source and
+then measured:
+
+| `borderWidth` | `/Rect` |
+|---|---|
+| 0 | `[40 500 160 524]` |
+| 1 (pdf-lib's default) | `[39.5 499.5 160.5 524.5]` |
+| 2 | `[39 499 161 525]` |
+| 6 | `[37 497 163 527]` |
+
+So the command passes **`borderWidth: 0`** and the rectangle a person drew is the
+rectangle in the file. Through the default it would be systematically half a
+point out, in a direction nobody asked for and nobody would see.
+
+### 9. A rotated page turns the CONTENT, and the argument is a pre-image
+
+The rectangle being right says nothing about which way up the field's text is
+drawn. On the `/Rotate 90` page, with the target set to the user-space rect a
+**landscape screen drag** actually produces — `toPdf` turns a 120×24 drag into a
+24×120 rect, portrait — and a long value so the two shapes cannot tie:
+
+| `rotate` | argument | lands on `[100 100 124 220]` | ink as displayed |
+|---|---|---|---|
+| 0 | `x100 y100 w24 h120` | yes | 3 × 22 — **clipped and sideways** |
+| 90 | `x124 y100 w120 h24` | yes | 111 × 8 — upright |
+| 180 | `x124 y220 w24 h120` | yes | 3 × 22 |
+| 270 | `x100 y220 w120 h24` | yes | 111 × 8 |
+
+Two things follow. **A field created without `rotate` reads sideways on a rotated
+page** — 3 pixels of ink where 111 belong, a visible defect on exactly the
+fixture almost nobody writes. And **passing `rotate` moves the rectangle**:
+pdf-lib turns the box about the anchor it was given, so `{x: 40, y: 380, w: 24,
+h: 120}` at 90 degrees writes `/Rect [-80 380 40 404]`, off the page.
+
+So the argument is a **pre-image**, and the four cases were written from the one
+90-degree reading and then checked against all four — because a formula
+extrapolated from a single turn is three assumptions. All four land.
+
+### 4. A create leaves a field MuPDF wrote alone
+
+The matrix splits *fill* and *delete* to MuPDF and *create* to pdf-lib, and that
+split is only safe if a pdf-lib write preserves what MuPDF wrote. MuPDF fills
+`existing.text` to `after`; pdf-lib then creates beside it:
+
+- the value survives — `[["existing.text","after"],["made.text","Xy"]]`;
+- **its appearance stream is untouched**: 135 bytes before, 135 after a create,
+  135 after a create *with* `updateFieldAppearances`.
+
+Three identical numbers are what an observable unable to see the operation
+prints, so a fourth row forces a rewrite — a longer value through pdf-lib — and
+reads **338**. The reading separates *left alone* from *cannot tell*.
+
+### 5, 6, 7. The rest
+
+- **No `/AcroForm` is the ordinary case**, and the create mints one: the field
+  lands in `/Fields`, and `/NeedAppearances` is **not set** — the appearance is a
+  real stream rather than a request that some other reader draw it.
+- **The appearance is built by `addToPage`**, not by the pass: 720 marked pixels
+  inside the field's box either way, against **576** for a field created with no
+  value. That calibration is what makes the identical pair mean *the pass changes
+  nothing* rather than *this count cannot see text*.
+- **It survives the round trip back.** MuPDF reopening the byte image and saving
+  it plainly answers the same type, name, value and rectangle.
+
+### 8. A dot in the name is a hierarchy, and this was found by the instrument breaking
+
+Not asked — the resolution test refused to build, because its two fields were
+`made.text` and `made.text.nudged`:
+
+| naming | outcome |
+|---|---|
+| `owner.first`, `owner.second` | accepted; both read back fully qualified |
+| `owner`, `owner.first` | **refused** — *a field already exists with the specified name: "owner"* |
+| `owner.first` twice | **refused** |
+| `plain` | accepted |
+
+A dot makes a **parent**, so a name is a path and not a label. That is a bound
+the payload owes: a create whose name collides with an existing field, or is a
+prefix of one, throws inside pdf-lib rather than producing a document.
+
+It also explains a second thing. pdf-lib puts `/T` on the parent field
+dictionary, so the **widget carries no name of its own** — which is how this
+instrument went blind for one run, below.
+
+### What the instrument got wrong about itself, three times
+
+Recorded because all three are shapes `CLAUDE.md` already names, and every one of
+them produced the reassuring answer:
+
+1. **A filter that could not match.** Question 2's raw-`/Rect` reading filtered
+   on a name beginning `made.`, and the widget's own dictionary has no `/T` at
+   all. It printed `/Rect in the file: []` — for all three page shapes, in the
+   load-bearing question — and an empty list reads exactly like a page with no
+   widgets on it. 4b, inside a filter rather than a grep.
+2. **A margin narrower than the observable.** Question 9's first reading
+   separated upright from sideways by 18×21 against 22×19, on a two-glyph probe
+   that is nearly square. A long value moved that to 3×22 against 111×8.
+3. **Two columns that never varied**, and both were calibrated rather than
+   trusted: the appearance-stream length (135 three times) and the ink count
+   (720 twice).
 
 ---
 
