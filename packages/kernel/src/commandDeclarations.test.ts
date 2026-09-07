@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CommandKind, NamesAnAnnotation, NamesASecondDocument } from '@monstera/contract';
+import type {
+  CommandKind,
+  NamesAFormField,
+  NamesAnAnnotation,
+  NamesASecondDocument,
+} from '@monstera/contract';
 
 import { type DeclaredCommands, declaredCommands } from './commandDeclarations.js';
 import { writerShapes } from './engineSeam.js';
@@ -85,12 +90,22 @@ type DeclaredTargets = {
  * leaving the `if` breaks the first.
  *
  * Note the derivation excludes `'none'` rather than including a named member,
- * so a SECOND member — a form field named by index is the anticipated one —
- * joins this set by existing, and its author meets these two lines rather than
- * a green build.
+ * so a SECOND member joins this set by existing, and its author meets these two
+ * lines rather than a green build.
+ *
+ * **It did, on 2026-09-07.** `fillFormField` declared `targets: 'field'` and
+ * these two lines were the first thing that failed — which is the sentence
+ * above cashed rather than repeated. The union on the right is a union rather
+ * than a widened `NamesAnAnnotation` because the two name different walks, and
+ * a single type covering both would say an annotation index and a widget index
+ * are the same kind of thing.
  */
-const _declarationsCoverTheTargets: NamesAnAnnotation extends DeclaredTargets ? true : never = true;
-const _targetsCoverTheDeclarations: DeclaredTargets extends NamesAnAnnotation ? true : never = true;
+const _declarationsCoverTheTargets: NamesAnAnnotation | NamesAFormField extends DeclaredTargets
+  ? true
+  : never = true;
+const _targetsCoverTheDeclarations: DeclaredTargets extends NamesAnAnnotation | NamesAFormField
+  ? true
+  : never = true;
 void _declarationsCoverTheTargets;
 void _targetsCoverTheDeclarations;
 
@@ -170,7 +185,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('mergeDocument');
   });
 
-  it('CONTROL: exactly three kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly four kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -178,6 +193,18 @@ describe('the declaration table', () => {
     // that carry none — which is the registration-defect throw, on every
     // rotate.
     const named = KINDS.filter((kind) => declaredCommands[kind].targets !== 'none');
-    expect(named).toStrictEqual(['removeAnnotation', 'placeAnnotation', 'styleAnnotation']);
+    expect(named).toStrictEqual([
+      'removeAnnotation',
+      'placeAnnotation',
+      'styleAnnotation',
+      'fillFormField',
+    ]);
+    // AND THE TWO MEMBERS ARE BOTH PRESENT, which the count above cannot say: a
+    // table where every target read `'annotation'` would satisfy it, and the
+    // bus would then compare a version for a payload pointing into the wrong
+    // walk — the failure the second member exists to prevent.
+    expect(new Set(named.map((kind) => declaredCommands[kind].targets))).toStrictEqual(
+      new Set(['annotation', 'field']),
+    );
   });
 });

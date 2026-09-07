@@ -265,10 +265,23 @@ export type CommandSources = 'none' | 'one';
  * The value names WHAT is named, not the mechanism for checking it. A member
  * called `'versioned'` would answer *how* and leave every reader to work out
  * *what*, which is the shape that lets a second unrelated command declare it
- * because the mechanism happens to fit. A form field named by index will want
- * its own member, and the two refusals will not be the same sentence.
+ * because the mechanism happens to fit.
+ *
+ * ## `'field'` ARRIVED, 2026-09-07, and it is the paragraph above cashed
+ *
+ * The sentence here read *a form field named by index will want its own member,
+ * and the two refusals will not be the same sentence*. Both halves held. The
+ * walks are disjoint — measured, a page carrying seven widgets answers zero
+ * annotations — so an index means a different thing under each member, and the
+ * refusals are written separately in `pageAnnotations.ts` and `formFields.ts`
+ * because *there is no annotation there* and *there is no widget there* are
+ * different facts about the same page.
+ *
+ * What the bus does with them is identical, and that is the axis working rather
+ * than a missed abstraction: staleness is one comparison, and the member is
+ * what says which answer the payload's index points into.
  */
-export type CommandTargets = 'none' | 'annotation';
+export type CommandTargets = 'none' | 'annotation' | 'field';
 
 /**
  * Does this command carry BYTES that cannot travel on the wire the writer is

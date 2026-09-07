@@ -1691,6 +1691,129 @@ export const formFieldKindSchema = z.enum([
 export type FormFieldKind = z.infer<typeof formFieldKindSchema>;
 
 /**
+ * How many characters a filled field may carry.
+ *
+ * {@link MAX_ANNOTATION_TEXT}'s number and its argument, stated separately for
+ * that constant's own reason: this bounds what a renderer may send **in** to a
+ * form, and a document's `/MaxLen` is the document's opinion rather than this
+ * boundary's. Generous enough that no value a person types into a form meets
+ * it, so a refusal here is evidence something built the command from a file
+ * rather than from a control.
+ */
+export const MAX_FIELD_VALUE = 4096;
+
+/**
+ * What a fill puts in a field, split by WHAT IS BEING SET rather than by the
+ * field's type.
+ *
+ * ## The three members are MuPDF's three mutators, and that is not a coincidence
+ *
+ * Measured 2026-09-07 against `mupdf.d.ts:812-834`: `PDFWidget` declares
+ * `setTextValue`, `setChoiceValue` and `toggle()`, and nothing else. There is no
+ * setter that names a state. So these are the three writes that exist, and a
+ * payload member for a fourth would be a promise the writer of record cannot
+ * keep.
+ *
+ * ## The discriminant makes the wrong pairing unsendable, not merely refused
+ *
+ * A field's kind is a property of the **document**, so no payload type can be
+ * conditional on it — the refusal happens at apply, and it has to, because the
+ * document is the only thing that knows. What the union does is stop the
+ * *intent* being ambiguous: there is no way to spell *set this text field to
+ * true*, and a caller that means to tick a box cannot express it as a string
+ * that happens to read `"Yes"` — which is the exact confusion `ListedField`
+ * exists to prevent on the way out (B5 over a comment, both directions).
+ *
+ * ## And every type rule below is OURS, because MuPDF applies none
+ *
+ * Measured 2026-09-07, six attempts and six successes with no throw:
+ * `setTextValue` lands on a read-only field and on a push button,
+ * `setChoiceValue` stores an option the document does not offer and lands on a
+ * text field, `setTextValue` lands on a listbox, and `toggle()` on a text field
+ * silently does nothing. The engine will write whatever it is asked, so the
+ * refusals live in this build's apply and are proven there.
+ */
+export const fieldFillSchema = z.discriminatedUnion('set', [
+  z
+    .object({
+      set: z.literal('text'),
+      /** What the field should say. Empty clears it. */
+      text: z.string().max(MAX_FIELD_VALUE),
+    })
+    .strict(),
+  z
+    .object({
+      set: z.literal('choice'),
+      /**
+       * One of the options the document offers.
+       *
+       * **Membership is checked against the document, not here.** `/Opt` is the
+       * document's list and this schema cannot see it; what the kernel refuses
+       * is an option that is not in it, because MuPDF stores an unlisted value
+       * happily — measured, `setChoiceValue('Professor')` against
+       * `["Dr","Mr","Ms"]` reads back as `Professor`.
+       */
+      option: z.string().max(MAX_FIELD_VALUE),
+    })
+    .strict(),
+  z
+    .object({
+      set: z.literal('button'),
+      /**
+       * Whether the named widget should end up on.
+       *
+       * **A state, not a toggle**, and the difference is measured: MuPDF's
+       * `toggle()` is keyed on `/AS` — what a viewer paints — so on a document
+       * whose `/V` and `/AS` disagree one call does something different from
+       * what it does on a consistent one. A payload spelt *flip it* would carry
+       * that ambiguity to every caller.
+       */
+      on: z.boolean(),
+    })
+    .strict(),
+]);
+
+/** What a fill puts in a field. See {@link fieldFillSchema}. */
+export type FieldFill = z.infer<typeof fieldFillSchema>;
+
+/**
+ * Fills one AcroForm field.
+ *
+ * ## ONE WIDGET, named by its place in the WIDGET walk
+ *
+ * `removeAnnotation`'s handle on the other walk, and it has to be its own:
+ * measured 2026-09-07, a page carrying seven widgets and nothing else answers
+ * **0** annotations and **7** widgets, so the two walks share no entries and an
+ * annotation handle can never name a field
+ * ([ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)
+ * measured the same filtering from the other side).
+ *
+ * **Not the field's name**, which is what a form's own vocabulary would
+ * suggest: a radio group is one field with several widgets, and both of the
+ * fixture's answer `applicant.post`. A command keyed on the name could not say
+ * which option to select — it is the one question a radio group asks.
+ *
+ * ## One field per command, unlike its annotation neighbours
+ *
+ * `removeAnnotation` and `styleAnnotation` take a list, because a person
+ * selects several comments and acts on them together. Nobody fills two fields
+ * with one gesture, and the singular shape is what makes this the **first
+ * invertible command on either walk**: `CommandPrior` carries one value per
+ * command, and a list is exactly what stopped the other three from recording a
+ * prior.
+ */
+export const fillFormFieldSchema = z.object({
+  kind: z.literal('fillFormField'),
+  /** Zero-based index of the page the widget sits on. */
+  page: z.number().int().nonnegative(),
+  /** Its position in the widget walk that produced the answer this names. */
+  index: z.number().int().nonnegative(),
+  value: fieldFillSchema,
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
+/**
  * Add one annotation to one page.
  *
  * §3's matrix at `docs/ARCHITECTURE.md`:386 puts *Annotations (all types),
@@ -2138,6 +2261,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   placeImageSchema,
   addLinkSchema,
   styleAnnotationSchema,
+  fillFormFieldSchema,
 ]);
 
 /**
@@ -2214,6 +2338,13 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // it was given — `removeAnnotation`'s shape with an appearance instead of a
   // deletion.
   styleAnnotationSchema,
+  // RENDERABLE, and it is `removeAnnotation`'s shape on the other walk: the
+  // renderer names a row of an answer it was given and says what that field
+  // should hold. The value is a string a person typed or a boolean, bounded by
+  // `MAX_FIELD_VALUE`, so the payload is the intent whatever the form weighs.
+  // What it cannot express is WHICH WRITE — `setTextValue`, `setChoiceValue` or
+  // a bounded sequence of toggles is the kernel's choice, made from the widget.
+  fillFormFieldSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -2353,6 +2484,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'removeAnnotation') return command.version;
   if (command.kind === 'placeAnnotation') return command.version;
   if (command.kind === 'styleAnnotation') return command.version;
+  if (command.kind === 'fillFormField') return command.version;
   return undefined;
 }
 
@@ -2369,3 +2501,21 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
 export type NamesAnAnnotation = 'removeAnnotation' | 'placeAnnotation' | 'styleAnnotation';
 const _thatNameIsACommandKind: NamesAnAnnotation extends CommandKind ? true : never = true;
 void _thatNameIsACommandKind;
+
+/**
+ * Which kinds {@link targetVersionOf} answers for on the WIDGET walk.
+ *
+ * **A second type rather than a member of {@link NamesAnAnnotation}**, and the
+ * seam's own note is why: `CommandTargets`' value names *what* is named, not the
+ * mechanism for checking it, so a form field gets its own member and its own
+ * refusal. Folding it into the annotation name would make the two indexes read
+ * as one index space — which is precisely the confusion the disjoint walks
+ * make possible.
+ *
+ * Anchored the same way, in `commandDeclarations.test.ts`, and against the
+ * union of both: this package cannot import the kernel, so the half checkable
+ * here is only that the name is a real kind.
+ */
+export type NamesAFormField = 'fillFormField';
+const _theFieldNameIsACommandKind: NamesAFormField extends CommandKind ? true : never = true;
+void _theFieldNameIsACommandKind;

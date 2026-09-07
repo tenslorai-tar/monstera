@@ -458,6 +458,29 @@ const PLACE_IMAGE_SPEC = `  placeImage: {
     reads: 'none',
   },`;
 
+/**
+ * The newest kind, and the one the `missing a command kind` case omits.
+ *
+ * `invertible: true` with `undo: 'inverse'`, unlike every annotation-adjacent
+ * spec beside it: a fill names one widget, so its prior is one value. And like
+ * {@link PLACE_IMAGE_SPEC} it spells no `targets`, because `CommandSpec` does
+ * not carry that axis — the bus branches on the declaration before this table
+ * is reached.
+ */
+const FILL_SPEC = `  fillFormField: {
+    kind: 'fillFormField',
+    writer: 'mupdf',
+    apply: applyFillFormField,
+    capture: captureFillFormField,
+    invert: invertFillFormField,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -573,6 +596,9 @@ const SPEC_IMPORTS = `import {
   applyPlaceImage,
   capturePlaceImage,
   invertPlaceImage,
+  applyFillFormField,
+  captureFillFormField,
+  invertFillFormField,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -1001,6 +1027,7 @@ ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
+${FILL_SPEC}
 };
 `,
   },
@@ -1018,7 +1045,8 @@ ${PLACE_IMAGE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `styleAnnotation` on 2026-09-07; `addLink`,
+    // table has to grow. `fillFormField` and `placeImage` and `styleAnnotation`
+    // on 2026-09-07; `addLink`,
     // `placeAnnotation` and `removeAnnotation` on 2026-09-06; `addAnnotation`,
     // `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage`,
     // `resizePages`, `setPageBackground` and
@@ -1033,7 +1061,7 @@ ${PLACE_IMAGE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'placeImage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'fillFormField' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1076,6 +1104,7 @@ ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
+${PLACE_IMAGE_SPEC}
 };
 `,
   },
@@ -1185,6 +1214,7 @@ ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
+${FILL_SPEC}
 };
 `,
   },
@@ -1232,6 +1262,7 @@ ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
+${FILL_SPEC}
 };
 `,
   },
@@ -1288,6 +1319,7 @@ ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
+${FILL_SPEC}
 };
 `,
   },
@@ -1340,6 +1372,7 @@ ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
+${FILL_SPEC}
 };
 `,
   },
@@ -2215,7 +2248,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 19 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 20 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

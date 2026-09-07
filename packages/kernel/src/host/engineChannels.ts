@@ -3,6 +3,8 @@ import {
   type CommandOfKind,
   addAnnotationSchema,
   placeImageSchema,
+  fieldFillSchema,
+  fillFormFieldSchema,
   MAX_ANNOTATION_BORDER,
   addLinkSchema,
   annotationKindNameSchema,
@@ -644,6 +646,26 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
       prior: z.array(priorPageTransitionSchema).readonly(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('fillFormField'),
+      /**
+       * The value a field held, and **which widget puts it back**.
+       *
+       * The index is part of it because a radio group's inverse acts on a
+       * different widget from the one the command named — measured, toggling
+       * the second radio moves the field to it and turns the first off, so the
+       * inverse of *select the second* is *select the first*.
+       */
+      prior: z
+        .object({
+          page: z.number().int().nonnegative(),
+          index: z.number().int().nonnegative(),
+          value: fieldFillSchema,
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 
 /**
@@ -797,6 +819,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   placeImageSchema.omit({ bytes: true }),
   styleAnnotationSchema,
   addLinkSchema,
+  fillFormFieldSchema,
 ]);
 
 /** What travels in place of a command, once its asset has been taken out. */

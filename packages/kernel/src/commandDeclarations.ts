@@ -985,6 +985,36 @@ const declarations = {
     reads: 'none',
     asset: 'none',
   },
+  fillFormField: {
+    kind: 'fillFormField',
+    // `docs/ARCHITECTURE.md`:385 assigns *"Form fields: fill"* to MuPDF by
+    // name, so the writer of record was settled before this row existed and
+    // none of it is a B4. The classification holds on its own terms: a field's
+    // value is `/V` on an object in `/AcroForm` and the appearance MuPDF
+    // regenerates is that object's — measured, 7708 marked pixels before a
+    // longer text value and 8701 after.
+    writer: 'mupdf',
+    // THE FIRST INVERTIBLE COMMAND ON EITHER WALK, and the reason is the shape
+    // of the payload rather than anything about forms: a fill names ONE widget,
+    // so its prior is one value, which is what `CommandPrior` has always been
+    // able to hold. `styleAnnotation` refused for exactly the missing half —
+    // it names several annotations and would need a list.
+    invertible: true,
+    undo: 'inverse',
+    // `setTextValue`, `setChoiceValue` and `toggle()` write a value and the
+    // appearance stream that displays it. No clock, no identifier: the same
+    // measurement `addAnnotation` records for the object beside it.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // THE SECOND MEMBER OF THIS AXIS, and the one `engineSeam.ts` anticipated
+    // by name. Its payload points into an answer `document.formFields` gave at
+    // one version — a different walk from the annotation one, which is why it
+    // is a different member rather than the same word.
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

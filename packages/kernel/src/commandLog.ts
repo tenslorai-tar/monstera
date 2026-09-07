@@ -14,6 +14,7 @@ import type { Brand } from '@monstera/shared';
 //
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage } from './engineSeam.js';
+import type { PriorFieldValue } from './formFields.js';
 import type { PriorLayerVisibility } from './layers.js';
 import type {
   PriorPageCopy,
@@ -400,6 +401,30 @@ export interface CommandPrior {
    * ADR-0041's handle is what unblocks both, and it unblocks them together.
    */
   readonly placeImage: never;
+  /**
+   * The value a field held, and **which widget puts it back**.
+   *
+   * The first entry on either walk that is not `never`, and it is not because
+   * fields are easier — it is because a fill names ONE widget. The four
+   * annotation commands each refused for a different reason and one of them was
+   * this type's own shape: a restyle names several annotations, so its prior
+   * would be a list whose length must match the payload's. A fill's prior is one
+   * value, which is what this table has always been able to hold.
+   *
+   * ## The index is part of the prior, and a radio group is why
+   *
+   * Measured 2026-09-07: toggling the second radio of a group moves the FIELD to
+   * that widget and turns the first off. So the inverse of *select the second*
+   * is *select the first* — a different widget from the one the command named —
+   * and an inverse computed as *unset what was set* would leave the group
+   * deselected, which is a document the user never had. That is
+   * `setLayerVisibility`'s lesson on a third axis: an inverse RESTORES rather
+   * than derives.
+   *
+   * `PriorFieldValue` therefore carries the whole restoring instruction —
+   * page, widget, value — rather than a value the invert has to place.
+   */
+  readonly fillFormField: PriorFieldValue;
 }
 
 /**

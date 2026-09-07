@@ -1,8 +1,17 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import type { CommandOfKind, FieldFill } from '@monstera/contract';
+import { asDocVersion } from '@monstera/shared';
+
 import type { MupdfSession } from './engineSeam.js';
-import { readFormFields } from './formFields.js';
+import {
+  applyFillFormField,
+  captureFillFormField,
+  invertFillFormField,
+  type ListedField,
+  readFormFields,
+} from './formFields.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { readAnnotations } from './pageAnnotations.js';
 
@@ -86,6 +95,51 @@ async function form({ ticked = true }: { readonly ticked?: boolean } = {}): Prom
   return document.save();
 }
 
+/**
+ * A form carrying the shapes a FILL has to refuse, which the six-type one does
+ * not: a read-only field, a push button, and a radio group split across pages.
+ *
+ * Separate from {@link form} rather than added to it, because every reading
+ * case above names field positions and adding to that fixture would move them —
+ * which is a change to what those cases assert, made silently, by a commit
+ * about something else.
+ */
+async function fillable(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const first = document.addPage([400, 600]);
+  const second = document.addPage([400, 600]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const fields = document.getForm();
+
+  const text = fields.createTextField('applicant.name');
+  text.setText('Ada');
+  text.addToPage(first, { x: 20, y: 540, width: 200, height: 20, font });
+
+  const locked = fields.createTextField('applicant.reference');
+  locked.setText('LOCKED');
+  locked.enableReadOnly();
+  locked.addToPage(first, { x: 20, y: 500, width: 200, height: 20, font });
+
+  const push = fields.createButton('applicant.submit');
+  push.addToPage('Send', first, { x: 20, y: 460, width: 60, height: 20, font });
+
+  const dropdown = fields.createDropdown('applicant.title');
+  dropdown.addOptions(['Dr', 'Mr', 'Ms']);
+  dropdown.select('Dr');
+  dropdown.addToPage(first, { x: 20, y: 420, width: 100, height: 20, font });
+
+  // A GROUP WHOSE SELECTED WIDGET IS ON ANOTHER PAGE. The capture cannot tell
+  // *nothing is selected* from *the selection is elsewhere* while looking at one
+  // page's walk, and an inverse built from the wrong answer deselects a group
+  // that was not deselected.
+  const split = fields.createRadioGroup('applicant.split');
+  split.addOptionToPage('here', first, { x: 20, y: 380, width: 16, height: 16 });
+  split.addOptionToPage('there', second, { x: 20, y: 380, width: 16, height: 16 });
+  split.select('there');
+
+  return document.save();
+}
+
 /** A page with a square on it and no fields at all. */
 async function marked(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
@@ -126,6 +180,21 @@ describe('readFormFields', () => {
       { kind: 'listbox', name: 'applicant.languages', value: 'Dutch', on: null },
       { kind: 'signature', name: 'applicant.signature', value: '', on: null },
     ]);
+  });
+
+  it('READS A PUSH BUTTON AS HAVING NO STATE, which is not the same as being off', async () => {
+    // It answered `on: false` until 2026-09-07 — *a box that is unticked*
+    // rather than *a control that has no tick* — and it got there through the
+    // `/AP` `/N` hazard: a push button's is a STREAM, which answers
+    // `isDictionary()`, whose first key is `BBox`. A panel reading `false` here
+    // would offer to tick a Send button.
+    const button = (await listed(await fillable()))[2];
+    expect(button).toStrictEqual({
+      kind: 'button',
+      name: 'applicant.submit',
+      value: '',
+      on: null,
+    });
   });
 
   it('READS AN UNTICKED BOX AS UNTICKED, which is the other half of the pair', async () => {
@@ -216,5 +285,307 @@ describe('readFormFields', () => {
     const answer = await onSession(await form(), (session) => readFormFields(session));
     expect(answer.fields.map((field) => field.name)).toContain('applicant.signature');
     expect(answer.truncated).toBe(false);
+  });
+});
+
+/** A fill naming one widget, at a version nothing here compares. */
+function filling(page: number, index: number, value: FieldFill): CommandOfKind<'fillFormField'> {
+  // THE VERSION IS THE BUS'S QUESTION, not this file's: `#refuseIfStale` runs
+  // before a spec is reached, so an apply called directly never sees it.
+  return { kind: 'fillFormField', page, index, value, version: asDocVersion(1) };
+}
+
+/**
+ * Applies a fill and answers what the reader says afterwards.
+ *
+ * The reading goes through `readFormFields` rather than through MuPDF directly,
+ * which is the point: `on` is the field's value against the widget's own
+ * on-state key, so a fill that moved only `/AS` — which is what one toggle does
+ * to a stale box — is visible here rather than hidden behind a getter that
+ * agrees with whatever was set.
+ */
+async function afterFill(
+  bytes: Uint8Array,
+  command: CommandOfKind<'fillFormField'>,
+): Promise<readonly ListedField[]> {
+  return onSession(bytes, async (session) => {
+    await applyFillFormField(session, command);
+    return (await readFormFields(session)).fields;
+  });
+}
+
+/** What pdf-lib says the field values are — the second library. */
+async function byPdfLib(bytes: Uint8Array): Promise<Record<string, string>> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const values: Record<string, string> = {};
+  for (const field of document.getForm().getFields()) {
+    const dictionary = field.acroField.dict;
+    const held = dictionary.get(dictionary.context.obj('V'));
+    values[field.getName()] = held === undefined ? '(absent)' : String(held);
+  }
+  return values;
+}
+
+describe('applyFillFormField', () => {
+  it('FILLS A TEXT FIELD, and the OTHER library reads the value back', async () => {
+    const bytes = await onSession(await form(), async (session) => {
+      await applyFillFormField(session, filling(0, 0, { set: 'text', text: 'Grace' }));
+      return mupdfWriter.serialise(session);
+    });
+    // pdf-lib, not MuPDF: a getter answering what a setter was just given is
+    // the library agreeing with itself, which says nothing about the document.
+    expect((await byPdfLib(bytes))['applicant.name']).toBe('(Grace)');
+  });
+
+  it('CHOOSES AN OPTION on a dropdown and on a listbox', async () => {
+    const dropdown = await afterFill(await form(), filling(0, 4, { set: 'choice', option: 'Ms' }));
+    expect(dropdown[4]?.value).toBe('Ms');
+    const listbox = await afterFill(await form(), filling(0, 5, { set: 'choice', option: 'Welsh' }));
+    expect(listbox[5]?.value).toBe('Welsh');
+  });
+
+  it('CLEARS A CHOICE with the empty option, which is a value and not an absence', async () => {
+    // Measured 2026-09-07: a dropdown built with no selection reads `""`, and
+    // `setChoiceValue('')` clears one that has a selection. So the empty string
+    // passes the membership test deliberately — it is how a choice is cleared,
+    // and an inverse restoring an untouched field has to be able to say it.
+    const cleared = await afterFill(await form(), filling(0, 4, { set: 'choice', option: '' }));
+    expect(cleared[4]?.value).toBe('');
+  });
+
+  it('TICKS A BOX WHOSE APPEARANCE IS STALE, which takes two toggles', async () => {
+    // THE CASE THE ONE-TOGGLE IMPLEMENTATION FAILS. The fixture's box has
+    // `/V /Yes` and `/AS /Off` — pdf-lib's `check()` leaves it that way — and
+    // MuPDF's `toggle()` is keyed on `/AS`. So asking for OFF and toggling once
+    // gives on/on, which is the opposite of what was asked. Reading back
+    // between toggles is what closes it.
+    const off = await afterFill(await form(), filling(0, 1, { set: 'button', on: false }));
+    expect(off[1]).toMatchObject({ kind: 'checkbox', on: false });
+
+    // And the other direction on the same box, which needs none.
+    const on = await afterFill(await form(), filling(0, 1, { set: 'button', on: true }));
+    expect(on[1]).toMatchObject({ kind: 'checkbox', on: true });
+  });
+
+  it('SELECTS THE SECOND RADIO, and the first goes off with it', async () => {
+    // A group is one field with several widgets, so this asserts BOTH: a fill
+    // that set the named widget without moving its sibling would leave a
+    // document reporting two selections, which the format cannot mean.
+    const after = await afterFill(await form(), filling(0, 3, { set: 'button', on: true }));
+    expect(after.filter((field) => field.kind === 'radio').map((field) => field.on)).toStrictEqual([
+      false,
+      true,
+    ]);
+  });
+
+  it('REFUSES A READ-ONLY FIELD, which MuPDF fills without complaint', async () => {
+    // Measured: `setTextValue` lands on a read-only field and reads back
+    // "CHANGED". Every rule in `refuseUnfillable` is this build's, and this is
+    // the case that says so.
+    const bytes = await fillable();
+    await expect(
+      afterFill(bytes, filling(0, 1, { set: 'text', text: 'CHANGED' })),
+    ).rejects.toThrow(/read-only/u);
+    // AND THE DOCUMENT IS UNTOUCHED, which the throw alone does not say: a
+    // refusal after the write is not a refusal.
+    const held = await onSession(bytes, (session) => readFormFields(session));
+    expect(held.fields[1]?.value).toBe('LOCKED');
+  });
+
+  it('REFUSES A PUSH BUTTON, a signature, and every mismatched pairing', async () => {
+    const split = await fillable();
+    const six = await form();
+    // A push button, which `setTextValue` writes to without complaint.
+    await expect(afterFill(split, filling(0, 2, { set: 'text', text: 'x' }))).rejects.toThrow(
+      /cannot fill a button field/u,
+    );
+    // A signature, which has no fill this build performs.
+    await expect(afterFill(six, filling(0, 6, { set: 'text', text: 'x' }))).rejects.toThrow(
+      /cannot fill a signature field/u,
+    );
+    // An on-state aimed at a text field — `toggle()` there does nothing at all,
+    // silently, so a build that passed it through would report success.
+    await expect(afterFill(six, filling(0, 0, { set: 'button', on: true }))).rejects.toThrow(
+      /An on-state cannot fill a text field/u,
+    );
+    // A text value aimed at a checkbox.
+    await expect(afterFill(six, filling(0, 1, { set: 'text', text: 'Yes' }))).rejects.toThrow(
+      /A text value cannot fill a checkbox field/u,
+    );
+    // An option the document does not offer, which MuPDF stores happily.
+    await expect(
+      afterFill(six, filling(0, 4, { set: 'choice', option: 'Professor' })),
+    ).rejects.toThrow(/does not offer the option/u);
+  });
+
+  it('REFUSES AN INDEX THIS PAGE HAS NO WIDGET FOR, naming the walk it counted', async () => {
+    // The message matters as much as the refusal: the annotation walk shares no
+    // entries with this one, so a reader sent to the wrong list by a generic
+    // sentence would look for a field where none can be.
+    await expect(afterFill(await form(), filling(0, 99, { set: 'text', text: 'x' }))).rejects.toThrow(
+      /widget walk that document\.formFields answers with/u,
+    );
+  });
+});
+
+describe('captureFillFormField and invertFillFormField', () => {
+  it('RESTORES A TEXT FIELD to what it held', async () => {
+    const held = await onSession(await form(), async (session) => {
+      const command = filling(0, 0, { set: 'text', text: 'Grace' });
+      const captured = await captureFillFormField(session, command);
+      if (!captured.captured) throw new Error(`the capture refused: ${captured.reason}`);
+      await applyFillFormField(session, command);
+      const changed = (await readFormFields(session)).fields[0]?.value;
+      await invertFillFormField(session, captured.prior);
+      return { changed, restored: (await readFormFields(session)).fields[0]?.value };
+    });
+    // BOTH HALVES. Without the middle reading, an inverse that did nothing and
+    // an apply that did nothing produce the same final value.
+    expect(held).toStrictEqual({ changed: 'Grace', restored: 'Ada' });
+  });
+
+  it('RESTORES THE RADIO THAT WAS ON, which is a DIFFERENT widget from the one filled', async () => {
+    // The finding this whole shape exists for: toggling the second radio moves
+    // the field to it and turns the first off, so the inverse of *select the
+    // second* is *select the first*. An inverse spelt *unset what was set*
+    // would leave the group deselected — a document the user never had.
+    const held = await onSession(await form(), async (session) => {
+      const command = filling(0, 3, { set: 'button', on: true });
+      const captured = await captureFillFormField(session, command);
+      if (!captured.captured) throw new Error(`the capture refused: ${captured.reason}`);
+      await applyFillFormField(session, command);
+      const changed = (await readFormFields(session)).fields.map((field) => field.on);
+      await invertFillFormField(session, captured.prior);
+      return {
+        prior: captured.prior,
+        changed,
+        restored: (await readFormFields(session)).fields.map((field) => field.on),
+      };
+    });
+
+    // THE PRIOR NAMES WIDGET 2, not the widget 3 the command named. That is the
+    // assertion; the round trip below would also pass for a prior that happened
+    // to work by coincidence on a two-option group.
+    expect(held.prior).toStrictEqual({
+      page: 0,
+      index: 2,
+      value: { set: 'button', on: true },
+    });
+    expect(held.changed).toStrictEqual([null, true, false, true, null, null, null]);
+    expect(held.restored).toStrictEqual([null, true, true, false, null, null, null]);
+  });
+
+  it('RESTORES A CHECKBOX, including the stale appearance it started with', async () => {
+    const held = await onSession(await form(), async (session) => {
+      const command = filling(0, 1, { set: 'button', on: false });
+      const captured = await captureFillFormField(session, command);
+      if (!captured.captured) throw new Error(`the capture refused: ${captured.reason}`);
+      await applyFillFormField(session, command);
+      const changed = (await readFormFields(session)).fields[1]?.on;
+      await invertFillFormField(session, captured.prior);
+      return { changed, restored: (await readFormFields(session)).fields[1]?.on };
+    });
+    expect(held).toStrictEqual({ changed: false, restored: true });
+  });
+
+  it('REFUSES TO CAPTURE a choice field holding a value the document does not offer', async () => {
+    // A hostile — or merely careless — document can carry one, because MuPDF
+    // stores an unlisted value without complaint. Recording it as a prior would
+    // produce an inverse this build's own apply rejects: an undo that throws,
+    // at the moment a person presses undo.
+    const strange = await onSession(await form(), async (session) => {
+      const document = await PDFDocument.load(await mupdfWriter.serialise(session), {
+        updateMetadata: false,
+      });
+      const dropdown = document.getForm().getDropdown('applicant.title');
+      dropdown.addOptions(['Professor']);
+      dropdown.select('Professor');
+      // AND THEN THE OPTION IS TAKEN AWAY, leaving the value behind — which is
+      // the state the refusal is about and which nothing else here produces.
+      dropdown.setOptions(['Dr', 'Mr', 'Ms']);
+      return document.save();
+    });
+
+    const captured = await onSession(strange, (session) =>
+      captureFillFormField(session, filling(0, 4, { set: 'choice', option: 'Mr' })),
+    );
+    expect(captured.captured).toBe(false);
+    expect(captured.captured ? '' : captured.reason).toMatch(/not among the options/u);
+  });
+
+  it('FINDS THE SELECTED RADIO ON ANOTHER PAGE, rather than reading absence', async () => {
+    // A group's widgets may sit on different pages, and then *nothing is lit
+    // here* and *the selection is elsewhere* are the same reading from one
+    // page's walk — with opposite inverses. The field's `/Kids` count is what
+    // separates them, so the search widens only for a field that reaches past
+    // this page.
+    const captured = await onSession(await fillable(), (session) =>
+      captureFillFormField(session, filling(0, 4, { set: 'button', on: true })),
+    );
+    expect(captured).toStrictEqual({
+      captured: true,
+      // PAGE 1, INDEX 0 — the sibling. A capture that stopped at this page
+      // would have recorded `{ page: 0, index: 4, on: false }`, whose inverse
+      // deselects a group that was never deselected.
+      prior: { page: 1, index: 0, value: { set: 'button', on: true } },
+    });
+  });
+
+  it('AND RESTORES IT, so the widened search is not just a different wrong answer', async () => {
+    const held = await onSession(await fillable(), async (session) => {
+      const command = filling(0, 4, { set: 'button', on: true });
+      const captured = await captureFillFormField(session, command);
+      if (!captured.captured) throw new Error(`the capture refused: ${captured.reason}`);
+      await applyFillFormField(session, command);
+      const changed = (await readFormFields(session)).fields.map((field) => field.on);
+      await invertFillFormField(session, captured.prior);
+      return { changed, restored: (await readFormFields(session)).fields.map((one) => one.on) };
+    });
+    // The group moves to page 0's widget and back to page 1's. The two arrays
+    // differ at exactly the two radio positions, which is what says the write
+    // reached a sibling on another page in both directions.
+    expect(held.changed).toStrictEqual([null, null, null, null, true, false]);
+    expect(held.restored).toStrictEqual([null, null, null, null, false, true]);
+  });
+
+  it('CONTROL: the capture refuses BEFORE the log holds an entry, on every rule the apply has', async () => {
+    // `captureRemoveAnnotation`'s care, and it is not decoration: a capture that
+    // validated nothing would let the bus checkpoint a command that is about to
+    // throw, so the document gains a log entry for something that never ran.
+    // A throw here — rather than `captured: false` — is the same refusal the
+    // apply raises, which is what says the two agree.
+    await expect(
+      onSession(await fillable(), (session) =>
+        captureFillFormField(session, filling(0, 1, { set: 'text', text: 'x' })),
+      ),
+    ).rejects.toThrow(/read-only/u);
+  });
+
+  it('CONTROL: a capture that succeeds names a value the document actually held', async () => {
+    // Without this the refusals above are satisfied by a capture that refuses
+    // everything, which is the reassuring answer for a file whose subject is
+    // refusal.
+    const captured = await onSession(await form(), (session) =>
+      captureFillFormField(session, filling(0, 5, { set: 'choice', option: 'Welsh' })),
+    );
+    expect(captured).toStrictEqual({
+      captured: true,
+      prior: { page: 0, index: 5, value: { set: 'choice', option: 'Dutch' } },
+    });
+  });
+
+  it('CONTROL: the walk finds the fields these cases act on, so a refusal is not blindness', async () => {
+    // 4b, for this describe rather than the reader's: every case above locates
+    // a widget by index, and a walk that came back short would refuse for the
+    // wrong reason while printing the same red.
+    const answer = await onSession(await fillable(), (session) => readFormFields(session));
+    expect(answer.fields.map((field) => field.name)).toStrictEqual([
+      'applicant.name',
+      'applicant.reference',
+      'applicant.submit',
+      'applicant.title',
+      'applicant.split',
+      'applicant.split',
+    ]);
   });
 });

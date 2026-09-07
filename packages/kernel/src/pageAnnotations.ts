@@ -90,8 +90,16 @@ import { snapRotation } from './rotatePages.js';
  * command it refuses on behalf of. What would make it one function is a caller
  * that needs the page OBJECT and the page — this one needs the `PDFPage` as
  * well, to create an annotation on it, which neither of those does.
+ *
+ * **EXPORTED 2026-09-07 rather than copied a fourth time**, and that is the
+ * sentence above being taken at its word: `formFields.ts` needs exactly this —
+ * the `PDFPage` for a validated index — so the trigger it names has fired. The
+ * refusal's wording is about the *page*, which is the same fact for either
+ * walk; what differs is the refusal for an index WITHIN a page, and those stay
+ * separate because *there is no annotation there* and *there is no widget
+ * there* are different facts.
  */
-function pageAt(document: PDFDocument, page: number, total: number): PDFPage {
+export function pageAt(document: PDFDocument, page: number, total: number): PDFPage {
   if (!Number.isInteger(page) || page < 0 || page >= total) {
     throw new RangeError(
       `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +

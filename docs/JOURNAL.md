@@ -877,6 +877,78 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-07 — Filling a form field: three mutators, no refusals, and a toggle keyed on the wrong entry
+
+`docs/FEATURES.md`'s D5 row points here. It is the measurement the fill command
+was designed from, taken by `scripts/research/formFieldFill.mjs` before a line
+of the command existed, and recorded because five of its six readings changed
+what the command had to be.
+
+**The surface is three functions.** `mupdf.d.ts:812-834` declares
+`setTextValue`, `setChoiceValue` and `toggle()` on `PDFWidget`, and nothing
+else. There is no setter that names a state, so the payload's shape follows the
+writer rather than the other way round.
+
+**`toggle()` is keyed on `/AS`, which is the entry the reader deliberately does
+not trust.** Two boxes separate the two possible readings: one whose `/V` and
+`/AS` agree, and one where `@cantoo/pdf-lib`'s `check()` left them disagreeing.
+
+| box | before | after one toggle |
+|---|---|---|
+| `box.stale` | `/V /Yes`, `/AS /Off` | `/V /Yes`, **`/AS /Yes`** |
+| `box.agreed` | `/V /Off`, `/AS /Off` | `/V /Yes`, `/AS /Yes` |
+
+The stale box's *data does not change*; its appearance catches up. So one call
+does different things to two documents that hold the same value, and *set this
+box to on* is not one toggle. A second toggle takes the stale box to off/off, so
+the operation terminates and is a flip once consistent — which is why the fill
+reads the state back between calls, bounded at two, and refuses rather than
+leaving a field holding the opposite of what was asked.
+
+**A radio group can be pointed at a named widget.** Toggling the second radio
+while the first was on moves the field to `/1` and the first widget's `/AS` to
+`/Off`; toggling the currently-on widget deselects the whole group. So the
+inverse of *select the second* is *select the first*, never *unset this one* —
+those are different documents, and it is why the prior carries a widget index
+rather than only a value.
+
+**The appearance follows the value**, measured by rendering rather than by
+reading back what was written: **7708** marked pixels on page 0 before a longer
+text value and **8701** after. A read-back would have been the library agreeing
+with itself about a string.
+
+**And nothing is refused. Six attempts, six successes, no throw:**
+
+| attempted | outcome |
+|---|---|
+| `setTextValue` on a read-only field (`isReadOnly()` true) | lands, reads back `CHANGED` |
+| `setTextValue` on a push button | lands, reads back `CHANGED` |
+| `setChoiceValue('Professor')` against `["Dr","Mr","Ms"]` | lands, and the options are unchanged |
+| `setTextValue` on a listbox | lands |
+| `setChoiceValue` on a text field | lands |
+| `toggle()` on a text field | silently does nothing |
+
+Every type rule the row needs is therefore this build's own, including the one
+the document itself asks for. That is Rule 0's *be equally suspicious of things
+that work*, with all six working.
+
+**Two readings recorded on the way past.** `setChoiceValue('')` clears a choice
+on a combobox and a listbox alike, and a dropdown built with no selection reads
+`""` — so the empty string is a value rather than an absence, and an inverse
+restoring an untouched field needs it. And `/AP` `/N` is a state dictionary on a
+button and a **stream** on every other kind, while a stream answers
+`isDictionary()` too: a walk over its keys yields `BBox`, `Matrix`,
+`Resources`, any of which reads as an on-state name. That produced a real
+defect in the reader — a push button reported `on: false`, which is *a box that
+is unticked* rather than *a control that has no tick* — fixed in both halves,
+the caller no longer asking and the reader no longer answering.
+
+The script carries its own positive control: it performs a text write it knows
+must land and refuses to report if that comes back unchanged, because a broken
+write and a refused one both print *no change*.
+
+---
+
 ## 2026-09-07 — Stage 3 closes: 3 days against a 3-day baseline, 1.00×, continue
 
 **Trajectory gate, in writing: 1.00× — continue.** The gate arms at 3×, which

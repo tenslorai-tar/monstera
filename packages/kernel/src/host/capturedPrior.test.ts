@@ -1,7 +1,8 @@
-import { PDFArray, PDFDocument, PDFName, PDFString } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { CommandKind, CommandOfKind } from '@monstera/contract';
+import { asDocVersion } from '@monstera/shared';
 
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import { localMupdfExecution } from '../commandSpecs.js';
@@ -63,6 +64,16 @@ beforeAll(async () => {
     context.obj({ OCGs: all, D: context.obj({ Order: all }) }),
   );
 
+  // A TEXT FIELD, for the layer group's reason one kind along: `fillFormField`
+  // is one of the ten and its capture refuses on a page with no widget at the
+  // index it names.
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const text = document.getForm().createTextField('applicant.name');
+  text.setText('Ada');
+  const first = document.getPages()[0];
+  if (first === undefined) throw new Error('the fixture must have a first page');
+  text.addToPage(first, { x: 20, y: 240, width: 120, height: 20, font });
+
   base = await document.save({ useObjectStreams: false });
 });
 
@@ -108,6 +119,16 @@ const COMMANDS: { readonly [K in InvertibleKind]: CommandOfKind<K> } = {
     pages: [1],
     style: 'blinds',
     durationSeconds: 2,
+  },
+  fillFormField: {
+    kind: 'fillFormField',
+    page: 0,
+    index: 0,
+    value: { set: 'text', text: 'Grace' },
+    // THE VERSION THE BUS COMPARES, not one this file checks: `capture` is
+    // called below directly, and the staleness refusal happens before the bus
+    // reaches a spec. Any version parses here.
+    version: asDocVersion(1),
   },
 };
 

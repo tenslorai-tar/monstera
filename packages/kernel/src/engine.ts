@@ -92,7 +92,13 @@ export {
   invertRemoveAnnotation,
   readAnnotations,
 } from './pageAnnotations.js';
-export { MAX_LISTED_FIELDS, readFormFields } from './formFields.js';
+export {
+  applyFillFormField,
+  captureFillFormField,
+  invertFillFormField,
+  MAX_LISTED_FIELDS,
+  readFormFields,
+} from './formFields.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export {

@@ -59,6 +59,11 @@ import {
   invertStyleAnnotation,
   applyStyleAnnotation,
 } from './pageAnnotations.js';
+import {
+  applyFillFormField,
+  captureFillFormField,
+  invertFillFormField,
+} from './formFields.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
@@ -339,6 +344,16 @@ const declared = {
     apply: applyAddLink,
     capture: captureAddLink,
     invert: invertAddLink,
+  },
+  fillFormField: {
+    // THE SPREAD CARRIES `targets: 'field'` IN, and nothing here reads it — the
+    // same shape `removeAnnotation`'s comment describes for the axis's first
+    // member. What differs is `invertible: true`, which this table does read:
+    // `invert` is reachable here where every annotation neighbour's throws.
+    ...declaredCommands.fillFormField,
+    apply: applyFillFormField,
+    capture: captureFillFormField,
+    invert: invertFillFormField,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them
