@@ -35,7 +35,7 @@ planner counting a table of rows as a table of untouched work.
 | 0 | Walking skeleton — the architecture, whole | **done** |
 | 1 | Viewer core (D1) | **done** (2026-09-03) — 22 of 24 rows, including all three `BUILD-PROMPT.md:686` names; `cmaps/` partly with a CJK trigger, drag-reorder deferred to Stage 2. Trajectory gate **0.20× — continue** |
 | 2 | Page management (D2) | **done** (2026-09-05) — 24 of 26 rows; the other two, deskew and enhance-scans, are deferred to Stage 6 with triggers rather than skipped. 3 days worked against a **2-day** baseline (owner, 2026-09-03), 50 commits. Trajectory gate **1.50× — continue**; the baseline is not revised |
-| 3 | Annotation platform, then tools (D3) | — |
+| 3 | Annotation platform, then tools (D3) | **done** (2026-09-07) — 23 of 24 rows, two with a named residual: built-in stamp artwork needs a decision about where it comes from (B10 bans committing binaries), and the annotation-types registry waits for its first reader. The 24th, redact's burn-in, is D7 and belongs to Stage 7. 3 days worked against a **3-day** baseline (owner, 2026-09-04), 53 commits. Trajectory gate **1.00× — continue** |
 | 4 | Forms (D5) | — |
 | **1.0** | **Minimum Shippable release — Stages 0–4** | — |
 | 5 | Text editing (D4) | — |

@@ -10,7 +10,8 @@ the fact is not a baseline, it is a rationalisation.
 | 0 — walking skeleton | 15 working days | **18 days worked** (2026-08-16 → 2026-09-02) | **1.20× — continue** |
 | 1 — viewer core | 10 working days | **2 days worked** (2026-09-02 → 2026-09-03), 52 commits | **0.20× — continue** |
 | 2 — page management | **2 working days** (owner, 2026-09-03) | **3 days worked** (2026-09-03 → 2026-09-05), 50 commits | **1.50× — continue** |
-| 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | not started | — |
+| 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
+| 4 — forms | **2 working days** (owner, 2026-09-07) | not started | — (the 3× gate arms at **6 days**) |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -873,6 +874,71 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-07 — Stage 3 closes: 3 days against a 3-day baseline, 1.00×, continue
+
+**Trajectory gate, in writing: 1.00× — continue.** The gate arms at 3×, which
+for Stage 3 would have been nine days. It was not armed and no decision was
+required; this records that it was read rather than skipped.
+
+3 days worked, **2026-09-05 → 2026-09-07**, 53 commits. Counted from the stage's
+own last commit rather than from the day its last row first passed, and the day
+count is distinct commit dates — 09-05, 09-06 and 09-07 — which is the
+convention Stage 0's note fixes and every stage since has used. 09-05 is shared
+with Stage 2's closing day exactly as 09-03 was shared between Stages 1 and 2.
+
+### What the stage delivered, against `BUILD-PROMPT.md:693-695`
+
+Its criteria are three: geometry adapters and tool controllers; every D3 tool
+landing as a **registration**; and persistence plus `srcRef` proofs. All four
+clauses are met.
+
+- **The platform.** `annotationSpace.ts`' adapters, the `ToolController`
+  lifecycle, and the tool registry every surface projects from. The one
+  qualification in a status cell is the annotation-**types** registry, which is
+  built and waits for its first reader — a registration nothing consumes yet.
+- **The tools as registrations.** **26** commands from one factory —
+  `sed -n '/export function shapeToolCommands/,/^}/p' … | grep -c
+  'ToolCommand(deps)'`, read 2026-09-07 — and `annotationCommands.test.ts` joins
+  that set against the tool registry, so the number is the same on both sides or
+  the case is red. Two of the 26 are not annotation tools and are composed here
+  anyway, which the composition's own comment states rather than hides.
+- **Persistence and `srcRef`.** [ADR-0043](DECISIONS/0043-an-annotation-this-build-wrote-carries-a-private-mark.md)
+  gave invariant L5's marking scheme a mechanism, and the panel that reads it
+  says which annotations came with the document.
+
+**23 of 24 rows done, two carrying a named residual.** Built-in stamp artwork
+needs a decision about where it comes from, B10 banning committed binaries; the
+types registry waits for a reader. The 24th is redact's burn-in, which is **D7
+and belongs to Stage 7** — marks land here, burning them in does not.
+
+### The two rows that were blocked at the last reading, and how they closed
+
+Place image and stamps were **blocked on a B4** on the morning of the 7th, and
+the block was recorded as a size: 256 KiB of engine-host frame against 64 MiB of
+image. It was the second wall. The wire is JSON, so a `Uint8Array` arrives as an
+object of numeric keys and the schema refines it away — raising the frame
+maximum fixes nothing.
+[ADR-0044](DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)
+keeps §3's matrix, adds an `asset` axis, and sends the bytes through the granted
+directory the document itself arrives by. The pdf-lib alternative was
+**executed** rather than argued — five readings, all yes — and lost on a cost
+keyed on object count, 197.3s and 224.8s at 127,082 objects against 0.6s at
+199 MB.
+
+**That reading stands against the shipped byte-image rows** — watermark, headers
+and footers, background, TOC, Bates, insert-from-image all pay a whole-document
+`@cantoo/pdf-lib` rewrite, and no fixture in that set would have shown it. It is
+recorded and deliberately not acted on inside a B4.
+
+### Stage 4 opens on a 2-day baseline
+
+Recorded in the table above **before** the stage begins, which is the whole
+point of the header's sentence: a gate with no recorded baseline is inert, and
+one recorded afterwards is a rationalisation. Owner-set 2026-09-07, seven rows,
+and the 3× gate arms at six days.
 
 ---
 
