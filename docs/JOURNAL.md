@@ -877,6 +877,151 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-07 — An incremental save takes ADR-0044's 225–320 seconds to 38, and the API that advertises it is not the one to call
+
+`scripts/research/incrementalSaveCost.mjs`, run against
+`perf-dense-127k.pdf` (25.1 MB, 127,082 objects) on this machine.
+
+ADR-0044 rejected a pdf-lib route on cost and the six shipped byte-image rows
+were measured at 225–320 seconds each. Every one of those readings is
+`PDFDocument.load` followed by `PDFDocument.save`. **The word *incremental*
+appears in neither ADR-0044 nor ADR-0039**, so the route was costed on the only
+save this project had ever called, and `@cantoo/pdf-lib` 2.8.3 has had a second
+one all along.
+
+| route | mutation | load | mutate | save | total | MB out |
+|---|---|---|---|---|---|---|
+| full | none | 21.25s | 0s | 248.70s | **269.95s** | 23.5 |
+| incremental | none | 21.08s | 0s | 5.49s | **26.58s** | 25.1 |
+| full | createField | 21.05s | 0.03s | 284.49s | **305.57s** | 23.5 |
+| incremental | createField | 20.74s | 11.76s | 5.28s | **37.78s** | 25.1 |
+| full | drawAll | 20.82s | 0.01s | 262.05s | **282.89s** | 23.5 |
+| incremental | drawAll | 20.67s | 29.71s | 30.17s | **80.56s** | 27.1 |
+
+**8.1x on the shape a created field would have, 3.5x on the shape the six
+shipped rows have.**
+
+### The phases had to be timed separately, and this is why
+
+A total would have said the same thing in one number and hidden where the work
+went. The save collapses from 248–284s to 5.3s — and part of it **reappears in
+`mutate`**, 0.03s to 11.76s for one field and 0.01s to 29.71s for forty pages,
+because a document loaded `forIncrementalUpdate` records every change as it is
+made. The saving is real and it is smaller than the save column alone says.
+
+**The 21s load does not move and cannot.** It is the parse, and no save option
+touches it, so it is the floor of any pdf-lib route on this document. That is
+what makes the remaining cost per *gesture* rather than per document: ten drawn
+fields is ten parses unless something holds the session, which is ADR-0039's
+question and not this measurement's.
+
+### `saveIncremental` is NOT the API a command can call
+
+Found before any dense reading was taken, on the 199 MB fixture. Its buffer is
+the **appendix alone**: `PDFWriter.serializeToBuffer` skips the header when a
+snapshot is present, so the bytes begin at an object rather than at `%PDF`.
+MuPDF opens the result with *"cannot find version marker"*, repairs it, and
+reports no page 1. `commit()` is the callable one — it concatenates that
+appendix onto the original bytes and answers a whole document.
+
+So the method whose docstring advertises *"the result buffer will contain only
+the differences"* means that literally, and a route that returned it would be
+the fastest and most broken result this instrument can produce. It was caught
+because **every row is opened by a different library than the one that wrote
+it**: pdf-lib agreeing with itself about bytes it just produced would have
+certified a file the shipped engine cannot read.
+
+### Two costs that come with it, stated because they are not free
+
+- **The load option.** `takeSnapshot` reads `originalBytes`, which the parser
+  retains only under `forIncrementalUpdate: true`. So `openForWriting` grows a
+  second shape — a cheaper save behind a dearer load would not be a saving, and
+  the load column above is why that is a statement rather than a hope.
+- **The file grows.** 23.5 MB out of a full save against 25.1–27.1 MB
+  incremental. ADR-0008 rule 1 already names the operations that may never take
+  this route, and *flatten* is on that list.
+
+### What this does not decide
+
+Nothing about routing. It removes the premise a block rested on — creating a
+form field was assessed as a 225–320s byte-image write, and that number is now
+38s worst-case on a deliberately pathological document and 0.39s on an ordinary
+one. Whether the six shipped rows should move to this route is a decision with a
+correctness half this measurement does not touch, and it belongs in an ADR.
+
+---
+
+## 2026-09-07 — All six field types bake, and a plain save leaves every one of them in the file
+
+`scripts/research/formFieldFlatten.mjs`, widened from H2's two-field fixture to
+nine widgets across the six types plus a push button and a read-only field.
+
+### Question 8 — six types is six behaviours, and all nine came across
+
+Ink counted **inside each field's own rectangle**, from the page's content
+stream alone. A page total is one number for nine widgets and would hide a type
+whose appearance did not bake.
+
+| | text | checkbox | radio.first | radio.second | dropdown | listbox | readonly | push | signature |
+|---|---|---|---|---|---|---|---|---|---|
+| before | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| after | 1159 | 60 | 129 | 77 | 329 | 2810 | 798 | 1200 | 203 |
+
+**Both halves of the radio group came across**, which is the case a bake working
+at field level rather than widget level would have got wrong.
+
+### Question 6 — the finding, and it blocks the row
+
+`bake(false, true)` unlinks the widgets: the walk answers 0 and pdf-lib lists no
+fields. **The objects are still in the file.**
+
+| save | objects | widget dicts | field dicts |
+|---|---|---|---|
+| unbaked fixture | 49 | 9 | 8 |
+| `bake` + `saveToBuffer("")` | **55** | **9** | **8** |
+| `bake` + `saveToBuffer("garbage")` | 22 | 0 | 0 |
+| `bake` + `saveToBuffer("garbage=compact")` | 22 | 0 | 0 |
+| `bake` + `saveToBuffer("garbage=deduplicate")` | 21 | 0 | 0 |
+
+The object count **grew**, 49 to 55. `mupdfWriter.ts` documents its own save as
+*"no incremental update, no garbage-collection pass"*, and this is what that
+sentence costs a removal: every field's value is still readable in the bytes by
+anything that walks the cross-reference table rather than the catalog.
+
+This is `docs/ARCHITECTURE.md` §4's removal row, arriving as a measurement
+rather than as a rule — and §4 already says *"Every command that reaches the
+save pipeline declares which row it falls under. A command whose purpose is
+removal cannot be added without classifying it."* **Flatten is the first
+command whose purpose is removal**, and the code has nowhere to put that
+classification: `serialise(session)` takes no mode and `commandDeclarations.ts`
+has no purpose axis. B4, before the row.
+
+**The reading was searched for rather than stumbled on**, and it needed the
+right instrument: `structure()` walks from the catalog, so it reports the
+widgets as gone. Only `enumerateIndirectObjects`, which reads the xref, can see
+an object nothing references. The detector's control is that it finds **9**
+widget dictionaries in the unbaked fixture — without which a zero afterwards
+would say nothing about the bake.
+
+**And the obvious observable was the wrong one.** Searching the saved bytes for
+the field's value finds it either way, because a correct flatten *draws* that
+text into the page. The fixture the bug also passes.
+
+### Question 7 — a bake is reproducible, measured across a second boundary
+
+Two bakes 1.1 seconds apart produce identical bytes, and the output's
+`/ModDate` is the **input's** — `D:20260907190614Z` on the fixture, on the
+first bake and on the second, equal to its own `/CreationDate`. MuPDF stamped
+nothing.
+
+The 1.1 seconds are deliberate. Two saves inside one clock tick produce
+identical bytes whether or not anything is stamped, which is exactly why the
+`/ModDate` mis-declaration found in this week's audit surfaced as a rare flake
+and not as a failing case. A byte comparison is only worth taking once the two
+runs are known to straddle a tick.
+
+---
+
 ## 2026-09-07 — Stage audit: `b156324..040be78` — a channel that could carry two of nine priors, and an amendment that arrived after its feature
 
 Twenty-two commits, 85 files: the annotation tail of Stage 3, then Stage 4's

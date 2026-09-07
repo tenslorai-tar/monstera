@@ -24,6 +24,16 @@
  * never have shown it: `budgetGate.mjs` measures **peak RSS**, and both of its
  * fixtures were chosen for memory shapes rather than for the axis this costs on.
  *
+ * **EVERY FIGURE HERE IS A `load` PLUS A `save`, AND THERE IS A SECOND SAVE.**
+ * Measured 2026-09-07 by `scripts/research/incrementalSaveCost.mjs`: the same
+ * work through `commit()` costs 26–81s against the 270–306s these commands pay,
+ * because the 248–284s serialise becomes 5.3s and only the 21s parse remains.
+ * That is not a defect in this script — these rows call `save`, so `save` is
+ * what they cost — but a reader taking a number from the table below as *what a
+ * pdf-lib write costs* would be taking it as a fact about the library when it is
+ * a fact about which of its two saves this build calls. The bound below is
+ * unchanged and still describes the shipped route.
+ *
  * ## What this instrument does, and what it deliberately does not
  *
  * It measures, and it holds a **regression** bound — not a budget. The

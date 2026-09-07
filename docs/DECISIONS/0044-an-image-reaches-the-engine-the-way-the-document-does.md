@@ -299,3 +299,50 @@ would have to reimplement.
 
 `docs/JOURNAL.md`'s entry of the same date carries the run conditions, the
 spread, and the trigger for re-measuring.
+
+---
+
+## Addendum, 2026-09-07 — the cost was measured on one of pdf-lib's two saves
+
+**Nothing above is withdrawn.** Decision 1 stands, the rejection of a pdf-lib
+route for `placeImage` stands, and every figure recorded here was correctly
+read. What is corrected is the **premise those figures were taken under**: the
+word *incremental* appears nowhere in this ADR or in ADR-0039, and
+`@cantoo/pdf-lib` 2.8.3 has always had a second save. Every reading above is
+`load` followed by `save`, and `save` is the whole-file serialise.
+
+Measured on the same fixture, same machine, `scripts/research/incrementalSaveCost.mjs`:
+
+| shape of the change | `load` + `save` | `load` + `commit` |
+|---|---|---|
+| nothing at all | 269.95s | **26.58s** |
+| one form field created | 305.57s | **37.78s** |
+| text drawn on all forty pages | 282.89s | **80.56s** |
+
+**The 21s load is the floor and does not move**, so what came down is the
+serialise: 248–284s to 5.3s for a small change set. Part of it reappears in the
+mutation — a document loaded `forIncrementalUpdate` records changes as they are
+made, 0.03s to 11.76s for one field — which is why the totals above are the
+honest column rather than the save column.
+
+Two things this addendum deliberately does **not** do:
+
+- It does not move any of the six rows. That decision needs its own ADR, for
+  the reason already written above: ADR-0039 exists because MuPDF's writer
+  cannot draw what these rows draw, and *cheaper* is not *correct*. The costs
+  that come with the route — a second load shape, and an output that grows
+  rather than shrinks — are in the JOURNAL entry.
+- It does not withdraw the sentence this ADR's rejection turns on — *every
+  byte-image row shipped so far is a document-level operation invoked once
+  where a stamp is a repeated gesture*. That is an argument about **shape**,
+  and a shape argument does not expire because a number improved. What the
+  number changes is its weight: a repeated gesture costing 320s on an
+  object-dense document is disqualifying, and one costing 38s there and 0.39s
+  on an ordinary one is a trade somebody can take.
+
+**`saveIncremental` is not the callable API and that is worth carrying
+forward.** Its buffer is the appendix alone — the header is skipped when a
+snapshot is present — so MuPDF opens the result with *"cannot find version
+marker"* and reports no page 1. `commit()` concatenates it onto the original
+bytes and answers a whole document. A route that returned the first would be
+the fastest and most broken result available.
