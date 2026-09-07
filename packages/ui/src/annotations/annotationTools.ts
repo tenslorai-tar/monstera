@@ -3,6 +3,8 @@ import type { EraserDeps } from './eraserTool.js';
 import { eraserTool } from './eraserTool.js';
 import { calloutTool } from './calloutTool.js';
 import { linkTools } from './linkTools.js';
+import type { MeasureDeps } from './measureTools.js';
+import { measureTools } from './measureTools.js';
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
@@ -48,6 +50,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     ...pointTools(deps),
     ...vertexTools(deps.style),
     ...textMarkupTools(deps.style),
+    ...measureTools(deps),
     ...linkTools(deps),
     calloutTool(deps),
     eraserTool(deps),
@@ -64,9 +67,10 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
  * what — the knowledge the registry exists to hold in one place. A tool that
  * needs neither takes it and reads nothing.
  *
- * The two members are genuinely different questions, which is why this is an
- * intersection rather than one interface: `ask` puts something to a person, and
- * `annotations` asks the document. The eraser is the first tool to need the
- * second, and the first to need anything about the document at all.
+ * The members are genuinely different questions, which is why this is an
+ * intersection rather than one interface: `ask` puts something to a person,
+ * `annotations` asks the document, and `scale` is a fact about the drawing. The
+ * eraser is the first tool to need the second, and the first to need anything
+ * about the document at all.
  */
-export type AnnotationToolDeps = TextToolDeps & EraserDeps & SelectDeps;
+export type AnnotationToolDeps = TextToolDeps & EraserDeps & SelectDeps & MeasureDeps;

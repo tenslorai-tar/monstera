@@ -12,6 +12,11 @@ import {
 import { CALLOUT_TOOL_ID } from '../annotations/calloutTool.js';
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
+import {
+  MEASURE_AREA_TOOL_ID,
+  MEASURE_DISTANCE_TOOL_ID,
+  MEASURE_PERIMETER_TOOL_ID,
+} from '../annotations/measureTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import {
@@ -38,6 +43,9 @@ import {
   LINE_TOOL_TITLE,
   LINK_ADDRESS_TOOL_TITLE,
   LINK_PAGE_TOOL_TITLE,
+  MEASURE_AREA_TOOL_TITLE,
+  MEASURE_DISTANCE_TOOL_TITLE,
+  MEASURE_PERIMETER_TOOL_TITLE,
   NUDGE_DOWN_TITLE,
   NUDGE_LEFT_TITLE,
   NUDGE_RIGHT_TITLE,
@@ -457,6 +465,31 @@ export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The three measurement tools' commands.
+ *
+ * **56, 57, 58 — after the callout and adjacent to each other**, which is the
+ * one thing worth saying about them: a person reaching for *measure area* has
+ * usually just used *measure distance*, and three consecutive orders put them
+ * together on every surface the registry projects onto without any surface
+ * knowing they are related.
+ *
+ * The tools behind these take a calibration the others do not, and that reaches
+ * this file as nothing at all — the fourteenth, fifteenth and sixteenth
+ * registrations from the same factory, each one line.
+ */
+export function measureDistanceToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(MEASURE_DISTANCE_TOOL_ID, MEASURE_DISTANCE_TOOL_TITLE, 56, deps);
+}
+
+export function measureAreaToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(MEASURE_AREA_TOOL_ID, MEASURE_AREA_TOOL_TITLE, 57, deps);
+}
+
+export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(MEASURE_PERIMETER_TOOL_ID, MEASURE_PERIMETER_TOOL_TITLE, 58, deps);
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -497,5 +530,8 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     linkPageToolCommand(deps),
     calloutToolCommand(deps),
     typewriterToolCommand(deps),
+    measureDistanceToolCommand(deps),
+    measureAreaToolCommand(deps),
+    measurePerimeterToolCommand(deps),
   ];
 }

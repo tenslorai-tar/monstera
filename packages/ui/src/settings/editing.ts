@@ -2,6 +2,8 @@ import {
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
   MIN_ANNOTATION_FONT,
+  measurePerPointSchema,
+  measureUnitSchema,
 } from '@monstera/contract';
 import { z } from 'zod';
 
@@ -10,6 +12,8 @@ import {
   EDITING_FONT_SIZE_TITLE,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
+  MEASURE_SCALE_TITLE,
+  MEASURE_UNIT_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -90,6 +94,41 @@ export const ANNOTATION_LINE_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   // arriving with a different default silently restyles every mark a person
   // makes from that day, and nothing on screen says why.
   fallback: 2,
+  category: 'editing',
+};
+
+/**
+ * How many units one PDF point represents on this drawing.
+ *
+ * `BUILD-PROMPT.md`:615's *measurement unit & scale*, and it is a **setting**
+ * for the same reason its neighbours are: a person working through a set of
+ * plans drawn at one scale sets it once. It is the shakiest of the five on that
+ * point — the scale is a fact about the DOCUMENT rather than about the person —
+ * and it is here rather than in the document's own state because nothing in the
+ * file records it and a per-document store would have to invent somewhere to
+ * keep it. Stated so the next reader meets the trade rather than the choice.
+ *
+ * **One by default, which means the reading is in the unit itself.** A point is
+ * 1/72 inch, so an uncalibrated distance reads in points and is honest: nothing
+ * has told this build what the drawing is.
+ */
+export const MEASURE_SCALE_SETTING: SettingDefinition<typeof measurePerPointSchema> = {
+  id: 'editing.measure-scale',
+  title: MEASURE_SCALE_TITLE,
+  // THE PAYLOAD'S OWN SCHEMA, for the reason the bounds above are imported: a
+  // control that accepts a number the command refuses fails on apply, and this
+  // field is one a person types into.
+  schema: measurePerPointSchema,
+  fallback: 1,
+  category: 'editing',
+};
+
+/** What unit a measurement is stated in. The contract's closed set. */
+export const MEASURE_UNIT_SETTING: SettingDefinition<typeof measureUnitSchema> = {
+  id: 'editing.measure-unit',
+  title: MEASURE_UNIT_TITLE,
+  schema: measureUnitSchema,
+  fallback: 'pt',
   category: 'editing',
 };
 

@@ -1039,6 +1039,110 @@ function textMarkupDraft<T extends 'highlight' | 'underline' | 'strikeout'>(
     .strict();
 }
 
+/**
+ * The units a measurement may be stated in.
+ *
+ * A CLOSED set, and for `annotationKindNameSchema`'s reason one layer along: the
+ * unit is written into the document as text AND shown in a control, so a free
+ * string would be a user-supplied string with no message key — B9's ban arriving
+ * through a payload. Six units cover what a drawing is dimensioned in.
+ */
+export const measureUnitSchema = z.enum(['pt', 'mm', 'cm', 'm', 'in', 'ft']);
+
+/** A measurement's unit. See {@link measureUnitSchema}. */
+export type MeasureUnit = z.infer<typeof measureUnitSchema>;
+
+/**
+ * How a drawing's own units relate to the page's.
+ *
+ * ## The calibration is in the PAYLOAD, not in the kernel
+ *
+ * *One centimetre on this plan is fifty metres* is a fact about the drawing that
+ * only the person reading it knows, and it changes per document. It travels with
+ * the command so the value written into `/Contents` and the one written into
+ * `/Measure` are computed from a single number — the alternative is a renderer
+ * that formats a label and a kernel that writes a ratio, which is two opinions
+ * about one measurement.
+ */
+/**
+ * How many of a drawing's units one PDF point represents.
+ *
+ * Exported apart from {@link measureScaleSchema} because the settings registry
+ * holds this number alone — `editing.measure-scale` is a field a person types
+ * into, and a control offering a value the payload refuses is a control that
+ * fails on apply. One schema, two callers, rather than two statements of one
+ * bound (B3a).
+ */
+export const measurePerPointSchema = z.number().positive();
+
+export const measureScaleSchema = z
+  .object({
+    /**
+     * How many `unit`s one PDF point represents. Positive and finite.
+     *
+     * A point rather than an inch or a millimetre because that is the space the
+     * geometry arrives in — converting here would put a second unit conversion
+     * between the drag and the label.
+     *
+     * **FINITE WITHOUT `.finite()`**, which is not the same claim as *nobody
+     * checks*: zod 4's `z.number()` refuses `Infinity` and `NaN` on its own, so
+     * the call is a no-op the deprecation lint reports. Asserting it rather than
+     * believing it — `channels.test.ts` sends an infinite scale through the
+     * boundary and requires a refusal, because a property nothing states in code
+     * is a property that leaves with the library's next default.
+     */
+    perPoint: measurePerPointSchema,
+    unit: measureUnitSchema,
+  })
+  .strict();
+
+/** A drawing's scale. See {@link measureScaleSchema}. */
+export type MeasureScale = z.infer<typeof measureScaleSchema>;
+
+/**
+ * One of the three measurements, as a draft.
+ *
+ * ## Three members, because the FILE distinguishes them
+ *
+ * A measurement is one of the shapes this build already writes plus `/Measure`
+ * and an `/IT`: a distance is a `/Line` with `/IT /LineDimension`, an area a
+ * `/Polygon` with `/PolygonDimension`, a perimeter a `/PolyLine` with
+ * `/PolyLineDimension`. The callout's rule exactly — `/IT` is a key the document
+ * carries, so a reader told *line* for a dimension would be told something the
+ * file disagrees with.
+ *
+ * ## The kernel computes the number
+ *
+ * The payload carries the points and the scale and no text. Length, area and
+ * perimeter are arithmetic on the points, and doing it in the renderer would put
+ * the number that ends up in `/Contents` on one side of the boundary and the
+ * ratio that ends up in `/Measure` on the other — two statements of one
+ * measurement, which is how they come to disagree.
+ */
+function measureDraft<T extends 'measure-distance' | 'measure-area' | 'measure-perimeter'>(
+  type: T,
+  minimum: 2 | 3,
+): z.ZodObject<{
+  type: z.ZodLiteral<T>;
+  points: z.ZodArray<typeof annotationPointSchema>;
+  scale: typeof measureScaleSchema;
+  colour: typeof annotationColourSchema;
+  opacity: typeof annotationOpacitySchema;
+  borderWidth: z.ZodNumber;
+}> {
+  return z
+    .object({
+      type: z.literal(type),
+      /** The points measured, in PDF user space and in order. */
+      points: z.array(annotationPointSchema).min(minimum).max(MAX_POLYGON_POINTS),
+      scale: measureScaleSchema,
+      colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
+      borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
+    })
+    .strict();
+}
+
 export const annotationDraftSchema = z.discriminatedUnion('type', [
   z
     .object({
@@ -1377,6 +1481,13 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
   textMarkupDraft('highlight'),
   textMarkupDraft('underline'),
   textMarkupDraft('strikeout'),
+  measureDraft('measure-distance', 2),
+  // THREE POINTS FOR AN AREA and two for a perimeter, which is the same
+  // distinction `polygon` and `polyline` carry: a closed shape needs three to
+  // enclose anything, and an open run of one segment is a legal thing to
+  // measure.
+  measureDraft('measure-area', 3),
+  measureDraft('measure-perimeter', 2),
   z
     .object({
       /**
@@ -1522,6 +1633,12 @@ export const annotationKindNameSchema = z.enum([
   // than by the subtype — which is a fact about the file and not a tool's
   // vocabulary, so a reader is being told what the document says.
   'typewriter',
+  // THREE MORE NAMES SEPARATED BY `/IT` RATHER THAN BY SUBTYPE, the callout's
+  // rule on the geometry kinds: a dimension is a `/Line`, `/Polygon` or
+  // `/PolyLine` that the file says is a measurement.
+  'measure-distance',
+  'measure-area',
+  'measure-perimeter',
   'other',
 ]);
 

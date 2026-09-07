@@ -330,4 +330,57 @@ describe('the shipping contract, exercised through its own map', () => {
 
     expect(result.ok).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // A measurement's scale, which is the one number in a command that a person
+  // types rather than a gesture producing. `measureScaleSchema` used to spell
+  // `.finite()` and zod 4 deprecates it as a no-op — so these two cases exist to
+  // say the property survived the call being deleted rather than the deprecation
+  // being obeyed. A no-op is a claim about the library's current default, and a
+  // default is exactly the thing that moves.
+  // ---------------------------------------------------------------------------
+
+  /** Sends a measurement whose scale is `perPoint`, and answers whether it was served. */
+  async function scaled(perPoint: number): Promise<boolean> {
+    const client = createClient(channels, (id, params) =>
+      wrapHandlers(channels, handlers, ignore)[id](params),
+    );
+    const result = await client['document.execute']({
+      docId: asDocId('doc-1'),
+      command: {
+        kind: 'addAnnotation',
+        page: 0,
+        annotation: {
+          type: 'measure-distance',
+          points: [
+            { x: 10, y: 10 },
+            { x: 110, y: 10 },
+          ],
+          scale: { perPoint, unit: 'mm' },
+          colour: [0.1, 0.45, 0.9],
+          opacity: 1,
+          borderWidth: 2,
+        },
+      },
+    });
+    return result.ok;
+  }
+
+  it('an INFINITE scale is refused, though nothing spells finite any more', async () => {
+    // An infinite ratio produces `Infinity mm` as a label and an `/X` array a
+    // reader cannot use — and it arrives from a settings field, which is a
+    // person typing rather than a gesture. `1e400` is the literal that IS
+    // `Infinity`; a large finite number is a different case and is legal.
+    expect(await scaled(Number.POSITIVE_INFINITY)).toBe(false);
+    expect(await scaled(Number.NaN)).toBe(false);
+    expect(await scaled(0)).toBe(false);
+  });
+
+  it('CONTROL: an ordinary scale is served, so the refusal is not "everything"', async () => {
+    // Without this the case above passes for a schema that refuses every
+    // measurement — which is also what a mistyped field name produces, and
+    // which would take the whole feature out at the boundary with three green
+    // refusals reading as rigour.
+    expect(await scaled(0.5)).toBe(true);
+  });
 });

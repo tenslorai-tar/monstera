@@ -170,6 +170,7 @@ describe('rectangleToolCommand', () => {
       onSelect: () => undefined,
       selected: () => undefined,
       style: PLAIN_STYLE,
+      scale: { perPoint: 1, unit: 'pt' },
     }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,

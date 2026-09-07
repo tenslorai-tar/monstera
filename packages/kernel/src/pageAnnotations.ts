@@ -19,6 +19,7 @@ import type {
   PDFAnnotationLineEndingStyle,
   PDFAnnotationType,
   PDFDocument,
+  PDFObject,
   PDFPage,
 } from 'mupdf';
 
@@ -523,6 +524,165 @@ function markupKind(subtype: PDFAnnotationType): AnnotationKind<MarkupDraft> {
  */
 const MAX_MARKUP_QUADS = 4096;
 
+/** The three measurements, which are three shapes the file marks as dimensions. */
+type MeasureDraft = DraftOf<'measure-distance' | 'measure-area' | 'measure-perimeter'>;
+
+/**
+ * How many decimal places a measurement's label carries.
+ *
+ * One, because the number is a reading off a drawing rather than a computation:
+ * a drag places a point to within a pixel, and a label with three decimals
+ * claims a precision the gesture does not have. `/Measure`'s own `/D` carries
+ * the same figure so the two agree.
+ */
+const MEASURE_PLACES = 1;
+
+/**
+ * The length of a run of points, in PDF points.
+ *
+ * Summed segment by segment rather than end to end, which is what makes this
+ * the perimeter of a run and the length of a line with the same code — a line
+ * has one segment.
+ */
+function pathLength(points: readonly AnnotationPoint[]): number {
+  let total = 0;
+  for (let at = 1; at < points.length; at += 1) {
+    const from = points[at - 1];
+    const to = points[at];
+    if (from === undefined || to === undefined) continue;
+    total += Math.hypot(to.x - from.x, to.y - from.y);
+  }
+  return total;
+}
+
+/**
+ * The area a closed run of points encloses, in square PDF points.
+ *
+ * The shoelace formula, and the absolute value is what makes it independent of
+ * the direction the person drew in — a polygon traced clockwise gives the
+ * negative of the same shape traced the other way, and *minus four square
+ * metres* is not a reading anybody wants.
+ */
+function shoelaceArea(points: readonly AnnotationPoint[]): number {
+  let twice = 0;
+  for (let at = 0; at < points.length; at += 1) {
+    const here = points[at];
+    const next = points[(at + 1) % points.length];
+    if (here === undefined || next === undefined) continue;
+    twice += here.x * next.y - next.x * here.y;
+  }
+  return Math.abs(twice) / 2;
+}
+
+/**
+ * A measurement's label — the text a reader sees on the annotation.
+ *
+ * **An area is squared in both the number and the unit**, which is the half a
+ * distance-only implementation gets wrong silently: scaling an area by the
+ * length ratio rather than its square is off by that ratio, and the label still
+ * reads like a measurement.
+ */
+function measureLabel(draft: MeasureDraft): string {
+  const { perPoint, unit } = draft.scale;
+  if (draft.type === 'measure-area') {
+    const value = shoelaceArea(draft.points) * perPoint * perPoint;
+    return `${value.toFixed(MEASURE_PLACES)} ${unit}²`;
+  }
+  const value = pathLength(draft.points) * perPoint;
+  return `${value.toFixed(MEASURE_PLACES)} ${unit}`;
+}
+
+/** What `/IT` and `/Subtype` a measurement is written as. */
+const MEASURED: Readonly<
+  Record<MeasureDraft['type'], { readonly subtype: PDFAnnotationType; readonly intent: string }>
+> = {
+  'measure-distance': { subtype: 'Line', intent: 'LineDimension' },
+  'measure-area': { subtype: 'Polygon', intent: 'PolygonDimension' },
+  'measure-perimeter': { subtype: 'PolyLine', intent: 'PolyLineDimension' },
+};
+
+/**
+ * A measurement — one of three shapes, plus what makes it a dimension.
+ *
+ * ## `/Measure` and `/IT` are written by hand, as the callout's `/IT` is
+ *
+ * MuPDF has no setter for either. Measured 2026-09-07: both are stored and
+ * survive a save, and `setLineCaption(true)` makes MuPDF **draw the
+ * `/Contents` along the line** — which is what turns a label into something a
+ * reader sees rather than a string in a dictionary.
+ *
+ * ## The ratio and the label are computed from ONE number
+ *
+ * `/Measure`'s `/X` array carries the conversion and `/Contents` carries the
+ * reading, and both come out of `draft.scale` here. A renderer that formatted
+ * the label would put those two statements on opposite sides of the boundary,
+ * which is where they come to disagree.
+ */
+function measureKind(type: MeasureDraft['type']): AnnotationKind<MeasureDraft> {
+  const { subtype, intent } = MEASURED[type];
+  return {
+    subtype,
+    bounds: (draft, transform) => verticesBox(draft.points, transform),
+    // TWO POINTS IN THE SAME PLACE MEASURE NOTHING, which is the vertex tools'
+    // rule: a run flat in one axis is a legal thing to measure, and only a run
+    // with no extent at all is a gesture that did not happen.
+    degenerate: (draft) =>
+      draft.points.every((point) => point.x === draft.points[0]?.x) &&
+      draft.points.every((point) => point.y === draft.points[0]?.y),
+    write: (annotation, draft, transform, on): void => {
+      const placed = placedPoints(draft.points, transform);
+      if (subtype === 'Line') {
+        const [from, to] = placed;
+        if (from === undefined || to === undefined) {
+          throw new Error('a distance is measured between two points');
+        }
+        annotation.setLine(from, to);
+        // THE LABEL IS DRAWN ALONG THE LINE. Measured 2026-09-07: `/Cap true`
+        // makes MuPDF render `/Contents` on the annotation itself, so the
+        // reading is visible rather than something a reader has to open.
+        annotation.setLineCaption(true);
+      } else {
+        annotation.setVertices(placed);
+      }
+      annotation.setColor([...draft.colour]);
+      annotation.setBorderWidth(draft.borderWidth);
+      annotation.setContents(measureLabel(draft));
+      annotation.getObject().put('IT', on.document.newName(intent));
+      annotation.getObject().put('Measure', measureDictionary(draft, on.document));
+    },
+  };
+}
+
+/**
+ * `/Measure` — the conversion a reader's own software uses.
+ *
+ * Written beside `/Contents` rather than instead of it: the label is what a
+ * person sees and this is what another application recalculates from, and a
+ * document carrying only one of them is either unreadable or unusable. PDF
+ * 32000 §12.9 defines the shape; `/X` is the one axis this build fills, because
+ * a drag on a page is measured in the page's own space where x and y share a
+ * scale.
+ */
+function measureDictionary(draft: MeasureDraft, document: PDFDocument): PDFObject {
+  const measure = document.newDictionary();
+  measure.put('Type', document.newName('Measure'));
+  measure.put('Subtype', document.newName('RL'));
+  measure.put('R', document.newString(`1 pt = ${draft.scale.perPoint.toString()} ${draft.scale.unit}`));
+  const format = document.newDictionary();
+  format.put('Type', document.newName('NumberFormat'));
+  format.put('U', document.newString(draft.scale.unit));
+  format.put('C', draft.scale.perPoint);
+  // `/D` IS THE DENOMINATOR OF THE PRECISION, so a one-decimal label is 10 —
+  // the same figure `MEASURE_PLACES` produces, because a reader recalculating
+  // from `/Measure` and a reader looking at `/Contents` must see the same
+  // number of digits.
+  format.put('D', 10 ** MEASURE_PLACES);
+  const axis = document.newArray();
+  axis.push(format);
+  measure.put('X', axis);
+  return measure;
+}
+
 const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T>> } = {
   square: outlineKind('Square'),
   circle: outlineKind('Circle'),
@@ -890,6 +1050,9 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
   highlight: markupKind('Highlight'),
   underline: markupKind('Underline'),
   strikeout: markupKind('StrikeOut'),
+  'measure-distance': measureKind('measure-distance'),
+  'measure-area': measureKind('measure-area'),
+  'measure-perimeter': measureKind('measure-perimeter'),
 };
 
 /**
@@ -1164,10 +1327,16 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
  */
 function kindOf(annotation: PDFAnnotation): AnnotationKindName {
   const named = NAMED[annotation.getType()] ?? 'other';
-  if (named !== 'text-box') return named;
   const intent = annotation.getObject().get('IT');
-  if (!intent.isName()) return 'text-box';
-  return INTENDED[intent.asName()] ?? 'text-box';
+  if (!intent.isName()) return named;
+  // THE TABLE IS CHOSEN BY THE SUBTYPE, not by the name: `/IT` is a per-subtype
+  // enumeration in the format, and one map over every name would have to be
+  // right about which subtypes each is legal on — a rule nothing here owns.
+  if (named === 'text-box') return INTENDED[intent.asName()] ?? 'text-box';
+  if (named === 'line' || named === 'polygon' || named === 'polyline') {
+    return DIMENSIONED[intent.asName()] ?? named;
+  }
+  return named;
 }
 
 /**
@@ -1183,6 +1352,21 @@ const INTENDED: Readonly<Record<string, AnnotationKindName>> = {
   FreeText: 'text-box',
   FreeTextCallout: 'callout',
   FreeTextTypeWriter: 'typewriter',
+};
+
+/**
+ * `/IT` on the three geometry subtypes that can be dimensions.
+ *
+ * A second table rather than one keyed on the `/IT` name alone, because the
+ * names do not partition: a `/Polygon` with `/IT /PolygonCloud` is a cloud and a
+ * `/FreeText` with `/IT /FreeTextCallout` is a callout, and a single map would
+ * have to be right about which subtypes each name is legal on. Two tables, each
+ * consulted only where its subtype says it applies.
+ */
+const DIMENSIONED: Readonly<Record<string, AnnotationKindName>> = {
+  LineDimension: 'measure-distance',
+  PolygonDimension: 'measure-area',
+  PolyLineDimension: 'measure-perimeter',
 };
 
 /**

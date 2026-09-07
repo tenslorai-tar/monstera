@@ -1,4 +1,4 @@
-import type { ContractClient, RenderableCommand } from '@monstera/contract';
+import type { ContractClient, MeasureScale, RenderableCommand } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import {
   useCallback,
@@ -128,6 +128,8 @@ import {
   ANNOTATION_FONT_SIZE_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
+  MEASURE_SCALE_SETTING,
+  MEASURE_UNIT_SETTING,
 } from './settings/editing.js';
 import { CommentStylesPanel } from './CommentStylesPanel.js';
 import { StylePanel } from './StylePanel.js';
@@ -860,6 +862,21 @@ export function App({ client, settings }: AppProps): ReactElement {
   }, [styleColour, styleFontSize, styleLineWidth, styleOpacity]);
 
   /**
+   * What one PDF point measures on this drawing.
+   *
+   * Two settings and one payload field, joined here rather than in the tool: the
+   * measurement tools take a calibration the way every other tool takes a style,
+   * and a tool reading the settings store itself would be the second reader of a
+   * value this component already owns.
+   */
+  const scalePerPoint = useSetting(settings, MEASURE_SCALE_SETTING);
+  const scaleUnit = useSetting(settings, MEASURE_UNIT_SETTING);
+  const scale = useMemo<MeasureScale>(
+    () => ({ perPoint: scalePerPoint, unit: scaleUnit }),
+    [scalePerPoint, scaleUnit],
+  );
+
+  /**
    * Restyling everything the select tool has picked.
    *
    * `removeSelection`'s shape with an appearance instead of a deletion, and the
@@ -913,9 +930,10 @@ export function App({ client, settings }: AppProps): ReactElement {
           onSelect: setPicked,
           selected: readSelection,
           style,
+          scale,
         }),
       ),
-    [ask, listAnnotations, readSelection, style],
+    [ask, listAnnotations, readSelection, scale, style],
   );
 
   const rulers = useSetting(settings, RULERS_SETTING);

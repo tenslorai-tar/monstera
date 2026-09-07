@@ -136,7 +136,7 @@ function placed(gesture: Gesture, transform: PageTransform): AnnotationPoint[] {
  *   for connected lines, where the last point is meant to be somewhere else
  * @param draftOf what the vertices become
  */
-function vertexTool(
+export function vertexTool(
   id: string,
   minimum: number,
   closes: boolean,

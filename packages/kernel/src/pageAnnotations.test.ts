@@ -2,6 +2,7 @@ import {
   PDFArray,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   PDFNumber,
   PDFRef,
@@ -2340,6 +2341,206 @@ describe('applyPlaceAnnotation', () => {
     );
     expect(captured.captured).toBe(false);
     expect(captured.captured ? '' : captured.reason).toMatch(/carry the geometry itself/u);
+  });
+});
+
+/**
+ * The three measurements.
+ *
+ * ## The load-bearing case is the AREA's arithmetic, and it is chosen that way
+ *
+ * A distance and a perimeter both scale by the ratio, so an implementation that
+ * multiplied every reading by `perPoint` gets two of the three right — and the
+ * third one wrong by exactly that ratio, with a label that still reads like a
+ * measurement. So the fixture uses a scale that is **not 1**, because at 1 the
+ * squared and unsquared answers are the same number and the case separates
+ * nothing (item 4b's *never build a fixture the bug also handles correctly*).
+ *
+ * Half a millimetre per point, a hundred-point square: the area is 2500 mm² and
+ * a linear conversion says 5000.
+ *
+ * ## `/Contents` and `/Measure` are BOTH asserted, and they are two facts
+ *
+ * The label is what a person reads and `/Measure` is what another application
+ * recalculates from. A build writing only the first is a picture of a number and
+ * one writing only the second is a reading nobody can see.
+ */
+describe('applyAddAnnotation writes a measurement', () => {
+  /** Half a millimetre to the point, so a squared conversion differs from a linear one. */
+  const SCALE = { perPoint: 0.5, unit: 'mm' } as const;
+
+  const DISTANCE: AnnotationDraft = {
+    type: 'measure-distance',
+    points: [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+    ],
+    scale: SCALE,
+    colour: [0.1, 0.45, 0.9],
+    opacity: 1,
+    borderWidth: 2,
+  };
+
+  /** A hundred-point square, so its area is 10,000 pt² and its perimeter 400 pt. */
+  const CORNERS = [
+    { x: 10, y: 20 },
+    { x: 110, y: 20 },
+    { x: 110, y: 120 },
+    { x: 10, y: 120 },
+  ];
+
+  const AREA: AnnotationDraft = { ...DISTANCE, type: 'measure-area', points: CORNERS };
+  const PERIMETER: AnnotationDraft = { ...DISTANCE, type: 'measure-perimeter', points: CORNERS };
+
+  /** The first annotation's raw dictionary, read with pdf-lib. */
+  async function stored(bytes: Uint8Array): Promise<PDFDict> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const first = annots.asArray()[0];
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the /Annots entry is not a dictionary');
+    return dict;
+  }
+
+  /**
+   * `/Contents`, which is the reading a person sees.
+   *
+   * **TWO STRING TYPES, and this helper read one of them.** Measured 2026-09-07:
+   * MuPDF stores the distance's `50.0 mm` as a literal and the area's
+   * `2500.0 mm²` as `<FEFF...00B2>` — a UTF-16BE hex string with a BOM, which is
+   * what PDF 32000 §7.9.2 requires once a character is outside PDFDocEncoding.
+   * The first version of this returned `''` for anything that was not a
+   * `PDFString`, so the one case in the set whose encoding differs reported the
+   * empty answer, and the label the engine had written correctly read as absent.
+   *
+   * It throws rather than falling back for that reason: an empty string is a
+   * value an assertion can be written against, and *could not decode* must not
+   * be spellable as *the label is empty*.
+   */
+  async function label(annotation: AnnotationDraft): Promise<string> {
+    const dict = await stored(await drawnOn(await fixture(), command({ annotation })));
+    const contents = dict.lookup(PDFName.of('Contents'));
+    if (contents instanceof PDFHexString) return contents.decodeText();
+    if (contents instanceof PDFString) return contents.asString();
+    throw new Error(`/Contents is neither string type: ${contents?.constructor.name ?? 'absent'}`);
+  }
+
+  it('states a DISTANCE in the drawing’s units, not in points', async () => {
+    // A hundred points at half a millimetre each. A build that ignored the
+    // scale would say 100.0, which is the reading an uncalibrated document
+    // gives — so the number here is the one that says the scale was applied.
+    expect(await label(DISTANCE)).toBe('50.0 mm');
+  });
+
+  it('SQUARES the ratio for an area, and the unit with it', async () => {
+    // THE CASE THE OTHER TWO CANNOT FAIL FOR. 10,000 pt² at 0.5 mm/pt is
+    // 10,000 × 0.25 = 2,500 mm²; a linear conversion gives 5,000.0 and reads
+    // exactly as plausible.
+    expect(await label(AREA)).toBe('2500.0 mm²');
+  });
+
+  it('sums a PERIMETER segment by segment, and leaves it open', async () => {
+    // Four corners, three segments — 300 points, not 400. The closing segment
+    // belongs to the area's shape and not to this one, which is the difference
+    // between `/Polygon` and `/PolyLine` said in the arithmetic.
+    expect(await label(PERIMETER)).toBe('150.0 mm');
+  });
+
+  it('writes /IT and /Measure, so another reader can recalculate', async () => {
+    const dict = await stored(await drawnOn(await fixture(), command({ annotation: DISTANCE })));
+    expect(dict.lookup(PDFName.of('IT'))?.toString()).toBe('/LineDimension');
+    const measure = dict.lookup(PDFName.of('Measure'));
+    if (!(measure instanceof PDFDict)) throw new Error('no /Measure');
+    expect(measure.lookup(PDFName.of('Subtype'))?.toString()).toBe('/RL');
+    const axis = measure.lookup(PDFName.of('X'));
+    if (!(axis instanceof PDFArray)) throw new Error('no /X');
+    const format = axis.asArray()[0];
+    const entry = format instanceof PDFRef ? undefined : format;
+    if (!(entry instanceof PDFDict)) throw new Error('/X carries no number format');
+    // THE CONVERSION AND THE LABEL COME FROM ONE NUMBER, which is what this
+    // asserts: `/C` is the payload's `perPoint`, and the label above was
+    // computed from the same field.
+    const conversion = entry.lookup(PDFName.of('C'));
+    expect(conversion instanceof PDFNumber ? conversion.asNumber() : NaN).toBeCloseTo(0.5, 6);
+    const unit = entry.lookup(PDFName.of('U'));
+    expect(unit instanceof PDFString ? unit.asString() : '').toBe('mm');
+  });
+
+  it('DRAWS the label on the line, which is what the caption is for', async () => {
+    // THE BRANCH NOTHING REACHED. `setLineCaption(true)` survived being flipped
+    // to `false` with all 117 cases green — the whole file could see the label
+    // in `/Contents` and nothing could see whether a reader would ever be shown
+    // it. A stored string with no appearance drawing it is a measurement
+    // somebody has to open a properties panel to read.
+    //
+    // Measured 2026-09-07 with the two written side by side: captioned, the
+    // appearance stream is 120 bytes carrying a text object, a font resource
+    // and the label's own characters; uncaptioned it is 36 bytes of line. So
+    // the assertion is on the text object rather than on `/Cap`.
+    const drawn = await drawnOn(await fixture(), command({ annotation: DISTANCE }));
+    const dict = await stored(drawn);
+    const appearance = dict.lookup(PDFName.of('AP'));
+    const normal = appearance instanceof PDFDict ? appearance.get(PDFName.of('N')) : undefined;
+    const document = await PDFDocument.load(drawn, { updateMetadata: false });
+    const stream = normal instanceof PDFRef ? document.context.lookup(normal) : normal;
+    if (!(stream instanceof PDFStream)) throw new Error('the measurement has no appearance');
+    const content = Buffer.from(stream.getContents()).toString('latin1');
+    expect(content).toContain('BT');
+    expect(content).toContain('50.0 mm');
+  });
+
+  it('is LISTED apart from the plain shape it shares a subtype with', async () => {
+    // `/Line`, `/Polygon` and `/PolyLine` are what the three measurements are
+    // written as, so `getType()` cannot separate them from the line, polygon
+    // and polyline tools — the reader has to look at `/IT`. Both in one
+    // document, because a reader answering `measure-distance` for everything
+    // and one answering `line` for everything each satisfy half of this.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: LINE })),
+      command({ annotation: DISTANCE }),
+    );
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.kind)).toStrictEqual([
+      'line',
+      'measure-distance',
+    ]);
+  });
+
+  it('separates an area from a perimeter, which share nothing but their table', async () => {
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: AREA })),
+      command({ annotation: PERIMETER }),
+    );
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.kind)).toStrictEqual([
+      'measure-area',
+      'measure-perimeter',
+    ]);
+  });
+
+  it('refuses a run of points with no extent', async () => {
+    await expect(
+      drawnOn(
+        await fixture(),
+        command({
+          annotation: {
+            ...DISTANCE,
+            points: [
+              { x: 40, y: 40 },
+              { x: 40, y: 40 },
+            ],
+          },
+        }),
+      ),
+    ).rejects.toThrow(/no extent/u);
+  });
+
+  it('MEASURES A RUN FLAT IN ONE AXIS, which the refusal above must not reach', async () => {
+    // The control for the case above: a `degenerate` that asked for extent in
+    // both axes would refuse a horizontal distance, which is the commonest
+    // thing anybody measures. `DISTANCE` is exactly that run.
+    expect(await label(DISTANCE)).toBe('50.0 mm');
   });
 });
 
