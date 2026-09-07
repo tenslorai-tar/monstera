@@ -877,6 +877,66 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-07 — MuPDF reads an FDF, and the XFDF half is a DTD question rather than an XML one
+
+`scripts/research/formDataFormats.mjs`, before a line of the export/import row
+was designed. Two questions, and both change the shape of it.
+
+### 1. FDF is not a parser we write
+
+FDF is PDF syntax — `%FDF-1.2` and a body of indirect objects — so the question
+was whether MuPDF simply opens one. It does, under **every** magic string
+tried, and the values come straight out of the object graph:
+
+| magic | opened | `/Root /FDF /Fields` |
+|---|---|---|
+| `application/vnd.fdf` | as a PDFDocument, 5 objects | `applicant.name=(GRACE HOPPER)`, `applicant.agrees=/Yes` |
+| `application/pdf` | as a PDFDocument, 5 objects | the same two |
+| `x.fdf` / `x.pdf` | as a PDFDocument, 5 objects | — |
+
+So the FDF import path is a **read through the writer of record**, not a format
+this build parses. That is *the authority may already do the hard part*, and it
+was worth one script: the alternative design was a third codec of ours, owning
+PDF object syntax, on the write path where a hostile file arrives.
+
+**It needs no new magic string**, which matters for invariant 23: an FDF opens
+under `application/pdf`, so nothing about this row asks a filename to select
+native code.
+
+The reading is only half an answer and the second half is what makes it usable:
+*it opened* is not *the values can be read out*. Both were asked, and the
+second is the row above's right-hand column.
+
+### 2. There is no XML parser in this repository, and the hostile shapes are DTD shapes
+
+XFDF is XML, and no workspace here declares an XML dependency. So the choice is
+a new one — *a dependency is a probe*, and one of them took a generator here
+from 39 packages to 114 — or a parser of our own. The script prints the input
+set that decision should be taken against rather than a feature list:
+
+| shape | bytes | what it does |
+|---|---|---|
+| the ordinary case | 149 | the only shape to ACCEPT, and the control for the rest |
+| external entity (XXE) | 158 | reads a file off this machine into a field value |
+| entity expansion | 223 | expands to gigabytes **inside the parser**, before any bound on the values can apply |
+| external DTD | 96 | a network fetch during a parse |
+| a field with no name | 82 | the model is keyed by name, so this must be refused rather than skipped |
+| deep nesting | 85,034 | exhausts a recursive parser's stack by structure alone, with no entities |
+
+**Three of the six are DTD features**, which is the finding rather than the
+list. A parser that refuses `<!DOCTYPE` outright answers XXE, entity expansion
+and the external DTD together; a depth bound answers the fourth; the nameless
+field is a refusal in the model rather than in the syntax. That is an argument
+for a **strict XFDF scanner over a general XML parser** — the general one is
+where those three live, and every one of them is a feature somebody has to
+remember to switch off.
+
+Not decided here. What is established is that the decision is about which
+inputs are refused, and that a bound on the VALUES is not one of the answers:
+entity expansion happens before any value exists to bound.
+
+---
+
 ## 2026-09-07 — An incremental save takes ADR-0044's 225–320 seconds to 38, and the API that advertises it is not the one to call
 
 `scripts/research/incrementalSaveCost.mjs`, run against
