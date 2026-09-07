@@ -186,3 +186,42 @@ fact to live.
 
 *Collect every save* and *a `serialiseForRemoval` sibling* remain rejected on
 the grounds given, unchanged.
+
+---
+
+## Correction, 2026-09-07 — it landed as adapter state, not as a resolver every call site asks
+
+Found by `npm run sweep:prose "one resolver answers"` while sweeping the
+architecture for the previous correction's own claims — which is the compensation
+NNN-4 requires, working, and it found this file rather than the one being swept.
+
+The correction above ends: *"One resolver answers what purpose must this
+document's bytes be serialised for, from the commands that have been applied,
+and every call site takes its answer."* The principle is what shipped and the
+**mechanism is not**. What shipped is state on the adapter that owns the
+session: `mupdfWriter.ts` holds a `WeakSet` of sessions a removal has been
+applied to, `withDocumentRemoving` adds to it, and `serialise` reads it.
+
+Three reasons it went that way, and the third is the one that makes it better
+rather than merely different:
+
+- **The adapter cannot reach the command log.** The log lives on the document's
+  record (ADR-0009) and the writer is registered on the bus; a resolver reading
+  one would have to be threaded to every call site, which is the parameter this
+  correction had just rejected wearing a different name.
+- **A `WeakSet` keyed on the session token cannot outlive the session**, and a
+  closed session can never be serialised again.
+- **A resolver every call site asks is still a rule five callers apply.** State
+  on the component that owns the thing is B5: there is nothing to pass, so there
+  is nothing to forget. That is the same move `serialise` losing its parameter
+  made, one layer further in — and having made it once and then written a
+  resolver into the correction is exactly why *a correction is a claim too*.
+
+The transition is one-way: nothing removes a session from the set, because a
+document that has had content removed does not stop having had it, and the
+absent transition is the one whose bug is a leak.
+
+**Three corrections to one ADR in one session is a fact about this ADR worth
+leaving visible.** Each was found by executing rather than by re-reading, and
+each moved the mechanism while the decision — *the command that removes produces
+removed bytes, once* — has not moved at all.
