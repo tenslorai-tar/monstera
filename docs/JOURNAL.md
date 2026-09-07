@@ -886,6 +886,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — An export is a write path, and MuPDF has no FDF writer to lend
+
+`scripts/research/formDataExport.mjs`, before a line of the export half of the
+data row. The 2026-09-07 entry measured the **read** side and found MuPDF opens
+an FDF under every magic string tried. The two sides are not symmetric and this
+is the half nobody had asked about.
+
+### 1. MuPDF declares no FDF API at all
+
+`fdf`, case-insensitively, appears **zero** times in `mupdf.d.ts` 1.28.0 — with
+the scan's positive control locating `getWidgets` in the same file first, so the
+silence is a fact about the library rather than about the pattern.
+
+So an FDF opening as a `PDFDocument` is FDF **being PDF syntax**, not an FDF API,
+and there is no writer to reach for. That inverts *the authority may already do
+the hard part*: the authority does the whole read and none of the write. A row
+designed from the read half alone would have carried that as an assumption
+nobody stated.
+
+### 2. The risk on the write side is ESCAPING, and it runs the other way
+
+An import is where a hostile document's values reach this build's parser. An
+**export is where the document's own values reach this build's serialiser**, and
+a form's values are not this build's data either.
+
+Measured on a fixture whose values close the constructs each format uses —
+`paren ) backslash \ open ( end`, `less < amp & greater > close </field>`:
+
+| encoder | what MuPDF reads back |
+|---|---|
+| escaped FDF | all five fields, values byte-identical |
+| naive FDF | **two of five arrive as `{"name":"","value":""}`** |
+
+**And the naive file OPENS.** MuPDF prints *syntax error: invalid key in dict*,
+*ignoring broken object (3 0 R)* — and then repairs and answers. So the failure
+is not a refusal a caller could catch; it is a file that parses and is silently
+missing the fields whose values contained a bracket. That is the worst available
+outcome, and it is what an unescaped exporter ships.
+
+XFDF's naive encoder emits this, from a value the document supplied:
+
+    <field name="hostile.xfdf"><value>less < amp & greater > close </field></value></field>
+
+The value's own `</field>` closes the element early. Markup injection, sourced
+from a form somebody else authored.
+
+**JSON is in the table as the control, not as a third encoder**: it has an
+authority in the runtime already, and it round-trips the same hostile values
+untouched. It is what the other two are measured against.
+
+### 3. `/V` is a name for a button and a string for everything else
+
+The round trip confirms it: `applicant.agrees` reads back as `/Yes` and
+`applicant.title` as `Dr`. An encoder writing `(Yes)` for a tick box produces a
+file every reader parses and no reader ticks the box with — the same class as the
+fill row's finding that a button's state is not its value.
+
+### 4. The XML dependency question is still open, and this did not answer it
+
+No parser is run here, deliberately. This repository has no XML dependency in any
+workspace, so the choice is a new one — *a dependency is a probe* — or a strict
+scanner of this build's own. What this measures is what each encoder **emits**,
+which is decidable without picking. The reviewing seat's ruling stands as the
+design: refuse `<!DOCTYPE` outright, which answers XXE, entity expansion and the
+external DTD together, plus a depth bound for the fourth.
+
+### The control that made the comparison mean something
+
+*The values match* is what a working round trip prints and also what comparing a
+value to itself prints. So the naive encoder runs against the same fixture in the
+same way, and the script **throws** rather than reporting if the two agree —
+because then the fixture would not be separating them and every line about
+escaping would be unearned.
+
+---
+
 ## 2026-09-08 — Create fields by drawing, and the guard that survived its own mutation
 
 `createFormField`, five tools, five dialogs. The measurement below decided every
