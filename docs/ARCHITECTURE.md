@@ -546,12 +546,17 @@ THEY ARE WRITTEN** ([ADR-0045](DECISIONS/0045-a-removals-garbage-collection-belo
 2026-09-07). `saveDocument` takes a `flush` and writes what it is handed, so it
 cannot collect bytes that reach it already serialised — and the disk save is not
 the only thing that emits a document's bytes. A command declares
-`purpose: 'ordinary' | 'removal'` and `EngineWriter.serialise` takes it, so the
-one serialise `CommandBus.execute` already performs after every terminal command
-produces collected bytes for a removal and nothing downstream has a question to
-answer. Deferring it would leave the canonical image, the checkpoint,
-`document.readRange`, save-a-copy, extract and export each re-deriving the rule,
-which is B3a's several opinions rather than a list of bugs.
+`purpose: 'ordinary' | 'removal'` and `EngineWriter.serialise` takes it.
+
+**The purpose being read is the SESSION's, not the executing command's.** A
+live-session mutation produces no bytes of its own — §2 above — and MuPDF
+collects at write time with no in-session equivalent, so the orphans a removal
+unlinks live in the session from that command until the session closes. One
+resolver answers *what purpose must this document's bytes be serialised for*
+from the commands applied to it, and every serialise takes its answer: the
+checkpoint the next command mints, the disk save's flush, save-a-copy, extract,
+export. Letting each of those decide for itself is B3a's several opinions rather
+than a list of bugs.
 
 Measured, and it is why this is stated rather than assumed:
 `bake(false, true)` unlinks nine widgets and `saveToBuffer('')` writes all nine

@@ -5,6 +5,7 @@ import type {
   CommandReads,
   CommandSources,
   CommandTargets,
+  SavePurpose,
   WriterSession,
 } from './engineSeam.js';
 
@@ -195,6 +196,36 @@ export type Reproducibility =
   | { readonly reproducible: true; readonly replay: 'reapply-intent' }
   | { readonly reproducible: false; readonly replay: 'stored-effect' };
 
+/**
+ * What are this command's bytes for?
+ *
+ * `docs/ARCHITECTURE.md` §4: *"Every command that reaches the save pipeline
+ * declares which row it falls under. A command whose purpose is removal cannot
+ * be added without classifying it."* That sentence has stood since 2026-08-16
+ * with nowhere to write the classification, because until `flattenFormFields`
+ * no command's purpose was removal
+ * ([ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)).
+ *
+ * Every command declares it, including the twenty-five that answer
+ * `'ordinary'` — {@link SourceRouting}'s argument a fifth axis along. An axis
+ * defaulted to the safe value is a choice nobody makes and nobody reads, and
+ * here the unsafe direction is the quiet one: a removal that forgot to declare
+ * itself produces a document that still contains what it removed, and every
+ * check on it passes.
+ *
+ * **It is not derivable from `undo: 'checkpoint'`**, which is the inference
+ * somebody will reach for. `deletePages`, `addLink` and `deleteFormFields` all
+ * take checkpoints and none of them is a removal in §4's sense: a checkpoint
+ * says *the prior state cannot be serialised*, and a purpose says *the prior
+ * state must not survive in the output*. Those are different claims and
+ * `deleteFormFields` is the pair that proves it — it removes a widget and its
+ * bytes are ordinary, because the person deleting a field is editing a form
+ * rather than redacting one.
+ */
+export interface PurposeRouting {
+  readonly purpose: SavePurpose;
+}
+
 /** Everything one command kind declares about itself, minus the doing of it. */
 export type CommandDeclaration<K extends CommandKind> = {
   readonly kind: K;
@@ -203,6 +234,7 @@ export type CommandDeclaration<K extends CommandKind> = {
   TargetRouting &
   ReadRouting &
   AssetRouting<K> &
+  PurposeRouting &
   Invertibility &
   Reproducibility;
 
@@ -254,6 +286,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   setLayerVisibility: {
     kind: 'setLayerVisibility',
@@ -287,6 +320,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   movePage: {
     kind: 'movePage',
@@ -320,6 +354,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   deletePages: {
     kind: 'deletePages',
@@ -352,6 +387,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   duplicatePage: {
     kind: 'duplicatePage',
@@ -381,6 +417,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   swapPages: {
     kind: 'swapPages',
@@ -407,6 +444,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   insertBlankPage: {
     kind: 'insertBlankPage',
@@ -434,6 +472,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   cropPages: {
     kind: 'cropPages',
@@ -462,6 +501,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   watermarkPages: {
     kind: 'watermarkPages',
@@ -512,6 +552,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   headerFooterPages: {
     kind: 'headerFooterPages',
@@ -542,6 +583,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   batesNumberPages: {
     kind: 'batesNumberPages',
@@ -571,6 +613,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   setPageTransition: {
     kind: 'setPageTransition',
@@ -603,6 +646,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   setPageBackground: {
     kind: 'setPageBackground',
@@ -630,6 +674,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   resizePages: {
     kind: 'resizePages',
@@ -663,6 +708,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   insertImagePage: {
     kind: 'insertImagePage',
@@ -692,6 +738,7 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   generateToc: {
     kind: 'generateToc',
@@ -731,6 +778,7 @@ const declarations = {
     // page.
     reads: 'outline',
     asset: 'none',
+    purpose: 'ordinary',
   },
   mergeDocument: {
     kind: 'mergeDocument',
@@ -766,6 +814,7 @@ const declarations = {
     // everything this composes is in the two page trees it already holds.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   replacePage: {
     kind: 'replacePage',
@@ -789,6 +838,7 @@ const declarations = {
     // Nothing read through another engine.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   addAnnotation: {
     kind: 'addAnnotation',
@@ -827,6 +877,7 @@ const declarations = {
     // from the session this apply is already holding.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   removeAnnotation: {
     kind: 'removeAnnotation',
@@ -864,6 +915,7 @@ const declarations = {
     // session's own.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   placeAnnotation: {
     kind: 'placeAnnotation',
@@ -896,6 +948,7 @@ const declarations = {
     // Reads nothing through another engine.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   placeImage: {
     kind: 'placeImage',
@@ -934,6 +987,7 @@ const declarations = {
     // the transport writes them into the directory `engine/open` already grants
     // the host READ on, and puts them back before the apply is called.
     asset: 'image',
+    purpose: 'ordinary',
   },
   styleAnnotation: {
     kind: 'styleAnnotation',
@@ -958,6 +1012,7 @@ const declarations = {
     targets: 'annotation',
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   addLink: {
     kind: 'addLink',
@@ -984,6 +1039,7 @@ const declarations = {
     // Reads nothing through another engine.
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   fillFormField: {
     kind: 'fillFormField',
@@ -1014,6 +1070,7 @@ const declarations = {
     targets: 'field',
     reads: 'none',
     asset: 'none',
+    purpose: 'ordinary',
   },
   deleteFormFields: {
     kind: 'deleteFormFields',
@@ -1041,6 +1098,43 @@ const declarations = {
     targets: 'field',
     reads: 'none',
     asset: 'none',
+    // ORDINARY, beside a command whose purpose is removal, and the pair is what
+    // makes the axis worth having. Deleting a field is editing a form; the
+    // widget goes and the person is not asserting that its value must not
+    // survive in the bytes. §4's removal row is about redaction, sanitize,
+    // flatten, encryption and metadata — a different claim from *this object is
+    // gone from the page*.
+    purpose: 'ordinary',
+  },
+  flattenFormFields: {
+    kind: 'flattenFormFields',
+    // `docs/ARCHITECTURE.md` §3 names the call: *"Form fields: flatten —
+    // MuPDF, `bake(false, true)`"*. Settled before this row existed, so no B4
+    // on the routing. The one that WAS owed is ADR-0045's, on the save.
+    writer: 'mupdf',
+    // TERMINAL, and larger than `deleteFormFields`' reason rather than a new
+    // one: this loses every widget in the document AND rewrites the content
+    // stream of every page one sat on. There is no bounded prior state.
+    invertible: false,
+    undo: 'checkpoint',
+    // Measured 2026-09-07 across a deliberate 1.1s gap, so the byte comparison
+    // straddles a clock tick: two bakes of the same input produce identical
+    // bytes, and the output's `/ModDate` is the INPUT's. MuPDF stamps nothing.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // NAMES NOTHING, unlike the two form commands above it. `bake` takes no
+    // page and no field list, so there is no answer this could be stale
+    // against — which is also why its payload carries no version.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    // THE FIRST COMMAND ON THIS AXIS THAT IS NOT `'ordinary'`, and the reason
+    // the axis exists at all. §4 puts flatten on the removal row by name, and
+    // the measurement says what that costs if it is not honoured: the bake
+    // unlinks nine widgets and a plain save writes all nine back out, the
+    // object count growing 49 to 55.
+    purpose: 'removal',
   },
 } satisfies CommandDeclarations;
 

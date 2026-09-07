@@ -134,3 +134,55 @@ the registration that carries them across the host boundary.
 - **`'ordinary'` is a positive name, not `'plain'` or a boolean.** A boolean
   would encode the mechanism (*does it collect*) at every declaration site, and
   the mechanism is the adapter's business; the purpose is the command's.
+
+---
+
+## Correction, 2026-09-07, the same day — the purpose is the SESSION's, not the executing command's
+
+Written while building it, against the code rather than against the reading of
+it. **The decision above stands and one sentence supporting it was false when it
+was written**, which is this project's own rule about a claim recorded more
+strongly than its evidence: nothing had changed, so no sweep would ever have
+found it.
+
+The false sentence is *"`CommandBus.execute` already serialises after every
+terminal command… the removal case changes its option string, not its
+existence."* It does not serialise after. It serialises **strictly before
+apply**, and the code says so in a comment — that serialise is the checkpoint,
+and a checkpoint is the document as it stands *before* the command it is stored
+on. So a flatten's own execution produces no bytes at all: a live-session
+mutation lands in the engine session and `docs/ARCHITECTURE.md` §2 is explicit
+that the record's bytes are not replaced.
+
+**And there is no in-session collection to reach for instead.** MuPDF collects
+at write time; `mupdf.d.ts` 1.28.0 exposes no garbage-collection method on
+`PDFDocument`, so nothing can make the session clean at the moment of the bake.
+
+### What that changes
+
+The orphans live in the **session**, from the bake until the session is closed.
+So the property being declared is not *what these bytes are for* at one call
+site; it is **what has been applied to this session**. Once a removal has run,
+every serialise of that session must collect — the checkpoint the next command
+takes, the disk save's flush, save-a-copy, extract, export.
+
+The declaration axis is unchanged and still required: §4 asks a command to
+classify itself and `purpose: 'removal'` is that classification. What changes is
+who reads it. **One resolver answers *what purpose must this document's bytes be
+serialised for*, from the commands that have been applied, and every call site
+takes its answer** — which is the same B3a argument the body makes, arriving one
+level up from where it was written.
+
+### The rejected alternative that this partly rehabilitates
+
+*Classify the disk save from the command log* was rejected above for leaving
+four leaks. That rejection was of the **scope**, not of the mechanism: reading
+the log to classify **one** call site leaves the other four, and reading it to
+classify **every** serialise is the design. The distinction is worth keeping
+rather than quietly dropping, because the sentence *"it puts the rule in the one
+place that has to consult history to apply it"* was the wrong objection — a
+removal's effect on a session **is** history, and there is nowhere else for that
+fact to live.
+
+*Collect every save* and *a `serialiseForRemoval` sibling* remain rejected on
+the grounds given, unchanged.

@@ -482,6 +482,34 @@ body {
   color: var(--text);
 }
 
+/*
+ * Flattening the whole form, below the list rather than in it.
+ *
+ * Separated from the rows by a rule and full-width, because it is the one
+ * control here that acts on the document instead of on a field. A
+ * document-wide action sitting in the same visual family as the per-row ones
+ * is the shape a person presses expecting it to affect the line they were
+ * looking at.
+ */
+.m-forms-flatten {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-forms-flatten:hover,
+.m-forms-flatten:focus-visible {
+  background: var(--surface2);
+  color: var(--text);
+}
+
 .m-forms-empty {
   margin: 0;
   padding: var(--space-4);

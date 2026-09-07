@@ -457,6 +457,22 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Flattening the whole form.
+   *
+   * **Takes no handle**, unlike its two neighbours, and that is not this call
+   * site simplifying: MuPDF's `bake` acts on the document and names neither a
+   * page nor a field, so there is no answer this could be composed against and
+   * therefore no version to be refused on. `targets: 'none'` says the same
+   * thing from the declaration side.
+   */
+  const flattenForm = useCallback((): void => {
+    if (activeId === undefined) return;
+    void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+      kind: 'flattenFormFields',
+    });
+  }, [activeId, applied, ask, client]);
+
+  /**
    * Removing everything the select tool has picked.
    *
    * ONE COMMAND FOR THE WHOLE SELECTION, which is why `removeAnnotation`'s
@@ -1420,6 +1436,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         docId={open?.docId}
         onDelete={deleteFormField}
         onFill={fillFormField}
+        onFlatten={flattenForm}
         onJump={navigator.jumpTo}
         version={open?.version}
       />

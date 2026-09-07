@@ -1,6 +1,6 @@
 import * as mupdf from 'mupdf';
 
-import type { ByteImage, EngineWriter, MupdfSession } from './engineSeam.js';
+import type { ByteImage, EngineWriter, MupdfSession, SavePurpose } from './engineSeam.js';
 
 /**
  * The one adapter behind the engine seam today.
@@ -133,6 +133,63 @@ export function withDocument<T>(
 }
 
 /**
+ * Sessions a removal-purpose command has been applied to.
+ *
+ * ## Why the state is here and not a parameter on `serialise`
+ *
+ * [ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md).
+ * MuPDF collects at write time and has no in-session equivalent, so the objects
+ * a removal unlinks stay in this document until the session closes — which
+ * makes *a removal has happened here* a property of the session rather than of
+ * the moment somebody asks for bytes. `CommandBus.execute` serialises **before**
+ * apply to mint a checkpoint, so a live-session removal's own execution never
+ * asks for bytes at all, and there is no single call site a purpose could ride
+ * in on.
+ *
+ * A `WeakSet` because the key is the session token and the entry must not keep
+ * one alive: `close` drops the document, and a session that has been closed can
+ * never be serialised again.
+ *
+ * ## It is one-way, and that is the safe direction
+ *
+ * Nothing removes a session from this set. A document that has had content
+ * removed does not stop having had it — a later ordinary command does not make
+ * the orphans safe — so the only transition is *ordinary → removal*, and the
+ * absent transition is the one whose bug is a leak.
+ */
+const removals = new WeakSet<MupdfSession>();
+
+/**
+ * Runs `work` and records that this session has had content removed.
+ *
+ * {@link withDocument}'s shape for a command declaring `purpose: 'removal'`.
+ * Separate rather than a flag, so the call reads as what it is at the one place
+ * a reviewer meets it, and so the ordinary helper cannot be given a `true` by a
+ * caller who has not thought about it.
+ *
+ * **What stops a future removal command from using the wrong one is not this
+ * name.** It is `removalCollects.test.ts`, whose roster is derived from
+ * `declaredCommands` — every kind declaring `purpose: 'removal'` owes a case
+ * proving its serialised bytes no longer carry what it removed. A command added
+ * to that axis arrives owing evidence rather than inheriting this one's.
+ *
+ * @template T
+ */
+export function withDocumentRemoving<T>(
+  session: MupdfSession,
+  work: (document: mupdf.PDFDocument) => T,
+): Promise<T> {
+  return promised(() => {
+    const answer = work(documentFor(session));
+    // MARKED AFTER THE WORK, so a mutation that threw does not leave a session
+    // collecting for a removal that never happened. `documentFor` refuses an
+    // unknown token first, which is what keeps a forged session out of the set.
+    removals.add(session);
+    return answer;
+  });
+}
+
+/**
  * Runs `work` against the native documents behind **two** sessions.
  *
  * ## Why this exists rather than nesting {@link withDocument}
@@ -245,15 +302,43 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
   },
 
   /**
-   * The canonical bytes for the session's current state.
+   * The canonical bytes for the session's current state, for a stated purpose.
    *
-   * An empty option string is a plain save: no incremental update, no
-   * garbage-collection pass, no re-encryption. Save *mode* is ADR-0008's
-   * decision and belongs to the save pipeline, not to the seam — an adapter
-   * that quietly chose one would be a second writer of that concern.
+   * ## The adapter is TOLD the purpose; it does not choose one
+   *
+   * This comment used to say save mode belongs to the pipeline and *"an adapter
+   * that quietly chose one would be a second writer of that concern"*. That
+   * sentence is still the rule and this is not a departure from it: the choice
+   * is the **command's**, declared once in `commandDeclarations.ts`, and what
+   * happens here is the translation of a purpose into one engine's option
+   * string — which is the one thing only this module can do
+   * ([ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)).
+   *
+   * What changed is where §4's removal row is applied. It read as the disk
+   * save's business until it was measured: `bake(false, true)` unlinks nine
+   * widgets and the empty option string writes all nine back out, the object
+   * count **growing** 49 to 55, so the orphans are in the canonical image long
+   * before any file is written.
+   *
+   * ## Why `garbage` and not `garbage=deduplicate`
+   *
+   * Measured 2026-09-07, all three of MuPDF's levels leave **zero** widget and
+   * field dictionaries: `garbage` and `garbage=compact` answer 22 objects and
+   * `garbage=deduplicate` answers 21. The removal is complete at the first
+   * level, and the extra levels buy a smaller file rather than a cleaner one —
+   * so this asks for exactly what invariant 19 requires and nothing that would
+   * make a save's output depend on a size decision nobody took.
+   *
+   * An empty option string remains a plain save: no incremental update, no
+   * garbage collection, no re-encryption.
    */
   serialise(session: MupdfSession): Promise<ByteImage> {
-    return promised(() => copiedOut(documentFor(session).saveToBuffer('')));
+    // EXHAUSTIVE OVER THE UNION rather than an `if`, so a third purpose is a
+    // compile error here instead of an option string silently defaulting to the
+    // one that keeps what a command removed.
+    const options: Record<SavePurpose, string> = { ordinary: '', removal: 'garbage' };
+    const purpose: SavePurpose = removals.has(session) ? 'removal' : 'ordinary';
+    return promised(() => copiedOut(documentFor(session).saveToBuffer(options[purpose])));
   },
 
   /**

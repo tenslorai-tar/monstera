@@ -95,10 +95,13 @@ export {
 export {
   applyDeleteFormFields,
   applyFillFormField,
+  applyFlattenFormFields,
   captureDeleteFormFields,
   captureFillFormField,
+  captureFlattenFormFields,
   invertDeleteFormFields,
   invertFillFormField,
+  invertFlattenFormFields,
   MAX_LISTED_FIELDS,
   readFormFields,
 } from './formFields.js';

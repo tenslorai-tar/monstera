@@ -1,4 +1,5 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandOfKind, FieldFill } from '@monstera/contract';
@@ -8,14 +9,17 @@ import type { MupdfSession } from './engineSeam.js';
 import {
   applyDeleteFormFields,
   applyFillFormField,
+  applyFlattenFormFields,
   captureDeleteFormFields,
   captureFillFormField,
+  captureFlattenFormFields,
   invertFillFormField,
+  invertFlattenFormFields,
   type ListedField,
   readFormFields,
 } from './formFields.js';
 import { mupdfWriter } from './mupdfWriter.js';
-import { readAnnotations } from './pageAnnotations.js';
+import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 
 /**
  * Reading a document's AcroForm fields.
@@ -828,5 +832,144 @@ describe('applyDeleteFormFields', () => {
       'merged',
       'applicant.split',
     ]);
+  });
+});
+
+/**
+ * How much ink page 0 renders, with and without annotation appearances drawn.
+ *
+ * **The second reading is what makes this an observable at all.** `toPixmap`'s
+ * fourth argument is `showExtras`, and with it ON a baked document and an
+ * unbaked one render **identically** — measured, because the renderer draws the
+ * widget's appearance on top either way. That comparison is satisfied by
+ * nothing having happened, which is the reading a working flatten produces and
+ * the reading its absence produces.
+ */
+function inked(bytes: Uint8Array): { withExtras: number; contentOnly: number } {
+  const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+  if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+  try {
+    const page = document.loadPage(0);
+    const count = (extras: boolean): number => {
+      const pixmap = page.toPixmap(
+        mupdf.Matrix.identity,
+        mupdf.ColorSpace.DeviceGray,
+        false,
+        extras,
+      );
+      let marked = 0;
+      for (const sample of pixmap.getPixels()) if (sample < 250) marked += 1;
+      return marked;
+    };
+    return { withExtras: count(true), contentOnly: count(false) };
+  } finally {
+    document.destroy();
+  }
+}
+
+/** The six-type form with a square annotation beside the fields. */
+async function formWithComment(): Promise<Uint8Array> {
+  return await onSession(await form(), async (session) => {
+    await applyAddAnnotation(session, {
+      kind: 'addAnnotation',
+      page: 0,
+      annotation: {
+        type: 'square',
+        rect: { x0: 250, y0: 100, x1: 350, y1: 180 },
+        colour: [1, 0, 0],
+        opacity: 1,
+        borderWidth: 2,
+      },
+    });
+    return await mupdfWriter.serialise(session);
+  });
+}
+
+describe('applyFlattenFormFields', () => {
+  it('empties the form: no widget in the walk and no field pdf-lib can list', async () => {
+    const flattened = await onSession(await form(), async (session) => {
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      return await mupdfWriter.serialise(session);
+    });
+
+    expect(await listed(flattened)).toStrictEqual([]);
+    // READ WITH THE OTHER LIBRARY. MuPDF agreeing with itself about a document
+    // it just wrote is not evidence that the form is gone for anything else.
+    const byPdfLib = await PDFDocument.load(flattened, { updateMetadata: false });
+    expect(byPdfLib.getForm().getFields()).toStrictEqual([]);
+  });
+
+  it('draws what the fields said into the page’s own content stream', async () => {
+    const bytes = await form();
+    const flattened = await onSession(bytes, async (session) => {
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      return await mupdfWriter.serialise(session);
+    });
+
+    // THE FIXTURE CONTRIBUTES NOTHING OF ITS OWN, which is what lets the number
+    // below mean the flatten rather than the page. Without this the case would
+    // pass on a document that already carried the ink.
+    expect(inked(bytes).contentOnly).toBe(0);
+    expect(inked(flattened).contentOnly).toBeGreaterThan(0);
+  });
+
+  it('THE BLIND OBSERVABLE, pinned: with extras drawn the two documents are identical', async () => {
+    // Kept as a case rather than as a comment, because this is the comparison
+    // somebody reaches for first and it separates nothing. If a future change
+    // makes these two differ, the reading above stops being the only one that
+    // can see a flatten, and this case is where that is noticed.
+    const bytes = await form();
+    const flattened = await onSession(bytes, async (session) => {
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      return await mupdfWriter.serialise(session);
+    });
+
+    expect(inked(flattened).withExtras).toBe(inked(bytes).withExtras);
+  });
+
+  it('LEAVES THE COMMENTS EDITABLE, which is the whole of `bakeAnnots: false`', async () => {
+    // The row's promise, and the reason the two arguments are separate
+    // decisions. A flatten that took the annotations with it would be D7's
+    // sanitize wearing this row's name.
+    const bytes = await formWithComment();
+    const before = await onSession(bytes, (session) => readAnnotations(session));
+    expect(before.annotations).toHaveLength(1);
+
+    const flattened = await onSession(bytes, async (session) => {
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      return await mupdfWriter.serialise(session);
+    });
+
+    const after = await onSession(flattened, (session) => readAnnotations(session));
+    expect(after.annotations).toHaveLength(1);
+    expect(after.annotations[0]?.kind).toBe(before.annotations[0]?.kind);
+  });
+
+  it('is a no-op on a document with no fields, rather than a refusal', async () => {
+    // Stated as a case because the alternative was considered: a refusal would
+    // make *flatten* fail on the documents a person is most likely to try it on
+    // by mistake, and there is nothing incorrect about flattening nothing.
+    const bytes = await marked();
+    const flattened = await onSession(bytes, async (session) => {
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      return await mupdfWriter.serialise(session);
+    });
+
+    expect(await listed(flattened)).toStrictEqual([]);
+    expect(inked(flattened).contentOnly).toBe(inked(bytes).contentOnly);
+  });
+
+  it('captures no prior state, and says why', async () => {
+    const captured = await onSession(await form(), (session) => captureFlattenFormFields(session));
+    expect(captured.captured).toBe(false);
+    expect(captured.captured ? '' : captured.reason).toMatch(/every widget in the document/u);
+  });
+
+  it('has no inverse, and throws rather than resolving', () => {
+    // A quiet resolve here would land a widened type as an undo that silently
+    // did nothing, which is `invertDeleteFormFields`' reason on a larger loss.
+    expect(() => invertFlattenFormFields(undefined as never, undefined as never)).toThrow(
+      /no inverse/u,
+    );
   });
 });

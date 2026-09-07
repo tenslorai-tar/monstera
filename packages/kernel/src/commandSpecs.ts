@@ -62,10 +62,13 @@ import {
 import {
   applyDeleteFormFields,
   applyFillFormField,
+  applyFlattenFormFields,
   captureDeleteFormFields,
   captureFillFormField,
+  captureFlattenFormFields,
   invertDeleteFormFields,
   invertFillFormField,
+  invertFlattenFormFields,
 } from './formFields.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
@@ -363,6 +366,12 @@ const declared = {
     apply: applyDeleteFormFields,
     capture: captureDeleteFormFields,
     invert: invertDeleteFormFields,
+  },
+  flattenFormFields: {
+    ...declaredCommands.flattenFormFields,
+    apply: applyFlattenFormFields,
+    capture: captureFlattenFormFields,
+    invert: invertFlattenFormFields,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them

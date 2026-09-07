@@ -7,6 +7,8 @@ import {
   FORMS_CHOICE_EMPTY,
   FORMS_DELETE,
   FORMS_EMPTY,
+  FORMS_FLATTEN,
+  FORMS_FLATTEN_CONFIRM,
   FORMS_GO_TO_PAGE,
   FORMS_KIND_BUTTON,
   FORMS_KIND_CHECKBOX,
@@ -80,6 +82,7 @@ export function FormsPanel({
   onJump,
   onFill,
   onDelete,
+  onFlatten,
 }: {
   readonly client: ContractClient;
   /** `undefined` with no document open, which renders nothing. */
@@ -116,6 +119,21 @@ export function FormsPanel({
     readonly index: number;
     readonly version: DocVersion;
   }) => void;
+  /**
+   * Flattens the whole form.
+   *
+   * **No handle at all**, unlike the two above, and that is the engine's shape
+   * rather than a simplification: MuPDF's `bake` takes no page and no field
+   * list, so there is nothing to name and no version to be stale against.
+   *
+   * **No confirmation dialog**, and that is this project's own recorded ruling
+   * rather than an omission — `dialogs/deletePages.ts`: *"a confirmation dialog
+   * over an undoable command would be a modal the user learns to dismiss
+   * without reading, which is worse than none."* A flatten declares
+   * `undo: 'checkpoint'`, so it is undoable; what carries the warning is the
+   * control's own label, which names the consequence rather than the verb.
+   */
+  readonly onFlatten: () => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
   const [state, setState] = useState<PanelState>({ kind: 'idle' });
@@ -230,6 +248,25 @@ export function FormsPanel({
             ))}
           </ul>
           {state.truncated ? <p className="m-forms-empty">{i18n._(FORMS_TRUNCATED)}</p> : null}
+          {/* INSIDE THE BRANCH THAT HAS FIELDS, so it is not offered on a
+              document with none. The kernel treats that as a no-op rather than
+              a refusal — there is nothing incorrect about flattening nothing —
+              but a control whose press changes nothing observable is the
+              display-only defect wearing a working command's clothes. The
+              wired-tools rule is about what a person can press.
+
+              AND IT IS OFFERED EVEN WHEN EVERY FIELD IS TRUNCATED AWAY, which
+              is deliberate: `bake` acts on the document, not on the rows this
+              panel managed to list, so a limit on what can be SHOWN is not a
+              limit on what this does. */}
+          <button
+            className="m-forms-flatten"
+            onClick={onFlatten}
+            title={i18n._(FORMS_FLATTEN_CONFIRM)}
+            type="button"
+          >
+            {i18n._(FORMS_FLATTEN)}
+          </button>
         </>
       )}
     </section>

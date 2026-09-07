@@ -117,6 +117,7 @@ export {
   deleteFormFieldsSchema,
   fieldFillSchema,
   fillFormFieldSchema,
+  flattenFormFieldsSchema,
   formFieldKindSchema,
   MAX_DELETED_FIELDS,
   MAX_FIELD_VALUE,

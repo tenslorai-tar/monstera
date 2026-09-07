@@ -2283,6 +2283,42 @@ export const deleteFormFieldsSchema = z.object({
   version: docVersionSchema,
 });
 
+/**
+ * Burns every form field's appearance into the page and removes the form.
+ *
+ * ## A payload with nothing in it, and that is the engine's shape
+ *
+ * MuPDF's `bake(bakeAnnots, bakeWidgets)` takes no page and no field list, so
+ * there is no scope to name. A per-field or per-page flatten would be this
+ * build re-deriving *which objects make up this field's appearance* — the
+ * engine's own rule, and B3a's second opinion.
+ *
+ * **No `version` either**, unlike the fill and the delete beside it. Those name
+ * positions in a walk an answer produced and are refused if the document has
+ * moved; this names nothing, so there is no answer it could be stale against.
+ * `targets: 'none'` says the same thing on the other side of the boundary.
+ *
+ * ## It flattens the FORM, not the comments
+ *
+ * Measured 2026-09-07: `bake(true, false)` leaves widgets and fields untouched,
+ * so the two arguments are separate decisions rather than one. Flattening
+ * annotations is D7's *sanitize / flatten document* and is deliberately not
+ * reachable from here — a person fixing a form should not lose the ability to
+ * edit the note beside it.
+ *
+ * ## The one command so far whose purpose is REMOVAL
+ *
+ * `docs/ARCHITECTURE.md` §4 has required such a command to classify itself
+ * since 2026-08-16 and this is the first
+ * ([ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)).
+ * The bake unlinks the widgets and a plain save writes them straight back out —
+ * measured, the object count **grows** 49 to 55 — so the kernel's session
+ * records the removal and collects on every serialise from then on.
+ */
+export const flattenFormFieldsSchema = z.object({
+  kind: z.literal('flattenFormFields'),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -2310,6 +2346,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   styleAnnotationSchema,
   fillFormFieldSchema,
   deleteFormFieldsSchema,
+  flattenFormFieldsSchema,
 ]);
 
 /**
@@ -2398,6 +2435,7 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // delete has to do to the field TREE, which is measured behaviour the kernel
   // owns and nothing on this side could describe.
   deleteFormFieldsSchema,
+  flattenFormFieldsSchema,
 ]);
 
 /** A command a renderer may send. */

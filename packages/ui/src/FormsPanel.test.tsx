@@ -85,11 +85,26 @@ async function settle(): Promise<void> {
 async function panel(
   fields: readonly unknown[],
   options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
-): Promise<{ jumps: number[]; fills: unknown[]; deletes: unknown[]; asked: unknown[] }> {
+): Promise<{
+  jumps: number[];
+  fills: unknown[];
+  deletes: unknown[];
+  // A FUNCTION, not the number. Every case clicks AFTER this helper returns,
+  // and a number captured at return time is the count before the click — which
+  // is zero for a working control and zero for a broken one. The arrays beside
+  // it do not have this problem because they are pushed into by reference; a
+  // count is the one shape where the reader has to be deferred.
+  flattens: () => number;
+  asked: unknown[];
+}> {
   const { client, asked } = clientAnswering(fields, options);
   const jumps: number[] = [];
   const fills: unknown[] = [];
   const deletes: unknown[] = [];
+  // A COUNT rather than a list, because a flatten carries no handle — there is
+  // nothing to record but that it happened, and *how many times* is the only
+  // question a case about it can ask.
+  let flattens = 0;
   render(
     <Wrapped>
       <FormsPanel
@@ -101,6 +116,9 @@ async function panel(
         onFill={(handle): void => {
           fills.push(handle);
         }}
+        onFlatten={(): void => {
+          flattens += 1;
+        }}
         onJump={(page): void => {
           jumps.push(page);
         }}
@@ -109,7 +127,7 @@ async function panel(
     </Wrapped>,
   );
   await settle();
-  return { jumps, fills, deletes, asked };
+  return { jumps, fills, deletes, flattens: () => flattens, asked };
 }
 
 /** A field with everything a row needs, so a case names only what it is about. */
@@ -331,5 +349,40 @@ describe('FormsPanel', () => {
     // its own idea of nothing.
     const { asked } = await panel([field({ name: 'one' })]);
     expect(asked).toStrictEqual([{ docId: DOC }]);
+  });
+
+  it('the flatten control dispatches, and dispatches once', async () => {
+    // The UI half of the wired pair. The kernel half is
+    // `formFields.test.ts`'s `applyFlattenFormFields` block; neither alone
+    // counts, because a control that dispatches into the void and a command
+    // nothing invokes both pass their own side.
+    //
+    // ONCE, asserted rather than assumed: *called* is a claim, and a handler
+    // wired twice — a click plus a bubbled press — would flatten and then
+    // flatten the already-flat result, which is a second undo entry a person
+    // has to press through.
+    const { flattens } = await panel([field({ name: 'one' })]);
+    expect(flattens()).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Flatten form' }));
+    expect(flattens()).toBe(1);
+  });
+
+  it('is NOT offered on a document with no fields', async () => {
+    // The wired-tools rule is about what a person can press. The kernel treats
+    // a flatten of a fieldless document as a no-op rather than a refusal —
+    // there is nothing incorrect about flattening nothing — but a control whose
+    // press changes nothing observable is the display-only defect wearing a
+    // working command's clothes.
+    await panel([]);
+    expect(screen.queryByRole('button', { name: 'Flatten form' })).toBeNull();
+  });
+
+  it('CONTROL: it IS offered when the list was truncated, because `bake` acts on the document', async () => {
+    // The case that stops the one above from being read as *offered only when
+    // this panel could list everything*. A cap on what can be SHOWN is not a
+    // cap on what the command reaches, and hiding the control there would make
+    // a large form the one document you cannot flatten.
+    await panel([field({ name: 'one' })], { truncated: true });
+    expect(screen.getByRole('button', { name: 'Flatten form' })).toBeTruthy();
   });
 });

@@ -502,6 +502,28 @@ const DELETE_FIELDS_SPEC = `  deleteFormFields: {
     reads: 'none',
   },`;
 
+/**
+ * The newest kind, and the one the `missing a command kind` case now omits.
+ *
+ * The first spec whose command declares `purpose: 'removal'`. That axis is not
+ * spelt in these fixtures for the reason none of the others is either: they
+ * exercise `CommandSpecs`' shape, and every axis a declaration carries would
+ * make each of twenty-seven fixtures a copy of the declaration table.
+ */
+const FLATTEN_SPEC = `  flattenFormFields: {
+    kind: 'flattenFormFields',
+    writer: 'mupdf',
+    apply: applyFlattenFormFields,
+    capture: captureFlattenFormFields,
+    invert: invertFlattenFormFields,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -623,6 +645,9 @@ const SPEC_IMPORTS = `import {
   applyDeleteFormFields,
   captureDeleteFormFields,
   invertDeleteFormFields,
+  applyFlattenFormFields,
+  captureFlattenFormFields,
+  invertFlattenFormFields,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -1053,6 +1078,7 @@ ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
+${FLATTEN_SPEC}
 };
 `,
   },
@@ -1070,7 +1096,8 @@ ${DELETE_FIELDS_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `deleteFormFields`, `fillFormField`, `placeImage` and
+    // table has to grow. `flattenFormFields`, `deleteFormFields`,
+    // `fillFormField`, `placeImage` and
     // `styleAnnotation` on 2026-09-07; `addLink`,
     // `placeAnnotation` and `removeAnnotation` on 2026-09-06; `addAnnotation`,
     // `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage`,
@@ -1086,7 +1113,7 @@ ${DELETE_FIELDS_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'deleteFormFields' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'flattenFormFields' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1131,6 +1158,7 @@ ${LINK_SPEC}
 ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
+${DELETE_FIELDS_SPEC}
 };
 `,
   },
@@ -1242,6 +1270,7 @@ ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
+${FLATTEN_SPEC}
 };
 `,
   },
@@ -1291,6 +1320,7 @@ ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
+${FLATTEN_SPEC}
 };
 `,
   },
@@ -1349,6 +1379,7 @@ ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
+${FLATTEN_SPEC}
 };
 `,
   },
@@ -1403,6 +1434,7 @@ ${STYLE_SPEC}
 ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
+${FLATTEN_SPEC}
 };
 `,
   },
@@ -2278,7 +2310,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 21 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 22 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

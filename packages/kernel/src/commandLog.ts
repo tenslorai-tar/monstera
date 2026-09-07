@@ -442,6 +442,17 @@ export interface CommandPrior {
    * difficulty here.
    */
   readonly deleteFormFields: never;
+
+  /**
+   * A flatten has no prior state either, and for a **strictly larger** reason
+   * than the entry above.
+   *
+   * Deleting fields loses the widgets a payload named. This loses every widget
+   * in the document and rewrites the content stream of every page one sat on,
+   * so the prior state is most of the file. Written out rather than pointed at
+   * its neighbour, for this table's standing reason.
+   */
+  readonly flattenFormFields: never;
 }
 
 /**

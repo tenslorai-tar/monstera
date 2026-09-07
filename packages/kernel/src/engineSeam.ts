@@ -180,7 +180,16 @@ export type WriterShapeOf = typeof writerShapes;
 export interface EngineWriter<TSession> {
   /** Parses `image` into a session. The image is not retained by the engine. */
   open(image: ByteImage): Promise<TSession>;
-  /** The canonical bytes for the session's current state. */
+  /**
+   * The canonical bytes for the session's current state.
+   *
+   * **No purpose parameter, deliberately** — see {@link SavePurpose}. A removal
+   * is a fact about what has been applied to the session, not about the moment
+   * somebody asks for its bytes, so the adapter that owns the session carries
+   * it and no caller can forget to. A parameter here would have to be supplied
+   * correctly by the checkpoint mint, the save flush, save-a-copy, extract and
+   * export, which is five chances to get one rule wrong (B5 over a rule).
+   */
   serialise(session: TSession): Promise<ByteImage>;
   /** Releases native resources. Safe to call once per session. */
   close(session: TSession): Promise<void>;
@@ -282,6 +291,56 @@ export type CommandSources = 'none' | 'one';
  * what says which answer the payload's index points into.
  */
 export type CommandTargets = 'none' | 'annotation' | 'field';
+
+/**
+ * What a command's bytes are FOR, which decides how they are serialised.
+ *
+ * [ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md),
+ * and `docs/ARCHITECTURE.md` §4's removal row given somewhere to live. A
+ * command whose purpose is removal must produce bytes that no longer contain
+ * what it removed, and MuPDF's plain save does not: measured 2026-09-07,
+ * `bake(false, true)` unlinks nine widgets and `saveToBuffer('')` writes all
+ * nine out again, with the object count **growing** 49 to 55.
+ *
+ * ## Two members where §4's table has three rows
+ *
+ * *Never incremental for removal* and *always incremental to preserve a
+ * signature* are both in that table, and only the first is a property of what a
+ * command's bytes CONTAIN. The second is a property of how a **file is
+ * written** — a full rewrite changes the byte ranges a PKCS#7 signature covers
+ * — and nothing here writes files. It arrives when Stage 7 has a signature to
+ * preserve; declaring a member nothing can produce is the shape `kindOf`'s
+ * unreachable `'other'` already cost this build a reading of.
+ *
+ * ## A purpose, not a mechanism
+ *
+ * `'ordinary'` rather than a boolean called `collectsGarbage`, because the
+ * mechanism is the adapter's business and the purpose is the command's. A
+ * boolean would put *does MuPDF need its `garbage` option* at every declaration
+ * site, where the answer depends on which engine the command happens to be
+ * routed to — and a command's purpose does not change when its writer does.
+ *
+ * ## This is a DECLARATION, and {@link EngineWriter.serialise} does not take it
+ *
+ * The obvious wiring is a parameter on `serialise`, and it is wrong for a
+ * reason that only shows up in the code: a live-session command produces no
+ * bytes of its own. `CommandBus.execute` serialises **before** apply, to mint
+ * the checkpoint, so the flatten's own execution never asks for bytes at all —
+ * and MuPDF has no in-session collection, so the orphans it unlinks sit in the
+ * session until it closes.
+ *
+ * The removal is therefore a fact about the **session**, and the adapter that
+ * owns the session is what remembers it. A parameter would have to be supplied
+ * correctly at five call sites — the next checkpoint, the save flush,
+ * save-a-copy, extract, export — which is a rule five callers apply rather than
+ * a state one component holds.
+ *
+ * What this type is for is §4's sentence: *"A command whose purpose is removal
+ * cannot be added without classifying it."* The classification is read by the
+ * apply that marks the session, and by the test roster that requires every
+ * command declaring `'removal'` to produce bytes its removal is gone from.
+ */
+export type SavePurpose = 'ordinary' | 'removal';
 
 /**
  * Does this command carry BYTES that cannot travel on the wire the writer is

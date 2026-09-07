@@ -270,6 +270,8 @@ export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
 export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
+export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
+export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
 export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
 export const FORMS_KIND_CHECKBOX = messageKey('surface.forms.kind.checkbox');
 export const FORMS_KIND_RADIO = messageKey('surface.forms.kind.radio');
@@ -611,6 +613,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // also says FIELD rather than value, because the two are different actions
   // and the control next to it performs the other one.
   [FORMS_DELETE]: 'Delete this field',
+  // NAMES THE CONSEQUENCE, not the verb. "Flatten" is the operation's name in
+  // every PDF tool and it says nothing to a person who has not met it, so the
+  // label says what changes about their document — and the confirmation says
+  // the part that cannot be taken back.
+  [FORMS_FLATTEN]: 'Flatten form',
+  [FORMS_FLATTEN_CONFIRM]:
+    'Flattening draws every field’s contents onto the page and removes the form. The fields can no longer be filled in. Comments are not affected.',
   [FORMS_KIND_TEXT]: 'Text',
   [FORMS_KIND_CHECKBOX]: 'Tick box',
   [FORMS_KIND_RADIO]: 'Option',

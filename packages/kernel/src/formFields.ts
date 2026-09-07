@@ -3,7 +3,7 @@ import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
-import { withDocument } from './mupdfWriter.js';
+import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
 import { frameOf, pageAt, readRect } from './pageAnnotations.js';
 
 /**
@@ -677,5 +677,90 @@ export function captureDeleteFormFields(
 export const invertDeleteFormFields: Invert<'mupdf', 'deleteFormFields'> = (): Promise<void> => {
   throw new Error(
     'a deleted form field has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};
+
+/**
+ * Burns every field's appearance into the page and removes the form.
+ *
+ * ## `bake(false, true)`, and the two arguments are not one decision
+ *
+ * `docs/ENGINE-SPIKE.md` H2 corrects the founding matrix — MuPDF *can* flatten
+ * — and `docs/ARCHITECTURE.md` §3 names this call, so the writer of record was
+ * settled before this row existed. What H2 asked for and never ran was the
+ * verification, executed 2026-09-07:
+ *
+ * | reading | before | after |
+ * |---|---|---|
+ * | widgets on the page | 9 | **0** |
+ * | fields pdf-lib lists | 8 | **0** |
+ * | ink from the page's own content stream | 0 | **8337** |
+ *
+ * Per rectangle, all nine came across — text 1159, checkbox 60, radio 129 and
+ * 77, dropdown 329, listbox 2810, read-only 798, push button 1200, signature
+ * 203, each from zero. **Both halves of the radio group**, which is the case a
+ * bake working at field level rather than widget level would have got wrong.
+ *
+ * `bakeAnnots` stays **false**. `bake(true, false)` leaves widgets and fields
+ * untouched, so the two arguments are genuinely separate and *flatten the form,
+ * keep the comments editable* is what this row promises. Flattening annotations
+ * is D7's *sanitize / flatten document* and is not smuggled in here.
+ *
+ * ## The whole document, because that is what the engine offers
+ *
+ * `bake` takes no page and no field list. A per-field flatten would be this
+ * build re-deriving *which objects make up this field's appearance*, which is
+ * the engine's rule (B3a) — and the payload says so by having no members at
+ * all beyond its kind.
+ *
+ * ## It is a REMOVAL, and that is why it uses the other helper
+ *
+ * [ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md).
+ * Measured: the bake unlinks the widgets and a plain save writes all nine back
+ * out, with the object count **growing** 49 to 55 — so every flattened field's
+ * value stays readable to anything walking the cross-reference table rather
+ * than the catalog. {@link withDocumentRemoving} records the fact on the
+ * session, and `serialise` collects from then on.
+ */
+export const applyFlattenFormFields: Apply<'mupdf', 'flattenFormFields'> = (session) =>
+  withDocumentRemoving(session, (document) => {
+    document.bake(false, true);
+  });
+
+/**
+ * Reports that a flatten's prior state is not recorded, and validates nothing.
+ *
+ * **{@link captureDeleteFormFields}'s reason, larger again.** Deleting fields
+ * loses the widgets a payload named; this loses every widget in the document
+ * *and* rewrites the content stream of every page one sat on. There is no
+ * bounded prior state to serialise, and the checkpoint the bus mints is the
+ * whole of the undo.
+ *
+ * **Nothing to validate**, unlike its two neighbours, and that is the payload
+ * rather than an omission: a fill and a delete name positions in a walk and can
+ * name one that is not there, while this names nothing. A flatten of a document
+ * with no fields is a no-op rather than a refusal — MuPDF bakes nothing and the
+ * session is marked, which costs a collecting save and removes nothing, which
+ * is exactly what was asked for.
+ */
+export const captureFlattenFormFields = (session: MupdfSession): Promise<CaptureResult<never>> =>
+  withDocument(session, () => ({
+    captured: false,
+    reason:
+      'a flattened form cannot be recorded as prior state: every widget in the document is gone ' +
+      'and the content stream of every page one sat on has been rewritten, which is unbounded ' +
+      'and has no serialisation here',
+  }));
+
+/**
+ * Unreachable, and required by {@link CommandSpec}'s shape.
+ *
+ * {@link invertDeleteFormFields}'s reason exactly: `CommandPrior` is `never`
+ * here, so nothing can construct an argument, and throwing rather than
+ * resolving keeps a widened type from landing as an undo that did nothing.
+ */
+export const invertFlattenFormFields: Invert<'mupdf', 'flattenFormFields'> = (): Promise<void> => {
+  throw new Error(
+    'a flattened form has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
   );
 };
