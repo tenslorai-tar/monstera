@@ -210,6 +210,21 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.snapshotRegion': 'needs an engine session and a save dialog',
   'document.split': 'needs an engine session and a folder dialog',
   'document.insertImage': 'needs an engine session and an image picker',
+  // THE IMAGE GOES THE OTHER WAY AND NEVER CROSSES THIS BOUNDARY, which is the
+  // sentence to read before the page list. The renderer sends a page list and a
+  // rectangle; main runs the picker, reads the file and mints `placeImage`, and
+  // the bytes are in exactly one process — `insertImage`'s argument, unchanged.
+  // The page list is `document.extract`'s second look and gets the same answer:
+  // an index per page, bounded by `MAX_IMAGE_PAGES`, so stamping a
+  // 4,000-page document asks in kilobytes. Answers with three numbers.
+  //
+  // What is NEW here and is not this gate's business is the hop after it: those
+  // bytes then reach the engine host, whose wire is JSON and cannot carry them
+  // at all, so they travel the granted directory
+  // ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+  // That is the same *no raster crosses* answer the snapshot above gives, in
+  // the opposite direction and on a boundary this file does not govern.
+  'document.placeImage': 'needs an engine session and an image picker',
   'document.searchPage': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',

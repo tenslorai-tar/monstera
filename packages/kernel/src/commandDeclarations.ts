@@ -1,6 +1,7 @@
 import type { CommandKind } from '@monstera/contract';
 
 import type {
+  CommandAsset,
   CommandReads,
   CommandSources,
   CommandTargets,
@@ -138,6 +139,27 @@ export interface ReadRouting {
 }
 
 /**
+ * Does this command carry bytes the writer's wire cannot express?
+ *
+ * [ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md),
+ * and {@link SourceRouting}'s argument a third axis along: declared rather than
+ * inferred from a payload that happens to hold a `Uint8Array`, because those are
+ * different statements and `insertImagePage` is the pair that proves it — an
+ * image in the payload, `asset: 'none'`, because a byte-image writer's wire is
+ * a function call.
+ *
+ * Generic where the other three are not, and that is {@link CommandAsset}'s
+ * doing: a kind with no `bytes` field has no member of that union but `'none'`,
+ * so declaring an asset on a command that has none is a compile error rather
+ * than a transport looking for a file at run time.
+ *
+ * Every command declares it, including the twenty-three that answer `'none'`.
+ */
+export interface AssetRouting<K extends CommandKind> {
+  readonly asset: CommandAsset<K>;
+}
+
+/**
  * Can this be undone, and what does undoing it cost?
  *
  * The consequence is part of the declaration because §4 spends it: a log entry
@@ -180,6 +202,7 @@ export type CommandDeclaration<K extends CommandKind> = {
   SourceRouting &
   TargetRouting &
   ReadRouting &
+  AssetRouting<K> &
   Invertibility &
   Reproducibility;
 
@@ -230,6 +253,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   setLayerVisibility: {
     kind: 'setLayerVisibility',
@@ -262,6 +286,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   movePage: {
     kind: 'movePage',
@@ -294,6 +319,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   deletePages: {
     kind: 'deletePages',
@@ -325,6 +351,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   duplicatePage: {
     kind: 'duplicatePage',
@@ -353,6 +380,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   swapPages: {
     kind: 'swapPages',
@@ -378,6 +406,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   insertBlankPage: {
     kind: 'insertBlankPage',
@@ -404,6 +433,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   cropPages: {
     kind: 'cropPages',
@@ -431,6 +461,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   watermarkPages: {
     kind: 'watermarkPages',
@@ -480,6 +511,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   headerFooterPages: {
     kind: 'headerFooterPages',
@@ -509,6 +541,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   batesNumberPages: {
     kind: 'batesNumberPages',
@@ -537,6 +570,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   setPageTransition: {
     kind: 'setPageTransition',
@@ -568,6 +602,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   setPageBackground: {
     kind: 'setPageBackground',
@@ -594,6 +629,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   resizePages: {
     kind: 'resizePages',
@@ -626,6 +662,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   insertImagePage: {
     kind: 'insertImagePage',
@@ -654,6 +691,7 @@ const declarations = {
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
+    asset: 'none',
   },
   generateToc: {
     kind: 'generateToc',
@@ -692,6 +730,7 @@ const declarations = {
     // destination resolved through the name tree, an entry with no reachable
     // page.
     reads: 'outline',
+    asset: 'none',
   },
   mergeDocument: {
     kind: 'mergeDocument',
@@ -726,6 +765,7 @@ const declarations = {
     // Needs nothing read through another engine. Both sessions are MuPDF's, and
     // everything this composes is in the two page trees it already holds.
     reads: 'none',
+    asset: 'none',
   },
   replacePage: {
     kind: 'replacePage',
@@ -748,6 +788,7 @@ const declarations = {
     targets: 'none',
     // Nothing read through another engine.
     reads: 'none',
+    asset: 'none',
   },
   addAnnotation: {
     kind: 'addAnnotation',
@@ -785,6 +826,7 @@ const declarations = {
     // Reads nothing through another engine. The page's boxes and rotation come
     // from the session this apply is already holding.
     reads: 'none',
+    asset: 'none',
   },
   removeAnnotation: {
     kind: 'removeAnnotation',
@@ -821,6 +863,7 @@ const declarations = {
     // Reads nothing through another engine. The walk it resolves against is the
     // session's own.
     reads: 'none',
+    asset: 'none',
   },
   placeAnnotation: {
     kind: 'placeAnnotation',
@@ -852,6 +895,45 @@ const declarations = {
     targets: 'annotation',
     // Reads nothing through another engine.
     reads: 'none',
+    asset: 'none',
+  },
+  placeImage: {
+    kind: 'placeImage',
+    // `addAnnotation`'s classification and its exact argument: a `/Stamp` is an
+    // object in `/Annots` carrying its own appearance stream, and that is what
+    // makes it selectable, movable and erasable afterwards. Drawing the image
+    // into `/Contents` through the byte-image writer produces a page that
+    // renders identically and has no annotation in it, which is the whole of
+    // what this row asks for.
+    //
+    // The pdf-lib route was EXECUTED before this was written and it works —
+    // ADR-0044 records five readings. It loses on cost, not capability.
+    writer: 'mupdf',
+    // `addAnnotation`'s reason, unchanged: the operation that removes an
+    // annotation exists, and an inverse spelt "the last stamp on the page"
+    // would depend on the log's ordering rather than on captured state.
+    invertible: false,
+    undo: 'checkpoint',
+    // MEASURED, not assumed, for `addAnnotation`'s reason — and this one has a
+    // second way to fail that the others do not. The image XObject is written
+    // by `addImage`, so a name or an object identifier minted per call would
+    // put randomness in the bytes where the annotation rows have none.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second document. The image is in its own payload.
+    sources: 'none',
+    // Self-contained. It names pages by index and nothing that a walk answered,
+    // so there is no earlier answer it could be stale against — the same reason
+    // `addAnnotation` declares `'none'` where `placeAnnotation` cannot.
+    targets: 'none',
+    // Reads nothing through another engine.
+    reads: 'none',
+    // THE ONE COMMAND THAT ANSWERS ANYTHING ELSE (ADR-0044). Its bytes cannot
+    // cross the engine host's wire, which is JSON: a `Uint8Array` arrives as an
+    // object of numeric keys and this command's own schema refines it away. So
+    // the transport writes them into the directory `engine/open` already grants
+    // the host READ on, and puts them back before the apply is called.
+    asset: 'image',
   },
   styleAnnotation: {
     kind: 'styleAnnotation',
@@ -875,6 +957,7 @@ const declarations = {
     // version, as `removeAnnotation`'s and `placeAnnotation`'s do.
     targets: 'annotation',
     reads: 'none',
+    asset: 'none',
   },
   addLink: {
     kind: 'addLink',
@@ -900,6 +983,7 @@ const declarations = {
     targets: 'none',
     // Reads nothing through another engine.
     reads: 'none',
+    asset: 'none',
   },
 } satisfies CommandDeclarations;
 

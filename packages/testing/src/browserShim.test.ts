@@ -199,6 +199,7 @@ describe('browser shim', () => {
       'document.open',
       'document.openRecent',
       'document.pageLinks',
+      'document.placeImage',
       'document.readRange',
       'document.recent',
       'document.save',

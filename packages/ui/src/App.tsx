@@ -17,6 +17,7 @@ import {
 
 import {
   applyDocumentCommand,
+  placeImage,
   snapshotRegion,
   findCommand,
   fitCommand,
@@ -904,6 +905,24 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Where a dragged box for an image goes.
+   *
+   * {@link onSnapshot}'s shape and the opposite reason: this DOES change the
+   * document, and it is still a channel call rather than a command, because the
+   * command carries an image the renderer may not hold and main mints it
+   * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+   * `placeImage` is where the version and the dropped-history dialog are
+   * handled, beside every other write's.
+   */
+  const onPlaceImage = useCallback(
+    (page: number, rect: AnnotationRect): void => {
+      if (activeId === undefined) return;
+      void placeImage({ client, ask, onApplied: applied }, activeId, page, rect);
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
    * Restyling everything the select tool has picked.
    *
    * `removeSelection`'s shape with an appearance instead of a deletion, and the
@@ -959,9 +978,10 @@ export function App({ client, settings }: AppProps): ReactElement {
           style,
           scale,
           onSnapshot,
+          onPlaceImage,
         }),
       ),
-    [ask, listAnnotations, onSnapshot, readSelection, scale, style],
+    [ask, listAnnotations, onPlaceImage, onSnapshot, readSelection, scale, style],
   );
 
   const rulers = useSetting(settings, RULERS_SETTING);

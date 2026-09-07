@@ -26,7 +26,11 @@ const held = (marker: string): HostSession =>
   // The session token is opaque to this module — it stores and returns it — so
   // a branded stand-in is enough and a real MuPDF session would drag a native
   // library into a test about a Map.
-  ({ session: { engine: 'mupdf' } as HostSession['session'], outputDirectory: marker });
+  ({
+    session: { engine: 'mupdf' } as HostSession['session'],
+    outputDirectory: marker,
+    snapshotDirectory: marker,
+  });
 
 /** A source that returns the same bytes every time. */
 function repeating(byte: number): () => Uint8Array {

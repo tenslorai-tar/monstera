@@ -1,6 +1,8 @@
 import {
   type CommandKind,
+  type CommandOfKind,
   addAnnotationSchema,
+  placeImageSchema,
   MAX_ANNOTATION_BORDER,
   addLinkSchema,
   annotationKindNameSchema,
@@ -25,6 +27,7 @@ import {
 import { z } from 'zod';
 
 import type { CommandPrior } from '../commandLog.js';
+import { declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 
@@ -527,9 +530,112 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
+  // WITHOUT ITS IMAGE, and this is the only member that differs from the kernel's
+  // own schema for its kind
+  // ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+  // This wire is JSON — `client.ts` frames `JSON.stringify` and `runtime.ts`
+  // parses it — so a `Uint8Array` arrives as an object of numeric keys and
+  // `placeImageSchema`'s own `instanceof` refines it away. The bytes travel the
+  // granted directory instead, named by `asset` on the call.
+  //
+  // `.omit` rather than a second schema written out, because two hand-kept
+  // shapes for one command would be a second opinion about what that command is
+  // (B3a) — and the derivation is in the direction 4c allows: a field added to
+  // the payload arrives here on its own, and the one field removed is named.
+  placeImageSchema.omit({ bytes: true }),
   styleAnnotationSchema,
   addLinkSchema,
 ]);
+
+/** What travels in place of a command, once its asset has been taken out. */
+export type MupdfWireCommand = z.infer<typeof mupdfCommandSchema>;
+
+/**
+ * Splits a command into what crosses the wire and what does not.
+ *
+ * **The axis decides, not the kind.** `declaredCommands` is where a command
+ * says whether it carries an asset, so this reads that rather than naming
+ * `placeImage` — which would be a second opinion about a question the
+ * declaration table owns, and one that agrees with it until somebody adds the
+ * next image-carrying command.
+ *
+ * One function for both `engine/apply` and `engine/capture`, because a capture
+ * carries the same command and has the same reason not to carry its bytes.
+ */
+export function splitAsset(command: CommandOfKind<KindsRoutedTo<'mupdf'>>): {
+  readonly command: MupdfWireCommand;
+  readonly asset: Uint8Array | undefined;
+} {
+  if (declaredCommands[command.kind].asset === 'none') {
+    return { command, asset: undefined };
+  }
+  // A NARROWING, NOT A CAST. `CommandAsset<K>` admits `'image'` only for a kind
+  // whose payload has `bytes`, so this cannot be false — and writing it as a
+  // check means the day the axis gains a third member the compiler asks here
+  // instead of a `Uint8Array` reaching `JSON.stringify` unremarked.
+  if (!('bytes' in command)) {
+    throw new Error(
+      `"${command.kind}" declares an asset and carries no bytes to send. The declaration and the ` +
+        `payload have diverged, which CommandAsset exists to make impossible.`,
+    );
+  }
+  const { bytes, ...rest } = command;
+  return { command: rest, asset: bytes };
+}
+
+/**
+ * Which kinds declare an asset — **derived from the declaration table**, so a
+ * command that starts carrying one appears here without anybody editing this.
+ *
+ * The alternative is a union written out, and it fails in 4c's dangerous
+ * direction: the danger is a kind arriving, which a hand-kept list is blind to,
+ * and the symptom would be an image silently reaching `JSON.stringify`.
+ */
+type AssetBearingKind = {
+  [K in keyof typeof declaredCommands]: (typeof declaredCommands)[K]['asset'] extends 'none'
+    ? never
+    : K;
+}[keyof typeof declaredCommands];
+
+/**
+ * Whether the command that arrived is one whose bytes were taken out.
+ *
+ * A type predicate, which is a claim — and both halves of this one come from
+ * `declaredCommands`, the type from its `asset` fields and the answer from the
+ * same fields at run time, so they cannot disagree with each other or with what
+ * {@link splitAsset} decided on the other side of the pipe.
+ */
+function carriesAsset(
+  command: MupdfWireCommand,
+): command is Extract<MupdfWireCommand, { kind: AssetBearingKind }> {
+  return declaredCommands[command.kind].asset !== 'none';
+}
+
+/**
+ * Puts an asset back into the command it was taken out of — {@link splitAsset}
+ * read backwards, on the host's side of the wire.
+ *
+ * @returns the whole command, or `undefined` when one that needs an asset
+ *   arrived without its bytes. That is an OUTCOME rather than a throw because
+ *   the handler answers it as `asset-missing`: the file main named is not in
+ *   the directory this session reads, which is a defect on main's side, and a
+ *   distinguishable answer is what stops the supervisor reading it as a sick
+ *   host.
+ */
+export function joinAsset(
+  command: MupdfWireCommand,
+  asset: Uint8Array | undefined,
+): CommandOfKind<KindsRoutedTo<'mupdf'>> | undefined {
+  if (!carriesAsset(command)) {
+    // AN ASSET FOR A COMMAND THAT DECLARED NONE is a peer contradicting the
+    // declaration table, and this host's peer is main rather than the hostile
+    // side — so it is our own defect and refused as one rather than ignored,
+    // which would apply a command whose sender believed it carried bytes.
+    return asset === undefined ? command : undefined;
+  }
+  if (asset === undefined) return undefined;
+  return { ...command, bytes: asset };
+}
 
 /**
  * The list above is **exactly** `KindsRoutedTo<'mupdf'>`, checked in both
@@ -1018,17 +1124,54 @@ export const engineChannels = {
          * closed source is the same ordinary race as a closed target.
          */
         source: sessionSchema.optional(),
+        /**
+         * The file in this session's snapshot directory holding the command's
+         * bytes, for a `asset: 'image'` command
+         * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+         *
+         * **A NAME, and the directory is the one this session was opened
+         * from** — the host already holds it, so nothing here lets a caller
+         * name a place. That is the same shape `engine/open`'s `snapshotName`
+         * has and deliberately so: an asset arrives by the door the document
+         * arrived by, in the direction the host may only read.
+         *
+         * Optional because twenty-three of the twenty-four MuPDF-routed
+         * commands carry no asset, and `.optional()` rather than nullable for
+         * `source`'s reason — a field absent from the message, not a value that
+         * may be null.
+         */
+        asset: outputNameSchema.optional(),
       })
       .strict(),
     z.object({}).strict(),
-    ['no-such-session'],
+    ['no-such-session', 'asset-missing'],
   ),
 
   'engine/capture': channel(
     'Reads prior state for one MuPDF-routed command, before it is applied.',
-    z.object({ session: sessionSchema, command: mupdfCommandSchema }).strict(),
+    z
+      .object({
+        session: sessionSchema,
+        command: mupdfCommandSchema,
+        /**
+         * `engine/apply`'s field, and a capture needs it for a reason that is
+         * not the obvious one: **no capture reads an asset** — prior state is
+         * what was there before, and bytes arriving with the command are not
+         * that. It is here because the command must be whole to be handed to
+         * `CommandExecution.capture`, whose parameter is the command.
+         *
+         * So this costs one extra write and read of the image per placement,
+         * and the alternative was measured against and rejected on shape rather
+         * than on cost: keeping the file alive from capture until apply makes
+         * its lifetime span two calls, and a capture with no apply after it —
+         * a refusal, a closed document, a dead host — leaks it with nothing
+         * left holding the name.
+         */
+        asset: outputNameSchema.optional(),
+      })
+      .strict(),
     captureResultSchema,
-    ['no-such-session'],
+    ['no-such-session', 'asset-missing'],
   ),
 
   'engine/invert': channel(
@@ -1073,4 +1216,11 @@ export type EngineFailureCode =
   // page the document does not have, a page that displays no region, a region
   // with no extent, a scale outside its bounds. None of them says anything
   // about the host's health.
-  | 'snapshot-failed';
+  | 'snapshot-failed'
+  // OURS, and it is the only code here that is. The asset a command named is
+  // not in the directory this session reads, which means main wrote it and it
+  // went, or main did not write it at all — a defect on our side of the pipe
+  // either way. It is a code rather than a throw because the alternative is the
+  // handler calling an apply with no bytes to give it, and a distinguishable
+  // answer is what stops the supervisor reading our own bug as a sick host.
+  | 'asset-missing';

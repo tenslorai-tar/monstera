@@ -271,6 +271,40 @@ export type CommandSources = 'none' | 'one';
 export type CommandTargets = 'none' | 'annotation';
 
 /**
+ * Does this command carry BYTES that cannot travel on the wire the writer is
+ * reached over
+ * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md))?
+ *
+ * ## It touches neither `Apply` nor the bus, and that is the point
+ *
+ * {@link CommandSources} changes what an apply is handed; {@link CommandTargets}
+ * changes what the bus does before applying. This one changes neither. An
+ * `apply` receives the whole command, bytes included, exactly as it always has,
+ * and every kernel caller is unmoved — the field leaves the payload in the
+ * **transport** and is put back before the handler calls anything.
+ *
+ * So the axis is read by two modules that already are the transport, and by
+ * nothing else. Declaring it here rather than inferring it from a payload that
+ * happens to hold a `Uint8Array` is {@link CommandSources}' argument one axis
+ * along: a command that carries bytes is not the same statement as a command
+ * whose bytes must leave the wire, and reading one off the other is the partial
+ * reimplementation B3a is about. `insertImagePage` is the proof of that
+ * distinction — it carries an image and declares `'none'`, because a byte-image
+ * writer runs in main and its wire is a function call.
+ *
+ * ## Conditional on the command, so the illegal state cannot be written
+ *
+ * A kind whose payload has no `bytes` field cannot declare `'image'`: there is
+ * no member of this union for it but `'none'`. That is B5 over a rule the
+ * transport would otherwise have to enforce at runtime, where the failure is a
+ * command whose asset the handler looks for and does not find — after the
+ * frame has been sent.
+ */
+export type CommandAsset<K extends CommandKind> =
+  | 'none'
+  | (CommandOfKind<K> extends { readonly bytes: Uint8Array } ? 'image' : never);
+
+/**
  * What a command's apply is handed that it could not read for itself.
  *
  * ADR-0040's 2026-09-05 extension. Decision 3 established the shape — *the bus

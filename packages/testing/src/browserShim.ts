@@ -218,6 +218,17 @@ export interface BrowserShimOptions {
    */
   readonly insertedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
   /**
+   * What the image picker answers, for `document.placeImage`.
+   *
+   * **A separate option from `insertedImage`**, where `document.extract` and
+   * `document.saveCopy` deliberately share one: those two run the same
+   * destination path in production, and these two do not — an inserted image
+   * becomes a page through `@cantoo/pdf-lib` and a placed one becomes a
+   * `/Stamp` through MuPDF. A shared switch would let a case configure the
+   * insert and exercise the placement.
+   */
+  readonly placedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
+  /**
    * The bytes each document is readable as, by id.
    *
    * **Real bytes rather than a generator**, because the one caller that matters
@@ -650,6 +661,36 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           kind: 'inserted' as const,
+          version,
+          byteLength: chosen.byteLength,
+          historyDropped: 0,
+        }),
+      );
+    },
+    /**
+     * The image placement, with `document.insertImage`'s outcome discipline.
+     *
+     * The pages and the rectangle are ignored here, for the reason the extract
+     * below states about its pages: what a browser-shim case can assert is
+     * which channel the control reached and with what arguments, and whether a
+     * `/Stamp` appears on those pages is the kernel's case.
+     */
+    'document.placeImage': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.placedImage;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
+      if (chosen === 'too-large') {
+        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES }));
+      }
+      const version = asDocVersion(current + 1);
+      versions.set(docId, version);
+      return Promise.resolve(
+        ok({
+          kind: 'placed' as const,
           version,
           byteLength: chosen.byteLength,
           historyDropped: 0,

@@ -430,6 +430,34 @@ const STYLE_SPEC = `  styleAnnotation: {
     reads: 'none',
   },`;
 
+/**
+ * The only command that declares an asset
+ * ([ADR-0044](../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)),
+ * and **`asset` does not appear here**, which is the axis working rather than a
+ * gap.
+ *
+ * `CommandSpec` is `kind` plus the writer binding plus the two undo axes.
+ * `sources` and `reads` are in it because `Apply` is conditional on them;
+ * `targets` and `asset` are not, because neither changes any signature — the
+ * bus branches on one before it reaches this table and the transport reads the
+ * other two modules away. The real table spreads the declaration, which carries
+ * both in without an excess-property check; a fixture that spells them out
+ * meets one, and the first spelling of this constant did.
+ */
+const PLACE_IMAGE_SPEC = `  placeImage: {
+    kind: 'placeImage',
+    writer: 'mupdf',
+    apply: applyPlaceImage,
+    capture: capturePlaceImage,
+    invert: invertPlaceImage,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -542,6 +570,9 @@ const SPEC_IMPORTS = `import {
   applyStyleAnnotation,
   captureStyleAnnotation,
   invertStyleAnnotation,
+  applyPlaceImage,
+  capturePlaceImage,
+  invertPlaceImage,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -620,6 +651,7 @@ export const handlers: ContractHandlers = {
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -681,6 +713,7 @@ export const handlers: ContractHandlers = {
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -817,6 +850,7 @@ export const shim: ContractClient = {
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),
   'document.viewModel': () =>
@@ -960,6 +994,7 @@ ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
+${PLACE_IMAGE_SPEC}
 };
 `,
   },
@@ -992,7 +1027,7 @@ ${STYLE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'styleAnnotation' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'placeImage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1034,6 +1069,7 @@ ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
+${STYLE_SPEC}
 };
 `,
   },
@@ -1142,6 +1178,7 @@ ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
+${PLACE_IMAGE_SPEC}
 };
 `,
   },
@@ -1188,6 +1225,7 @@ ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
+${PLACE_IMAGE_SPEC}
 };
 `,
   },
@@ -1243,6 +1281,7 @@ ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
+${PLACE_IMAGE_SPEC}
 };
 `,
   },
@@ -1294,6 +1333,7 @@ ${REMOVE_SPEC}
 ${PLACE_SPEC}
 ${LINK_SPEC}
 ${STYLE_SPEC}
+${PLACE_IMAGE_SPEC}
 };
 `,
   },
@@ -2169,7 +2209,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 18 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 19 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

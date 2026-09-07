@@ -12,6 +12,7 @@ import {
 } from '@cantoo/pdf-lib';
 import type { AnnotationDraft, AnnotationRect, CommandOfKind } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
+import { ColorSpace, Pixmap } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
@@ -20,10 +21,12 @@ import type { ListedAnnotation } from './pageAnnotations.js';
 import {
   applyAddAnnotation,
   applyPlaceAnnotation,
+  applyPlaceImage,
   applyRemoveAnnotation,
   applyStyleAnnotation,
   captureAddAnnotation,
   capturePlaceAnnotation,
+  capturePlaceImage,
   captureRemoveAnnotation,
   captureStyleAnnotation,
   readAnnotations,
@@ -89,6 +92,7 @@ async function fixture({
   field,
   claimsAuthored,
   unplaceable,
+  pages,
 }: {
   readonly crop?: readonly number[];
   readonly rotate?: number;
@@ -106,9 +110,18 @@ async function fixture({
    * not a state this build can produce.
    */
   readonly unplaceable?: boolean;
+  /**
+   * How many pages, for the one command that names several.
+   *
+   * The extras go **after** the first, so every existing case sees the document
+   * it always saw — a fixture option that moved page 0 would change what a
+   * hundred cases are about while looking like an addition.
+   */
+  readonly pages?: number;
 } = {}): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([...MEDIA]);
+  for (let extra = 1; extra < (pages ?? 1); extra += 1) document.addPage([...MEDIA]);
   if (field === true) {
     // A WIDGET, WHICH IS AN ANNOTATION THE WALK DOES NOT RETURN. It goes on the
     // page FIRST so that every index below it shifts — a field added after the
@@ -2541,6 +2554,213 @@ describe('applyAddAnnotation writes a measurement', () => {
     // both axes would refuse a horizontal distance, which is the commonest
     // thing anybody measures. `DISTANCE` is exactly that run.
     expect(await label(DISTANCE)).toBe('50.0 mm');
+  });
+});
+
+describe('applyPlaceImage', () => {
+  /**
+   * A small PNG, deliberately not square and not a round number.
+   *
+   * `7x3` is a reading only the right XObject produces, where `1x1` is what
+   * half the wrong ones produce too — item 4's *never build a fixture the bug
+   * also handles correctly*, applied to a dimension rather than to a document.
+   */
+  function png(): Uint8Array {
+    const pixmap = new Pixmap(ColorSpace.DeviceRGB, [0, 0, 7, 3], false);
+    pixmap.clear(200);
+    return pixmap.asPNG();
+  }
+
+  const BOX: AnnotationRect = { x0: 20, y0: 40, x1: 120, y1: 90 };
+
+  function placement(
+    overrides: Partial<CommandOfKind<'placeImage'>> = {},
+  ): CommandOfKind<'placeImage'> {
+    return { kind: 'placeImage', pages: [0], rect: BOX, bytes: png(), ...overrides };
+  }
+
+  /** Applies a placement to a fixture and returns the resulting bytes. */
+  async function placedOn(
+    bytes: Uint8Array,
+    given: CommandOfKind<'placeImage'> = placement(),
+  ): Promise<Uint8Array> {
+    return await onSession(bytes, async (session) => {
+      await applyPlaceImage(session, given);
+      return await mupdfWriter.serialise(session);
+    });
+  }
+
+  /**
+   * Every annotation on a page, read with pdf-lib.
+   *
+   * The reading goes all the way down to `/Subtype /Image`, which is the point:
+   * a `/Stamp` whose appearance names nothing draws nothing, and an assertion
+   * that stopped at *there is a stamp* would pass for it.
+   */
+  async function stampsOn(
+    bytes: Uint8Array,
+    page: number,
+  ): Promise<{ subtype: string; images: string[] }[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[page]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) return [];
+    return annots.asArray().map((entry) => {
+      const dict = entry instanceof PDFRef ? document.context.lookup(entry, PDFDict) : undefined;
+      if (dict === undefined) throw new Error('the /Annots entry is not a dictionary');
+      const subtype = dict.lookup(PDFName.of('Subtype'));
+      const appearance = dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+      const resources =
+        appearance instanceof PDFStream
+          ? appearance.dict.lookup(PDFName.of('Resources'), PDFDict)
+          : undefined;
+      const xobjects = resources?.lookup(PDFName.of('XObject'), PDFDict);
+      const images: string[] = [];
+      for (const [, value] of xobjects?.entries() ?? []) {
+        const object = value instanceof PDFRef ? document.context.lookup(value) : value;
+        if (!(object instanceof PDFStream)) continue;
+        if (object.dict.lookup(PDFName.of('Subtype')) !== PDFName.of('Image')) continue;
+        const width = object.dict.lookup(PDFName.of('Width'), PDFNumber).asNumber();
+        const height = object.dict.lookup(PDFName.of('Height'), PDFNumber).asNumber();
+        images.push(`${String(width)}x${String(height)}`);
+      }
+      return { subtype: subtype instanceof PDFName ? subtype.asString() : 'none', images };
+    });
+  }
+
+  it('WRITES A /Stamp WHOSE APPEARANCE DRAWS THE IMAGE, read back with pdf-lib', async () => {
+    // The whole feature in one reading, and the `7x3` is what makes it one: a
+    // stamp carrying somebody else's XObject, or an appearance MuPDF
+    // regenerated into a blank, both answer this differently.
+    expect(await stampsOn(await placedOn(await fixture()), 0)).toEqual([
+      { subtype: '/Stamp', images: ['7x3'] },
+    ]);
+  });
+
+  it('MARKS IT AS THIS BUILD S, which the walk is what reads', async () => {
+    // ADR-0043's mark, at the second creation site. Without it the stamp reads
+    // as foreign and the eraser and select tools refuse to touch it — which is
+    // a defect nothing about the drawing would show.
+    const listed = await onSession(await placedOn(await fixture()), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations.map((entry) => entry.authored)).toEqual([true]);
+  });
+
+  /** How many image XObjects the whole document holds. */
+  async function imageObjects(bytes: Uint8Array): Promise<number> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    return document.context
+      .enumerateIndirectObjects()
+      .filter(
+        ([, object]) =>
+          object instanceof PDFStream &&
+          object.dict.lookup(PDFName.of('Subtype')) === PDFName.of('Image'),
+      ).length;
+  }
+
+  it('STAMPS EVERY NAMED PAGE, and the document holds ONE image for all of them', async () => {
+    // ## This case says less than it looks like it says, and the note is the
+    // point
+    //
+    // It was written to hold the apply's `addImage` outside its loop, and it
+    // cannot: moving the call INSIDE the loop leaves all 127 cases green,
+    // measured 2026-09-07. MuPDF 1.28.0 deduplicates by content, so one image
+    // object is what both spellings produce and this assertion separates
+    // nothing about our code.
+    //
+    // It is kept because it pins the ENGINE's behaviour, which is the thing the
+    // document's size actually depends on: a MuPDF that stopped deduplicating
+    // would turn a 3 MB stamp on forty pages into a 120 MB document, and this
+    // is the only line anywhere that would notice. A case whose subject is the
+    // dependency rather than the caller — said here so the next reader does not
+    // mutate the hoist, see green, and conclude the hoist is dead.
+    //
+    // The first spelling was worse still: it compared two documents' SIZES and
+    // asserted the gap was under a kilobyte, which a per-page embed satisfies
+    // too because this PNG is about a hundred bytes. Item 4's *never build a
+    // fixture the bug also handles correctly*, twice over.
+    const all = await placedOn(await fixture({ pages: 3 }), placement({ pages: [0, 1, 2] }));
+
+    for (const page of [0, 1, 2]) {
+      expect(await stampsOn(all, page)).toEqual([{ subtype: '/Stamp', images: ['7x3'] }]);
+    }
+    expect(await imageObjects(all)).toBe(1);
+  });
+
+  it('LEAVES A PAGE IT WAS NOT GIVEN ALONE, so "every page" is not what it does', async () => {
+    // The control for the case above. Without it, an apply that ignored `pages`
+    // and stamped all three would satisfy every assertion there.
+    const some = await placedOn(await fixture({ pages: 3 }), placement({ pages: [0, 2] }));
+    expect(await stampsOn(some, 1)).toEqual([]);
+    expect(await stampsOn(some, 2)).toEqual([{ subtype: '/Stamp', images: ['7x3'] }]);
+  });
+
+  it('REFUSES A DUPLICATE PAGE, because two stamps in one box cannot be told apart', async () => {
+    await expect(placedOn(await fixture(), placement({ pages: [0, 0] }))).rejects.toThrow(
+      /same page/u,
+    );
+  });
+
+  it('REFUSES A PAGE THIS DOCUMENT DOES NOT HAVE, and writes nothing at all', async () => {
+    // THE WHOLE-OR-NOTHING CASE, and page 0 is what makes it one: a refusal
+    // that had already written page 0's stamp would leave a document the user
+    // has to clean up, and every assertion about the throw would still pass.
+    const three = await fixture({ pages: 3 });
+    const session = await mupdfWriter.open(three);
+    try {
+      await expect(applyPlaceImage(session, placement({ pages: [0, 9] }))).rejects.toThrow(
+        /outside this/u,
+      );
+      expect(await stampsOn(await mupdfWriter.serialise(session), 0)).toEqual([]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('REFUSES BYTES THAT ARE NOT AN IMAGE, which is what validates the file', async () => {
+    // The decoder is the validation — there is no media type on this command,
+    // and this is the case that says the absent field costs nothing.
+    await expect(
+      placedOn(await fixture(), placement({ bytes: new Uint8Array([1, 2, 3, 4]) })),
+    ).rejects.toThrow();
+  });
+
+  it('CONTROL: the fixture carries no stamp of its own', async () => {
+    // Without this every reading above is *the document has a stamp*, which the
+    // fixture could have supplied. It cannot.
+    expect(await stampsOn(await fixture(), 0)).toEqual([]);
+  });
+});
+
+describe('capturePlaceImage', () => {
+  it('refuses, naming the handle rather than the operation', async () => {
+    const result = await onSession(await fixture(), (session) =>
+      capturePlaceImage(session, {
+        kind: 'placeImage',
+        pages: [0],
+        rect: { x0: 20, y0: 40, x1: 120, y1: 90 },
+        bytes: new Uint8Array([0]),
+      }),
+    );
+    expect(result.captured).toBe(false);
+    if (result.captured) throw new Error('unreachable: the capture asserted false above');
+    expect(result.reason).toMatch(/handle/u);
+  });
+
+  it('still throws for a page index this document does not have', async () => {
+    // `captureAddAnnotation`'s reason, and the bytes are deliberately not an
+    // image: a capture that decoded one would be doing the apply's work, and
+    // this case would be the only thing that could tell.
+    await expect(
+      onSession(await fixture(), (session) =>
+        capturePlaceImage(session, {
+          kind: 'placeImage',
+          pages: [9],
+          rect: { x0: 20, y0: 40, x1: 120, y1: 90 },
+          bytes: new Uint8Array([0]),
+        }),
+      ),
+    ).rejects.toThrow(/outside this/u);
   });
 });
 

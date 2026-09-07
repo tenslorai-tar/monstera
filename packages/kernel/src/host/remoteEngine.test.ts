@@ -22,6 +22,7 @@ import {
   EngineSessionGone,
   remoteMupdfExecution,
   remoteMupdfGeometry,
+  type SessionAssets,
   UnknownRemoteSession,
 } from './remoteEngine.js';
 
@@ -58,6 +59,26 @@ beforeAll(async () => {
  */
 const AREA = { snapshotDirectory: 'in', outputDirectory: 'out' };
 
+/**
+ * An asset surface that refuses to be used.
+ *
+ * Every command in this file declares `asset: 'none'`, so a stub that THROWS is
+ * the assertion: an execution that reached for the filesystem on a command
+ * carrying no bytes would fail here rather than pass quietly with a file
+ * nobody asked for. A stub answering politely would separate nothing.
+ */
+const NO_ASSETS: SessionAssets = {
+  write: () => {
+    throw new Error('no command in this file carries an asset');
+  },
+  remove: () => {
+    throw new Error('no command in this file carries an asset');
+  },
+  name: () => {
+    throw new Error('no command in this file carries an asset');
+  },
+};
+
 /** Every page of the three-page fixture, in order. */
 const ALL_PAGES = [0, 1, 2];
 
@@ -92,7 +113,14 @@ async function joined(): Promise<{
 }> {
   const session = await mupdfWriter.open(flat);
   const held = new Map<string, HostSession>([
-    ['h1', { session, outputDirectory: 'no directory: the execution half writes no bytes' }],
+    [
+      'h1',
+      {
+        session,
+        outputDirectory: 'no directory: the execution half writes no bytes',
+        snapshotDirectory: 'no directory: no command here carries an asset',
+      },
+    ],
   ]);
 
   const incidents: Incident[] = [];
@@ -166,7 +194,7 @@ async function joined(): Promise<{
   return {
     session,
     token: sessions.adopt('h1', AREA),
-    remote: remoteMupdfExecution(client, sessions),
+    remote: remoteMupdfExecution(client, sessions, NO_ASSETS),
     geometry: remoteMupdfGeometry(client, sessions),
     sessions,
     requests: () => requests,
@@ -358,7 +386,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       engineChannels,
       createEngineHandlers({
         sessions: {
-          lookup: () => ({ session, outputDirectory: 'unused' }),
+          lookup: () => ({ session, outputDirectory: 'unused', snapshotDirectory: 'unused' }),
           issue: () => {
             throw new Error('unused');
           },
@@ -424,7 +452,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     );
     const sessions = createRemoteSessions();
     const client = createClient(engineChannels, async (id, params) => wrapped[id](params));
-    const remote = remoteMupdfExecution(client, sessions);
+    const remote = remoteMupdfExecution(client, sessions, NO_ASSETS);
 
     try {
       await expect(remote.apply(sessions.adopt('h1', AREA), rotateFirst)).rejects.toThrow(
@@ -456,7 +484,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       engineChannels,
       createEngineHandlers({
         sessions: {
-          lookup: () => ({ session, outputDirectory: 'unused' }),
+          lookup: () => ({ session, outputDirectory: 'unused', snapshotDirectory: 'unused' }),
           issue: () => {
             throw new Error('unused');
           },

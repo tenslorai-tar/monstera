@@ -291,6 +291,59 @@ export async function snapshotRegion(
 }
 
 /**
+ * Places a picked image in a dragged box, as a stamp.
+ *
+ * ## Here rather than in the component, for {@link snapshotRegion}'s reason
+ *
+ * It IS a command and it still cannot be sent as one: `placeImage` carries an
+ * image, so `renderableCommandSchema` has it removed and main mints it
+ * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+ * That makes this the same shape as the snapshot above — a channel with its own
+ * outcome union — and it differs in the tail, because a placement DOES change
+ * the document: `onApplied` runs, and invariant 18's dropped-history dialog
+ * with it, exactly as {@link applyDocumentCommand} does them.
+ *
+ * The two failures a person can act on are the picker's:
+ * `insertImageCommand`'s dialog says what happened to a file that could not be
+ * read or was too large, and it is reused rather than copied — the outcomes are
+ * the same two and a second dialog would be a second wording for them.
+ */
+export async function placeImage(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'>,
+  docId: DocId,
+  page: number,
+  rect: AnnotationRect,
+): Promise<void> {
+  const answer = await deps.client['document.placeImage']({ docId, pages: [page], rect });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return;
+  }
+  if (answer.value.kind === 'cancelled') return;
+  if (answer.value.kind === 'unreadable') {
+    void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'unreadable' as const });
+    return;
+  }
+  if (answer.value.kind === 'too-large') {
+    void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, {
+      reason: 'too-large' as const,
+      limitBytes: answer.value.limitBytes,
+    });
+    return;
+  }
+  // THE TWO SCALARS, not the whole answer: `Applied` is a version and a byte
+  // length, and handing the outcome object over would put `kind` and
+  // `historyDropped` into the view's rebuild for whoever reads it next.
+  deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+
+  // INVARIANT 18, after `onApplied` and guarded on a positive count for
+  // `applyDocumentCommand`'s reason: the dialog's schema refuses zero.
+  if (answer.value.historyDropped > 0) {
+    void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
+  }
+}
+
+/**
  * Rotates the page on screen a quarter turn clockwise.
  *
  * ## The current page, which stopped being a constant on 2026-09-02

@@ -25,7 +25,7 @@ import type {
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
-import { withDocument } from './mupdfWriter.js';
+import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
 
@@ -1168,6 +1168,143 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
   });
 
 /**
+ * The resource name the appearance stream reaches its image by.
+ *
+ * Private to the stream it appears in — a `/Resources` dictionary is scoped to
+ * the stream that names it, so this cannot collide with anything in the
+ * document however many stamps a page carries.
+ */
+const STAMP_IMAGE_NAME = 'Im0';
+
+/**
+ * Places one image on each of several pages, as a `/Stamp`.
+ *
+ * ## THE APPEARANCE IS WRITTEN, NOT SYNTHESISED, and that is the whole of it
+ *
+ * Every other annotation here ends with `annotation.update()`, which asks MuPDF
+ * to draw the appearance from the properties just set. There is no property
+ * that means *this image*, so a stamp's appearance is a content stream we write
+ * — `q w 0 0 h 0 0 cm /Im0 Do Q` against a `/Resources` naming the XObject
+ * `addImage` returned — and `update()` is not called afterwards because there
+ * is nothing for it to synthesise.
+ *
+ * **Not because it would erase this one**, which is what this comment claimed
+ * before anyone tried it. Measured 2026-09-07 on MuPDF 1.28.0: calling
+ * `update()` after `setAppearance` leaves the written appearance intact, image
+ * and all. The risk was reasoned and the reading says it is not there — worth
+ * having, because the next person to meet a stamp with no `update()` beside
+ * eleven that have one will ask exactly this.
+ *
+ * ## One decode, several annotations — and the obvious reason for it is false
+ *
+ * `addImage` and the decode run once, outside the loop, and every page's
+ * appearance names the object it answered.
+ *
+ * **The reason this comment first gave was that the alternative embeds a copy
+ * of the photograph per page. Measured 2026-09-07 and it does not.** Calling
+ * `addImage` inside the loop with the same bytes produces a document holding
+ * **one** image XObject, on MuPDF 1.28.0 — the engine deduplicates by content,
+ * so the mutation this hoist exists to prevent was invisible to a case
+ * asserting the object count, which is how the measurement came to be taken.
+ *
+ * What the hoist genuinely saves is **N decodes** of the image, in CPU and in
+ * peak memory inside the contained host — real, smaller than claimed, and not
+ * asserted by anything, because a decode leaves no trace in the document. Said
+ * plainly rather than left as a number nobody can check.
+ *
+ * ## Refused whole, before anything is written
+ *
+ * {@link applyAddAnnotation}' invariant on a command that touches several
+ * pages, where it matters more: a stamp refused on page nine after landing on
+ * pages one to eight is a document the user has to clean up by hand, and the
+ * log entry would describe the command rather than what happened.
+ */
+export const applyPlaceImage: Apply<'mupdf', 'placeImage'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'placeImage'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const total = document.countPages();
+
+    // DUPLICATES ARE REFUSED RATHER THAN COLLAPSED. Two identical stamps in one
+    // place are indistinguishable in the walk that names them, so the second is
+    // unerasable except by erasing the first — ADR-0041's argument against
+    // content addressing, arriving as a payload that can ask for it.
+    const seen = new Set(command.pages);
+    if (seen.size !== command.pages.length) {
+      throw new RangeError(
+        `the same page is named ${String(command.pages.length - seen.size + 1)} times in one ` +
+          `placement. Two stamps in the same box on the same page cannot be told apart afterwards.`,
+      );
+    }
+
+    // EVERY PAGE RESOLVED AND CHECKED FIRST. `pageAt` throws for an index past
+    // the end, and a rectangle off the page is this module's other refusal —
+    // asked here so that neither can happen once writing has begun.
+    const loaded = command.pages.map((page) => {
+      const found = pageAt(document, page, total);
+      const transform = transformFor(found);
+      const box = placedRect(command.rect, transform);
+      if (!touchesPage(box, transform)) {
+        throw new RangeError(
+          `that image lies entirely outside page ${String(page)}, whose displayed region is ` +
+            `${String(transform.viewport.width)} by ${String(transform.viewport.height)} units, ` +
+            `so nothing would be visible.`,
+        );
+      }
+      return { page: found, box };
+    });
+
+    // THE DECODE IS ALSO BEFORE THE FIRST WRITE, and it is the failure most
+    // likely to happen: the bytes came from a file a person picked. MuPDF
+    // throws on anything it cannot read, which is what validates the file.
+    const embedded = document.addImage(decodedImage(command.bytes));
+
+    for (const { page, box } of loaded) {
+      const annotation = page.createAnnotation('Stamp');
+      annotation.setRect(box);
+
+      // THE BBOX IS THE RECTANGLE'S OWN SIZE AT THE ORIGIN, so the appearance
+      // maps onto `/Rect` one-to-one and the image is not stretched by the
+      // viewer's fitting rule. The `cm` scales the unit square the `Do`
+      // operator draws into that box.
+      const width = box[2] - box[0];
+      const height = box[3] - box[1];
+
+      const resources = document.newDictionary();
+      const xobjects = document.newDictionary();
+      xobjects.put(STAMP_IMAGE_NAME, embedded);
+      resources.put('XObject', xobjects);
+
+      annotation.setAppearance(
+        null,
+        null,
+        [1, 0, 0, 1, 0, 0],
+        [0, 0, width, height],
+        resources,
+        `q ${formatted(width)} 0 0 ${formatted(height)} 0 0 cm /${STAMP_IMAGE_NAME} Do Q`,
+      );
+
+      // THE MARK, at the one place this command creates an annotation, for
+      // `applyAddAnnotation`'s reason — and this is the second creation site
+      // that function's comment anticipated.
+      markAuthored(annotation);
+    }
+  });
+
+/**
+ * A number as a content stream defines one.
+ *
+ * `String(1e-7)` is `"1e-7"`, which is not a number in a content stream — the
+ * background row paid for this and its symptom there was a blank page. Fixed
+ * notation, and the same reason applies here: a rectangle a hundredth of a
+ * point across is representable in the payload.
+ */
+function formatted(value: number): string {
+  return value.toFixed(4);
+}
+
+/**
  * What kind an annotation on the page IS, as a surface may name it.
  *
  * ## A CLOSED union, not the subtype the document carries
@@ -1495,6 +1632,38 @@ export function captureAddAnnotation(
 export const invertAddAnnotation: Invert<'mupdf', 'addAnnotation'> = (): Promise<void> => {
   throw new Error(
     'an added annotation has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};
+
+/**
+ * {@link captureAddAnnotation}' answer, on several pages at once.
+ *
+ * The pages are resolved first for that function's reason — a capture that
+ * refused without looking would report the same thing for a page index the
+ * document does not have, and the bus would then take a checkpoint for a
+ * command about to throw.
+ */
+export function capturePlaceImage(
+  session: MupdfSession,
+  command: CommandOfKind<'placeImage'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    const total = document.countPages();
+    for (const page of command.pages) pageAt(document, page, total);
+    return {
+      captured: false,
+      reason:
+        'a placed image cannot be recorded as prior state: removing it again needs a handle ' +
+        'naming which annotation on each page it is, and this command mints one per page whose ' +
+        'identity is not in its payload',
+    };
+  });
+}
+
+/** Unreachable, for {@link invertAddAnnotation}'s reason. */
+export const invertPlaceImage: Invert<'mupdf', 'placeImage'> = (): Promise<void> => {
+  throw new Error(
+    'a placed image has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
   );
 };
 

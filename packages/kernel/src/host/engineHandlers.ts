@@ -1,5 +1,6 @@
-import type { Handlers } from '@monstera/contract';
+import type { CommandOfKind, Handlers } from '@monstera/contract';
 
+import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
 import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
@@ -13,6 +14,8 @@ import type { ContainmentProbePaths, ContainmentReport } from './containment.js'
 import {
   ENGINE_DUPLICATE_PAGES_MAX,
   type EngineChannels,
+  type MupdfWireCommand,
+  joinAsset,
   taggedPrior,
 } from './engineChannels.js';
 
@@ -139,6 +142,19 @@ export interface HostSession {
   readonly session: MupdfSession;
   /** The directory main granted this session MODIFY on. */
   readonly outputDirectory: string;
+  /**
+   * The directory main granted this session READ on.
+   *
+   * Held for the output directory's reason above, one direction over: an asset
+   * arriving on `engine/apply` names a **file**, never a place, and the place
+   * is the one this session was opened from
+   * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+   * A per-call directory would be a channel through which a confused main could
+   * point this process at a path it was never granted — and the grant is what
+   * would refuse it, which is a containment argument made twice instead of a
+   * message that cannot express the mistake.
+   */
+  readonly snapshotDirectory: string;
 }
 
 /** The sessions one host process holds, keyed by the id it issued. */
@@ -279,6 +295,51 @@ export function createEngineHandlers({
     error: { code },
   });
 
+  /**
+   * Puts a command back together with the asset it was sent without
+   * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+   *
+   * `readSnapshot` against the session's OWN directory, so what a caller
+   * supplies is a name inside a place this process was granted rather than a
+   * path — the same shape `engine/open` has. Nothing here validates the
+   * directory, for the reason that handler states: main composed it and wrote
+   * its DACL, and re-deriving a policy here would be a second opinion about a
+   * question the ACE already answers.
+   */
+  const wholeCommand = async (
+    held: HostSession,
+    command: MupdfWireCommand,
+    asset: string | undefined,
+  ): Promise<
+    | { readonly ok: true; readonly command: CommandOfKind<KindsRoutedTo<'mupdf'>> }
+    | { readonly ok: false; readonly failure: { readonly ok: false; readonly error: { readonly code: 'asset-missing' } } }
+  > => {
+    let bytes: Uint8Array | undefined;
+    if (asset !== undefined) {
+      try {
+        bytes = await files.readSnapshot(held.snapshotDirectory, asset);
+      } catch (error) {
+        return { ok: false, failure: failed('asset-missing', error) };
+      }
+    }
+    const whole = joinAsset(command, bytes);
+    if (whole === undefined) {
+      // THE COMMAND AND ITS ASSET DISAGREE, which is main contradicting the
+      // declaration table both ends read. Refused rather than ignored: applying
+      // it would run a command whose sender believed it carried bytes.
+      return {
+        ok: false,
+        failure: failed(
+          'asset-missing',
+          new Error(
+            `"${command.kind}" and the asset sent with it disagree about whether it carries one`,
+          ),
+        ),
+      };
+    }
+    return { ok: true, command: whole };
+  };
+
   return {
     // NO try/catch, and that is deliberate rather than an omission. Every
     // outcome this can produce is already one of `ProbeOutcome`'s four states —
@@ -315,7 +376,10 @@ export function createEngineHandlers({
       // that does not exist is one main would run commands against, and every
       // one of those would fail as `no-such-session` — which the supervisor
       // reads as a dead host and answers with a rebuild.
-      return { ok: true, value: { session: sessions.issue({ session, outputDirectory }) } };
+      return {
+        ok: true,
+        value: { session: sessions.issue({ session, outputDirectory, snapshotDirectory }) },
+      };
     },
 
     'engine/serialise': async ({ session, into }) => {
@@ -466,9 +530,16 @@ export function createEngineHandlers({
       return { ok: true, value: { groups: kept, truncated } };
     },
 
-    'engine/apply': async ({ session, command, source }) => {
+    'engine/apply': async ({ session, command, source, asset }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
+
+      // THE ASSET IS READ BEFORE THE SOURCE IS RESOLVED and before anything is
+      // applied, for the reason stated below about the source: a command that
+      // cannot be completed must refuse without having touched the target.
+      const completed = await wholeCommand(held, command, asset);
+      if (!completed.ok) return completed.failure;
+      const whole = completed.command;
 
       // THE SOURCE IS LOOKED UP THE SAME WAY AND REFUSED THE SAME WAY, which is
       // what makes a closed source document an ordinary `no-such-session` race
@@ -486,14 +557,19 @@ export function createEngineHandlers({
         from = heldSource.session;
       }
 
-      await execution.apply(held.session, command, from);
+      await execution.apply(held.session, whole, from);
       return { ok: true, value: {} };
     },
 
-    'engine/capture': async ({ session, command }) => {
+    'engine/capture': async ({ session, command, asset }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
-      const captured = await execution.capture(held.session, command);
+      // NO CAPTURE READS THE ASSET, and the command is still completed here —
+      // `CommandExecution.capture` takes the command, and half a command is not
+      // one. The channel's own field says why the bytes travel twice.
+      const completed = await wholeCommand(held, command, asset);
+      if (!completed.ok) return completed.failure;
+      const captured = await execution.capture(held.session, completed.command);
       return captured.captured
         ? // The kind is stamped from the COMMAND THIS CALL CARRIED, so the tag
           // and the prior state cannot disagree at the source. What it buys is

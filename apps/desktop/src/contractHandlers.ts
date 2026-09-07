@@ -147,6 +147,7 @@ export function createContractHandlers(deps: {
     'document.split': splitHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
+    'document.placeImage': placeImageHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
@@ -297,6 +298,43 @@ function insertImageHandler(commands: DocumentCommands): ContractHandlers['docum
       }
       return ok({
         kind: 'inserted',
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        historyDropped: outcome.historyDropped,
+      } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The place-image handler.
+ *
+ * {@link insertImageHandler}'s body with one call and one member name changed,
+ * and written out rather than shared with it for the reason the extract's
+ * comment below gives at greater length: the two map the same shape today, and
+ * a helper over both is a single point at which a future divergence becomes a
+ * change to the other path too.
+ */
+function placeImageHandler(commands: DocumentCommands): ContractHandlers['document.placeImage'] {
+  return async ({
+    docId,
+    pages,
+    rect,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.placeImage']>>> => {
+    try {
+      const outcome = await commands.placeImage(docId, pages, rect);
+      if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'too-large') {
+        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+      }
+      return ok({
+        kind: 'placed',
         version: outcome.version,
         byteLength: outcome.byteLength,
         historyDropped: outcome.historyDropped,

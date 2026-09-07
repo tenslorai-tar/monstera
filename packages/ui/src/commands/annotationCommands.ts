@@ -19,6 +19,7 @@ import {
 } from '../annotations/measureTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
+import { PLACE_IMAGE_TOOL_ID } from '../annotations/placeImageTool.js';
 import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
@@ -56,6 +57,7 @@ import {
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
   SELECT_TOOL_TITLE,
+  PLACE_IMAGE_TOOL_TITLE,
   SNAPSHOT_TOOL_TITLE,
   STRIKEOUT_TOOL_TITLE,
   TOOL_CARET_TITLE,
@@ -516,6 +518,19 @@ export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The place-image tool's command.
+ *
+ * **59, among the marks**, where the snapshot above is at 29 with the view
+ * controls. The two tools have the same gesture and the same shape — drag a
+ * box, main does the rest — and they are not the same kind of thing: a
+ * snapshot is something a reader does to LOOK at a document, and this puts an
+ * object into it that survives the save.
+ */
+export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(PLACE_IMAGE_TOOL_ID, PLACE_IMAGE_TOOL_TITLE, 59, deps);
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -560,5 +575,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     measureAreaToolCommand(deps),
     measurePerimeterToolCommand(deps),
     snapshotToolCommand(deps),
+    placeImageToolCommand(deps),
   ];
 }

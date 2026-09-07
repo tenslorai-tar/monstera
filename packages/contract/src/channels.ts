@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import {
   MAX_ANNOTATION_BORDER,
+  MAX_IMAGE_PAGES,
   annotationKindNameSchema,
   annotationRectSchema,
   renderableCommandSchema,
@@ -1007,6 +1008,41 @@ export const channels = {
       }),
       z.object({ kind: z.literal('cancelled') }),
       /** The file was picked and is not an image this build can decode. */
+      z.object({ kind: z.literal('unreadable') }),
+      /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Places an image on pages, from a file the user picks.
+   *
+   * `document.insertImage`'s shape and every one of its arguments — the ask
+   * carries no bytes, main opens the picker, reads the file and mints
+   * `placeImage` straight into the bus, and `document.execute` cannot carry
+   * that command because `renderableCommandSchema` has it removed.
+   *
+   * What it adds is a **rectangle and a page list**, which are the two things
+   * the renderer does know: the tool drew the box on the page in view, and
+   * *every page* is one click in a surface. Both are numbers.
+   */
+  'document.placeImage': channel(
+    'Places an image on pages of an open document, from a file the user picks.',
+    z.object({
+      docId: docIdSchema,
+      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
+      rect: annotationRectSchema,
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('placed'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      /** The file was picked and the engine could not decode it. */
       z.object({ kind: z.literal('unreadable') }),
       /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),

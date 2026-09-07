@@ -172,6 +172,7 @@ describe('rectangleToolCommand', () => {
       style: PLAIN_STYLE,
       scale: { perPoint: 1, unit: 'pt' },
       onSnapshot: () => undefined,
+      onPlaceImage: () => undefined,
     }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,

@@ -1828,6 +1828,89 @@ export const placeAnnotationSchema = z.object({
 });
 
 /**
+ * How many pages one image may be stamped onto in a single command.
+ *
+ * `MAX_EXTRACT_PAGES`' argument, which is about what a page selection COSTS
+ * rather than about how many pages a document has: the payload grows by an
+ * index per page, not by a page per page, and the image is carried once
+ * however many pages name it. 4096 is far past any document a person stamps by
+ * hand and short of a number that could matter beside the frame's own bound.
+ *
+ * **Not `MAX_PLACED_ANNOTATIONS`' 1024**, and the difference is which way the
+ * number is spent: that one bounds annotations a person selected, and this one
+ * bounds pages a person did not — *every page* is one click.
+ */
+export const MAX_IMAGE_PAGES = 4096;
+
+/**
+ * Places an image on one or more pages, as an annotation that can be moved.
+ *
+ * ## THIS IS BOTH ROWS — place image AND stamps
+ *
+ * `docs/FEATURES.md` asks for *place image (move/resize/delete)* and *stamps
+ * (built-ins + custom image + multi-page apply)* as two rows. Read as documents
+ * they are one object: a `/Stamp` whose appearance stream draws an image
+ * XObject. What separates them is where the bytes came from and how many pages
+ * the command names — a picker and an array — so there is one command and two
+ * surfaces, not two commands.
+ *
+ * **Move, resize and delete are not here** because they already exist:
+ * `placeAnnotation` and `removeAnnotation` reach a `/Stamp` through the
+ * ordinary walk, exactly as they reach a square.
+ *
+ * ## The pages are a LIST on one command
+ *
+ * Stamping ten pages is one decision, so it is one log entry and one undo, and
+ * the rectangle is shared because *the same stamp in the same place on every
+ * page* is what the feature means. A per-page rectangle would be a different
+ * feature nobody asked for, and a loop in a surface would be ten versions of
+ * which nine are stale.
+ *
+ * ## The bytes are here, and they leave before the wire
+ *
+ * `insertImagePage`'s argument for carrying an image applies unchanged — the
+ * image *is* the intent, it scales with the image and not with the document,
+ * and the renderer never holds it. What is new is that this command is routed
+ * to **MuPDF**, which is behind a pipe that carries JSON, and a `Uint8Array`
+ * does not survive `JSON.stringify`
+ * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+ * So the declaration says `asset: 'image'`, and the transport writes these
+ * bytes into the directory the host was already granted READ on — the one the
+ * document itself arrives through. Nothing about that is visible here: the
+ * command carries its whole intent, and the log stores it.
+ */
+export const placeImageSchema = z.object({
+  kind: z.literal('placeImage'),
+  /** Zero-based indices of the pages it goes on. Order carries no meaning. */
+  pages: z
+    .array(z.number().int().nonnegative())
+    .min(1)
+    .max(MAX_IMAGE_PAGES)
+    .readonly(),
+  /** The box it occupies on every one of them, in PDF user space. */
+  rect: annotationRectSchema,
+  /**
+   * The image itself.
+   *
+   * `instanceof` for `insertImagePage`'s reason, and bounded by the same
+   * constant: a file picker is a place a user can hand this application a 4 GB
+   * video by mistake.
+   *
+   * **No `mediaType` beside it**, which is the one field `insertImagePage` has
+   * that this does not. That one routes to `@cantoo/pdf-lib`, which offers
+   * `embedJpg` and `embedPng` as two calls, so somebody must choose. This
+   * routes to MuPDF, whose `Image` takes bytes and decides — and it decides by
+   * reading them, where a caller would be reading a file extension. A field
+   * carrying the answer anyway would be a second opinion about a question the
+   * decoder already owns (B3a), and the weaker of the two.
+   */
+  bytes: z.custom<Uint8Array>(
+    (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
+    { message: 'not an image this build will place, or larger than the bound' },
+  ),
+});
+
+/**
  * The URI schemes a link this build writes may carry.
  *
  * ## The list is short because we are the PRODUCER here
@@ -2018,6 +2101,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
+  placeImageSchema,
   addLinkSchema,
   styleAnnotationSchema,
 ]);
@@ -2025,10 +2109,11 @@ export const commandSchema = z.discriminatedUnion('kind', [
 /**
  * The commands a **renderer** may put on `document.execute`.
  *
- * `commandSchema` with `insertImagePage` removed, and that is the only
- * difference. Every other kind is intent a renderer can express in a few
- * numbers; that one carries an image, which main reads from a file the user
- * picked and mints directly into the bus.
+ * `commandSchema` with the two image-carrying kinds removed —
+ * `insertImagePage` and `placeImage` — and that is the only difference. Every
+ * other kind is intent a renderer can express in a few numbers; those two carry
+ * an image, which main reads from a file the user picked and mints directly
+ * into the bus.
  *
  * ## Written out, for `mupdfCommandSchema`'s reason
  *
@@ -2114,7 +2199,7 @@ export type RenderableCommand = z.infer<typeof renderableCommandSchema>;
  * a new command quietly becoming unreachable from the renderer, which reads at
  * every call site as a control that does nothing.
  */
-type WithheldFromRenderer = 'insertImagePage';
+type WithheldFromRenderer = 'insertImagePage' | 'placeImage';
 type LeftOver = Exclude<Command['kind'], RenderableCommand['kind']>;
 const _withheldIsExactlyThat: LeftOver extends WithheldFromRenderer ? true : never = true;
 const _andNothingElseIsWithheld: WithheldFromRenderer extends LeftOver ? true : never = true;

@@ -16,6 +16,7 @@ import {
   extractPagesCommand,
   insertFromPdfCommand,
   insertImageCommand,
+  placeImage,
   mergeDocumentCommand,
   replacePageCommand,
   splitDocumentCommand,
@@ -923,6 +924,99 @@ describe('delete pages — the mutation-dialog gate', () => {
         id: 'dialog.insert-image-problem',
         props: { reason: 'too-large', limitBytes: 67_108_864 },
       },
+    ]);
+  });
+
+  it('A PLACEMENT SENDS THE PAGE AND THE BOX AND NO BYTES, and rebuilds the view', async () => {
+    // THE SECOND HALF of place-image's pair; the first is
+    // `placeImageTool.test.ts`, which asserts the tool calls this with the
+    // converted rectangle, and the kernel's is `applyPlaceImage`'s block.
+    //
+    // The page comes from the TOOL rather than from the context — a stamp goes
+    // on the page it was drawn on — so this passes 3 explicitly, and the
+    // payload's `pages` is a one-element list because the surface places one at
+    // a time. `document.placeImage` physically cannot carry bytes: the params
+    // schema has three fields and none of them is a `Uint8Array`.
+    const { client, sent } = recording({
+      'document.placeImage': {
+        kind: 'placed',
+        version: asDocVersion(2),
+        byteLength: 8192,
+        historyDropped: 0,
+      },
+    });
+    const applied: unknown[] = [];
+
+    await placeImage(
+      { client, onApplied: (a) => applied.push(a), ask: () => Promise.resolve(undefined) },
+      DOC,
+      3,
+      { x0: 10, y0: 20, x1: 110, y1: 70 },
+    );
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.placeImage',
+        params: { docId: DOC, pages: [3], rect: { x0: 10, y0: 20, x1: 110, y1: 70 } },
+      },
+    ]);
+    // AND THE VIEW WAS REBUILT, with both scalars — `insertImage`'s reason: a
+    // version without a byte length rebinds the transport to the previous
+    // image's length, which is a range past the end of the new document.
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 8192 }]);
+  });
+
+  it('CONTROL: a DISMISSED picker reports nothing and rebuilds nothing', async () => {
+    // The user closed the dialog. This is the one non-success outcome that must
+    // stay silent, and without it the reporting case below reads as *something
+    // is always shown*.
+    const { client } = recording({ 'document.placeImage': { kind: 'cancelled' } });
+    const applied: unknown[] = [];
+    const opened: unknown[] = [];
+
+    await placeImage(
+      {
+        client,
+        onApplied: (a) => applied.push(a),
+        ask: (id, props) => {
+          opened.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      },
+      DOC,
+      3,
+      { x0: 10, y0: 20, x1: 110, y1: 70 },
+    );
+
+    expect(applied).toStrictEqual([]);
+    expect(opened).toStrictEqual([]);
+  });
+
+  it('REPORTS a file past the bound, through the dialog the insert already owns', async () => {
+    // THE SAME DIALOG, deliberately: the two outcomes are the same two, and a
+    // second wording for them would be a second answer to *what happened to my
+    // picture*. The limit travels from main rather than being restated here.
+    const { client } = recording({
+      'document.placeImage': { kind: 'too-large', limitBytes: 67_108_864 },
+    });
+    const opened: unknown[] = [];
+
+    await placeImage(
+      {
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          opened.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      },
+      DOC,
+      3,
+      { x0: 10, y0: 20, x1: 110, y1: 70 },
+    );
+
+    expect(opened).toStrictEqual([
+      { id: 'dialog.insert-image-problem', props: { reason: 'too-large', limitBytes: 67_108_864 } },
     ]);
   });
 

@@ -185,6 +185,29 @@ export function newDocument(): mupdf.PDFDocument {
   return new mupdf.PDFDocument();
 }
 
+/**
+ * Decodes image bytes a person picked.
+ *
+ * Exported for {@link newDocument}'s reason — one value import of the binding
+ * in this package — and it is the second caller that reason anticipated.
+ *
+ * **The format is SNIFFED here rather than declared by the caller**, which is
+ * the opposite of `insertImagePage`, and the difference is which library does
+ * the work: `@cantoo/pdf-lib` offers `embedJpg` and `embedPng` as two calls, so
+ * something must choose; MuPDF's `Image` takes bytes and decides. A media type
+ * carried alongside would be a second opinion about a question this constructor
+ * already answers (B3a), and it would be the weaker of the two — a caller reads
+ * a file extension, and this reads the bytes.
+ *
+ * **The decode happens in the engine host**, which is where a hostile image
+ * should meet a decoder: invariant 25's containment is exactly what a malformed
+ * JPEG is for. It throws on anything it cannot read, and that throw is what
+ * validates the file rather than a check anywhere upstream.
+ */
+export function decodedImage(bytes: Uint8Array): mupdf.Image {
+  return new mupdf.Image(bytes);
+}
+
 export const mupdfWriter: EngineWriter<MupdfSession> = {
   /**
    * Parses `image` into a session.

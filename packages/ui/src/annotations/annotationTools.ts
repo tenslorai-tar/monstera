@@ -5,6 +5,8 @@ import { calloutTool } from './calloutTool.js';
 import { linkTools } from './linkTools.js';
 import type { MeasureDeps } from './measureTools.js';
 import { measureTools } from './measureTools.js';
+import type { PlaceImageDeps } from './placeImageTool.js';
+import { placeImageTool } from './placeImageTool.js';
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
@@ -63,6 +65,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // — which is the exact drift this file exists to have stopped. The file's
     // name is the residual falsehood, stated rather than fixed quietly.
     snapshotTool(deps),
+    placeImageTool(deps),
   ];
 }
 
@@ -85,4 +88,5 @@ export type AnnotationToolDeps = TextToolDeps &
   EraserDeps &
   SelectDeps &
   MeasureDeps &
-  SnapshotDeps;
+  SnapshotDeps &
+  PlaceImageDeps;

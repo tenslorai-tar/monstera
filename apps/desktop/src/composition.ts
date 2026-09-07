@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -24,6 +24,7 @@ import {
   type RemoteMupdfWriter,
   type MupdfSession,
   type SessionAreaSurface,
+  type SessionAssets,
   type SnapshotWrite,
   type WriterRegistry,
   classifyContainment,
@@ -1009,7 +1010,7 @@ function engineSessionOpener(
     // talking to two different hosts — which is the state a second
     // `createClient` here would make representable.
     const client = createClient(engineChannels, live.value.client.invoke);
-    writer = remoteMupdfWriter(client, remote, sessionAreas(platform));
+    writer = remoteMupdfWriter(client, remote, sessionAreas(platform), sessionAssets());
     geometry = remoteMupdfGeometry(client, remote);
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
@@ -1230,6 +1231,30 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
       });
       return Promise.resolve();
     },
+  };
+}
+
+/**
+ * A command's asset, written where the host may read it and taken away again
+ * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+ *
+ * **The name comes from the same mint as every other name main sends**, for
+ * the reason `sessionAreas` states one line up: lower-case hex is what
+ * `outputNameSchema` accepts, and main naming the file is what stops the host
+ * naming one.
+ *
+ * It writes into the **snapshot** directory, the one the host holds READ on and
+ * the one the document itself arrives through — so an asset grants the
+ * contained process nothing it did not already have.
+ */
+function sessionAssets(): SessionAssets {
+  return {
+    name: () => randomBytes(16).toString('hex'),
+    write: (directory, name, bytes) => writeFile(join(directory, name), bytes),
+    // `force` BECAUSE THIS IS CALLED FROM A `finally`. A removal that threw on
+    // an absent file would replace the call's own error — which is the one that
+    // says what actually went wrong — with a complaint about cleanup.
+    remove: (directory, name) => rm(join(directory, name), { force: true }),
   };
 }
 

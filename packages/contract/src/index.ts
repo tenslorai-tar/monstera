@@ -112,6 +112,8 @@ export {
   type NamesAnAnnotation,
   type NamesASecondDocument,
   placeAnnotationSchema,
+  placeImageSchema,
+  MAX_IMAGE_PAGES,
   removeAnnotationSchema,
   styleAnnotationSchema,
   renderableCommandSchema,

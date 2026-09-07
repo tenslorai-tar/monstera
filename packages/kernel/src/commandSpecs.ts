@@ -45,13 +45,16 @@ import {
 import {
   applyAddAnnotation,
   applyPlaceAnnotation,
+  applyPlaceImage,
   applyRemoveAnnotation,
   captureAddAnnotation,
   capturePlaceAnnotation,
+  capturePlaceImage,
   captureRemoveAnnotation,
   captureStyleAnnotation,
   invertAddAnnotation,
   invertPlaceAnnotation,
+  invertPlaceImage,
   invertRemoveAnnotation,
   invertStyleAnnotation,
   applyStyleAnnotation,
@@ -313,6 +316,17 @@ const declared = {
     apply: applyPlaceAnnotation,
     capture: capturePlaceAnnotation,
     invert: invertPlaceAnnotation,
+  },
+  placeImage: {
+    // THE SPREAD CARRIES `asset: 'image'` IN, and nothing here reads it — the
+    // same shape `removeAnnotation`'s comment describes for `targets`. This
+    // apply is handed the whole command, bytes included; what the axis governs
+    // happens in the transport, two modules away, and a spec that carried an
+    // asset and one that did not are the same shape at this point.
+    ...declaredCommands.placeImage,
+    apply: applyPlaceImage,
+    capture: capturePlaceImage,
+    invert: invertPlaceImage,
   },
   styleAnnotation: {
     ...declaredCommands.styleAnnotation,

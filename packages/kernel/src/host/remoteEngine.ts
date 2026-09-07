@@ -5,7 +5,12 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
-import { type EngineChannels, taggedPrior } from './engineChannels.js';
+import {
+  type EngineChannels,
+  type MupdfWireCommand,
+  splitAsset,
+  taggedPrior,
+} from './engineChannels.js';
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
@@ -100,6 +105,33 @@ export interface SessionArea {
   readonly snapshotDirectory: string;
   /** The directory the host may MODIFY. It writes serialised bytes here. */
   readonly outputDirectory: string;
+}
+
+/**
+ * Writing a command's asset into the directory the host reads, and taking it
+ * away again
+ * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+ *
+ * Injected for {@link SessionArea}'s reason and one more that is specific to
+ * this: **the name has to satisfy a schema declared in this package and a
+ * directory policy declared in `apps/desktop`**, and only one of those two can
+ * be checked here. `sessionDirectoryName` already mints names that pass both,
+ * so `name` is asked for rather than composed — a second minting rule here
+ * would be a second opinion about what the host will accept (B3a), agreeing
+ * with the first until one of them changes.
+ *
+ * `write` takes a directory and a name rather than a path for
+ * `HostFilesystem.readSnapshot`'s reason on the other side of the pipe: the two
+ * halves of an asset's address come from different places, and joining them is
+ * the shell's job because the shell is where a path may be spelt.
+ */
+export interface SessionAssets {
+  /** Writes bytes into a granted directory, under a name from {@link name}. */
+  readonly write: (directory: string, name: string, bytes: Uint8Array) => Promise<void>;
+  /** Removes one. Called from a `finally`, so it must not throw on absence. */
+  readonly remove: (directory: string, name: string) => Promise<void>;
+  /** A fresh name the engine host's own schema accepts. */
+  readonly name: () => string;
 }
 
 /** A token whose handle this registry does not hold. */
@@ -328,34 +360,73 @@ export function remoteMupdfDuplicateReport(
 export function remoteMupdfExecution(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
+  assets: SessionAssets,
 ): CommandExecution<'mupdf'> {
+  /**
+   * Writes a command's asset where the host can read it, runs `call` with the
+   * name, and removes it — whatever `call` did
+   * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+   *
+   * **The `finally` is the whole of the lifetime.** A file that outlives the
+   * call is one nothing holds a name for, in a directory whose other occupant
+   * is the document, and the only thing that would eventually collect it is
+   * closing the session.
+   */
+  const withAsset = async <T>(
+    session: MupdfSession,
+    command: CommandOfKind<KindsRoutedTo<'mupdf'>>,
+    call: (wire: MupdfWireCommand, asset: string | undefined) => Promise<T>,
+  ): Promise<T> => {
+    const split = splitAsset(command);
+    if (split.asset === undefined) return await call(split.command, undefined);
+
+    const directory = sessions.areaFor(session).snapshotDirectory;
+    const name = assets.name();
+    await assets.write(directory, name, split.asset);
+    try {
+      return await call(split.command, name);
+    } finally {
+      await assets.remove(directory, name);
+    }
+  };
+
   return {
     apply: async (session, command, source) => {
-      answered(
-        'engine/apply',
-        await client['engine/apply']({
-          session: sessions.handleFor(session),
-          command,
+      await withAsset(session, command, async (wire, asset) => {
+        answered(
+          'engine/apply',
+          await client['engine/apply']({
+            session: sessions.handleFor(session),
+            command: wire,
+            asset,
           // TRANSLATED TO A HANDLE HERE, exactly as the target is. `handleFor`
           // is what turns main's session token into the host's, so a source
           // that main holds but the host does not is refused at the registry
           // rather than sent as a handle the peer would not recognise.
           //
-          // `undefined` for every command but a merge, and the channel's schema
-          // makes that absence rather than a null — a message that omits the
-          // field, which is what eleven of the twelve MuPDF commands send.
-          source: source === undefined ? undefined : sessions.handleFor(source),
-        }),
-      );
+            // `undefined` for every command but a merge, and the channel's
+            // schema makes that absence rather than a null — a message that
+            // omits the field, which is what eleven of the twelve MuPDF
+            // commands send.
+            source: source === undefined ? undefined : sessions.handleFor(source),
+          }),
+        );
+      });
     },
 
     capture: async <K extends KindsRoutedTo<'mupdf'>>(
       session: MupdfSession,
       command: CommandOfKind<K>,
     ): Promise<CaptureResult<CommandPrior[K]>> => {
-      const answer = answered(
-        'engine/capture',
-        await client['engine/capture']({ session: sessions.handleFor(session), command }),
+      const answer = await withAsset(session, command, async (wire, asset) =>
+        answered(
+          'engine/capture',
+          await client['engine/capture']({
+            session: sessions.handleFor(session),
+            command: wire,
+            asset,
+          }),
+        ),
       );
       if (!answer.captured) return { captured: false, reason: answer.reason };
 

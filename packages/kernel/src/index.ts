@@ -127,6 +127,7 @@ export {
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './host/remoteLifecycle.js';
+export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
 export type { RemoteMupdfWriter } from './host/remoteWriter.js';

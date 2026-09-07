@@ -3,7 +3,7 @@ import type { ClientApi } from '@monstera/contract';
 import type { RegisteredWriter } from '../commandSpecs.js';
 import type { EngineChannels } from './engineChannels.js';
 import { remoteMupdfExecution } from './remoteEngine.js';
-import type { RemoteSessions } from './remoteEngine.js';
+import type { RemoteSessions, SessionAssets } from './remoteEngine.js';
 import {
   type RemoteMupdfLifecycle,
   type SessionAreaSurface,
@@ -65,6 +65,7 @@ export function remoteMupdfWriter(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
   areas: SessionAreaSurface,
+  assets: SessionAssets,
 ): RemoteMupdfWriter {
   // `close` USED TO BE DROPPED HERE, and that was the whole of the leak. This
   // line destructured `serialise` alone, so the one function that ends a
@@ -89,6 +90,16 @@ export function remoteMupdfWriter(
   // than an exception: it is a third job needing the same client, sessions and
   // granted areas, and putting it anywhere else is what would make the granted
   // directory reachable from a second place.
+  // `assets` GOES TO THE EXECUTION ALONE, and that is the line worth reading:
+  // an asset's lifetime is one command, so it belongs to whatever runs one.
+  // The lifecycle above owns the session's directories; this owns a file inside
+  // one for the length of a call (ADR-0044).
   const { serialise, close, extract, snapshot } = remoteMupdfLifecycle(client, sessions, areas);
-  return { serialise, close, extract, snapshot, ...remoteMupdfExecution(client, sessions) };
+  return {
+    serialise,
+    close,
+    extract,
+    snapshot,
+    ...remoteMupdfExecution(client, sessions, assets),
+  };
 }

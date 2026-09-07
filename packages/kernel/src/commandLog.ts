@@ -386,6 +386,20 @@ export interface CommandPrior {
    * The trigger is the second command that needs one.
    */
   readonly styleAnnotation: never;
+  /**
+   * **`never`**, for {@link addAnnotation}' reason and not for its own bytes'.
+   *
+   * The tempting reading is that the image makes this expensive to record, and
+   * that is wrong in both directions: the image is in the **command**, not in
+   * the prior state, and the prior state of a placement is the absence of what
+   * it placed. What blocks it is the same missing sentence that blocks
+   * `addAnnotation` — an inverse spelt *the stamps this command added* would
+   * depend on the log's ordering rather than on captured state, and a stamp on
+   * forty pages makes that forty guesses instead of one.
+   *
+   * ADR-0041's handle is what unblocks both, and it unblocks them together.
+   */
+  readonly placeImage: never;
 }
 
 /**

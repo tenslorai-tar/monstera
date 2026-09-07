@@ -1,4 +1,5 @@
 import {
+  type AnnotationRect,
   type CommandKind,
   type CommandOfKind,
   MAX_IMAGE_BYTES,
@@ -395,6 +396,19 @@ export interface CopySource {
 /** What {@link DocumentCommands.insertImage} answers. */
 export type InsertImageOutcome =
   | ({ readonly kind: 'inserted' } & Applied)
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'too-large'; readonly limitBytes: number };
+
+/**
+ * What {@link DocumentCommands.placeImage} answers.
+ *
+ * {@link InsertImageOutcome}'s members with one renamed: `placed` rather than
+ * `inserted`, because the two operations differ in what happens to the page
+ * count and a caller that treated them alike would be wrong about that.
+ */
+export type PlaceImageOutcome =
+  | ({ readonly kind: 'placed' } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'too-large'; readonly limitBytes: number };
@@ -1732,6 +1746,62 @@ export class DocumentCommands {
       // — a poisoned document, a missing session — is a class the handler
       // already turns into a declared code, so widening this catch would turn
       // those into `unreadable` and tell the user their picture was the problem.
+      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
+        throw error;
+      }
+      if (error instanceof DocumentNotOpenError) throw error;
+      return { kind: 'unreadable' };
+    }
+  }
+
+  /**
+   * Places a picked image on pages, as a `/Stamp` the user can then move.
+   *
+   * {@link insertImage}' shape and, for the most part, its reasons: the ask
+   * carries no bytes, the picker runs here, and `renderableCommandSchema`
+   * withholds the command so the renderer cannot express one.
+   *
+   * **Two differences, and both are the row rather than the plumbing.**
+   *
+   * The media type is not read from the extension, because MuPDF's `Image`
+   * decodes by reading the bytes and a second answer here would be the weaker
+   * of two (B3a). So a file this build cannot decode arrives as a throw from
+   * the engine and leaves as `unreadable`, where `insertImage` can answer that
+   * before the read — this one pays the read to find out, which is what the
+   * bound above is for.
+   *
+   * And the pages are a list: stamping ten is one decision, one log entry and
+   * one undo.
+   */
+  async placeImage(
+    docId: DocId,
+    pages: readonly number[],
+    rect: AnnotationRect,
+  ): Promise<PlaceImageOutcome> {
+    // READ BEFORE THE DIALOG, `insertImage`'s ordering and its reason.
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'place an image');
+    }
+
+    const picked = await this.#image.pick();
+    if (picked === null) return { kind: 'cancelled' };
+
+    const read = await this.#image.read(picked);
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+
+    try {
+      const applied = await this.execute(docId, { kind: 'placeImage', pages, rect, bytes: read.bytes });
+      return { kind: 'placed', ...applied };
+    } catch (error) {
+      // `insertImage`'s catch and its reason: a decoder refusing is an outcome,
+      // and every other failure is a class the handler already turns into a
+      // declared code. A page index the document does not have and a rectangle
+      // off the page throw from the apply and arrive here as `unreadable`,
+      // which would be a lie — but neither is reachable from the surface that
+      // sends this, because the tool draws the rectangle on a page it is
+      // displaying. The day something else sends one, that is a second outcome
+      // rather than a widened catch.
       if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
         throw error;
       }
