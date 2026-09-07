@@ -498,7 +498,15 @@ body {
   padding: var(--space-3) var(--space-4);
   background: none;
   border: none;
-  border-top: 1px solid var(--border);
+  /*
+   * `--border-control` and NOT `--border`, because this line is drawn on a
+   * button. It was written as a divider between the rows and the action, which
+   * is what it reads as — and ADR-0003 types `--border` boundary-decorative
+   * with no 3:1 solve, so the moment a divider sits on the edge of something
+   * focusable it is a control boundary at decorative contrast. The scan caught
+   * it; the zoom slider track it names measured 1.16:1.
+   */
+  border-top: 1px solid var(--border-control);
   color: var(--muted);
   text-align: left;
   cursor: pointer;
