@@ -460,6 +460,28 @@ body {
   color: var(--muted);
 }
 
+/*
+ * Deleting the field, beside the control that fills it.
+ *
+ * The annotations panel's remove control, and it does not shrink for that
+ * control's reason: a destructive action whose width depends on the row beside
+ * it is one a person clicks on the wrong line.
+ */
+.m-forms-delete {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.m-forms-delete:hover,
+.m-forms-delete:focus-visible {
+  background: var(--surface2);
+  color: var(--text);
+}
+
 .m-forms-empty {
   margin: 0;
   padding: var(--space-4);

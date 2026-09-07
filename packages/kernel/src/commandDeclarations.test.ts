@@ -185,7 +185,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('mergeDocument');
   });
 
-  it('CONTROL: exactly four kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly five kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -198,6 +198,7 @@ describe('the declaration table', () => {
       'placeAnnotation',
       'styleAnnotation',
       'fillFormField',
+      'deleteFormFields',
     ]);
     // AND THE TWO MEMBERS ARE BOTH PRESENT, which the count above cannot say: a
     // table where every target read `'annotation'` would satisfy it, and the

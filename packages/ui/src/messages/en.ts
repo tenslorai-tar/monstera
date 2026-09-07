@@ -269,6 +269,7 @@ export const FORMS_GO_TO_PAGE = messageKey('surface.forms.go-to-page');
 export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
 export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
+export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
 export const FORMS_KIND_CHECKBOX = messageKey('surface.forms.kind.checkbox');
 export const FORMS_KIND_RADIO = messageKey('surface.forms.kind.radio');
@@ -604,6 +605,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // measured, clearing a dropdown stores the empty string, and a document may
   // arrive with one already cleared.
   [FORMS_CHOICE_EMPTY]: '(none)',
+  // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument
+  // one walk along. The rows beside it name similar fields, and a bare verb on
+  // a list of similar rows is the label a person clicks on the wrong line. It
+  // also says FIELD rather than value, because the two are different actions
+  // and the control next to it performs the other one.
+  [FORMS_DELETE]: 'Delete this field',
   [FORMS_KIND_TEXT]: 'Text',
   [FORMS_KIND_CHECKBOX]: 'Tick box',
   [FORMS_KIND_RADIO]: 'Option',

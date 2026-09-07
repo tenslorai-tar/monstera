@@ -436,6 +436,27 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Deleting one form field, from the row that names it.
+   *
+   * `removeAnnotation`'s shape on the widget walk. The payload is plural
+   * because a person can select several rows and remove them together, and this
+   * surface is a list of rows with a control each — the one place where *these*
+   * would have to be invented rather than collected.
+   */
+  const deleteFormField = useCallback(
+    (handle: { page: number; index: number; version: DocVersion }): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+        kind: 'deleteFormFields',
+        page: handle.page,
+        indices: [handle.index],
+        version: handle.version,
+      });
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
    * Removing everything the select tool has picked.
    *
    * ONE COMMAND FOR THE WHOLE SELECTION, which is why `removeAnnotation`'s
@@ -1397,6 +1418,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       <FormsPanel
         client={client}
         docId={open?.docId}
+        onDelete={deleteFormField}
         onFill={fillFormField}
         onJump={navigator.jumpTo}
         version={open?.version}

@@ -1,5 +1,5 @@
 import type { AnnotationRect, CommandOfKind, FieldFill, FormFieldKind } from '@monstera/contract';
-import type { PDFDocument, PDFPage, PDFWidget } from 'mupdf';
+import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -528,3 +528,144 @@ export const invertFillFormField: Invert<'mupdf', 'fillFormField'> = (session, i
     const loaded = pageAt(document, inverse.page, document.countPages());
     fill(widgetAt(loaded, inverse.index), inverse.value);
   });
+
+/**
+ * Removes from the field tree every field the deletion has emptied.
+ *
+ * ## What the engine does and does not do, measured
+ *
+ * 2026-09-07: `deleteAnnotation` removes a widget from `/Annots` **and** from
+ * wherever the field tree references it — a split field's `/Kids` 1 → 0, a
+ * radio group's 2 → 1 — so there is never a dangling reference to repair. What
+ * it leaves is a field dictionary with an empty `/Kids`, which `@cantoo/pdf-lib`
+ * still lists by name. So a document is left in two states: this build's reader
+ * walks widgets and reports the field gone, every other reader reports it there
+ * and unfillable.
+ *
+ * The merged shape needs none of this: a field and its one widget in a single
+ * dictionary leaves `/Fields` on its own, measured.
+ *
+ * ## It prunes UPWARDS, because emptying a child can empty its parent
+ *
+ * `applicant.name` losing its widget leaves `applicant` with two children
+ * rather than none, so nothing more happens. Deleting all three would empty
+ * `applicant` too, and a pass that pruned only the leaves would leave the
+ * parent — the same half-state one level up. So the walk repeats while it is
+ * still removing something, which terminates because each pass removes at
+ * least one entry from a finite tree.
+ *
+ * ## A field that never had `/Kids` is NOT pruned
+ *
+ * Absence and emptiness are different states here: a field with no `/Kids` at
+ * all is either a merged field/widget — already gone if it was deleted, still
+ * live if it was not — or a value-only parent the format allows. Only an array
+ * that is present and empty says *this field's widgets have been removed*.
+ */
+function pruneEmptyFields(document: PDFDocument): void {
+  const acroForm = document.getTrailer().get('Root').get('AcroForm');
+  const fields = acroForm.get('Fields');
+  if (!fields.isArray()) return;
+
+  const emptied = (field: PDFObject): boolean => {
+    const kids = field.get('Kids');
+    // PRESENT AND EMPTY, never merely absent — see the note above.
+    return kids.isArray() && kids.length === 0;
+  };
+
+  /** One pass over one array, answering whether it removed anything. */
+  const sweep = (array: PDFObject): boolean => {
+    let removed = false;
+    for (let index = array.length - 1; index >= 0; index -= 1) {
+      const field = array.get(index);
+      const kids = field.get('Kids');
+      // DESCEND FIRST, so a parent emptied by this pass is seen by it rather
+      // than by the next one. The reverse order is what makes deleting by index
+      // safe while iterating.
+      if (kids.isArray() && sweep(kids)) removed = true;
+      if (emptied(field)) {
+        array.delete(index);
+        removed = true;
+      }
+    }
+    return removed;
+  };
+
+  while (sweep(fields)) {
+    // REPEATS WHILE IT IS STILL REMOVING. `sweep` descends before it prunes, so
+    // one pass usually suffices; the loop is what makes that an observation
+    // rather than an assumption about tree depth.
+  }
+}
+
+/**
+ * Deletes the fields a handle names, and tidies the tree they leave behind.
+ *
+ * ## Descending order, for `applyRemoveAnnotation`'s reason
+ *
+ * The indices are positions in one walk, and removing a widget shifts every
+ * position after it. Deleting from the highest index down means no surviving
+ * index has moved by the time it is used — the alternative is arithmetic on the
+ * caller's numbers, which is the shape that deletes the wrong thing when a
+ * document is not the simple one.
+ *
+ * ## Every index is validated BEFORE anything is deleted
+ *
+ * A refusal on the fourth of five, after three have gone, is a document nobody
+ * asked for and no undo entry describes correctly.
+ */
+export const applyDeleteFormFields: Apply<'mupdf', 'deleteFormFields'> = (session, command) =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    for (const index of command.indices) widgetAt(loaded, index);
+
+    const descending = [...new Set(command.indices)].sort((a, b) => b - a);
+    for (const index of descending) loaded.deleteAnnotation(widgetAt(loaded, index));
+    pruneEmptyFields(document);
+  });
+
+/**
+ * Reports that a deleted field's prior state is not recorded, and validates.
+ *
+ * **`captureRemoveAnnotation`'s reason, strictly larger.** A removed
+ * annotation's prior state is its whole object graph — a dictionary that may
+ * reference an appearance stream, which references fonts and images — and a
+ * deleted field adds the field dictionary and every ancestor pruned with it.
+ * That is unbounded and has no serialisation here, and the bytes would sit in a
+ * log whose `retainedBytes` counts checkpoints only.
+ *
+ * So this is a *never* rather than a *not yet*, and the handle ADR-0041 built
+ * does not change it: the handle says which field, and the difficulty was never
+ * naming one.
+ */
+export function captureDeleteFormFields(
+  session: MupdfSession,
+  command: CommandOfKind<'deleteFormFields'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    // EVERY index, not the first: a capture that validated one of five would
+    // let the bus checkpoint a command that is about to refuse on the fourth.
+    for (const index of command.indices) widgetAt(loaded, index);
+    return {
+      captured: false,
+      reason:
+        'a deleted form field cannot be recorded as prior state: its prior state is the widget’s ' +
+        'whole object graph, the field dictionary that held it and every ancestor pruned with ' +
+        'it, which is unbounded and has no serialisation here',
+    };
+  });
+}
+
+/**
+ * Unreachable, and required by {@link CommandSpec}'s shape.
+ *
+ * `CommandPrior['deleteFormFields']` is `never`, so nothing can construct an
+ * argument. It throws rather than resolving for `invertRemoveAnnotation`'s
+ * reason: a reachable path here would mean the type had been widened, and a
+ * quiet resolve would land that as an undo that silently did nothing.
+ */
+export const invertDeleteFormFields: Invert<'mupdf', 'deleteFormFields'> = (): Promise<void> => {
+  throw new Error(
+    'a deleted form field has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};

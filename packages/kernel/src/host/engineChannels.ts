@@ -3,6 +3,7 @@ import {
   type CommandOfKind,
   addAnnotationSchema,
   placeImageSchema,
+  deleteFormFieldsSchema,
   fieldFillSchema,
   fillFormFieldSchema,
   MAX_ANNOTATION_BORDER,
@@ -820,6 +821,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   styleAnnotationSchema,
   addLinkSchema,
   fillFormFieldSchema,
+  deleteFormFieldsSchema,
 ]);
 
 /** What travels in place of a command, once its asset has been taken out. */

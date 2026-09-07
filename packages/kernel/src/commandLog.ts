@@ -425,6 +425,23 @@ export interface CommandPrior {
    * page, widget, value — rather than a value the invert has to place.
    */
   readonly fillFormField: PriorFieldValue;
+  /**
+   * **`never`**, and it is {@link removeAnnotation}'s reason with a second
+   * structure attached rather than a new one.
+   *
+   * The prior state is the widget's whole object graph — a dictionary that may
+   * reference an appearance stream, which references fonts and images — plus
+   * the field dictionary that held it and every ancestor the deletion emptied.
+   * Unbounded and unserialisable here, and the bytes would sit in a log whose
+   * `retainedBytes` counts checkpoints only.
+   *
+   * Written out rather than pointed at its neighbour, because this table is
+   * where each command says what its inverse is made of. **ADR-0041's handle
+   * does not unblock it**, which is worth saying because the handle is what
+   * unblocked `fillFormField` two entries up: naming the field was never the
+   * difficulty here.
+   */
+  readonly deleteFormFields: never;
 }
 
 /**

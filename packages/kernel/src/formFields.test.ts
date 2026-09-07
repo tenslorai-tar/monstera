@@ -6,7 +6,9 @@ import { asDocVersion } from '@monstera/shared';
 
 import type { MupdfSession } from './engineSeam.js';
 import {
+  applyDeleteFormFields,
   applyFillFormField,
+  captureDeleteFormFields,
   captureFillFormField,
   invertFillFormField,
   type ListedField,
@@ -136,6 +138,27 @@ async function fillable(): Promise<Uint8Array> {
   split.addOptionToPage('here', first, { x: 20, y: 380, width: 16, height: 16 });
   split.addOptionToPage('there', second, { x: 20, y: 380, width: 16, height: 16 });
   split.select('there');
+
+  // THE MERGED SHAPE, BY HAND, and it is the hard one. `@cantoo/pdf-lib` always
+  // writes a field dictionary with a `/Kids` array holding a separate widget;
+  // the format also lets a field with exactly one widget be ONE dictionary —
+  // `/FT` and `/T` beside `/Subtype /Widget` — which is what a great many real
+  // forms carry. Appended LAST so every index the cases above name is unmoved.
+  const context = document.context;
+  const merged = context.obj({
+    Type: PDFName.of('Annot'),
+    Subtype: PDFName.of('Widget'),
+    FT: PDFName.of('Tx'),
+    T: PDFString.of('merged'),
+    Rect: context.obj([20, 200, 220, 220]),
+    F: 4,
+  });
+  const mergedRef = context.register(merged);
+  first.node.addAnnot(mergedRef);
+  document.catalog
+    .lookup(PDFName.of('AcroForm'), PDFDict)
+    .lookup(PDFName.of('Fields'), PDFArray)
+    .push(mergedRef);
 
   return document.save();
 }
@@ -544,8 +567,12 @@ describe('captureFillFormField and invertFillFormField', () => {
     // The group moves to page 0's widget and back to page 1's. The two arrays
     // differ at exactly the two radio positions, which is what says the write
     // reached a sibling on another page in both directions.
-    expect(held.changed).toStrictEqual([null, null, null, null, true, false]);
-    expect(held.restored).toStrictEqual([null, null, null, null, false, true]);
+    // THE MERGED TEXT FIELD SITS BETWEEN THE TWO RADIOS in the walk — page 0's
+    // widgets, then page 1's — so the two arrays differ at positions 4 and 6.
+    // A pair that differed anywhere else would be a write that reached a
+    // neighbour rather than the sibling it named.
+    expect(held.changed).toStrictEqual([null, null, null, null, true, null, false]);
+    expect(held.restored).toStrictEqual([null, null, null, null, false, null, true]);
   });
 
   it('CONTROL: the capture refuses BEFORE the log holds an entry, on every rule the apply has', async () => {
@@ -585,6 +612,164 @@ describe('captureFillFormField and invertFillFormField', () => {
       'applicant.submit',
       'applicant.title',
       'applicant.split',
+      'merged',
+      'applicant.split',
+    ]);
+  });
+});
+
+/** A deletion naming rows of one page's walk, at a version nothing here compares. */
+function deleting(page: number, indices: readonly number[]): CommandOfKind<'deleteFormFields'> {
+  return { kind: 'deleteFormFields', page, indices, version: asDocVersion(1) };
+}
+
+/**
+ * What pdf-lib says the FIELDS are — the second library, and the load-bearing
+ * reading of this describe.
+ *
+ * MuPDF's own walk is over widgets, so a field left in `/AcroForm` with no
+ * widget is invisible to it: asking MuPDF whether a delete worked is asking the
+ * library that performed it, through the one view that cannot see what it left.
+ * pdf-lib lists the tree, which is what every other reader sees.
+ */
+async function fieldNamesByPdfLib(bytes: Uint8Array): Promise<string[]> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  return document
+    .getForm()
+    .getFields()
+    .map((field) => field.getName());
+}
+
+/** Applies a deletion and answers both readings of the result. */
+async function afterDelete(
+  bytes: Uint8Array,
+  command: CommandOfKind<'deleteFormFields'>,
+): Promise<{ widgets: string[]; fields: string[] }> {
+  return onSession(bytes, async (session) => {
+    await applyDeleteFormFields(session, command);
+    const listed = await readFormFields(session);
+    return {
+      widgets: listed.fields.map((field) => field.name),
+      fields: await fieldNamesByPdfLib(await mupdfWriter.serialise(session)),
+    };
+  });
+}
+
+describe('applyDeleteFormFields', () => {
+  it('REMOVES THE FIELD FROM BOTH STRUCTURES, not only from the page walk', async () => {
+    // THE WHOLE ROW IN ONE CASE. `deleteAnnotation` alone leaves the field in
+    // `/AcroForm` with an empty `/Kids`, which pdf-lib still lists by name —
+    // measured — so a document ends in two states: this build says the field is
+    // gone and every other reader says it is there and unfillable. Asserting
+    // the widget walk alone would pass for exactly that defect.
+    const after = await afterDelete(await form(), deleting(0, [0]));
+    expect(after.widgets).not.toContain('applicant.name');
+    expect(after.fields).not.toContain('applicant.name');
+    // AND THE REST SURVIVE, which is the half a delete-everything also passes.
+    expect(after.fields).toContain('applicant.agrees');
+  });
+
+  it('DELETES SEVERAL AT ONCE, in an order that does not move the survivors', async () => {
+    // The indices are positions in one walk and removing a widget shifts every
+    // position after it. Deleting low-to-high removes the wrong things; this
+    // names two whose positions straddle others, so an ascending pass would
+    // take a listbox and a signature instead.
+    const after = await afterDelete(await form(), deleting(0, [1, 4]));
+    expect(after.widgets).toStrictEqual([
+      'applicant.name',
+      'applicant.post',
+      'applicant.post',
+      'applicant.languages',
+      'applicant.signature',
+    ]);
+  });
+
+  it('TAKES ONE WIDGET OF A RADIO GROUP and leaves the field, because it still has one', async () => {
+    // Measured: a group's `/Kids` goes 2 to 1 and the field is not empty, so
+    // nothing is pruned. A prune keyed on *this field lost a widget* rather
+    // than on *this field has none left* would delete the whole group here.
+    const after = await afterDelete(await form(), deleting(0, [2]));
+    expect(after.widgets.filter((name) => name === 'applicant.post')).toHaveLength(1);
+    expect(after.fields).toContain('applicant.post');
+  });
+
+  it('TAKES BOTH WIDGETS OF A GROUP and then the field goes too', async () => {
+    const after = await afterDelete(await form(), deleting(0, [2, 3]));
+    expect(after.widgets).not.toContain('applicant.post');
+    expect(after.fields).not.toContain('applicant.post');
+  });
+
+  it('DELETES A MERGED FIELD, which is the shape pdf-lib never writes', async () => {
+    // THE HARD SHAPE (audit item 2). A field and its one widget in a single
+    // dictionary is what a great many real forms carry, and measured it leaves
+    // `/Fields` on its own — so this case says the delete reaches a shape the
+    // rest of this file cannot produce, and it does NOT redden when the pruning
+    // is removed, because the pruning is not what deletes it.
+    //
+    // The first spelling of this case pointed at index 3 of `fillable()`, which
+    // is a pdf-lib DROPDOWN and therefore split. It went red under the pruning
+    // mutation, which is how the mislabelling surfaced: a case named for the
+    // hard shape that reddens for the easy one's reason is testing the easy one.
+    const after = await afterDelete(await fillable(), deleting(0, [5]));
+    expect(after.widgets).not.toContain('merged');
+    expect(after.fields).not.toContain('merged');
+    expect(after.fields).toContain('applicant.title');
+  });
+
+  it('REFUSES AN INDEX THIS PAGE HAS NO WIDGET FOR, before deleting anything', async () => {
+    // A refusal on the fourth of five, after three have gone, is a document
+    // nobody asked for and no undo entry describes correctly.
+    const bytes = await form();
+    await expect(afterDelete(bytes, deleting(0, [0, 99]))).rejects.toThrow(
+      /widget walk that document\.formFields answers with/u,
+    );
+    const held = await onSession(bytes, (session) => readFormFields(session));
+    expect(held.fields.map((field) => field.name)).toContain('applicant.name');
+  });
+
+  it('CONTROL: it leaves a document with no fields named alone', async () => {
+    // Without this, every case above is satisfied by a delete that empties the
+    // form — *the name is gone* is true of a document that lost everything, and
+    // that is this describe's reassuring answer.
+    const after = await afterDelete(await form(), deleting(0, [6]));
+    expect(after.fields).toStrictEqual([
+      'applicant.name',
+      'applicant.agrees',
+      'applicant.post',
+      'applicant.title',
+      'applicant.languages',
+    ]);
+  });
+
+  it('CONTROL: the capture refuses with a reason, and validates every index first', async () => {
+    const refused = await onSession(await form(), (session) =>
+      captureDeleteFormFields(session, deleting(0, [0])),
+    );
+    expect(refused.captured).toBe(false);
+    expect(refused.captured ? '' : refused.reason).toMatch(/whole object graph/u);
+
+    // AND IT VALIDATES, which the refusal above cannot show: a capture that
+    // refused without looking would answer identically for a handle naming
+    // nothing, and the bus would checkpoint a command about to throw.
+    await expect(
+      onSession(await form(), (session) =>
+        captureDeleteFormFields(session, deleting(0, [0, 99])),
+      ),
+    ).rejects.toThrow(/outside this page/u);
+  });
+
+  it('CONTROL: the walk finds the fields this describe deletes from, in the order it names', async () => {
+    // 4b again, and it earns its place twice: every case above names an INDEX,
+    // so a fixture whose order moved would delete the wrong field while every
+    // assertion about names still passed. This is the list those indices mean.
+    const answer = await onSession(await fillable(), (session) => readFormFields(session));
+    expect(answer.fields.map((field) => field.name)).toStrictEqual([
+      'applicant.name',
+      'applicant.reference',
+      'applicant.submit',
+      'applicant.title',
+      'applicant.split',
+      'merged',
       'applicant.split',
     ]);
   });

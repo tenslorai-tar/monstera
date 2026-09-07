@@ -1015,6 +1015,33 @@ const declarations = {
     reads: 'none',
     asset: 'none',
   },
+  deleteFormFields: {
+    kind: 'deleteFormFields',
+    // A widget is an object in `/Annots` and an entry in `/AcroForm`'s tree, so
+    // removing one is a page-tree and catalog write — `removeAnnotation`'s
+    // classification with a second structure attached. Nothing a content-stream
+    // writer could do would remove a field; it would paint over the appearance
+    // and leave the object fillable.
+    writer: 'mupdf',
+    // TERMINAL, and it is `removeAnnotation`'s reason strictly larger rather
+    // than a new one: the prior state is the widget's whole object graph — a
+    // dictionary that may reference an appearance stream, which references
+    // fonts and images — plus the field dictionary that held it and every
+    // ancestor pruned with it. Unbounded, unserialisable here, and a log whose
+    // `retainedBytes` counts checkpoints only would under-report it. ADR-0041's
+    // handle does not unblock this: naming the field was never the difficulty.
+    invertible: false,
+    undo: 'checkpoint',
+    // Removing objects writes no date and consults no clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // Its payload points into an answer `document.formFields` gave at one
+    // version, as `fillFormField`'s does.
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

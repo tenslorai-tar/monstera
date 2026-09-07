@@ -5,6 +5,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 
 import {
   FORMS_CHOICE_EMPTY,
+  FORMS_DELETE,
   FORMS_EMPTY,
   FORMS_GO_TO_PAGE,
   FORMS_KIND_BUTTON,
@@ -78,6 +79,7 @@ export function FormsPanel({
   version,
   onJump,
   onFill,
+  onDelete,
 }: {
   readonly client: ContractClient;
   /** `undefined` with no document open, which renders nothing. */
@@ -98,6 +100,21 @@ export function FormsPanel({
     readonly index: number;
     readonly version: DocVersion;
     readonly value: FieldFill;
+  }) => void;
+  /**
+   * Deletes one field, named by the handle the row was built from.
+   *
+   * **Offered on every row, including the ones with no fill control.** A
+   * signature, a push button and a read-only field cannot be *filled* here, and
+   * that is a statement about the value; removing the field from the document
+   * is a different action, and the reasons the first is refused say nothing
+   * about the second. A document's read-only flag governs filling, not editing
+   * the form's structure.
+   */
+  readonly onDelete: (handle: {
+    readonly page: number;
+    readonly index: number;
+    readonly version: DocVersion;
   }) => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
@@ -191,6 +208,24 @@ export function FormsPanel({
                     });
                   }}
                 />
+                <button
+                  className="m-forms-delete"
+                  onClick={() => {
+                    onDelete({
+                      page: field.page,
+                      index: field.index,
+                      // FROM THE STATE, for the fill's reason: the handle is
+                      // *page, index and the version its walk was read at*, and
+                      // a version that can never disagree is a guard that
+                      // cannot fire.
+                      version: state.version,
+                    });
+                  }}
+                  title={i18n._(FORMS_DELETE)}
+                  type="button"
+                >
+                  {i18n._(FORMS_DELETE)}
+                </button>
               </li>
             ))}
           </ul>

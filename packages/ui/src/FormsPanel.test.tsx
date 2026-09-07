@@ -85,15 +85,19 @@ async function settle(): Promise<void> {
 async function panel(
   fields: readonly unknown[],
   options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
-): Promise<{ jumps: number[]; fills: unknown[]; asked: unknown[] }> {
+): Promise<{ jumps: number[]; fills: unknown[]; deletes: unknown[]; asked: unknown[] }> {
   const { client, asked } = clientAnswering(fields, options);
   const jumps: number[] = [];
   const fills: unknown[] = [];
+  const deletes: unknown[] = [];
   render(
     <Wrapped>
       <FormsPanel
         client={client}
         docId={DOC}
+        onDelete={(handle): void => {
+          deletes.push(handle);
+        }}
         onFill={(handle): void => {
           fills.push(handle);
         }}
@@ -105,7 +109,7 @@ async function panel(
     </Wrapped>,
   );
   await settle();
-  return { jumps, fills, asked };
+  return { jumps, fills, deletes, asked };
 }
 
 /** A field with everything a row needs, so a case names only what it is about. */
@@ -262,6 +266,35 @@ describe('FormsPanel', () => {
     ]);
     expect(screen.getAllByText('This field is not one that can be filled here.')).toHaveLength(2);
     expect(screen.queryByText('The document marks this field read-only.')).toBeNull();
+  });
+
+  it('DISPATCHES A DELETE with the handle from the row it sits on', async () => {
+    // The second page's row again, for the fill's reason: its list position is
+    // 1 and its walk index is 0, and a delete built from the position would
+    // take a field that is not there.
+    const { deletes } = await panel([
+      field({ name: 'first', page: 0, index: 0 }),
+      field({ name: 'second', page: 1, index: 0 }),
+    ]);
+    const buttons = screen.getAllByRole('button', { name: 'Delete this field' });
+    buttons[1]?.click();
+    expect(deletes).toStrictEqual([{ page: 1, index: 0, version: asDocVersion(1) }]);
+  });
+
+  it('OFFERS A DELETE on rows that cannot be filled, because those are different actions', async () => {
+    // A signature cannot be filled here and a read-only field is one the
+    // document locked — both are statements about the VALUE. Removing the field
+    // from the form is a different action, and the reasons the first is refused
+    // say nothing about the second. A panel that hid delete wherever it hid
+    // fill would make a read-only field permanent.
+    const { deletes } = await panel([
+      field({ name: 'applicant.signature', kind: 'signature' }),
+      field({ name: 'applicant.reference', readOnly: true, index: 1 }),
+    ]);
+    const buttons = screen.getAllByRole('button', { name: 'Delete this field' });
+    expect(buttons).toHaveLength(2);
+    buttons[1]?.click();
+    expect(deletes).toStrictEqual([{ page: 0, index: 1, version: asDocVersion(1) }]);
   });
 
   it('jumps to the page a row names, zero-based as the shell expects', async () => {

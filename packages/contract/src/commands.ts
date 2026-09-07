@@ -2236,6 +2236,53 @@ export const styleAnnotationSchema = z.object({
   version: docVersionSchema,
 });
 
+/**
+ * How many form fields one deletion may name.
+ *
+ * {@link MAX_REMOVED_ANNOTATIONS}' argument on the other walk: this is *how
+ * many a person selected in a panel and removed*, not how many a document may
+ * hold. Stated separately rather than shared, for the reason every bound here
+ * is: two bounds that happen to agree are not one bound.
+ */
+export const MAX_DELETED_FIELDS = 1024;
+
+/**
+ * Deletes form fields, named by where they sit in the widget walk.
+ *
+ * ## It deletes WIDGETS and prunes what that empties
+ *
+ * Measured 2026-09-07 (`scripts/research/formFieldDelete.mjs`): MuPDF's
+ * `deleteAnnotation` removes a widget from the page's `/Annots` **and** from
+ * wherever the field tree references it — a split field's `/Kids` goes 1 → 0
+ * and a radio group's 2 → 1. There is no dangling reference. What it leaves is
+ * a **field with no children**, which every other reader still lists by name:
+ * `@cantoo/pdf-lib` answers with it after its only widget is gone. So a command
+ * that stopped at the engine call would leave the document in two states — this
+ * build's reader walking widgets and saying the field is gone, everything else
+ * saying it is there and unfillable.
+ *
+ * The merged shape — a field and its one widget in a single dictionary, which
+ * pdf-lib never writes and real forms often carry — needs no pruning at all: it
+ * leaves `/Fields` on its own.
+ *
+ * ## Plural, unlike the fill beside it
+ *
+ * `removeAnnotation`'s shape and its reason: a person selects several rows and
+ * removes them together, and a loop of single deletions would be one version
+ * bump per field, one undo step each, and every handle after the first stale.
+ * A fill is singular because nobody fills two fields with one gesture; nobody
+ * deletes one at a time either.
+ */
+export const deleteFormFieldsSchema = z.object({
+  kind: z.literal('deleteFormFields'),
+  /** Zero-based index of the page they sit on. */
+  page: z.number().int().nonnegative(),
+  /** Their positions in the widget walk that produced the answer this names. */
+  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_DELETED_FIELDS).readonly(),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -2262,6 +2309,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   addLinkSchema,
   styleAnnotationSchema,
   fillFormFieldSchema,
+  deleteFormFieldsSchema,
 ]);
 
 /**
@@ -2345,6 +2393,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // What it cannot express is WHICH WRITE — `setTextValue`, `setChoiceValue` or
   // a bounded sequence of toggles is the kernel's choice, made from the widget.
   fillFormFieldSchema,
+  // RENDERABLE, and `removeAnnotation`'s shape on the widget walk: the renderer
+  // names rows of an answer it was given. What it cannot express is what a
+  // delete has to do to the field TREE, which is measured behaviour the kernel
+  // owns and nothing on this side could describe.
+  deleteFormFieldsSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -2485,6 +2538,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'placeAnnotation') return command.version;
   if (command.kind === 'styleAnnotation') return command.version;
   if (command.kind === 'fillFormField') return command.version;
+  if (command.kind === 'deleteFormFields') return command.version;
   return undefined;
 }
 
@@ -2516,6 +2570,6 @@ void _thatNameIsACommandKind;
  * union of both: this package cannot import the kernel, so the half checkable
  * here is only that the name is a real kind.
  */
-export type NamesAFormField = 'fillFormField';
+export type NamesAFormField = 'fillFormField' | 'deleteFormFields';
 const _theFieldNameIsACommandKind: NamesAFormField extends CommandKind ? true : never = true;
 void _theFieldNameIsACommandKind;

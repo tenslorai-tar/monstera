@@ -93,8 +93,11 @@ export {
   readAnnotations,
 } from './pageAnnotations.js';
 export {
+  applyDeleteFormFields,
   applyFillFormField,
+  captureDeleteFormFields,
   captureFillFormField,
+  invertDeleteFormFields,
   invertFillFormField,
   MAX_LISTED_FIELDS,
   readFormFields,

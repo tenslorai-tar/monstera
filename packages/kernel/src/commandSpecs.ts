@@ -60,8 +60,11 @@ import {
   applyStyleAnnotation,
 } from './pageAnnotations.js';
 import {
+  applyDeleteFormFields,
   applyFillFormField,
+  captureDeleteFormFields,
   captureFillFormField,
+  invertDeleteFormFields,
   invertFillFormField,
 } from './formFields.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
@@ -354,6 +357,12 @@ const declared = {
     apply: applyFillFormField,
     capture: captureFillFormField,
     invert: invertFillFormField,
+  },
+  deleteFormFields: {
+    ...declaredCommands.deleteFormFields,
+    apply: applyDeleteFormFields,
+    capture: captureDeleteFormFields,
+    invert: invertDeleteFormFields,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them
