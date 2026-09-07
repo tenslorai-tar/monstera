@@ -307,14 +307,47 @@ export async function snapshotRegion(
  * `insertImageCommand`'s dialog says what happened to a file that could not be
  * read or was too large, and it is reused rather than copied — the outcomes are
  * the same two and a second dialog would be a second wording for them.
+ *
+ * ## It takes a page LIST, which is the stamps row
+ *
+ * The caller decides which pages, because that is a person's setting rather
+ * than a fact about the drag. One call either way: stamping ten pages is one
+ * decision, so it is one command, one log entry and one undo — where a loop in
+ * a surface would be ten versions of which nine are stale before the second
+ * call is sent.
  */
+/**
+ * Which pages a placement covers — the stamps row's multi-page apply, as a
+ * decision with a name.
+ *
+ * ## It is here rather than inline in `App.tsx`, and that is the whole reason
+ *
+ * Written at the call site it would be three lines inside a `useCallback`: a
+ * conditional, a `Array.from`, and a fallback. Nothing tests a component's
+ * closure, so *the decision that turns one drag into forty stamps* would sit
+ * inside a feeling of coverage — `placeImage` below is well covered and takes
+ * whatever it is given, which is exactly the helper-hides-the-caller shape.
+ *
+ * **An unknown page count answers with the one page we know exists.** The drag
+ * happened and something must be placed; `'all'` with no count is not *no
+ * pages*, and it is certainly not a guess at how many there are.
+ */
+export function imagePagesFor(
+  choice: 'this' | 'all',
+  page: number,
+  pageCount: number | undefined,
+): readonly number[] {
+  if (choice === 'this' || pageCount === undefined) return [page];
+  return Array.from({ length: pageCount }, (_unused, index) => index);
+}
+
 export async function placeImage(
   deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'>,
   docId: DocId,
-  page: number,
+  pages: readonly number[],
   rect: AnnotationRect,
 ): Promise<void> {
-  const answer = await deps.client['document.placeImage']({ docId, pages: [page], rect });
+  const answer = await deps.client['document.placeImage']({ docId, pages, rect });
   if (!answer.ok) {
     reportProblem(deps, answer.error);
     return;

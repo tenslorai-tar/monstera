@@ -15,6 +15,7 @@ import {
   resizePagesCommand,
   extractPagesCommand,
   insertFromPdfCommand,
+  imagePagesFor,
   insertImageCommand,
   placeImage,
   mergeDocumentCommand,
@@ -927,16 +928,36 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
+  it('PLACES ON THE ONE PAGE by default, which is the safe half of an asymmetry', () => {
+    // Placing on one page when you meant all is one more drag. Placing on all
+    // when you meant one is a mark on every page of a long document, removed
+    // one at a time.
+    expect(imagePagesFor('this', 3, 40)).toStrictEqual([3]);
+  });
+
+  it('PLACES ON EVERY PAGE when the setting says so — the stamps row', () => {
+    // Zero-based and the whole document, so `all` means the pages the document
+    // has now rather than the pages it had when the tool was chosen.
+    expect(imagePagesFor('all', 3, 5)).toStrictEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('FALLS BACK TO THE ONE PAGE when the count is unknown, not to none', () => {
+    // The drag happened and something must be placed. `all` with no count is
+    // not *no pages*, and it is certainly not a guess at how many there are.
+    expect(imagePagesFor('all', 3, undefined)).toStrictEqual([3]);
+  });
+
   it('A PLACEMENT SENDS THE PAGE AND THE BOX AND NO BYTES, and rebuilds the view', async () => {
     // THE SECOND HALF of place-image's pair; the first is
     // `placeImageTool.test.ts`, which asserts the tool calls this with the
     // converted rectangle, and the kernel's is `applyPlaceImage`'s block.
     //
     // The page comes from the TOOL rather than from the context — a stamp goes
-    // on the page it was drawn on — so this passes 3 explicitly, and the
-    // payload's `pages` is a one-element list because the surface places one at
-    // a time. `document.placeImage` physically cannot carry bytes: the params
-    // schema has three fields and none of them is a `Uint8Array`.
+    // on the page it was drawn on — so this passes 3 explicitly. The list is
+    // the CALLER's: `App.tsx` reads the image-pages setting and turns *every
+    // page* into the whole range, so this function never has to know how many
+    // pages there are. `document.placeImage` physically cannot carry bytes: the
+    // params schema has three fields and none of them is a `Uint8Array`.
     const { client, sent } = recording({
       'document.placeImage': {
         kind: 'placed',
@@ -950,7 +971,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await placeImage(
       { client, onApplied: (a) => applied.push(a), ask: () => Promise.resolve(undefined) },
       DOC,
-      3,
+      [3],
       { x0: 10, y0: 20, x1: 110, y1: 70 },
     );
 
@@ -984,7 +1005,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
       DOC,
-      3,
+      [3],
       { x0: 10, y0: 20, x1: 110, y1: 70 },
     );
 
@@ -1011,7 +1032,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
       DOC,
-      3,
+      [3],
       { x0: 10, y0: 20, x1: 110, y1: 70 },
     );
 

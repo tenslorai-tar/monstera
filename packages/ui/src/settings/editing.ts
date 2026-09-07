@@ -10,6 +10,7 @@ import { z } from 'zod';
 import {
   EDITING_COLOUR_TITLE,
   EDITING_FONT_SIZE_TITLE,
+  EDITING_IMAGE_PAGES_TITLE,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
   MEASURE_SCALE_TITLE,
@@ -129,6 +130,41 @@ export const MEASURE_UNIT_SETTING: SettingDefinition<typeof measureUnitSchema> =
   title: MEASURE_UNIT_TITLE,
   schema: measureUnitSchema,
   fallback: 'pt',
+  category: 'editing',
+};
+
+/**
+ * Which pages a placed image goes on — the stamps row's **multi-page apply**.
+ *
+ * ## Why a setting rather than a dialog after every drag
+ *
+ * `docs/FEATURES.md`'s stamps row asks for *multi-page apply*, and the command
+ * has taken a page list since it was written: stamping ten pages is one
+ * decision, so it is one log entry and one undo. What was missing was a way for
+ * a person to say so.
+ *
+ * A dialog after each drag would ask the question every time and the answer is
+ * *this page* almost every time — which is the shape that trains people to
+ * dismiss it. A setting is asked once and then it is a **mode**, which is what
+ * *stamp this on every page* actually is: somebody applying a DRAFT mark to a
+ * document is doing it to the document, not to page four.
+ *
+ * ## `'this'` is the default, and the cost of getting it wrong is asymmetric
+ *
+ * Placing on one page when you meant all of them is one more drag. Placing on
+ * all of them when you meant one is a mark on every page of a long document,
+ * removed one at a time — there is no *undo the stamps* short of the command's
+ * own undo, which is the whole placement and therefore the right tool, and a
+ * person who has since done something else has lost that.
+ *
+ * So the safe value is the default, and it is the one that matches what the
+ * gesture looks like: a box drawn on the page in front of you.
+ */
+export const IMAGE_PAGES_SETTING: SettingDefinition<z.ZodEnum<{ this: 'this'; all: 'all' }>> = {
+  id: 'editing.image-pages',
+  title: EDITING_IMAGE_PAGES_TITLE,
+  schema: z.enum(['this', 'all']),
+  fallback: 'this',
   category: 'editing',
 };
 

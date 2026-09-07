@@ -17,6 +17,7 @@ import {
 
 import {
   applyDocumentCommand,
+  imagePagesFor,
   placeImage,
   snapshotRegion,
   findCommand,
@@ -135,6 +136,7 @@ import {
   ANNOTATION_FONT_SIZE_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
+  IMAGE_PAGES_SETTING,
   MEASURE_SCALE_SETTING,
   MEASURE_UNIT_SETTING,
 } from './settings/editing.js';
@@ -878,6 +880,7 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const scalePerPoint = useSetting(settings, MEASURE_SCALE_SETTING);
   const scaleUnit = useSetting(settings, MEASURE_UNIT_SETTING);
+  const imagePages = useSetting(settings, IMAGE_PAGES_SETTING);
   const scale = useMemo<MeasureScale>(
     () => ({ perPoint: scalePerPoint, unit: scaleUnit }),
     [scalePerPoint, scaleUnit],
@@ -913,13 +916,25 @@ export function App({ client, settings }: AppProps): ReactElement {
    * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
    * `placeImage` is where the version and the dropped-history dialog are
    * handled, beside every other write's.
+   *
+   * **WHICH PAGES IS A SETTING, and it is read here rather than in the tool.**
+   * The tool knows where the box is; *this page or every page* is a mode the
+   * person is in, and reading it here is what keeps the tool a description of a
+   * gesture. `pageCount` comes from the view model, so *every page* means every
+   * page of the document as it is now — the command is one call whatever the
+   * answer, which is the stamps row's multi-page apply.
    */
   const onPlaceImage = useCallback(
     (page: number, rect: AnnotationRect): void => {
       if (activeId === undefined) return;
-      void placeImage({ client, ask, onApplied: applied }, activeId, page, rect);
+      void placeImage(
+        { client, ask, onApplied: applied },
+        activeId,
+        imagePagesFor(imagePages, page, pageCount),
+        rect,
+      );
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, imagePages, pageCount],
   );
 
   /**

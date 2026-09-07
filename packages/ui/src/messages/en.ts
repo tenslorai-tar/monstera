@@ -313,6 +313,7 @@ export const EDITING_COLOUR_TITLE = messageKey('setting.editing.annotation-colou
 export const EDITING_OPACITY_TITLE = messageKey('setting.editing.annotation-opacity');
 export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-line-width');
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
+export const EDITING_IMAGE_PAGES_TITLE = messageKey('setting.editing.image-pages');
 export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
 export const COMMENT_STYLES_LABEL = messageKey('surface.comment-styles.label');
 export const COMMENT_STYLES_NONE = messageKey('surface.comment-styles.none');
@@ -585,6 +586,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_OPACITY_TITLE]: 'Annotation opacity',
   [EDITING_LINE_WIDTH_TITLE]: 'Annotation line width',
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
+  [EDITING_IMAGE_PAGES_TITLE]: 'Place images on',
   [STYLE_PANEL_LABEL]: 'Annotation style',
   [COMMENT_STYLES_LABEL]: 'Style of the selected annotations',
   [COMMENT_STYLES_NONE]: 'Select annotations to change how they look.',
