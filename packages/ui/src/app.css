@@ -495,7 +495,20 @@ body {
   display: block;
   width: 100%;
   margin: 0;
-  padding: var(--space-3) var(--space-4);
+  /*
+   * `--space-2`, and it read `--space-3` from the day this was written until
+   * 2026-09-08. THE SCALE HAS NO 3: `tokens.css` declares 2, 4, 8, 16, 24, 32,
+   * so `var(--space-3)` resolved to nothing and the whole declaration was
+   * invalid at computed-value time — this control shipped with no padding at
+   * all, in either axis, because one half of the shorthand was undefined.
+   *
+   * That is the failure mode worth knowing: an undefined custom property does
+   * not fall back to the other value in the shorthand and does not warn. It
+   * discards the property. Every neighbouring control in this panel, including
+   * the delete row directly above, is `var(--space-2) var(--space-4)`, which is
+   * what this was meant to be.
+   */
+  padding: var(--space-2) var(--space-4);
   background: none;
   border: none;
   /*
