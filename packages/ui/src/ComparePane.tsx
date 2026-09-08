@@ -185,6 +185,12 @@ function CompareView({
       // has something true to say.
       label={COMPARE_SECOND_LABEL}
       labelValues={{ name: against.name }}
+      // NOTHING, and this is the one PageList that gets nothing on purpose:
+      // this pane holds a DIFFERENT document, and the find bar searched the
+      // one the reader has open. Painting the same query's matches here would
+      // be highlighting a search nobody ran against this file — the compare
+      // pane is a second document, not a second view of the first.
+      search={undefined}
     />
   );
 }

@@ -7,6 +7,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FindBar } from './FindBar.js';
+import type { SearchHighlight } from './searchHighlight.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 
@@ -77,15 +78,33 @@ function only<T extends Element>(
 }
 
 /** Renders the bar over the fixture and runs a whole-document walk. */
+/**
+ * A spy on `onHighlight`, TYPED.
+ *
+ * `vi.fn()` alone answers `any` for `lastCall`, and a case reading a field off
+ * `any` cannot tell a renamed field from a wrong value — both arrive as
+ * `undefined`. The signature is the one the prop declares.
+ */
+type PaintSpy = ReturnType<typeof vi.fn<(highlight: SearchHighlight | null) => void>>;
+
 async function afterWalking(): Promise<{
   readonly container: HTMLElement;
   readonly jumped: ReturnType<typeof vi.fn>;
+  readonly painted: PaintSpy;
 }> {
   const { client } = clientAnswering();
   const jumped = vi.fn();
+  const painted: PaintSpy = vi.fn();
   const { container } = render(
     <Wrapped>
-      <FindBar client={client} docId={DOC} page={1} pageCount={PAGES} onJump={jumped} />
+      <FindBar
+        client={client}
+        docId={DOC}
+        page={1}
+        pageCount={PAGES}
+        onJump={jumped}
+        onHighlight={painted}
+      />
     </Wrapped>,
   );
 
@@ -104,7 +123,7 @@ async function afterWalking(): Promise<{
     for (let turn = 0; turn <= PAGES; turn += 1) await Promise.resolve();
   });
 
-  return { container, jumped };
+  return { container, jumped, painted };
 }
 
 /** Clicks a navigation control by the attribute the surface is found by. */
@@ -131,6 +150,60 @@ describe('FindBar match navigation', () => {
     // Page 0, the first MATCHED page — not 1, which is where the reader was.
     expect(jumped).toHaveBeenLastCalledWith(0);
     expect(container.querySelector('.m-find-position')?.textContent).toBe('Match 1 of 2');
+  });
+
+  it('REPORTS what to paint, and moves it with the active match', async () => {
+    // The find bar's half of the highlight. What the layers do with this is
+    // `TextLayer.test.tsx`'s; what this pins is that the description carries
+    // the query that was ANSWERED and the match the reader is on — a bar that
+    // reported a highlight with no `active` would paint every match the same
+    // and the *next* control would change a number and nothing else.
+    const { container, painted } = await afterWalking();
+
+    expect(painted).toHaveBeenLastCalledWith({
+      query: 'hit',
+      options: { caseSensitive: false, wholeWord: false, regex: false },
+      active: { page: 0, line: 0, offset: 0 },
+    });
+
+    await press(container, 'data-find-next');
+
+    // THE PAGE MOVED. Asserting the whole object again would pass for a bar
+    // that re-sent the first match, since only one field differs.
+    //
+    expect(painted.mock.lastCall?.[0]?.active?.page).toBe(2);
+  });
+
+  it('reports NOTHING for a query that has been typed and not searched', async () => {
+    // The control, and it is what separates painting a search from painting the
+    // search box. Typing into the field is a query the document has not been
+    // asked about; a bar that read `query` at the point of use rather than the
+    // answered query would highlight it, beside a result list counting nothing.
+    const { client } = clientAnswering();
+    const painted: PaintSpy = vi.fn();
+    const { container } = render(
+      <Wrapped>
+        <FindBar
+          client={client}
+          docId={DOC}
+          page={1}
+          pageCount={PAGES}
+          onJump={vi.fn()}
+          onHighlight={painted}
+        />
+      </Wrapped>,
+    );
+
+    await act(async () => {
+      fireEvent.change(only(container, '[data-find-input]', HTMLInputElement), {
+        target: { value: 'hit' },
+      });
+      await Promise.resolve();
+    });
+
+    // `null` on mount and `null` still: a bar that reported the typed query
+    // would have sent an object on the second call.
+    expect(painted.mock.calls.every((call) => call[0] === null)).toBe(true);
   });
 
   it('MOVES TO THE NEXT MATCH BY ITS PAGE, not by its place in the list', async () => {
@@ -170,7 +243,14 @@ describe('FindBar match navigation', () => {
     const jumped = vi.fn();
     const { container } = render(
       <Wrapped>
-        <FindBar client={client} docId={DOC} page={0} pageCount={PAGES} onJump={jumped} />
+        <FindBar
+          client={client}
+          docId={DOC}
+          page={0}
+          pageCount={PAGES}
+          onJump={jumped}
+          onHighlight={vi.fn()}
+        />
       </Wrapped>,
     );
 

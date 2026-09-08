@@ -1,8 +1,9 @@
-import { toPdf, toViewport, viewportPoint } from '@monstera/shared';
-import type { ReactElement } from 'react';
+import { type LineMatch, findInLines, toPdf, toViewport, viewportPoint } from '@monstera/shared';
+import { type ReactElement, useEffect, useRef } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform, unscaledTransform } from './annotations/annotationSpace.js';
+import { type HighlightPainter, type SearchHighlight, sharedPainter } from './searchHighlight.js';
 
 /**
  * One line of the page, as the channel reports it.
@@ -29,6 +30,23 @@ export interface TextLayerProps {
   readonly page: number;
   /** The page as drawn, for the transform. The overlay's own geometry. */
   readonly geometry: OverlayPage;
+  /**
+   * The search whose matches should be painted over these glyphs, if any.
+   *
+   * Absent while nothing has been searched, which is not the same as a search
+   * that found nothing — the second still paints (nothing), and the difference
+   * is that it has an answer.
+   *
+   * **Required, and `| undefined`.** See `PageListProps.search`: a prop crossing
+   * four components must be dropped deliberately or not at all.
+   */
+  readonly search: SearchHighlight | undefined;
+  /**
+   * Where the ranges go. The window's shared painter unless a caller says
+   * otherwise, which is what lets a test read what would have been painted in
+   * an environment that has no `CSS.highlights` at all.
+   */
+  readonly painter?: HighlightPainter | null | undefined;
 }
 
 /**
@@ -85,8 +103,88 @@ export interface TextLayerProps {
  * does this achieves, and is why the text is transparent rather than merely
  * hidden: a person dragging across a page must see the browser's own selection
  * highlight land on the words.
+ *
+ * ## It now paints a search's matches, and that is still placement
+ *
+ * The paragraph above said this component "registers no handlers and makes no
+ * decisions". It still registers none. What it gained is one effect that turns
+ * a search into DOM ranges over the nodes it just rendered, because those nodes
+ * are its own and the alternative is a second component reaching into them.
+ *
+ * The matches are recomputed HERE from the same lines this layer drew, rather
+ * than taken from `document.searchPage`'s offsets. That is not duplication of
+ * the search — it is the same resolver, `findInLines`, run over the text the
+ * reader is actually looking at. Taking the channel's offsets would put a
+ * correspondence between two strings at the call site: the channel normalises
+ * before matching, and NFC can change a line's length, so an offset computed
+ * there is not an index into the string rendered here unless something states
+ * that it is. `CLAUDE.md`'s page-index finding is that shape exactly, and the
+ * remedy it names is to remove the second frame rather than to write the
+ * correspondence down.
  */
-export function TextLayer({ lines, page, geometry }: TextLayerProps): ReactElement | null {
+export function TextLayer({
+  lines,
+  page,
+  geometry,
+  search,
+  painter,
+}: TextLayerProps): ReactElement | null {
+  const container = useRef<HTMLDivElement | null>(null);
+  // THE DEFAULT IS RESOLVED IN THE EFFECT, not here: `sharedPainter` reads
+  // `globalThis`, and reading it during render would fix the answer before a
+  // test could arrange an environment. `undefined` means "ask"; an explicit
+  // `null` means "paint nowhere" and is not overridden.
+  const askedFor = painter;
+
+  useEffect(() => {
+    const sink = askedFor === undefined ? sharedPainter() : askedFor;
+    const root = container.current;
+    if (sink === null || root === null) return undefined;
+
+    // A CLEANUP THAT ALWAYS RUNS, including on the paths that paint nothing.
+    // A page scrolled out of view unmounts, and a contribution left behind
+    // would paint ranges over nodes that are gone — which is not a visual
+    // defect but a growing set of detached ranges the registry keeps alive.
+    const forget = (): void => {
+      sink.setPage(page, null);
+    };
+
+    if (search === undefined || search.query === '') {
+      forget();
+      return forget;
+    }
+
+    const found = findInLines(
+      lines.map((line) => line.text),
+      search.query,
+      search.options,
+    );
+    // A PATTERN THAT DOES NOT COMPILE PAINTS NOTHING, and is not an error here.
+    // The find bar has its own state for it and says so; a layer that threw
+    // would take the page down for a half-typed regex.
+    if (!found.ok) {
+      forget();
+      return forget;
+    }
+
+    const all: Range[] = [];
+    const active: Range[] = [];
+    for (const match of found.value) {
+      const range = rangeOf(root, match);
+      if (range === null) continue;
+      all.push(range);
+      if (
+        search.active?.page === page &&
+        search.active.line === match.line &&
+        search.active.offset === match.offset
+      ) {
+        active.push(range);
+      }
+    }
+    sink.setPage(page, { all, active });
+    return forget;
+  }, [askedFor, lines, page, search]);
+
   // NOTHING AT ALL RATHER THAN AN EMPTY SURFACE, which is `AnnotationOverlay`'s
   // rule and `SelectionLayer`'s: an element over the page that holds nothing is
   // a thing that can go wrong silently, and *absent* is checkable in a way
@@ -98,7 +196,7 @@ export function TextLayer({ lines, page, geometry }: TextLayerProps): ReactEleme
   const shown = overlayTransform(geometry);
 
   return (
-    <div className="m-text-layer" data-text-layer={String(page)}>
+    <div className="m-text-layer" data-text-layer={String(page)} ref={container}>
       {lines.map((line, index) => {
         // Display space to PDF user space, then PDF to the viewport. Both
         // corners, because a rotation swaps which one is topmost and taking the
@@ -136,4 +234,53 @@ export function TextLayer({ lines, page, geometry }: TextLayerProps): ReactEleme
       })}
     </div>
   );
+}
+
+/**
+ * One match as a DOM range over the line elements it covers.
+ *
+ * ## Why it walks the rendered nodes rather than trusting the index
+ *
+ * The line elements carry `data-text-line`, and the match carries a line index
+ * into the same array that produced them — so `children[match.line]` would be
+ * right. It is queried by attribute anyway, because the two agree by
+ * construction and disagreeing is exactly the failure this returns `null` for:
+ * a layer mid-update, a line the browser has not laid out yet. A `null` paints
+ * one match less; an index into the wrong node paints a highlight over the
+ * wrong words, which reads as the search being wrong.
+ *
+ * ## The two ends may be different elements
+ *
+ * A match that spans a wrap starts in one line and ends in the next, and a
+ * `Range` across two elements is exactly what the Custom Highlight API paints
+ * as one region. That is the whole reason `LineMatch` reports its end as a
+ * `(line, offset)` pair rather than a length.
+ *
+ * @returns the range, or `null` when either end cannot be located.
+ */
+function rangeOf(root: HTMLElement, match: LineMatch): Range | null {
+  const start = textNodeOf(root, match.line);
+  const end = textNodeOf(root, match.endLine);
+  if (start === null || end === null) return null;
+  // CLAMPED, because a `Range` throws on an offset past its node's length and
+  // one bad match must not take the whole page's highlighting with it. The
+  // clamp cannot fire while the layer and the search read the same lines; it is
+  // here for the moment they do not.
+  const from = Math.min(match.offset, start.length);
+  const to = Math.min(match.endOffset, end.length);
+  const range = root.ownerDocument.createRange();
+  range.setStart(start, from);
+  range.setEnd(end, to);
+  return range;
+}
+
+/** The text node inside the `index`-th rendered line, or `null`. */
+function textNodeOf(root: HTMLElement, index: number): Text | null {
+  const element = root.querySelector(`[data-text-line="${String(index)}"]`);
+  const node = element?.firstChild ?? null;
+  // A TEXT NODE SPECIFICALLY. `firstChild` is one whenever the line rendered
+  // its string, and an element there would mean this component grew a wrapper
+  // — at which point every offset below is measured against the wrong thing and
+  // the honest answer is to paint nothing until someone updates this.
+  return node !== null && node.nodeType === Node.TEXT_NODE ? (node as Text) : null;
 }

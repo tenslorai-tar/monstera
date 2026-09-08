@@ -1410,6 +1410,35 @@ body {
 }
 
 /*
+ * A search's matches, painted over the same glyphs without touching the tree.
+ *
+ * `::highlight()` is styled by NAME rather than by selector, so these two rules
+ * are the whole stylesheet side of the feature — the names are registered from
+ * `searchHighlight.ts` and match its two constants. A rule for a name nothing
+ * registers paints nothing and costs nothing, which is what makes the absent-API
+ * path silent rather than broken.
+ *
+ * Both are weaker than `::selection` above on purpose: a reader dragging across
+ * a highlighted match must still see their own selection win, because that is
+ * the one they are making right now. `color` is left transparent by both, since
+ * the glyphs under this layer are the raster's and the text here is a stand-in.
+ *
+ * The active match is the same hue at full strength rather than a second colour.
+ * A different hue would say "a different kind of thing"; this is the same kind
+ * of thing, currently under the reader's attention — and one hue keeps the
+ * contrast argument to a single pair.
+ */
+::highlight(monstera-find) {
+  background-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: transparent;
+}
+
+::highlight(monstera-find-active) {
+  background-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  color: transparent;
+}
+
+/*
  * What the select tool has picked, drawn under the overlay.
  *
  * INERT. The pointer belongs to the overlay above this, which is what keeps

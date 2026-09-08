@@ -14,6 +14,7 @@ import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { renderPage } from './renderPage.js';
+import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
 import { type RulerUnit, gridSpacing } from './rulerGeometry.js';
@@ -193,6 +194,24 @@ export interface PageListProps {
         readonly selection?: AnnotationSelection | undefined;
       }
     | undefined;
+  /**
+   * The search whose matches the text layers should paint, if one has been run.
+   *
+   * Passed straight through to every slot rather than resolved here: the ranges
+   * are DOM nodes and only the layer that rendered them can build one, so this
+   * scroller's part is to hand each page the same description. `undefined`
+   * paints nothing, which is the state before a search rather than the state of
+   * a search that found nothing.
+   *
+   * **Required, and `| undefined` rather than optional.** Under
+   * `exactOptionalPropertyTypes` that makes a caller say `search={undefined}`
+   * on purpose instead of leaving the prop off, and the reason is the whole
+   * chain this sits in: a highlight crosses four components, and a prop
+   * silently dropped at any of them leaves every test green and the feature
+   * dead. B5 over another case — the omission is a compile error rather than
+   * something a reader has to notice.
+   */
+  readonly search: SearchHighlight | undefined;
 }
 
 /**
@@ -268,6 +287,7 @@ export function PageList({
   labelValues,
   startAt,
   drawing,
+  search,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
@@ -688,6 +708,7 @@ export function PageList({
           // line in the wrong frame, which reads as a selection that drifts
           // rather than as a missing measurement.
           text={sizes.has(page) ? pageText.get(page) : undefined}
+          search={search}
         />
       ))}
     </div>
@@ -731,6 +752,7 @@ function PageSlot({
   onMeasured,
   drawing,
   text,
+  search,
 }: {
   readonly page: number;
   readonly ref: (element: HTMLElement | null) => void;
@@ -743,6 +765,7 @@ function PageSlot({
   readonly onMeasured: (page: number, measured: Measured) => void;
   readonly drawing: PageListProps['drawing'];
   readonly text: readonly TextLayerLine[] | undefined;
+  readonly search: SearchHighlight | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -846,6 +869,7 @@ function PageSlot({
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           lines={text}
           page={page}
+          search={search}
         />
       )}
       {drawing === undefined || size === undefined ? null : (

@@ -1,10 +1,11 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useCallback, useId, useRef, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import type { ContractClient } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import { type DocumentMatch, searchDocument } from './documentSearch.js';
+import type { SearchHighlight } from './searchHighlight.js';
 import {
   FIND_ALL_PAGES,
   FIND_BAD_PATTERN,
@@ -78,9 +79,20 @@ import { pdfjsPageOf } from './pageNumbering.js';
  * would be a scroll to where they are, and a *match 3 of 7* readout that never
  * moved anything is the display-only defect with a number on it.
  *
- * What is still owed is highlighting the match's own glyphs, which needs DOM
- * ranges over a text layer — D4's *Select and copy* row, in Stage 5. Landing on
- * the right page is what can be true today.
+ * ## The glyphs ARE highlighted now, and this bar's part of that is one report
+ *
+ * This section said highlighting "needs DOM ranges over a text layer — D4's
+ * *Select and copy* row, in Stage 5. Landing on the right page is what can be
+ * true today." That row landed on 2026-09-08 and this paragraph is the second
+ * one in this file to have been left standing past its trigger — the first is
+ * recorded three paragraphs up, which is why the trigger and the row that
+ * fires it now name each other.
+ *
+ * What this bar contributes is `onHighlight`: the query that was **answered**,
+ * the flags it was answered with, and which occurrence the reader is on.
+ * Nothing here builds a range or touches the registry — the layer that rendered
+ * the glyphs is the only thing that can, and `searchHighlight.ts` is the only
+ * thing that writes `CSS.highlights`.
  */
 export interface FindBarProps {
   readonly client: ContractClient;
@@ -104,6 +116,14 @@ export interface FindBarProps {
    * has no second way to move the reader.
    */
   readonly onJump: (page: number) => void;
+  /**
+   * What the text layers should paint, or `null` for nothing.
+   *
+   * Called whenever the answer moves — a new search, a step, a refusal, a
+   * closed document. **Must be stable across renders**, because it is an effect
+   * dependency; a `useState` setter is, and an inline arrow is not.
+   */
+  readonly onHighlight: (highlight: SearchHighlight | null) => void;
 }
 
 /**
@@ -118,11 +138,29 @@ const PAGE_LIMIT = 100;
 /** What the bar is showing: nothing asked, an answer, or a refusal. */
 type FindState =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'answered'; readonly lines: readonly string[]; readonly truncated: boolean }
+  | {
+      readonly kind: 'answered';
+      readonly lines: readonly string[];
+      readonly truncated: boolean;
+      /**
+       * What was actually asked, so the painted matches are the counted ones.
+       *
+       * **In the variant rather than read from `query` at the point of use.** A
+       * reader who searches and then keeps typing has a field holding a query
+       * nothing has answered; painting that one would put highlights on the
+       * page beside a result list counting different matches, and the two would
+       * be right about different questions. Carrying the answered query here
+       * makes that state unrepresentable (B5), which is the same argument
+       * `active` below already makes for its index.
+       */
+      readonly asked: Asked;
+    }
   | {
       readonly kind: 'document';
       readonly matches: readonly DocumentMatch[];
       readonly truncated: boolean;
+      /** What was asked — see the `answered` variant. */
+      readonly asked: Asked;
       /**
        * Which match the reader is on, an index into `matches`.
        *
@@ -149,12 +187,19 @@ interface FindOptions {
   readonly regex: boolean;
 }
 
+/** The query and flags a completed search was run with. */
+interface Asked {
+  readonly query: string;
+  readonly options: FindOptions;
+}
+
 export function FindBar({
   client,
   docId,
   page,
   pageCount,
   onJump,
+  onHighlight,
 }: FindBarProps): ReactElement | null {
   const { _ } = useLingui();
   const [query, setQuery] = useState('');
@@ -204,6 +249,7 @@ export function FindBar({
       kind: 'answered',
       lines: answer.value.matches.map((match) => match.text),
       truncated: answer.value.truncated,
+      asked: { query, options },
     });
   }, [client, docId, options, page, query]);
 
@@ -248,9 +294,51 @@ export function FindBar({
       matches: outcome.matches,
       truncated: outcome.truncated,
       active: first === undefined ? -1 : 0,
+      asked: { query, options },
     });
     if (first !== undefined) onJump(first.page);
   }, [client, docId, onJump, options, pageCount, query]);
+
+  /**
+   * Tells the surface below which matches to paint, whenever the answer moves.
+   *
+   * **An effect rather than a call beside each `setState`.** There are four
+   * places the answer changes — a page search, a document walk, stepping the
+   * active match, and a refusal — and the failure to fear is one of them
+   * forgetting, which leaves highlights on the page for a search that is over.
+   * One effect keyed on the state cannot forget a branch, because the branch is
+   * the thing it reads.
+   *
+   * `docId` is in the condition rather than only in the dependencies: a closed
+   * document leaves this component mounted with its last answer, and the pages
+   * it painted are gone.
+   */
+  useEffect(() => {
+    if (docId === undefined) {
+      onHighlight(null);
+      return;
+    }
+    if (state.kind === 'answered') {
+      onHighlight({ query: state.asked.query, options: state.asked.options });
+      return;
+    }
+    if (state.kind === 'document') {
+      const current = state.active === -1 ? undefined : state.matches[state.active];
+      onHighlight({
+        query: state.asked.query,
+        options: state.asked.options,
+        active:
+          current === undefined
+            ? undefined
+            : { page: current.page, line: current.line, offset: current.offset },
+      });
+      return;
+    }
+    // EVERY OTHER STATE PAINTS NOTHING, including `searching` — a walk in
+    // progress has no answer, and highlighting the previous one while a new
+    // count ticks up is two searches on screen at once.
+    onHighlight(null);
+  }, [docId, onHighlight, state]);
 
   /**
    * Step the active match and take the reader to its page.

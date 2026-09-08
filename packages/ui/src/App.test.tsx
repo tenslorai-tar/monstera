@@ -14,6 +14,7 @@ import { ALL_SETTINGS } from './settings/all.js';
 import { THEME_SETTING } from './settings/appearance.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
+import { resetSharedPainter } from './searchHighlight.js';
 import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
 
 /**
@@ -62,7 +63,13 @@ vi.mock('./documentView.js', () => ({
 // `renderPage` refuses before it draws — which these cases would then have to
 // treat as a failure rather than as the environment.
 vi.mock('./renderPage.js', () => ({
-  renderPage: () => Promise.resolve({ width: 595, height: 842 }),
+  // THE CROP AND THE ROTATION TOO, which the real one returns and this stub
+  // omitted. Without them a slot measures to a size whose `crop` is undefined,
+  // and the overlays that convert through it — the text layer among them — are
+  // either not mounted or throw on their first conversion. The omission was
+  // invisible while nothing in this file looked at an overlay.
+  renderPage: () =>
+    Promise.resolve({ width: 595, height: 842, crop: [0, 0, 595, 842], rotation: 0 }),
 }));
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
@@ -891,6 +898,104 @@ describe('App', () => {
       // The matched line reaches the screen, so this is not a dispatch into a
       // void that happens to be well formed.
       expect(screen.getByText('the needle sits here')).toBeDefined();
+    });
+
+    it('a search PAINTS its matches on the page, through the whole chain', async () => {
+      /*
+       * The end-to-end half, and the reason it is here rather than in
+       * `TextLayer.test.tsx`. That file proves the layer turns a search into
+       * ranges over the right nodes; it hands the layer a painter, so it says
+       * nothing about whether a search a person runs ever reaches one. Four
+       * components sit between the find field and the glyphs — the bar's
+       * effect, App's state, `PageCanvas`, `PageList` — and a prop dropped
+       * anywhere in them leaves both halves green and the feature dead.
+       *
+       * The registry is faked because happy-dom has no Custom Highlight API,
+       * and the fake is installed before render for the same reason
+       * `sharedPainter` resolves lazily: the module asks the window once.
+       */
+      const registered = new Map<string, unknown>();
+      Reflect.set(globalThis, 'CSS', {
+        highlights: {
+          set: (name: string, value: unknown) => registered.set(name, value),
+          delete: (name: string) => registered.delete(name),
+        },
+      });
+      Reflect.set(
+        globalThis,
+        'Highlight',
+        class {
+          readonly ranges: readonly Range[];
+          constructor(...ranges: readonly Range[]) {
+            this.ranges = ranges;
+          }
+        },
+      );
+      resetSharedPainter();
+
+      try {
+        const { client } = answeringClient({
+          ...OPEN_DOCUMENT_ANSWERS,
+          // THE LAYER'S OWN LINES, which is what the highlight is computed
+          // from — the channel's match offsets are never used for painting,
+          // because they index a string normalised somewhere else.
+          'document.pageTextLayer': {
+            version: asDocVersion(1),
+            lines: [
+              { text: 'the needle sits here', box: { x0: 10, y0: 10, x1: 200, y1: 26 } },
+            ],
+            truncated: false,
+          },
+          'document.searchPage': {
+            version: asDocVersion(1),
+            matches: [
+              { line: 0, offset: 4, endLine: 0, endOffset: 10, text: 'the needle sits here' },
+            ],
+            truncated: false,
+          },
+        });
+        render(<App client={client} settings={freshSettings()} />);
+        await withDocumentOpen();
+
+        const field = screen.getByLabelText('Find on this page');
+        await act(async () => {
+          fireEvent.change(field, { target: { value: 'needle' } });
+          await Promise.resolve();
+        });
+        // CONTROL, taken before the search: typing alone must paint nothing,
+        // or this case would pass against a build that highlighted whatever is
+        // in the box — which is a different feature and the wrong one.
+        expect(registered.has('monstera-find')).toBe(false);
+
+        await act(async () => {
+          screen.getByRole('button', { name: 'Search this page' }).click();
+          await Promise.resolve();
+        });
+
+        // The layer's own turns: a page is measured, then its text is fetched,
+        // then the effect runs.
+        await act(async () => {
+          for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
+        });
+        // THE PRECONDITION, asserted rather than assumed. A page with no text
+        // layer paints nothing for a reason that has nothing to do with the
+        // feature, and the empty registry would read the same either way —
+        // which is how this case failed on its first run, against a render stub
+        // that returned no crop and so mounted no overlay at all.
+        expect(document.querySelectorAll('.m-text-line')).toHaveLength(1);
+        const painted = registered.get('monstera-find');
+        expect(painted).toBeDefined();
+        const ranges = (painted as { ranges: readonly Range[] }).ranges;
+        expect(ranges).toHaveLength(1);
+        // THE OFFSETS, so this is a highlight over the word and not a range
+        // that happens to exist. `needle` starts at 4 in the layer's own line.
+        expect(ranges[0]?.startOffset).toBe(4);
+        expect(ranges[0]?.endOffset).toBe(10);
+      } finally {
+        Reflect.deleteProperty(globalThis, 'CSS');
+        Reflect.deleteProperty(globalThis, 'Highlight');
+        resetSharedPainter();
+      }
     });
 
     it('a TOGGLED option reaches the channel, and only the one that was toggled', async () => {

@@ -887,7 +887,7 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
-## 2026-09-08 — A trigger that fired unnoticed for the second time in one row, and a blocker that dissolved on re-reading
+## 2026-09-08 — Both halves of D1's owed search work, and a trigger that fired unnoticed for the second time in one row
 
 `docs/FEATURES.md:73` — D1's search row — carried two owed items and a status
 cell reading *"the Highlight API and a line-break match move to Stage 5,
@@ -977,11 +977,73 @@ different lines, and `text` is the START line's clipped window. The stub in
 two agree is satisfied by a surface that drops `endLine` and echoes `line` back,
 and mutating the implementation to do exactly that reddens three cases.
 
+### The Highlight API, and the reason it computes its own matches
+
+`searchHighlight.ts` is the one writer of `CSS.highlights`, which is a
+**document-level** registry: several text layers are mounted at once, each knows
+only its own ranges, and a layer writing the registry directly would erase every
+other page's. So the layers contribute per page and one painter composes — one
+writer, many contributors (B3).
+
+Ranges rather than `<mark>` elements, and that is not a preference. The text
+layer is transparent text over a raster whose whole contract is that the browser
+owns selection, caret, double-click-to-word, copy and the accessibility tree.
+Splitting a line's single text node into three to wrap a match changes what a
+selection copies and moves the caret's offsets. `::highlight()` paints over
+ranges and leaves the tree alone — and a match spanning a wrap is **one** range
+across two line elements rather than two elements pretending to be one match.
+
+**The layer recomputes the matches from its own lines rather than taking the
+channel's offsets**, and that is the finding worth carrying. Those offsets are
+indices into a string `findInLines` normalised before matching, and NFC can
+change a line's length — so an offset computed there is not an index into the
+string rendered here unless something declares the two equal. That is
+`CLAUDE.md`'s page-index defect exactly, where a rotate reached page 2 while the
+renderer showed page 1 and both halves were green. Its remedy is to remove the
+second frame, not to write the correspondence down, and here that is free: the
+same resolver runs over the text the reader is looking at.
+
+**Absence is a state.** `CSS.highlights` does not exist in happy-dom and not in
+every browser; `platformSink()` answers `null` and everything treats that as
+nothing to do. The control that keeps that honest is a case installing a fake
+registry and asserting the sink is found — without it, a detection that always
+answered `null` would pass the absence case perfectly and the feature would be
+dead everywhere, reported by nothing.
+
+### Two defects the end-to-end case found, and it found them by failing first
+
+The chain is four components — the bar's effect, App's state, `PageCanvas`,
+`PageList` — and a prop dropped anywhere in it leaves both unit halves green and
+the feature dead. So one case in `App.test.tsx` drives the whole thing: type,
+search, read the registry.
+
+It failed on its first run, and the reason was that **no overlay had ever been
+mounted in that file**. `vi.mock('./renderPage.js')` returned `{ width, height }`
+and the real one returns a crop and a rotation too; without them a slot measures
+to a size the overlays cannot convert through, so the text layer never rendered.
+Nothing in `App.test.tsx` had looked at an overlay, so the incomplete stub cost
+nothing until something did. The case now asserts the precondition — one
+`.m-text-line` — because an empty registry reads identically whether the layer
+was absent or the feature was broken.
+
+The second was found by the compiler, and only because the prop was made
+**required and `| undefined`** rather than optional. `ComparePane.tsx` mounts a
+third `PageList` that nothing in this work had touched, and an optional prop
+would have let it silently paint nothing for ever. It gets `undefined` on
+purpose, with the reason in the call: that pane holds a *different document*, and
+painting this document's search there would be highlighting a query nobody ran
+against that file.
+
+That is B5 over another test, and it is the shape to copy for any prop that
+crosses more than two components: make the omission a compile error, not
+something a reader has to notice.
+
 ### Executed
 
-`npm run typecheck` 0 · `npm run lint` 0 · `npx vitest run` **151 files, 2,139
-tests**, all passing · `check:docs` 11/11 · three mutations run and reverted,
-each naming the cases it reddened.
+`npm run typecheck` 0 · `npm run lint` 0 · `npx vitest run` **153 files, 2,159
+tests**, all passing · `check:docs` 11/11 · four mutations run and reverted, each
+naming the cases it reddened — the `m` flag, the whitespace-run match, `endLine`
+echoing `line`, and the bar reporting no highlight for a page search.
 
 ---
 

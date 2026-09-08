@@ -77,6 +77,7 @@ import { AnnotationsPanel } from './AnnotationsPanel.js';
 import { FormsPanel } from './FormsPanel.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
+import type { SearchHighlight } from './searchHighlight.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -254,6 +255,19 @@ export function App({ client, settings }: AppProps): ReactElement {
    * reason rather than by oversight.
    */
   const [compareId, setCompareId] = useState<DocId | undefined>(undefined);
+  /**
+   * What the find bar last answered, for the text layers to paint.
+   *
+   * **Here rather than inside `FindBar`**, because the two components that need
+   * it are siblings: the bar knows what was searched and the scroller owns the
+   * pages. App-shell state for `compareId`'s reason — it is about this moment,
+   * and a highlight that survived a restart would be painted for a search
+   * nobody ran.
+   *
+   * Not per document: only the focused document's pages are mounted, and the
+   * bar clears this when the document closes.
+   */
+  const [search, setSearch] = useState<SearchHighlight | null>(null);
   const open = tabs.find((tab) => tab.docId === activeId);
 
   /**
@@ -1395,6 +1409,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           drawing={drawing}
           others={tabs}
           onCompare={setCompareId}
+          search={search ?? undefined}
         />
         </ErrorBoundary>
       )}
@@ -1485,6 +1500,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         // field dispatch — a match is one more thing that names a page, not a
         // second way to move the reader.
         onJump={navigator.jumpTo}
+        // THE SETTER ITSELF, which React guarantees is stable. The find bar
+        // calls this from an effect keyed on its own answer, so an inline arrow
+        // here would be a new dependency every render and the effect would run
+        // in a loop.
+        onHighlight={setSearch}
       />
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because
@@ -1649,6 +1669,7 @@ function PageCanvas({
   others,
   onCompare,
   drawing,
+  search,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -1684,6 +1705,8 @@ function PageCanvas({
   readonly onCompare: (docId: DocId | undefined) => void;
   /** The active tool and where its commands go. Both panes take it. */
   readonly drawing: PageListProps['drawing'];
+  /** What the find bar last answered, painted over both panes' text layers. */
+  readonly search: SearchHighlight | undefined;
 }): ReactElement {
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
@@ -1781,6 +1804,7 @@ function PageCanvas({
         showGrid={showGrid}
         unit={unit}
         drawing={drawing}
+        search={search}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
           One document, two scrollers: a pane that opened its own view would
@@ -1856,6 +1880,10 @@ function PageCanvas({
               // could not draw would be a surface where a selected tool
               // silently does nothing.
               drawing={drawing}
+              // BOTH PANES PAINT the same matches, for the same reason: it is
+              // one document, and a split where the search highlighted one half
+              // would read as the second pane showing a different document.
+              search={search}
             />
           ) : null}
         </div>
