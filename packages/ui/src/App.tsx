@@ -78,6 +78,7 @@ import { FormsPanel } from './FormsPanel.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
 import type { SearchHighlight } from './searchHighlight.js';
+import { type RunningTask, trackerOver } from './runningTask.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -269,6 +270,23 @@ export function App({ client, settings }: AppProps): ReactElement {
    * bar clears this when the document closes.
    */
   const [search, setSearch] = useState<SearchHighlight | null>(null);
+  /**
+   * The long command currently running, for the status bar.
+   *
+   * One at a time, and that is what the state shape says rather than something
+   * enforced: two walks at once would be two four-hundred-page reads competing
+   * in one document lane, and the second's report would replace the first's
+   * with nothing saying so. A queue is the answer if that ever becomes
+   * reachable; today every long command is started from a surface that is
+   * blocked by the dialog the previous one opened.
+   */
+  const [task, setTask] = useState<RunningTask | undefined>(undefined);
+  /**
+   * `useMemo` rather than a fresh tracker per render: it goes into the command
+   * registry's own memo, and a new identity every render would rebuild every
+   * command on every keystroke. `setTask` is stable, so this never recomputes.
+   */
+  const track = useMemo(() => trackerOver(setTask), []);
   const open = tabs.find((tab) => tab.docId === activeId);
 
   /**
@@ -1149,13 +1167,13 @@ export function App({ client, settings }: AppProps): ReactElement {
       new CommandRegistry([
         openCommand,
         showAboutCommand({ client, ask }),
-        showWordCountCommand({ client, ask }),
+        showWordCountCommand({ client, ask, track }),
         // TAKES THE SETTINGS STORE, which no other command here does. The
         // personal dictionary is what makes this feature manageable rather than
         // fixed, and it is a preference rather than document state — so it
         // lives in §10.4's registry, and the command that adds to it is the one
         // that has to reach it.
-        checkSpellingCommand({ client, settings, ask }),
+        checkSpellingCommand({ client, settings, ask, track }),
         revealLogCommand({ client }),
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
@@ -1240,6 +1258,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       readTool,
       selectionDeps,
       settings,
+      track,
     ],
   );
 
@@ -1443,6 +1462,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           // THE SAME `jumpTo` a key, a thumbnail and an outline entry dispatch,
           // so a typed page is recorded in the history exactly as those are.
           onGoTo={navigator.jumpTo}
+          task={task}
         />
       )}
       {/* THE LINKS PANEL, which renders nothing with no document for the find

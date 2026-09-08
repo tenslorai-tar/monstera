@@ -887,6 +887,67 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Progress and cancellation, and a check nothing separated until it was mutated
+
+Both D4 rows recorded the same debt and both diagnosed it the same way: *"a
+surface question, not a missing `await`."* Four hundred pages is four hundred
+round trips, and the only feedback is a dialog that has not opened yet.
+
+`searchDocument` already has progress and cancellation, and what gives it them
+is the **find bar** — a surface that is on screen while the walk runs. A dialog
+cannot be that: its props are validated at the `ask` call and it opens with the
+answer, so a dialog is where a walk **ends**.
+
+The surface is the **status bar**, the one piece of chrome present for the whole
+of a document's life, and `runningTask.ts` is the seam between it and a command
+that does not know it exists. `track` is a command **dependency** — `ask` opens
+a dialog, `onApplied` reports a mutation, `track` reports progress — so nothing
+about the command registry changes and §7's list of seams is unmoved. A command
+that does not take one is unaffected.
+
+**A cancelled walk publishes nothing**, which is `documentSearch.ts`'s rule for
+its reason: *your document has 4,000 words* about one with 40,000 is
+indistinguishable from a complete answer once it is on screen. So a cancel opens
+no dialog at all — the cancel is the outcome. Sharper for spell check than for
+the count: eleven misspellings from forty of four hundred pages reads exactly
+like the document's whole answer.
+
+### The check that separated nothing, and how it was found
+
+The walk checks `aborted()` twice per page — before the call and after it — and
+the second one **survived its own mutation**. Deleting it left all nine cases
+green.
+
+The reason is worth carrying. The next iteration's check stops the walk anyway,
+so the dialog is absent and `asked` is `[0]` whether or not the post-call check
+exists. Both observables the cases were reading are produced by the bug as well
+as by the fix — `CLAUDE.md` item 4's *assert the decision, not the end state*,
+met in a place where the end state genuinely is identical.
+
+What the check actually buys is one thing and it is visible: without it, the
+page that was **in flight** when the reader pressed cancel is counted and
+`step` reports it, so the bar ticks once MORE after the button was pressed. So
+the case asserts `steps`, and its fixture aborts **inside** the client call —
+the interleaving a reader produces, and the only one that reaches the branch.
+Mutating the check now reddens exactly that case.
+
+That is the second time in this build a fixture has been found to be about the
+wrong observable, and both were found by mutation rather than by reading.
+
+### One instrument defect, in the scratchpad rather than the tree
+
+The board waiter reported `TIMED OUT — not a verdict` with an **empty** seen
+list, twice, against a board that was green on all three pushed shas. It
+compares `run.head_sha === SHA`, and the sha a person has in hand is
+`git log --oneline`'s seven characters against the API's forty. It matched
+nothing.
+
+Recorded because of what it did right: it refused to print a verdict. A waiter
+that had defaulted to *not yet* would have said the same thing and meant
+something else. The fix is `startsWith`.
+
+---
+
 ## 2026-09-08 — The text layer's two bounds, read against the corpus at last
 
 `MONSTERA_CORPUS` was set for the first time in this build, and *Select and

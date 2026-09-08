@@ -7,8 +7,11 @@ import {
   STATUS_LABEL,
   STATUS_PAGE_OF,
   STATUS_ZOOM,
+  TASK_CANCEL,
+  TASK_PROGRESS,
 } from './messages/en.js';
 import { kernelPageOf, pdfjsPageOf } from './pageNumbering.js';
+import type { RunningTask } from './runningTask.js';
 
 /**
  * The strip along the bottom: which document this is, where the reader is, how
@@ -64,6 +67,7 @@ export function StatusBar({
   pageCount,
   zoom,
   onGoTo,
+  task,
 }: {
   /**
    * The document's name, as main stated it on `document.open`.
@@ -79,6 +83,14 @@ export function StatusBar({
   readonly zoom: number;
   /** Takes the reader to a page. Zero-based, like every page that crosses. */
   readonly onGoTo: (page: number) => void;
+  /**
+   * A long command reporting how far it has got, or nothing running.
+   *
+   * This bar is the surface for it because it is the one piece of chrome
+   * present for the whole of a document's life — see `runningTask.ts`. It
+   * renders the report and knows nothing about which command produced it.
+   */
+  readonly task: RunningTask | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const [typed, setTyped] = useState('');
@@ -151,6 +163,27 @@ export function StatusBar({
             rounding. */}
         {i18n._(STATUS_ZOOM, { percent: Math.round(zoom * 100) })}
       </span>
+      {/* THE RUNNING TASK, and it is absent rather than empty when nothing is
+          running — `QuickToolbar`'s rule. A permanent progress region reading
+          "0 of 0" is a control that looks broken, and it would announce itself
+          to a screen reader on every page change because this bar is a live
+          region.
+
+          Last in the bar, after the numbers a reader checks while reading. A
+          task is transient and the numbers are not, so putting it first would
+          move the page and zoom readouts sideways every time one ran. */}
+      {task === undefined ? null : (
+        <span className="m-status-task" data-status-task={String(task.done)}>
+          {i18n._(TASK_PROGRESS, {
+            label: i18n._(task.label),
+            done: task.done,
+            total: task.total,
+          })}
+          <button className="m-status-cancel" onClick={task.cancel} type="button">
+            {i18n._(TASK_CANCEL)}
+          </button>
+        </span>
+      )}
     </footer>
   );
 }

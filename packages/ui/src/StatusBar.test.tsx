@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { StatusBar } from './StatusBar.js';
 import { activateCatalogue, i18n } from './i18n.js';
-import { EN } from './messages/en.js';
+import { EN, WORD_COUNT_PROGRESS } from './messages/en.js';
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', EN);
@@ -20,7 +20,7 @@ describe('StatusBar', () => {
     // silently, because "Page 3 of 10" is a perfectly plausible thing to read.
     const { container } = render(
       <Wrapped>
-        <StatusBar name="annual.pdf" page={3} pageCount={10} zoom={1} onGoTo={vi.fn()} />
+        <StatusBar name="annual.pdf" page={3} pageCount={10} zoom={1} onGoTo={vi.fn()} task={undefined} />
       </Wrapped>,
     );
 
@@ -34,7 +34,7 @@ describe('StatusBar', () => {
     // layout in every screenshot.
     const { container } = render(
       <Wrapped>
-        <StatusBar name="annual report.pdf" page={0} pageCount={1} zoom={1} onGoTo={vi.fn()} />
+        <StatusBar name="annual report.pdf" page={0} pageCount={1} zoom={1} onGoTo={vi.fn()} task={undefined} />
       </Wrapped>,
     );
 
@@ -53,7 +53,7 @@ describe('StatusBar', () => {
     // then draws at.
     const { container } = render(
       <Wrapped>
-        <StatusBar name="annual.pdf" page={0} pageCount={1} zoom={1.3361} onGoTo={vi.fn()} />
+        <StatusBar name="annual.pdf" page={0} pageCount={1} zoom={1.3361} onGoTo={vi.fn()} task={undefined} />
       </Wrapped>,
     );
 
@@ -67,7 +67,7 @@ describe('StatusBar', () => {
     // because the role is what assistive technology reads.
     const { container } = render(
       <Wrapped>
-        <StatusBar name="annual.pdf" page={0} pageCount={1} zoom={1} onGoTo={vi.fn()} />
+        <StatusBar name="annual.pdf" page={0} pageCount={1} zoom={1} onGoTo={vi.fn()} task={undefined} />
       </Wrapped>,
     );
 
@@ -87,7 +87,14 @@ describe('StatusBar', () => {
       const went = vi.fn();
       const { container } = render(
         <Wrapped>
-          <StatusBar name="annual.pdf" page={3} pageCount={10} zoom={1} onGoTo={went} />
+          <StatusBar
+            name="annual.pdf"
+            page={3}
+            pageCount={10}
+            zoom={1}
+            onGoTo={went}
+            task={undefined}
+          />
         </Wrapped>,
       );
       const field = container.querySelector('[data-goto-input]');
@@ -178,6 +185,71 @@ describe('StatusBar', () => {
       // AND THE READOUT IS STILL THE READOUT, which is the half that would be
       // lost by making the field hold the page.
       expect(field.ownerDocument.querySelector('.m-status-page')?.textContent).toBe('Page 4 of 10');
+    });
+  });
+
+  describe('a running task', () => {
+    function withTask(done: number): {
+      readonly container: HTMLElement;
+      readonly cancelled: ReturnType<typeof vi.fn>;
+    } {
+      const cancelled = vi.fn();
+      const { container } = render(
+        <Wrapped>
+          <StatusBar
+            name="annual.pdf"
+            page={3}
+            pageCount={10}
+            zoom={1}
+            onGoTo={vi.fn()}
+            task={{ label: WORD_COUNT_PROGRESS, done, total: 400, cancel: cancelled }}
+          />
+        </Wrapped>,
+      );
+      return { container, cancelled };
+    }
+
+    it('is ABSENT with nothing running, rather than an empty region', () => {
+      // A permanent progress region reading "0 of 0" is a control that looks
+      // broken — and this footer is `role="status"`, so it would announce
+      // itself to a screen reader on every scroll.
+      const { container } = render(
+        <Wrapped>
+          <StatusBar
+            name="annual.pdf"
+            page={3}
+            pageCount={10}
+            zoom={1}
+            onGoTo={vi.fn()}
+            task={undefined}
+          />
+        </Wrapped>,
+      );
+
+      expect(container.querySelector('.m-status-task')).toBeNull();
+    });
+
+    it('names WHAT is running before the numbers, and both of them', () => {
+      // "12 of 400" alone is the shape a progress region most often has and the
+      // one that says least. The label is resolved through the catalogue, so
+      // this also asserts the key reached it rather than the id.
+      const { container } = withTask(12);
+
+      expect(container.querySelector('.m-status-task')?.textContent).toContain(
+        'Counting words — 12 of 400',
+      );
+    });
+
+    it('the CANCEL dispatches the task’s own cancel, not a lookup at press time', () => {
+      // The UI half of the pair. A button that rendered and called nothing is
+      // the display-only defect with a progress bar attached.
+      const { container, cancelled } = withTask(12);
+      const button = container.querySelector('.m-status-cancel');
+      if (!(button instanceof HTMLButtonElement)) throw new Error('the task offers a cancel');
+
+      fireEvent.click(button);
+
+      expect(cancelled).toHaveBeenCalledTimes(1);
     });
   });
 });

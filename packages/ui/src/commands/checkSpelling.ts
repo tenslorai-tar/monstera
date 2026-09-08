@@ -2,7 +2,12 @@ import { MAX_TEXT_LAYER_LINES, type ContractClient } from '@monstera/contract';
 
 import { SPELL_CHECK_DIALOG_ID } from '../dialogs/spellCheck.js';
 import { SPELL_CHECK_RESULT } from '../dialogs/spellCheckResult.js';
-import { GROUP_PROOFING, SPELL_CHECK_COMMAND_TITLE } from '../messages/en.js';
+import {
+  GROUP_PROOFING,
+  SPELL_CHECK_COMMAND_TITLE,
+  SPELL_CHECK_PROGRESS,
+} from '../messages/en.js';
+import type { TrackTask } from '../runningTask.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { PERSONAL_DICTIONARY_SETTING } from '../settings/editing.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -49,12 +54,19 @@ import { hasDocument } from './documentCommands.js';
  * either side of it describe two documents. The first answer's version is the
  * one this list is about.
  *
- * ## What this does NOT have, stated rather than left to be discovered
+ * ## Progress and cancellation, inherited from `showWordCount` as they were
  *
- * No progress and no cancellation, and it inherits that from `showWordCount`
- * unchanged — a four-hundred-page document is four hundred round trips with no
- * feedback. Giving it both is a surface question, not a missing `await`, and it
- * is recorded on the FEATURES row rather than half-built.
+ * This section said there were none. Both landed 2026-09-08 on the same seam —
+ * `runningTask.ts` over the status bar — and the reason it took a surface is
+ * written there: a dialog's props are validated at the `ask` call, so a dialog
+ * is where a walk ends and cannot be where it reports.
+ *
+ * **A cancelled walk publishes nothing**, and here that is sharper than for a
+ * count: a list of eleven misspellings from forty of four hundred pages reads
+ * exactly like the document's whole answer, and a reader who cancelled would
+ * have no way to tell.
+ *
+ * ## What this still does NOT have
  *
  * No squiggles under the words. The substrate reports a **line** with a box and
  * no per-word geometry, so underlining a word would need either the substrate
@@ -68,6 +80,8 @@ export function checkSpellingCommand(deps: {
   readonly client: ContractClient;
   readonly settings: SettingsStore;
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /** Reports progress and carries the cancel. `UNTRACKED` where nothing renders one. */
+  readonly track: TrackTask;
 }): UiCommand {
   return {
     id: 'document.spell-check',
@@ -104,23 +118,38 @@ export function checkSpellingCommand(deps: {
       let pagesChecked = 0;
       let expected: unknown;
 
-      for (let page = 0; page < pageCount; page += 1) {
-        const answer = await deps.client['document.pageTextLayer']({
-          docId,
-          page,
-          limit: MAX_TEXT_LAYER_LINES,
-        });
-        if (!answer.ok) break;
-        expected ??= answer.value.version;
-        if (answer.value.version !== expected) break;
+      // TRACKED FROM HERE, not from the top: the dictionary is fetched first
+      // and a bar that reported "0 of 400" while a 550 KB word list crossed
+      // would be counting one thing and waiting for another.
+      const task = deps.track(SPELL_CHECK_PROGRESS, pageCount);
+      const aborted = (): boolean => task.signal.aborted;
+      try {
+        for (let page = 0; page < pageCount; page += 1) {
+          if (aborted()) return;
+          const answer = await deps.client['document.pageTextLayer']({
+            docId,
+            page,
+            limit: MAX_TEXT_LAYER_LINES,
+          });
+          // A CANCELLED WALK PUBLISHES NOTHING, and here that means no dialog
+          // at all — a list of eleven misspellings from the first forty pages
+          // of four hundred reads exactly like the document's whole answer.
+          if (aborted()) return;
+          if (!answer.ok) break;
+          expected ??= answer.value.version;
+          if (answer.value.version !== expected) break;
 
-        collectMisspellings(
-          checker,
-          answer.value.lines.map((line) => line.text),
-          page,
-          found,
-        );
-        pagesChecked += 1;
+          collectMisspellings(
+            checker,
+            answer.value.lines.map((line) => line.text),
+            page,
+            found,
+          );
+          pagesChecked += 1;
+          task.step(pagesChecked);
+        }
+      } finally {
+        task.end();
       }
 
       // SORTED BY HOW OFTEN, then alphabetically. A list in the order words

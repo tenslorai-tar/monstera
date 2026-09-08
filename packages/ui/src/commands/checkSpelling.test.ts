@@ -9,6 +9,7 @@ import { ALL_SETTINGS } from '../settings/all.js';
 import { PERSONAL_DICTIONARY_SETTING } from '../settings/editing.js';
 import { SettingsStore } from '../settingsStore.js';
 import { checkSpellingCommand } from './checkSpelling.js';
+import { type TrackTask, UNTRACKED } from '../runningTask.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fe');
 
@@ -115,7 +116,7 @@ describe('the spell check command', () => {
     ]);
     const { ask, opened } = askAnswering(undefined);
 
-    await checkSpellingCommand({ client, settings: store(), ask }).run(contextWith(3));
+    await checkSpellingCommand({ client, settings: store(), ask, track: UNTRACKED }).run(contextWith(3));
 
     expect(asked).toEqual([0, 1, 2]);
     expect(opened[0]?.id).toBe(SPELL_CHECK_DIALOG_ID);
@@ -134,7 +135,7 @@ describe('the spell check command', () => {
     ]);
     const { ask, opened } = askAnswering(undefined);
 
-    await checkSpellingCommand({ client, settings: store(), ask }).run(contextWith(3));
+    await checkSpellingCommand({ client, settings: store(), ask, track: UNTRACKED }).run(contextWith(3));
 
     // ASKED THE SECOND PAGE AND KEPT NOTHING FROM IT. Asserting only
     // `pagesChecked` would pass against a command that stopped one page early
@@ -153,7 +154,7 @@ describe('the spell check command', () => {
     ]);
     const { ask, opened } = askAnswering(undefined);
 
-    await checkSpellingCommand({ client, settings: store(), ask }).run(contextWith(4));
+    await checkSpellingCommand({ client, settings: store(), ask, track: UNTRACKED }).run(contextWith(4));
 
     const props = propsOf(opened);
     expect(props.pagesChecked).toBe(1);
@@ -164,7 +165,7 @@ describe('the spell check command', () => {
     const { client, asked } = clientWith([{ kind: 'ok', version: 1, lines: ['documnet'] }], 'absent');
     const { ask, opened } = askAnswering(undefined);
 
-    await checkSpellingCommand({ client, settings: store(), ask }).run(contextWith(1));
+    await checkSpellingCommand({ client, settings: store(), ask, track: UNTRACKED }).run(contextWith(1));
 
     // THE STATE, NOT AN EMPTY LIST. A checker that was never built produces
     // zero misspellings, which is byte-for-byte what a correctly spelt document
@@ -181,7 +182,7 @@ describe('the spell check command', () => {
     const { ask } = askAnswering({ added: ['documnet'] });
     const settings = store();
 
-    await checkSpellingCommand({ client, settings, ask }).run(contextWith(1));
+    await checkSpellingCommand({ client, settings, ask, track: UNTRACKED }).run(contextWith(1));
 
     expect(settings.get(PERSONAL_DICTIONARY_SETTING.id)).toEqual(['documnet']);
   });
@@ -192,7 +193,7 @@ describe('the spell check command', () => {
     const settings = store();
     settings.set(PERSONAL_DICTIONARY_SETTING.id, ['Monstera']);
 
-    await checkSpellingCommand({ client, settings, ask }).run(contextWith(1));
+    await checkSpellingCommand({ client, settings, ask, track: UNTRACKED }).run(contextWith(1));
 
     // SEEDED FIRST, so this separates *left alone* from *written empty*. With
     // an empty start the two are the same observation.
@@ -205,7 +206,7 @@ describe('the spell check command', () => {
     const settings = store();
     settings.set(PERSONAL_DICTIONARY_SETTING.id, ['monstera']);
 
-    await checkSpellingCommand({ client, settings, ask }).run(contextWith(1));
+    await checkSpellingCommand({ client, settings, ask, track: UNTRACKED }).run(contextWith(1));
 
     expect(settings.get(PERSONAL_DICTIONARY_SETTING.id)).toEqual(['monstera', 'documnet']);
   });
@@ -216,7 +217,7 @@ describe('the spell check command', () => {
     const settings = store();
     settings.set(PERSONAL_DICTIONARY_SETTING.id, ['documnet']);
 
-    await checkSpellingCommand({ client, settings, ask }).run(contextWith(1));
+    await checkSpellingCommand({ client, settings, ask, track: UNTRACKED }).run(contextWith(1));
 
     // THE ROUND TRIP the feature is for: a word added on one run is accepted on
     // the next. Without it the personal dictionary is a list that is written
@@ -227,7 +228,7 @@ describe('the spell check command', () => {
   it('does nothing without a document, and its `when` says so', async () => {
     const { client, asked } = clientWith([]);
     const { ask, opened } = askAnswering(undefined);
-    const command = checkSpellingCommand({ client, settings: store(), ask });
+    const command = checkSpellingCommand({ client, settings: store(), ask, track: UNTRACKED });
 
     await command.run({
       docId: undefined,
@@ -247,5 +248,52 @@ describe('the spell check command', () => {
     // still the one that matters: a command with no `when` yields `undefined`
     // here and fails, which is correct — a command without one is shown always.
     expect(command.when?.({ docId: undefined } as CommandContext)).toBe(false);
+  });
+
+  it('A CANCELLED WALK OPENS NO DIALOG, and stops asking for pages', async () => {
+    // Sharper here than for a count: a list of misspellings from forty of four
+    // hundred pages reads exactly like the document's whole answer, so a
+    // partial one is not a smaller truth, it is a wrong one.
+    const { client, asked } = clientWith([
+      { kind: 'ok', version: 1, lines: ['documnet one'] },
+      { kind: 'ok', version: 1, lines: ['documnet two'] },
+      { kind: 'ok', version: 1, lines: ['documnet three'] },
+    ]);
+    const { ask, opened } = askAnswering(undefined);
+    const controller = new AbortController();
+    const track: TrackTask = () => ({
+      signal: controller.signal,
+      // FROM OUTSIDE, after the first page — which is what a reader pressing
+      // cancel does. Aborting before the walk starts separates nothing.
+      step: () => {
+        controller.abort();
+      },
+      end: () => undefined,
+    });
+
+    await checkSpellingCommand({ client, settings: store(), ask, track }).run(contextWith(3));
+
+    expect(opened).toEqual([]);
+    expect(asked).toEqual([0]);
+  });
+
+  it('TRACKS THE PAGES AND NOT THE DICTIONARY, which is fetched first', async () => {
+    // A bar reporting "0 of 3" while a 550 KB word list crosses is counting one
+    // thing and waiting for another. The first report must be page 1.
+    const { client } = clientWith([
+      { kind: 'ok', version: 1, lines: ['documnet'] },
+      { kind: 'ok', version: 1, lines: ['page two'] },
+    ]);
+    const { ask } = askAnswering(undefined);
+    const steps: number[] = [];
+    const track: TrackTask = () => ({
+      signal: new AbortController().signal,
+      step: (done) => steps.push(done),
+      end: () => steps.push(-1),
+    });
+
+    await checkSpellingCommand({ client, settings: store(), ask, track }).run(contextWith(2));
+
+    expect(steps).toStrictEqual([1, 2, -1]);
   });
 });

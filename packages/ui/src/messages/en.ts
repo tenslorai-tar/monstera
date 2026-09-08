@@ -500,6 +500,19 @@ export const GROUP_FIELDS = messageKey('surface.ribbon.group.fields');
 export const GROUP_DISPLAY = messageKey('surface.ribbon.group.display');
 export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
 export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
+
+/**
+ * A long command's own name, as the status bar announces it while it runs.
+ *
+ * Separate from the command's title, and not a formatting of it. *Word count*
+ * names a thing a reader asks for; *Counting words* names what is happening
+ * right now, and a progress line reading "Word count — 12 of 400" describes a
+ * noun rather than an activity.
+ */
+export const WORD_COUNT_PROGRESS = messageKey('task.word-count');
+export const SPELL_CHECK_PROGRESS = messageKey('task.spell-check');
+export const TASK_PROGRESS = messageKey('status.task.progress');
+export const TASK_CANCEL = messageKey('status.task.cancel');
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
 export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
@@ -1142,6 +1155,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_DISPLAY]: 'Display',
   [GROUP_NAVIGATE]: 'Navigate',
   [GROUP_APPLICATION]: 'Application',
+  [WORD_COUNT_PROGRESS]: 'Counting words',
+  [SPELL_CHECK_PROGRESS]: 'Checking spelling',
+  // THE LABEL FIRST, so a screen reader announces what is running before the
+  // numbers. "12 of 400" alone is the shape a progress region most often has
+  // and the one that says least.
+  [TASK_PROGRESS]: '{label} — {done} of {total}',
+  [TASK_CANCEL]: 'Cancel',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure
   // invites the reading that something was lost.

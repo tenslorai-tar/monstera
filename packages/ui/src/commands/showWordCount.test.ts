@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { WORD_COUNT_DIALOG_ID } from '../dialogs/wordCount.js';
 import type { CommandContext } from '../registries/commands.js';
 import { showWordCountCommand } from './showWordCount.js';
+import { type TrackTask, UNTRACKED } from '../runningTask.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000ff');
 
@@ -77,7 +78,7 @@ describe('the word count command', () => {
     ]);
     const { ask, opened } = recordingAsk();
 
-    await showWordCountCommand({ client, ask }).run(contextWith(3));
+    await showWordCountCommand({ client, ask, track: UNTRACKED }).run(contextWith(3));
 
     // THE PAGES, not a count of calls: a command that asked page 0 three times
     // would produce the same length and the wrong total on any real document.
@@ -104,7 +105,7 @@ describe('the word count command', () => {
     ]);
     const { ask, opened } = recordingAsk();
 
-    await showWordCountCommand({ client, ask }).run(contextWith(3));
+    await showWordCountCommand({ client, ask, track: UNTRACKED }).run(contextWith(3));
 
     // It does not go on to page 2: the refusals this channel declares are about
     // the document, so a skip would ask every remaining page a question that has
@@ -128,7 +129,7 @@ describe('the word count command', () => {
     ]);
     const { ask, opened } = recordingAsk();
 
-    await showWordCountCommand({ client, ask }).run(contextWith(3));
+    await showWordCountCommand({ client, ask, track: UNTRACKED }).run(contextWith(3));
 
     // A command applied mid-walk moves the version, and pages counted either
     // side of it describe two documents. Adding them would give a total that is
@@ -152,7 +153,7 @@ describe('the word count command', () => {
     ]);
     const { ask, opened } = recordingAsk();
 
-    await showWordCountCommand({ client, ask }).run(contextWith(3));
+    await showWordCountCommand({ client, ask, track: UNTRACKED }).run(contextWith(3));
 
     expect(asked).toStrictEqual([0, 1, 2]);
     expect((opened[0] as { props: { pagesCounted: number } }).props.pagesCounted).toBe(3);
@@ -162,7 +163,7 @@ describe('the word count command', () => {
     const { client, asked } = clientCounting([]);
     const { ask, opened } = recordingAsk();
 
-    await showWordCountCommand({ client, ask }).run({
+    await showWordCountCommand({ client, ask, track: UNTRACKED }).run({
       docId: undefined,
       version: undefined,
       hasSelection: false,
@@ -177,10 +178,118 @@ describe('the word count command', () => {
     expect({ asked, opened }).toStrictEqual({ asked: [], opened: [] });
   });
 
+  it('REPORTS ITS PROGRESS PER PAGE, after the answer rather than before the call', async () => {
+    const { client } = clientCounting([
+      { kind: 'ok', version: 1, words: 10 },
+      { kind: 'ok', version: 1, words: 4 },
+      { kind: 'ok', version: 1, words: 6 },
+    ]);
+    const { ask } = recordingAsk();
+    const steps: number[] = [];
+    const track: TrackTask = () => ({
+      signal: new AbortController().signal,
+      step: (done) => steps.push(done),
+      end: () => steps.push(-1),
+    });
+
+    await showWordCountCommand({ client, ask, track }).run(contextWith(3));
+
+    // AFTER THE ANSWER. A walk reporting `page + 1` before the call says three
+    // of three while the third page is still in flight, which is a bar that
+    // finishes early and then waits — and `-1` last is the end, which must
+    // arrive whatever happened.
+    expect(steps).toStrictEqual([1, 2, 3, -1]);
+  });
+
+  it('A CANCELLED WALK OPENS NO DIALOG, however many pages it had counted', async () => {
+    const { client, asked } = clientCounting([
+      { kind: 'ok', version: 1, words: 10 },
+      { kind: 'ok', version: 1, words: 4 },
+      { kind: 'ok', version: 1, words: 6 },
+    ]);
+    const { ask, opened } = recordingAsk();
+    const controller = new AbortController();
+    const track: TrackTask = () => ({
+      signal: controller.signal,
+      // CANCELLED AFTER THE FIRST PAGE, from outside, which is what a reader
+      // pressing the button does. A case that aborted before the walk started
+      // would separate nothing: a walk that never ran opens no dialog either.
+      step: () => {
+        controller.abort();
+      },
+      end: () => undefined,
+    });
+
+    await showWordCountCommand({ client, ask, track }).run(contextWith(3));
+
+    // THE DIALOG, asserted as absent. A partial count on screen says *your
+    // document has 10 words* about one with 20, and a reader who cancelled has
+    // no way to tell — `documentSearch.ts`'s rule, and its reason.
+    expect(opened).toStrictEqual([]);
+    // AND THE WALK STOPPED. Without this the case passes for a build that read
+    // all three pages and then threw the answer away, which is the same screen
+    // and four hundred round trips.
+    expect(asked).toStrictEqual([0]);
+  });
+
+  it('does NOT report the page that was IN FLIGHT when the cancel landed', async () => {
+    // The post-call check's own case, and it took a mutation to find that
+    // nothing separated it: the next iteration's check stops the walk either
+    // way, so the dialog is absent and `asked` is [0] whether or not the check
+    // exists. What differs is one `step` — the bar ticking once MORE after the
+    // reader pressed cancel — so that is what this asserts.
+    //
+    // The abort lands INSIDE the call, which is the interleaving a reader
+    // produces and the only one that reaches this branch.
+    const controller = new AbortController();
+    const asked: number[] = [];
+    const client = createClient(channels, (id, params) => {
+      if (id !== 'document.pageWordCount') throw new Error(`unexpected channel ${id}`);
+      asked.push((params as { page: number }).page);
+      controller.abort();
+      return Promise.resolve(
+        ok({ version: asDocVersion(1), words: 10, characters: 50, charactersNoSpaces: 40 }),
+      );
+    });
+    const { ask, opened } = recordingAsk();
+    const steps: number[] = [];
+    const track: TrackTask = () => ({
+      signal: controller.signal,
+      step: (done) => steps.push(done),
+      end: () => undefined,
+    });
+
+    await showWordCountCommand({ client, ask, track }).run(contextWith(3));
+
+    expect(steps).toStrictEqual([]);
+    expect(asked).toStrictEqual([0]);
+    expect(opened).toStrictEqual([]);
+  });
+
+  it('ENDS THE TASK even when a refusal stops the walk', async () => {
+    // The `finally`'s own case. A status bar still counting after a walk
+    // stopped is worse than none: it is the one piece of chrome a reader
+    // trusts to be current.
+    const { client } = clientCounting([{ kind: 'refused' }]);
+    const { ask } = recordingAsk();
+    let ended = false;
+    const track: TrackTask = () => ({
+      signal: new AbortController().signal,
+      step: () => undefined,
+      end: () => {
+        ended = true;
+      },
+    });
+
+    await showWordCountCommand({ client, ask, track }).run(contextWith(1));
+
+    expect(ended).toBe(true);
+  });
+
   it('is hidden where there is no document', () => {
     const { client } = clientCounting([]);
     const { ask } = recordingAsk();
-    const command = showWordCountCommand({ client, ask });
+    const command = showWordCountCommand({ client, ask, track: UNTRACKED });
 
     expect(command.when?.(contextWith(3))).toBe(true);
     expect(

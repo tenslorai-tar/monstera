@@ -1205,6 +1205,36 @@ body {
   text-align: center;
 }
 
+/*
+ * A long command reporting itself in the status bar.
+ *
+ * `margin-inline-start: auto` rather than a position: the bar is a flex row and
+ * this is its last child, so the task sits at the far end whatever is beside
+ * it — and it takes no space at all when nothing is running, because the
+ * element is absent rather than empty.
+ *
+ * Tabular figures for the same reason the page readout has them: the numbers
+ * change once per page and a proportional set would shift the cancel button
+ * sideways under the reader's pointer.
+ */
+.m-status-task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-inline-start: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-status-cancel {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-chrome-11);
+}
+
 .m-quick-toolbar {
   position: fixed;
   inset-inline-start: var(--space-16);

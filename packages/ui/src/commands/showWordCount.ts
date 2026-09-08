@@ -1,7 +1,8 @@
 import type { ContractClient } from '@monstera/contract';
 
 import { WORD_COUNT_DIALOG_ID } from '../dialogs/wordCount.js';
-import { GROUP_PROOFING, WORD_COUNT_COMMAND_TITLE } from '../messages/en.js';
+import { GROUP_PROOFING, WORD_COUNT_COMMAND_TITLE, WORD_COUNT_PROGRESS } from '../messages/en.js';
+import type { TrackTask } from '../runningTask.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
@@ -41,18 +42,27 @@ import { hasDocument } from './documentCommands.js';
  * count is about; a later page answering at a different one stops the walk the
  * same way a refusal does.
  *
- * ## What this does NOT have, stated rather than left to be discovered
+ * ## PROGRESS AND CANCELLATION, and where the surface for them came from
  *
- * No progress and no cancellation. A four-hundred-page document is four hundred
- * round trips before anything appears, and the only feedback is that the dialog
- * has not opened yet. `runDocumentSearch` has both, and the surface that gives
- * it them is the find bar rather than a dialog — so adding them here is a
- * surface question rather than a missing `await`, and it is recorded on the
- * FEATURES row instead of being half-built.
+ * This section said there were none, and was right about why: *"a surface
+ * question rather than a missing `await`"*. A four-hundred-page document is
+ * four hundred round trips, and a dialog cannot report them — its props are
+ * validated at the `ask` call, so a dialog is where a walk ENDS.
+ *
+ * The surface is the **status bar**, which is present for the whole of a
+ * document's life, and `runningTask.ts` is the seam. `track` is a command
+ * dependency like `ask` and `onApplied` rather than a new registry.
+ *
+ * **A cancelled walk publishes nothing** — `documentSearch.ts`'s rule, for its
+ * reason: *your document has 4,000 words* about a document with 40,000 is
+ * indistinguishable from a complete answer once it is on screen, and a reader
+ * who cancelled has no way to tell. So a cancel opens no dialog at all.
  */
 export function showWordCountCommand(deps: {
   readonly client: ContractClient;
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /** Reports progress and carries the cancel. `UNTRACKED` where nothing renders one. */
+  readonly track: TrackTask;
 }): UiCommand {
   return {
     id: 'document.word-count',
@@ -78,19 +88,46 @@ export function showWordCountCommand(deps: {
       let pagesCounted = 0;
       let expected: unknown;
 
-      for (let page = 0; page < pageCount; page += 1) {
-        const answer = await deps.client['document.pageWordCount']({ docId, page });
-        if (!answer.ok) break;
-        // THE FIRST PAGE FIXES THE VERSION this count is about, and every later
-        // page must agree. Comparing against the context's version instead would
-        // compare with what was true when the palette was opened.
-        expected ??= answer.value.version;
-        if (answer.value.version !== expected) break;
+      const task = deps.track(WORD_COUNT_PROGRESS, pageCount);
+      // A FUNCTION, not a read of `signal.aborted` at each site —
+      // `documentSearch.ts`'s note: the flag is flipped from outside between
+      // the two checks, which is what the compiler's narrowing assumes cannot
+      // happen, and reading it inline makes the second check "unintentional".
+      const aborted = (): boolean => task.signal.aborted;
+      try {
+        for (let page = 0; page < pageCount; page += 1) {
+          // CHECKED BEFORE THE CALL, so a cancel between pages costs no round
+          // trip, and again after it, because the answer to the page in flight
+          // arrives after the reader pressed cancel.
+          if (aborted()) return;
 
-        words += answer.value.words;
-        characters += answer.value.characters;
-        charactersNoSpaces += answer.value.charactersNoSpaces;
-        pagesCounted += 1;
+          const answer = await deps.client['document.pageWordCount']({ docId, page });
+          // AND AGAIN AFTER IT. The next iteration's check would stop the walk
+          // anyway, so what this buys is one thing and it is visible: without
+          // it the page in flight when the reader pressed cancel is counted and
+          // `step` reports it, so the bar ticks once MORE after the button was
+          // pressed. Asserted on the reports rather than on the dialog, which
+          // is absent either way.
+          if (aborted()) return;
+          if (!answer.ok) break;
+          // THE FIRST PAGE FIXES THE VERSION this count is about, and every later
+          // page must agree. Comparing against the context's version instead would
+          // compare with what was true when the palette was opened.
+          expected ??= answer.value.version;
+          if (answer.value.version !== expected) break;
+
+          words += answer.value.words;
+          characters += answer.value.characters;
+          charactersNoSpaces += answer.value.charactersNoSpaces;
+          pagesCounted += 1;
+          task.step(pagesCounted);
+        }
+      } finally {
+        // IN A `finally`, so the indicator goes whichever way this leaves — a
+        // cancel, a refusal, a version that moved, or the end. A status bar
+        // still counting after a walk stopped is worse than none: it is the one
+        // piece of chrome a reader trusts to be current.
+        task.end();
       }
 
       // Voided: this dialog declares no result and settles only on dismissal,
