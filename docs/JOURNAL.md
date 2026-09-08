@@ -887,6 +887,121 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Two extraction paths would disagree about what a page says, measured before the text layer is built
+
+*Select and copy (native text layer)* is Stage 5's first unblocked row — the
+editing rows wait on the PDFium host, which waits on the engine-reach decision.
+It needs DOM elements over the rendered page for the browser's own selection to
+run across, and their text can come from two places.
+
+**PDF.js's `getTextContent`.** It is what its own `TextLayer` is built from, it
+is already in the renderer, and it needs no channel.
+
+**The kernel's substrate** — `textStructure.ts` over MuPDF's structured text,
+reached through `document.pageText`. It is what *search* already walks, and
+`docs/FEATURES.md`:73 records why: `findInPages` uses the substrate and not
+MuPDF's own `search`, because ADR-0034's K.0 bans a second extraction path.
+
+The rule already decides this. §3 says PDF.js renders and is never a source of
+truth; `CLAUDE.md` names the pathology — fragile identity joins between two
+parsers. **What the rule does not say is what obeying it is worth**, and if the
+two agreed character for character the answer would be *very little*.
+
+### They do not agree, and the disagreement is exactly the user-visible one
+
+`scripts/research/textLayerAgreement.mjs`. Five fixtures, text and reading order
+compared as strings — not boxes, since the two report geometry in different
+frames and a coordinate comparison would measure the conversion rather than the
+extraction. Per fixture, never blended, for ADR-0034's reason: *every line
+correct in an unusable order* and *the right order with mangled lines* are
+different failures and one number hides which you have.
+
+| fixture | identical |
+|---|---|
+| one column, plain prose | yes |
+| **two columns, 60pt gutter, drawn row-major** | **no — 0 of 6 lines shared** |
+| **a line broken by a wide intra-line gap** | **no — 0 of 2 lines shared** |
+| tight leading, two baselines 2pt apart | yes |
+| text rotated 90 degrees | yes |
+
+The two-column case is the whole argument in one reading. The substrate answers
+six lines in column order:
+
+```
+Left column line 1 / Left column line 2 / Left column line 3
+Right column line 1 / Right column line 2 / Right column line 3
+```
+
+PDF.js answers three, each straddling the gutter:
+
+```
+Left column line 1 Right column line 1
+Left column line 2 Right column line 2
+Left column line 3 Right column line 3
+```
+
+So with a PDF.js text layer a user could **search for a phrase, be told it is
+there, select it, and copy something else** — because the two halves of the
+application would be reading the page differently. That is not a rule being
+obeyed; it is a defect avoided.
+
+The gap case is the quieter one and would show up in every invoice: the
+substrate splits a label from its value across a wide intra-line gap, PDF.js
+runs them together.
+
+**Ruling: the text layer is built from the kernel's substrate.** The rule and
+the measurement agree, which is the comfortable case — but the measurement is
+what makes the cost defensible, because the substrate route needs a channel, a
+coordinate conversion and DOM positioning that PDF.js would have given free.
+
+### The instrument caught its own fixture first, and that is the part to keep
+
+The two-column case was declared `control: 'differ'` — a fixture the engines
+**must** disagree on, since a comparison that cannot separate them where reading
+order is the entire question is not discriminating, and every clean result
+elsewhere would mean nothing.
+
+Its first run **agreed**, and the script threw rather than printing a sweep.
+
+The reason is the fixture, not the engines. `pdf-lib` drew the left column's
+three lines and then the right column's, which puts the **content stream** in
+column-major order already — so PDF.js, which returns stream order, and MuPDF,
+which segments into columns, produce the same answer. Nothing about the case
+looked wrong and its name said it was covered: *never build a fixture the bug
+also handles correctly*. Interleaving the draws makes the stream row-major, and
+only an engine that groups by column can then produce column order.
+
+That is the same shape ADR-0034 recorded from the other side — it rejected
+staggered two-column fixtures because *the broken version handles those
+correctly* — and it arrived here through the draw ORDER rather than through the
+geometry, which is a place nobody had looked.
+
+### Its other controls
+
+**A fixture the two must agree on**, so universal disagreement reads as the
+instrument rather than the engines. **Ground truth from the generator**: every
+fixture declares the strings it drew and *both* readers must contain all of
+them before their agreement is compared, which separates *the two extract
+differently* from *one of them extracted nothing usable*. That control earns its
+place immediately — PDF.js warns on every call here that it cannot fetch
+standard font data over a `file:` URL, and this is what says the extraction was
+sound anyway rather than an argument that it should be.
+
+**And the comparison is resolution-tested** before it compares anything: two
+strings one character apart must not be reported identical, and identical inputs
+must be.
+
+**The substrate is read through the kernel's build**, so a stale one would
+answer for code that is no longer there. Importing the source is not available —
+it is TypeScript — and reimplementing the parse would be a second opinion about
+a format `textStructure.ts` owns, which is worse than the staleness. So the
+mtime edge is checked and the run refuses. `buildFreshness.mjs` does this
+properly for proofs, keyed by `proof:*` name against an anchor derived from the
+proofs that import it; this is a research script, and adding it to that map
+would put a non-proof into a roster derived from proofs.
+
+---
+
 ## 2026-09-08 — The engine the product runs is not the engine the law describes, and not the one the proof scanned
 
 Found while deciding the PDFium host's process topology, which is the one
