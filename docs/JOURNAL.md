@@ -1447,6 +1447,24 @@ takes it with the measurement in hand rather than rediscovering a red board.
 **And `main` is green.** The board at `0258c3f` reports both jobs successful; the
 red was one run on one commit, and the tree has moved past it.
 
+**Correction, 2026-09-08 (later the same day): this entry named no TRIGGER, and
+*"recorded so the next range takes it"* is not one.** It names no event, so
+nothing makes it due — which is the shape `an-expiring-claim-needs-a-reader`
+warns about, and it is the same defect as a claim parked in a register whose
+scan can never fire. A deferral whose condition is *somebody will get to it*
+expires never.
+
+The trigger is **whichever comes first** of: the next range that touches
+`checkLocal.proof.mjs` for any other reason — so the change is verified beside
+work already exercising that leg, which is the thing this machine cannot do
+alone — **or a second observed red on that case**, which is the evidence that a
+one-in-twenty flake has not gone away by itself. At one in twenty it costs a red
+board roughly every twenty pushes, so the second occurrence is not a long wait
+and is a fact rather than a feeling.
+
+What does **not** count as the trigger: this entry being read again. That is the
+condition it had.
+
 ---
 
 ## 2026-09-08 — nspell probed in a scratch tree: cheap to install, expensive to hold, and the dictionaries are an owner's decision
