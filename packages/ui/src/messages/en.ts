@@ -211,6 +211,13 @@ export const ARROW_TOOL_TITLE = messageKey('command.annotate-arrow.title');
 export const INK_TOOL_TITLE = messageKey('command.annotate-ink.title');
 export const REDACT_TOOL_TITLE = messageKey('command.annotate-redact.title');
 export const ANNOTATION_SURFACE_LABEL = messageKey('surface.annotation.label');
+export const WORD_COUNT_COMMAND_TITLE = messageKey('command.word-count.title');
+export const WORD_COUNT_TITLE = messageKey('dialog.word-count.title');
+export const WORD_COUNT_WORDS_LABEL = messageKey('dialog.word-count.words');
+export const WORD_COUNT_CHARACTERS_LABEL = messageKey('dialog.word-count.characters');
+export const WORD_COUNT_CHARACTERS_TIGHT_LABEL = messageKey('dialog.word-count.characters-tight');
+export const WORD_COUNT_PAGES_LABEL = messageKey('dialog.word-count.pages');
+export const WORD_COUNT_PARTIAL = messageKey('dialog.word-count.partial');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
@@ -533,6 +540,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // screen-reader user cannot tell apart, which is `SPLIT_SECOND_LABEL`'s
   // argument on a list rather than a pair.
   [ANNOTATION_SURFACE_LABEL]: 'Draw on page {page}',
+  [WORD_COUNT_COMMAND_TITLE]: 'Word count',
+  [WORD_COUNT_TITLE]: 'Word count',
+  [WORD_COUNT_WORDS_LABEL]: 'Words',
+  [WORD_COUNT_CHARACTERS_LABEL]: 'Characters',
+  [WORD_COUNT_CHARACTERS_TIGHT_LABEL]: 'Characters, no spaces',
+  [WORD_COUNT_PAGES_LABEL]: 'Pages counted',
+  // SAYS THE FIGURES ARE SHORT, in the sentence rather than in a colour: a
+  // total smaller than the document is indistinguishable from a correct total
+  // for a shorter one, and a reader quoting it has no way to tell.
+  [WORD_COUNT_PARTIAL]: 'Counted {counted} of {total} pages — these totals are incomplete.',
   [RULER_UNIT_TITLE]: 'Ruler unit',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',

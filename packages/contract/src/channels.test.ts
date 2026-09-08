@@ -106,6 +106,12 @@ const handlers: ContractHandlers = {
         truncated: false,
       }),
     ),
+  // NON-ZERO AND ALL THREE DIFFERENT, so a case can assert which figure crossed.
+  // A fixture of zeros is what a dropped field and an empty page produce alike.
+  'document.pageWordCount': () =>
+    Promise.resolve(
+      ok({ version: asDocVersion(1), words: 5, characters: 27, charactersNoSpaces: 23 }),
+    ),
   // ONE OF EACH KIND, for the search fixture's reason: a list holding only
   // internal links would let a boundary that dropped the external branch pass,
   // and the external branch is the one invariant 24 rests on.

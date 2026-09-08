@@ -887,6 +887,128 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Word count, where the interesting decision is what a word is
+
+Stage 5's second unblocked row, and it rides on the reader select-and-copy
+built: the same `#pageText` read, in the same lane, answering something else.
+
+### The channel counts a page and answers with none of it
+
+A whole-document count is three small numbers, and getting them means reading
+every page's text. A channel that counted the document would hold every page's
+text somewhere while it worked, and ADR-0035 measured extracted text at **3.59×
+a document's bytes** — which is why it is never resident in main.
+
+So `document.pageWordCount` reads one page inside the lane, counts it, and drops
+it. Three integers cross; the text never does. The command walks the pages and
+adds up, which is `document.searchPage`'s shape — and inherits the same place to
+put cancellation and progress when they arrive.
+
+### `Intl.Segmenter`, and the failure a whitespace split has
+
+*What is a word* is a question the platform already answers, to the Unicode
+segmentation rules, in both runtimes this application has. Splitting on
+whitespace is the obvious alternative, and it is a second opinion about a solved
+question (B3a) — and a worse one in a way that is invisible on the documents a
+developer tests with:
+
+**Chinese, Japanese and Thai are written without spaces.** The naive rule reports
+a paragraph of any of them as **one word**. That is not an edge case — it is most
+of the writing in the world by volume — and it fails toward *this document is
+nearly empty*, which is the reassuring direction and the one nobody checks.
+
+The case for it is written the way this project writes them: `countWords` on a
+line of Chinese must exceed 1, with a **control asserting that a whitespace split
+of the same line gives exactly 1**. Without the control, *greater than one* is a
+fact about a string with no spaces that could hold anything.
+
+`don't` and `state-of-the-art` are the quieter half: every hand-rolled rule
+splits them differently and every such rule is somebody's guess. The rule this
+build states is one line — **a word is a word-like segment** — and nothing here
+decides which segments those are.
+
+### It lives in `@monstera/shared`, for `findInLines`' reason exactly
+
+The browser shim answers `document.pageWordCount` and **may not import the
+kernel**. A counting rule in the kernel would therefore be re-stated in the shim,
+and the two would agree until one of them changed — which is what happened to the
+search's matching rule, whose shim copy carried a comment claiming it followed
+the kernel's while being a lower-case `indexOf` loop.
+
+So `countWords(lines)` is in `shared` and `countPageWords(page)` in the kernel is
+four lines: pull the substrate's lines out and call it. The kernel's own cases
+assert only that — the reading, the order, and that image and vector blocks are
+dropped — because repeating the segmenter's cases there would be two assertions
+from one source.
+
+### Characters are code points, and the join is counted
+
+`String.prototype.length` counts UTF-16 code units, so an emoji or a rarer CJK
+ideograph counts as two. A person counting characters means the things they can
+see, so the count iterates code points. It still counts a combining sequence as
+more than one, and that is **stated rather than hidden** — a grapheme segmenter
+per page would change no word count.
+
+The lines are joined with a space rather than concatenated: a structured-text
+line is a run on a baseline, so a wrapped sentence is two of them, and
+concatenating fuses the last word of one with the first of the next into a word
+that appears in no document. The separator is counted in `characters` too, so the
+two figures describe one page rather than two.
+
+### The partial total, which is the reason `pagesCounted` exists
+
+A walk that stops — a refusal, or a page answering at a version that has moved —
+gives a total that is smaller than the document and **indistinguishable from a
+correct total for a shorter one**. It is also exactly the figure somebody would
+quote.
+
+So the dialog is handed how many pages contributed and how many the document has,
+and says the totals are incomplete when they differ. The walk stops rather than
+skips, because the refusals this channel declares are all about the document
+rather than a page: skipping would ask every remaining page a question that has
+just been answered.
+
+**The version is fixed by the first page**, not taken from the context: the
+context's version is what was true when the palette was opened, and a command
+applied while the walk runs moves it. Pages counted either side of that describe
+two documents.
+
+Six cases, including a control that a walk where every version agrees counts all
+of them — without it, the two stopping cases pass for a command that stops after
+page one whatever the answers say, which is the same observation with a different
+cause.
+
+### Two things the registration caught
+
+**The id grammar.** `document.wordCount` is not a command id: the registry
+refuses anything that is not lower-case and dot-separated, and its message says
+why rather than just that — `check:secondwiring` matches ids by that grammar, so
+an id outside it is invisible to the scan that forbids a second wiring place.
+Sixty-four cases went red at once, all from one throw at registry construction.
+
+**A deprecated formatter with a real reason under it.** Lingui's `i18n.number`
+is deprecated and the lint rule said so. What matters is not the deprecation:
+`12,345` and `12.345` are different documents to different readers, so the
+grouping separator is a locale's business and `String(value)` gives neither. It
+formats through `Intl.NumberFormat` with the catalogue's locale.
+
+### What it does not have, recorded rather than left to be found
+
+**No progress and no cancellation.** A four-hundred-page document is four hundred
+round trips before the dialog opens, and the only feedback is that it has not.
+`runDocumentSearch` has both, and the surface that gives it them is the find bar
+— a dialog whose props are validated at the open call cannot fill in as it goes.
+So this is a surface question rather than a missing `await`, and it is on the
+row with a trigger instead of being half-built.
+
+**And no ribbon placement.** D4 is *ribbon: Edit*, and no command in this build
+carries a `ribbon` placement because no projection renders one. Naming a section
+would put the command on a surface that does not exist. `placements: []` is
+correct meanwhile and the palette still reaches it, because `paletteModel` reads
+no placements at all.
+
+---
+
 ## 2026-09-08 — Select and copy: the platform does the selecting, and the kernel decides what the words are
 
 Stage 5's first row that does not wait on the PDFium host. Two measurements

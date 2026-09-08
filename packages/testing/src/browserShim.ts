@@ -16,6 +16,7 @@ import {
   type FileHandle,
   asDocId,
   asDocVersion,
+  countWords,
   err,
   findInLines,
   ok,
@@ -1001,6 +1002,28 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           // and a real one disagree about nothing a test could come to rely on.
           truncated: all.length > limit,
         }),
+      );
+    },
+
+    /**
+     * One page's counts, from the same lines the search and the layer read.
+     *
+     * **Counted rather than canned**, which is `document.searchPage`'s rule
+     * here: a shim answering a fixed number would agree with a renderer that
+     * asked about the wrong page, or that never added the pages up — and the UI
+     * half of the wired pair would go green over a total nobody computed.
+     *
+     * `countWords` is `@monstera/shared`'s — which both this package and the
+     * kernel may import — so there is one answer rather than two that agree for
+     * a while (B3a). The kernel's `countPageWords` is the same call with the
+     * substrate's lines pulled out first.
+     */
+    'document.pageWordCount': ({ docId, page }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), ...countWords(pageLines[page] ?? []) }),
       );
     },
 

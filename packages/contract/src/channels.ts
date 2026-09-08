@@ -1568,6 +1568,53 @@ export const channels = {
   ),
 
   /**
+   * One page's word and character counts.
+   *
+   * ## PER PAGE, and the caller adds up — which is L11 rather than a preference
+   *
+   * A whole-document count is one small answer, and getting it means reading
+   * every page's text. The question is where that reading happens and what
+   * crosses: a channel answering *the whole document* would hold every page's
+   * text somewhere while it worked, and
+   * [ADR-0035](DECISIONS/0035-extracted-text-is-never-resident-in-main.md)
+   * measured extracted text at **3.59× a document's bytes**.
+   *
+   * So a page's text is read inside the document's lane, counted, and dropped —
+   * three numbers cross and the text never does. A caller walks the pages and
+   * adds up, exactly as `document.searchPage`'s caller walks them, and gets
+   * cancellation and progress from the same shape rather than from a second
+   * mechanism inside this one.
+   *
+   * ## The counts themselves are the kernel's, and *what a word is* is the
+   * platform's
+   *
+   * `Intl.Segmenter`, not a whitespace split: Chinese, Japanese and Thai are
+   * written without spaces, so the naive rule reports a paragraph of them as one
+   * word — and reports the document as nearly empty rather than as wrong, which
+   * is the reassuring direction. Counting here rather than in the renderer also
+   * keeps one answer to a question two surfaces could otherwise ask differently.
+   *
+   * ## `page` is ZERO-BASED, like every other page index that crosses here
+   */
+  'document.pageWordCount': channel(
+    'One page’s word and character counts, the text never leaving the lane.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+    }),
+    z.object({
+      version: docVersionSchema,
+      /** Word-like segments, as `Intl.Segmenter` identifies them. */
+      words: z.number().int().nonnegative(),
+      /** Characters as Unicode code points, so a surrogate pair counts once. */
+      characters: z.number().int().nonnegative(),
+      /** Characters excluding whitespace — the figure most editors show. */
+      charactersNoSpaces: z.number().int().nonnegative(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * The document's optional-content groups.
    *
    * ## A READ, and the toggle is `document.execute`

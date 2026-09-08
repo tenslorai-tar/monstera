@@ -246,6 +246,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // table cell is its own line, and the longest line a page could be built to
   // carry was 531 characters (`MAX_TEXT_LAYER_LINES`).
   'document.pageTextLayer': 'needs an engine session',
+  // THREE INTEGERS, whatever the page holds. This is the channel that reads a
+  // page's text and answers with none of it — which is the whole point of it
+  // being per page and counted in the lane: a whole-document count would hold
+  // text ADR-0035 measured at 3.59x the document's bytes.
+  'document.pageWordCount': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',
   'document.destinations': 'needs an engine session',

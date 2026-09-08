@@ -38,6 +38,7 @@ import {
   type SnapshotWrite,
   type TextLayerLine,
   type TextMatch,
+  countPageWords,
   findInPages,
   textLayerOf,
   saveDocument,
@@ -45,7 +46,13 @@ import {
   writeDocumentCopy,
   writeDocumentSplit,
 } from '@monstera/kernel';
-import { type DocId, type DocVersion, type QueryProblem, compileQuery } from '@monstera/shared';
+import {
+  type DocId,
+  type DocVersion,
+  type QueryProblem,
+  type WordCount,
+  compileQuery,
+} from '@monstera/shared';
 // THE ONE PATH JOIN IN THIS FILE, and it is not invariant L2's concern: the
 // directory came from a picker in this process and never crosses to the
 // renderer, exactly as a destination does. What L2 forbids is a path in a
@@ -909,6 +916,11 @@ export interface PageSearchResult {
   readonly truncated: boolean;
 }
 
+/** One page's counts, stamped with the version the lane read them at. */
+export interface PageWordCountResult extends WordCount {
+  readonly version: DocVersion;
+}
+
 /** One page's selectable text, stamped with the version the lane read it at. */
 export interface PageTextLayerResult {
   readonly version: DocVersion;
@@ -1220,6 +1232,34 @@ export class DocumentCommands {
 
       const text = await this.#pageText(docId, sessions, page);
       return textLayerOf(text, limit, MAX_TEXT_LAYER_LINE);
+    });
+
+    return { version, ...value };
+  }
+
+  /**
+   * One page's word and character counts.
+   *
+   * ## In the LANE, and the text is dropped inside it
+   *
+   * `#pageText` is the same read `searchPage` and `pageTextLayer` make. What
+   * differs is what leaves: three numbers rather than the text, so nothing here
+   * holds a page's text beyond the call and nothing accumulates across pages —
+   * which is what lets a caller count a document ADR-0035 says must never be
+   * resident in main.
+   *
+   * @param page the zero-based index, as every page index crossing the contract is
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async pageWordCount(docId: DocId, page: number): Promise<PageWordCountResult> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return countPageWords(await this.#pageText(docId, sessions, page));
     });
 
     return { version, ...value };

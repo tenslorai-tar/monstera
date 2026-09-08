@@ -80,7 +80,9 @@ import { FindBar } from './FindBar.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
+import { showWordCountCommand } from './commands/showWordCount.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
+import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
@@ -276,6 +278,7 @@ export function App({ client, settings }: AppProps): ReactElement {
     () =>
       new DialogRegistry([
         ABOUT_DIALOG,
+        WORD_COUNT_DIALOG,
         SAVE_PROBLEM_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
@@ -1128,6 +1131,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       new CommandRegistry([
         openCommand,
         showAboutCommand({ client, ask }),
+        showWordCountCommand({ client, ask }),
         revealLogCommand({ client }),
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
