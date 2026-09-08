@@ -1,7 +1,15 @@
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { ok } from '@monstera/shared';
+import {
+  type PageTransform,
+  fitzPoint,
+  fromFitz,
+  ok,
+  pageTransform,
+  toPdf,
+  viewportPoint,
+} from '@monstera/shared';
 
 import type { ByteImage } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
@@ -57,6 +65,63 @@ async function blankDocument(): Promise<ByteImage> {
   const doc = await PDFDocument.create();
   doc.addPage([612, 792]);
   return doc.save({ useObjectStreams: false });
+}
+
+/** Where the rotation fixtures put their single run, in PDF user space. */
+const TURNED = { x: 60, baseline: 600, size: 14, text: 'FRAME PROBE' };
+
+/** A non-square page, so a swapped axis cannot hide. */
+const TURNED_PAGE = { width: 400, height: 700 };
+
+/**
+ * The SAME ink at the SAME user-space position, with one `/Rotate`.
+ *
+ * The pre-image is identical across all four, so a reported box that moves is
+ * the frame moving rather than the content — which is what makes a comparison
+ * across turns mean anything. A fixture that drew upright ink and declared
+ * `/Rotate 90` would read sideways and answer a question nobody asked.
+ */
+async function turnedDocument(rotation: number): Promise<ByteImage> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([TURNED_PAGE.width, TURNED_PAGE.height]);
+  page.drawText(TURNED.text, {
+    x: TURNED.x,
+    y: TURNED.baseline,
+    size: TURNED.size,
+    font,
+  });
+  page.setRotation(degrees(rotation));
+  return doc.save({ useObjectStreams: false });
+}
+
+/** The page's transform at scale 1, built from the fixture's own numbers. */
+function turnedTransform(rotation: number): PageTransform {
+  return pageTransform(
+    { x0: 0, y0: 0, x1: TURNED_PAGE.width, y1: TURNED_PAGE.height },
+    rotation,
+    1,
+  );
+}
+
+/**
+ * Whether a converted rectangle lands on the run this fixture drew.
+ *
+ * The left edge and the baseline, not the whole box: a line's reported height
+ * carries the font's ascent and descent, which is a fact about the font rather
+ * than about the frame, and requiring it to match would fail every candidate
+ * for a reason that is not the one under test.
+ */
+function landsOnTheRun(rect: { x0: number; y0: number; x1: number; y1: number }): boolean {
+  const left = Math.min(rect.x0, rect.x1);
+  const bottom = Math.min(rect.y0, rect.y1);
+  const top = Math.max(rect.y0, rect.y1);
+  return (
+    Math.abs(left - TURNED.x) < 2 &&
+    bottom < TURNED.baseline + 1 &&
+    top > TURNED.baseline &&
+    top - bottom < TURNED.size * 2
+  );
 }
 
 describe('readPageText, against a real MuPDF session', () => {
@@ -150,5 +215,90 @@ describe('readPageText, against a real MuPDF session', () => {
     // A half-read answer whose length matches the request and whose contents
     // describe a different set of pages is what a per-page check would allow.
     await expect(readPageText(session, [0, 7])).rejects.toThrow(/outside this document/u);
+  });
+});
+
+/**
+ * Which SPACE the substrate's boxes are in, checked as a pre-image against all
+ * four turns rather than extrapolated from one.
+ *
+ * ## Why these cases exist
+ *
+ * `textStructure.ts` typed its corners `FitzPoint` until 2026-09-08.
+ * `@monstera/shared`'s `FitzPoint` is the **unrotated** y-down space —
+ * `toFitz` is `(x − crop.x0, crop.y1 − y)` and touches rotation nowhere — and
+ * MuPDF's structured text comes off the page's display list, which has already
+ * applied `/Rotate`.
+ *
+ * **At `/Rotate 0` the two conversions are arithmetically the same operation.**
+ * Every other fixture in this repository is upright, so the wrong brand agreed
+ * with the right one everywhere it was ever exercised, and nothing in the
+ * product converted one of these boxes — search carries `line`, `offset` and
+ * `text` and no geometry. The text layer is the first caller that would, and it
+ * would have placed every line of every rotated page somewhere the text is not.
+ *
+ * So the assertion is the CONSEQUENCE rather than the brand: a name is checked
+ * by the compiler and would be changed back by the same edit that broke this.
+ * What cannot be argued with is whether the converted box lands on the run.
+ */
+describe('the space the substrate reports boxes in', () => {
+  for (const rotation of [0, 90, 180, 270]) {
+    it(`places the run correctly through toPdf at /Rotate ${String(rotation)}`, async () => {
+      const session = await mupdfWriter.open(await turnedDocument(rotation));
+      const { pages } = await readPageText(session, [0]);
+      const line = linesOf(pages[0] ?? { blocks: [] }).find((entry) =>
+        entry.text.includes(TURNED.text),
+      );
+      if (line === undefined) throw new Error('the fixture draws one run');
+
+      const transform = turnedTransform(rotation);
+      const a = toPdf(viewportPoint(line.box.topLeft.x, line.box.topLeft.y), transform);
+      const b = toPdf(
+        viewportPoint(line.box.bottomRight.x, line.box.bottomRight.y),
+        transform,
+      );
+      expect(landsOnTheRun({ x0: a.x, y0: a.y, x1: b.x, y1: b.y })).toBe(true);
+    });
+  }
+
+  /**
+   * THE CASE THAT SEPARATES THE TWO SPACES, and without it the four above pass
+   * for a page that is not turned at all.
+   *
+   * Read as a pair with the `/Rotate 0` case below it: `fromFitz` is correct
+   * upright and wrong on every turn, which is exactly the shape of a defect
+   * that ships. A case asserting only that `toPdf` works would stay green if
+   * the brand were changed back, because `toPdf` would still be the call
+   * somebody wrote.
+   */
+  it('CONTROL: fromFitz — the OLD brand’s conversion — misses on a turned page', async () => {
+    const session = await mupdfWriter.open(await turnedDocument(90));
+    const { pages } = await readPageText(session, [0]);
+    const line = linesOf(pages[0] ?? { blocks: [] }).find((entry) =>
+      entry.text.includes(TURNED.text),
+    );
+    if (line === undefined) throw new Error('the fixture draws one run');
+
+    const transform = turnedTransform(90);
+    const a = fromFitz(fitzPoint(line.box.topLeft.x, line.box.topLeft.y), transform);
+    const b = fromFitz(
+      fitzPoint(line.box.bottomRight.x, line.box.bottomRight.y),
+      transform,
+    );
+    expect(landsOnTheRun({ x0: a.x, y0: a.y, x1: b.x, y1: b.y })).toBe(false);
+  });
+
+  it('CONTROL: fromFitz agrees with toPdf upright, which is why this went unnoticed', async () => {
+    const session = await mupdfWriter.open(await turnedDocument(0));
+    const { pages } = await readPageText(session, [0]);
+    const line = linesOf(pages[0] ?? { blocks: [] }).find((entry) =>
+      entry.text.includes(TURNED.text),
+    );
+    if (line === undefined) throw new Error('the fixture draws one run');
+
+    const transform = turnedTransform(0);
+    const viaFitz = fromFitz(fitzPoint(line.box.topLeft.x, line.box.topLeft.y), transform);
+    const viaPdf = toPdf(viewportPoint(line.box.topLeft.x, line.box.topLeft.y), transform);
+    expect({ x: viaFitz.x, y: viaFitz.y }).toStrictEqual({ x: viaPdf.x, y: viaPdf.y });
   });
 });

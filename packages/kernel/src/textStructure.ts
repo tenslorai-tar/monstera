@@ -1,4 +1,4 @@
-import { type FitzPoint, fitzPoint } from '@monstera/shared';
+import { type ViewportPoint, viewportPoint } from '@monstera/shared';
 
 /**
  * The one place that asks MuPDF for text, and the one shape its answer takes.
@@ -18,7 +18,7 @@ import { type FitzPoint, fitzPoint } from '@monstera/shared';
  * and the regression E2 calls K.0 becomes **a second set of stext options
  * anywhere**, which is a grep rather than a judgement.
  *
- * ## Coordinates are FitzPoint, and that is not a formality
+ * ## Coordinates are branded, and that is not a formality
  *
  * MuPDF's structured text is **y-down from the page top** — measured: a run
  * drawn at PDF user y=700 on a 792pt page comes back at y=92, which is
@@ -26,10 +26,17 @@ import { type FitzPoint, fitzPoint } from '@monstera/shared';
  * invisible bug invariant L3 exists to prevent, because it renders correctly on
  * every page whose CropBox starts at the origin and wrongly on the rest.
  *
- * So every coordinate leaving here is a {@link FitzPoint}, and a consumer that
- * wants viewport or PDF space converts through `PageTransform`. This module
- * performs no flip: it has no rotation and no CropBox in hand, which is the
- * whole reason the flip lives in one place.
+ * So every coordinate leaving here is branded and a consumer converts through
+ * `PageTransform`. This module performs no conversion of its own: it has no
+ * rotation and no CropBox in hand, which is the whole reason the conversion
+ * lives in one place.
+ *
+ * **THE BRAND WAS `FitzPoint` UNTIL 2026-09-08 AND THAT WAS THE WRONG SPACE.**
+ * It is `ViewportPoint` at scale 1 — display space, with `/Rotate` already
+ * applied. The measurement, the table and why nothing caught it are on
+ * {@link DisplayedRect}. The paragraph above is unchanged and was never the
+ * error: y **is** down from the page top, and it was measured on an upright
+ * page, where the two spaces coincide.
  */
 
 /**
@@ -82,18 +89,60 @@ export const STEXT_OPTIONS = {
  */
 export const STEXT_OPTION_STRING: string = STEXT_OPTIONS.segment;
 
-/** A rectangle in MuPDF's space, as two corners rather than a size. */
-export interface FitzRect {
-  readonly topLeft: FitzPoint;
-  readonly bottomRight: FitzPoint;
+/**
+ * A rectangle in the page's **display space**, as two corners rather than a size.
+ *
+ * ## This said `FitzRect` and `FitzPoint` until 2026-09-08, and that was wrong
+ *
+ * `FitzPoint` in `@monstera/shared` is the **unrotated** y-down space:
+ * `toFitz` is `(x − crop.x0, crop.y1 − y)` and touches rotation nowhere. MuPDF's
+ * structured text is not in that space. It comes off the page's display list,
+ * which has already applied `/Rotate`.
+ *
+ * Measured at all four turns (`scripts/research/textFrames.mjs`), with the same
+ * ink at the same user-space position on every fixture so the pre-image cannot
+ * move. A run drawn at user `(60, 600)`, 14pt, on a 400×700 page:
+ *
+ * | `/Rotate` | the box reported here | `fromFitz` | `toPdf` |
+ * |---|---|---|---|
+ * | 0 | (60, 84)–(161, 103) | on the run | on the run |
+ * | 90 | (595, 60)–(614, 161) | **elsewhere** | on the run |
+ * | 180 | (238, 595)–(339, 614) | **elsewhere** | on the run |
+ * | 270 | (84, 238)–(103, 339) | **elsewhere** | on the run |
+ *
+ * **At `/Rotate 0` the two conversions are arithmetically the same operation**,
+ * which is why nothing caught it: every fixture in this repository that touches
+ * the substrate is upright, and the wrong type agrees with the right one on all
+ * of them.
+ *
+ * So the corners are {@link ViewportPoint} at scale 1 — the same reading
+ * `flatFields.ts` already takes of MuPDF's device output, whose `Displayed`
+ * box goes through `toPdf(viewportPoint(…), transform)`. One answer to *what
+ * frame does this engine report in*, not two (B3a).
+ *
+ * **Nothing in the product converted one of these**, which is why this was a
+ * latent claim rather than a live defect: search carries `line`, `offset` and
+ * `text` and no geometry. The text layer is the first caller, and it would have
+ * placed every line of every rotated page somewhere the text is not — a failure
+ * that looks exactly like a working feature until someone opens a landscape
+ * scan.
+ */
+export interface DisplayedRect {
+  readonly topLeft: ViewportPoint;
+  readonly bottomRight: ViewportPoint;
 }
 
 /** One run of text MuPDF placed on a single baseline. */
 export interface TextLine {
   readonly text: string;
-  readonly box: FitzRect;
-  /** The line's origin, which is its left edge on the baseline. */
-  readonly origin: FitzPoint;
+  readonly box: DisplayedRect;
+  /**
+   * The line's origin, which is its left edge on the baseline.
+   *
+   * Display space, for {@link DisplayedRect}'s reason and measured in the same
+   * run — it comes from the same node of the same JSON.
+   */
+  readonly origin: ViewportPoint;
   /** Point size, as MuPDF reports it for the line's font. */
   readonly size: number;
 }
@@ -101,7 +150,7 @@ export interface TextLine {
 /** A group of lines MuPDF placed together, in the reading order it chose. */
 export interface TextBlock {
   readonly lines: readonly TextLine[];
-  readonly box: FitzRect;
+  readonly box: DisplayedRect;
 }
 
 /** One page's text, in reading order. */
@@ -159,13 +208,13 @@ function field(from: RawNode | null, name: string): unknown {
   return from === null ? undefined : from[name];
 }
 
-function rectOf(value: unknown): FitzRect {
+function rectOf(value: unknown): DisplayedRect {
   const box = node(value);
   const x = num(field(box, 'x'), 0);
   const y = num(field(box, 'y'), 0);
   return {
-    topLeft: fitzPoint(x, y),
-    bottomRight: fitzPoint(x + num(field(box, 'w'), 0), y + num(field(box, 'h'), 0)),
+    topLeft: viewportPoint(x, y),
+    bottomRight: viewportPoint(x + num(field(box, 'w'), 0), y + num(field(box, 'h'), 0)),
   };
 }
 
@@ -212,7 +261,7 @@ function collectBlocks(source: readonly unknown[], into: TextBlock[]): void {
       lines.push({
         text,
         box: rectOf(field(line, 'bbox')),
-        origin: fitzPoint(num(field(line, 'x'), 0), num(field(line, 'y'), 0)),
+        origin: viewportPoint(num(field(line, 'x'), 0), num(field(line, 'y'), 0)),
         size: num(field(node(field(line, 'font')), 'size'), 0),
       });
     }

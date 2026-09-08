@@ -887,6 +887,99 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — The substrate's boxes were branded the wrong space, and at `/Rotate 0` the two are the same operation
+
+Found by asking, before writing the text layer's first line, which frame its
+coordinates arrive in. Two modules in this repository already read MuPDF
+geometry and they answered differently:
+
+- `textStructure.ts` typed its corners **`FitzPoint`**, and `@monstera/shared`'s
+  `fromFitz` converts one by flipping y about the crop box. It touches rotation
+  nowhere — `toFitz` is `(x − crop.x0, crop.y1 − y)`, and that is the whole of
+  it.
+- `flatFields.ts` reads geometry off a `mupdf.Device` and converts with
+  **`toPdf(viewportPoint(…), transform)`**, which does undo rotation, because
+  `toPdf` switches on `transform.rotation`.
+
+On a turned page at most one of them can be right.
+
+### The measurement
+
+`scripts/research/textFrames.mjs`, written as **a pre-image checked against all
+four turns** rather than extrapolated from one — the discipline this project
+adopted after the `/Rect` measurement. Each fixture draws the same run at the
+same user-space position and differs only in `/Rotate`, so the pre-image cannot
+move and a box that moves is the frame.
+
+A run at user `(60, 600)`, 14pt, on a 400×700 page:
+
+| `/Rotate` | the substrate's box | `fromFitz` | `toPdf` |
+|---|---|---|---|
+| 0 | (60, 84)–(161, 103) | on the run | on the run |
+| 90 | (595, 60)–(614, 161) | **elsewhere** | on the run |
+| 180 | (238, 595)–(339, 614) | **elsewhere** | on the run |
+| 270 | (84, 238)–(103, 339) | **elsewhere** | on the run |
+
+`toPdf` 4 of 4; `fromFitz` 1 of 4. The substrate's boxes are in **display
+space**, with `/Rotate` already applied — MuPDF builds structured text from the
+page's display list. So the corners are `ViewportPoint` at scale 1, which is the
+reading `flatFields.ts` already takes of the same engine's device output. One
+answer to *what frame does this engine report in*, not two (B3a).
+
+### Why nothing caught it, and why it was not yet a defect
+
+**At `/Rotate 0` the two conversions are arithmetically the same operation.**
+Every fixture in this repository that touches the substrate is upright, so the
+wrong brand agreed with the right one on every input it has ever seen.
+
+And **nothing in the product converts one of these boxes.** Search carries
+`line`, `offset` and `text` and no geometry — ADR-0035's doing. So this was a
+latent claim rather than a live defect, which is the memory *a seam whose every
+test injects its surfaces is unproven; write the first real caller early and
+expect it to fail*, arriving on schedule. The text layer is that first caller,
+and it would have placed every line of every rotated page somewhere the text is
+not — a failure that looks exactly like a working feature until someone opens a
+landscape scan.
+
+### The correction, and what the cases assert
+
+`FitzRect` becomes `DisplayedRect` with `ViewportPoint` corners; `origin` moves
+with it, coming from the same JSON node. The module header's coordinate
+paragraph is corrected and **its measurement is not**: *y is down from the page
+top*, measured at `792 − 700 = 92`, was read on an upright page and is still
+true. What was wrong was the space's name, one clause over.
+
+Six cases in `pageText.test.ts`, which is the substrate's first real caller
+against a real engine. **They assert the consequence rather than the brand** — a
+name is checked by the compiler and would be changed back by the same edit that
+broke it; what cannot be argued with is whether the converted box lands on the
+run. Four turns through `toPdf`, plus two controls:
+
+- **`fromFitz` must MISS on a turned page.** Without it the four above pass for
+  a page that is not turned at all, and a `toPdf`-only assertion would stay
+  green if the brand were reverted, because `toPdf` would still be the call
+  somebody had written.
+- **`fromFitz` and `toPdf` must AGREE upright**, which is the case that records
+  why this went unnoticed rather than merely asserting that it did.
+
+Non-vacuous: dropping `setRotation` from the fixture reddens four of the six
+immediately — the three turned `toPdf` cases and the `fromFitz` control.
+
+The landing test is the run's **left edge and baseline**, not the whole box: a
+line's reported height carries the font's ascent and descent, which is a fact
+about the font rather than about the frame, and requiring it to match would fail
+every candidate for a reason that is not the one under test.
+
+### And the instrument's own first version was a second opinion
+
+It walked MuPDF's JSON by hand to find the probe line, spelt the field names
+wrong, and reported that the text was absent — the finding it was written to
+detect, produced by itself. It goes through `parsePageText` and `linesOf` now,
+which is both the rule (B3a: `textStructure.ts` owns that format) and the better
+measurement, since the numbers are then the ones a text layer would be handed.
+
+---
+
 ## 2026-09-08 — Two extraction paths would disagree about what a page says, measured before the text layer is built
 
 *Select and copy (native text layer)* is Stage 5's first unblocked row — the

@@ -244,7 +244,7 @@ export {
 // so a consumer that holds a `PageText` needs no reason to reach for `/engine`
 // (ADR-0026). Reading one from a document does, and `readPageText` is there.
 export {
-  type FitzRect,
+  type DisplayedRect,
   type PageText,
   type TextBlock,
   type TextLine,
