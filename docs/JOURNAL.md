@@ -887,6 +887,48 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — SHIP 1.0 is deferred, and until today that was recorded nowhere
+
+The owner deferred the 1.0 release on **2026-09-07**: *"I am more interested in
+getting the full app built as soon as possible so that proper testing can be
+done."* Stage 4 closed on 2026-09-08, so every stage 1.0 gates on is done and
+the gate is **passable and not being taken**.
+
+That is a decision, and it appeared in no document. `docs/FEATURES.md`'s Progress
+table carried a bare `—` in the 1.0 row, which in that table's own legend means
+*not started — nothing exists*. Every other row there says what happened; this
+one said the opposite of what had.
+
+**Deferred is not cancelled**, and the difference is the whole reason this is
+written down. A cancelled release needs no trigger and nothing to come back to.
+A deferred one has both: it returns when the owner has used the application, and
+`npm start` — landed 2026-09-08, owed since 2026-09-07 — is what makes that
+possible. A reader meeting a dash cannot tell those apart, and the one they
+would guess is *not reached yet*.
+
+**`BUILD-PROMPT.md` is immutable**, and Part G fixes the staged releases. So
+nothing here edits it: the founding record still says 1.0 follows Stage 4, and
+what is recorded is that the owner has chosen when to take it. The Progress row
+is edited rather than corrected underneath, because that table is a live
+specification of where the build is.
+
+Premise P1 is untouched and stays on the packaging row with its trigger intact —
+an elevated read settles it, and the owner holds that.
+
+### One item from the same list was already closed, and the note about it was stale
+
+The undefined-token class was carried as *"no scan"*. It has one:
+`scripts/lib/definedTokens.mjs`, written for that exact instance —
+`var(--space-3)` against a scale of 2, 4, 8, 16, 24, 32 — registered as
+`check:definedtokens`, invoked by `.github/workflows/ci.yml:237` beside its own
+proof at :234, and green on this tree. `tokens.css` is the writer of record for
+the scale and the scan is a set difference against it, so the instance is fixed
+**and** the class is closed. Recorded because a live note saying a class is
+unwatched is the mirror image of the defect it warns about: it sends the next
+reader to build a mechanism that exists.
+
+---
+
 ## 2026-09-08 — Progress and cancellation, and a check nothing separated until it was mutated
 
 Both D4 rows recorded the same debt and both diagnosed it the same way: *"a
