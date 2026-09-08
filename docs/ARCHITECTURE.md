@@ -195,6 +195,41 @@ badly rather than only main exiting cleanly. **The host body lives in
 `packages/kernel`**, where naming Electron is already a red build, for the reason
 in §9.26.
 
+**ONE HOST BODY, PARAMETERISED BY ENGINE — never a second copy of it**
+(amended 2026-09-08, ahead of `pdfiumHost`). The diagram above has shown two
+contained hosts since Stage 0 and the body serving them is one implementation:
+`hostBody` is generic over the writer of record it runs, each **entry** binds
+exactly one engine, and a host that does not is unrepresentable rather than
+discouraged.
+
+The alternative is the pathology B3 exists to forbid, and it is the one that
+arrives by itself: a second host is *the first host with a different import*, so
+copying it is the cheapest edit at the moment somebody needs one. What that
+would duplicate is not plumbing — it is the pipe framing, the startup
+containment check, the session table, the failure classification and the
+shutdown ordering, five mechanisms whose second copies would agree with the
+first until one of them was fixed.
+
+Three things follow, and each is a property the type system already carries for
+one engine:
+
+- **The command schema a host accepts is DERIVED per engine**, from the routing
+  table, filtered to the kinds routed to that writer. `CommandExecution<W>`
+  binds the accepted kinds to `KindsRoutedTo<W>`, so a command routed elsewhere
+  arriving at a host is a compile error rather than a native library handed a
+  pointer where bytes were expected — which is what it was before Stage 4
+  narrowed the schema, inside the process invariant 25 assumes is hostile.
+- **Each host has its own channel set**, in `packages/kernel` for
+  [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+  Decision 11's reason, because the payload schemas differ by construction.
+- **The containment is one problem and not two.** Both hosts contain a *native*
+  parser reached through koffi ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md),
+  corrected 2026-09-08), so invariant 25's four properties are established the
+  same way for both. This paragraph could not have been written before that
+  decision: a process containing a WASM sandbox and one containing a native
+  parser are not the same containment problem, and the generalisation would have
+  been over two different kinds of thing.
+
 **Renderer hardening (non-negotiable).** `sandbox: true`,
 `contextIsolation: true`, `nodeIntegration: false`, CSP set — **the exact
 directive list is invariant 27**, not a note — deny-all permissions except
@@ -387,8 +422,9 @@ never by spawning `mutool`. `DocumentService` holds a **document handle** across
 mutations, which is the difference between a mutation costing 0.004 ms and
 costing seconds ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)).
 
-**HOW it is reached is an open decision, and this paragraph asserted the wrong
-answer until 2026-09-08.** It read *"MuPDF is reached natively, as a shared
+**HOW it is reached is DECIDED — native, koffi — and NOT YET BUILT. This
+paragraph asserted the built state until 2026-09-08.** It read *"MuPDF is
+reached natively, as a shared
 library built from source and bound with koffi behind a thin flat-C shim —
 never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
 bare specifier `mupdf`, which resolves to the npm package's
@@ -401,12 +437,23 @@ The clause about the held handle stayed true throughout, which is why the
 sentence survived review: a compound claim whose live half vouches for its dead
 one. So did *never by spawning `mutool`*.
 
-ADR-0010's decision — native FFI, WASM withdrawn — is **not** withdrawn by this
-correction; what is recorded here is that it is unbuilt for the document
-pipeline. Which side moves is an owner-level decision and is owed an ADR: either
-the kernel's adapters move onto the shim, or ADR-0010 is amended to the reach
-the product actually has. Nothing may be built on either reading until it is
-taken, and a reader here must not infer that the WASM route is endorsed.
+ADR-0010's decision — native FFI, WASM withdrawn — was **not** withdrawn by that
+correction; what it recorded is that the decision was **unbuilt** for the
+document pipeline.
+
+**THE DECISION IS TAKEN, 2026-09-08: native, both engines, koffi.** The kernel's
+adapters move onto `mupdfRaw.ts`; the rejected option was amending ADR-0010 to
+the WASM reach the product has, with the 2 GB cap and the whole-file copy
+re-entered as live constraints
+([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md), corrected that
+date, which carries the founding-record clauses the ruling was taken against).
+
+**The migration is not done, and this paragraph will be false in the other
+direction until it is.** Nineteen non-test kernel modules still import the bare
+specifier; §9.17's budgets were read against the WASM route; the four security
+proofs that scan `monstera_mupdf.dll` move with them. Until that lands, the
+engine the product *reaches* is still the npm package — which is what the
+measurement above says and what a reader must not infer their way past.
 
 **WHERE that engine is instantiated is a separate question, and it is answered:
 the contained host, never `main`.** Measured 2026-09-08 by an observed run
@@ -1913,3 +1960,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-09-01 | **A ratio budget governs a process that HOLDS bytes, and `mupdf-host`'s multiple is withdrawn** (§9.17). Its `6x` was exceeded by the real host on both content shapes where the model `perf:gate` asserts against cleared them, and the two breaches disagreed about which document was expensive — 6.26x cost 1.34 GB where 7.83x cost 284 MB, ranking the documents in the opposite order from their cost. A ratio against file size states something about a process that holds a copy, which is why `main`'s stands; the host parses, where cost tracks content shape. The absolute is enforced by the job object and read back off it (invariant 25(b)); the multiple had no mechanism and could not have one. `memoryBudgets.mjs` gains a parsed two-term state and **refuses** a `mupdf-host` line that restores the multiple, so the withdrawal is a decision with a mechanism rather than a fact about today's text. Gives up amplification detection — a 1 MB file parsing to 2.9 GB now clears every term — which is stated in the ADR beside the open question of a term keyed on object count. Rejected: raising the number (§9.17 forbids it in terms, and 7.83x is the larger of two documents rather than a ceiling). | §9.17's `mupdf-host = 6x, 3 GB, base 128 MB`, whose multiple this document already recorded as "not yet derived" | [ADR-0033](DECISIONS/0033-a-ratio-budget-governs-a-process-that-holds-bytes.md) |
 | 2026-09-08 | **WHERE the engine is instantiated is separated from WHICH engine is reached, and answered: the contained host, never `main`** (§3). Measured by an observed run rather than read off the module graph — `packages/kernel/dist/index.js`, the specifier `apps/desktop` imports, loads 318 modules, none of them MuPDF's, and instantiates no WebAssembly; `hostEntry.js` loads `mupdf.js` and `mupdf-wasm.js` and instantiates 10,408,550 bytes; both controls separated on the same run. So **invariant 25's containment covers the process the document is parsed in**, and the reach decision recorded above is **not** a containment decision — it holds under either answer and must be taken on which engine this project wants to own. Two things are stated rather than left to be inferred. **Invariant 20's letter does not reach this**: it keeps *native code* out of `main`, and a WASM engine is not refused by that wording — what holds the line is ADR-0026's barrel discipline plus placement, guarded statically by `proof:kernelload` and now confirmed from a run. That is a gap in the invariant's **wording** rather than a live breach, and it is the shape that let content generation through in Stage 2: *native* is a proxy for *where a document is parsed*, and the product has already stepped outside it. And the run is the positive half nothing had — every existing check asserts main does **not** reach the adapter, none asserted the host **does**, which is 4b's *found nothing* sitting in a containment claim. | Nothing. It separates a question §3's 2026-09-08 correction left compound, and answers the half that was answerable | — (a measurement; the reach decision itself is still owed an ADR) |
 | 2026-09-08 | **A ribbon placement's `group` is a `MessageKey`, not a `string`** (§7). The group's *caption* is what §10.3 puts on screen — *"captioned groups, hairline separators"* — so a plain string in that field is a visible user-facing literal that B9 puts in a catalogue, arriving through the one door the JSX lint rule cannot see: a variable. Nothing about the ribbon's own code looks wrong, and the string reaches the screen untranslated in every locale. **The alternative was worse in a way this seam exists to prevent:** a `Record<string, MessageKey>` inside the ribbon, mapping group names to captions, is a hand-maintained layout table owned by the surface — §7's own second wiring place, one field narrower. `MessageKey` keeps the declaration where it already is, on the command, and makes the untranslated spelling a compile error rather than something a reviewer has to notice (B5). **`SectionId` is untouched and stays a closed union**: a section is anatomy and its name is a display concern the ribbon resolves from a total record, where a ninth section fails to compile. The group stays free-form for the reason §7 gives — two features that never see each other's code must be able to interleave — and a `MessageKey` is free-form; it is a branded string, so `localeCompare` ordering and `Map` keying are unchanged. **Rejected:** leaving it a string and translating in the ribbon (the layout table above); a `groupTitle` field beside `group` (two fields that must agree, with nothing comparing them); and rendering the group id as its own caption (which is what the code did, and is how this was found). | §7's `Placement` snippet, which spelt `group: string` | — (a type refinement inside an existing seam; no ADR) |
+| 2026-09-08 | **One host body, parameterised by engine — a second contained host is a generalisation of the first, never a copy of it** (§3). Written **ahead of `pdfiumHost`**, which is B4's whole point: `hostEntry.ts` imports `mupdfWriter` and `hostBody.ts` is typed `CommandExecution<'mupdf'>`, so a second host cannot be a registration into the seam as it stands, and bending it in place is what B4 forbids. **The pathology is the one that arrives by itself**: a second host is *the first host with a different import*, so copying is the cheapest edit at the moment somebody needs one — and what it duplicates is not plumbing but the pipe framing, the startup containment check, the session table, the failure classification and the shutdown ordering, five mechanisms whose copies would agree until one of them was fixed (B3). Three consequences, each a property the types already carry for one engine: the accepted **command schema is derived per engine** from the routing table (`CommandExecution<W>` binds the kinds to `KindsRoutedTo<W>`, so a command routed elsewhere is a compile error rather than a native library handed a pointer where bytes were expected); **each host owns its channel set**, in `packages/kernel` for ADR-0023 Decision 11's reason, because the payload schemas differ by construction; and **the containment is one problem**, since both hosts contain a native parser reached through koffi. **This amendment was not writable before 2026-09-08's reach decision** — a process containing a WASM sandbox and one containing a native parser are not the same containment problem, and the generalisation would have been over two different kinds of thing. **Rejected:** a second host body copied and edited (the five duplicated mechanisms above); one host serving both engines over one pipe (invariant 25 contains a compromise, and a breach of one engine would then hold the other's documents); and deferring the amendment until the feature needs it, which is the retrofit B4 exists to prevent. | Nothing. §3 has drawn two contained hosts since Stage 0; what it did not say is that the body serving them is one implementation | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md), corrected 2026-09-08 · [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) |

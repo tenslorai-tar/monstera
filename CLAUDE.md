@@ -330,8 +330,20 @@ is wrong** — fix the boundary, not the test.
   weeks would have read exactly as it does now had the answer been the opposite.
 
   **`docs/ARCHITECTURE.md` §3's own claim that MuPDF is reached natively was
-  false in the same way** and is corrected there, with the reach recorded as an
-  open decision. ADR-0010 is not withdrawn — it is unbuilt.
+  false in the same way** and is corrected there. ADR-0010 was not withdrawn —
+  it was **unbuilt**, and the reach was recorded as an open decision.
+
+  **THAT DECISION IS TAKEN, 2026-09-08: native, both engines, koffi.** The
+  kernel's adapters move onto `mupdfRaw.ts`; the rejected option was amending
+  ADR-0010 to the WASM reach the product has, with the 2 GB cap and the
+  whole-file copy re-entered as live constraints. Taken against the founding
+  record rather than by preference — `BUILD-PROMPT.md`:115-117 names
+  `mupdfRaw.ts` **and** `pdfiumFfi.ts` as the two native-boundary adapters,
+  :203 draws `pdfiumHost` as *"PDFium via koffi FFI"*, :399 provisions
+  `pdfium.dll`, and :257 assigns in-place text editing to PDFium in both
+  columns. **The migration is not done**: nineteen non-test kernel modules still
+  import the bare specifier, and §9.17's budgets and the four proofs that scan
+  `monstera_mupdf.dll` move with them.
 
   **WHERE that engine loads is a different question and it is answered: the
   contained host, never `main`** (§3, 2026-09-08, measured by an observed run —
@@ -349,6 +361,16 @@ is wrong** — fix the boundary, not the test.
   cannot create, so **the engine hosts are processes we create** — `CreateProcessW`
   running the Electron binary in Node mode. The host body lives in
   `packages/kernel`; the factory that creates it lives in `apps/desktop/`.
+
+  **ONE host body, parameterised by engine — a second host is a generalisation
+  of the first and never a copy** (§3, amended 2026-09-08 ahead of
+  `pdfiumHost`). The pathology is the one that arrives by itself: a second host
+  is *the first host with a different import*, so copying is the cheapest edit
+  at the moment somebody needs one — and what it duplicates is the pipe framing,
+  the containment check, the session table, the failure classification and the
+  shutdown ordering. Each host's accepted command schema is **derived** from the
+  routing table per writer, so a command routed elsewhere is a compile error
+  rather than a native library handed a pointer where bytes were expected.
 
   **The rule that got us there is worth more than the decision:** *only
   kernel-enforced mechanisms contain native code.* Node's permission model is
