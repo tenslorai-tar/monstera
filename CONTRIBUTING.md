@@ -103,6 +103,25 @@ npm run guard:staged    # file policy against what you have staged
 npm run scan:secrets    # full-history secret scan
 ```
 
+## Running it
+
+```bash
+npm run provision:electron   # the pinned runtime, verified against a SHA-256
+npm run build                # typecheck + preload bundle + renderer bundle
+npm start                    # the shell, on that runtime
+```
+
+`npm start` refuses a build older than the source it was made from. That guard
+is not politeness: the only thing a person observes here is a window, and a
+window built from stale sources is indistinguishable from a current one — so
+without it, editing a file and running the app shows you the previous version
+with nothing anywhere saying so.
+
+If it says the runtime is missing, run `provision:electron`. **Do not install
+the `electron` package's own binary** — importing that package *is* the
+download, through an installer that reads an environment variable which can
+repoint it away from our pinned hash.
+
 ## What the pre-commit hook blocks, and why you must not bypass it
 
 This repository has been **public since its first commit**, and GitHub retains

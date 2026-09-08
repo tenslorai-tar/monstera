@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "prepare": "node scripts/bootstrapHooks.mjs",
+    "start": "node scripts/launch.mjs",
     "typecheck": "tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty",
     "provision:playwright": "node scripts/provision/playwright.mjs",
     "test:a11y": "playwright test --config scripts/test/playwright.config.mjs",

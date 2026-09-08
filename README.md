@@ -96,7 +96,20 @@ and reject binaries and oversized files before they can enter the permanent
 public history. If a commit is rejected because the scanner is not installed,
 run `node scripts/provision/gitleaks.mjs` — **do not bypass the hook.**
 
-More build and run instructions land as Stage 0 completes.
+To run it, fetch the pinned Electron runtime, build, and start:
+
+```bash
+npm run provision:electron
+npm run build
+npm start
+```
+
+`provision:electron` downloads the pinned build and verifies it against a
+recorded SHA-256; it is a separate step because importing the `electron`
+package is itself a download, through an installer that can be repointed away
+from our pin. `npm run build` is a typecheck **plus** both bundles, and `npm
+start` refuses to launch a build older than the source it was made from —
+otherwise the window shows the previous version of the app and looks identical.
 
 ## Licence
 

@@ -30,13 +30,24 @@
  * first one written against an invariant that exists precisely so there is one
  * resolver.
  *
+ * ## Why it refuses a stale build rather than launching one
+ *
+ * This is the only caller of {@link refuseStaleBuild} whose output a person
+ * reads instead of a proof. That makes it the one where staleness is
+ * undetectable downstream: a proof that ran against an old bundle at least
+ * prints cases somebody can compare, and a window does not. The refusal names
+ * `npm run build`, because `npm run typecheck` produces neither bundle and is
+ * the spelling habit reaches for.
+ *
  * Usage: node scripts/launch.mjs [--...args passed through]
+ *   or:  npm start [-- --...args]
  */
 
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
 import { formatError } from './lib/reportError.mjs';
@@ -74,6 +85,7 @@ async function resolveRuntime() {
 }
 
 async function main() {
+  refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
   const child = spawn(binary, [APP_DIRECTORY, ...process.argv.slice(2)], {
     stdio: 'inherit',
@@ -96,4 +108,13 @@ async function main() {
   });
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  // A PERSON reads this one. An unhandled rejection would print the same facts
+  // buried in a stack trace under a runtime warning, and the two refusals this
+  // file raises are both instructions — provision the runtime, run the build —
+  // so the instruction is what has to survive to the terminal.
+  process.stderr.write(`\n${formatError(error)}\n`);
+  process.exitCode = 1;
+}

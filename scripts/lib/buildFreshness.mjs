@@ -181,6 +181,54 @@ export const TOKEN_CONTRAST = [
 ];
 
 /**
+ * What `scripts/launch.mjs` hands Electron, and where each half comes from.
+ *
+ * ## Why the launcher takes this guard at all
+ *
+ * Every other caller here is an instrument, and the argument for them is that a
+ * stale artefact answers a probe confidently about the previous build. The
+ * launcher's version of that is worse rather than milder: a person runs it,
+ * sees the last build's behaviour, and has no probe output to compare against —
+ * the only observable is a window, which looks identical either way. A
+ * developer who edits a file and reaches for the run command is the exact HH-6
+ * shape with the diagnostic removed.
+ *
+ * ## The sources are TREES, and that is the difference from the proof lists
+ *
+ * A proof reads a named artefact and declares the one or two files it is about.
+ * The launcher loads the whole application, so naming `entry.ts` would be a
+ * guard that passes whenever the edit landed in a sibling — which is nearly
+ * always. The tsc pairs are therefore package source trees, and the compiler
+ * arbitrates whenever a timestamp moved without content changing.
+ *
+ * Five projects, not one: `tsc --build --dry` is only consulted for a pair
+ * whose mtime comparison already failed, so a stale `shared` build is invisible
+ * to a pair anchored on `apps/desktop/src`. One pair per project is what makes
+ * the compiler reachable from wherever the edit landed.
+ *
+ * ## The stated limit
+ *
+ * `packages/shared` and `packages/contract` are inputs to the **renderer
+ * bundle** as well, and the bundled pair below is anchored on `packages/ui/src`
+ * alone. Editing shared and rebuilding nothing is caught by shared's own tsc
+ * pair, so the launch still refuses — but it refuses naming tsc, and the
+ * renderer bundle is stale for a reason this list does not say out loud. The
+ * existing renderer pair lists have the same shape, and widening them is one
+ * change across all of them rather than a special case here.
+ *
+ * @type {BuildEdge[]}
+ */
+export const SHELL_LAUNCH = [
+  ['apps/desktop/src', 'apps/desktop/dist/entry.js', 'tsc'],
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+  ['packages/contract/src', 'packages/contract/dist/index.js', 'tsc'],
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
+  ['packages/nodemode/src', 'packages/nodemode/dist/index.js', 'tsc'],
+  ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs', 'bundler'],
+  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
+];
+
+/**
  * The newest mtime at `path`, walking it if it is a directory.
  *
  * `dist` and `node_modules` are skipped: the first is the artefact side of the
@@ -341,8 +389,12 @@ export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
     if (producer === 'tsc' && askCompiler(repoRoot)) continue;
 
     throw new Error(
-      `${artefact} is OLDER than ${source}, so this proof would run against a stale build ` +
-        `and every case would pass about the previous version of the shell.\n  ` +
+      // "This proof" until 2026-09-08, when the launcher became a caller and
+      // the noun stopped being true: a person reading this is not running a
+      // proof, and being told their cases would pass is one more thing to
+      // decode before the instruction. The sentence says what happens instead.
+      `${artefact} is OLDER than ${source}, so what runs next would be the PREVIOUS build — ` +
+        `every check passing, and every window showing, the shell as it was.\n  ` +
         `${source}: ${new Date(sourceAt).toISOString()}\n  ` +
         `${artefact}: ${new Date(artefactAt).toISOString()}\n` +
         `Run \`npm run build\` — \`npm run typecheck\` produces neither the preload bundle nor ` +
