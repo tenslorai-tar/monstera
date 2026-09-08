@@ -887,6 +887,94 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — The PDFium adapter, and a boundary that needed no `any` after all
+
+`engineSeam.ts` has declared `PdfiumSession` since Stage 0 with nothing behind
+it, and said so in terms: *"a live PDFium session. Declared, with no adapter
+behind it yet."* `packages/kernel/src/pdfiumFfi.ts` is what goes behind it —
+`open`, `serialise`, `close`, plus the text-object surface Stage 5's editing rows
+need. It registers into the existing seam, so there is no B4 here; the amendment
+this sits on landed on 2026-09-08.
+
+### What the proof asserts, and the case worth reading
+
+`scripts/proofs/pdfiumAdapter.proof.mjs`, **17 of 17 against the real library**
+(PDFium 155.0.8044.0). It is a script rather than a vitest file because
+`pdfium.dll` is provisioned rather than installed, and a `skip` reads as green in
+a summary — so an absent library is **UNVERIFIABLE** with a stated reason, and a
+hard failure under `--require-pdfium`, which the Windows leg passes. Both
+directions were run before the step was written: exit 0 with the message, exit 1
+with the flag.
+
+Every case asserts the decision rather than the tidy end state. The round trip
+reads back from a **reopened** document; it asserts the replacement is present
+**and** the text it replaced is absent, because presence alone passes on a page
+that never changed and absence alone passes on a page that rendered nothing; the
+neighbours are asserted in the same read, since *the edit worked* and *the edit
+worked and rewrote the rest of the page* are one observation on the edited run
+alone; and the two refusals assert **which rule refused**, by message, because a
+bad index and a non-text object both fail somewhere.
+
+The one worth reading is the retained-bytes case. `FPDF_LoadMemDocument` does
+not copy — PDFium parses lazily out of the caller's memory for the document's
+whole life — so an adapter that passed a `ByteImage` through would work in every
+short test and fail when a collection or an overwrite landed between two
+commands. The case overwrites the caller's array with zeros after `open` and
+then reads the page back. **And it carries its own control**, because *the text
+is still right* is also what an overwrite that never landed produces: it asserts
+the caller's array really is all zeros first.
+
+### Non-vacuity, run against the built module
+
+Two mutations, each in `packages/kernel/dist/pdfiumFfi.js`, each restored:
+
+| mutation | what went red |
+|---|---|
+| `open` passes the caller's bytes through instead of copying | the retained-bytes case, and only it — 16 of 17 |
+| the `FPDFPage_GenerateContent` call is skipped | the round trip and the absence case — 15 of 17 |
+
+The second is the silent failure this adapter exists to prevent: without that
+call the edit lives in PDFium's in-memory object, reads back correctly from the
+same session, and is absent from the saved bytes.
+
+### B7's file-level disable turned out not to be needed
+
+`BUILD-PROMPT.md`:115 names this file as one of two that may carry one, because
+the koffi edge is untypeable. **It is permitted, not required.** koffi 3.1.5
+ships types good enough that the finished file carries no `any` keyword at all:
+the conversion happens in one named function whose parameter type is an
+assertion, and every answer that crosses is narrowed by `numberFrom` at the point
+it arrives. The first draft *did* carry a file-level disable and 54 lint errors
+under it; removing the disable is what surfaced that two of the casts were
+unnecessary, which is the disable's cost stated as a measurement — a file-wide
+suppression also suppresses the diagnostics that would have simplified the file.
+
+What the exception exists for is still true and is written on the line: nothing
+downstream of that conversion is checked against a C declaration.
+
+### Two things it deliberately does not do
+
+**It does not decide where `pdfium.dll` is.** `scripts/provision/pdfium.mjs`
+owns that answer already, the kernel cannot import a script, and a second
+resolver here is the B3a defect this project has paid for three times. The path
+is a parameter with no fallback and no search.
+
+**It is not reachable from the barrel.** ADR-0026 clause 2 governs it the moment
+`packages/kernel/src/index.ts` reaches it; `proof:kernelload` passed unchanged,
+which is the statement that importing the kernel from `main` still loads no
+native binding.
+
+### One registration owed more than one rule, and the anchor caught it
+
+`proof:buildfreshness` went red on the first run after the proof was registered:
+a proof that calls `refuseStaleBuild` also owes an `ARTEFACT_EDGES` entry, or
+`stepOrder.mjs` cannot order it after the build it reads. That map is hand-kept
+and the failure it must catch is an **omission** from it, so the anchor is
+derived from the set of proofs that *import* the guard — which an omission in
+the map cannot reach. It worked exactly as its own comment says it should.
+
+---
+
 ## 2026-09-09 — A count of import statements became an estimate, and a stage was queued behind it
 
 The reach ruling of 2026-09-08 is native, both engines, koffi. ADR-0010's

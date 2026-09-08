@@ -112,6 +112,20 @@ export const CANVAS_PIXELS_RUNTIME = [
  *
  * @type {Record<string, readonly BuildEdge[]>}
  */
+/**
+ * The adapter `pdfiumAdapter.proof.mjs` drives.
+ *
+ * One edge, because that proof imports exactly one built module and everything
+ * it asserts lives in it. A wider list would refuse a stale build over a file
+ * this proof cannot observe, which is the direction that gets a guard turned
+ * off.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_ADAPTER = [
+  ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
+];
+
 export const ARTEFACT_EDGES = {
   'proof:rendererpolicy': [...RENDERER_POLICY_DECLARATION, ...RENDERER_POLICY_RUNTIME],
   'proof:canvaspixels': CANVAS_PIXELS_RUNTIME,
@@ -129,6 +143,12 @@ export const ARTEFACT_EDGES = {
   // in `buildFreshness.proof.mjs` is, and it comes from the set of proofs that
   // IMPORT `refuseStaleBuild`, which an omission here cannot reach.
   'proof:rendergeometry': CANVAS_PIXELS_RUNTIME,
+  // THE FOURTH, and it is the anchor above working rather than a reader
+  // remembering: `proof:pdfiumadapter` was registered with its refuseStaleBuild
+  // call and without this entry, and `buildFreshness.proof.mjs` named it on its
+  // first run — from the set of proofs that IMPORT the guard, which no omission
+  // here can reach.
+  'proof:pdfiumadapter': PDFIUM_ADAPTER,
 };
 
 /**

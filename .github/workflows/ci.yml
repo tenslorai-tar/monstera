@@ -266,6 +266,23 @@ jobs:
       - name: Measure the engine surface the kernel reaches
         run: node scripts/ci/annotate.mjs scripts/research/engineSurface.mjs
 
+      # The pinned archive is 3.8 MB, hash-verified before anything unpacks it.
+      # Windows only, because `pdfium-win-x64.tgz` is the one asset this project
+      # pins — the product ships to the Microsoft Store and nowhere else.
+      - name: Provision PDFium
+        if: runner.os == 'Windows'
+        run: node scripts/provision/pdfium.mjs
+
+      # Runs on BOTH legs deliberately. On Windows it is required, so a
+      # could-not-look is red. On Linux it prints UNVERIFIABLE and exits 0 —
+      # visible in the log as a stated absence rather than as a step that
+      # silently did not exist, which is the difference this project keeps
+      # paying for.
+      - name: Prove the PDFium adapter against the real library
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/pdfiumAdapter.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 
