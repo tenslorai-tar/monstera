@@ -560,6 +560,59 @@ body {
 }
 
 /*
+ * The spell check review, and it needs the same two rules for the same reason.
+ *
+ * The comment above states this file's rule: every other dialog body carries no
+ * CSS and relies on the dialog primitive's own flow — `m-word-count` has none
+ * and is right not to. **A LIST IS THE EXCEPTION**, and this body is one: four
+ * spans per row, which default flow stacks into four lines each, and a `<ul>`
+ * that arrives with bullets and an indent the primitive did not ask for.
+ *
+ * The word and its detail are on one line with the action at the end, so a
+ * reader scanning for a word finds it in the same column on every row.
+ */
+.m-spell-check__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-spell-check__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  padding-block: var(--space-2);
+}
+
+/*
+ * The misspelt word carries the weight, and its surroundings do not.
+ *
+ * `--muted` on the count, the page and the suggestions for
+ * `.m-flat-fields__name`'s reason: the distinction has to survive being read
+ * quickly, and colour carries it without a second line. The word itself is the
+ * thing a reader is looking for, so it is the one thing at full contrast.
+ */
+.m-spell-check__word {
+  font-weight: 600;
+}
+
+.m-spell-check__where,
+.m-spell-check__suggestions,
+.m-spell-check__added {
+  color: var(--muted);
+}
+
+/*
+ * The action sits at the end of the row rather than beside the word.
+ *
+ * Every row's button in the same column is what makes a list of them scannable;
+ * left to flow, each would sit wherever its own word ended.
+ */
+.m-spell-check__row > :last-child {
+  margin-inline-start: auto;
+}
+
+/*
  * The derived name, set apart from the document's own words beside it.
  *
  * `--muted` because the caption is what a reader recognises on the page and the
