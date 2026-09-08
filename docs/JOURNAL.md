@@ -887,6 +887,118 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Which process loads MuPDF, observed from a run: the host does and main does not, so the reach decision is not a containment question
+
+§3's correction earlier today established *which engine* the product reaches —
+the npm package's WASM build, by nineteen non-test modules importing the bare
+specifier `mupdf`. It did not establish **where that engine is instantiated**,
+and the two questions have different consequences. Invariant 25 contains the
+engine host because a parser is where a hostile document meets us. If the parse
+runs in `main`, that containment covers a process the parse does not happen in.
+
+And invariant 20's letter cannot answer it. It keeps **native code** out of
+`main`; the engine here is WASM, so a rule written against native code does not,
+by its letter, refuse it — the same gap that let content generation through in
+Stage 2.
+
+### Answered from a run, because the module graph cannot answer it
+
+`packages/kernel/src/index.ts` is written to keep the engine out of its
+importers — `export type` rather than `export {}`, deliberately, ADR-0026 behind
+it, with a comment on nearly every line saying so. Whether that holds **today**
+is a fact about a running process, not about the intent in a barrel's comments.
+
+`scripts/research/engineReach.mjs` spawns one child per subject, because an
+engine instantiates once per world and a second subject in the same process
+would read the first one's answer. Each child reports **two independent
+observables**: a loader `load` hook recording every module URL the graph
+actually pulls in, and a patched `WebAssembly.instantiate` recording what was
+actually instantiated and how large. They answer different questions and can
+fail differently — a graph hit with no instantiation would mean a lazy or
+erased import, an instantiation with no graph hit would mean the engine arrived
+by a route the hook cannot see. **A disagreement is the finding**, so both are
+printed and neither is derived from the other. They agreed on every row.
+
+| subject | graph reached engine | WASM instantiated | modules | engine modules |
+|---|---|---|---|---|
+| `mupdf` — **control** | true | true (10,408,550 bytes) | 3 | `mupdf.js`, `mupdf-wasm.js` |
+| `@monstera/shared` — **control** | false | false | 10 | none |
+| `packages/kernel/dist/index.js` — what `apps/desktop` imports | **false** | **false** | 318 | none |
+| `packages/kernel/dist/host/hostEntry.js` — the contained host | **true** | **true** | 324 | `mupdf.js`, `mupdf-wasm.js` |
+
+**So the parse runs in the contained host, and `main` never loads the engine.**
+Invariant 25's containment covers the process the document is parsed in, and it
+does so with a WASM engine rather than the native one ADR-0022 was written
+against. The AppContainer, the job object, the absent network and the handed
+directories all apply to the process that touches the bytes.
+
+### Why the controls are the load-bearing half
+
+The reassuring answer here is *"main does not load the engine"*, and **every way
+this instrument can break produces it**: a loader hook that never registered, a
+`WebAssembly` patch installed too late, a specifier that failed to resolve, a
+`dist/` nobody built. So two of the four subjects are controls rather than
+readings — `mupdf` itself must read true (4b: locate something known present,
+on every run) and `@monstera/shared` must read false (4a: two inputs differing
+by the smallest amount that changes the verdict, reported as different). A
+control that disagrees makes the whole run **UNVERIFIABLE** and no verdict about
+the subjects is printed, because an instrument that cannot separate its own two
+controls has not separated anything.
+
+The build check is the same shape: a missing `dist/` throws rather than
+reporting, since a subject that cannot be imported reports *no engine* — which
+is the answer this instrument exists to be suspicious of.
+
+### What this does and does not add to `kernelLoad.proof.mjs`
+
+The class is already guarded. `scripts/proofs/kernelLoad.proof.mjs` walks the
+**emitted** JavaScript from four roots and asserts `mupdfWriter.js` is not
+reachable from the barrel, the bus or `DocumentService`, with the anchor on
+`engine.js` because ADR-0026 made the barrel the wrong control. That is a static
+check and it is the right one to keep: it runs in CI, it names the offending
+edge, and it catches the defect at the spelling.
+
+What a run adds is the other half of *verify by executing*: the static walk
+proves an edge does not exist in the emit, and this proves no engine was
+instantiated in a process that imported the thing. They are independent methods
+that agreed, which is worth more than either alone — and it is the **positive**
+half neither had: nothing until now asserted that the host *does* load it.
+
+### Two things noted rather than concluded
+
+- **The barrel's RSS delta reads 47.8–50.0 MB here**, against the +7.5 to +8.0 MB
+  `kernelLoad.proof.mjs`' comment records for the barrel over a bare Node
+  process. These are **not the same measurement** — this one spans a dynamic
+  import in a process that has already registered a loader thread and 318
+  modules, and a marginal cost is not runtime-independent (SSSS-2). It is
+  recorded as an unexplained difference and not as a regression; the figure to
+  compare against §9.17 is the proof's, taken the proof's way.
+- The host subject's module body **throws** — it is `hostEntry.js` with no pipe
+  name — and that is reported beside its reading rather than swallowed. ES
+  module order evaluates every import before the body, so the imports are
+  observed and the throw is the entry point refusing to run, which is what it is
+  built to do.
+
+**The first run had a confound and it is the harness's own shape.** The subject
+was passed as `argv[2]`; `hostEntry.js` reads `argv[2]` as the pipe name it must
+connect to, dialled the file URL it was handed, failed with `ENOENT` and called
+`process.exit(1)` before printing anything. A subject that reads the harness's
+arguments is a harness that is part of what it measures. The subject now travels
+in an environment variable and the process's `argv` is left clean.
+
+### The consequence for the decision that is open
+
+The reach decision — adapters onto the native shim, or ADR-0010 amended to the
+reach the product has — **is not a security decision**, and it read like one.
+Containment holds either way and holds today: whichever engine the kernel binds,
+it is bound in the host, and the host is the contained process. What is at stake
+is which engine we want to own, and the fact that ADR-0010 is unbuilt.
+
+Stated because it changes how the decision reads: a reviewer weighing *is the
+parser contained* has that answer, measured, and does not have to weigh it.
+
+---
+
 ## 2026-09-08 — Guards went red once on a case about process trees, and the observable conflates *dead* with *not scheduled*
 
 Read from the board rather than noticed: `NOT GREEN at 53c0112…: Guards=failure,
