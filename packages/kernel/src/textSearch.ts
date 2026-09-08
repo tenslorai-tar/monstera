@@ -29,27 +29,45 @@ import { type PageText, type TextLine, linesOf } from './textStructure.js';
  * Fitz space and `PageTransform` converts it; a second engine call is not what
  * that costs.
  *
- * ## Matching is per LINE, and the limitation is stated rather than hidden
+ * ## A match may now SPAN a line break, and the reasoning that said it could not
  *
- * A match spanning a line break is not found. That is a real limit and it is the
- * honest one to start with: joining lines to search across them requires knowing
- * whether the break is a wrap or a paragraph, and inventing that rule here would
- * be the clustering this substrate exists not to re-implement. The block
- * boundary MuPDF gives is the input to that question, and the feature that needs
- * it — a search that spans wraps — owes the reading, exactly as `table-hunt`
- * does.
+ * This section read *"a match spanning a line break is not found … joining lines
+ * to search across them requires knowing whether the break is a wrap or a
+ * paragraph, and inventing that rule here would be the clustering this
+ * substrate exists not to re-implement."* The conclusion was right for a stage
+ * and the premise was not: **the question does not have to be answered.** A
+ * whitespace run in a literal query matches a whitespace run of any kind in the
+ * text, so a wrap and a paragraph break are both simply *a gap*, and nothing
+ * here has to decide which one it met. `textMatch.ts` does the joining, because
+ * the browser shim answers this channel and the rule has one home (B3a).
+ *
+ * **What is genuinely not handled is HYPHENATION**, and that one does need the
+ * decision this paragraph used to claim for the whole feature: `wor-` / `ld`
+ * requires knowing that the hyphen was inserted by the typesetter rather than
+ * written by the author, and `well-` / `known` is the counter-example in the
+ * same shape. That is a reading against the corpus and it is owed by the
+ * *Select and copy* row's bounds, not by this one.
  */
 
 /** One occurrence, located in the reading order the substrate produced. */
 export interface TextMatch {
   /** Zero-based page index, as `commands.ts` declares page indices. */
   readonly page: number;
-  /** Index of the line within that page's reading order. */
+  /** Index of the line the match STARTS in, within that page's reading order. */
   readonly line: number;
-  /** Offset of the match within the line's text, in UTF-16 code units. */
+  /** Offset of the match within that line's text, in UTF-16 code units. */
   readonly offset: number;
+  /** Index of the line the match ENDS in. Equal to `line` unless it crossed. */
+  readonly endLine: number;
   /**
-   * The line the match sits in, so a caller needs no second lookup.
+   * Offset one past the match's last character, within the `endLine`-th line.
+   *
+   * Into that line's own normalised text rather than into {@link text}, which
+   * is the START line's window — see `LineMatch` in `@monstera/shared`.
+   */
+  readonly endOffset: number;
+  /**
+   * The line the match STARTS in, so a caller needs no second lookup.
    *
    * **After normalisation**, which is what keeps it and `offset` consistent:
    * NFC can change a line's length, so an offset into the raw extraction would

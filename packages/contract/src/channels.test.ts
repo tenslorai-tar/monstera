@@ -91,7 +91,13 @@ const handlers: ContractHandlers = {
     Promise.resolve(
       ok({
         version: asDocVersion(1),
-        matches: [{ line: 2, offset: 7, text: 'a line holding the query' }],
+        // ENDING ON A DIFFERENT LINE, because the pair that separates a
+        // spanning match from an ordinary one is `endLine !== line`, and a stub
+        // where the two agree is satisfied by a surface that drops `endLine`
+        // and echoes `line` back.
+        matches: [
+          { line: 2, offset: 7, endLine: 3, endOffset: 4, text: 'a line holding the query' },
+        ],
         truncated: false,
       }),
     ),

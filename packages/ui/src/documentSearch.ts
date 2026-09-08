@@ -39,6 +39,13 @@ export interface DocumentMatch {
   readonly page: number;
   readonly line: number;
   readonly offset: number;
+  /**
+   * Where the match ends, which may be a different line — a phrase spanning a
+   * wrap is one match, because a reader does not know where the page broke.
+   * `endOffset` indexes the `endLine`-th line, never `text`.
+   */
+  readonly endLine: number;
+  readonly endOffset: number;
   readonly text: string;
 }
 

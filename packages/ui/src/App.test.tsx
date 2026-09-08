@@ -838,7 +838,9 @@ describe('App', () => {
         ...OPEN_DOCUMENT_ANSWERS,
         'document.searchPage': {
           version: asDocVersion(1),
-          matches: [{ line: 1, offset: 4, text: 'the needle sits here' }],
+          matches: [
+            { line: 1, offset: 4, endLine: 1, endOffset: 10, text: 'the needle sits here' },
+          ],
           truncated: false,
         },
       });
@@ -934,7 +936,7 @@ describe('App', () => {
         ...OPEN_DOCUMENT_ANSWERS,
         'document.searchPage': {
           version: asDocVersion(1),
-          matches: [{ line: 0, offset: 0, text: 'a line' }],
+          matches: [{ line: 0, offset: 0, endLine: 0, endOffset: 1, text: 'a line' }],
           truncated: false,
         },
       });
@@ -985,7 +987,7 @@ describe('App', () => {
               resolve(
                 ok({
                   version: asDocVersion(1),
-                  matches: [{ line: 0, offset: 0, text: 'a line' }],
+                  matches: [{ line: 0, offset: 0, endLine: 0, endOffset: 1, text: 'a line' }],
                   truncated: false,
                 }),
               );

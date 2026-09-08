@@ -887,6 +887,104 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — A trigger that fired unnoticed for the second time in one row, and a blocker that dissolved on re-reading
+
+`docs/FEATURES.md:73` — D1's search row — carried two owed items and a status
+cell reading *"the Highlight API and a line-break match move to Stage 5,
+trigger: D4's text layer"*. That text layer landed the same day, in D4's *Select
+and copy* row, whose own body names the debt back: *"Stage 1's Highlight API,
+whose trigger this row was."* Both sides pointed at each other and both stayed
+open.
+
+**This is the second time this row has recorded a trigger firing unnoticed**,
+and the first is written into it — `MATCH NAVIGATION'S TRIGGER HAD FIRED
+UNNOTICED`, caught only because a comment the change falsified happened to be
+read by someone re-reading the file for another reason. Twice in one row is not
+bad luck. A trigger is a claim with an expiry, and this repository's mechanism
+for an expiry is a `FEATURES` row body — which nothing reads on a schedule. The
+memory note *an expiring claim needs a reader* says to grep the docs for a
+feature's name **before** building it; what happened here is the inverse and it
+is the case that note does not cover: the row was not looked at because nobody
+was building *it*, they were building the thing whose completion was its
+trigger. **The reader a trigger needs is the commit that fires it**, and the
+only way that reader exists is if the firing row names the fired row by its
+number — which this pair now does, in both directions.
+
+### The line-break match: the blocker was withdrawn, not met
+
+`textSearch.ts`'s header said, in terms:
+
+> *A match spanning a line break is not found. That is a real limit … joining
+> lines to search across them requires knowing whether the break is a wrap or a
+> paragraph, and inventing that rule here would be the clustering this substrate
+> exists not to re-implement.*
+
+The conclusion was right for a stage and **the premise was not**. The question
+does not have to be answered. A literal query's whitespace run matches a
+whitespace run of any kind in the text, so a wrap and a paragraph break are both
+simply *a gap*, and nothing has to decide which one it met. That is
+`a-block-that-dissolves-on-one-grep`'s shape at the level of a stated blocker
+rather than an invariant: the sentence read as a mechanism because it named one,
+and the mechanism it named was for a question the feature does not ask.
+
+The remedy is `CLAUDE.md` item 4b's, in its own words — **build the unit,
+normalise it, match against it**. The unit is the page:
+`packages/shared/src/textMatch.ts` joins the lines and maps a match back to the
+line it starts in afterwards. This repository's tooling has paid for that
+sentence **five** times, all of them in searches over prose, and this is the
+first time it has been applied to the product's own text.
+
+Three decisions inside it, and each is a case:
+
+- **`^` and `$` still anchor a LINE**, because the pattern is compiled with `m`
+  and the join really is a newline. A page of table cells is what makes this
+  matter: `^\d+$` finds the cells holding only a number, and joining without `m`
+  would have silently turned it into a question about the whole page. Dropping
+  the flag reddens exactly one case.
+- **Nothing crosses a break unless it asks.** `.` does not match a newline, so
+  the regex path is behaviour-preserving and an author opts in with `\s+`. The
+  fixture asserts both halves against one page.
+- **A literal query's whitespace absorbs the padding an extractor leaves.** A
+  line ending in a space and the next beginning with one puts three whitespace
+  characters between two words; a fixed separator plus `indexOf` would need a
+  query containing exactly three spaces, which nobody types.
+
+**A latent defect went with it.** The old path lowered both strings and called
+`indexOf`. Lowering `İ` yields two code units, so every offset after the first
+Turkish capital I was reported into a string the caller never sees. Folding per
+character removes the possibility rather than checking for it.
+
+**One fixture stopped separating anything and was moved.** The case *"starts
+each LINE at the beginning, which a shared cursor does not"* held two lines of
+one page, and a `g` regex's `lastIndex` is now reset once per page rather than
+once per line — so a single `exec` walk covers both lines however the cursor
+behaves, and the case could not fail. The boundary the defect lives at is the
+page, so the fixture is two pages. That is *never build a fixture the bug also
+handles correctly*, arriving because the code under it moved rather than because
+the fixture was wrong when written.
+
+**What is genuinely not handled is hyphenation**, and that one does need the
+decision the withdrawn paragraph claimed for the whole feature: `wor-`/`ld`
+against `well-`/`known`. It is a corpus reading, and it is owed by *Select and
+copy*'s bounds rather than by this row.
+
+### The end of a match is a PAIR, not a length
+
+`LineMatch` gains `endLine` and `endOffset`, and the channel carries them. A
+length would have been an offset into a string nobody holds: the two ends index
+different lines, and `text` is the START line's clipped window. The stub in
+`channels.test.ts` ends on a **different** line for that reason — one where the
+two agree is satisfied by a surface that drops `endLine` and echoes `line` back,
+and mutating the implementation to do exactly that reddens three cases.
+
+### Executed
+
+`npm run typecheck` 0 · `npm run lint` 0 · `npx vitest run` **151 files, 2,139
+tests**, all passing · `check:docs` 11/11 · three mutations run and reverted,
+each naming the cases it reddened.
+
+---
+
 ## 2026-09-08 — `main` went red on a stale NOTICE, and the enumeration that missed it was complete about the wrong partition
 
 Read from the run rather than noticed: both CI jobs failed at the step that

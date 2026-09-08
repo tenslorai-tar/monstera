@@ -35,14 +35,71 @@ import { type Result, err, ok } from './result.js';
  * length, so an offset into the raw extraction would not index the text the
  * caller was handed. The pair `(offset, text)` is always self-consistent, and
  * `text` is what a result surface shows.
+ *
+ * ## A LINE IS NOT A UNIT OF MEANING, and this module searched one for a stage
+ *
+ * The lines here are a **typesetter's** lines: where the glyphs happened to be
+ * broken by the width of a column. A reader searching for a phrase does not
+ * know where a page wrapped and cannot be expected to, so a search that looks
+ * at each line separately reports *not found* for a phrase that is plainly on
+ * the page — and reports it in exactly the voice of a genuine absence.
+ *
+ * `CLAUDE.md` item 4b already carries this as the sixth axis of a blind search,
+ * with five prior instances in this repository's own tooling, and its remedy is
+ * one sentence: **build the unit, normalise it, match against it.** So the unit
+ * searched here is the page — the lines joined by a newline — and a match is
+ * mapped back to the line it starts in afterwards.
+ * `scripts/lib/withdrawnPhrases.mjs` owns the same rule for tracked prose; this
+ * is a second subject rather than a second opinion, because the two share no
+ * text and no input (that module reads markdown from disk in plain `.mjs`,
+ * which cannot import TypeScript).
+ *
+ * Two consequences worth stating, because both are decisions:
+ *
+ * - **`^` and `$` still anchor a LINE**, because the regex is compiled with
+ *   `m` and the join really does put a newline between lines. A page of table
+ *   cells is the case that makes this matter: `^\d+$` finding cells that hold
+ *   only a number is a thing somebody types, and joining without `m` would have
+ *   silently made it a question about the whole page. Nothing in the regex path
+ *   crosses a break unless the pattern asks — `.` does not match a newline — so
+ *   a regex author opts in by writing `\s+`.
+ * - **A literal query's whitespace matches a RUN of whitespace**, which is what
+ *   lets `hello world` cross the break where `hello` ends one line and `world`
+ *   begins the next. It also absorbs the trailing and leading spaces an
+ *   extractor leaves on a line, which a fixed separator would have turned into
+ *   a double space that the query does not contain — the collapse
+ *   `withdrawnPhrases.mjs` performs, done positionally so every offset still
+ *   indexes the text it was computed from.
  */
 
-/** One occurrence within a line. */
+/**
+ * One occurrence, which may begin on one line and end on another.
+ *
+ * The four indices are two pairs and they are not interchangeable:
+ * `(line, offset)` is where the match starts and `offset` indexes {@link
+ * LineMatch.text}; `(endLine, endOffset)` is one past its last character and
+ * `endOffset` indexes the END line, which this record does not carry. A caller
+ * that highlights a match therefore needs the lines it was searching — which
+ * every caller has, since it passed them in.
+ */
 export interface LineMatch {
-  /** Index of the line within the list that was searched. */
+  /** Index of the line the match STARTS in, within the list that was searched. */
   readonly line: number;
   /** Offset within `text`, in UTF-16 code units. */
   readonly offset: number;
+  /**
+   * Index of the line the match ENDS in. Equal to `line` for a match that does
+   * not cross a break, which is nearly all of them.
+   */
+  readonly endLine: number;
+  /**
+   * Offset one past the match's last character, within the `endLine`-th line.
+   *
+   * **Into the raw line, not into `text`.** `text` is clipped to a window
+   * around the start, so an index into it would be meaningless the moment a
+   * match crossed a break — the window is a different line's.
+   */
+  readonly endOffset: number;
   /**
    * The line the match sits in, after normalisation, so `offset` indexes it.
    *
@@ -115,10 +172,15 @@ export interface TextMatchOptions {
 /** Why a query could not be compiled. */
 export type QueryProblem = 'empty' | 'invalid-pattern';
 
-/** A compiled query: the thing that actually looks at a line. */
+/** A compiled query: the thing that actually looks at the text. */
 export interface CompiledQuery {
-  /** Every match in one line, in order. */
-  readonly matchesIn: (line: string) => readonly { offset: number; length: number }[];
+  /**
+   * Every match in the joined page, in order.
+   *
+   * The argument is the whole unit — see this module's header — rather than one
+   * line, which is what makes a match across a break representable at all.
+   */
+  readonly matchesIn: (text: string) => readonly { offset: number; length: number }[];
   /** The normalisation this query was compiled with, applied to each line. */
   readonly normalise: Normalisation;
 }
@@ -179,39 +241,86 @@ export function compileQuery(
   if (options.regex === true) {
     let compiled: RegExp;
     try {
-      // `g` so `exec` walks the line, `u` so the pattern's own `\p{…}` and
+      // `g` so `exec` walks the text, `u` so the pattern's own `\p{…}` and
       // surrogate pairs mean what the author wrote. `i` rather than lowering
-      // the line, because a regex must see the text it was written against.
-      compiled = new RegExp(needle, caseSensitive ? 'gu' : 'giu');
+      // the text, because a regex must see the text it was written against.
+      //
+      // `m` IS WHAT KEEPS `^` AND `$` MEANING A LINE. The unit searched is the
+      // page, so without it an anchor written against a line would silently
+      // become one about the whole page — and `^\d+$` over a table of cells is
+      // a pattern somebody types.
+      compiled = new RegExp(needle, caseSensitive ? 'gmu' : 'gimu');
     } catch {
       return err('invalid-pattern');
     }
     return ok({
       normalise,
-      matchesIn: (line) => collect(line, compiled, wholeWord),
+      matchesIn: (text) => collect(text, compiled, wholeWord),
     });
   }
 
-  const literal = caseSensitive ? needle : needle.toLowerCase();
   return ok({
     normalise,
-    matchesIn: (line) => {
-      const haystack = caseSensitive ? line : line.toLowerCase();
+    matchesIn: (text) => {
       const found: { offset: number; length: number }[] = [];
-      for (let from = 0; ; ) {
-        const offset = haystack.indexOf(literal, from);
-        if (offset < 0) break;
-        if (!wholeWord || bounded(line, offset, literal.length)) {
-          found.push({ offset, length: literal.length });
+      // EVERY POSITION, not a jump past each match: overlapping occurrences are
+      // occurrences. Searching "aa" in "aaa" finds two, and a reader stepping
+      // through matches expects the one starting at offset 1.
+      for (let from = 0; from < text.length; from += 1) {
+        const end = literalEnd(text, needle, from, caseSensitive);
+        if (end < 0) continue;
+        if (!wholeWord || bounded(text, from, end - from)) {
+          found.push({ offset: from, length: end - from });
         }
-        // ADVANCE BY ONE, not by the needle's length: overlapping occurrences
-        // are occurrences. Searching "aa" in "aaa" finds two, and a reader
-        // stepping through matches expects the one starting at offset 1.
-        from = offset + 1;
       }
       return found;
     },
   });
+}
+
+/** Whether one character is whitespace. Not `g`: a shared cursor is a defect. */
+const WHITESPACE = /\s/u;
+
+/**
+ * Where a literal needle ends if it starts at `from`, or `-1`.
+ *
+ * ## Two things this does that `indexOf` cannot, and both are the point
+ *
+ * **A whitespace run in the needle consumes a whitespace run in the text.**
+ * That is what makes `hello world` findable across a break, since the join put
+ * a newline between the two words and the extractor may have left a space on
+ * either side of it as well. A fixed separator plus `indexOf` would answer *not
+ * found* for a phrase a reader can see, which is the defect this module's
+ * header is about.
+ *
+ * **Case is folded PER CHARACTER rather than by lowering both strings.**
+ * Lowering `İ` yields two code units, so lowering a page shifts every offset
+ * after the first Turkish capital I — a latent defect in the `indexOf` form
+ * this replaced, which reported offsets into a string the caller never sees.
+ *
+ * @returns one past the last character consumed, or `-1` if the needle does not
+ *   start here.
+ */
+function literalEnd(text: string, needle: string, from: number, caseSensitive: boolean): number {
+  let at = from;
+  let n = 0;
+  while (n < needle.length) {
+    const wanted = needle[n];
+    if (wanted === undefined) break;
+    if (WHITESPACE.test(wanted)) {
+      const here = text[at];
+      if (here === undefined || !WHITESPACE.test(here)) return -1;
+      while (n < needle.length && WHITESPACE.test(needle[n] ?? '')) n += 1;
+      while (at < text.length && WHITESPACE.test(text[at] ?? '')) at += 1;
+      continue;
+    }
+    const here = text[at];
+    if (here === undefined) return -1;
+    if (caseSensitive ? here !== wanted : here.toLowerCase() !== wanted.toLowerCase()) return -1;
+    at += 1;
+    n += 1;
+  }
+  return at;
 }
 
 /** Every match of a compiled pattern in one line. */
@@ -268,16 +377,65 @@ export function findInLines(
   const compiled = compileQuery(query, options);
   if (!compiled.ok) return compiled;
 
+  const normalisedLines = lines.map((raw) => normalised(raw, compiled.value.normalise));
+  // ONE UNIT, one separator per gap. The starts are computed alongside rather
+  // than recovered from the joined string afterwards: recovering them would
+  // mean finding newlines in text that may contain its own, which is the
+  // extractor's business and not this join's.
+  const starts: number[] = [];
+  let at = 0;
+  for (const line of normalisedLines) {
+    starts.push(at);
+    at += line.length + 1;
+  }
+  const unit = normalisedLines.join(JOIN);
+
   const limit = options.limit;
   const matches: LineMatch[] = [];
-  for (const [line, raw] of lines.entries()) {
-    const text = normalised(raw, compiled.value.normalise);
-    for (const hit of compiled.value.matchesIn(text)) {
-      matches.push({ line, ...clipped(text, hit.offset) });
-      if (limit !== undefined && matches.length >= limit) return ok(matches);
-    }
+  for (const hit of compiled.value.matchesIn(unit)) {
+    const start = locate(starts, hit.offset);
+    const end = locate(starts, hit.offset + hit.length);
+    matches.push({
+      line: start.line,
+      ...clipped(normalisedLines[start.line] ?? '', start.offset),
+      endLine: end.line,
+      endOffset: end.offset,
+    });
+    if (limit !== undefined && matches.length >= limit) return ok(matches);
   }
   return ok(matches);
+}
+
+/**
+ * What separates two lines in the searched unit.
+ *
+ * A newline and not a space, so `m`-mode `^` and `$` keep meaning a line and a
+ * `.` keeps not crossing one. The literal path never sees it as a newline in
+ * particular — {@link literalEnd} treats any whitespace run as one gap — so the
+ * choice costs the literal case nothing and buys the regex case its anchors.
+ */
+const JOIN = '\n';
+
+/**
+ * Which line an index into the joined unit falls in, and where within it.
+ *
+ * Binary search rather than a walk: a dense page is 840 lines measured and
+ * bounded at 2,048, and this runs once per match end. The separator belongs to
+ * the line BEFORE it — an index pointing at it is reported as one past that
+ * line's last character, which is what a match ending at a line's end means and
+ * is the only reading that keeps `endOffset` an index into a line that actually
+ * contains the match.
+ */
+function locate(starts: readonly number[], index: number): { line: number; offset: number } {
+  if (starts.length === 0) return { line: 0, offset: index };
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if ((starts[middle] ?? 0) <= index) low = middle;
+    else high = middle - 1;
+  }
+  return { line: low, offset: index - (starts[low] ?? 0) };
 }
 
 /**

@@ -44,7 +44,9 @@ function clientAnswering(): { client: ContractClient; asked: number[] } {
     return Promise.resolve(
       ok({
         version: asDocVersion(1),
-        matches: MATCHED.includes(page) ? [{ line: 0, offset: 0, text: `hit on ${String(page)}` }] : [],
+        matches: MATCHED.includes(page)
+          ? [{ line: 0, offset: 0, endLine: 0, endOffset: 3, text: `hit on ${String(page)}` }]
+          : [],
         truncated: false,
       }),
     );

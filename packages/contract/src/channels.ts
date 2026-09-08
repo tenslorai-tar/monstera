@@ -1521,7 +1521,24 @@ export const channels = {
             /** Offset within the line, in UTF-16 code units. */
             offset: z.number().int().nonnegative(),
             /**
-             * The line the match sits in, so a result needs no second call.
+             * The line the match ENDS in, and one past its last character there.
+             *
+             * A match may span a wrap — `hello` ending one line and `world`
+             * beginning the next is one occurrence of `hello world`, because a
+             * reader does not know where the page was broken. So the end is its
+             * own pair rather than `offset + length`: a length would be an
+             * offset into a string nobody holds, since the two ends index
+             * different lines.
+             *
+             * Equal to `line` and `offset + length` for a match that did not
+             * cross, which is nearly all of them — and a caller that ignores
+             * these two fields is exactly as correct as it was before they
+             * existed, for every match that fits on one line.
+             */
+            endLine: z.number().int().nonnegative(),
+            endOffset: z.number().int().nonnegative(),
+            /**
+             * The line the match starts in, so a result needs no second call.
              *
              * **BOUNDED, and this was the L11 gap the sweep found** (2026-09-03).
              * A line's length is chosen by whoever made the PDF, so an unclipped

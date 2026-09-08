@@ -32,7 +32,15 @@ function clientOverPages(
     return Promise.resolve(
       ok({
         version: asDocVersion(1),
-        matches: [{ line: 0, offset: page, text: `page ${String(page)} of ${String(pageCount)}` }],
+        matches: [
+          {
+            line: 0,
+            offset: page,
+            endLine: 0,
+            endOffset: page + 1,
+            text: `page ${String(page)} of ${String(pageCount)}`,
+          },
+        ],
         truncated: options.truncateAt === page,
       }),
     );

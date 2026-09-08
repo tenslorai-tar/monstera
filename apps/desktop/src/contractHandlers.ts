@@ -681,7 +681,13 @@ function searchPageHandler(commands: DocumentCommands): ContractHandlers['docume
       );
       return ok({
         version,
-        matches: matches.map(({ line, offset, text }) => ({ line, offset, text })),
+        matches: matches.map(({ line, offset, endLine, endOffset, text }) => ({
+          line,
+          offset,
+          endLine,
+          endOffset,
+          text,
+        })),
         truncated,
       });
     } catch (thrown) {

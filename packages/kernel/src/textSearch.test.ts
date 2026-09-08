@@ -47,7 +47,7 @@ describe('findInPages', () => {
     const pages = [pageOf(['the quick brown fox']), pageOf(['jumps over the lazy dog'])];
 
     expect(matchesOf(pages, 'lazy')).toStrictEqual([
-      { page: 1, line: 0, offset: 15, text: 'jumps over the lazy dog' },
+      { page: 1, line: 0, offset: 15, endLine: 0, endOffset: 19, text: 'jumps over the lazy dog' },
     ]);
   });
 
@@ -56,7 +56,7 @@ describe('findInPages', () => {
 
     expect(matchesOf(pages, 'pdf')).toHaveLength(2);
     expect(matchesOf(pages, 'pdf', { caseSensitive: true })).toStrictEqual([
-      { page: 0, line: 0, offset: 8, text: 'PDF and pdf' },
+      { page: 0, line: 0, offset: 8, endLine: 0, endOffset: 11, text: 'PDF and pdf' },
     ]);
   });
 
@@ -223,16 +223,109 @@ describe('findInPages', () => {
       expect(found.map((match) => match.offset)).toStrictEqual([0, 1, 2]);
     });
 
-    it('starts each LINE at the beginning, which a shared cursor does not', () => {
-      // A `g` regex carries `lastIndex` between calls. Reusing one across lines
-      // starts each line where the previous stopped, so a match early in a later
-      // line disappears — and only a fixture whose SECOND line matches before
-      // the first line's match ended can see it.
-      const pages = [pageOf(['xxxxxxxxxx needle', 'needle'])];
+    it('starts each PAGE at the beginning, which a shared cursor does not', () => {
+      // A `g` regex carries `lastIndex` between calls, and `findInPages` hands
+      // the same compiled query to every page — so without the reset, page 2
+      // starts where page 1 stopped and a match early in it disappears.
+      //
+      // THIS FIXTURE WAS TWO LINES OF ONE PAGE until the search began joining a
+      // page into one unit, at which point a single `exec` walk covered both
+      // and the case could not fail however the cursor behaved. The boundary
+      // the defect now lives at is the page, so that is where the fixture is.
+      const pages = [pageOf(['xxxxxxxxxx needle']), pageOf(['needle'])];
 
-      expect(matchesOf(pages, 'needle', { regex: true }).map((match) => match.line)).toStrictEqual([
+      expect(matchesOf(pages, 'needle', { regex: true }).map((match) => match.page)).toStrictEqual([
         0, 1,
       ]);
+    });
+
+    it('keeps `^` and `$` meaning a LINE, which the page-wide unit would not', () => {
+      // The load-bearing case for the `m` flag. A page of table cells is where
+      // this is asked for — `^\d+$` finds the cells holding only a number —
+      // and joining the lines without `m` would silently turn it into a
+      // question about the whole page, which matches nothing here.
+      const pages = [pageOf(['12', 'page 12 of 340', '340'])];
+
+      expect(
+        matchesOf(pages, '^\\d+$', { regex: true }).map((match) => match.line),
+      ).toStrictEqual([0, 2]);
+    });
+
+    it('does NOT cross a break unless the pattern asks, because `.` is not `\\n`', () => {
+      const pages = [pageOf(['hello', 'world'])];
+
+      // The control and the case in one fixture: the same two words, one
+      // pattern that cannot cross and one that says it may.
+      expect(matchesOf(pages, 'hello.world', { regex: true })).toStrictEqual([]);
+      expect(
+        matchesOf(pages, 'hello\\s+world', { regex: true }).map((match) => ({
+          line: match.line,
+          endLine: match.endLine,
+        })),
+      ).toStrictEqual([{ line: 0, endLine: 1 }]);
+    });
+  });
+
+  describe('a match that spans a line break', () => {
+    it('FINDS a phrase the typesetter wrapped, and says where it starts and ends', () => {
+      // The defect this closes: a reader searching for a phrase does not know
+      // where the column was broken, so a per-line search answers "not found"
+      // in exactly the voice of a genuine absence.
+      const pages = [pageOf(['the quick brown', 'fox jumps over'])];
+
+      expect(matchesOf(pages, 'brown fox')).toStrictEqual([
+        {
+          page: 0,
+          line: 0,
+          offset: 10,
+          endLine: 1,
+          endOffset: 3,
+          // THE START LINE, not the joined text. `offset` indexes this string
+          // and `endOffset` indexes the other one, which is the whole reason
+          // the end is a pair rather than a length.
+          text: 'the quick brown',
+        },
+      ]);
+    });
+
+    it('CONTROL: a phrase that is not there is still not found across the break', () => {
+      // Without this, a join that matched too eagerly — treating the break as
+      // nothing at all, so `brownfox` matched — would pass the case above.
+      const pages = [pageOf(['the quick brown', 'fox jumps over'])];
+
+      expect(matchesOf(pages, 'brownfox')).toStrictEqual([]);
+      expect(matchesOf(pages, 'brown cat')).toStrictEqual([]);
+    });
+
+    it('absorbs the padding an extractor leaves, which a fixed separator would not', () => {
+      // A line arriving with a trailing space and the next with a leading one
+      // puts three whitespace characters between the words. A join that
+      // inserted one separator and compared with `indexOf` would need the query
+      // to contain exactly three spaces — which nobody types.
+      const pages = [pageOf(['the quick brown ', ' fox jumps'])];
+
+      expect(matchesOf(pages, 'brown fox').map((match) => match.endLine)).toStrictEqual([1]);
+    });
+
+    it('reports `endLine` equal to `line` for a match that did not cross', () => {
+      // The other half of the pair, and it is a control on the first: a build
+      // that reported the LAST line of the page as every match's end would pass
+      // every spanning case above.
+      const pages = [pageOf(['alpha beta', 'gamma delta'])];
+
+      expect(
+        matchesOf(pages, 'gamma').map((match) => ({
+          line: match.line,
+          endLine: match.endLine,
+          endOffset: match.endOffset,
+        })),
+      ).toStrictEqual([{ line: 1, endLine: 1, endOffset: 5 }]);
+    });
+
+    it('does not join across a PAGE, because a page is where the unit ends', () => {
+      const pages = [pageOf(['the quick brown']), pageOf(['fox jumps over'])];
+
+      expect(matchesOf(pages, 'brown fox')).toStrictEqual([]);
     });
   });
 
