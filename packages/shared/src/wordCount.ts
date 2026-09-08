@@ -68,13 +68,42 @@ const WHITESPACE = /\s/u;
  *
  * @param lines the page's lines, in reading order
  */
+/**
+ * The words in a page's lines, as the segmenter identifies them.
+ *
+ * ## Extracted so that spell check and word count cannot disagree
+ *
+ * Spell check needs the words themselves where this file's other caller needs
+ * only how many, and the obvious spelling — a regex or a whitespace split at
+ * the spelling caller — is a **second opinion about what a word is** (B3a). The
+ * two would agree on English prose and differ on `don't`, on
+ * `state-of-the-art`, and on every language written without spaces, so a
+ * document could report a word count of 400 and offer 380 words to check with
+ * nothing anywhere able to say which was right.
+ *
+ * {@link countWords} takes its `words` figure from this generator, so there is
+ * one rule and not two that happen to match.
+ *
+ * The join is the same rule and for the same reason — a structured-text line is
+ * a run on a baseline, so a wrapped sentence arrives as two, and concatenating
+ * without a separator fuses the last word of one line with the first of the
+ * next into a word that appears in no document. For a **count** that is short
+ * by one per line; for a **spell check** it is a fabricated misspelling, which
+ * is louder and worse: the reader is shown a word they never wrote.
+ *
+ * @param lines the page's lines, in reading order
+ */
+export function* wordsOf(lines: readonly string[]): Generator<string> {
+  for (const segment of SEGMENTER.segment(lines.join(' '))) {
+    if (segment.isWordLike === true) yield segment.segment;
+  }
+}
+
 export function countWords(lines: readonly string[]): WordCount {
   const text = lines.join(' ');
 
   let words = 0;
-  for (const segment of SEGMENTER.segment(text)) {
-    if (segment.isWordLike === true) words += 1;
-  }
+  for (const _word of wordsOf(lines)) words += 1;
 
   let characters = 0;
   let charactersNoSpaces = 0;

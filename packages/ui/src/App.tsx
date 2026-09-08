@@ -77,12 +77,14 @@ import { AnnotationsPanel } from './AnnotationsPanel.js';
 import { FormsPanel } from './FormsPanel.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
+import { checkSpellingCommand } from './commands/checkSpelling.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
+import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
@@ -279,6 +281,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       new DialogRegistry([
         ABOUT_DIALOG,
         WORD_COUNT_DIALOG,
+        SPELL_CHECK_DIALOG,
         SAVE_PROBLEM_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
@@ -1132,6 +1135,12 @@ export function App({ client, settings }: AppProps): ReactElement {
         openCommand,
         showAboutCommand({ client, ask }),
         showWordCountCommand({ client, ask }),
+        // TAKES THE SETTINGS STORE, which no other command here does. The
+        // personal dictionary is what makes this feature manageable rather than
+        // fixed, and it is a preference rather than document state — so it
+        // lives in §10.4's registry, and the command that adds to it is the one
+        // that has to reach it.
+        checkSpellingCommand({ client, settings, ask }),
         revealLogCommand({ client }),
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so

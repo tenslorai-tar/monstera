@@ -38,6 +38,15 @@ export {
   // that is not a channel; a second declaration there would be two of one thing.
   type OutlineEntry,
   outlineEntrySchema,
+  // The dictionary set and its two bounds. The list is exported because BOTH
+  // sides key a record on it — main's package map and the renderer's display
+  // titles — which is what makes adding a language two compile errors rather
+  // than a checklist.
+  MAX_AFFIX_BYTES,
+  MAX_DICTIONARY_BYTES,
+  SPELLING_LANGUAGES,
+  type SpellingLanguage,
+  spellingLanguageSchema,
   channelIds,
   channels,
 } from './channels.js';

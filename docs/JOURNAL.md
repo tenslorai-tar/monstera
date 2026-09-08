@@ -887,6 +887,388 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Stage audit of `3d87cee..642b262`: the text substrate, forms' last three rows, and the engine-reach measurement
+
+Sixteen commits, 87 files, and the commit this is written in takes it to 105
+against a batch of 100 — which is how the audit was called. **The gate blocked a
+commit rather than reporting later**, and its own message says why that is the
+right moment: `check:docs` measures the range against HEAD, so at the instant of
+crossing the crossing commit is invisible to it and the board would go red one
+push after the fact.
+
+Worth recording because two instruments disagreed and both were right:
+`npm run audit:scope` printed *"Within one batch. An audit is not yet owed"*
+while the pre-commit gate refused. The scope report answers *where is HEAD*; the
+gate answers *where will HEAD be*. Neither is wrong and only one of them can
+stop you.
+
+### 1. Root cause, or workaround?
+
+Every correction in this range names a mechanism. **No repair could regenerate**,
+**no override or escape hatch** was added, and **no check was loosened** — the
+one candidate is `formFieldCreate.test.ts`' −56 lines, read below and found to
+be a fixture reshape rather than a weakening. The two findings closed in this
+commit are both root fixes: `useSetting` holds its snapshot rather than the
+setting being shaped around the hook, and the missing coverage is a case that
+uses no fixture rather than a note.
+
+### 2. Verified against the easy shape only?
+
+The range's headline risk was exactly this and was met: the text substrate's
+boxes were re-branded after `textFrames.mjs` measured **all four `/Rotate`
+turns**, because at `/Rotate 0` the wrong conversion and the right one are
+arithmetically the same operation and every fixture in this repository is
+upright. `formFieldCreate` was checked at all four turns, on a cropped page, and
+against a merged field-and-widget dictionary that `@cantoo/pdf-lib` never
+writes.
+
+**Where it was NOT met is BBBBBB-1** — spell check was verified only against a
+three-word synthetic dictionary, never the installed 49,568-word one, and never
+through the code that finds it. Closed below.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and in the strengthening direction: `proof:activecontent` moved from
+scanning a written-down binary to scanning **the engine the application's own
+import resolves to**, derived rather than named, so it cannot drift off its
+subject in silence. Both binaries answer the same. Nothing in this range turned
+an asserted claim into a derived one that could become UNVERIFIABLE on a leg
+that installs nothing.
+
+### 3. Would CI have caught it?
+
+**Answered from the push state, and the answer is no because it has not run.**
+The range's last two commits are unpushed, so CI has evaluated neither; the
+board's last green is `77cebee`, three commits short of the range's end. That is
+BBBBBB-3, recorded rather than smoothed over — AAAA-29's shape is answering this
+item from what the range was *about* rather than from a run.
+
+**And the other way round — a defect this machine cannot see:** every corpus
+reading in this range is UNVERIFIABLE here, correctly. `MONSTERA_CORPUS` is
+unset on this machine, so `corpus.mjs` refuses rather than passing, and the two
+text-layer bounds still owe their corpus reading.
+
+### 4. Are the proofs non-vacuous?
+
+The new cases were written against the direction rule: `available: false`
+asserts the field **and** that no page was read, because `misspellings: []` is
+what a clean document produces too; the personal-dictionary *left alone* case
+seeds a value first, because an empty start makes *left alone* and *written
+empty* the same observation; the suggest-once case asserts the **call count**,
+because the answer is identical either way.
+
+### 4a. Has every instrument passed a resolution test?
+
+Yes, and each carries it in the instrument rather than only in a proof:
+`engineReach.mjs` refuses to print a verdict unless its two control subjects
+separate; `peExports.mjs` throws when handed no `certainlyPresent` symbol;
+`pdfiumRender.mjs` runs `resolutionTest()` before anything real;
+`definedTokens.mjs` plants a fixture and checks both directions;
+`pdfiumBinary.mjs` anchors on symbols the DLL certainly exports.
+
+### 4b. Does every search have a positive control?
+
+Yes. `corpus.mjs` has a 13-case proof and refuses an empty directory rather than
+reporting one; `kernelLoad.proof.mjs`' anchor is on `engine.js` — moved there
+when ADR-0026 made the barrel the wrong control — and `engineReach.mjs` adds the
+**positive** half nothing had: that the host *does* load the engine.
+
+### 4c. Does each check derive its extent from the set it governs?
+
+The one roster added in this range is the language set, and it derives in the
+direction that is safe: `SPELLING_LANGUAGES` is the writer of record and both
+consumers are `Record<SpellingLanguage, …>`, so the failure feared is a language
+**added** without its package or its title, which growth makes louder rather
+than quieter. A language *removed* takes its entries with it, and that is
+correct — a dictionary that no longer ships should stop being offered.
+
+### 5. Executed, or asserted?
+
+**One thing was asserted and it is BBBBBB-4:** the summary claimed every
+remaining D4 row waits on the engine-reach decision, over a translate row whose
+body was a bare `—`. Executed since — the text needs nothing new, the provider is
+E5's and Stage 9's, and `grep` for `AiProvider` returns zero.
+
+Everything else in the range was run: the engine reach from four child
+processes, the dictionary read against the installed package, all four `/Rotate`
+turns, both PDF.js-versus-substrate disagreements.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, in its own commit: `642b262` amends §3 to separate *where* the engine
+loads from *which* engine is reached, and nothing was built on that reading in
+the same commit. Spell check registered into existing seams — a channel in
+`packages/contract`, a setting in §10.4's registry, a command and a dialog in
+their registries — so no B4 arose for it.
+
+### 7. Do the documents still match the code?
+
+Three did not and now do: the spell-check row said *blocked* for a feature that
+ships, the translate row said nothing while a summary spoke for it, and the
+ribbon had no row at all (BBBBBB-5). §3, `CLAUDE.md`'s digest and the amendment
+log were corrected in `642b262` for the reach measurement.
+
+**Cross-document sweep**, per NNN-4: the range states a cross-document
+relationship — *the engine loads in the host* — so every other statement of it
+was swept. `docs/ARCHITECTURE.md` §3, `CLAUDE.md`'s invariant-24 section and
+ADR-0010's appended correction now agree, and ADR-0022's containment text is
+about process creation rather than about which engine, so it needed no change.
+
+### BBBBBB-1 — the one function whose job is to find files was the one nothing pointed at
+
+Spell check shipped with both halves of the wired pair: a kernel-shaped test on
+the checking logic and a UI-shaped test on the command. **Both pass against a
+build where `readSpellingDictionary` resolves nothing**, because neither calls
+it — the command test injects a `readDictionary`, and the checker test injects a
+client.
+
+`dictionary-en`'s `exports` field is the bare string `"./index.js"`, so neither
+data file has a subpath a resolver will answer for; the module resolves the root
+export and joins. That idiom either works or the feature reports *the dictionary
+could not be loaded* for every language, which is a **declared, calm state** —
+the failure that looks like the feature working.
+
+This is `the-helper-hides-the-caller` with the roles swapped: the caller is
+thoroughly tested and the thing it delegates to is not, precisely because every
+case hands in a substitute for it. **Closed in this commit**, with cases that
+use no fixture and assert the *format* as well as the presence — two non-empty
+files is satisfied by reading a licence and a readme.
+
+### BBBBBB-2 — a stated limitation with nothing enforcing it, one commit from mattering
+
+`useSetting`'s header said its snapshot is reference-stable *"because the values
+are primitives"*. `SettingsStore.get` ends in `schema.safeParse(…).data`, and
+zod builds a **new array every call** — so the first non-primitive setting read
+through that hook re-renders for ever, in a component that looks exactly like
+the six that work.
+
+The personal dictionary is that first setting and it does **not** go through the
+hook, which is why this is a finding rather than a bug: the limitation would
+have stayed true and untested until somebody added a non-primitive setting a
+*component* reads. **Closed in this commit** — the snapshot is held, primitives
+skip the cache, and the six existing readers are unchanged.
+
+### BBBBBB-3 — item 3, answered from the push state rather than from the range's subject
+
+**The range's last two commits are unpushed, so CI has evaluated neither.** The
+board's last green is `77cebee`, three commits short of the range's end. That is
+the honest answer and it is not a claim about the workflow file: the two commits
+add `scripts/research/` instruments and documentation, and whether their checks
+run is a question about a run that has not happened.
+
+Recorded rather than smoothed over, because AAAA-29's shape is answering this
+item from what the range was *about*.
+
+### BBBBBB-4 and BBBBBB-5 — two rows that were wrong in opposite ways
+
+Both are written up in their own entry below. In audit terms: **a blanket claim
+was made over a cell that said nothing** (the translate row's body was a bare
+`—`, and an empty cell reads as agreement with whatever is asserted about it),
+and **a surface with six code sites writing around it had no row at all**. The
+second is the missing-row shape; the first is item 5, asserted rather than
+executed.
+
+### Read and sound
+
+- **All 22 modified-proof diffs.** Two carry deletions and both are the same
+  cause: `createFormField`'s payload became a list when heuristic detection
+  landed, so `formFieldCreate.test.ts` is −56 and `formFieldTools.test.ts` −12
+  from a fixture reshape. Case counts across the range: 24 → **27** and
+  11 → **11**; `pageText.test.ts` 8 → **11** and `PageList.test.tsx` 8 → **12**.
+  Nothing lost, which the per-commit staged-test rule was already asserting
+  commit by commit — this is the range-scoped confirmation of it.
+- **24 source files added.** Every instrument among them carries its own
+  control: `engineReach.mjs`' two subjects that must separate, `peExports.mjs`'
+  `certainlyPresent`, `corpus.mjs`' 13-case proof, `definedTokens.mjs`' planted
+  fixture checked in both directions, `pdfiumRender.mjs`' `resolutionTest()`
+  before anything real, `pdfiumBinary.mjs`' known-exports control.
+- **No proofs removed.**
+
+---
+
+## 2026-09-08 — Two rows whose blocker was asserted rather than measured, and one surface that had no row at all
+
+Three corrections to what this build had written down about its own state. None
+of them changed a line of product code, and two of them changed what is true.
+
+### Translate document text was recorded as blocked on nothing
+
+The Stage 5 summary said every remaining D4 row waits on the engine-reach
+decision. **The translate row did not support that**, and could not have: its
+body was a bare `—`. A blanket claim was made over a cell that said nothing, and
+an empty cell reads as agreement with whatever is asserted about it.
+
+Measured instead of asserted, and the answer is more specific and more useful:
+
+- **The text needs nothing new.** `document.pageTextLayer` carries a bounded
+  page and is already walked by two shipped commands.
+- **What it needs is `AiProvider`**, which `BUILD-PROMPT.md` E5 declares and
+  which the build order puts in **Stage 9**. `grep` for `AiProvider` across
+  `packages/` and `apps/` returns **zero**. Standing one up here would be a
+  second AI seam beside the one E5 already specifies (B3a), and the half not yet
+  written is the half that would drift.
+- **The privacy question is already answered and is not this row's to take.**
+  E5: document content reaches a provider *"only on explicit user action"*, with
+  consent copy naming the provider, keys in `safeStorage`, and an honest no-key
+  state. So *does document text leave this machine* has a specified answer, and
+  C8's *no telemetry* is untouched by it. It looked like an open question because
+  nothing had gone and read the clause.
+- **Writing the translation into the document is a second, different blocker** —
+  that half needs in-place editing, and therefore the reach decision. A
+  read-only reading needs only E5.
+
+So the row is blocked, and on **neither** of the two things the summary named.
+
+### The ribbon had six code sites and no row
+
+Every other surface §7 names has a `docs/FEATURES.md` row. The ribbon had none —
+while `placement.ts` declares the placement shape and eight sections in render
+order, `projections.ts` computes a model from the command registry, and
+**nothing mounts it**.
+
+The consequence is visible only when you go looking for it: `grep -rn ribbon
+packages/ui/src/commands/` finds **no command carrying one**, because a `ribbon`
+placement today projects into nothing, which is the display-only defect the
+wired rule bans arriving as a *placeholder for later*. So four commands declare
+`placements: []` and explain why in a comment, and three FEATURES rows owe *a
+ribbon placement* in their bodies.
+
+**Each debt is one line on the day a component exists**, and that is both why it
+is cheap and why it keeps being deferred: nothing breaks, and the palette
+reaches every command meanwhile — `paletteModel` reads no placements,
+deliberately, so a surface that does not exist costs a reader nothing.
+
+What it costs is countable and nobody was counting it: **every feature row from
+here adds another owed line**, and a debt recorded in six comments and zero rows
+is one no audit column can see. It is now a row with a trigger. This is the
+missing-row shape rather than an undecided design — the clause everybody wrote
+around, that nobody wrote down.
+
+### And the check refused to guess, correctly
+
+Rewriting two D4 rows and adding one D12 row in a single commit made
+`check:docs` report *"2 row opening(s) disappeared and 3 appeared … this rule
+cannot tell a rename from a new row and refuses to guess"*. That is the right
+answer and it was worth taking rather than working around: the three changes are
+three units, and they are three commits.
+
+---
+
+## 2026-09-08 — Spell check, where the founding record answered half the question nobody had read as an answer
+
+The row was recorded **blocked** this morning, on the ground that
+`BUILD-PROMPT.md`:464 is silent about which dictionaries ship. Reading the
+clause again is what unblocked it, and the mechanism is worth more than the
+feature: **it is silent on *which* and it is not silent on *whether they are
+managed*.** The row's own name is *"spell check (nspell + **dictionary
+management**)"*.
+
+So a fixed baked-in set is refused by the founding record itself — it would
+contradict the row's title, and a Store package would carry every language's
+bytes for every user who never opens a second one. What the record asks for is
+one language and a path to manage them. The undecided half — *bundled or
+downloaded* — is real and stays the owner's, and it turns out not to block
+anything, because the shape that admits either is the shape you build anyway.
+
+**That is a class, not an instance.** A compound clause read for one of its
+parts is this project's own recurring shape, and every previous instance ran the
+other way: a live clause vouching for a dead one, in §3's reach sentence, in the
+escape guard's heredoc allowance, in `publish`'s `--force`. This is the same
+error with the polarity reversed — an **unanswered** clause standing for a
+clause that *was* answered — and it produced a blocked row rather than a false
+claim, which is why nothing caught it.
+
+### The row's own claim that this needs no channel was half right
+
+`docs/FEATURES.md` recorded that spell check *"needs no new channel at all"*,
+because checking is 0.76 ms of pure JavaScript and the renderer already holds
+the text. **The checking half is right and it is not the feature.** A checker
+needs a dictionary, and `dictionary-en` reads its `index.aff` and `index.dic`
+with `node:fs/promises` **at module top level** — so `packages/ui`, which may
+never import Node, cannot import that package at all.
+
+Found by building it, which is what the claim was owed. Nothing about the probe
+that produced the claim was wrong; the probe ran in Node, where the import
+works.
+
+**So there is one channel and it carries bytes.** `spelling.dictionary` takes a
+language and answers an affix file and a word list. Three alternatives were
+considered and the reason for rejecting the cheapest is the load-bearing one:
+
+- **A Vite alias plus `?raw`**, baking the two files into a renderer chunk at
+  build time. Cheapest — no channel, no registration tax. Rejected because it
+  **cannot express a dictionary that was downloaded**, so choosing it would have
+  foreclosed the owner's open half. Main answering with bytes and never saying
+  where it got them is what keeps both readings live.
+- **Running the checker in main.** Rejected on §9.17: 24 MB against the tightest
+  budget in the build, plus a round trip per page for work that costs 0.76 ms.
+- **`unknown-dictionary` as a failure.** It is a refusal — the request schema
+  already narrows `language` to a declared id, so reaching it means a build
+  shipped without its dependency, which is a thing a person can act on.
+
+### Adding a language is an entry and two compile errors
+
+`SPELLING_LANGUAGES` in the contract is the writer of record. Main's package map
+and the renderer's display titles are both `Record<SpellingLanguage, …>`, which
+is exhaustive — so an entry in the list turns both files red until they are
+filled in. B5 rather than a checklist: there is no state in which a declared
+language has no package and no name.
+
+**There is deliberately no language setting.** A select offering one option is a
+control that renders and does nothing, which this project calls a defect rather
+than a placeholder, and the wired rule does not soften for a control that will
+be useful later. What a person actually manages is the **personal dictionary**,
+which works on any number of languages and is a setting.
+
+### Three outcomes, because two of them look identical
+
+A document with no misspellings, a dictionary that would not load, and a walk
+that stopped after two pages all produce a short or empty list. Only the first
+means *your spelling is fine*.
+
+`available: false` is therefore a **state and not an empty list**, and the case
+that separates it asserts that field and that **no page was read** — asserting
+`misspellings: []` would pass against either, which is item 4b's *found nothing*
+sitting inside a feature rather than inside a search.
+
+### Two things found by building, neither of them spell check
+
+**`useSetting` would have hung on the first non-primitive setting.** Its own
+header said the snapshot is reference-stable *"because the values are
+primitives"* — a stated limitation with nothing enforcing it. `SettingsStore.get`
+ends in `schema.safeParse(…).data`, and zod builds a **new array every call**,
+which `useSyncExternalStore` reads as a change on every render. The personal
+dictionary is the first array setting and it does **not** go through that hook,
+which is precisely why this was worth fixing rather than noting: the limitation
+would have stayed true and untested until somebody added a non-primitive setting
+a *component* reads, and the failure then is a hang with no visible cause. The
+hook now holds its snapshot and primitives skip the cache entirely, so the six
+existing readers are unchanged.
+
+**`wordsOf` moved into `@monstera/shared`.** Spell check needs the words where
+word count needs only how many, and the obvious spelling — a regex at the
+spelling caller — is a second opinion about what a word is (B3a). The two would
+agree on English prose and differ on `don't`, on `state-of-the-art`, and on
+every language written without spaces. `countWords` now takes its figure from
+the same generator, so there is one rule rather than two that happen to match.
+The join is part of it: for a count, a missing separator is short by one per
+line; for a spell check it **fabricates a misspelling**, and the reader is shown
+a word they never wrote.
+
+### What is not built, and why rather than when
+
+**No squiggles under the words.** `textStructure.ts` reports a **line** with a
+box, an origin and a size — no per-word geometry. Underlining a word needs
+either character boxes in the substrate, which is ADR-0034's module and its own
+amendment, or this build dividing a line's width by its character count, which
+is a made-up metric wrong for every proportional font. A list with page numbers
+is what the substrate can honestly support today.
+
+**No progress and no cancellation**, inherited from `showWordCount` unchanged
+and recorded rather than half-built.
+
+---
+
 ## 2026-09-08 — Which process loads MuPDF, observed from a run: the host does and main does not, so the reach decision is not a containment question
 
 §3's correction earlier today established *which engine* the product reaches —

@@ -715,6 +715,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
           settings: { read: () => ({}), write: () => undefined },
           revealLog: () => Promise.resolve(false),
+          readDictionary: () => Promise.resolve(null),
         })['document.viewModel'],
         new IncidentLog(sink),
       );

@@ -218,6 +218,7 @@ describe('browser shim', () => {
       'log.reveal',
       'settings.load',
       'settings.save',
+      'spelling.dictionary',
     ]);
   });
 

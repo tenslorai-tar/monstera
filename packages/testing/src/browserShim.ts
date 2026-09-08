@@ -471,6 +471,30 @@ function acrossTheWire<T>(value: T): T {
 }
 
 /**
+ * The affix file the shim's dictionary carries.
+ *
+ * One directive, which is all Hunspell requires: the encoding. Everything else
+ * an affix file can express — prefixes, suffixes, compounding, keyboard
+ * layout — is a rule for generating word forms, and a three-word vocabulary
+ * has none to generate.
+ */
+const SHIM_AFFIX = 'SET UTF-8\n';
+
+/**
+ * The shim's vocabulary, in Hunspell's own format: a count, then the words.
+ *
+ * Chosen so a case can assert **both directions** without another fixture —
+ * `document` is in and `documnet` is not, which is the transposition
+ * `nspell`'s own suggester was measured resolving on 2026-09-08.
+ *
+ * The count line is part of the format rather than decoration. Hunspell reads
+ * it as a hint for sizing and tolerates a wrong one, so it is written correctly
+ * here rather than left to be discovered as a fixture that disagrees with
+ * itself.
+ */
+const SHIM_WORDS = '3\ndocument\npage\nspelling\n';
+
+/**
  * Builds a browser-side contract client backed by an in-memory stub.
  *
  * @param options see {@link BrowserShimOptions}
@@ -1172,6 +1196,24 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       revealedLog += 1;
       return Promise.resolve(ok({ revealed: false }));
     },
+    // A REAL DICTIONARY, three words long. The shim runs in a browser and
+    // cannot read `dictionary-en` off disk, and the two obvious answers are
+    // both worse than a fixture: `unknown-dictionary` would make every spelling
+    // case assert the refusal path, and a stub checker that agrees with
+    // everything is the display-only defect wearing a green check.
+    //
+    // Hunspell's format needs almost nothing to be valid — an encoding line in
+    // the affix file and a count followed by words — so this exercises the same
+    // `nspell` the product builds, on a vocabulary a case can state in full.
+    'spelling.dictionary': ({ language }) =>
+      Promise.resolve(
+        ok({
+          kind: 'dictionary' as const,
+          language,
+          affix: new TextEncoder().encode(SHIM_AFFIX),
+          words: new TextEncoder().encode(SHIM_WORDS),
+        }),
+      ),
   };
 
   const wrapped = wrapHandlers(channels, handlers, (incident) => {

@@ -18,5 +18,8 @@
   },
   "devDependencies": {
     "electron": "43.4.1"
+  },
+  "dependencies": {
+    "dictionary-en": "^4.0.0"
   }
 }

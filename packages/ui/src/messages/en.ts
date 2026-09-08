@@ -218,6 +218,23 @@ export const WORD_COUNT_CHARACTERS_LABEL = messageKey('dialog.word-count.charact
 export const WORD_COUNT_CHARACTERS_TIGHT_LABEL = messageKey('dialog.word-count.characters-tight');
 export const WORD_COUNT_PAGES_LABEL = messageKey('dialog.word-count.pages');
 export const WORD_COUNT_PARTIAL = messageKey('dialog.word-count.partial');
+export const SPELL_CHECK_COMMAND_TITLE = messageKey('command.spell-check.title');
+export const SPELL_CHECK_TITLE = messageKey('dialog.spell-check.title');
+export const SPELL_CHECK_LANGUAGE = messageKey('dialog.spell-check.language');
+export const SPELL_CHECK_LANGUAGE_EN = messageKey('dialog.spell-check.language-en');
+export const SPELL_CHECK_CLEAN = messageKey('dialog.spell-check.clean');
+export const SPELL_CHECK_UNAVAILABLE = messageKey('dialog.spell-check.unavailable');
+export const SPELL_CHECK_PARTIAL = messageKey('dialog.spell-check.partial');
+export const SPELL_CHECK_OCCURRENCES = messageKey('dialog.spell-check.occurrences');
+export const SPELL_CHECK_FIRST_PAGE = messageKey('dialog.spell-check.first-page');
+export const SPELL_CHECK_SUGGESTIONS = messageKey('dialog.spell-check.suggestions');
+export const SPELL_CHECK_NO_SUGGESTIONS = messageKey('dialog.spell-check.no-suggestions');
+export const SPELL_CHECK_ADD = messageKey('dialog.spell-check.add');
+export const SPELL_CHECK_ADDED = messageKey('dialog.spell-check.added');
+export const SPELL_CHECK_SAVE = messageKey('dialog.spell-check.save');
+export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
+  'setting.editing.personal-dictionary.title',
+);
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
@@ -550,6 +567,26 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // total smaller than the document is indistinguishable from a correct total
   // for a shorter one, and a reader quoting it has no way to tell.
   [WORD_COUNT_PARTIAL]: 'Counted {counted} of {total} pages — these totals are incomplete.',
+  [SPELL_CHECK_COMMAND_TITLE]: 'Spell check',
+  [SPELL_CHECK_TITLE]: 'Spell check',
+  [SPELL_CHECK_LANGUAGE]: 'Checked against {language}',
+  [SPELL_CHECK_LANGUAGE_EN]: 'English',
+  // SAID OUT LOUD. A dialog that opened empty is indistinguishable from one
+  // whose check never ran, and *found nothing* is the answer a reader was
+  // hoping for — which is exactly when it needs stating rather than implying.
+  [SPELL_CHECK_CLEAN]: 'No misspellings found.',
+  [SPELL_CHECK_UNAVAILABLE]:
+    'The spelling dictionary could not be loaded, so nothing was checked.',
+  [SPELL_CHECK_PARTIAL]: 'Checked {counted} of {total} pages — this list is incomplete.',
+  [SPELL_CHECK_OCCURRENCES]: '{count, plural, one {# time} other {# times}}',
+  [SPELL_CHECK_FIRST_PAGE]: 'first on page {page}',
+  [SPELL_CHECK_SUGGESTIONS]: 'Suggestions',
+  [SPELL_CHECK_NO_SUGGESTIONS]: 'No suggestions',
+  [SPELL_CHECK_ADD]: 'Add {word} to dictionary',
+  [SPELL_CHECK_ADDED]: 'Added to your dictionary',
+  [SPELL_CHECK_SAVE]:
+    '{count, plural, one {Save one word to your dictionary} other {Save # words to your dictionary}}',
+  [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [RULER_UNIT_TITLE]: 'Ruler unit',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',

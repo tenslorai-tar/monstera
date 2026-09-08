@@ -13,6 +13,7 @@ import {
   EDITING_IMAGE_PAGES_TITLE,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
+  EDITING_PERSONAL_DICTIONARY_TITLE,
   MEASURE_SCALE_TITLE,
   MEASURE_UNIT_TITLE,
 } from '../messages/en.js';
@@ -165,6 +166,67 @@ export const IMAGE_PAGES_SETTING: SettingDefinition<z.ZodEnum<{ this: 'this'; al
   title: EDITING_IMAGE_PAGES_TITLE,
   schema: z.enum(['this', 'all']),
   fallback: 'this',
+  category: 'editing',
+};
+
+/**
+ * How many words a personal dictionary may hold.
+ *
+ * A bound because the values in this store are written to a file and read back
+ * on every launch, and a list a person adds to has no natural ceiling. Ten
+ * thousand is far past a working vocabulary of names, jargon and product terms
+ * — the whole of `dictionary-en` is 49,568 words — and far short of a settings
+ * file that costs anything to parse.
+ */
+export const MAX_PERSONAL_WORDS = 10_000;
+
+/**
+ * The words a reader has told this build are spelt correctly.
+ *
+ * ## This is the *dictionary management* the founding record asks for
+ *
+ * `BUILD-PROMPT.md`:464 names the row *"spell check (nspell + **dictionary
+ * management**)"*. One language ships (`SPELLING_LANGUAGES`), so there is
+ * nothing to choose **between** and a language selector would be a control that
+ * renders and does nothing. What a person actually manages, on any number of
+ * languages, is the list of words their own documents use that no dictionary
+ * has — names, products, jargon — and that is this.
+ *
+ * ## A SETTING and not per-document state, which is `viewing.ts`' test
+ *
+ * A colleague's surname is spelt the same way in every document, so the list
+ * follows the person rather than the file. It survives a restart for the same
+ * reason: a personal dictionary that forgot itself every launch is one nobody
+ * would add a second word to.
+ *
+ * ## Not `secret`, and that is a decision rather than the default
+ *
+ * §7 excludes `secret` settings from export. This is a vocabulary, and a person
+ * moving to a new machine wants it to come with them — but it is also drawn
+ * from the documents they work on, so it is the one non-secret setting that
+ * could carry a surname or a project name into a shared file. Stated here so
+ * the next reader of §7's rule knows the question was asked and answered on
+ * *the user expects their dictionary to move with them*.
+ *
+ * ## The first non-primitive setting in this build
+ *
+ * `useSetting` returned `schema.safeParse(…).data` straight to
+ * `useSyncExternalStore`, and zod builds a **new array every call** — so a
+ * component reading this through that hook would have re-rendered for ever. The
+ * hook now holds its snapshot; nothing reads this one through it, which is
+ * exactly why the trap was worth closing rather than noting.
+ */
+export const PERSONAL_DICTIONARY_SETTING: SettingDefinition<
+  z.ZodArray<z.ZodString>
+> = {
+  id: 'editing.personal-dictionary',
+  title: EDITING_PERSONAL_DICTIONARY_TITLE,
+  // TRIMMED AND NON-EMPTY at the door. A blank entry is a word that matches
+  // nothing and shows as a gap in any list of them, and the store validates
+  // before storing — so this is the one place it can be refused rather than
+  // coped with by every reader (`SettingsStore.set`).
+  schema: z.array(z.string().trim().min(1).max(128)).max(MAX_PERSONAL_WORDS),
+  fallback: [],
   category: 'editing',
 };
 

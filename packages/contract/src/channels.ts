@@ -164,6 +164,71 @@ export const MAX_TEXT_LAYER_LINES = 2048;
 export const MAX_TEXT_LAYER_LINE = 1024;
 
 /**
+ * The spelling dictionaries this build ships, and the ONE place they are named.
+ *
+ * ## One language, and that is the founding record read whole
+ *
+ * `BUILD-PROMPT.md`:464 asks for *"spell check (nspell + **dictionary
+ * management**)"*. It is silent on **which** dictionaries ship and it is not
+ * silent on whether they are managed — so a fixed baked-in set with no
+ * management path would contradict the row's own name, and a Store package
+ * would carry every language's bytes for every user who never opens a second
+ * one. Each language is its own npm package with its own licence notice;
+ * `dictionary-en` alone is 551,762 bytes (measured 2026-09-08,
+ * `node_modules/dictionary-en/index.dic`, 49,568 words).
+ *
+ * So: one language now, and the shape that admits the next one.
+ *
+ * ## Adding a language is an entry here and two compile errors
+ *
+ * The list is the writer of record (B3). Everything that must know about a
+ * language is a record keyed by {@link SpellingLanguage} — main's package map
+ * and the renderer's display titles — so adding an entry here turns both red
+ * until they are filled in. That is B5 rather than a checklist: you cannot add
+ * a language and forget a site.
+ *
+ * **What is NOT decided is how a language ARRIVES**, and it stays the owner's:
+ * bundled as a dependency, as `en` is, or downloaded on demand — which is a
+ * network path in an application whose engine hosts have none, and a
+ * provisioning decision like gitleaks' and PDFium's. This channel's shape
+ * admits either, because main answers with **bytes** and never says where it
+ * got them. That is the reason it is a channel at all rather than a build-time
+ * asset baked into the renderer's bundle: a bundled asset cannot express a
+ * dictionary that was downloaded, so it would foreclose the decision.
+ */
+export const SPELLING_LANGUAGES = ['en'] as const;
+
+/** One of {@link SPELLING_LANGUAGES}. */
+export type SpellingLanguage = (typeof SPELLING_LANGUAGES)[number];
+
+/** {@link SPELLING_LANGUAGES} as a schema, derived rather than respelt. */
+export const spellingLanguageSchema = z.enum(SPELLING_LANGUAGES);
+
+/**
+ * How large an affix file may be.
+ *
+ * Measured 2026-09-08: `dictionary-en`'s is **3,086 bytes**. An affix file is a
+ * grammar rather than a word list, so it does not scale with vocabulary — no
+ * language's is going to be near this.
+ */
+export const MAX_AFFIX_BYTES = 256 * 1024;
+
+/**
+ * How large a dictionary's word list may be.
+ *
+ * Measured 2026-09-08: `dictionary-en`'s is **551,762 bytes** for 49,568 words.
+ *
+ * **This bound is L11 and not tuning**, and the distinction matters because
+ * only one language has ever been measured here. Its job is to refuse a payload
+ * that grows without limit, not to be the smallest number that fits English —
+ * a morphologically richer language's list is legitimately several times this
+ * and nothing in this repository can say how much. **The trigger:** the first
+ * dictionary that exceeds it is a measurement of that dictionary, never a
+ * larger round number chosen to make a red check green.
+ */
+export const MAX_DICTIONARY_BYTES = 4 * 1024 * 1024;
+
+/**
  * How many links one page may report to the renderer.
  *
  * A COUNT, because each link is a declared shape whose own fields are bounded —
@@ -2154,6 +2219,67 @@ export const channels = {
     'Replaces the stored settings with the values the renderer currently holds.',
     z.object({ values: z.record(z.string(), z.unknown()) }),
     z.object({ stored: z.literal(true) }),
+  ),
+
+  /**
+   * One spelling dictionary's bytes, for the renderer to build a checker from.
+   *
+   * ## The CHECKING needs no channel; the DICTIONARY does
+   *
+   * `docs/FEATURES.md`' spell-check row recorded that this feature *"needs no
+   * new channel at all"*, on the ground that checking is pure JavaScript at
+   * 0.76 ms per page and the renderer already holds the text through
+   * `usePageText`. **That half is right and it is not the whole feature.** A
+   * checker needs a dictionary, and `dictionary-en` reads its two files with
+   * `node:fs/promises` at module top level — so the renderer, which may never
+   * import Node, cannot load it. Found by building it, which is what the row's
+   * claim was owed.
+   *
+   * ## Why bytes rather than a built checker
+   *
+   * Constructing the checker costs **401 ms and +23.95 MB RSS** (measured
+   * 2026-09-08, JOURNAL that date) against **0.76 ms** to check a 600-word
+   * page. The cost is entirely in construction, so the object is built once and
+   * held while it is wanted — and it is held **where the checking happens**,
+   * which is the renderer. Building it in main would put 24 MB against §9.17's
+   * tightest budget and add a round trip to every page.
+   *
+   * ## And main never says where it got them
+   *
+   * The answer is bytes and a language id. Whether main read them out of a
+   * bundled dependency or a file it downloaded is invisible here, which is what
+   * keeps {@link SPELLING_LANGUAGES}' open half open.
+   *
+   * ## `unknown-dictionary` is a refusal and not a failure
+   *
+   * A language this build does not ship is a decided outcome, the same shape as
+   * `log.reveal`'s `revealed: false`. The schema already narrows the request to
+   * a declared id, so this fires only where the id is declared and the files are
+   * not — a dependency that failed to install, which a person can act on.
+   */
+  'spelling.dictionary': channel(
+    'One spelling dictionary’s affix and word-list bytes, by language.',
+    z.object({ language: spellingLanguageSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('dictionary'),
+        language: spellingLanguageSchema,
+        /**
+         * `instanceof` with a bound rather than a base64 string, for
+         * `insertImagePage`'s reason: a string would cost a third more memory
+         * to express the same bytes, and nothing on this path needs encoding.
+         */
+        affix: z.custom<Uint8Array>(
+          (value) => value instanceof Uint8Array && value.byteLength <= MAX_AFFIX_BYTES,
+          { message: 'not an affix file, or larger than the bound' },
+        ),
+        words: z.custom<Uint8Array>(
+          (value) => value instanceof Uint8Array && value.byteLength <= MAX_DICTIONARY_BYTES,
+          { message: 'not a word list, or larger than the bound' },
+        ),
+      }),
+      z.object({ kind: z.literal('unknown-dictionary') }),
+    ]),
   ),
 
   /**

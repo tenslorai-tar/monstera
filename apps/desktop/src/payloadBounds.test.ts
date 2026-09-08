@@ -143,6 +143,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     recent: createRecentFiles(createEphemeralSettings()),
     settings: createEphemeralSettings(),
     revealLog: () => Promise.resolve(false),
+    readDictionary: () => Promise.resolve(null),
   });
 }
 
@@ -170,6 +171,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',
   'log.reveal': 'answers a boolean',
+  // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its
+  // size is the language's, fixed at build time, bounded by MAX_AFFIX_BYTES and
+  // MAX_DICTIONARY_BYTES at both the read and the schema — which is L11's
+  // requirement met, not skipped. What this file measures is growth with a
+  // DOCUMENT, and there is none: the same bytes cross for a two-page file and a
+  // twenty-thousand-page one, once per language per session.
+  'spelling.dictionary': "carries a language's dictionary, which no document contributes to",
   'document.open': 'drives a picker; its answer is measured through the service below',
   'document.openRecent': "same answer as document.open, by a handle rather than a picker",
   'document.recent': 'answers a bounded list of files the user opened, not about a document',

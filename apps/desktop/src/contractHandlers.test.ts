@@ -73,6 +73,15 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
       revealed.push(true);
       return Promise.resolve(true);
     },
+    // TWO WORDS AND AN AFFIX LINE, so the handler's answer can be asserted as
+    // the dictionary it was handed rather than as *something came back*. The
+    // absent case has its own harness below, because `null` here would make
+    // every case in this file exercise the refusal.
+    readDictionary: (language) =>
+      Promise.resolve({
+        affix: new TextEncoder().encode(`SET UTF-8\n${language}\n`),
+        words: new TextEncoder().encode('1\ndocument\n'),
+      }),
   });
   return { capabilities, handlers, opened, recent, revealed, sessioned, settings };
 }
@@ -283,6 +292,7 @@ describe('document.open', () => {
           recent: createRecentFiles(createEphemeralSettings()),
           settings: createEphemeralSettings(),
           revealLog: () => Promise.resolve(false),
+      readDictionary: () => Promise.resolve(null),
         }),
       };
     }
@@ -459,6 +469,7 @@ describe('the recent list', () => {
       recent,
       settings: createEphemeralSettings(),
       revealLog: () => Promise.resolve(false),
+      readDictionary: () => Promise.resolve(null),
     });
 
     await handlers['document.openRecent']({ handle });
@@ -502,6 +513,7 @@ describe('log.reveal', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       settings: createEphemeralSettings(),
       revealLog: () => Promise.resolve(false),
+      readDictionary: () => Promise.resolve(null),
     });
 
     await expect(handlers['log.reveal']({})).resolves.toEqual({

@@ -220,6 +220,15 @@ const handlers: ContractHandlers = {
   // one.
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'spelling.dictionary': () =>
+    Promise.resolve(
+      ok({
+        kind: 'dictionary' as const,
+        language: 'en' as const,
+        affix: new Uint8Array(),
+        words: new Uint8Array(),
+      }),
+    ),
 };
 
 describe('the shipping contract, exercised through its own map', () => {

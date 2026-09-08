@@ -810,6 +810,15 @@ export const handlers: ContractHandlers = {
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'spelling.dictionary': () =>
+    Promise.resolve(
+      ok({
+        kind: 'dictionary' as const,
+        language: 'en' as const,
+        affix: new Uint8Array(),
+        words: new Uint8Array(),
+      }),
+    ),
 };
 `,
   },
@@ -884,6 +893,15 @@ export const handlers: ContractHandlers = {
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'spelling.dictionary': () =>
+    Promise.resolve(
+      ok({
+        kind: 'dictionary' as const,
+        language: 'en' as const,
+        affix: new Uint8Array(),
+        words: new Uint8Array(),
+      }),
+    ),
 };
 `,
   },
@@ -1033,6 +1051,15 @@ export const shim: ContractClient = {
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'spelling.dictionary': () =>
+    Promise.resolve(
+      ok({
+        kind: 'dictionary' as const,
+        language: 'en' as const,
+        affix: new Uint8Array(),
+        words: new Uint8Array(),
+      }),
+    ),
 };
 `,
   },

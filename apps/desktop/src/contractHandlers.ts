@@ -1,4 +1,4 @@
-import type { ChannelResult, ContractHandlers } from '@monstera/contract';
+import type { ChannelResult, ContractHandlers, SpellingLanguage } from '@monstera/contract';
 import {
   type CapabilityRegistry,
   DocumentBusyError,
@@ -18,6 +18,7 @@ import {
 } from './documentCommands.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SettingsSurface } from './settingsFile.js';
+import type { DictionaryBytes } from './spellingDictionaries.js';
 
 /**
  * Where a document comes from, as a value this module can be handed.
@@ -131,6 +132,15 @@ export function createContractHandlers(deps: {
    * path even by accident (B5 over a rule at the call site).
    */
   readonly revealLog: () => Promise<boolean>;
+  /**
+   * Reads a spelling dictionary's two files. `readSpellingDictionary`.
+   *
+   * Injected for the file's own reason: it resolves a package out of
+   * `node_modules`, so a case that wanted to exercise the handler would
+   * otherwise need the dependency installed and the real bytes on disk to say
+   * anything about the shape of the answer.
+   */
+  readonly readDictionary: (language: SpellingLanguage) => Promise<DictionaryBytes | null>;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
@@ -177,6 +187,20 @@ export function createContractHandlers(deps: {
       // has a complete document on disk — which is the whole difference between
       // proving persistence and asserting a write.
       return Promise.resolve(ok({ stored: true } as const));
+    },
+    'spelling.dictionary': async ({ language }) => {
+      const read = await deps.readDictionary(language);
+      // A DECLARED LANGUAGE WITH NO PACKAGE is a refusal, not a failure: the
+      // request schema already narrowed `language` to one this build declares,
+      // so reaching here means the dependency is missing rather than that a
+      // caller asked for something impossible.
+      if (read === null) return ok({ kind: 'unknown-dictionary' } as const);
+      return ok({
+        kind: 'dictionary',
+        language,
+        affix: read.affix,
+        words: read.words,
+      } as const);
     },
     'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
   };

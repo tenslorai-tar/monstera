@@ -42,7 +42,7 @@ export {
 // `document.pageWordCount` and may not import the kernel, so a counting rule in
 // the kernel would be re-stated in the shim and the two would agree until one
 // of them changed — which is exactly what happened to the matching rule above.
-export { type WordCount, countWords } from './wordCount.js';
+export { type WordCount, countWords, wordsOf } from './wordCount.js';
 // The five coordinate spaces and the ONE thing permitted to convert between
 // them (invariant L3). The point constructors are exported and `Brand`'s
 // `brandValue` is not, deliberately: a caller may build a point in a space, and

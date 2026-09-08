@@ -105,6 +105,7 @@ import type { RecentFiles } from './recentFiles.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
+import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies } from './main.js';
 
 /**
@@ -620,6 +621,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // test in this repository — genuinely has no directory to reveal, and
       // saying so is the honest answer rather than a silent success.
       revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
+      readDictionary: readSpellingDictionary,
     }),
     incidents: log?.incidents ?? reportIncident,
     failures,
