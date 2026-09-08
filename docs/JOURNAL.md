@@ -887,6 +887,181 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — *Higher fidelity* is not a measured property, and the HD toggle is not the host's first caller
+
+The queue says to build the PDFium host **with its first consumer, which is the
+HD render toggle** — Stage 3's platform treated the same way, and the reasoning
+is right: a seam with no tool driving it is the unproven-seam shape. Following
+the ruling meant verifying the fact underneath it first, which is that the
+toggle is a consumer at all. `docs/ARCHITECTURE.md`:797 calls PDFium *"an
+optional higher-fidelity rasteriser behind a setting"*, and that sentence is the
+whole of the toggle's premise.
+
+It is not established, and after a day of measurement it is still not
+established — but not in the direction I expected, and not for the reason the
+first instrument gave.
+
+### 1. What was measured
+
+`scripts/research/pdfiumRender.mjs`. The same 40-line, 9-point Times page
+through both engines, greyscale, at 1× to 4×. Three readings.
+
+**Each engine against its own supersampled reference** — its 1× render against
+its own 4× render box-filtered down to 1×. That is what anti-aliasing is
+approximating, so the deviation is per-engine, needs no shared reference, and
+cannot favour either. *Which of two images is better* has no answer a script can
+give; *how far is each from the thing it is approximating* does.
+
+| engine | mean absolute difference, levels 0–255 |
+|---|---|
+| MuPDF | **0.442** |
+| PDFium | **2.309** |
+
+Read alone that says PDFium is the worse rasteriser by a factor of five, which
+would have ended the row. It does not say that, and §2 is why.
+
+### 2. The score is reading a legibility policy, not accuracy
+
+A low score is *agreement with itself across scale*. An engine that deliberately
+fattens stems at low resolution — hinting, stem darkening — is scale-inconsistent
+on purpose, scores badly here, and looks **better** on a screen. That reading is
+separable from a quality difference, because darkening leaves ink where a
+quality difference leaves noise: count the inked fraction at both scales.
+
+| engine | 1× | its own 4× | direction |
+|---|---|---|---|
+| MuPDF | 9.08% | 9.44% | **lighter** by 0.36 points |
+| PDFium | 10.74% | 9.56% | **darker** by 1.18 points |
+
+So PDFium darkens at low resolution and MuPDF drops thin stems there. Both are
+the textbook behaviours — hinted and unhinted — and PDFium's is the one a reader
+of body text would call the better of the two. The 2.309 is that choice being
+measured, not a defect.
+
+**Which leaves the instrument unable to rank them, and that is the finding
+rather than a limitation of it.** There is no engine-neutral score that says
+which of *thinner and truer to the outline* and *fatter and easier to read* is
+higher fidelity. It is a preference, and a preference is what a toggle is for —
+but *higher fidelity* is a claim, and this is now measured evidence that it is
+not a property either engine has.
+
+### 3. The scale sweep, and a denominator that inverted its own conclusion
+
+An HD render toggle raises the device pixel ratio, so the reading that decides
+it is not how the engines differ at 1× — it is whether they still differ where
+the toggle operates. The first sweep said they converge:
+
+| scale | mean over the whole page |
+|---|---|
+| 1× | 2.981 |
+| 2× | 2.658 |
+| 3× | 2.083 |
+| 4× | 1.978 |
+
+That number is arithmetic, and it took asking what else changes across those
+rows to see it. **Ink lives on glyph outlines, whose pixel count grows with the
+perimeter — linearly in scale — while the denominator is the page area, which
+grows quadratically.** So a whole-page mean falls with scale for two engines
+whose disagreement per edge pixel never changes at all. The convergence was the
+denominator, and I nearly quoted it as an optical result.
+
+Restricted to pixels either render inked, so the denominator tracks what the
+numerator does:
+
+| scale | whole page | **per inked pixel** | inked pixels |
+|---|---|---|---|
+| 1× | 2.981 | **26.421** | 54,240 |
+| 2× | 2.658 | **34.635** | 147,520 |
+| 3× | 2.083 | **33.182** | 272,240 |
+| 4× | 1.978 | **35.754** | 426,520 |
+
+They do not converge. They diverge slightly and then flatten, at **26 to 36
+levels of disagreement on every pixel that carries ink**, at every resolution.
+Both columns are printed and the comment says to read the inked one across rows,
+because the whole-page figure is what a reader of a screen experiences — the
+confound is in the comparison between rows, not in either row.
+
+This is *a column that never varies* with the sign flipped: a column that varies
+for a reason that has nothing to do with the subject. The tell was the same one
+AAAA-8 names — **what else is different about the odd point** — asked of a row
+rather than a point.
+
+### 4. So the engines genuinely differ, and the toggle still has no measured premise
+
+Both halves matter and they point opposite ways.
+
+A toggle between these two would **not** be a no-op. Thirty levels per inked
+pixel is a visibly different page, at every zoom. Whatever else is true, this is
+not the display-only shape.
+
+And *higher fidelity* remains unmeasured, because §2 shows the difference is a
+policy. Building the most expensive thing in Stage 5 — ADR-0022's process shape,
+an AppContainer SID, a DACL, a second host body, a second adapter — on the
+strength of a sentence the measurement cannot support is the shape this project
+exists to avoid.
+
+### 5. And the instrument answered the wrong pair, which is the more useful half
+
+Recorded rather than corrected away. The file compared **PDFium against MuPDF**
+and I read the result as an answer about the toggle. It is not one.
+`docs/ARCHITECTURE.md` §3 places the toggle where **PDF.js** draws every page a
+reader sees, so the toggle's own pair is PDFium against PDF.js, and MuPDF
+appears in it nowhere.
+
+What the pair it did measure answers is the question that decides the **cost**,
+and that turns out to be the sharper one. **MuPDF is already here** — provisioned,
+contained, behind a host, and already the kernel's rasteriser. If the product
+wants a second opinion about how a page looks, there are two candidates and only
+one of them costs a host. §3's table says MuPDF's would be a visibly different
+render, so the free candidate is a real one.
+
+PDF.js's own raster is not measured here and that is stated rather than left
+implicit: it comes from Chromium's canvas inside a renderer process, which this
+project already drives through `scripts/lib/canvasReadback.mjs` — which returns
+**counts, not a buffer**. Carrying pixels out of it is proof infrastructure, and
+it is owed before the toggle ships rather than before the host is built.
+
+### 6. What this changes
+
+**The order, not the engine.** PDFium is still Stage 5's substrate and
+`docs/FEATURES.md`:144's own trigger already says so in the words that matter:
+*"PDFium's first non-optional consumer, which is this table's editing rows."* The
+queue named the HD render toggle as the host's first caller; the row named the
+editing rows; and the measurement says the row is right, because the toggle's
+premise is a preference and the editing rows' premise is that PDFium is the
+writer of record for in-place text editing, which §3's matrix at `:410` already
+settles.
+
+So the host is built with in-place text editing driving it, and the toggle
+follows the host rather than leading it. That keeps the queue's actual argument
+intact — a seam with no tool driving it is unproven — and changes only which
+tool.
+
+**The row body is corrected** rather than annotated, because a `docs/FEATURES.md`
+row is a live specification of what is owed and the stale half sits in the
+position a reader takes as the contract.
+
+**What is owed before the toggle ships**, written into the row so it expires on
+an event rather than on someone remembering: the PDFium-against-PDF.js
+measurement, which needs the canvas harness to carry pixels.
+
+### 7. The instrument's own controls
+
+Its metric is resolution-tested before it measures anything real, which is audit
+item 4a and the reason §3's confound was catchable at all: two synthetic renders
+differing by **one level in one pixel** of ten thousand must report exactly
+1.000e-4, and do. The other direction is asserted too — two identical renders
+must report exactly 0 — because a function returning the pixel count's reciprocal
+for any input passes the first case perfectly.
+
+Then the fixture is required to carry ink before any score is printed, since a
+blank page scores 0.00 for every engine and 0.00 is the reassuring answer; and
+each engine's native render is required to differ from its own downsampled
+reference at all, since agreement there would mean the script is comparing
+something with itself.
+
+---
+
 ## 2026-09-08 — PDFium is provisioned, and the flavour is a security decision
 
 Stage 5's substrate, and the first question was not *how does it render*.
