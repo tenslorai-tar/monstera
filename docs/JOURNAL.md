@@ -887,6 +887,136 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — A name is not a substring, and an untouched PDFium save moved nothing
+
+The HD render toggle turned out not to be the host's first caller, so the
+editing rows are — and their premise gets the same treatment before an
+AppContainer SID is written for it. `scripts/research/pdfiumTextEdit.mjs` asks
+four questions in the order where a *no* stops the next one.
+
+### 1. The instrument was wrong before it measured anything, and the way it was
+wrong is the most transferable thing here
+
+§1 asked *does this build export `FPDFTextObj_SetText`* by searching the DLL's
+bytes for that name. It printed **present**. One line later `koffi.load` refused:
+
+```
+Error: Cannot find function 'FPDFTextObj_SetText' in shared library
+```
+
+Both readings were correct. The bytes are in the file — as the **prefix of
+`FPDFTextObj_SetTextRenderMode`**, which this build does export — and the export
+directory, the only list a dynamic loader consults, has no entry under that name.
+`String.prototype.includes` has no way to know that a symbol name is a whole
+token; it was handed a haystack and a needle and did exactly what it says.
+
+This is `CLAUDE.md`'s search discipline arriving on the axis it names last and
+demonstrates least: **the unit**. The scan could see. Its positive control
+passed — `FPDF_LoadMemDocument` and `FPDF_RenderPageBitmap` were both found. Its
+root was right, its window was the entire file, its pattern was the exact string
+wanted. It was matching against the wrong **structure**, and every one of the
+five documented axes was green.
+
+*A line is not a unit of meaning* is the version already written down, for prose
+that wraps. This is the same sentence about a binary: **a name is not a
+substring**, and a file's export table is the unit it actually has. The remedy is
+the one that section already gives — build the unit and match against it — so
+`scripts/lib/peExports.mjs` parses the PE export directory and owns the question
+(B3a). Every future caller asking *what does this DLL export* takes it from
+there. `pdfiumBinary.mjs` keeps its byte scan and is not a second opinion: it
+asks whether V8 is **linked**, which is a question about code that need not be
+exported at all, and a byte scan is the right reader for that one.
+
+`peExports` throws rather than answering an empty set for anything it cannot
+parse, and `exportedSymbols` **requires** a known-present name from its caller
+rather than defaulting one. A parse that read the wrong region answers *absent*
+for every symbol asked about, and *absent* is the finding each caller is
+looking for.
+
+**The wrong answer is kept in the output rather than deleted.** §1 now prints
+both readers side by side for every symbol, with `FPDFTextObj_SetText` in the
+list purely as the row where they disagree. A note in a comment saying *don't use
+a byte search here* is a paragraph the next author has to read and accept; a
+column headed `NOT EXPORTED` beside one headed `found` is a reading.
+
+The call that does exist is **`FPDFText_SetText`**, and the surface is otherwise
+complete: `FPDFPage_CountObjects`, `FPDFPage_GetObject`, `FPDFPageObj_GetType`,
+`FPDFTextObj_GetText`, `FPDFPage_GenerateContent`, `FPDF_SaveAsCopy`,
+`FPDFText_LoadPage`, `FPDFText_GetText` — all exported, out of 467 names.
+
+### 2. It can see the runs
+
+Three text objects on a three-line page, all type 1, and the text reads back
+through `FPDFText_LoadPage` as what was written. Read through PDFium rather than
+through the library that produced the file, so the two are not the same opinion.
+
+### 3. An untouched save moved nothing, and that is `BUILD-PROMPT.md`:706's question
+
+The founding record owes *fidelity proofs, pixel-diff untouched runs* — the guard
+that in-place editing does not silently redraw text it never touched, **which is
+where a failure otherwise looks exactly like a working feature**. The cheapest
+form of it is asked here, before any editing exists to blame: open, save with no
+edit at all, reopen, render both, compare.
+
+| | |
+|---|---|
+| original | 1,179 bytes |
+| after `FPDF_SaveAsCopy` | 1,673 bytes |
+| pixels differing | **0 of 480,000** |
+| worst difference | 0 levels |
+| text after the save | unchanged |
+
+The file grew 42%, so it *is* the full rewrite `docs/ENGINE-SPIKE.md`:157 warns
+about — and on this fixture it cost nothing. The fixture is deliberately the
+shape that warning names: standard-14 Helvetica, **not embedded**, which is
+exactly the reference a full rewrite is supposed to lose.
+
+**Zero is the reassuring answer, so it is calibrated in the same run.** §4's
+edited save reports 2,523 differing pixels through the same comparator on the
+same page. A comparator that returned zero for everything would give §3 its
+result perfectly, and §4 throws if it ever does. The comparator is also
+resolution-tested before either: one pixel changed by one level must be reported
+as exactly one pixel with a worst of one, and two identical renders as exactly
+zero.
+
+### 4. The edit survives, and nothing else moved
+
+`FPDFText_SetText` accepted, `FPDFPage_GenerateContent` ok, and the replacement
+reads back from a **reopened** document — a setter agreeing with itself says
+nothing about what was stored.
+
+And the half that matters more, because *the edit worked* and *the edit worked
+and rewrote the rest of the page* are the same observation over a whole page:
+
+| region | pixels differing | worst |
+|---|---|---|
+| device rows 194–230, the edited run | 2,523 | 255 |
+| above it — the first run | **0** | 0 |
+| below it — the third run | **0** | 0 |
+
+Every changed pixel is inside the edited run's band. The band is computed from
+the run's baseline and size rather than found by looking, so it cannot be fitted
+to the answer.
+
+### 5. What this does and does not establish
+
+It establishes that PDFium's editing surface exists in the pinned non-V8 build,
+that it can enumerate and rewrite a run, that the rewrite survives a round trip,
+and that neither the save nor the edit disturbed anything it was not asked to.
+Those are the four premises the in-place editing rows rest on, and they are the
+premises the second contained host would be built for.
+
+**It does not establish that `FPDF_SaveAsCopy` is fidelity-preserving.** One
+synthetic 1.2 KB page with three standard-font text objects, no images, no
+annotations, no forms, no embedded font, one producer. That is a harness proving
+it can catch a gross failure, not a corpus. The corpus is supplied and lives
+outside the repository, and **it is not readable from this session** — no
+environment variable naming it is set here. An absent corpus is unverifiable and
+never a pass, so the §3 reading stands as *one fixture, zero difference* and the
+corpus reading is owed. The harness for it is the next commit.
+
+---
+
 ## 2026-09-08 — *Higher fidelity* is not a measured property, and the HD toggle is not the host's first caller
 
 The queue says to build the PDFium host **with its first consumer, which is the
