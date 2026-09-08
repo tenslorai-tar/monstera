@@ -388,3 +388,72 @@ No JavaScript interpreter is linked into either. **That the answer did not chang
 is why this is recorded rather than quietly fixed:** the mechanism would have
 read exactly as it did if the answer had been the opposite, which makes its
 previous green a check that verified nothing.
+
+---
+
+## Correction, 2026-09-08 (later the same day) — the open question is answered: NATIVE, both engines, koffi
+
+**The correction above ends with *"nothing may be built on either reading until
+it is taken"*. It has been taken.** The owner ruled on 2026-09-08: MuPDF and
+PDFium are both reached **natively**, through koffi, and the kernel's adapters
+move onto `mupdfRaw.ts`. That sentence is now satisfied rather than outstanding,
+and this note is what a later reader needs in order not to re-open it.
+
+Appended and not folded in. What was believed on the morning of 2026-09-08 — a
+decision recorded, unbuilt, and owed to the owner — is the record, and editing
+the paragraph above would destroy the evidence that it was ever in doubt.
+
+### Which option was taken, and which was rejected
+
+Two were weighed and both were live:
+
+- **the kernel's adapters move onto the shim** — the option taken;
+- **this ADR is amended to the WASM reach the product has**, with the 2 GB cap
+  and the whole-file copy re-entered as live constraints — **rejected**.
+
+### The ruling was taken against the documentation, not by preference
+
+The founding record never re-opened this, and that is the reason given rather
+than a taste for native code:
+
+- `BUILD-PROMPT.md`:115-117 names `mupdfRaw.ts` **and** `pdfiumFfi.ts` as the
+  two native-boundary adapter modules that alone may carry a file-level lint
+  disable — a rule that presumes two native boundaries exist;
+- :203 draws `pdfiumHost` as *"PDFium via koffi FFI"* in the architecture
+  diagram;
+- :399 provisions `pdfium.dll` among the native binaries;
+- :257 assigns in-place text editing, styled runs and HD render to **PDFium** in
+  both columns.
+
+**And the reason the owner decides in is a measurement this ADR already
+carries**: a 464 MB, 2M-object file opens in **144 MB** and saves incrementally
+in **4.5 s** natively. The WASM route's own figure for the same document is
+[ADR-0007](0007-memory-budgets-and-the-document-size-ceiling.md)'s **withdrawn**
+ceiling — withdrawn precisely because it was a WASM ceiling read as a property
+of documents — so the comparison here is the native reading against the *shape*
+of the other: WASM eagerly materialises objects because it cannot page from
+disk, and the same file costs 45 bytes per object natively. Stage 5's editing
+rows are where a document of that shape is met.
+
+### What this settles, and what it deliberately does not
+
+**Settled: the topology question.** The correction above said a second engine
+host's process topology depends on which reading is taken, *"a process
+containing a WASM sandbox and a process containing a native parser are not the
+same containment problem"*. With native taken it is **one** containment problem
+and not two: both hosts contain a native parser reached the same way, so the
+second host is a generalisation of the first rather than a new kind of thing.
+That is what makes it a B4 amendment to an existing seam rather than a new ADR.
+
+**Not settled here: how much moves and in what order.** Nineteen non-test kernel
+modules import the bare specifier `mupdf`. The change reaches the memory budgets
+in `docs/ARCHITECTURE.md` §9.17 — whose figures were read against the WASM route
+— and the four security proofs that scan `monstera_mupdf.dll`, which is the
+binary this correction's parent recorded as one the shipped pipeline never
+opens. Those are part of the change and not follow-up work.
+
+**`proof:activecontent` keeps the property it gained.** It derives its subject
+from the application's own module resolution rather than from a written-down
+path. When the resolution moves to the shim, the scan follows it with no edit —
+which is the whole reason it was built that way, and a path constant added
+during the migration would undo it.
