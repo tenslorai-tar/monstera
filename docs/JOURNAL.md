@@ -887,6 +887,116 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — The corpus harness, where two of its three rules stop being rules
+
+The corpus is supplied by the owner, lives **outside this repository**, and is
+never committed. `MONSTERA_CORPUS` names the directory. Three rules govern it,
+and `scripts/lib/corpus.mjs` owns all three so the next caller does not
+re-derive them (B3a).
+
+### 1. Rule 1 is enforced by never handing the name over
+
+*Nothing from a corpus document is ever quoted — not its text, not a field
+value, not a filename.* Findings are scores and shapes.
+
+The tempting implementation is a rule in a comment and care at each call site.
+This project's record on rules-you-must-recall is eight escape-guard
+occurrences and seven backtick ones, so instead: **`openCorpus` returns
+`{ id, bytes, size }` and the id is the document's position in sorted order.**
+The filename exists on exactly one line of one module and goes no further. An
+instrument cannot print what it was never given.
+
+That is B5 over a comment — the illegal state is *a corpus filename in
+committed output*, and the way to make it unrepresentable is to keep the name
+on this side of the boundary. `size` is given because a byte count is a shape
+rather than content, and an instrument reporting three scores needs to say
+whether the three were comparable.
+
+The proof's load-bearing case asserts the **property**, not the intention: it
+serialises everything `openCorpus` returns and requires that none of the
+fixture's names appear anywhere in it. The fixture names are deliberately
+distinctive — `zulu-alpha`, `mike-bravo`, `kilo-delta` — so a leak cannot hide
+inside an ordinary word. Mutated by putting the name into the id, two cases go
+red and one of them prints the leaked names.
+
+### 2. Rule 3 is enforced by refusing to answer
+
+*An absent corpus is unverifiable, never a pass. The variable says where the
+corpus is; it never says skip the tuning.*
+
+So a missing variable returns an outcome from `unverifiable.mjs`'s existing
+three-state discipline rather than an empty list. An empty list is the shape a
+clean corpus has, and every score computed over zero documents comes out
+perfect. The permissive path exits 0 and says **NOT a pass** in as many words;
+`--require-corpus` makes the same condition red, because a job that supplies the
+corpus and then cannot read it is something broken rather than something absent.
+
+A directory that exists and holds no PDF **throws**. That is the corollary this
+file's search discipline already states — an empty intermediate result is a
+broken parse, not a clean input — and it is the difference between *your corpus
+is fine* and *there is no corpus here*.
+
+### 3. And a fourth thing, which is not one of the rules but follows from B10
+
+**A corpus directory inside the repository is refused, with a throw rather than
+an absence.** Pointing the variable at a path under the working tree is how
+three documents that must never be published end up staged by a `git add -A`,
+and nothing else here would catch it: they are ordinary PDFs with ordinary
+names, they trip no secret scan, and `guardFiles.mjs` has no opinion about them.
+
+An absence would be the wrong answer even though it stops the read, because the
+caller then proceeds believing it has no corpus while the configuration that
+would commit them is still in place.
+
+The **repository root itself** is the case that needed writing down.
+`path.relative(root, root)` is the empty string, so a check for *not empty*
+waves through the single most dangerous value the variable can hold. Both
+halves have their own case, and mutating the condition back to the natural
+spelling reddens both.
+
+### 4. The branch nobody on this machine executes
+
+`openCorpus`' present branch never runs here and never runs on any CI runner —
+no variable names a corpus in either place. That is `CLAUDE.md`'s audit item 3
+pointing the other way: *any branch keyed on the presence of something has a
+side that never executes wherever that thing is always present*, and the side
+nobody runs is a specification nobody has read. The rules on that side are
+precisely the ones keeping supplied documents out of a public repository.
+
+So `scripts/proofs/corpus.proof.mjs` **supplies a corpus** — three synthetic
+PDFs in a temporary directory outside the working tree — and both sides run
+everywhere. Thirteen cases, registered in `package.json` and in `ci.yml`.
+
+### 5. Its first consumer, and what that run does and does not say
+
+`pdfiumTextEdit.mjs` §5 asks §3's untouched-save question over the corpus,
+because §3's own fixture is 1.2 KB from one producer with three standard-font
+text objects and nothing else — and embedded subsets, images, transparency and
+appearance streams are exactly what a full rewrite loses.
+
+On this machine §5 prints the unverifiable outcome, which is the correct
+reading and not a result.
+
+**The present branch was then exercised against a throwaway corpus generated
+into the scratchpad — three documents this session made, outside the tree — and
+that is recorded here as proving the code path rather than as a corpus
+reading.** It is not the supplied corpus and no figure from it is a finding
+about PDFium. What it established is that the section runs end to end: three
+documents read, each opened, rendered, saved, reopened and re-rendered.
+
+That run also found a missing control, which is the reason it was worth doing.
+§5's columns showed three zero differences — and **a page PDFium failed to draw
+renders white, and white differs from white by nothing**. A blank render and a
+perfectly preserved one produce the same 0. There is now an ink column beside
+the difference, and the section throws if *every* document rendered blank: one
+blank first page is a document's business, all of them blank is the script
+measuring nothing. On the throwaway documents the ink read 3.91%, 56.25% and
+0.23%, so those zeros were real.
+
+The corpus reading itself remains owed.
+
+---
+
 ## 2026-09-08 — A name is not a substring, and an untouched PDFium save moved nothing
 
 The HD render toggle turned out not to be the host's first caller, so the

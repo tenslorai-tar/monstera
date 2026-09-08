@@ -239,6 +239,15 @@ jobs:
       - name: Prove the second-wiring-place scan can see, refuse and tolerate
         run: node scripts/ci/annotate.mjs scripts/proofs/secondWiringPlace.proof.mjs
 
+      # The corpus lives outside the repository and is named by an environment
+      # variable, so on every runner here `openCorpus` takes its absent branch
+      # and the present one never executes. A branch nothing reaches is a
+      # specification nobody has read, and the rules on that branch are the ones
+      # that keep three supplied documents out of a public repository. This
+      # proof supplies a synthetic corpus so both sides run everywhere.
+      - name: Prove the corpus harness refuses, reports absent, and leaks no name
+        run: node scripts/ci/annotate.mjs scripts/proofs/corpus.proof.mjs
+
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 

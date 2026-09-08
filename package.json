@@ -103,6 +103,7 @@
     "proof:bordertokens": "node scripts/proofs/borderTokens.proof.mjs",
     "check:bordertokens": "node scripts/lib/borderTokens.mjs",
     "provision:pdfium": "node scripts/provision/pdfium.mjs",
+    "proof:corpus": "node scripts/proofs/corpus.proof.mjs",
     "proof:definedtokens": "node scripts/proofs/definedTokens.proof.mjs",
     "check:definedtokens": "node scripts/lib/definedTokens.mjs",
     "proof:typeonlyexports": "node scripts/proofs/typeOnlyExports.proof.mjs",

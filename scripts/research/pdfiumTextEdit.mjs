@@ -88,6 +88,7 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import koffi from 'koffi';
 
+import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { exportedSymbols } from '../lib/peExports.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -169,6 +170,9 @@ function bind() {
     closePage: library.func('void FPDF_ClosePage(void *page)'),
     countObjects: library.func('int FPDFPage_CountObjects(void *page)'),
     getObject: library.func('void *FPDFPage_GetObject(void *page, int index)'),
+    pageCount: library.func('int FPDF_GetPageCount(void *document)'),
+    pageWidth: library.func('float FPDF_GetPageWidthF(void *page)'),
+    pageHeight: library.func('float FPDF_GetPageHeightF(void *page)'),
     objectType: library.func('int FPDFPageObj_GetType(void *object)'),
     setText: library.func('int FPDFText_SetText(void *object, const void *text)'),
     generateContent: library.func('int FPDFPage_GenerateContent(void *page)'),
@@ -296,6 +300,44 @@ function resolutionTest() {
   const same = compare(flat, { width: 40, height: 40, grey: Float64Array.from(flat.grey) });
   console.log(`  two identical renders: ${String(same.differing)} differing`);
   if (same.differing !== 0) throw new Error('the comparator reports a difference between equals');
+}
+
+/**
+ * The longest edge any corpus render is allowed, in device pixels.
+ *
+ * A corpus document chooses its own page size and this script renders every one
+ * of them twice. The bound is on the render rather than on the document, so a
+ * large page is measured at a lower scale instead of being skipped — a skipped
+ * document reports nothing, and nothing is the answer §5 is hoping for.
+ */
+const MAX_CORPUS_EDGE = 1600;
+
+/**
+ * A render of an arbitrary page, at the largest scale within {@link MAX_CORPUS_EDGE}.
+ *
+ * @param {ReturnType<typeof bind>} api
+ * @param {unknown} page
+ * @returns {Render}
+ */
+function renderAnyPage(api, page) {
+  const points = { width: api.pageWidth(page), height: api.pageHeight(page) };
+  const scale = Math.min(
+    2,
+    MAX_CORPUS_EDGE / Math.max(points.width, points.height, 1),
+  );
+  const width = Math.max(1, Math.round(points.width * scale));
+  const height = Math.max(1, Math.round(points.height * scale));
+  const bitmap = api.createBitmap(width, height, 1);
+  api.fillRect(bitmap, 0, 0, width, height, 0xffffffff);
+  api.renderPage(bitmap, page, 0, 0, width, height, 0, 0);
+  const stride = api.bitmapStride(bitmap);
+  const pixels = koffi.decode(api.bitmapBuffer(bitmap), 'uint8_t', stride * height);
+  const grey = new Float64Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) grey[y * width + x] = pixels[y * stride + x * 4] ?? 0;
+  }
+  api.destroyBitmap(bitmap);
+  return { width, height, grey };
 }
 
 /**
@@ -485,9 +527,105 @@ async function main() {
     api.closeDocument(editedDocument);
     api.closePage(page);
     api.closeDocument(document);
+    console.log('');
+
+    corpusUntouchedSave(api);
   } finally {
     api.destroy();
   }
+}
+
+/**
+ * §3 again, over documents this build did not write.
+ *
+ * ## Why the synthetic fixture cannot answer this on its own
+ *
+ * §3's page is 1.2 KB from one producer with three standard-font text objects
+ * and nothing else. Its zero is real and it is a fact about the easy shape. The
+ * question `BUILD-PROMPT.md`:706 actually asks is whether a save silently
+ * redraws content, and the content that could be silently redrawn — embedded
+ * subsets, images, transparency groups, annotation appearance streams, shadings
+ * — is exactly what a hand-built fixture does not have.
+ *
+ * Three producers across three PDF versions is enough to catch a gross failure
+ * and not enough to tune anything, which is what {@link corpusCaveat} prints
+ * beside every figure.
+ *
+ * Nothing from a corpus document is quoted here, and that is structural rather
+ * than careful: `openCorpus` hands out an opaque id and bytes, so there is no
+ * filename in scope to print by accident.
+ *
+ * @param {ReturnType<typeof bind>} api
+ */
+function corpusUntouchedSave(api) {
+  console.log('## 5. The same question over the supplied corpus');
+  console.log('   §3 is one synthetic page from one producer. Embedded subsets, images,');
+  console.log('   transparency and appearance streams are what a full rewrite loses, and a');
+  console.log('   hand-built fixture has none of them.');
+
+  const corpus = openCorpus();
+  if (!corpus.available) {
+    // NOT A PASS, and the text says so in the words every other could-not-look
+    // in this repository uses. A silence here is indistinguishable from a clean
+    // corpus, which is the answer this section was hoping for.
+    process.stdout.write(corpus.outcome.text);
+    return;
+  }
+
+  console.log(`   documents: ${String(corpus.documents.length)}`);
+  console.log('   THE INK COLUMN IS WHY THE ZEROS MEAN ANYTHING: a page PDFium failed to draw');
+  console.log('   renders white, and white differs from white by nothing. A blank render and a');
+  console.log('   perfectly preserved one produce the same 0 in the column beside it.');
+  console.log('  id          pages  bytes → saved        differing / total   worst   ink');
+  let anyInk = false;
+  for (const item of corpus.documents) {
+    const document = api.loadDocument(item.bytes, item.size, null);
+    if (document === null) {
+      console.log(`  ${item.id.padEnd(11)} PDFium refused it`);
+      continue;
+    }
+    try {
+      const pages = api.pageCount(document);
+      const page = api.loadPage(document, 0);
+      const before = renderAnyPage(api, page);
+
+      const saved = saveAsCopy(api, document);
+      const reopened = api.loadDocument(saved, saved.length, null);
+      if (reopened === null) {
+        console.log(`  ${item.id.padEnd(11)} PDFium could not reopen what it saved`);
+        api.closePage(page);
+        continue;
+      }
+      const reopenedPage = api.loadPage(reopened, 0);
+      const after = renderAnyPage(api, reopenedPage);
+      const { differing, worst } = compare(before, after);
+      let inked = 0;
+      for (const sample of before.grey) if (sample < 250) inked += 1;
+      const ink = inked / before.grey.length;
+      if (ink >= 0.001) anyInk = true;
+      console.log(
+        `  ${item.id.padEnd(11)} ${String(pages).padStart(5)}  ` +
+          `${String(item.size).padStart(8)} → ${String(saved.length).padEnd(9)} ` +
+          `${String(differing).padStart(9)} / ${String(before.grey.length).padEnd(9)} ` +
+          `${String(worst).padStart(5)}  ${(ink * 100).toFixed(2)}%`,
+      );
+      api.closePage(reopenedPage);
+      api.closeDocument(reopened);
+      api.closePage(page);
+    } finally {
+      api.closeDocument(document);
+    }
+  }
+  // A SINGLE BLANK PAGE IS A DOCUMENT'S BUSINESS; ALL OF THEM BLANK IS THIS
+  // SCRIPT'S. If nothing rendered, every zero above is a comparison between two
+  // white rectangles and the section measured nothing at all.
+  if (!anyInk) {
+    throw new Error(
+      'every corpus document rendered a blank first page, so the zero differences above are ' +
+        'two white rectangles agreeing rather than a save preserving anything',
+    );
+  }
+  console.log(corpusCaveat(corpus.documents.length));
 }
 
 await main();
