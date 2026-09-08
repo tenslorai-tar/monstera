@@ -11,7 +11,8 @@ the fact is not a baseline, it is a rationalisation.
 | 1 — viewer core | 10 working days | **2 days worked** (2026-09-02 → 2026-09-03), 52 commits | **0.20× — continue** |
 | 2 — page management | **2 working days** (owner, 2026-09-03) | **3 days worked** (2026-09-03 → 2026-09-05), 50 commits | **1.50× — continue** |
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
-| 4 — forms | **2 working days** (owner, 2026-09-07) | **in progress** — began at `ecf95a9`, the commit after Stage 3 closed. **1 day worked, 19 commits**, read at `6f67306` on 2026-09-07 (`git rev-list --count fc903fe..HEAD`, `git log --format=%ad --date=short` returning one date) | — (the 3× gate arms at **6 days**) |
+| 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
+| 5 — text editing | **3 working days** (owner, 2026-09-08) | **in progress** — opens at the commit after Stage 4's close | — (the 3× gate arms at **9 days**) |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -883,6 +884,104 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-08 — Stage 4 closes: 2 days against a 2-day baseline, 1.00×, continue — and Stage 5 opens on 3
+
+### The verdict, in writing
+
+**2 days worked against a 2-day baseline — 1.00×, trigger 6 days. The gate has
+not armed and the verdict is *continue*.**
+
+Counted the way every stage before it was, with the command named so nobody
+re-derives it:
+
+```
+git log --format=%ad --date=short fc903fe..HEAD | sort -u
+```
+
+returns **2026-09-07** and **2026-09-08**. `fc903fe` is the commit that closed
+Stage 3, so it belongs to neither stage and the range starts after it;
+`ecf95a9` — *"getValue() on a checkbox answers Yes whether it is ticked or
+not"* — is Stage 4's first commit, and it is a measurement, which is how every
+row in this stage began.
+
+**35 commits**, `git rev-list --count fc903fe..HEAD` at the commit before this
+one.
+
+**Counted from the stage's LAST commit and not from when its last row first
+passed**, which is the unflattering direction and the one this journal has
+already had to correct once. The detection row's kernel passed on 2026-09-08 and
+the stage's last commit is the same day, so here the two agree — recorded
+anyway, because a rule that only gets applied when it changes the answer is a
+rule nobody is applying.
+
+### What Stage 4 delivered
+
+**All seven D5 rows are done.**
+
+| row | what it is |
+|---|---|
+| render and fill all six types | reader, channel, `fillFormField`, and the six-type panel |
+| create fields by drawing | five tools, the one form concern on `@cantoo/pdf-lib` |
+| delete fields | `deleteFormFields`, with the field-tree prune the engine leaves owing |
+| flatten | `bake(false, true)`, and the first command whose purpose is removal |
+| the forms panel | every field with the control that fills it, and two different absences |
+| export / import data | three formats each way, every byte of them this build's |
+| heuristic field detection | a proposal a person accepts, which is what the measurement allowed |
+
+**Three ADRs**: [0045](DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)
+(a removal's garbage collection belongs to the command),
+[0046](DECISIONS/0046-a-strict-xfdf-reader-rather-than-an-xml-parser.md) (a
+strict XFDF reader), and a correction to
+[0044](DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)
+renaming the asset member. **Three B4 amendments**, each in its own commit ahead
+of the feature that needed it.
+
+**Nine measurement instruments**, every row measured before it was designed —
+which is the thing this stage will be read for. Five of the seven rows had their
+shape changed by a reading: the create route's frame, the export being a write
+path, the import's asymmetry over multi-select, XFDF's DTD question, and the
+detector's proposal-not-detection.
+
+### What it did NOT deliver, stated rather than left
+
+- **Signature fields cannot be created.** pdf-lib declares no factory, and a
+  command that hand-built the dictionary would be a second writer for the
+  concern §3's matrix had just assigned. A measurement, not a gap.
+- **A multi-select field can be read and not written.** `FieldFill` carries one
+  option; the panel offers no control for such a field, the capture refuses to
+  record one as a prior, and the import refuses a file that gives two. One
+  sentence in three places.
+- **An apply's refusal reason does not cross the host boundary**, so the
+  import's `unreadable` covers three causes. That limit is older than this stage
+  and `fillFormField` has it too.
+- **`pruneEmptyFields`' behaviour against Acrobat and PDF-XChange is
+  unverified** — impossible on this machine, and still owed.
+
+### Stage 5's baseline: 3 working days
+
+**Owner's decision, 2026-09-08, taken before the stage begins** — the same
+ordering that made Stage 2's, 3's and 4's baselines baselines rather than
+rationalisations. Recorded in the table at the top of this file **before Stage
+5's first commit**, because a gate with no recorded baseline is inert.
+
+Owner-set and **not derived**: D4 carries ten rows against D5's seven and gets
+one more day, which no formula produces.
+
+**The trigger is nine days**, and it is **never revised to meet an actual**. An
+estimate rewritten to match what happened is the abort condition deleted, which
+is the failure the gate exists to prevent.
+
+**Stage 5 is the first stage whose substrate does not exist.** PDFium is
+declared at `engineSeam.ts`:97 with no adapter behind it, `commandSpecs.ts`:112
+anticipates an apply taking one, and `fetchVerified.mjs` anticipates the binary
+— so the stage opens with a second native engine to build under invariants 20
+and 25, ADR-0022's process shape, the DACL and the download pin. It is built
+with its first consumer, the HD render toggle, for the reason Stage 3's platform
+was: a seam with no tool driving it is the unproven-seam shape, and that lesson
+is three weeks old and has been paid for once.
 
 ---
 
