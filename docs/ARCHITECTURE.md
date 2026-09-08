@@ -381,14 +381,41 @@ Four engines, each covering a gap the others cannot. **The law is who *writes*.*
 MuPDF is the structural writer of record. Nothing is ever written by one engine
 and re-read for truth by another.
 
-**MuPDF is reached natively**, as a shared library built from source and bound
-with koffi behind a thin flat-C shim, running in the contained `mupdfHost`
-process this application creates (§2,
-[ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)) — never as
-WASM, and never by spawning `mutool`. That is what gives
-`DocumentService` a **held document handle**, which is the difference between a
-mutation costing 0.004 ms and costing seconds
-([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)).
+**MuPDF runs in the contained `mupdfHost` process this application creates**
+(§2, [ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)), and
+never by spawning `mutool`. `DocumentService` holds a **document handle** across
+mutations, which is the difference between a mutation costing 0.004 ms and
+costing seconds ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)).
+
+**HOW it is reached is an open decision, and this paragraph asserted the wrong
+answer until 2026-09-08.** It read *"MuPDF is reached natively, as a shared
+library built from source and bound with koffi behind a thin flat-C shim —
+never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
+bare specifier `mupdf`, which resolves to the npm package's
+`dist/mupdf-wasm.wasm`; **nineteen non-test modules do so, and a search for
+`monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
+built, is scanned by four security proofs, and is loaded by nothing the product
+runs.
+
+The clause about the held handle stayed true throughout, which is why the
+sentence survived review: a compound claim whose live half vouches for its dead
+one. So did *never by spawning `mutool`*.
+
+ADR-0010's decision — native FFI, WASM withdrawn — is **not** withdrawn by this
+correction; what is recorded here is that it is unbuilt for the document
+pipeline. Which side moves is an owner-level decision and is owed an ADR: either
+the kernel's adapters move onto the shim, or ADR-0010 is amended to the reach
+the product actually has. Nothing may be built on either reading until it is
+taken, and a reader here must not infer that the WASM route is endorsed.
+
+**One consequence is already closed.** Invariant 24's mechanism —
+`proof:activecontent` — scanned only `monstera_mupdf.dll`, so it was reading a
+binary the shipped pipeline never opens. It now scans **the engine the
+application's own import resolves to** as well, with its target derived from
+that resolution rather than written down, and with both controls. The answer is
+the same on both: no MuJS. That the answer did not change is the reason it is
+recorded rather than quietly fixed — the mechanism would have read exactly as it
+did if the answer had been the opposite.
 
 Violating that breeds two specific pathologies, both banned at the root here:
 **sidecar hacks** (data smuggled through unrelated PDF fields so the writer's
@@ -1857,4 +1884,5 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-25 | **Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side** (§1, §9.26). The map classified by what a package is *about*; this is the first module where subject and mode disagree — the engine host's reader is Win32 pipe plumbing for the shell that executes where the shell's API surface does not exist. Measured: a `worker_threads` Worker inside Electron main has `process.versions.electron` set, `process.type` undefined, and `import('electron')` yielding a module with **no `app`**, against main's control in the same run — the fourth failure of the `apps/desktop/src/` proxy and the only one where the import SUCCEEDS. A sixth package, not in `MAY_IMPORT_ELECTRON`, so the specifier is a red build with no rule to remember (B5). Harness and probe files are in scope by the same test. `packages/kernel` was rejected on subject rather than on mode: a Windows-only reader there breaks §1's own reason for the kernel's Electron-free property. The engine host body is unmoved and stays in `packages/kernel`. | §1's one-axis repository map, and invariant 26 answering each occurrence by moving one file rather than stating where Node-mode code goes | [ADR-0024](DECISIONS/0024-execution-mode-is-a-placement-axis.md) |
 | 2026-08-26 | **A baseline budget is derived from what it must catch, and `main`'s becomes `base 80 MB`** (§9.17). A baseline budget sits above the honest measured fixed cost of every role it governs and **below that cost plus the smallest regression it exists to detect**; outside that window it is not a loose limit but one that cannot fail for its stated reason. `96 MB` was argued and never measured — its own commit says *"the budgets are argued rather than fitted"* — and landed within a megabyte of a bare interpreter plus the whole kernel barrel. Measured 2026-08-26: bare Node **55.0 MB**, `+mupdfWriter.js` **+39.2 MB**, the barrel **+48.8 MB**; `main-service` clean **63.4/63.5 MB**, and with the barrel accidentally loaded **98.1/98.6 MB here (gate FAILS) against 92.0 MB on the runner (gate PASSED)** — build-dependent, so the exposure was caught by `proof:perfbudget`'s variance-sensitive control rather than by the budget. Rejected: fitting the limit to today's measurement; deriving it from a bare-interpreter reading taken in the same disturbed environment, which reintroduces exactly the blindness the baseline term exists to remove. | §9.17's `base 96 MB` and its argument-only derivation, which states the lower bound and no upper one | [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) |
 | 2026-08-26 | **A channel's DEFINITION lives where its schemas may live; the shared thing is the discipline** (§5). `packages/contract` defines every *renderer-facing* channel exactly once; the engine host's channels are declared in `packages/kernel` and still go through `channel()`, `wrapHandler` and `frame.ts`. Forced by a rule the contract package already states about itself — `commands.ts`: inverses "stay kernel-only: they carry structural prior state the renderer must not see" — and the host's `capture` channel answers with exactly that prior state, so its result schema cannot be declared in the package the renderer imports. Rejected: declaring it in `contract` anyway (breaks that rule at the only boundary it was written for); and a `contract`-side factory taking the prior schema as a parameter (splits one channel definition across two packages to preserve a sentence, and is an abstraction with one caller). | Part C5's "defines every channel once (zod schema per params/result)", and §5's unqualified restatement of it — both predate any non-renderer channel | [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) |
+| 2026-09-08 | **§3's claim that MuPDF is reached natively is corrected to an open decision, and invariant 24's mechanism was scanning the wrong artefact.** The paragraph read *"MuPDF is reached natively, as a shared library built from source and bound with koffi behind a thin flat-C shim … never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the bare specifier `mupdf`, which resolves to the npm package's `dist/mupdf-wasm.wasm` — **nineteen non-test modules**, against **zero** references to `monstera_mupdf` anywhere under `packages/` or `apps/`. The shim is built, is 39.4 MB, is scanned by four security proofs, and is loaded by nothing the product runs. **A compound claim whose live clauses vouched for its dead one:** the held handle and *never by spawning `mutool`* stayed true throughout, which is why the sentence survived review. `docs/JOURNAL.md`'s finding AAAAAA-1 had already recorded that structured text reaches the npm package — as a fact about one shim **export** being uncalled — and nobody asked what it implied about §3's own sentence, which is NNN-4's hole exactly: no range ever touched both the claim and the code that refutes it. **ADR-0010's decision is NOT withdrawn**; what is recorded is that it is unbuilt for the document pipeline, and which side moves is an owner-level decision owed an ADR. **One consequence is closed in the same commit:** `proof:activecontent` now also scans the engine the application's own import **resolves to**, with the target derived from that resolution rather than written down, and with both controls; the answer is the same on both binaries, which is why this is recorded rather than quietly extended. | §3's *"**MuPDF is reached natively** … never as WASM"*, and invariant 24's mechanism, which named "the shipped binary" and read only the shim | — (a correction of fact; the reach decision itself is owed an ADR) |
 | 2026-09-01 | **A ratio budget governs a process that HOLDS bytes, and `mupdf-host`'s multiple is withdrawn** (§9.17). Its `6x` was exceeded by the real host on both content shapes where the model `perf:gate` asserts against cleared them, and the two breaches disagreed about which document was expensive — 6.26x cost 1.34 GB where 7.83x cost 284 MB, ranking the documents in the opposite order from their cost. A ratio against file size states something about a process that holds a copy, which is why `main`'s stands; the host parses, where cost tracks content shape. The absolute is enforced by the job object and read back off it (invariant 25(b)); the multiple had no mechanism and could not have one. `memoryBudgets.mjs` gains a parsed two-term state and **refuses** a `mupdf-host` line that restores the multiple, so the withdrawal is a decision with a mechanism rather than a fact about today's text. Gives up amplification detection — a 1 MB file parsing to 2.9 GB now clears every term — which is stated in the ADR beside the open question of a term keyed on object count. Rejected: raising the number (§9.17 forbids it in terms, and 7.83x is the larger of two documents rather than a ceiling). | §9.17's `mupdf-host = 6x, 3 GB, base 128 MB`, whose multiple this document already recorded as "not yet derived" | [ADR-0033](DECISIONS/0033-a-ratio-budget-governs-a-process-that-holds-bytes.md) |

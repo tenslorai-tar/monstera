@@ -151,7 +151,150 @@ function runPoc(fixture, mode) {
   return { ok: result.status === 0, events, output };
 }
 
+/**
+ * Where the engine the APPLICATION loads actually lives.
+ *
+ * ## Why this is resolved and not written down
+ *
+ * Every MuPDF consumer in `packages/kernel` imports the bare specifier
+ * `'mupdf'`, and Node resolves that to `node_modules/mupdf/dist/mupdf.js`,
+ * which instantiates `mupdf-wasm.wasm` beside it. A scan that spelt that path
+ * as a literal would keep passing after the application's import moved, and
+ * would then be reporting a clean absence about a file nothing loads — which is
+ * the defect this function exists because of, one layer along.
+ *
+ * `import.meta.resolve` is the same resolution the kernel's own import
+ * performs, so the target cannot drift away from the subject without this
+ * throwing.
+ *
+ * @returns {string} the WASM engine's path
+ */
+function shippedEngine() {
+  return join(dirname(fileURLToPath(import.meta.resolve('mupdf'))), 'mupdf-wasm.wasm');
+}
+
+/**
+ * Case group 0: the engine the product actually runs carries no interpreter.
+ *
+ * ## The defect this closes, found 2026-09-08
+ *
+ * Everything below this group scans `monstera_mupdf.dll`. **The application
+ * does not load that file.** Nineteen non-test modules under the packages' own
+ * `src` trees import the bare specifier `'mupdf'`, which is the npm package — a
+ * WASM build — and a search for `monstera_mupdf` across `packages/` and `apps/`
+ * returns **zero**. So invariant 24's asserted mechanism was reading a binary
+ * the shipped document pipeline never opens, and had been since the kernel's
+ * adapters were written.
+ *
+ * (That sentence first said it with a glob. A glob's slash-star-slash closes a
+ * JSDoc block, so the comment ended mid-paragraph and the parser blamed the
+ * next quoted string — the backtick-in-an-emitted-template class with a
+ * different delimiter, met while documenting something else, which is the third
+ * property that family always has.)
+ *
+ * Nothing about that looked wrong. The scan could see, its positive control
+ * passed, its needles were right and its answer was correct **about the file it
+ * read**. It was pointed at the wrong artefact, which is the one failure a
+ * positive control cannot reach: the control proves the instrument can see
+ * *this* file, never that this file is the subject.
+ *
+ * The answer turns out to be the same — no MuJS in the WASM build either — and
+ * that is the reason to write it down rather than to quietly extend the scan.
+ * *Be equally suspicious of things that work.* A mechanism that was covering
+ * nothing for weeks, and would have read exactly as it does now if the answer
+ * had been the opposite, is a green check that verified nothing.
+ *
+ * ## One scan, two targets, and deliberately not a second scan
+ *
+ * The needles, the counter and the controls are the ones already in this file.
+ * A separate check for the WASM engine would be a second opinion about what
+ * counts as an interpreter (B3a), and the two would drift the first time the
+ * needle list changed.
+ *
+ * @param {import('../lib/passRoster.mjs').Roster} roster
+ * @param {string[]} failures
+ */
+function scanShippedEngine(roster, failures) {
+  let mark = roster.mark();
+  const engine = shippedEngine();
+  if (!existsSync(engine)) {
+    failures.push(
+      `the engine the application imports resolves to ${engine}, which does not exist. ` +
+        `Run npm install — a missing engine here would make every absence below a fact about ` +
+        `a file that is not there.`,
+    );
+    roster.record(mark, 'the engine the application imports is resolvable and present');
+    return;
+  }
+  roster.record(mark, 'the engine the application imports is resolvable and present');
+
+  const bytes = readFileSync(engine);
+
+  mark = roster.mark();
+  const libraryHits = LIBRARY_STRINGS.map((needle) => occurrences(bytes, needle));
+  if (libraryHits.some((hits) => hits === 0)) {
+    failures.push(
+      `POSITIVE CONTROL FAILED: MuPDF library strings are absent from the shipped WASM engine. ` +
+        `${LIBRARY_STRINGS.map((s, i) => `"${s}"=${String(libraryHits[i])}`).join(', ')}. ` +
+        `A scan that cannot see libmupdf's own text in this file cannot report on what this ` +
+        `file linked.`,
+    );
+  }
+  roster.record(mark, 'CONTROL: the scan finds MuPDF library strings in the WASM engine');
+
+  // AND THAT THE NEEDLES ARE MATCHABLE AT ALL, which the control above does not
+  // establish: library strings being found proves the file is readable, not
+  // that these particular needles could ever be found in anything. The PoC
+  // binary is the strong form of this and it is Windows-and-MSVC gated, so a
+  // synthetic haystack carries it on every platform.
+  mark = roster.mark();
+  const synthetic = Buffer.from(`prefix ${INTERPRETER_STRINGS.join(' ')} suffix`, 'latin1');
+  const syntheticHits = INTERPRETER_STRINGS.map((needle) => occurrences(synthetic, needle));
+  if (syntheticHits.some((hits) => hits === 0)) {
+    failures.push(
+      `CONTROL FAILED: the interpreter needles are not matchable by this scan even in a buffer ` +
+        `built from them (${INTERPRETER_STRINGS.map((s, i) => `"${s}"=${String(syntheticHits[i])}`).join(', ')}). ` +
+        `Their absence from the engine would then be a fact about the counter.`,
+    );
+  }
+  roster.record(mark, 'CONTROL: the interpreter needles are matchable by this scan');
+
+  mark = roster.mark();
+  const interpreter = INTERPRETER_STRINGS.map((needle) => occurrences(bytes, needle));
+  process.stdout.write(
+    `  shipped engine (${engine}):\n    ` +
+      `${INTERPRETER_STRINGS.map((s, i) => `${s}=${String(interpreter[i])}`).join(' ')}\n`,
+  );
+  if (interpreter.some((hits) => hits > 0)) {
+    failures.push(
+      `a JavaScript interpreter is linked into the engine the application actually loads: ` +
+        `${INTERPRETER_STRINGS.map((s, i) => `"${s}"=${String(interpreter[i])}`).join(', ')}. ` +
+        `Invariant 24 is about what RUNS, so this is not a breach on its own — but the ` +
+        `containment then rests on nothing calling it, and the open path needs a guard rather ` +
+        `than an absence.`,
+    );
+  }
+  roster.record(mark, 'the engine the application loads links no JavaScript interpreter');
+}
+
 async function main() {
+  // FIRST, AND BEFORE EVERY GATE BELOW. The WASM engine is what the product
+  // loads on every platform, so a scan of it must not sit behind a Windows
+  // check and a built shim — the arrangement that let the shim scan stand in
+  // for it in the first place.
+  /** @type {string[]} */
+  const engineFailures = [];
+  const engineRoster = createRoster(engineFailures, { cases: 4 });
+  scanShippedEngine(engineRoster, engineFailures);
+  if (engineFailures.length > 0) {
+    process.stderr.write(
+      `\n${String(engineFailures.length)} shipped-engine failure(s):\n\n` +
+        `${engineFailures.join('\n\n')}\n\n`,
+    );
+    return 1;
+  }
+  process.stdout.write(engineRoster.format('shipped-engine case'));
+
   if (process.platform !== 'win32') {
     process.stdout.write('  skip  the active-content harness links MuPDF and is Windows-only today\n');
     return 0;

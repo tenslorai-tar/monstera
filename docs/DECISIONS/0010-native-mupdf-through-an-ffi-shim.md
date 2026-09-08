@@ -334,3 +334,57 @@ What remains genuinely owed is the packaging half, and it needs Electron to
 exist before it can be asserted: that the unpacked binary is found via
 `resourcesPath` from a built application. That is the packaging test, and it is
 recorded as such rather than as an ABI problem to solve.
+
+---
+
+## Correction, 2026-09-08 — this decision is unbuilt for the document pipeline
+
+**The decision above is not withdrawn. What is corrected is the belief that it
+had been implemented**, which three documents stated in the present tense.
+
+Measured on 2026-09-08. Every MuPDF consumer in `packages/kernel` imports the
+bare specifier `mupdf`, which Node resolves to the npm package's
+`dist/mupdf-wasm.wasm` — **nineteen non-test modules do so**, and a search for
+`monstera_mupdf` across `packages/` and `apps/` returns **zero**. The shim is
+built, is 39.4 MB, is scanned by four security proofs, and is loaded by nothing
+the shipped application runs. The engine the product actually reaches is the
+WASM build this ADR withdrew.
+
+So the two options this ADR weighed are both still live, and the one it rejected
+is the one running.
+
+**What that does and does not touch.** The measurements above stand — they were
+taken against the native library and nothing here re-opens them. `mutool.exe` is
+still not shipped. The held document handle is still real: the npm package's
+`PDFDocument` object persists across mutations, so the property this ADR was
+protecting is obtained by a different mechanism than the one it named. What is
+untrue is the *reach*, and with it the parts of the reasoning that depend on
+native memory behaviour — the 2 GB cap and the whole-file copy this ADR removed
+are removed only for a route the product does not take.
+
+**Why it survived.** `docs/ARCHITECTURE.md` §3 stated it as a compound claim —
+*reached natively … running in the contained host … never as WASM, and never by
+spawning `mutool`* — of which two clauses were true throughout. The live half
+vouches for the dead half, and the part a reader checks is the part still true.
+`docs/JOURNAL.md`'s finding AAAAAA-1 had already recorded that the product
+reaches structured text through the npm package, and read that as a fact about
+one uncalled shim **export** rather than about this decision.
+
+**What is owed: a decision, and it is the owner's.** Either the kernel's
+adapters move onto the shim — a large change touching every MuPDF consumer, the
+host, the memory budgets and the security proofs — or this ADR is amended to the
+reach the product has, with the 2 GB cap and the copy re-entered as live
+constraints. **Nothing may be built on either reading until it is taken**, and
+in particular a second engine host's process topology depends on which it is: a
+process containing a WASM sandbox and a process containing a native parser are
+not the same containment problem.
+
+**One consequence is already closed**, because it was a mechanism rather than a
+decision. Invariant 24's proof, `proof:activecontent`, scanned only
+`monstera_mupdf.dll` — a binary the shipped pipeline never opens. It now also
+scans the engine the application's own import **resolves to**, with the target
+derived from that resolution rather than written down, and with both controls.
+No JavaScript interpreter is linked into either. **That the answer did not change
+is why this is recorded rather than quietly fixed:** the mechanism would have
+read exactly as it did if the answer had been the opposite, which makes its
+previous green a check that verified nothing.

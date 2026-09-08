@@ -4,6 +4,16 @@ A flat C ABI over MuPDF, bound with koffi. This is the seam
 [ADR-0010](../../docs/DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)
 mandates; it is not a helper or an optimisation.
 
+> **NOTHING IN THE APPLICATION LOADS THIS LIBRARY TODAY, measured 2026-09-08.**
+> Every MuPDF consumer in `packages/kernel` imports the bare specifier `mupdf`,
+> which resolves to the npm package's WASM build; a search for
+> `monstera_mupdf` across `packages/` and `apps/` returns zero. Its callers are
+> the security proofs and the research instruments. ADR-0010's correction of
+> that date records the open decision — the adapters move here, or the ADR is
+> amended to the reach the product has — and says why nothing may be built on
+> either reading until it is taken. This note is here because a reader arriving
+> at a seam described as mandated will otherwise assume it is in use.
+
 ## Why a shim exists at all
 
 MuPDF's error handling is `fz_try`/`fz_catch`, which is `setjmp`/`longjmp`. A

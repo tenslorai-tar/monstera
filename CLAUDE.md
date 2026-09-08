@@ -306,9 +306,32 @@ is wrong** — fix the boundary, not the test.
   interpreter back in a one-line diff. `FZ_ENABLE_JS=0` would make its absence
   structural and is deliberately not set, because stages 3 and 4 anticipate
   JavaScript-bearing widgets. So the absence is **asserted** —
-  `proof:activecontent` scans the shipped binary and carries both controls, one
-  proving the scan finds MuPDF's strings and one proving it finds the
-  interpreter in a binary that links it.
+  `proof:activecontent` scans and carries both controls, one proving the scan
+  finds MuPDF's strings and one proving it finds the interpreter in a binary
+  that links it.
+
+  **AND UNTIL 2026-09-08 IT SCANNED THE WRONG ARTEFACT.** This line said *"scans
+  the shipped binary"*, and that binary was `monstera_mupdf.dll` — which nothing
+  in the application loads. Every MuPDF consumer in `packages/kernel` imports the
+  bare specifier `mupdf`, resolving to the npm package's WASM build: nineteen
+  non-test modules, against zero references to `monstera_mupdf` anywhere under
+  `packages/` or `apps/`. So the mechanism this paragraph offers as the
+  invariant's evidence was reading a file the shipped pipeline never opens.
+
+  Nothing about it looked wrong, and that is the transferable part: **a positive
+  control proves an instrument can see the file it was given; it can never say
+  that file is the subject.** The scan could see, its controls passed, its
+  needles were right, and its answer was correct about the artefact it read.
+
+  The scan now also reads the engine the application's own import **resolves
+  to** — derived from that resolution rather than written down, so it cannot
+  drift off the subject in silence — and the answer is the same on both. *Be
+  equally suspicious of things that work*: a mechanism that covered nothing for
+  weeks would have read exactly as it does now had the answer been the opposite.
+
+  **`docs/ARCHITECTURE.md` §3's own claim that MuPDF is reached natively was
+  false in the same way** and is corrected there, with the reach recorded as an
+  open decision. ADR-0010 is not withdrawn — it is unbuilt.
 - **An engine host contains a compromise, not only a crash.** Lowest workable
   integrity level, job object limits, no network, no filesystem beyond what it
   was handed (invariant 25). **All four now have a mechanism, and two of them

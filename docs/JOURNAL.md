@@ -887,6 +887,142 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — The engine the product runs is not the engine the law describes, and not the one the proof scanned
+
+Found while deciding the PDFium host's process topology, which is the one
+question that cannot be answered without knowing what is inside the existing
+host. The answer was not what four documents said it was.
+
+### 1. The measurement
+
+| reading | result |
+|---|---|
+| non-test modules in `packages/kernel` importing the bare specifier `mupdf` | **19** |
+| what Node resolves that to | the npm package's `dist/mupdf-wasm.wasm` |
+| references to `monstera_mupdf` anywhere under `packages/` or `apps/` | **0** |
+| the built shim | 39.4 MB, scanned by four security proofs, loaded by nothing the product runs |
+
+`docs/ARCHITECTURE.md` §3 said: *"**MuPDF is reached natively**, as a shared
+library built from source and bound with koffi behind a thin flat-C shim,
+running in the contained `mupdfHost` process this application creates — never as
+WASM, and never by spawning `mutool`."*
+
+Two of those clauses are true. It does run in the contained host. It does not
+spawn `mutool`. The document pipeline reaches MuPDF as **WASM**.
+
+### 2. Why it survived, and it is a shape this file already names
+
+A **compound claim whose live clauses vouch for the dead one**. `CLAUDE.md`'s
+audit item 7 describes it exactly: *look for a sentence where the change
+invalidated one clause of a compound claim — those are the ones no reader flags*.
+The part a reader checks is the part still true, and *never by spawning `mutool`*
+is checkable in a second.
+
+And the evidence was already in this journal. Finding **AAAAAA-1** recorded that
+*"the product reaches structured text through the **npm** MuPDF instead"* — filed
+as a fact about one shim **export** having no caller. Nobody asked what an
+uncalled export implied about the sentence one document over. NNN-4's hole in
+its purest form: no range has ever touched both the claim and the code that
+refutes it, so nothing range-scoped could reach it, and every citation resolved.
+
+### 3. The consequence that mattered more than the sentence
+
+Invariant 24's mechanism is `proof:activecontent`, and `CLAUDE.md` offers it in
+those words: *the absence is **asserted** — `proof:activecontent` scans the
+shipped binary and carries both controls.*
+
+It scanned `monstera_mupdf.dll`. **The shipped pipeline never opens that file.**
+
+So the invariant that says *opening a document runs none of its content* was
+evidenced by a scan of a binary the product does not load, and had been since
+the kernel's adapters were written.
+
+Nothing about it looked wrong, and this is the part worth carrying: the scan
+**could see** — its MuPDF library strings were found. Its needles were right.
+Its root and window were the whole file. Its answer was correct **about the
+artefact it read**. Every axis this project has written down was green.
+
+**A positive control proves an instrument can see the file it was given. It can
+never say that file is the subject.** That is the axis underneath the five
+already listed, and it is the one a control is structurally unable to cover.
+
+### 4. Closed, and the answer did not change
+
+The scan now also reads the engine the application's own import resolves to. The
+target is **derived** from `import.meta.resolve('mupdf')` — the same resolution
+the kernel's own import performs — rather than written as a path, because a
+literal would keep passing after the import moved and would then be reporting a
+clean absence about a file nothing loads, which is this finding one layer along.
+
+Four new cases, run **before** the Windows and built-shim gates, since the WASM
+engine is what the product loads on every platform and the arrangement that let
+the shim scan stand in for it was exactly that gating:
+
+```
+  shipped engine (…\node_modules\mupdf\dist\mupdf-wasm.wasm):
+    Array.prototype.forEach=0 String.prototype.charCodeAt=0 Function.prototype.apply=0
+  ok  the engine the application imports is resolvable and present
+  ok  CONTROL: the scan finds MuPDF library strings in the WASM engine
+  ok  CONTROL: the interpreter needles are matchable by this scan
+  ok  the engine the application loads links no JavaScript interpreter
+```
+
+The same needles, the same counter, the same library-string control — one scan
+with a second target, not a second scan, because a separate check would be a
+second opinion about what counts as an interpreter (B3a).
+
+The needle-matchability control is new and platform-independent: the existing
+strong control is the PoC executable that links MuJS, and it is Windows-and-MSVC
+gated, so a synthetic haystack built from the needles carries that meaning
+everywhere. Case 2 proves the file is readable; case 3 proves the needles are
+findable at all. Neither alone separates anything.
+
+Non-vacuous: pointing `shippedEngine()` at the PoC binary reddens it —
+`Array.prototype.forEach=1 String.prototype.charCodeAt=1 Function.prototype.apply=1`.
+
+**No interpreter is linked into the WASM build either**, so invariant 24 holds
+and held throughout. *That the answer did not change is the reason this is
+written down rather than quietly extended.* A mechanism covering nothing for
+weeks reads exactly as it does now, and would have if the answer were the
+opposite. Rule 0: be equally suspicious of things that work.
+
+### 5. What is corrected, and what is deliberately not decided
+
+`docs/ARCHITECTURE.md` §3's body is edited to be currently true — it is a live
+specification, and a false body means the specification is lying — with the
+history in the amendment log. `ADR-0010` gets a **dated correction appended**,
+never an edit, because an ADR records what was decided. `CLAUDE.md`'s digest is
+corrected in the same commit, per its own header. `native/mupdf-shim/README.md`
+gains a note, because a reader arriving at a seam described as *mandated* will
+otherwise assume it is in use.
+
+**ADR-0010 is not withdrawn. It is unbuilt.** Its measurements stand, `mutool`
+is still not shipped, and the held document handle is still real — the npm
+package's `PDFDocument` persists across mutations, so that property is obtained
+by a different mechanism than the one the ADR named. What is untrue is the
+*reach*, and with it the parts of the reasoning that depend on native memory
+behaviour: the 2 GB cap and the whole-file copy are removed only for a route the
+product does not take.
+
+**Which side moves is the owner's decision and is owed an ADR** — the adapters
+move onto the shim, or ADR-0010 is amended to the reach the product has, with
+the WASM constraints re-entered as live. It is not taken here because it is not
+mine to take and because both readings are large.
+
+### 6. And this is why it blocked the row that found it
+
+The PDFium host's topology depends on it. **A process containing a WASM sandbox
+and a process containing a native parser are not the same containment problem**,
+and invariant 25's whole subject is what a host contains. Putting a native
+PDFium into the existing host is a step change in that process's native attack
+surface if MuPDF there is WASM, and no change at all if the shim were in use.
+
+So the host is not designed until the reach decision is taken. That is
+`CLAUDE.md`'s own rule rather than caution: *never build features on top of
+architecture that a feature has shown to be wrong.*
+
+---
+
 ## 2026-09-08 — The corpus harness, where two of its three rules stop being rules
 
 The corpus is supplied by the owner, lives **outside this repository**, and is
