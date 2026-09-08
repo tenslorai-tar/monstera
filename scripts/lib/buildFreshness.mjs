@@ -81,6 +81,19 @@ export const CANVAS_PIXELS_RUNTIME = [
 ];
 
 /**
+ * The adapter `pdfiumAdapter.proof.mjs` and `editFidelity.proof.mjs` drive.
+ *
+ * One edge, because both proofs import exactly one built module and everything
+ * they assert lives in it. A wider list would refuse a stale build over a file
+ * neither can observe, which is the direction that gets a guard turned off.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_ADAPTER = [
+  ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
+];
+
+/**
  * Which sources a proof reads **through a build** rather than through an import.
  *
  * ## Why this map exists, and it is not a convenience (finding PPPPP-2)
@@ -112,20 +125,6 @@ export const CANVAS_PIXELS_RUNTIME = [
  *
  * @type {Record<string, readonly BuildEdge[]>}
  */
-/**
- * The adapter `pdfiumAdapter.proof.mjs` drives.
- *
- * One edge, because that proof imports exactly one built module and everything
- * it asserts lives in it. A wider list would refuse a stale build over a file
- * this proof cannot observe, which is the direction that gets a guard turned
- * off.
- *
- * @type {BuildEdge[]}
- */
-export const PDFIUM_ADAPTER = [
-  ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
-];
-
 export const ARTEFACT_EDGES = {
   'proof:rendererpolicy': [...RENDERER_POLICY_DECLARATION, ...RENDERER_POLICY_RUNTIME],
   'proof:canvaspixels': CANVAS_PIXELS_RUNTIME,
@@ -149,6 +148,9 @@ export const ARTEFACT_EDGES = {
   // first run — from the set of proofs that IMPORT the guard, which no omission
   // here can reach.
   'proof:pdfiumadapter': PDFIUM_ADAPTER,
+  // The fidelity proof drives the same built adapter, and reads pixels rather
+  // than text: it is the guard that an edit does not silently redraw the page.
+  'proof:editfidelity': PDFIUM_ADAPTER,
 };
 
 /**

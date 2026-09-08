@@ -283,6 +283,15 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumAdapter.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # BUILD-PROMPT.md:706's owed fidelity proof. The corpus is not here, so its
+      # corpus half reports UNVERIFIABLE and exits 0; the half that runs on every
+      # runner is the load-bearing one — a constructed page whose untouched save
+      # must change no pixel, and whose edited band must change, in the same run.
+      - name: Prove an edit redraws only what it touched
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/editFidelity.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 

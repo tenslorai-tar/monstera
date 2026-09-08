@@ -887,6 +887,72 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — The fidelity proof, which asks the question in pixels because nothing else can see it
+
+`BUILD-PROMPT.md`:706 owes *fidelity proofs — pixel-diff untouched runs*, and
+the reason it is owed rather than nice to have is that **a fidelity failure looks
+exactly like a working feature**. An editor that replaces one run and re-encodes
+the rest of the page passes every text assertion ever written for it: the text is
+right, the round trip is right, and the document quietly stops looking like
+itself. `docs/ENGINE-SPIKE.md`:157 already carries that failure in MuPDF's
+voice — *a full rewrite corrupts non-embedded font refs* — and
+`FPDF_SaveAsCopy` is a full rewrite.
+
+`scripts/proofs/editFidelity.proof.mjs` makes two claims and carries three
+controls.
+
+**Claim 1 — an untouched save changes no pixel.** Open, serialise with **no edit
+at all**, reopen, render both, compare. This has to come first: a non-zero answer
+here is a defect no editing test could attribute correctly, because every editing
+test changes something.
+
+**Claim 2 — an edit changes only where it was made.** The bands above and below
+the edited run are compared, because *the edit worked* and *the edit worked and
+rewrote the rest of the page* are one observation over the whole page.
+
+**The controls, because every answer wanted here is zero, and zero is also what a
+broken instrument produces.** The comparator is resolution-tested before it
+compares anything real — two renders differing by one pixel at one level, and it
+must report exactly that. Every render's inked fraction is asserted non-zero,
+because a page PDFium failed to draw renders white and white differs from white
+by nothing. And the edited band **must** differ, in the same run: without that
+positive case the whole file passes on a build where editing does nothing.
+
+### The readings, 2026-09-09
+
+Constructed page, 400×300pt at 2×: untouched save **0 of 480,000** differing;
+the edited band **2,523 of 35,200**; above it **0 of 152,000**; below it **0 of
+292,800**.
+
+Over the supplied corpus, first page of each, untouched save:
+
+| id | bytes → saved | differing / total | ink |
+|---|---|---|---|
+| corpus-1 | 236,318 → 236,581 | 0 / 2,003,960 | 21.33% |
+| corpus-2 | 235,020 → 233,114 | 0 / 2,006,835 | 29.48% |
+| corpus-3 | 209,422 → 215,544 | 0 / 2,005,644 | 11.97% |
+| corpus-4 | 72,769 → 73,105 | 0 / 1,390,392 | 100.00% |
+| corpus-5 | 25,127 → 24,880 | 0 / 2,005,644 | 35.21% |
+
+The ink column is what makes the zeros mean anything, and the byte column is
+worth reading beside them: three documents grew and two **shrank**, so the bytes
+demonstrably moved and the pixels did not. Five documents build a harness and
+catch a gross failure; they cannot tune a constant, and this is a shape rather
+than an accuracy figure.
+
+**Non-vacuous.** With `FPDFPage_GenerateContent` skipped in the built adapter,
+the positive case — *the edited band DID change* — goes red and nothing else
+does: 6 of 7. That is the direction rule working, since the two zero-valued
+claims are exactly what an edit that never happened also produces.
+
+**What it does not cover, stated in the file rather than assumed.** Page 1 only
+over the corpus; the edited-band case on the constructed page alone, because
+choosing a band for a corpus document would mean printing what it says; and text
+replacement only, though the untouched-save half already covers every editing
+command that will share one `serialise`.
+
+---
+
 ## 2026-09-09 — The PDFium adapter, and a boundary that needed no `any` after all
 
 `engineSeam.ts` has declared `PdfiumSession` since Stage 0 with nothing behind
