@@ -161,6 +161,9 @@ async function joined(): Promise<{
       snapshot: () => {
         throw new Error('unused');
       },
+      exportFormData: () => {
+        throw new Error('unused');
+      },
     }),
     (incident) => incidents.push(incident),
   );

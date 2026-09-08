@@ -11,6 +11,7 @@ import {
   addLinkSchema,
   annotationKindNameSchema,
   annotationRectSchema,
+  formDataFormatSchema,
   formFieldKindSchema,
   channel,
   cropPagesSchema,
@@ -1380,6 +1381,43 @@ export const engineChannels = {
       })
       .strict(),
     ['no-such-session'],
+  ),
+
+  /**
+   * Writes the form's data out, in one of three encodings, to the granted area.
+   *
+   * ## The FILE goes through the granted directory, for `engine/extract`'s
+   * reason
+   *
+   * An export is a second document's bytes rather than an answer about this
+   * one, and it is built where the engine is because reading the fields reaches
+   * MuPDF (invariant 20). Answering the bytes on this pipe would be a payload
+   * that scales with the form.
+   *
+   * ## And there is a reason a channel answering the FIELDS would not do
+   *
+   * `engine/form-fields` already crosses every field, so a serialiser in main
+   * looks free. It is not: that answer is bounded — a value is sliced at
+   * `ENGINE_FORM_FIELD_TEXT_MAX` and the list stops at `ENGINE_FORM_FIELDS_MAX`
+   * — because it feeds a panel a person reads. An export built from it would be
+   * silently truncated at both bounds, which is this row's own subject wearing
+   * a boundary's clothes. So the export reads the document, and the bounds that
+   * exist for a panel stay where they belong.
+   */
+  'engine/exportFormData': channel(
+    'Writes a session’s form data to a file in the output directory.',
+    z
+      .object({ session: sessionSchema, format: formDataFormatSchema, into: outputNameSchema })
+      .strict(),
+    // A COUNT, for `engine/serialise`'s reason: main knows where it asked for
+    // the bytes and cannot know how many arrived without being told.
+    z.object({ bytes: z.number().int().nonnegative() }).strict(),
+    // `unrepresentable` IS SEPARATE FROM `export-failed`, because it is the one
+    // failure that names a different format the user can choose instead — XFDF
+    // cannot carry a control character and the other two can. Folding it into
+    // the general code would tell them the export failed and nothing they could
+    // act on.
+    ['no-such-session', 'export-failed', 'unrepresentable'],
   ),
 
   'engine/duplicate-pages': channel(

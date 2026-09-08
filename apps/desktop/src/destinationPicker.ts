@@ -1,6 +1,13 @@
 import { dialog } from 'electron';
 
-import type { PickDestination } from './documentCommands.js';
+import type { FormDataFormat } from '@monstera/contract';
+
+import {
+  FORM_DATA_FILES,
+  type FormDataSource,
+  type PickDestination,
+  suggestedFormDataName,
+} from './documentCommands.js';
 
 /**
  * The real save picker: Electron's save dialog, narrowed to one PDF.
@@ -89,6 +96,42 @@ export function createSnapshotPicker(): PickDestination {
       defaultPath: suggestedName,
       properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
       filters: [{ name: 'PNG image', extensions: ['png'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePath.length === 0 ? null : result.filePath;
+  };
+}
+
+/**
+ * The save picker for a form-data export: the same dialog, narrowed to the
+ * format the user asked for.
+ *
+ * ## A PARAMETER HERE, and the paragraph above is what decides it
+ *
+ * That argument is about two different dialogs — a copy and a snapshot —
+ * sharing one function, where a shared one is "a branch on *which dialog*
+ * wearing the shape of an abstraction". This is one dialog, and the parameter
+ * is not a choice between features: it is the user's own choice of format,
+ * already made, already on the wire. Three siblings differing in one literal
+ * each would be `FORM_DATA_FILES` written three times.
+ *
+ * **It takes the DOCUMENT'S name and derives the suggested one**, so there is
+ * no pair of arguments that can disagree: the extension in the filename and
+ * the extension in the filter come from the same table entry. A dialog whose
+ * filter and default name name different extensions appends one to the other
+ * silently, and the user gets `form data.json.fdf`.
+ *
+ * Everything the paragraphs above say about `dontAddToRecent`,
+ * `showOverwriteConfirmation`, `createDirectory` and the two routes to a
+ * dismissal holds here unchanged.
+ */
+export function createFormDataPicker(): FormDataSource['pick'] {
+  return async (sourceName: string, format: FormDataFormat): Promise<string | null> => {
+    const file = FORM_DATA_FILES[format];
+    const result = await dialog.showSaveDialog({
+      defaultPath: suggestedFormDataName(sourceName, format),
+      properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
+      filters: [{ name: file.label, extensions: [file.extension] }],
     });
     if (result.canceled) return null;
     return result.filePath.length === 0 ? null : result.filePath;

@@ -886,6 +886,120 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — A field holding two values read as a field holding none, and the export half of the data row
+
+Three commits: the measurement that found it, the reader it corrected, and the
+three encoders built on the corrected reader.
+
+### 1. The unset half of the export measurement, and the defect it turned up
+
+`scripts/research/formDataExport.mjs` gained questions 7 to 9. Every stateful
+field in its first fixture is **on**, so it measured what `/V` must be for a
+field somebody filled and nothing about the one they left — which is most of
+every real form.
+
+| question | reading |
+|---|---|
+| 7. an unset tick box and an unselected radio group | `getValue()` answers `""`, **not** `"Off"` |
+| 8. `/V` on a multi-select built by `select()` twice | a plain string, `(de)` — pdf-lib **overwrites** |
+| 9. `getValue()` on a `/V` that IS an array of two | **`""`** |
+
+Question 9 is the one that changed a shipped row. `getValue()` does not truncate
+a multi-valued field's list — it reports the field as **empty**, which is the
+reassuring direction. A panel showed nothing, an export would have written
+nothing, an undo would have restored nothing, and all three agreed with each
+other and none of them with the document.
+
+**Question 8's first spelling read the widget's own dictionary** and printed
+`null` for all six fields — including the listbox question 7 had just answered
+`"de"` for. Two readings of one document contradicting each other inside one
+script is what caught it; alone it would have printed six clean nulls. `/V` is
+inheritable and pdf-lib puts it on the parent, which the create row had measured
+for `/T` the same morning.
+
+The shape had never been met because **this build could not produce one**: the
+fixture for question 9 is a `/V` array built by hand, because the library that
+writes every fixture here cannot write one.
+
+### 2. The reader, corrected
+
+`fieldValues` replaces `getValue()` as the one reading of `/V` in
+`formFields.ts`, including for the on-state comparison, so there are not two
+views of what a field holds. It is a **replacement rather than a second
+opinion** (B3a): the authority's accessor has a return type that cannot express
+the answer.
+
+`ListedField.value: string` became `values: readonly string[]` through the
+engine channel and the contract channel to the panel. `['']` and `[]` are now
+different states — a cleared choice and a field with no `/V` — which the string
+could not separate.
+
+Two refusals, because reading a state is not being able to change it: the
+capture refuses a field holding several (a `FieldFill` carries one option, so an
+inverse built from it would restore the first and delete the rest — an undo that
+loses data, where a checkpoint restores it exactly), and the panel renders no
+control for one, naming the values.
+
+**The UI fixtures were typed `Record<string, unknown>`**, so the rename left
+every one compiling and sixteen cases failing at run time with *no rows
+rendered* — the boundary refusing a shape it no longer knew, several layers from
+the literal. A fixture typed as a bag of unknowns is one the compiler cannot
+hold against the contract, which is the only thing it is for.
+
+### 3. The three encoders
+
+`formData.ts`, on the corrected reader. Four decisions the measurements made
+rather than the design: `/V` is a **name** for a tick box and a radio and a
+string for everything else; an unset stateful field needs `/Off` written for it,
+because `/V /` is a syntax error rather than an off state; a radio's export
+value is what `/V` holds (`"1"` where the option is labelled `"second"`); and a
+value outside ASCII becomes a UTF-16BE hex string, because a PDF literal is read
+as PDFDocEncoding and a build that emitted one for everything would write a file
+that parses and holds the wrong characters.
+
+**XFDF refuses a value XML cannot carry.** XML 1.0 admits tab, newline and
+carriage return out of the C0 range and has no escape for the rest — not even a
+numeric reference. The three options were a file no parser accepts, a file
+silently missing a character, and a refusal; the first two are this row's own
+subject. The refusal names the two formats that carry it, because that is the
+action.
+
+One entry per **field** and the walk is per widget, since a radio group is one
+field with several. Push buttons and signatures are absent by decision: a push
+button's value is meaningless by construction and a signature's `/V` is a
+dictionary, and neither is something an import could put back.
+
+### 4. Where the file is built, and the channel that was rejected
+
+`engine/exportFormData` writes into the granted output directory and main reads
+it back with the count checked — `engine/extract`'s route, its reason and its
+four-step dance, now a class of three.
+
+**A serialiser in main looked free and is not.** `engine/form-fields` already
+crosses every field, so main holds the data; but that answer is bounded — a
+value sliced at 512 characters, the list stopped at 4096 — because it feeds a
+panel a person reads. An export built from it would be silently truncated at
+both bounds, which is this row's subject wearing a boundary's clothes.
+
+### 5. The pair's blind spot, with a string enum in place of a page index
+
+`formData.test.ts` proves three encoders produce three different files.
+`commands/documentCommands.test.ts` proves three controls dispatch three
+different `format` values. **Both stay green if the composition drops the
+argument** — three controls that all write JSON, a correct encoder table nobody
+reaches with anything but `'json'`, two tests on opposite sides of a boundary
+each correct in its own frame.
+
+So `documentCommands.test.ts` in `apps/desktop` writes two formats to two real
+files and reads what landed. Mutated: replacing the passed `format` with the
+literal `'json'` reddens exactly that case.
+
+**Owed, and stated rather than implied:** the import half of the row is not
+built. Three commands, three channels and three encoders is the export; nothing
+reads a file back yet.
+
+---
+
 ## 2026-09-08 — An export is a write path, and MuPDF has no FDF writer to lend
 
 `scripts/research/formDataExport.mjs`, before a line of the export half of the

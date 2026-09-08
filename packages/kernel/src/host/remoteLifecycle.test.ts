@@ -8,6 +8,7 @@ import { type ClientApi, createClient, type Incident, wrapHandlers } from '@mons
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
+import { readFormData, serialiseFormData } from '../formData.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter } from '../mupdfWriter.js';
@@ -236,6 +237,10 @@ function joined(
       // round trip through the granted area, and this file is where that trip
       // is driven end to end.
       snapshot: snapshotRegion,
+      // AND THE THIRD, for the same reason: the export takes the identical
+      // round trip through the granted area.
+      exportFormData: async (session, format) =>
+        serialiseFormData(await readFormData(session), format),
     }),
     (incident) => incidents.push(incident),
   );
@@ -444,6 +449,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         snapshot: () => {
           throw new Error('the byte-size case must not rasterise a page');
+        },
+        exportFormData: () => {
+          throw new Error('the byte-size case must not export form data');
         },
       }),
       () => undefined,

@@ -4,6 +4,7 @@ import {
   DocumentBusyError,
   DocumentNotOpenError,
   type DocumentService,
+  EngineFormDataExportFailed,
   type WriteTargetVerdict,
   readDocumentRange,
 } from '@monstera/kernel';
@@ -144,6 +145,7 @@ export function createContractHandlers(deps: {
     'document.save': saveHandler(deps.commands),
     'document.extract': extractHandler(deps.commands),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands),
+    'document.exportFormData': exportFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
@@ -418,6 +420,45 @@ function snapshotRegionHandler(
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The form-data export's handler.
+ *
+ * {@link snapshotRegionHandler} with one more outcome, and the extra one is
+ * why this is written out rather than folded into a shared helper: XFDF cannot
+ * carry a control character and the other two formats can, so *this format
+ * refused* is a different message from *the write failed* and the only one a
+ * person can act on. The kernel throws it as its own class through the host's
+ * own code; a widened catch here would report every failure as the format's.
+ */
+function exportFormDataHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.exportFormData'] {
+  return async ({
+    docId,
+    format,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.exportFormData']>>> => {
+    try {
+      const outcome = await commands.exportFormData(docId, format);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      // THE ONE REFUSAL WITH AN ACTION ATTACHED, matched on the host's own code
+      // rather than on a message: `EngineFormDataExportFailed` carries what the
+      // host answered, and `unrepresentable` is the code the export handler
+      // returns for a value XML has no escape for.
+      if (thrown instanceof EngineFormDataExportFailed && thrown.detail === 'unrepresentable') {
+        return ok({ kind: 'unrepresentable' } as const);
+      }
       throw thrown;
     }
   };

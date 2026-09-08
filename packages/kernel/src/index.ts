@@ -111,6 +111,7 @@ export {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostFormDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
   type HostPageLinksReader,
@@ -121,6 +122,7 @@ export {
   createEngineHandlers,
 } from './host/engineHandlers.js';
 export {
+  EngineFormDataExportFailed,
   EngineOpenFailed,
   EngineSerialiseFailed,
   EngineSerialiseMismatch,

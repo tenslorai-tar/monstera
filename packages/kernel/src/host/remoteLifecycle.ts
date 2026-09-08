@@ -1,4 +1,4 @@
-import type { ClientApi } from '@monstera/contract';
+import type { ClientApi, FormDataFormat } from '@monstera/contract';
 
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import type { RegionRequest } from '../pageSnapshot.js';
@@ -98,6 +98,22 @@ export class EngineSnapshotFailed extends Error {
   }
 }
 
+/**
+ * The host could not write the form's data out.
+ *
+ * `detail` is the host's own code, so a caller can separate the one refusal
+ * with an action attached — `unrepresentable`, meaning XFDF cannot carry a
+ * value the other two formats carry — from every other failure. Folding them
+ * would tell the user the export failed and nothing they could act on.
+ */
+export class EngineFormDataExportFailed extends Error {
+  override readonly name = 'EngineFormDataExportFailed';
+
+  constructor(readonly detail: string) {
+    super(`The engine host could not write the form data out: ${detail}.`);
+  }
+}
+
 /** The host wrote a different number of bytes than the file main read back. */
 export class EngineSerialiseMismatch extends Error {
   override readonly name = 'EngineSerialiseMismatch';
@@ -189,6 +205,17 @@ export interface RemoteMupdfLifecycle {
     session: MupdfSession,
     request: RegionRequest,
   ) => Promise<ByteImage>;
+  /**
+   * The form's data, encoded.
+   *
+   * The third caller of the same four-step dance, and the reason is the first
+   * one's: the bytes are built where the engine is, land in the granted area,
+   * and are read back out with the count checked.
+   */
+  readonly exportFormData: (
+    session: MupdfSession,
+    format: FormDataFormat,
+  ) => Promise<ByteImage>;
   /** Ends the session on the host and removes its granted pair. */
   readonly close: (session: MupdfSession) => Promise<void>;
 }
@@ -261,6 +288,26 @@ export function remoteMupdfLifecycle(
       // THE SAME MISMATCH CHECK the two above make, and it is worth more here:
       // a PNG main never looks inside is one whose truncation nothing else
       // would notice until somebody opened the file.
+      if (bytes.length !== answer.value.bytes) {
+        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
+      }
+      return bytes;
+    },
+
+    exportFormData: async (session, format) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/exportFormData']({
+        session: sessions.handleFor(session),
+        format,
+        into,
+      });
+      if (!answer.ok) throw new EngineFormDataExportFailed(answer.error.code);
+
+      const bytes = await areas.takeOutput(area, into);
+      // THE SAME MISMATCH CHECK the three above make, and here for the
+      // snapshot's reason: a file main never looks inside is one whose
+      // truncation nothing would notice until somebody opened it.
       if (bytes.length !== answer.value.bytes) {
         throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
       }

@@ -9,6 +9,9 @@ import {
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
+  exportFormDataFdfCommand,
+  exportFormDataJsonCommand,
+  exportFormDataXfdfCommand,
   saveCopyCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
@@ -651,6 +654,64 @@ describe('delete pages — the mutation-dialog gate', () => {
     }
 
     expect(openedFor).toStrictEqual({ cancelled: 0, refused: 1 });
+  });
+
+  it('EACH EXPORT DISPATCHES ITS OWN FORMAT, which is the only thing separating them', async () => {
+    // THE UI HALF, and the pair's blind spot is exactly here: three commands
+    // built from one factory differ in a single argument, so a factory that
+    // captured the wrong variable — or three call sites passing the same
+    // literal — produces three controls that all write JSON and three green
+    // tests if each is asserted alone. Driving all three in one case and
+    // comparing the SET is what separates them.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ kind: 'copied', bytes: 512 }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined) };
+
+    await exportFormDataJsonCommand(deps).run(CONTEXT);
+    await exportFormDataXfdfCommand(deps).run(CONTEXT);
+    await exportFormDataFdfCommand(deps).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      { id: 'document.exportFormData', params: { docId: DOC, format: 'json' } },
+      { id: 'document.exportFormData', params: { docId: DOC, format: 'xfdf' } },
+      { id: 'document.exportFormData', params: { docId: DOC, format: 'fdf' } },
+    ]);
+    // AND THREE DISTINCT IDS, because a factory that also shared its `id` would
+    // register one command three times and the registry would keep the last.
+    expect(
+      new Set([
+        exportFormDataJsonCommand(deps).id,
+        exportFormDataXfdfCommand(deps).id,
+        exportFormDataFdfCommand(deps).id,
+      ]).size,
+    ).toBe(3);
+  });
+
+  it('SAYS SO when the format cannot carry a value, rather than treating it as a write failure', async () => {
+    // The outcome with an action attached: XFDF has no escape for a control
+    // character and the other two formats carry it, so the user's next move is
+    // a different entry in this same menu. A renderer that folded this into
+    // `contested` would tell them another tab holds the file.
+    const opened: { id: string; props: unknown }[] = [];
+    const client = createClient(channels, () =>
+      Promise.resolve(ok({ kind: 'unrepresentable' as const })),
+    );
+
+    await exportFormDataXfdfCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      { id: 'dialog.save-problem', props: { outcome: 'unrepresentable' } },
+    ]);
   });
 
   it('BATES DISPATCHES THE PARTS, not a formatted identifier', async () => {

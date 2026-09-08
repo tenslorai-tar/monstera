@@ -2,6 +2,7 @@ import {
   type AnnotationRect,
   type CommandKind,
   type CommandOfKind,
+  type FormDataFormat,
   MAX_IMAGE_BYTES,
   sourceIdsOf,
 } from '@monstera/contract';
@@ -329,6 +330,37 @@ export function suggestedExtractName(name: string): string {
  * `.pdf` is a file the platform opens with the wrong application and the user
  * cannot see why.
  */
+/**
+ * What each export format is called on disk and in a dialog's filter.
+ *
+ * **One table for both**, so the suggested name and the filter cannot name
+ * different extensions — which is the failure a save dialog produces silently,
+ * by appending the filter's extension to a name that already had another one.
+ */
+export const FORM_DATA_FILES: Readonly<
+  Record<FormDataFormat, { readonly extension: string; readonly label: string }>
+> = {
+  json: { extension: 'json', label: 'JSON form data' },
+  xfdf: { extension: 'xfdf', label: 'XFDF form data' },
+  fdf: { extension: 'fdf', label: 'FDF form data' },
+};
+
+/**
+ * The name a form-data export's picker opens with.
+ *
+ * {@link suggestedSnapshotName}'s shape — suffix, then re-extend — and its
+ * reason: a file the platform opens with the wrong application is one the user
+ * cannot see the cause of. *data* rather than *copy* because the two files are
+ * different things and a folder holding both would otherwise offer no way to
+ * tell them apart.
+ */
+export function suggestedFormDataName(name: string, format: FormDataFormat): string {
+  const suffixed_ = suffixed(name, 'data');
+  const dot = suffixed_.lastIndexOf('.');
+  const stem = dot <= 0 ? suffixed_ : suffixed_.slice(0, dot);
+  return `${stem}.${FORM_DATA_FILES[format].extension}`;
+}
+
 export function suggestedSnapshotName(name: string): string {
   const suffixed_ = suffixed(name, 'snapshot');
   const dot = suffixed_.lastIndexOf('.');
@@ -697,6 +729,39 @@ export interface SnapshotSource {
   readonly region: DocumentSnapshotReader;
 }
 
+/**
+ * Encodes the form's data, through whichever host is live.
+ *
+ * {@link DocumentSnapshotReader}'s sibling and not a read either: it produces a
+ * file rather than answering a question. It runs in the host because reading
+ * the fields reaches MuPDF, and because `document.formFields` is bounded for a
+ * panel a reader looks at — an export built from that answer would be
+ * truncated at both bounds without saying so.
+ */
+export type DocumentFormDataReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  format: FormDataFormat,
+) => Promise<ByteImage>;
+
+/**
+ * What exporting form data needs, bundled for {@link SnapshotSource}'s reason.
+ *
+ * **The picker takes the FORMAT rather than a suggested name**, which is the
+ * one place this departs from `destinationPicker.ts`' *a sibling rather than a
+ * parameter*. That argument is about two different dialogs — a copy and a
+ * snapshot — sharing one function; this is ONE dialog whose filter and
+ * suggested extension are both the user's own choice of format, and they come
+ * from a single table, so the pair cannot disagree. Three sibling pickers
+ * differing in one literal each would be the same table written three times.
+ */
+export interface FormDataSource {
+  /** Runs the platform's save dialog, narrowed to the chosen format. */
+  readonly pick: (sourceName: string, format: FormDataFormat) => Promise<string | null>;
+  /** How the form's data becomes bytes. */
+  readonly encode: DocumentFormDataReader;
+}
+
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
   docId: DocId,
@@ -869,6 +934,7 @@ export interface DocumentCommandsParts {
   readonly image: ImageSource;
   readonly extract: DocumentExtractReader;
   readonly snapshot: SnapshotSource;
+  readonly formData: FormDataSource;
   readonly directory: PickDirectory;
 }
 
@@ -890,6 +956,7 @@ export class DocumentCommands {
   readonly #image: ImageSource;
   readonly #extract: DocumentExtractReader;
   readonly #snapshot: SnapshotSource;
+  readonly #formData: FormDataSource;
   readonly #directory: PickDirectory;
 
   constructor(parts: DocumentCommandsParts) {
@@ -910,6 +977,7 @@ export class DocumentCommands {
     this.#image = parts.image;
     this.#extract = parts.extract;
     this.#snapshot = parts.snapshot;
+    this.#formData = parts.formData;
     this.#directory = parts.directory;
   }
 
@@ -1678,6 +1746,52 @@ export class DocumentCommands {
         this.#save.deps,
         this.#copy.checkTarget,
         () => this.#snapshot.region(docId, sessions, request),
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /**
+   * Writes the form's data to a destination the user picks.
+   *
+   * ## The FOURTH caller of the destination path, and it changes nothing about
+   * it
+   *
+   * {@link snapshot}'s body with a different picker and a different flush. The
+   * contested check, the temporary and backup naming and the atomic write are
+   * the same code on the same terms — a form-data file written over a document
+   * somebody has open destroys it exactly as a PDF would.
+   *
+   * ## It does NOT touch the document
+   *
+   * An export is a reading written out, so there is no command, no log entry
+   * and no version bump — and `writeDocumentCopy` is given no
+   * `DocumentContext`, which is what makes that structural rather than a
+   * promise.
+   *
+   * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
+   *   reason: a document this service does not hold has no name to offer.
+   */
+  async exportFormData(docId: DocId, format: FormDataFormat): Promise<CopyOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export form data');
+
+    const destination = await this.#formData.pick(suggest, format);
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => this.#formData.encode(docId, sessions, format),
         destination,
       );
     });

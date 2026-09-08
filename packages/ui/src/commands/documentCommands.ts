@@ -1,4 +1,9 @@
-import type { AnnotationRect, ContractClient, RenderableCommand } from '@monstera/contract';
+import type {
+  AnnotationRect,
+  ContractClient,
+  FormDataFormat,
+  RenderableCommand,
+} from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
 import type { z } from 'zod';
@@ -50,6 +55,9 @@ import {
   GENERATE_TOC_COMMAND_TITLE,
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
+  EXPORT_FORM_DATA_FDF_TITLE,
+  EXPORT_FORM_DATA_JSON_TITLE,
+  EXPORT_FORM_DATA_XFDF_TITLE,
   EXTRACT_PAGES_COMMAND_TITLE,
   INSERT_FROM_PDF_COMMAND_TITLE,
   INSERT_IMAGE_COMMAND_TITLE,
@@ -1523,6 +1531,81 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     },
   };
 }
+
+/**
+ * The three form-data exports, from one factory.
+ *
+ * ## THREE COMMANDS AND NOT ONE WITH A DIALOG
+ *
+ * The format is the entire decision, and every other collecting command in this
+ * file opens a dialog because it needs a page range or a name. A dialog whose
+ * only control is a three-way choice spends a click on something the menu can
+ * say — and the registry is the surface, so three entries is three entries in
+ * the palette, the ribbon and the shortcut map at once.
+ *
+ * `formFieldTools.ts` is the precedent one row along: five tools from one
+ * factory, differing in the shape they draw. These differ in one field.
+ *
+ * ## `saveCopyCommand`'s outcomes with a fifth
+ *
+ * The destination path is the same, so `copied` and `cancelled` say nothing and
+ * the two write failures reach the save-problem dialog. `unrepresentable` joins
+ * them and is the one that names a different **format** rather than a different
+ * destination: XFDF cannot store a control character and the other two can, so
+ * the action is to pick another entry from this same menu.
+ */
+function exportFormDataCommand(
+  format: FormDataFormat,
+  id: string,
+  title: MessageKey,
+  order: number,
+): (deps: DocumentCommandDeps) => UiCommand {
+  return (deps) => ({
+    id,
+    title,
+    placements: [{ surface: 'quick-toolbar', order }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = await deps.client['document.exportFormData']({
+        docId: context.docId,
+        format,
+      });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome:
+          answer.value.kind === 'write-failed'
+            ? 'write-failed'
+            : answer.value.kind === 'unrepresentable'
+              ? 'unrepresentable'
+              : 'contested',
+      });
+    },
+  });
+}
+
+export const exportFormDataJsonCommand = exportFormDataCommand(
+  'json',
+  'document.export-form-data-json',
+  EXPORT_FORM_DATA_JSON_TITLE,
+  32,
+);
+export const exportFormDataXfdfCommand = exportFormDataCommand(
+  'xfdf',
+  'document.export-form-data-xfdf',
+  EXPORT_FORM_DATA_XFDF_TITLE,
+  33,
+);
+export const exportFormDataFdfCommand = exportFormDataCommand(
+  'fdf',
+  'document.export-form-data-fdf',
+  EXPORT_FORM_DATA_FDF_TITLE,
+  34,
+);
 
 export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
   return {

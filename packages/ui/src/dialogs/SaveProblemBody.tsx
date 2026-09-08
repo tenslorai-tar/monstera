@@ -6,13 +6,20 @@ import {
   SAVE_REFUSED_CONTESTED,
   SAVE_REFUSED_REPLACED,
   SAVE_REFUSED_TARGET_ABSENT,
+  SAVE_REFUSED_UNREPRESENTABLE,
   SAVE_REFUSED_UNVERIFIABLE,
   SAVE_WORK_INTACT,
   SAVE_WRITE_FAILED,
 } from '../messages/en.js';
 
 /** Every outcome this dialog is opened for. */
-type SaveProblem = 'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed';
+type SaveProblem =
+  | 'contested'
+  | 'replaced'
+  | 'target-absent'
+  | 'unrepresentable'
+  | 'unverifiable'
+  | 'write-failed';
 
 /**
  * The message for one outcome.
@@ -33,6 +40,11 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   contested: SAVE_REFUSED_CONTESTED,
   replaced: SAVE_REFUSED_REPLACED,
   'target-absent': SAVE_REFUSED_TARGET_ABSENT,
+  // THE SIXTH, and the first that is about the FORMAT rather than the
+  // destination: XFDF has no escape for a control character and the other two
+  // export formats carry it. It reaches this dialog rather than a toast for the
+  // reason the others do — the document is untouched and there is an action.
+  unrepresentable: SAVE_REFUSED_UNREPRESENTABLE,
   unverifiable: SAVE_REFUSED_UNVERIFIABLE,
   'write-failed': SAVE_WRITE_FAILED,
 };

@@ -168,6 +168,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       snapshot: () => {
         throw new Error('a field read must not rasterise');
       },
+      exportFormData: () => {
+        throw new Error('a field read must not encode an export');
+      },
     }),
     (incident) => incidents.push(incident),
   );

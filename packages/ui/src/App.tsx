@@ -29,6 +29,9 @@ import {
   headerFooterCommand,
   batesNumberCommand,
   saveCopyCommand,
+  exportFormDataFdfCommand,
+  exportFormDataJsonCommand,
+  exportFormDataXfdfCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
@@ -1153,6 +1156,9 @@ export function App({ client, settings }: AppProps): ReactElement {
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),
         saveCopyCommand({ client, onApplied: applied, ask }),
+        exportFormDataJsonCommand({ client, onApplied: applied, ask }),
+        exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
+        exportFormDataFdfCommand({ client, onApplied: applied, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.

@@ -1691,6 +1691,24 @@ export const formFieldKindSchema = z.enum([
 export type FormFieldKind = z.infer<typeof formFieldKindSchema>;
 
 /**
+ * Which encoding a form-data export or import is in.
+ *
+ * **Declared once and read by four boundaries** — the renderer's ask, the host
+ * channel, the picker's filter and the encoder's branch. A second spelling
+ * anywhere would be a fifth opinion about which formats this build supports,
+ * and it would agree with this one until a format was added.
+ *
+ * The three are the row's, and each is here for a different reason: FDF is
+ * PDF's own, XFDF is the one every other tool exchanges, and JSON is the one a
+ * script can read without a library. `@monstera/kernel` writes all three —
+ * MuPDF declares no FDF symbol at all, measured 2026-09-08.
+ */
+export const formDataFormatSchema = z.enum(['json', 'xfdf', 'fdf']);
+
+/** See {@link formDataFormatSchema}. */
+export type FormDataFormat = z.infer<typeof formDataFormatSchema>;
+
+/**
  * How many characters a filled field may carry.
  *
  * {@link MAX_ANNOTATION_TEXT}'s number and its argument, stated separately for

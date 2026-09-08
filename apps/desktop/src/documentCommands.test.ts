@@ -29,6 +29,8 @@ import {
   readLayers,
   readPageLinks,
   readPageText,
+  readFormData,
+  serialiseFormData,
   snapshotRegion,
   withDocument,
 } from '@monstera/kernel/engine';
@@ -58,6 +60,7 @@ import {
   DocumentPoisonedError,
   type DocumentRestore,
   MissingSessionError,
+  type FormDataSource,
   type SaveSource,
   type SnapshotSource,
 } from './documentCommands.js';
@@ -295,6 +298,16 @@ const localSnapshot: SnapshotSource = {
   },
 };
 
+/** The form-data export composed the way `composition.ts` composes it. */
+const localFormData: FormDataSource = {
+  pick: () => Promise.reject(new Error('this case does not write a form data file')),
+  encode: async (id, sessions, format) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return serialiseFormData(await readFormData(held), format);
+  },
+};
+
 /**
  * The production composition of the duplicate report, the way `composition.ts`
  * assembles it — a session lookup and `findDuplicatePages`.
@@ -425,6 +438,7 @@ const INERT = {
   image: noImages,
   extract: localExtract,
   snapshot: localSnapshot,
+  formData: localFormData,
   directory: noDirectory,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
@@ -1063,5 +1077,121 @@ describe('search is E2s first consumer, through the composition point', () => {
     await expect(commands.searchPage(searchable, 1, 'needle', 10)).rejects.toBeInstanceOf(
       DocumentPoisonedError,
     );
+  });
+});
+
+/**
+ * The MIDDLE of the form-data export's wired pair, and it is the half neither
+ * end can see.
+ *
+ * `formData.test.ts` proves the three encoders produce three different files
+ * from the same fields. `commands/documentCommands.test.ts` proves the three
+ * controls dispatch three different `format` values. **Both are green if the
+ * composition drops the argument** — three controls that all write JSON, a
+ * correct encoder table nobody reaches with anything but `'json'`, and two
+ * tests on opposite sides of the boundary each correct in its own frame.
+ *
+ * That is the pair's blind spot with a string enum in place of a page index.
+ * So this drives the real `DocumentCommands` against a real session, writes
+ * two formats to two files, and reads what landed.
+ */
+describe('the form data export carries the format all the way to the file', () => {
+  let formDoc: DocId;
+  let formSession: MupdfSession;
+  let formService: DocumentService;
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 600]);
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const fields = document.getForm();
+    const text = fields.createTextField('applicant.name');
+    // A VALUE CARRYING THE CONSTRUCT, so a file written by an unescaped
+    // encoder is a file this case can tell apart from a correct one.
+    text.setText('Ada ) Lovelace');
+    text.addToPage(page, { x: 20, y: 540, width: 200, height: 18, font, borderWidth: 0 });
+    const bytes = await document.save();
+
+    const path = join(directory, 'form.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    formService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const outcome = await formService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    formDoc = outcome.docId;
+    formSession = await mupdfWriter.open(bytes);
+  });
+
+  /** The production composition, with a picker answering a path this case owns. */
+  function exportingTo(destination: string): DocumentCommands {
+    const held = new EngineSessions();
+    held.hold(formDoc, { mupdf: formSession });
+    return new DocumentCommands({
+      ...LOCAL_READS,
+      documents: formService,
+      bus: bus(),
+      engine: held,
+      // THE REAL WRITE PATH, for the save cases' reason: what this claims is
+      // that a file lands, and an injected surface cannot say so.
+      save: {
+        deps: {
+          checkWriteTarget: (id) => formService.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: siblingNames,
+          wait: () => Promise.resolve(),
+        },
+        flush: () => Promise.reject(new Error('an export does not flush the document')),
+      },
+      copy: {
+        pick: () => Promise.reject(new Error('this case does not write a copy')),
+        checkTarget: (target) => formService.checkCopyTarget(target),
+      },
+      formData: { ...localFormData, pick: () => Promise.resolve(destination) },
+    });
+  }
+
+  it('writes FDF and JSON to two files, and the two differ', async () => {
+    const asFdf = join(directory, 'exported.fdf');
+    const asJson = join(directory, 'exported.json');
+
+    expect((await exportingTo(asFdf).exportFormData(formDoc, 'fdf'))?.kind).toBe('copied');
+    expect((await exportingTo(asJson).exportFormData(formDoc, 'json'))?.kind).toBe('copied');
+
+    const fdf = readFileSync(asFdf).toString('latin1');
+    const json = readFileSync(asJson).toString('utf8');
+
+    // EACH FILE IS THE FORMAT THAT WAS ASKED FOR. A composition that dropped
+    // the argument writes the same bytes twice, and asserting only that files
+    // exist would pass for it.
+    expect(fdf.startsWith('%FDF-')).toBe(true);
+    expect(JSON.parse(json)).toMatchObject({ format: 'monstera-form-data' });
+
+    // AND THE VALUE SURVIVED, escaped. Without this the case passes for an
+    // export that wrote a well-formed file holding no fields — which is the
+    // shape a wrong session or an empty read produces.
+    expect(fdf).toContain('Ada \\) Lovelace');
+    expect(json).toContain('Ada ) Lovelace');
+  });
+
+  it('CONTROL: the picker runs FIRST, so a dismissal writes nothing', async () => {
+    // `undefined` is the dismissal, and it is an outcome rather than a failure.
+    // Without this the case above passes for a command that ignored the picker
+    // and wrote wherever it liked.
+    const untouched = join(directory, 'never-written.fdf');
+    const held = new EngineSessions();
+    held.hold(formDoc, { mupdf: formSession });
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      documents: formService,
+      bus: bus(),
+      engine: held,
+      formData: {
+        pick: () => Promise.resolve(null),
+        encode: () => Promise.reject(new Error('a dismissed picker must not reach the encoder')),
+      },
+    });
+
+    expect(await commands.exportFormData(formDoc, 'fdf')).toBeUndefined();
+    expect(existsSync(untouched)).toBe(false);
   });
 });

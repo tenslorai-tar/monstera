@@ -1,5 +1,7 @@
 import type { PDFWidget } from 'mupdf';
 
+import type { FormDataFormat } from '@monstera/contract';
+
 import type { MupdfSession } from './engineSeam.js';
 import { fieldValues } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
@@ -55,8 +57,9 @@ import { withDocument } from './mupdfWriter.js';
  * emitting `/` for an empty name would be the unescaped bug in another suit.
  */
 
-/** Which encoding an export or an import is in. */
-export type FormDataFormat = 'json' | 'xfdf' | 'fdf';
+// `FormDataFormat` IS THE CONTRACT'S. The renderer's ask, the host channel, the
+// picker's filter and this branch are four readers of one closed set, and a
+// second spelling here would agree with it until a format was added.
 
 /**
  * One field as an export sees it — folded from the widget walk.
@@ -224,8 +227,9 @@ function xmlEscaped(text: string): string {
  * measurement showed a naive encoder losing two of five fields to.
  */
 function pdfString(text: string): string {
-  // eslint-disable-next-line no-control-regex -- The question is exactly which
-  // bytes are outside printable ASCII, so the range is the check.
+  // THE PRINTABLE ASCII RANGE. Its ends are a space and a tilde, neither of
+  // which is a control character, so `no-control-regex` has nothing to say
+  // here — a disable comment would be claiming a control that does not exist.
   if (/^[\x20-\x7e]*$/u.test(text)) {
     return `(${text.replace(/[\\()]/gu, (match) => `\\${match}`)})`;
   }

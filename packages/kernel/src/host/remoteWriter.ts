@@ -59,7 +59,7 @@ import {
  * one object that holds both.
  */
 export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
-  Pick<RemoteMupdfLifecycle, 'close' | 'extract' | 'snapshot'>;
+  Pick<RemoteMupdfLifecycle, 'close' | 'extract' | 'snapshot' | 'exportFormData'>;
 
 export function remoteMupdfWriter(
   client: ClientApi<EngineChannels>,
@@ -94,12 +94,20 @@ export function remoteMupdfWriter(
   // an asset's lifetime is one command, so it belongs to whatever runs one.
   // The lifecycle above owns the session's directories; this owns a file inside
   // one for the length of a call (ADR-0044).
-  const { serialise, close, extract, snapshot } = remoteMupdfLifecycle(client, sessions, areas);
+  // `exportFormData` JOINS FOR THE SAME REASON, which makes it a class of
+  // three: bytes that are not the session's document, built where the engine
+  // is, arriving through the granted area.
+  const { serialise, close, extract, snapshot, exportFormData } = remoteMupdfLifecycle(
+    client,
+    sessions,
+    areas,
+  );
   return {
     serialise,
     close,
     extract,
     snapshot,
+    exportFormData,
     ...remoteMupdfExecution(client, sessions, assets),
   };
 }

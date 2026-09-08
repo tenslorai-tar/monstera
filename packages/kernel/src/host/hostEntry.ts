@@ -9,6 +9,7 @@ import { mupdfWriter } from '../mupdfWriter.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
@@ -146,6 +147,11 @@ startEngineHost(
     // payload that scales with what the user dragged, so it is built here and
     // written into the granted directory rather than crossing the pipe.
     snapshot: snapshotRegion,
+    // AND A THIRD, for the first's reason: reading the fields reaches MuPDF.
+    // The bounds on `engine/form-fields` exist for a panel a person reads, so
+    // an export built from that answer would be silently truncated at both.
+    exportFormData: async (session, format) =>
+      serialiseFormData(await readFormData(session), format),
     tokens: cryptoBytes,
     // Where a handler's thrown diagnostic goes. Never the pipe: main gets
     // `internal` and an id, and the text stays on this side — which is the

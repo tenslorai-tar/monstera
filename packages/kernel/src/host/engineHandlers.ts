@@ -1,4 +1,4 @@
-import type { CommandOfKind, Handlers } from '@monstera/contract';
+import type { CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
@@ -131,6 +131,19 @@ export type HostSnapshot = (
 ) => Promise<ByteImage>;
 
 /**
+ * The form's data, encoded — a THIRD producer of bytes that are not the
+ * session's document, for the two above's reason.
+ *
+ * It runs here rather than in main because reading the fields reaches MuPDF,
+ * and because the panel's field list is bounded on both axes and an export
+ * built from it would be truncated at both without saying so.
+ */
+export type HostFormDataExport = (
+  session: MupdfSession,
+  format: FormDataFormat,
+) => Promise<ByteImage>;
+
+/**
  * The engine host's side of Decision 10: it looks the spec up and calls it
  * against a session **it** holds.
  *
@@ -253,6 +266,8 @@ export interface EngineHandlerParts {
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
   readonly snapshot: HostSnapshot;
+  /** How this process writes the form's data out. `engine/exportFormData`. */
+  readonly exportFormData: HostFormDataExport;
 }
 
 export function createEngineHandlers({
@@ -271,6 +286,7 @@ export function createEngineHandlers({
   duplicates,
   extract,
   snapshot,
+  exportFormData,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -528,6 +544,34 @@ export function createEngineHandlers({
       // what knows there was more. Both halves are forwarded.
       const listed = await formFields(held.session);
       return { ok: true, value: { fields: [...listed.fields], truncated: listed.truncated } };
+    },
+
+    'engine/exportFormData': async ({ session, format, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        // BUILT HERE AND WRITTEN INTO THE GRANTED DIRECTORY, `engine/extract`'s
+        // route and its reason: reading the fields reaches MuPDF, which
+        // invariant 20 keeps out of main.
+        const bytes = await exportFormData(held.session, format);
+        const written = await files.writeOutput(held.outputDirectory, into, bytes);
+        return { ok: true, value: { bytes: written } };
+      } catch (error) {
+        // A FORMAT THAT CANNOT CARRY THE VALUE IS ITS OWN CODE, because it is
+        // the one failure with an action attached: XFDF has no escape for a
+        // control character and the other two formats carry it unharmed. It is
+        // matched by NAME rather than by `instanceof`, because the host body
+        // and this module may be different realms — the error crosses a
+        // dynamic import boundary, where `instanceof` is the check that agrees
+        // most of the time.
+        if (error instanceof Error && error.name === 'UnrepresentableFormDataError') {
+          return failed('unrepresentable', error);
+        }
+        // EVERYTHING ELSE IS THE DOCUMENT'S FAULT rather than the host's, which
+        // is `engine/extract`'s distinction: the supervisor declines to count a
+        // distinguishable code as a host death.
+        return failed('export-failed', error);
+      }
     },
 
     'engine/duplicate-pages': async ({ session }) => {

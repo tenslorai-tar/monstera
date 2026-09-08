@@ -5,7 +5,11 @@ import { MAX_IMAGE_BYTES } from '@monstera/contract';
 import { app, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
-import { createDestinationPicker, createSnapshotPicker } from './destinationPicker.js';
+import {
+  createDestinationPicker,
+  createFormDataPicker,
+  createSnapshotPicker,
+} from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
 import { createImagePicker } from './imagePicker.js';
@@ -76,6 +80,9 @@ startShell(() =>
     // Its sibling, on the line after it for the reason the line above gives:
     // every Electron dialog this application opens is visible in one place.
     pickSnapshot: createSnapshotPicker(),
+    // The fourth save dialog, on the line after its siblings for the reason
+    // above: every Electron dialog this application opens is visible together.
+    pickFormData: createFormDataPicker(),
     // The third dialog, beside the two above so all of them are visible
     // together — and the first surface added since composition became an
     // object, which is why `pickerProbe.ts` is absent from this commit.

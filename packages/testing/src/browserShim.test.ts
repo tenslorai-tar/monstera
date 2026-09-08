@@ -193,6 +193,7 @@ describe('browser shim', () => {
       'document.destinations',
       'document.duplicatePages',
       'document.execute',
+      'document.exportFormData',
       'document.extract',
       'document.formFields',
       'document.insertImage',

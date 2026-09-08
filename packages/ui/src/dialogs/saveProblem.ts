@@ -39,7 +39,14 @@ export const SAVE_PROBLEM_DIALOG = declareDialog({
   id: SAVE_PROBLEM_DIALOG_ID,
   title: SAVE_PROBLEM_TITLE,
   props: z.object({
-    outcome: z.enum(['contested', 'replaced', 'target-absent', 'unverifiable', 'write-failed']),
+    outcome: z.enum([
+      'contested',
+      'replaced',
+      'target-absent',
+      'unrepresentable',
+      'unverifiable',
+      'write-failed',
+    ]),
   }),
   component: lazy(() => import('./SaveProblemBody.js')),
 });

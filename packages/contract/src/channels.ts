@@ -7,6 +7,7 @@ import {
   MAX_IMAGE_PAGES,
   annotationKindNameSchema,
   annotationRectSchema,
+  formDataFormatSchema,
   formFieldKindSchema,
   renderableCommandSchema,
 } from './commands.js';
@@ -983,6 +984,46 @@ export const channels = {
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Writes the form's data to a file the user picks, in the format they chose.
+   *
+   * ## `snapshotRegion`'s FOUR OUTCOMES with one more, and the extra one is the
+   * row
+   *
+   * The destination path is the same code on the same terms — the contested
+   * check, the temporary and backup naming, the atomic write — because a form
+   * data file written over a document somebody has open destroys it exactly as
+   * a PDF copy would.
+   *
+   * `unrepresentable` is the fifth, and it exists because the three formats are
+   * not equivalent. XML 1.0 admits tab, newline and carriage return out of the
+   * C0 range and has no escape for the rest, so a field value carrying a
+   * control character cannot be written as XFDF at all — while FDF and JSON
+   * carry it unharmed. The alternatives were a file no parser accepts and a
+   * file silently missing a character; both are the failure this row is about,
+   * which is an export that looks like it worked. A refusal naming the format
+   * is the only one of the three a person can act on.
+   *
+   * ## The format is the USER'S choice and reaches four readers
+   *
+   * It picks the encoder, the dialog's filter and the suggested extension, and
+   * it is `formDataFormatSchema` in all of them — one closed set rather than
+   * four agreeing lists.
+   */
+  'document.exportFormData': channel(
+    'Writes the document’s form data to a file the user picks.',
+    z.object({ docId: docIdSchema, format: formDataFormatSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      /** A value this format cannot carry. The other two can — see above. */
+      z.object({ kind: z.literal('unrepresentable') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

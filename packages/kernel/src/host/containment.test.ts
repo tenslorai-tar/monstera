@@ -539,6 +539,9 @@ describe('the engine host answers a containment probe', () => {
     snapshot: () => {
       throw new Error('a containment probe must not rasterise a page');
     },
+    exportFormData: () => {
+      throw new Error('a containment probe must not read a form');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {

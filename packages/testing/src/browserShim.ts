@@ -774,6 +774,28 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
+    // THE SAME OPTION A FOURTH TIME, and the format is ignored for the region's
+    // reason: what a browser-shim case can assert about an export is which
+    // channel the control reached and in which format, and whether those bytes
+    // are valid FDF is `formData.test.ts`' case. A shim that encoded would be a
+    // second serialiser.
+    //
+    // `unrepresentable` IS NOT REACHABLE HERE and that is deliberate: it is a
+    // fact about a document's values, which this shim holds none of, so
+    // offering a switch for it would let a case assert a message against a
+    // condition nothing produced.
+    'document.exportFormData': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.copyDestination;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'write-failed') return Promise.resolve(ok({ kind: 'write-failed' as const }));
+      if (typeof chosen === 'object') {
+        return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
+      }
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+    },
     // THE SAME `copyDestination` OPTION AGAIN, for the extract's reason. The
     // success answers `files` from the group count, which is the one thing a
     // shim CAN answer honestly here: it is a function of the request rather

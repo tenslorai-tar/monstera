@@ -105,6 +105,12 @@ export {
   MAX_LISTED_FIELDS,
   readFormFields,
 } from './formFields.js';
+export {
+  type ExportedField,
+  UnrepresentableFormDataError,
+  readFormData,
+  serialiseFormData,
+} from './formData.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export {

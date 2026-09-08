@@ -275,7 +275,7 @@ describe('serialiseFormData, XFDF', () => {
     );
   });
 
-  it('REFUSES A VALUE XML CANNOT CARRY, rather than dropping the character', async () => {
+  it('REFUSES A VALUE XML CANNOT CARRY, rather than dropping the character', () => {
     // XML 1.0 admits tab, newline and carriage return out of the C0 range and
     // nothing else — not even as a numeric reference, so there is no escape to
     // reach for. The three options are a file no parser accepts, a file

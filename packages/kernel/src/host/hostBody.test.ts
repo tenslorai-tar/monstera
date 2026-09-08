@@ -148,6 +148,9 @@ function start(stream: HostByteStream) {
       snapshot: () => {
         throw new Error('no case here rasterises a page');
       },
+      exportFormData: () => {
+        throw new Error('no case here exports form data');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

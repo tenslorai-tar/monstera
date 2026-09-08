@@ -103,6 +103,9 @@ export const BATES_NUMBER_APPLY = messageKey('dialog.bates-number.apply');
 export const BATES_NUMBER_NOT_A_NUMBER = messageKey('dialog.bates-number.not-a-number');
 export const BATES_NUMBER_COMMAND_TITLE = messageKey('command.bates-number.title');
 export const SAVE_COPY_TITLE = messageKey('command.save-copy.title');
+export const EXPORT_FORM_DATA_JSON_TITLE = messageKey('command.export-form-data.json');
+export const EXPORT_FORM_DATA_XFDF_TITLE = messageKey('command.export-form-data.xfdf');
+export const EXPORT_FORM_DATA_FDF_TITLE = messageKey('command.export-form-data.fdf');
 export const PAGE_TRANSITION_TITLE = messageKey('dialog.page-transition.title');
 export const PAGE_TRANSITION_REPLACE = messageKey('dialog.page-transition.replace');
 export const PAGE_TRANSITION_DISSOLVE = messageKey('dialog.page-transition.dissolve');
@@ -429,6 +432,7 @@ export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
 export const SAVE_REFUSED_REPLACED = messageKey('dialog.save-problem.replaced');
 export const SAVE_REFUSED_TARGET_ABSENT = messageKey('dialog.save-problem.target-absent');
+export const SAVE_REFUSED_UNREPRESENTABLE = messageKey('dialog.save-problem.unrepresentable');
 export const SAVE_REFUSED_UNVERIFIABLE = messageKey('dialog.save-problem.unverifiable');
 export const SAVE_WRITE_FAILED = messageKey('dialog.save-problem.write-failed');
 export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
@@ -881,6 +885,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // prompted about unsaved work. Naming it "Save as" would promise a move this
   // command deliberately does not make.
   [SAVE_COPY_TITLE]: 'Save a copy…',
+  // THREE ENTRIES AND NOT ONE WITH A DIALOG. The format is the whole of the
+  // decision, so a dialog whose only field is a three-way choice is a click
+  // spent on something the menu can say. The name of each format is what a
+  // person receiving the file will be told to expect, so it is the label.
+  [EXPORT_FORM_DATA_JSON_TITLE]: 'Export form data as JSON…',
+  [EXPORT_FORM_DATA_XFDF_TITLE]: 'Export form data as XFDF…',
+  [EXPORT_FORM_DATA_FDF_TITLE]: 'Export form data as FDF…',
   [PAGE_TRANSITION_TITLE]: 'Page transition',
   [PAGE_TRANSITION_REPLACE]: 'None',
   [PAGE_TRANSITION_DISSOLVE]: 'Dissolve',
@@ -1103,6 +1114,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_REFUSED_REPLACED]: 'The file on disk is not the one this document was opened from. Use Save As to write somewhere else.',
   [SAVE_REFUSED_TARGET_ABSENT]: 'The file this document came from is no longer there. Use Save As to write somewhere else.',
   [SAVE_REFUSED_UNVERIFIABLE]: 'Monstera could not confirm the file on disk is still the same one, so it did not overwrite it.',
+  // NAMES THE TWO FORMATS THAT WORK, because the action here is choosing a
+  // different one and a message saying only what failed leaves the reader
+  // guessing which. XFDF is XML and XML has no way to write a control
+  // character at all — not even escaped.
+  [SAVE_REFUSED_UNREPRESENTABLE]: 'A field in this form holds a character XFDF cannot store. Export as FDF or JSON instead, which both keep it.',
   [SAVE_WRITE_FAILED]: 'The file could not be written. Check that it is not open in another application, and that there is room on the disk.',
   // "Could not be done" and never "error". Every code below leaves the document
   // exactly as it was, so the title describes the operation and not the state.

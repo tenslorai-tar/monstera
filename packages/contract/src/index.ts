@@ -121,6 +121,8 @@ export {
   fieldFillSchema,
   fillFormFieldSchema,
   flattenFormFieldsSchema,
+  type FormDataFormat,
+  formDataFormatSchema,
   formFieldKindSchema,
   MAX_DELETED_FIELDS,
   MAX_FIELD_NAME,

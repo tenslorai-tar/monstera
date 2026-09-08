@@ -67,6 +67,7 @@ const handlers: ContractHandlers = {
   // returns one cannot show that the dismissal path exists at all.
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.snapshotRegion': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

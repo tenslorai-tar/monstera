@@ -208,6 +208,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // and what travels here is a rectangle, a scale and a byte count. The request
   // is four numbers whatever the document weighs.
   'document.snapshotRegion': 'needs an engine session and a save dialog',
+  // THE SAME TWO REASONS AND THE SAME ANSWER TO L11: the file is built where
+  // the engine is and written into the granted directory, so what travels is a
+  // format name and a byte count. The ask is a `DocId` and one enum member
+  // whatever the form holds — which is the reason a channel answering the
+  // FIELDS was rejected for this: that payload does scale, which is why the one
+  // that exists for a panel is bounded on both axes.
+  'document.exportFormData': 'needs an engine session and a save dialog',
   'document.split': 'needs an engine session and a folder dialog',
   'document.insertImage': 'needs an engine session and an image picker',
   // THE IMAGE GOES THE OTHER WAY AND NEVER CROSSES THIS BOUNDARY, which is the

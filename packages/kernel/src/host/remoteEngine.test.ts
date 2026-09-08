@@ -11,6 +11,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
@@ -187,6 +188,8 @@ async function joined(): Promise<{
       duplicates: findDuplicatePages,
       extract: extractPages,
       snapshot: snapshotRegion,
+      exportFormData: async (session, format) =>
+        serialiseFormData(await readFormData(session), format),
     }),
     (incident) => incidents.push(incident),
   );
@@ -457,6 +460,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         snapshot: () => {
           throw new Error('unused');
         },
+        exportFormData: () => {
+          throw new Error('unused');
+        },
       }),
       (incident) => incidents.push(incident),
     );
@@ -545,6 +551,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         snapshot: () => {
           throw new Error('the rotation-refusal case must not rasterise a page');
+        },
+        exportFormData: () => {
+          throw new Error('the rotation-refusal case must not export form data');
         },
       }),
       (incident) => incidents.push(incident),

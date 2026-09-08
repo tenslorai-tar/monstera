@@ -15,6 +15,7 @@ import {
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
+  type HostFormDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
   type HostPageLinksReader,
@@ -54,6 +55,7 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import {
   DocumentCommands,
+  type FormDataSource,
   type ImageSource,
   type PickDestination,
   type PickDirectory,
@@ -263,6 +265,12 @@ export interface ShellComposition {
   /** Where a snapshot goes. The same dialog narrowed to a PNG. */
   readonly pickSnapshot: PickDestination;
   /**
+   * Where a form-data export goes. The same dialog narrowed to the chosen
+   * format, which is why this one takes the format rather than a name —
+   * `destinationPicker.ts` carries the argument for the difference.
+   */
+  readonly pickFormData: FormDataSource['pick'];
+  /**
    * Which image becomes a page. Electron's open dialog, narrowed.
    *
    * **THE FIRST SURFACE ADDED SINCE THIS BECAME AN OBJECT**, and the point of
@@ -320,6 +328,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickDocument,
     pickDestination,
     pickSnapshot,
+    pickFormData,
     pickImage,
     pickDirectory,
     readImage,
@@ -547,6 +556,18 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         return engineHost.snapshot(session, request);
       },
     },
+    // THE FORM DATA EXPORT, composed the way the snapshot beside it is and for
+    // its reasons: the bytes are built in the host because reading the fields
+    // reaches MuPDF, and they arrive through the granted directory rather than
+    // over the pipe.
+    formData: {
+      pick: pickFormData,
+      encode: (docId, sessions, format) => {
+        const session = sessions.mupdf;
+        if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+        return engineHost.exportFormData(session, format);
+      },
+    },
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the
     // part that arrives from `entry.ts` and this file keeps its property of
@@ -670,6 +691,8 @@ function engineSessionOpener(
   readonly extract: HostExtract;
   /** Rasterises a region of a page. On this surface for {@link extract}'s reason. */
   readonly snapshot: HostSnapshot;
+  /** Encodes the form's data. On this surface for {@link extract}'s reason. */
+  readonly exportFormData: HostFormDataExport;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -929,6 +952,18 @@ function engineSessionOpener(
       );
     }
     return writer.snapshot(session, request);
+  };
+
+  /** The export's half, and {@link extractThroughHost}'s reason word for word. */
+  const exportFormDataThroughHost: HostFormDataExport = (session, format) => {
+    if (writer === null) {
+      throw new Error(
+        'A form data export reached the engine with no host writer registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return writer.exportFormData(session, format);
   };
 
   /**
@@ -1215,6 +1250,7 @@ function engineSessionOpener(
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
     snapshot: snapshotThroughHost,
+    exportFormData: exportFormDataThroughHost,
     closeHost,
     rebuildSessions: create,
     restoreSessions: buildSessions,

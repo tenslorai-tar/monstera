@@ -77,6 +77,9 @@ export function harnessSurfaces(
     pickSnapshot: () => {
       throw new Error(`${harness} writes no snapshot, so nothing may pick a destination for one`);
     },
+    pickFormData: () => {
+      throw new Error(`${harness} exports no form data, so nothing may pick a file for it`);
+    },
     // ADDED 2026-09-05, AND THIS LINE IS THE MECHANISM WORKING. `pickImage` is
     // the first surface the shell has gained since composition became an
     // object, and it reached every harness through this file: `pickerProbe.ts`
