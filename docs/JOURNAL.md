@@ -886,6 +886,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — A field and an empty table cell are the same rectangle, and the measurement says what to do about it
+
+`scripts/research/flatFieldDetection.mjs`, before a line of *heuristic field
+detection on flat documents* was designed. The row's difficulty was never
+finding the lines: **a table looks exactly like a form**, and a detector that
+offers a text field on every cell of a financial table is worse than none — a
+person would delete forty fields to keep two.
+
+Six fixtures, every shape labelled `field` or `cell` by the code that drew it,
+so precision and recall are computed rather than eyeballed. Every fixture shares
+one stroke width, colour and font, because two populations drawn by two code
+paths differ for reasons that have nothing to do with the question.
+
+### 1. Two instrument defects, and the report is what caught both
+
+**The first run matched 0 of 61 shapes and scored every population `n/a`.** A
+clean table of nothing — which is also what a detector that separates nothing
+prints. It was caught because the report shows matched and unmatched counts
+beside the score; without that line, `precision n/a` reads as *the rule decided
+nothing* rather than *the join is broken*. The cause is the frame: pdf-lib draws
+in PDF user space, y up, and MuPDF's device reports display space, y down, so a
+box at `y=700` on a 792-point page arrives at `y=68` with its edges swapped.
+
+**And `holds text` was 0 of 32 for cells that visibly hold text** — the column
+that never varies. `Text.getBounds` answers the FONT's box scaled to the run,
+not the glyphs' ink: a run drawn at `x=66` inside a cell spanning 59.5–200.5
+reported `[55.69, 66.77, 95.96, 96.23]`, starting four points left of its own
+cell. Every containment test against it was false. `toStructuredText` answers
+where the glyphs are, which is the question and MuPDF's own answer to it.
+
+### 2. What separates, and what does not
+
+| rule | flat form | mixed | filled table | empty grid ×2 | blank timesheet |
+|---|---|---|---|---|---|
+| holds no text | 1.00 / 1.00 | 1.00 / 1.00 | no calls | **28 and 8 false** | **24 false** |
+| under 3 column siblings | 1.00 / **0.43** | 1.00 / 1.00 | no calls | 0, then **12 false** | none |
+| a label to its left | 1.00 / 0.57 | 1.00 / 1.00 | no calls | none | **7 false** |
+| it is a LINE, not a box | 1.00 / 0.57 | 1.00 / 1.00 | no calls | none | none |
+| **no text AND a label either side** | **1.00 / 1.00** | **1.00 / 1.00** | no calls | **none** | **6 false** |
+
+*(precision / recall, against the generator's labels)*
+
+**The column-sibling rule is backwards for the commonest field shape.** A form's
+rule lines all begin after the labels and end at the same margin, so they are
+themselves a column — each of four has three siblings, and a threshold that
+rejects a table rejects them too. Its recall on a pure form is 0.43. And the
+threshold cannot be set anyway: an eight-row grid gives seven siblings and a
+three-row grid gives two, which is *under* the form's three.
+
+**The label has to be read on both sides.** `☐ Yes` puts the word right of the
+square, so a left-only rule finds the four rule lines and none of the three tick
+boxes.
+
+### 3. The finding that changes the row rather than scoring it
+
+The best rule still calls six cells of a **blank timesheet** fields. Chasing
+that number is the wrong move, because the label `cell` there is the fixture's
+assumption and not the page's fact: **somebody prints a blank timesheet in order
+to write in the cells.** A filled cell is not a field — it already holds a
+value. An empty ruled box beside a label is a place to write, which is what a
+field is.
+
+So the distinction the row asked about is not a property of the page, and the
+measurement says what to build rather than whether to build it:
+
+- the separator is **does it already hold text**, and the label on either side
+  is what raises precision from 0.00 to 1.00 on every fixture but the timesheet;
+- the residual cases are genuinely ambiguous, so the detector must **propose**
+  candidates a person accepts, and must never convert a document on its own.
+
+**Not a withdrawal**, then — but not the feature as stated either. The row said
+*detection*; what it can honestly ship is a proposal with a review step, and
+that is a difference the row has to carry.
+
+---
+
 ## 2026-09-08 — A strict XFDF reader, and three attacks answered by one refusal
 
 [ADR-0046](DECISIONS/0046-a-strict-xfdf-reader-rather-than-an-xml-parser.md).
