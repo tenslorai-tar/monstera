@@ -8,6 +8,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { fieldValues, fillWidget, onStateKey, refuseUnfillable } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
+import { readXfdf } from './xfdfReader.js';
 
 /**
  * Writing a document's form data out, in the three formats the row names.
@@ -468,7 +469,33 @@ export function parseFormData(
   bytes: Uint8Array,
   format: FormDataImportFormat,
 ): readonly ImportedField[] {
-  return format === 'json' ? parseJson(bytes) : parseFdf(bytes);
+  if (format === 'json') return parseJson(bytes);
+  if (format === 'xfdf') return parseXfdf(bytes);
+  return parseFdf(bytes);
+}
+
+/**
+ * An XFDF, through the strict reader
+ * ([ADR-0046](../../../docs/DECISIONS/0046-a-strict-xfdf-reader-rather-than-an-xml-parser.md)).
+ *
+ * `fatal: true` for the JSON parse's reason: a lenient decode turns a binary
+ * file into a run of replacement characters, which then fails as *not XFDF* —
+ * the right outcome by the wrong route, and the wrong one the day a binary file
+ * decodes into something that parses.
+ *
+ * The reader's refusals are re-thrown as they are. Each names the rule that
+ * fired, which is worth more than a uniform message to whoever reads a log:
+ * *this file carries a DOCTYPE* and *this file is not XFDF* are different facts
+ * about the person's file.
+ */
+function parseXfdf(bytes: Uint8Array): readonly ImportedField[] {
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (error) {
+    throw new UnreadableFormDataError(error instanceof Error ? error.message : String(error));
+  }
+  return readXfdf(text);
 }
 
 function parseJson(bytes: Uint8Array): readonly ImportedField[] {

@@ -63,6 +63,7 @@ import {
   EXTRACT_PAGES_COMMAND_TITLE,
   IMPORT_FORM_DATA_FDF_TITLE,
   IMPORT_FORM_DATA_JSON_TITLE,
+  IMPORT_FORM_DATA_XFDF_TITLE,
   INSERT_FROM_PDF_COMMAND_TITLE,
   INSERT_IMAGE_COMMAND_TITLE,
   MERGE_DOCUMENT_COMMAND_TITLE,
@@ -1679,11 +1680,17 @@ export const importFormDataJsonCommand = importFormDataCommand(
   IMPORT_FORM_DATA_JSON_TITLE,
   35,
 );
+export const importFormDataXfdfCommand = importFormDataCommand(
+  'xfdf',
+  'document.import-form-data-xfdf',
+  IMPORT_FORM_DATA_XFDF_TITLE,
+  36,
+);
 export const importFormDataFdfCommand = importFormDataCommand(
   'fdf',
   'document.import-form-data-fdf',
   IMPORT_FORM_DATA_FDF_TITLE,
-  36,
+  37,
 );
 
 export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {

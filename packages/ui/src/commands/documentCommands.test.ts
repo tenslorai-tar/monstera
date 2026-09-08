@@ -14,6 +14,7 @@ import {
   exportFormDataXfdfCommand,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
+  importFormDataXfdfCommand,
   saveCopyCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
@@ -716,12 +717,11 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('EACH IMPORT DISPATCHES ITS OWN FORMAT, and there are only two', async () => {
-    // The export's case one row along, and the count is the assertion the
-    // export's does not make: there are TWO imports where there are three
-    // exports, because reading XFDF needs a parser this build does not have —
-    // and a third entry whose command refuses is the display-only defect the
-    // wired rule is about.
+  it('EACH IMPORT DISPATCHES ITS OWN FORMAT, three of them against the export’s three', async () => {
+    // The export's case one row along, and the same blind spot: commands built
+    // from one factory differ in a single captured argument, so driving all
+    // three and comparing the SET is what separates them from three controls
+    // that all read JSON.
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
@@ -732,10 +732,12 @@ describe('delete pages — the mutation-dialog gate', () => {
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined) };
 
     await importFormDataJsonCommand(deps).run(CONTEXT);
+    await importFormDataXfdfCommand(deps).run(CONTEXT);
     await importFormDataFdfCommand(deps).run(CONTEXT);
 
     expect(sent).toStrictEqual([
       { id: 'document.importFormData', params: { docId: DOC, format: 'json' } },
+      { id: 'document.importFormData', params: { docId: DOC, format: 'xfdf' } },
       { id: 'document.importFormData', params: { docId: DOC, format: 'fdf' } },
     ]);
   });

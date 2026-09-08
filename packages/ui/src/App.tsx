@@ -34,6 +34,7 @@ import {
   exportFormDataXfdfCommand,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
+  importFormDataXfdfCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
@@ -1164,6 +1165,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
         exportFormDataFdfCommand({ client, onApplied: applied, ask }),
         importFormDataJsonCommand({ client, onApplied: applied, ask }),
+        importFormDataXfdfCommand({ client, onApplied: applied, ask }),
         importFormDataFdfCommand({ client, onApplied: applied, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a

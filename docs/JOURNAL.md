@@ -886,6 +886,66 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — A strict XFDF reader, and three attacks answered by one refusal
+
+[ADR-0046](DECISIONS/0046-a-strict-xfdf-reader-rather-than-an-xml-parser.md).
+The row's last operation, and the only one that needed a decision rather than a
+measurement — this repository declares no XML dependency in any workspace, so
+reading XFDF meant a new production dependency on the path a stranger's file
+arrives by, or a reader of this build's own.
+
+### 1. Three of the six shapes are one construct
+
+The 2026-09-07 measurement printed six inputs. Refusing `<!DOCTYPE` outright
+answers **XXE, entity expansion and the external DTD together**; a depth bound
+answers the fourth; the nameless field is a refusal in the model. What is left
+is a fixed, shallow schema — which is to say the refusal policy removes exactly
+what a general parser is valuable for, and each of those three is a feature
+somebody has to remember to switch off.
+
+The case that asserts it asserts the **same class** for all three, which is what
+says the rule is one construct rather than three special cases that agree. And
+a second case pins the ORDER: a nine-megabyte internal subset is refused in
+under 50 ms, because a reader that consumed the subset and refused afterwards
+would have done the work already — the same defect with a refusal on the end.
+
+### 2. What the reader accepts is decided by what Acrobat writes
+
+**Both spellings of a hierarchical name.** This build writes
+`<field name="applicant.name">` and Acrobat writes
+`<field name="applicant"><field name="name">`; a reader taking only the flat
+form would refuse every file the feature exists for. The nested one is joined
+with dots, which is what a fully-qualified name is — the create row measured
+that a dot makes a parent in the field tree.
+
+It also walks past `<f>`, `<ids>` and `<annots>` rather than refusing them,
+because refusing an element this build reads nothing from would refuse every
+real export.
+
+**A named entity it does not define is a refusal**, and that is the other half
+of the `<!DOCTYPE` rule rather than strictness for its own sake: nothing may
+declare one, so `&nbsp;` is either a file that needed the refused construct or a
+value somebody wrote unescaped — and passing it through as text would put
+`&nbsp;` into a form field.
+
+### 3. The limit that is stated rather than fixed
+
+**A namespace prefix is dropped, not resolved.** Resolving one means tracking
+`xmlns` bindings down the tree, which is the reader becoming a parser — ADR-0046's
+own re-argue trigger. The cost is written down: a file using an `xfdf` prefix for
+a different namespace would be read as XFDF, and nothing this build imports does
+that.
+
+### 4. Two writers a day apart, and the round trip that holds them together
+
+The XFDF encoder landed yesterday and its reader today, both ours. That is the
+pair that can drift and look correct from either side, so the round trip runs
+through the hostile values: a fixture of ordinary words round-trips through an
+encoder that escapes nothing **and** a reader that unescapes nothing — the two
+defects cancel, and only a value carrying `<` and `&` separates them.
+
+---
+
 ## 2026-09-08 — Import form data, and two mutations that each found a comment claiming a control
 
 Three commits: the B4 amendment, the rename it authorises, and the import.

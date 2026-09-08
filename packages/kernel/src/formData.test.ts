@@ -325,7 +325,7 @@ describe('applyImportFormData', () => {
   async function afterImport(
     document: Uint8Array,
     bytes: Uint8Array,
-    format: 'json' | 'fdf',
+    format: 'json' | 'xfdf' | 'fdf',
   ): Promise<readonly ExportedField[]> {
     return await onSession(document, async (session) => {
       await applyImportFormData(session, { kind: 'importFormData', format, bytes });
@@ -375,6 +375,44 @@ describe('applyImportFormData', () => {
     await expect(
       afterImport(await form({ ticked: false, filled: false }), both, 'json'),
     ).rejects.toThrow(/writes one per field/u);
+  });
+
+  it('ROUND-TRIPS THROUGH XFDF, which is the format with a reader of ours', async () => {
+    // THE THIRD FORMAT, and the one whose reader this build wrote (ADR-0046).
+    // The round trip is what says the writer and the reader agree — two halves
+    // written a day apart, both by us, which is exactly the pair that can drift
+    // and still look correct from either side.
+    const filled = await form({ multi: false });
+    const written = serialiseFormData(await exported(filled), 'xfdf');
+    expect(
+      await afterImport(await form({ ticked: false, filled: false }), written, 'xfdf'),
+    ).toStrictEqual(await exported(filled));
+  });
+
+  it('CARRIES THE HOSTILE VALUES THROUGH XFDF, escaped out and unescaped back', async () => {
+    // The values that close the format's constructs, through both halves. A
+    // fixture of ordinary words round-trips through an encoder that escapes
+    // nothing AND a reader that unescapes nothing — the two defects cancel, and
+    // only a value carrying `<` and `&` separates them.
+    const filled = await form({ multi: false });
+    const written = serialiseFormData(await exported(filled), 'xfdf');
+    const back = await afterImport(await form({ ticked: false, filled: false }), written, 'xfdf');
+    expect(back.find((field) => field.name === 'hostile.xml')?.values).toStrictEqual([
+      HOSTILE['hostile.xml'],
+    ]);
+  });
+
+  it('REFUSES AN XFDF CARRYING A DOCTYPE, which is where three attacks live', async () => {
+    // The reader's rule, asserted from the import's side so the wiring is
+    // covered too: a reader that refuses and an import that never calls it look
+    // identical from `readXfdf`'s own test file.
+    const hostile = new TextEncoder().encode(
+      '<?xml version="1.0"?><!DOCTYPE xfdf [<!ENTITY x SYSTEM "file:///c:/windows/win.ini">]>' +
+        '<xfdf><fields><field name="hostile.fdf"><value>&x;</value></field></fields></xfdf>',
+    );
+    await expect(afterImport(await form(), hostile, 'xfdf')).rejects.toThrow(
+      /document type declaration/u,
+    );
   });
 
   it('REFUSES JSON THAT IS NOT THIS BUILD’S, rather than importing nothing and succeeding', async () => {

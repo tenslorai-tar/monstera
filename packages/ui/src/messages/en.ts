@@ -107,6 +107,7 @@ export const EXPORT_FORM_DATA_JSON_TITLE = messageKey('command.export-form-data.
 export const EXPORT_FORM_DATA_XFDF_TITLE = messageKey('command.export-form-data.xfdf');
 export const EXPORT_FORM_DATA_FDF_TITLE = messageKey('command.export-form-data.fdf');
 export const IMPORT_FORM_DATA_JSON_TITLE = messageKey('command.import-form-data.json');
+export const IMPORT_FORM_DATA_XFDF_TITLE = messageKey('command.import-form-data.xfdf');
 export const IMPORT_FORM_DATA_FDF_TITLE = messageKey('command.import-form-data.fdf');
 export const IMPORT_FORM_DATA_PROBLEM_TITLE = messageKey('dialog.import-form-data.title');
 export const IMPORT_FORM_DATA_UNREADABLE = messageKey('dialog.import-form-data.unreadable');
@@ -897,10 +898,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_FORM_DATA_JSON_TITLE]: 'Export form data as JSON…',
   [EXPORT_FORM_DATA_XFDF_TITLE]: 'Export form data as XFDF…',
   [EXPORT_FORM_DATA_FDF_TITLE]: 'Export form data as FDF…',
-  // TWO ENTRIES WHERE THE EXPORT HAS THREE, and the absence is the honest one:
-  // reading XFDF needs an XML reader this build does not have, so there is no
-  // menu entry for it rather than one that refuses.
+  // THREE EACH WAY. It was two for one commit, while XFDF had no reader — the
+  // menu says what works, and an entry whose command refuses is the
+  // display-only defect one layer below the surface.
   [IMPORT_FORM_DATA_JSON_TITLE]: 'Import form data from JSON…',
+  [IMPORT_FORM_DATA_XFDF_TITLE]: 'Import form data from XFDF…',
   [IMPORT_FORM_DATA_FDF_TITLE]: 'Import form data from FDF…',
   [IMPORT_FORM_DATA_PROBLEM_TITLE]: 'That form data was not imported',
   // NAMES ALL THREE CAUSES, because this build genuinely cannot tell them

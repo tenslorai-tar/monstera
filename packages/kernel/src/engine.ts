@@ -118,6 +118,14 @@ export {
   readFormData,
   serialiseFormData,
 } from './formData.js';
+export {
+  NamelessFieldError,
+  readXfdf,
+  type XfdfField,
+  XfdfDoctypeError,
+  XfdfRefusedError,
+  XfdfTooDeepError,
+} from './xfdfReader.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export {

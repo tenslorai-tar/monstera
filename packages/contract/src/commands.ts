@@ -2349,16 +2349,20 @@ export const flattenFormFieldsSchema = z.object({
 export const MAX_FORM_DATA_BYTES = 8 * 1024 * 1024;
 
 /**
- * Which encodings an IMPORT can read, which is not the set an export writes.
+ * Which encodings an IMPORT can read.
  *
- * **A second enum and not `formDataFormatSchema`**, and the asymmetry is the
- * honest shape rather than an oversight: FDF is PDF syntax, so MuPDF reads it,
- * and JSON has an authority in the runtime — while XFDF needs an XML reader
- * this repository does not have. A command admitting `'xfdf'` today would be a
- * payload whose apply refuses, which is the display-only defect one layer below
- * the surface. The member joins when the reader does.
+ * It was `['json', 'fdf']` for one commit, because XFDF needed a reader this
+ * repository did not have and a command admitting a format whose apply refuses
+ * is the display-only defect one layer below the surface. The reader landed
+ * ([ADR-0046](../../../docs/DECISIONS/0046-a-strict-xfdf-reader-rather-than-an-xml-parser.md))
+ * and the member joined it.
+ *
+ * **Still its own enum rather than `formDataFormatSchema`**, now that the two
+ * agree: they are two questions — *what can this build write* and *what can it
+ * read* — and they were different a commit ago. Collapsing them the moment they
+ * coincide is the shape that makes the next divergence a surprise.
  */
-export const formDataImportFormatSchema = z.enum(['json', 'fdf']);
+export const formDataImportFormatSchema = z.enum(['json', 'xfdf', 'fdf']);
 
 /** See {@link formDataImportFormatSchema}. */
 export type FormDataImportFormat = z.infer<typeof formDataImportFormatSchema>;
