@@ -887,6 +887,84 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — nspell probed in a scratch tree: cheap to install, expensive to hold, and the dictionaries are an owner's decision
+
+Stage 5's last unblocked row is spell check, and its first step is the standing
+rule rather than any code: **a dependency is a probe — install into a scratch
+tree first.** That rule exists because one dependency took a generator from 39
+packages to 114 and fired four latent defects.
+
+Run outside the repository, nothing added to this tree.
+
+### What it costs to install
+
+| | |
+|---|---|
+| packages added | **3** — `nspell` 2.1.5, `dictionary-en` 4.0.0, `is-buffer` 2.0.5 |
+| on disk | **691 KB**, of which the dictionary is 574 KB |
+| licences | MIT · **(MIT AND BSD)** · MIT |
+| vulnerabilities | 0 |
+
+The opposite of the case the rule was written for. The licences matter to a
+project distributing under AGPL-3.0-or-later and all three are permissive; the
+dictionary's dual notice is the Hunspell corpus's own and belongs in
+`nativeComponents.json`'s notice generation when this lands.
+
+### What it costs to run
+
+| | |
+|---|---|
+| building the checker | **401 ms** |
+| heap it holds | **+15.31 MB** |
+| RSS it holds | **+23.95 MB** |
+| checking a 600-word page | **0.76 ms** |
+| checking 12,000 words | **5.7 ms** |
+
+**The cost is entirely in construction, not in checking.** Two things follow and
+both are decisions rather than tuning: the checker must be built **lazily**, when
+spell check is switched on, because 400 ms and 24 MB are not a price to pay on
+every document for a feature a reader may never use; and 24 MB resident is a
+figure that belongs against §9.17's per-process budgets rather than being
+absorbed silently.
+
+### It separates what it must, with a control
+
+`recieve` false, `receive` true, `anotation` false, `annotation` true — and the
+control that gives those meaning: a nonsense string answers `correct=false`,
+without which every reading above is compatible with a checker that agrees with
+any input. Suggestions are good (`recieve` → `receive`, `documnet` → `document`),
+and `add()` works at run time, so a personal dictionary needs no separate
+mechanism.
+
+### Where it would live, which the measurements decide
+
+It is pure JavaScript, binds no native library and parses no document, so
+invariant 20 has nothing to say and the engine host is the wrong place. Checking
+is 0.76 ms per page, so it is comfortably renderer-side — **and the renderer
+already holds the text**, because the text layer that landed today fetches the
+substrate's lines for every visible page. So spell check needs **no new channel
+at all**: it reads what `usePageText` already has.
+
+That is worth recording as a shape rather than only a plan: the row looked like
+it needed a kernel path, and the row before it removed the need.
+
+### What is NOT decided, and it is the owner's
+
+**Which dictionaries ship, and how.** `dictionary-en` is one language; every
+other is its own package, so shipping a handful multiplies the 574 KB and each
+carries its own licence notice. The founding record says only *"spell check
+(nspell + dictionary management)"* — `BUILD-PROMPT.md`:464 — and is silent on the
+set. Two readings lead to materially different work: ship one language and add
+more as a download (which is a network path in an application whose engine hosts
+have none, and a provisioning decision like gitleaks' and PDFium's), or ship a
+fixed set and accept the size.
+
+Silence in the founding record is an **ask**, per the standing rule, and the
+answer is an ADR. The probe is recorded so that decision is taken against
+measurements rather than estimates.
+
+---
+
 ## 2026-09-08 — Word count, where the interesting decision is what a word is
 
 Stage 5's second unblocked row, and it rides on the reader select-and-copy
