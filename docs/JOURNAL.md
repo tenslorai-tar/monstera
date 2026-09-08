@@ -887,6 +887,65 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — `main` went red on a stale NOTICE, and the enumeration that missed it was complete about the wrong partition
+
+Read from the run rather than noticed: both CI jobs failed at the step that
+checks NOTICE against the tree, with the annotation *"NOTICE is stale. Run:
+npm run notice:generate"*. Spell check added three packages —
+`dictionary-en@4.0.0` under the dual **(MIT AND BSD)** notice the probe entry
+predicted, `is-buffer@2.0.5` and `nspell@2.1.5`, both MIT — and the generation
+never ran. 412 lines, which is the licence texts rather than the list.
+
+### The failure is mine and it was written down in advance
+
+That morning's probe entry says the dictionary's dual notice *"belongs in
+`nativeComponents.json`'s notice generation when this lands"*. It landed. The
+entry was not reopened.
+
+**An owed item recorded in a journal entry is one nobody opens at the moment of
+landing** — the same shape as the Guards deferral corrected two commits earlier
+for having no trigger, and the same shape as a claim parked in a register whose
+scan can never fire. A note that names the step is not a mechanism that runs it.
+
+### Why the pre-push enumeration missed it, which is the transferable half
+
+Before pushing I did the thing the standing note says to do: enumerate the CI
+steps the changed files reach, and run them. Typecheck, lint, the whole suite,
+the contract proof, `check:docs`, `check:emittedtemplates`,
+`check:secondwiring`, `proof:kernelload`, `guard:tree` — nine, all green.
+
+**The enumeration was complete about the wrong partition.** It was made from the
+*kind* of change — source, tests, documents — and **a dependency is none of those
+three**. It changes `package.json` and `node_modules`, which nothing in that
+list reads. The sweep was exhaustive over a set that did not contain the answer,
+which is the failure mode that feels most like rigour.
+
+So the remedy is not *run more checks*. It is that **a dependency is its own
+category of change**, and the question to ask is what else in the repository is
+**derived from the dependency set** — a licence notice, a bundle list, a size
+budget, an allowlist. `npm run notice:check` is one command and answers it.
+
+### And the fix uncovered a second failure, which is the part worth stating
+
+The notice step failed **early** in the typecheck-and-proofs job, so the forty
+or so steps after it never executed on this range at all. Fixing NOTICE did not
+make CI green — it made the rest of the job run for the first time, and
+something in it fails.
+
+That is a general property of a red board worth carrying: **a failing step masks
+everything after it**, so the first green-ward move often reveals a second
+defect rather than finishing. Reading the first failure as *the* failure is how a
+range gets pushed twice.
+
+Diagnosis of the second is deferred to a run rather than guessed: fourteen of the
+scans and proofs in that job were run locally afterwards and all pass, so it is
+not reproducible here — and the unauthenticated Actions budget was spent by a
+board waiter that polled every thirty seconds, which is exactly what *ask for the
+board, do not poll it* exists to prevent. One read per push; a waiter is still
+polling.
+
+---
+
 ## 2026-09-08 — Stage audit of `3d87cee..642b262`: the text substrate, forms' last three rows, and the engine-reach measurement
 
 Sixteen commits, 87 files, and the commit this is written in takes it to 105
