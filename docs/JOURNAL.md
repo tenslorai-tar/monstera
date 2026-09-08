@@ -887,6 +887,91 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — PDFium is provisioned, and the flavour is a security decision
+
+Stage 5's substrate, and the first question was not *how does it render*.
+
+### 1. Two flavours, and one of them links a JavaScript engine
+
+`bblanchon/pdfium-binaries` publishes two Windows x64 archives per release —
+`pdfium-win-x64.tgz` at 3.8 MB and `pdfium-v8-win-x64.tgz` at 12.7 MB. The
+second links **V8** into the process that parses documents.
+
+Invariant 24 says opening a document runs none of its content, and this project
+has already paid to establish that for MuPDF — with a **scan of the shipped
+binary** rather than a call-graph argument, because the call-graph version is
+one line of diff away from being false. Taking the V8 build would put an
+interpreter back, in a second engine, and leave the invariant resting on exactly
+the reading this project refused to rest on.
+
+**Measured on the archive now pinned** (`scripts/research/pdfiumBinary.mjs`),
+release `chromium/8044`, `VERSION` reading 155.0.8044.0, `pdfium.dll` 7,370,752
+bytes:
+
+| marker | occurrences |
+|---|---|
+| `FPDF_LoadMemDocument`, `FPDF_RenderPageBitmap`, `FPDFBitmap_Create` | 2, 4, 2 — the scan can see |
+| `v8::`, `V8_Fatal`, `Torque`, `IsolateData` | **0** |
+| `CJS_Runtime`, `CJS_Object` | **0** |
+
+Two groups, and both are asked because they answer different questions: the
+first four are V8's own symbols, the last two are **PDFium's** JavaScript layer,
+which exists only when V8 does. Neither is present.
+
+**`FPDFDoc_GetJavaScriptActionCount` and `FPDF_LoadXFA` appear once each, and
+that is not a finding** — they are export-table names whose bodies do nothing in
+a non-V8 build. Printed by the instrument for that reason: finding them later
+and reading them as an engine is the misreading the table exists to prevent.
+
+The control was checked before any of it. A string scan's reassuring answer is
+*found nothing*, which is precisely the answer wanted here, so the script
+**throws** rather than reporting if it cannot locate three symbols the DLL
+certainly exports.
+
+### 2. And koffi binds it, asked here rather than assumed by the adapter
+
+An FFI binding that resolves and a library that loads are two facts, and the
+second is what a missing runtime dependency breaks. `FPDF_InitLibrary` returns
+and `FPDF_GetLastError` answers 0; a **193-byte document this script writes by
+hand** loads through `FPDF_LoadMemDocument` and `FPDF_GetPageCount` answers 1.
+
+By hand rather than through `@cantoo/pdf-lib`, so a failure could not be
+ambiguous between the library under test and the library that built its fixture.
+
+### 3. What the provisioner is, and what it is not
+
+Downloaded rather than built from source, which is `docs/ARCHITECTURE.md`:923's
+own classification and the opposite of MuPDF's: MuPDF's headers carry no
+`dllexport`, so the shim owns the export surface and links statically. PDFium's
+release builds export the `FPDF_*` C API directly and there is nothing for a
+shim to do.
+
+Pinned version, pinned digest, host-locked on **both** hops — `github.com`
+issues the release URL and always redirects to
+`release-assets.githubusercontent.com` — size-bounded by counting rather than by
+believing `Content-Length`, and digest-checked before the extractor touches the
+bytes. All four come from `downloadVerified`, which is the one download
+primitive.
+
+**Windows x64 only**, and that is the product rather than a shortcut:
+distribution is the Microsoft Store and the engine hosts are Windows processes
+created with an AppContainer SID. Gitleaks' provisioner offers ten platforms
+because gitleaks runs on the contributor's machine; this is the shipped engine.
+
+**The version was researched, not recalled** — read from
+`api.github.com/repos/bblanchon/pdfium-binaries/releases/latest` on 2026-09-08,
+which returned `chromium/8044` published the day before.
+
+### What this does NOT do
+
+No host, no adapter, no session, no command. `engineSeam.ts`:97's *declared,
+with no adapter behind it yet* is still true. What has moved is that the binary
+is now provisioned by one command, its flavour is a recorded decision rather
+than a default, and the FFI is known to bind — which are the three things every
+later step would otherwise have assumed.
+
+---
+
 ## 2026-09-08 — Stage 4 closes: 2 days against a 2-day baseline, 1.00×, continue — and Stage 5 opens on 3
 
 ### The verdict, in writing
