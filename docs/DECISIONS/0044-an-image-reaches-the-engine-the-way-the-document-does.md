@@ -346,3 +346,33 @@ snapshot is present — so MuPDF opens the result with *"cannot find version
 marker"* and reports no page 1. `commit()` concatenates it onto the original
 bytes and answers a whole document. A route that returned the first would be
 the fastest and most broken result available.
+
+---
+
+## Correction, 2026-09-08 — the member's name was narrower than the axis from the day it was written
+
+The axis this ADR added is spelt `asset: 'none' | 'image'` throughout the text
+above. **`'image'` was the wrong word on the day it was chosen**, and the
+evidence is in this document's own wording: the axis is introduced as answering
+*does this command carry bytes that cannot travel on the wire the writer is
+reached over*. That is a question about the **transport**. `'image'` is a
+statement about the **content**.
+
+The correction is `asset: 'none' | 'bytes'`. Nothing else about the decision
+moves — the same granted `snapshotDirectory`, the same two transport modules,
+the same untouched `apply` signature, the same bytes retained in the log, and
+`CommandAsset<K>`'s conditional still refuses the member to any kind whose
+payload has no `bytes` field.
+
+**This is recorded as a mislabel rather than as a widening**, because the
+alternative reading — *the axis grew when a second kind of file needed it* —
+would be false and would make the same mistake available next time. The reason
+it survived is worth more than the rename: **nothing reads the member.** The
+transport tests `asset === 'none'` and looks no further, so declaring `'image'`
+for a form-data file would have worked perfectly and been a lie, with no
+mechanism anywhere able to notice. A label no code branches on is a label that
+stays wrong; renaming it is the only thing that could correct it.
+
+What triggered it: form-data **import**. An FDF is PDF syntax, so decoding one
+needs MuPDF, invariant 20 keeps MuPDF out of `main`, and a picked file's bytes
+therefore take the one route bytes have — this one.
