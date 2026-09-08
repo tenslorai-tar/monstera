@@ -887,6 +887,74 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — The text layer's two bounds, read against the corpus at last
+
+`MONSTERA_CORPUS` was set for the first time in this build, and *Select and
+copy*'s owed reading was taken. `scripts/research/textLayerBounds.mjs` reports,
+per document, the largest number of lines any page produced and the longest
+single line — both through `parsePageText`, the shipped substrate, so a
+disagreement with the channel would be a defect rather than a second reading of
+what a line is.
+
+```
+  id          pages   max lines/page   longest line   total lines   engine chars
+  corpus-1        1                0              0             0              0
+  corpus-2        2               69            131           114           5634
+  corpus-3        1              104             94           104           1131
+  corpus-4        1                0              0             0              0
+  corpus-5        2               87             81            96           2984
+```
+
+**Worst: 104 lines on a page, 131 characters in a line**, against bounds of
+2,048 and 1,024. Neither is contradicted, and **neither is changed**. Five
+documents build a harness and catch a gross failure; they cannot say where the
+world's distribution sits, and a bound moved to fit five files is a bound fitted
+to five files. The 840-line constructed page — a 12×70 table at 6pt — remains
+the closest thing to a stress point this build has, which is what the row said
+when it declared the numbers.
+
+### The zero column is why the instrument grew a second measurement
+
+Two of the five documents produced **no lines at all**, and that reads exactly
+like a defect. It is also exactly what a scanned page produces, correctly. Both
+print `0`, and `0` is the answer nobody looks at twice.
+
+So the engine's own plain text is measured beside ours, through a different call
+on the same `StructuredText`: `asText()` against `asJSON()` through our parser.
+Both zeros come with **zero engine characters**, so those two documents carry no
+text and the right answer is nothing — Stage 6's OCR is what changes it. Had the
+engine reported characters where we reported no lines, the instrument would have
+printed `DEFECT` and exited 1, because that is this build's parser rather than
+the document.
+
+That column is the difference between *found nothing* and *nothing to find*, and
+without it this entry would have recorded a clean reading over a corpus 40% of
+which the feature cannot serve.
+
+### Its control, and the reason the CI step exists
+
+A constructed page of 37 lines whose longest is 300 characters, measured through
+the same path. Without it, a run that read zero pages out of every document — a
+stext option that stopped parsing, a swallowed throw in the page loop — reports
+small numbers under both bounds, which is the reassuring answer.
+
+CI has no corpus, so the step reports UNVERIFIABLE for that half and exits 0.
+**The control still runs**, on every runner, and it is the half that would go
+quiet if the substrate changed. `check:proofcoverage` refused the script until
+it was invoked somewhere, which is the mechanism working: a proof CI never
+executes is a green board that verified nothing.
+
+### One slip worth recording
+
+The first version wrote `corpus.outcome.message` and `corpus.outcome.exitCode`,
+which are not the fields `unverifiableOutcome` returns. It printed the literal
+string `undefined` and exited 0 — a could-not-look verdict rendered as nothing,
+in the one path that exists to say *this was not measured*. Caught by running
+the absent branch on purpose, which is the branch a machine with a corpus never
+takes.
+
+---
+
 ## 2026-09-08 — The ribbon, and a trigger keyed on an observable its own absence prevented
 
 The ribbon row's trigger read *"Stage 10's shell work, or the first stage that

@@ -248,6 +248,16 @@ jobs:
       - name: Prove the corpus harness refuses, reports absent, and leaks no name
         run: node scripts/ci/annotate.mjs scripts/proofs/corpus.proof.mjs
 
+      # The corpus is absent here, so this reports UNVERIFIABLE for the corpus
+      # half and exits 0 — which is the honest answer and is not why the step
+      # exists. Its CONTROL runs on every runner: a constructed page whose line
+      # count and longest line are properties of the generator, measured through
+      # the shipped substrate. That is the half that would go quiet if the stext
+      # options moved, the parser stopped producing lines, or the build were
+      # stale, and it is the half no corpus is needed for.
+      - name: Prove the text-layer bound instrument can see a page it drew
+        run: node scripts/ci/annotate.mjs scripts/research/textLayerBounds.mjs
+
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 
