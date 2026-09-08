@@ -239,6 +239,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // the opposite direction and on a boundary this file does not govern.
   'document.placeImage': 'needs an engine session and an image picker',
   'document.searchPage': 'needs an engine session',
+  // BOUNDED AT 2,048 LINES AND 1,024 CHARACTERS EACH, and per PAGE — so the
+  // answer's size is a function of one page's density, never of how long the
+  // document is. Both numbers are readings rather than round guesses: the
+  // densest page measured, a 12 x 70 table at 6pt, produces 840 lines because a
+  // table cell is its own line, and the longest line a page could be built to
+  // carry was 531 characters (`MAX_TEXT_LAYER_LINES`).
+  'document.pageTextLayer': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',
   'document.destinations': 'needs an engine session',

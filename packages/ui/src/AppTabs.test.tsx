@@ -94,6 +94,11 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
         }),
       );
     }
+    // The scroller asks every visible page for its selectable text; these cases
+    // are about tabs, so the answer is empty rather than seeded.
+    if (id === 'document.pageTextLayer') {
+      return Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false }));
+    }
     if (id === 'log.reveal') return Promise.resolve(ok({ revealed: false }));
     throw new Error(`this fixture has no answer for ${id}`);
   });

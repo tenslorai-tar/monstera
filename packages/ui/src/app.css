@@ -1310,6 +1310,53 @@ body {
  * through would be a thing that can go wrong silently.
  */
 /*
+ * The invisible text a person selects and copies, laid over the raster.
+ *
+ * NOT INERT, and that is the one way it differs from every other layer here:
+ * the pointer must reach it or there is nothing to select. It sits UNDER the
+ * annotation overlay, which is mounted only while a tool is active — so while
+ * somebody is drawing, the drawing surface takes the pointer, and while nobody
+ * is, this does.
+ *
+ * `color: transparent` rather than `visibility` or a zero alpha on the text:
+ * the glyphs must be laid out and hit-testable for selection to run across
+ * them, and the browser's own selection highlight has to paint. `::selection`
+ * is what a person actually sees, so it carries a real colour while the text
+ * it covers does not.
+ */
+.m-text-layer {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  /* A line's own box positions it; nothing here should add to that. */
+  line-height: 1;
+  /* Selection is what this exists for, and a stray caret is not. */
+  user-select: text;
+}
+
+.m-text-line {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  transform-origin: 0 0;
+  /* The line is stretched to the box the engine reported, so the glyphs land
+     where the ink is whatever font the browser substitutes. Without this a
+     wider substitute font runs past the end of its own line and a selection
+     drifts further from the pointer with every word. */
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.m-text-line::selection {
+  /* The highlight is the whole point: the text under it is transparent, so
+     this is the only thing a person sees change when they drag. */
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: transparent;
+}
+
+/*
  * What the select tool has picked, drawn under the overlay.
  *
  * INERT. The pointer belongs to the overlay above this, which is what keeps

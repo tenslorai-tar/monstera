@@ -95,6 +95,17 @@ const handlers: ContractHandlers = {
         truncated: false,
       }),
     ),
+  // ONE LINE WITH A BOX, for the search fixture's reason: an empty list is what
+  // a dropped array and a blank page produce alike, and blank is the reassuring
+  // answer for a layer nobody can select.
+  'document.pageTextLayer': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        lines: [{ text: 'a line of the page', box: { x0: 10, y0: 20, x1: 110, y1: 32 } }],
+        truncated: false,
+      }),
+    ),
   // ONE OF EACH KIND, for the search fixture's reason: a list holding only
   // internal links would let a boundary that dropped the external branch pass,
   // and the external branch is the one invariant 24 rests on.

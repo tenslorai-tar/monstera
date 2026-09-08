@@ -971,6 +971,40 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     },
 
     /**
+     * One page's text layer, from the same lines the search reads.
+     *
+     * **The same seed as `document.searchPage`**, deliberately. The two channels
+     * describe one page, and a shim that answered them from separate fixtures
+     * would let a UI test pass where searching finds a line the layer cannot
+     * select — which is the two-extraction-paths defect this channel exists to
+     * avoid, reproduced inside the harness written to catch it.
+     *
+     * The boxes are placed from the line's index rather than seeded: what a UI
+     * test can assert about them is that each line got its own, in order, and a
+     * fixture carrying real geometry would invite a case to assert numbers the
+     * shim invented.
+     */
+    'document.pageTextLayer': ({ docId, page, limit }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const all = pageLines[page] ?? [];
+      const kept = all.slice(0, limit);
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          lines: kept.map((text, index) => ({
+            text,
+            box: { x0: 10, y0: 20 + index * 15, x1: 110, y1: 32 + index * 15 },
+          })),
+          // The same one-past-the-limit honesty the kernel has, so a shim answer
+          // and a real one disagree about nothing a test could come to rely on.
+          truncated: all.length > limit,
+        }),
+      );
+    },
+
+    /**
      * One page's links, from the fixture the shim was built with.
      *
      * **One of each kind on the first page**, because the split is what a

@@ -27,6 +27,12 @@ export {
   // this file's comment and nothing else, which is what the audit of
   // `87540a5..HEAD` found it to be.
   MAX_RECENT_ENTRIES,
+  // The text layer's two bounds. Exported because the caller that sizes a read
+  // under the line limit is the renderer, and the per-line cap is what the
+  // main-side reader passes to `textLayerOf` — a second spelling of either
+  // would be the number this channel refuses on, written twice.
+  MAX_TEXT_LAYER_LINE,
+  MAX_TEXT_LAYER_LINES,
   // NAMED BECAUSE THE KERNEL SEAM NOW READS IT TOO. ADR-0040's extension hands
   // a command's apply the outline as pre-read data, so this shape has a reader
   // that is not a channel; a second declaration there would be two of one thing.

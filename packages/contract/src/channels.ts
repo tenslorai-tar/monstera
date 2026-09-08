@@ -110,6 +110,60 @@ export const MAX_VIEW_MODEL_PAGES = 512;
 export const MAX_SEARCH_MATCHES = 512;
 
 /**
+ * How many lines of one page's text may cross as a selectable layer.
+ *
+ * ## The reasoning above does NOT transfer, which is why this is its own number
+ *
+ * `MAX_SEARCH_MATCHES` rests on *no results surface shows more than a screenful
+ * before the user narrows the query*. A text layer has no such escape: it must
+ * cover the **whole** page or the part past the bound cannot be selected, and
+ * there is no query to narrow. So this bound is set from what a page actually
+ * holds rather than from what a surface shows.
+ *
+ * Measured 2026-09-08 with the shipped substrate (`textStructure.ts` over MuPDF
+ * 1.28.0 with `segment`), on A4 pages built to be denser than anything real:
+ *
+ * | page | lines | longest line |
+ * |---|---|---|
+ * | 6pt prose, 7pt leading, full page | 118 | 83 chars |
+ * | a 12 × 70 table at 6pt | **840** | 6 chars |
+ * | 2,000 separate one-glyph runs | 2,000 | 1 char |
+ *
+ * **A table cell is its own line**, which is what makes the second row the
+ * interesting one: a spreadsheet page produces hundreds of lines where its prose
+ * equivalent produces about a hundred, and `MAX_SEARCH_MATCHES` would have cut
+ * it. 2,048 clears the densest page measured and the pathological one beside it.
+ *
+ * **Three synthetic pages are a shape, not a distribution.** The corpus reading
+ * is owed — this is enough to catch a gross failure and not enough to tune a
+ * constant against.
+ *
+ * **The trigger:** the first page that reports `truncated` for a reason other
+ * than a hostile document is the evidence this is wrong, and the fix is a
+ * measurement of that page rather than a larger round number.
+ */
+export const MAX_TEXT_LAYER_LINES = 2048;
+
+/**
+ * How many characters of one line may cross.
+ *
+ * A line's length is chosen by whoever made the document, so it is the second
+ * unbounded axis and needs its own ceiling — {@link MAX_SEARCH_MATCHES}'s note
+ * about a count being the only axis does not hold here, because this text is not
+ * clipped to a window around anything.
+ *
+ * Measured in the same run: the densest prose page's longest line was **83**
+ * characters, and a page built deliberately to carry one enormous run reported a
+ * single line of **531**. 1,024 is about double the worst reading.
+ *
+ * Together with {@link MAX_TEXT_LAYER_LINES} this bounds one page's layer at
+ * 2 MiB of text, which is a ceiling on a **page** rather than a figure that
+ * grows with the document — invariant 11's actual requirement. The pages
+ * measured above cross about 10 KB.
+ */
+export const MAX_TEXT_LAYER_LINE = 1024;
+
+/**
  * How many links one page may report to the renderer.
  *
  * A COUNT, because each link is a declared shape whose own fields are bounded —
@@ -1432,6 +1486,85 @@ export const channels = {
     // a renderer that could not tell the two apart would have to show one of
     // them for both.
     ['document-not-open', 'document-busy', 'document-poisoned', 'search-pattern-invalid'],
+  ),
+
+  /**
+   * One page's text as a selectable layer: every line, in reading order, boxed.
+   *
+   * ## Why this exists beside `document.searchPage` rather than inside it
+   *
+   * They answer different questions. A search answers *where is this query*, and
+   * its result is a handful of matches with a window of surrounding text. A text
+   * layer answers *what is on this page and where*, and a caller that got it by
+   * searching for the empty string would receive the page-sized result this
+   * contract already refuses.
+   *
+   * ## THE TEXT COMES FROM THE KERNEL'S SUBSTRATE, not from PDF.js
+   *
+   * PDF.js draws the page and has its own `getTextContent`, which needs no
+   * channel at all — and taking it would put **two extraction paths** in one
+   * application: one deciding what the user finds, one deciding what the user
+   * copies. §3 says PDF.js renders and is never a source of truth, and ADR-0034's
+   * K.0 bans a second extraction path.
+   *
+   * **Measured 2026-09-08 rather than left as a rule**
+   * (`scripts/research/textLayerAgreement.mjs`), because if the two agreed the
+   * rule would be cheap to obey and worth little. On five fixtures they agree on
+   * three and disagree on the two that matter: a two-column page drawn row-major
+   * shares **0 of 6 lines** — the substrate reads column-major, PDF.js reads
+   * straight across the gutter — and a label separated from its value by a wide
+   * intra-line gap shares **0 of 2**. So a PDF.js text layer would let a user
+   * search for a phrase, be told it is there, select it, and copy something else.
+   *
+   * ## The boxes are DISPLAY space, and the renderer converts
+   *
+   * Not PDF user space, which is what every other geometry crossing here uses.
+   * Converting main-side would mean deriving the page's box from `/MediaBox`,
+   * `/CropBox` and their intersection rules — which PDF.js owns (B3a), and which
+   * is exactly why `document.viewModel` carries rotations and not sizes. The
+   * renderer already holds that box from the page it drew.
+   *
+   * These are `ViewportPoint`s at scale 1 with `/Rotate` already applied —
+   * measured at all four turns, `textStructure.ts`'s `DisplayedRect`. The
+   * conversion is `toPdf`, and `fromFitz` misses on every turned page.
+   *
+   * ## `page` is ZERO-BASED, like every other page index that crosses here
+   */
+  'document.pageTextLayer': channel(
+    'One page’s text, in reading order, with each line’s box, bounded by the caller.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      limit: z.number().int().positive().max(MAX_TEXT_LAYER_LINES),
+    }),
+    z.object({
+      version: docVersionSchema,
+      lines: z
+        .array(
+          z.object({
+            text: z.string().max(MAX_TEXT_LAYER_LINE),
+            /** The line's box in the page's display space, at scale 1. */
+            box: z.object({
+              x0: z.number(),
+              y0: z.number(),
+              x1: z.number(),
+              y1: z.number(),
+            }),
+          }),
+        )
+        .max(MAX_TEXT_LAYER_LINES)
+        .readonly(),
+      /**
+       * Whether anything was left out — by EITHER bound.
+       *
+       * One flag for two limits. A caller's question is *is this the whole
+       * page*, and separate flags would let a consumer handle the line count and
+       * silently ship a clipped line. A copy that succeeds and is missing
+       * characters nobody can see is the export-escaping defect one layer over.
+       */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
   /**

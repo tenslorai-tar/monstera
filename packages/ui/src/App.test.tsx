@@ -199,6 +199,12 @@ const OPEN_DOCUMENT_ANSWERS = {
   // and a flat document produce alike, so a fixture of zeros would make "the
   // renderer used the model" and "the renderer ignored it" the same observation.
   'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90] },
+  // THE SCROLLER ASKS FOR EVERY VISIBLE PAGE'S SELECTABLE TEXT, so a fixture
+  // without an answer here rejects on every case that opens a document. Empty
+  // rather than seeded: what these cases are about is the shell's dispatch, and
+  // the text layer's own assertions live in `PageList.test.tsx` where the boxes
+  // can be chosen.
+  'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false },
 };
 
 /** Opens a document and settles the effects, leaving the toolbar rendered. */

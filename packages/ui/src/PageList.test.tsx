@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import {
+  type ContractClient,
+  MAX_TEXT_LAYER_LINES,
+  channels,
+  createClient,
+} from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { render as renderBare, act } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -79,7 +84,22 @@ const rasterised: [number, number][] = [];
 vi.mock('./renderPage.js', () => ({
   renderPage: (_document: unknown, pdfjsPage: number, _canvas: unknown, scale: number) => {
     rasterised.push([pdfjsPage, scale]);
-    return Promise.resolve({ width: 100 * scale, height: 200 * scale });
+    return Promise.resolve({
+      width: 100 * scale,
+      height: 200 * scale,
+      // THE CROP AND THE ROTATION, which this mock did not return until
+      // 2026-09-08 — `RasterisedPage` declares both and `vi.mock`'s factory is
+      // untyped, so a stub narrower than the interface compiled. Nothing read
+      // them: the two overlays that do are mounted only while a drawing tool is
+      // active, and no case here activates one. The text layer is mounted
+      // whenever a page has been measured, and it threw on the first run.
+      //
+      // The page is 100 x 200 CSS pixels at scale 1, so its box in PDF units is
+      // the same numbers — which is what makes the two conversions compose to
+      // the identity here and lets a placement case assert the box it sent.
+      crop: [0, 0, 100, 200] as const,
+      rotation: 0,
+    });
   },
 }));
 
@@ -171,9 +191,28 @@ function viewDrawing(): DocumentView {
   } as unknown as DocumentView;
 }
 
-function clientAnswering(): { client: ContractClient; asked: unknown[] } {
+/**
+ * The scroller's two reads, answered.
+ *
+ * `document.pageTextLayer` is here because the scroller asks for the selectable
+ * text of every visible page — and a stub that threw on it would make every
+ * case in this file a test of an unhandled rejection. `textAsked` records what
+ * it was asked for, which is what the wired pair's UI half asserts: that the
+ * layer is driven by the channel rather than by anything this component made up.
+ *
+ * The lines are canned and their boxes are the identity in display space, so a
+ * case can assert placement against numbers it chose.
+ */
+function clientAnswering(
+  lines: readonly { text: string; box: { x0: number; y0: number; x1: number; y1: number } }[] = [],
+): { client: ContractClient; asked: unknown[]; textAsked: unknown[] } {
   const asked: unknown[] = [];
+  const textAsked: unknown[] = [];
   const client = createClient(channels, (id, params) => {
+    if (id === 'document.pageTextLayer') {
+      textAsked.push(params);
+      return Promise.resolve(ok({ version: VERSION, lines, truncated: false }));
+    }
     if (id !== 'document.viewModel') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     const pages = (params as { pages: readonly number[] }).pages;
@@ -181,7 +220,7 @@ function clientAnswering(): { client: ContractClient; asked: unknown[] } {
       ok({ version: VERSION, pageCount: 5, rotations: pages.map(() => 0) }),
     );
   });
-  return { client, asked };
+  return { client, asked, textAsked };
 }
 
 /**
@@ -294,6 +333,154 @@ describe('PageList', () => {
     // this build has shipped that off-by-one once.
     expect(rasterised).toStrictEqual([[1, 1]]);
     expect(container.querySelectorAll('canvas.m-page')).toHaveLength(1);
+  });
+
+  /**
+   * The text layer, and this is the UI half of §10.4's wired pair.
+   *
+   * The kernel half is `textLayer.test.ts` — that the flattening is right and
+   * bounded. Neither alone counts: a kernel proof alone is a channel nobody
+   * calls, and a rendered layer alone could be a component drawing whatever it
+   * invented. What these assert is that the lines on screen came from
+   * `document.pageTextLayer`, and were placed with the boxes it sent.
+   */
+  const LINES = [
+    { text: 'the first line', box: { x0: 10, y0: 20, x1: 110, y1: 32 } },
+    { text: 'the second line', box: { x0: 10, y0: 40, x1: 90, y1: 52 } },
+  ];
+
+  it('asks the CHANNEL for each visible page’s text, rather than inventing it', async () => {
+    const { client, textAsked } = clientAnswering(LINES);
+    render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+      />,
+    );
+    await settle();
+
+    // ONE PAGE, AND IT IS THE VISIBLE ONE, zero-based as every page index
+    // crossing the contract is. A layer that fetched the whole document would
+    // ask for five — the same defect lazy rasterisation exists to prevent, and
+    // the payload here is larger than a bitmap request.
+    expect(textAsked).toStrictEqual([
+      { docId: DOC, page: 0, limit: MAX_TEXT_LAYER_LINES },
+    ]);
+  });
+
+  it('renders one selectable element per line, carrying the channel’s text', async () => {
+    const { client } = clientAnswering(LINES);
+    const { container } = render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+      />,
+    );
+    await settle();
+
+    const rendered = [...container.querySelectorAll('.m-text-line')].map((el) => el.textContent);
+    // THE TEXT ITSELF, not a count. A count passes for a layer that rendered
+    // two empty elements, which is what a component drawing its own idea of the
+    // page would produce — and an empty selectable layer copies nothing while
+    // looking exactly like a working one.
+    expect(rendered).toStrictEqual(['the first line', 'the second line']);
+  });
+
+  it('places a line at the box the channel sent, converted through the page', async () => {
+    const { client } = clientAnswering(LINES);
+    const { container } = render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+      />,
+    );
+    await settle();
+
+    const first = container.querySelector('.m-text-line');
+    if (!(first instanceof HTMLElement)) throw new Error('a line was rendered');
+    // AT SCALE 1 AND ROTATION 0 the two conversions compose to the identity, so
+    // the box the channel sent is the box on screen — which is what makes this
+    // assertable against numbers the test chose rather than against whatever the
+    // component computed. The rotated case is the kernel's, in `pageText.test.ts`,
+    // where a real engine is available to disagree.
+    expect({
+      left: first.style.left,
+      top: first.style.top,
+      width: first.style.width,
+      height: first.style.height,
+    }).toStrictEqual({ left: '10px', top: '20px', width: '100px', height: '12px' });
+  });
+
+  it('mounts NO layer for a page with no text, rather than an empty one', async () => {
+    const { client } = clientAnswering([]);
+    const { container } = render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+      />,
+    );
+    await settle();
+
+    // An empty layer would still accept pointer events, so it would swallow
+    // drags meant for the page while offering nothing to select. *Absent* is
+    // checkable in a way *inert* is not.
+    expect(container.querySelectorAll('.m-text-layer')).toHaveLength(0);
   });
 
   it('draws a page when it comes into view, and RELEASES it when it leaves', async () => {

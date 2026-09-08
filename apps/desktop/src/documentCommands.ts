@@ -6,6 +6,7 @@ import {
   type FormDataImportFormat,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_TEXT_LAYER_LINE,
   sourceIdsOf,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
@@ -35,8 +36,10 @@ import {
   type SessionsByWriter,
   type RegionRequest,
   type SnapshotWrite,
+  type TextLayerLine,
   type TextMatch,
   findInPages,
+  textLayerOf,
   saveDocument,
   type SplitOutcome,
   writeDocumentCopy,
@@ -906,6 +909,19 @@ export interface PageSearchResult {
   readonly truncated: boolean;
 }
 
+/** One page's selectable text, stamped with the version the lane read it at. */
+export interface PageTextLayerResult {
+  readonly version: DocVersion;
+  readonly lines: readonly TextLayerLine[];
+  /**
+   * Whether either bound left something out.
+   *
+   * Carried rather than derived, for `PageSearchResult.truncated`'s reason —
+   * and covering both bounds, because a clipped line is invisible in a length.
+   */
+  readonly truncated: boolean;
+}
+
 /**
  * What an applied mutation produced: the two scalars that describe the document
  * it left behind.
@@ -1161,6 +1177,49 @@ export class DocumentCommands {
         matches: found.value.slice(0, limit).map((match) => ({ ...match, page })),
         truncated: found.value.length > limit,
       };
+    });
+
+    return { version, ...value };
+  }
+
+  /**
+   * One page's text as a selectable layer.
+   *
+   * ## In the LANE, and reading the same value the search reads
+   *
+   * `#pageText` is the call `searchPage` makes, so a layer and a search taken at
+   * the same version describe the same page — which is the whole point of taking
+   * the text from the substrate rather than from PDF.js. Two readers of one
+   * value, not two extractions.
+   *
+   * The version comes back with the answer for `searchPage`'s reason: a renderer
+   * must be able to discard a layer that describes a document it is no longer
+   * showing, and a text layer left over a mutated page is a selection that
+   * copies text the document no longer has.
+   *
+   * ## The bounds are the channel's, passed through
+   *
+   * `limit` is the caller's, capped by the schema. The per-line cap is this
+   * layer's own and is not a parameter: it is a property of what may cross,
+   * which the renderer has no business choosing per call.
+   *
+   * @param page the zero-based index, as every page index crossing the contract is
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async pageTextLayer(
+    docId: DocId,
+    page: number,
+    limit: number,
+  ): Promise<PageTextLayerResult> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      const text = await this.#pageText(docId, sessions, page);
+      return textLayerOf(text, limit, MAX_TEXT_LAYER_LINE);
     });
 
     return { version, ...value };

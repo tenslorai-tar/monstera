@@ -887,6 +887,132 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Select and copy: the platform does the selecting, and the kernel decides what the words are
+
+Stage 5's first row that does not wait on the PDFium host. Two measurements
+settled its design before a line of it was written, and both are recorded above:
+the two extraction paths disagree, and the substrate's boxes are display space.
+
+### What the layer is
+
+Transparent text over the raster, one element per line, placed where the glyphs
+are. The browser then does the selection, the caret, the drag,
+double-click-to-word, the copy, *find in page* and the accessibility tree. None
+of that is reimplemented and none of it should be — **a hand-written selection
+model is a second answer to a question the platform already owns**, and it is
+the answer that will not match the user's other applications.
+
+So the component's whole job is placement. It registers no handlers. It is the
+one layer here that is **not** inert: the pointer must reach it or there is
+nothing to select, and it sits under the annotation overlay, which mounts only
+while a tool is active — so while somebody is drawing the drawing surface takes
+the pointer, and while nobody is, this does.
+
+### The channel, and the two bounds that are readings
+
+`document.pageTextLayer`, one page, bounded by the caller, beside
+`document.searchPage` and for a different question: a search answers *where is
+this query*, a layer answers *what is on this page and where*.
+
+`MAX_SEARCH_MATCHES`' reasoning does not transfer and the number is not reused.
+That bound rests on *no results surface shows more than a screenful before the
+user narrows the query*; a text layer has no such escape, because the part past
+the bound cannot be selected and there is no query to narrow. So both bounds come
+from what a page actually holds, measured with the shipped substrate:
+
+| page | lines | longest line |
+|---|---|---|
+| 6pt prose, 7pt leading, full A4 | 118 | 83 chars |
+| a 12 × 70 table at 6pt | **840** | 6 chars |
+| 2,000 separate one-glyph runs | 2,000 | 1 char |
+| one deliberately enormous run | 1 | **531 chars** |
+
+**A table cell is its own line**, which is what makes the second row the
+interesting one: a spreadsheet page produces hundreds of lines where its prose
+equivalent produces about a hundred, and 512 would have cut it. `2,048` clears
+the densest page measured and the pathological one; `1,024` is about double the
+worst line. Three synthetic pages are a shape, not a distribution — **the corpus
+reading is owed**, and is stated as owed in the row.
+
+**One `truncated` flag for both bounds.** A caller's question is *is this the
+whole page*, and separate flags would let a consumer handle the line count and
+silently ship a clipped line. That is the export-escaping defect one layer over:
+the copy succeeds and is missing characters nobody can see.
+
+### The frames, and the conversion that was rejected
+
+The boxes cross in **display space at scale 1**. Converting main-side would mean
+deriving the page's box from `/MediaBox`, `/CropBox` and their intersection
+rules — which PDF.js owns (B3a), and which is exactly why `document.viewModel`
+carries rotations and not sizes.
+
+So the renderer converts, in two named steps: `toPdf` through the page at scale
+1, then `toViewport` through the same page at the current zoom.
+`unscaledTransform` is the one new line, beside `overlayTransform` in the module
+that owns overlay geometry.
+
+**Multiplying the reported box by the zoom was rejected**, and it would have
+worked. It is a third implementation of a conversion that module already owns,
+and its rotation handling is invisible at rotation 0 — which is precisely how the
+substrate's own coordinate brand was wrong for weeks with every test green.
+
+### The wired pair, and what each half cannot see
+
+`textLayer.test.ts` is the kernel half: ten cases on the bounded flattening,
+including that a page holding **exactly** the limit is not truncated — the
+off-by-one that makes the flag dishonest in the reassuring direction — and that
+both bounds report through the one flag. Non-vacuous: `>` to `>=` reddens the
+exact-limit case.
+
+`PageList.test.tsx` is the UI half: that the scroller asks
+**`document.pageTextLayer`** for the one visible page and no others, that the
+rendered elements carry **the channel's text** rather than a count of empty ones,
+that a line lands at the box the channel sent, and that a page with no text
+mounts **no layer** rather than an empty one — an empty layer would still take
+pointer events and swallow drags while offering nothing to select.
+
+### Three things the wiring found
+
+**A mock narrower than the interface it stands for.** `PageList.test.tsx` mocks
+`renderPage` and returned `{width, height}`; `RasterisedPage` declares `crop` and
+`rotation` too. `vi.mock`'s factory is untyped, so it compiled. Nothing read
+them, because the two overlays that do are mounted only while a drawing tool is
+active and no case in that file activates one. The text layer mounts whenever a
+page has been measured, and it threw on the first run. **The first real consumer
+of a stub's missing field is what finds it**, which is the same sentence as the
+seam's, one layer down.
+
+**Five fixtures owed the new channel an answer**, and the way they said so is
+worth keeping. The suite reported `Test Files 145 passed` and
+`Tests 2090 passed` and **exited 1**: 76 unhandled rejections, from fixtures that
+throw on an unknown channel, raised inside an effect nothing awaited. The tally
+and the exit code disagreed, and the tally is the line a reader looks at.
+
+**And a flag TypeScript could not check.** `textLayerOf` accumulated `clipped`
+inside a `.map` callback; the analysis narrows it to `false` at the return and
+the lint rule reported the `||` as dead code. It is right that the code could not
+be checked rather than that it was wrong — the fix derives the value with
+`some()` instead of mutating, which states the same fact where both a reader and
+the compiler can see it. The same shape appeared in `usePageText`, where a
+`cancelled` flag read after an `await` narrows to `false`; that one is read
+through a function, which is the idiom `documentSearch.ts` already uses and
+whose comment says the second check is the load-bearing one.
+
+### And the staleness that would have been cleared in an effect
+
+A text layer over a mutated page is a selection that copies text the document no
+longer has, so the answer has to be dropped when the version moves. Doing that by
+clearing state in an effect is what React's own lint rule refuses, and rightly:
+between the change and the clear, a layer from the previous document sits over
+the new one's raster.
+
+The state holds **the question beside the answer** — a key of document, version
+and visible pages — and the hook returns the map only when the key still matches.
+The stale state stops being something to clear and becomes something that cannot
+be returned, which is B5 rather than bookkeeping.
+
+---
+
 ## 2026-09-08 — The substrate's boxes were branded the wrong space, and at `/Rotate 0` the two are the same operation
 
 Found by asking, before writing the text layer's first line, which frame its

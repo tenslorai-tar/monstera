@@ -76,6 +76,28 @@ export function overlayTransform(page: OverlayPage): PageTransform {
 }
 
 /**
+ * The same page at **scale 1**, for reading a coordinate the engine reported.
+ *
+ * ## Why a second transform rather than dividing by the zoom
+ *
+ * `document.pageTextLayer` answers with boxes in the page's display space at
+ * scale 1 — `/Rotate` applied, no zoom — because deriving the crop box
+ * main-side would be a second opinion about a question PDF.js owns (B3a, §3).
+ * Turning one of those into a CSS position is therefore two conversions: display
+ * to PDF at scale 1, then PDF to viewport at the current zoom.
+ *
+ * The alternative is to multiply the reported box by the zoom, which is correct
+ * and is a **third** implementation of a conversion this module already owns —
+ * and one whose rotation handling is invisible at rotation 0, which is exactly
+ * how the substrate's own brand was wrong for weeks. Two named calls beat one
+ * multiplication whose correctness has to be re-derived by every reader.
+ */
+export function unscaledTransform(page: OverlayPage): PageTransform {
+  const [x0, y0, x1, y1] = page.crop;
+  return pageTransform({ x0, y0, x1, y1 }, page.rotation, 1);
+}
+
+/**
  * Where a pointer is, relative to the page it is over.
  *
  * **Measured from the element's own box** rather than from the page, the

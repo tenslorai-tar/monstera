@@ -7,6 +7,8 @@ import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } 
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
+import { TextLayer, type TextLayerLine } from './TextLayer.js';
+import { usePageText } from './usePageText.js';
 import { ANNOTATION_SURFACE_LABEL } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
@@ -272,6 +274,11 @@ export function PageList({
   // question of a different container, and a second implementation here would
   // be two opinions about what *near the viewport* means (B3a).
   const { visible, slotRef, slotFor } = useVisiblePages(MARGIN, startAt);
+  // THE SELECTABLE TEXT FOR WHAT IS ON SCREEN. Held here rather than lifted to
+  // a caller because `visible` is this component's answer and it changes on
+  // every scroll — a caller owning the fetch would re-render on scroll to hand
+  // back a set the scroller already had.
+  const pageText = usePageText(client, docId, version, visible);
   const scroller = useRef<HTMLDivElement | null>(null);
   /**
    * The scroller's own box, remeasured whenever it changes.
@@ -676,6 +683,11 @@ export function PageList({
           // estimate for layout, which is a different tolerance from a
           // coordinate system.
           drawing={sizes.has(page) ? drawing : undefined}
+          // THE SLOT'S OWN MEASUREMENT GATES THIS TOO, and for `drawing`'s
+          // reason: a text layer placed with a neighbour's box would put every
+          // line in the wrong frame, which reads as a selection that drifts
+          // rather than as a missing measurement.
+          text={sizes.has(page) ? pageText.get(page) : undefined}
         />
       ))}
     </div>
@@ -718,6 +730,7 @@ function PageSlot({
   renderZoom,
   onMeasured,
   drawing,
+  text,
 }: {
   readonly page: number;
   readonly ref: (element: HTMLElement | null) => void;
@@ -729,6 +742,7 @@ function PageSlot({
   readonly renderZoom: number;
   readonly onMeasured: (page: number, measured: Measured) => void;
   readonly drawing: PageListProps['drawing'];
+  readonly text: readonly TextLayerLine[] | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -823,6 +837,17 @@ function PageSlot({
           style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
         />
       ) : null}
+      {/* UNDER the annotation overlay and over the canvas. The overlay is
+          mounted only while a tool is active, so while somebody is drawing the
+          drawing surface takes the pointer and while nobody is, this does —
+          which keeps *where does a press go* a question with one answer. */}
+      {text === undefined || size === undefined ? null : (
+        <TextLayer
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          lines={text}
+          page={page}
+        />
+      )}
       {drawing === undefined || size === undefined ? null : (
         <SelectionLayer
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}

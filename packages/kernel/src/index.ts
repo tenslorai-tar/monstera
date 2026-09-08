@@ -243,6 +243,7 @@ export {
 // parsing, searching and scoring import no engine and bind no native library,
 // so a consumer that holds a `PageText` needs no reason to reach for `/engine`
 // (ADR-0026). Reading one from a document does, and `readPageText` is there.
+export { type TextLayer, type TextLayerLine, textLayerOf } from './textLayer.js';
 export {
   type DisplayedRect,
   type PageText,

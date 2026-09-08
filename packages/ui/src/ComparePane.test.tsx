@@ -52,6 +52,11 @@ function client(): ContractClient {
     if (id === 'document.viewModel') {
       return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 2, rotations: [] }));
     }
+    // The scroller asks every visible page for its selectable text; these cases
+    // are about the compare pane, so the answer is empty rather than seeded.
+    if (id === 'document.pageTextLayer') {
+      return Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false }));
+    }
     throw new Error(`this fixture has no answer for ${id}`);
   });
 }

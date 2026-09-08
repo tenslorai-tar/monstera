@@ -154,6 +154,7 @@ export function createContractHandlers(deps: {
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
+    'document.pageTextLayer': pageTextLayerHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
@@ -665,6 +666,45 @@ function searchPageHandler(commands: DocumentCommands): ContractHandlers['docume
       if (thrown instanceof InvalidSearchPatternError) {
         return err({ code: 'search-pattern-invalid' });
       }
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * One page's text as a selectable layer.
+ *
+ * The three refusals are `searchPageHandler`'s minus the fourth, and the
+ * omission is the point: a search can be asked an unparseable question and this
+ * cannot. There is no query here, so `search-pattern-invalid` is not among the
+ * codes this channel declares — and a renderer switches on what is declared.
+ */
+function pageTextLayerHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.pageTextLayer'] {
+  return async ({
+    docId,
+    page,
+    limit,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.pageTextLayer']>>> => {
+    try {
+      const { version, lines, truncated } = await commands.pageTextLayer(docId, page, limit);
+      // REBUILT FIELD BY FIELD, as `searchPageHandler` rebuilds a match: the
+      // kernel's shape and the channel's are two declarations that happen to
+      // agree today, and spreading one into the other is how a field added
+      // kernel-side crosses without anyone deciding it should.
+      return ok({
+        version,
+        lines: lines.map(({ text, box }) => ({
+          text,
+          box: { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 },
+        })),
+        truncated,
+      });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
   };
