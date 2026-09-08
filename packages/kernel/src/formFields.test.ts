@@ -239,6 +239,42 @@ async function multiValued(): Promise<Uint8Array> {
   return document.save();
 }
 
+/**
+ * A MERGED field carrying its own value — the shape pdf-lib never writes.
+ *
+ * ## AAAAAA-2, closed
+ *
+ * The format lets a field with exactly one widget be a single dictionary:
+ * `/FT`, `/T` and `/V` beside `/Subtype /Widget`, with no `/Kids` and no
+ * `/Parent`. A great many real forms carry it, and `deleteFormFields` calls it
+ * *the hard one* and has its own case for it.
+ *
+ * `fieldValues` reads the widget's own `/V` before walking `/Parent`, precisely
+ * for this shape — and every other fixture in this file is `@cantoo/pdf-lib`'s,
+ * which always puts the value on the parent. So that first read was exercised
+ * only by fields with no `/V` anywhere, where answering `[]` cannot be told
+ * from the walk finding nothing. The stage audit of `040be78..3d87cee` named
+ * it; this is the fixture that separates the two.
+ */
+async function mergedValued(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 600]);
+  const context = document.context;
+  const merged = context.obj({
+    Type: PDFName.of('Annot'),
+    Subtype: PDFName.of('Widget'),
+    FT: PDFName.of('Tx'),
+    T: PDFString.of('merged.name'),
+    V: PDFString.of('ON THE WIDGET'),
+    Rect: context.obj([20, 200, 220, 220]),
+    F: 4,
+  });
+  const ref = context.register(merged);
+  page.node.addAnnot(ref);
+  document.catalog.set(PDFName.of('AcroForm'), context.obj({ Fields: context.obj([ref]) }));
+  return document.save();
+}
+
 /** A page with a square on it and no fields at all. */
 async function marked(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
@@ -294,6 +330,20 @@ describe('readFormFields', () => {
     expect(await listed(await multiValued())).toStrictEqual([
       { kind: 'listbox', name: 'applicant.languages', values: ['English', 'Welsh'], on: null },
       { kind: 'dropdown', name: 'applicant.title', values: ['Dr'], on: null },
+    ]);
+  });
+
+  it('READS A MERGED FIELD’S OWN /V, which no pdf-lib fixture can exercise', async () => {
+    // AAAAAA-2, closed. `fieldValues` reads the widget's dictionary before
+    // walking `/Parent`, and every other fixture here puts the value on the
+    // parent — so the first read was covered only by fields holding no value at
+    // all, where its answer is indistinguishable from the walk's.
+    //
+    // A build that walked FIRST and read the widget second would still pass
+    // this, and a build that only walked would answer `[]`: that is the
+    // separation, and it needs a value on the widget and no parent to have one.
+    expect(await listed(await mergedValued())).toStrictEqual([
+      { kind: 'text', name: 'merged.name', values: ['ON THE WIDGET'], on: null },
     ]);
   });
 

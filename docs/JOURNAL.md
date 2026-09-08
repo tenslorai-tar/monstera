@@ -1077,14 +1077,24 @@ range added no writer of record.
 
 | # | finding | state |
 |---|---|---|
-| AAAAAA-1 | `engine/exportFormData` is registered, wired, and driven by nothing | **open** — one case in `remoteLifecycle.test.ts` |
-| AAAAAA-2 | `fieldValues` has no case for the merged field shape | **open** — one fixture |
+| AAAAAA-1 | `engine/exportFormData` is registered, wired, and driven by nothing | **closed the same day** — one case in `remoteLifecycle.test.ts` |
+| AAAAAA-2 | `fieldValues` has no case for the merged field shape | **closed the same day** — one fixture |
 | AAAAAA-3 | the `--space-3` class stayed open for eight commits, carried only by a commit message | closed in the next range |
 | AAAAAA-4 | the board is green two commits short of the range's end | a reading to take, not a repair |
 
 Two of the four are cases nobody wrote, and both look identical to coverage from
 inside the files that would carry them — a dependency filled in to make a
 fixture compile, and a fixture set every one of whose members is the easy shape.
+
+**Correction, the same day: AAAAAA-1 and AAAAAA-2 are closed.** Both were one
+case each, and leaving them open would have made this entry the place a finding
+goes to wait. The export now runs through the joined halves, reads its file back
+out of the granted directory and asserts the directory is empty afterwards;
+`fieldValues` now has a merged field carrying `/V` on the widget itself.
+Mutated: truncating what the host writes reddens the first, and walking to
+`/Parent` before reading the widget reddens the second along with four
+neighbours — which is what says the widget read is load-bearing rather than a
+first branch nothing takes.
 
 ---
 

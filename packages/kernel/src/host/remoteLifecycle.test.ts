@@ -381,6 +381,48 @@ describe('remoteMupdfLifecycle', () => {
   });
 
   /**
+   * THE FORM DATA'S ROUND TRIP — AAAAAA-2's sibling and the audit's AAAAAA-1,
+   * closed.
+   *
+   * `engine/exportFormData` had a channel, a handler, this adapter, a
+   * composition entry and a widened writer type, and **no case called it**.
+   * Every test that reached the encoder went through the local composition,
+   * which builds the bytes with `serialiseFormData` directly and bypasses the
+   * channel, the granted directory, the count check and this whole trip.
+   *
+   * It got there the quiet way: this file's fixture gained `exportFormData` in
+   * its **dependency object** so `createEngineHandlers` would still compile,
+   * and nothing gained a case. Filling in a dependency to make a fixture build
+   * is how a channel arrives looking covered.
+   *
+   * The document has no form, which is the honest fixture here: what this case
+   * is about is the TRIP, and `formData.test.ts` is where the encoders are
+   * proven against real fields. What separates a working trip from a broken one
+   * is that the file exists, is FDF, and its byte count is the one the host
+   * reported — the three things only the round trip can say.
+   */
+  it('carries the form data out through the granted directory, with the count checked', async () => {
+    const areas = realAreas();
+    const { lifecycle, open } = joined(areas);
+
+    const session = await open(flat);
+    const written = await lifecycle.exportFormData(session, 'fdf');
+
+    // THE BYTES CAME BACK, and they are the format that was asked for. A trip
+    // that answered an empty buffer — the shape a missing file produces —
+    // fails here, and the mismatch check inside the adapter fails before it.
+    expect(written.length).toBeGreaterThan(0);
+    expect(new TextDecoder().decode(written.subarray(0, 6))).toBe('%FDF-1');
+
+    // AND THE GRANTED DIRECTORY IS EMPTY AFTERWARDS. `takeOutput` removes the
+    // file on the way out for the serialise's reason: every export is another
+    // copy of the user's data in a directory the contained host may read.
+    expect(await exists(join(areas.made[0]?.outputDirectory ?? '', 'f1'))).toBe(false);
+
+    await lifecycle.close(session);
+  });
+
+  /**
    * NOTHING DOCUMENT-SIZED CROSSED THE PIPE, and this asserts it on the
    * MESSAGES rather than by inspecting the design.
    *
