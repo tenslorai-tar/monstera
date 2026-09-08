@@ -341,6 +341,23 @@ try {
       },
     ],
     [
+      'scripts/research/engineReachProbe.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports the SUBJECT it was handed, one per child process, so the specifier is the ' +
+          'variable the whole instrument varies — a literal would make it a probe of one fixed ' +
+          'module and there would be nothing to compare. It reads that subject from the ' +
+          'environment rather than argv, deliberately: the first run passed it as `argv[2]`, ' +
+          'and `hostEntry.js` reads `argv[2]` as the pipe name it must connect to, so the ' +
+          'probe handed its own subject to the subject, which dialled it and exited before ' +
+          'reporting. The four subjects are two npm packages this repository already depends ' +
+          'on (`mupdf`, `@monstera/shared`) and two file:// URLs under packages/kernel/dist; ' +
+          'none can be the electron package, and this file starts nothing — it records which ' +
+          'modules a graph loaded and whether any WebAssembly was instantiated.',
+      },
+    ],
+    [
       'scripts/research/barrelCost.mjs',
       {
         sites: 1,
