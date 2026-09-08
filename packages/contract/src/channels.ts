@@ -8,6 +8,7 @@ import {
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
+  formDataImportFormatSchema,
   formFieldKindSchema,
   renderableCommandSchema,
 } from './commands.js';
@@ -1112,6 +1113,52 @@ export const channels = {
       /** The file was picked and the engine could not decode it. */
       z.object({ kind: z.literal('unreadable') }),
       /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Fills the form from a data file the user picks.
+   *
+   * `document.placeImage`'s shape and every one of its arguments: the ask
+   * carries no bytes, main opens the picker, reads the file and mints
+   * `importFormData` straight into the bus, and `renderableCommandSchema` has
+   * that command removed so the capability is unrepresentable rather than
+   * merely unused.
+   *
+   * ## The format is the USER'S, and the set is smaller than the export's
+   *
+   * `formDataImportFormatSchema` admits JSON and FDF. XFDF needs an XML reader
+   * this repository does not have, and a channel admitting a format whose apply
+   * refuses is a control that does nothing wearing a working one's clothes.
+   *
+   * ## `unreadable` COVERS THREE CAUSES, and that is a limit rather than a
+   * choice
+   *
+   * The file may not be form data; it may name no field this document has; or
+   * it may hold a value the field's type rules reject. All three are refusals
+   * the **apply** makes, and an apply's refusal reason does not cross the
+   * engine host's boundary — a throw there becomes `internal` with its
+   * diagnostic withheld, by design (§5). So this answers one outcome for the
+   * three, and the message names all three as the things to check, rather than
+   * claiming a certainty this build does not have. The same limit governs every
+   * shipped command that refuses on document state, including `fillFormField`.
+   */
+  'document.importFormData': channel(
+    'Fills the form from a data file the user picks.',
+    z.object({ docId: docIdSchema, format: formDataImportFormatSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('imported'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      /** Not form data, or naming nothing here, or holding a refused value. */
+      z.object({ kind: z.literal('unreadable') }),
+      /** Past {@link MAX_FORM_DATA_BYTES} — refused before it is read. */
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],

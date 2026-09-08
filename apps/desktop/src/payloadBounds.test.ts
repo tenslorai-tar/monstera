@@ -215,6 +215,12 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // FIELDS was rejected for this: that payload does scale, which is why the one
   // that exists for a panel is bounded on both axes.
   'document.exportFormData': 'needs an engine session and a save dialog',
+  // THE ASK IS A `DocId` AND AN ENUM MEMBER. The file's bytes never touch this
+  // boundary: the renderer names a format, main picks and reads the file, and
+  // the command that carries the bytes is one `renderableCommandSchema` has
+  // removed — so the payload here is the same size for a one-field form and a
+  // four-thousand-field one.
+  'document.importFormData': 'needs an engine session and an open dialog',
   'document.split': 'needs an engine session and a folder dialog',
   'document.insertImage': 'needs an engine session and an image picker',
   // THE IMAGE GOES THE OTHER WAY AND NEVER CROSSES THIS BOUNDARY, which is the

@@ -80,6 +80,12 @@ export function harnessSurfaces(
     pickFormData: () => {
       throw new Error(`${harness} exports no form data, so nothing may pick a file for it`);
     },
+    openFormData: () => {
+      throw new Error(`${harness} imports no form data, so nothing may pick a file to read`);
+    },
+    readFormData: () => {
+      throw new Error(`${harness} imports no form data, so nothing may read one`);
+    },
     // ADDED 2026-09-05, AND THIS LINE IS THE MECHANISM WORKING. `pickImage` is
     // the first surface the shell has gained since composition became an
     // object, and it reached every harness through this file: `pickerProbe.ts`

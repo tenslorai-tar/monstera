@@ -146,6 +146,7 @@ export function createContractHandlers(deps: {
     'document.extract': extractHandler(deps.commands),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands),
     'document.exportFormData': exportFormDataHandler(deps.commands),
+    'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
@@ -416,6 +417,42 @@ function snapshotRegionHandler(
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The form-data import's handler.
+ *
+ * {@link placeImageHandler}'s shape with a different success member, because it
+ * is the same route: a picker, a bound-checked read, and a command minted in
+ * main carrying bytes the renderer never held.
+ */
+function importFormDataHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.importFormData'] {
+  return async ({
+    docId,
+    format,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.importFormData']>>> => {
+    try {
+      const outcome = await commands.importFormData(docId, format);
+      if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'too-large') {
+        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+      }
+      return ok({
+        kind: 'imported',
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        historyDropped: outcome.historyDropped,
+      } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

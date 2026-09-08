@@ -12,6 +12,8 @@ import {
   exportFormDataFdfCommand,
   exportFormDataJsonCommand,
   exportFormDataXfdfCommand,
+  importFormDataFdfCommand,
+  importFormDataJsonCommand,
   saveCopyCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
@@ -711,6 +713,98 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(opened).toStrictEqual([
       { id: 'dialog.save-problem', props: { outcome: 'unrepresentable' } },
+    ]);
+  });
+
+  it('EACH IMPORT DISPATCHES ITS OWN FORMAT, and there are only two', async () => {
+    // The export's case one row along, and the count is the assertion the
+    // export's does not make: there are TWO imports where there are three
+    // exports, because reading XFDF needs a parser this build does not have —
+    // and a third entry whose command refuses is the display-only defect the
+    // wired rule is about.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(
+        ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
+      );
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined) };
+
+    await importFormDataJsonCommand(deps).run(CONTEXT);
+    await importFormDataFdfCommand(deps).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      { id: 'document.importFormData', params: { docId: DOC, format: 'json' } },
+      { id: 'document.importFormData', params: { docId: DOC, format: 'fdf' } },
+    ]);
+  });
+
+  it('REPORTS the document moved after an import, which is what makes it a mutation', async () => {
+    // The import answers a version and a byte length exactly as a mutation
+    // does, because it is one — main mints the command. A renderer that treated
+    // it as a file operation and said nothing would leave the view showing the
+    // form before it was filled, which is the display-only failure with the
+    // work already done.
+    const applied: unknown[] = [];
+    const client = createClient(channels, () =>
+      Promise.resolve(
+        ok({ kind: 'imported', version: asDocVersion(7), byteLength: 4096, historyDropped: 0 }),
+      ),
+    );
+
+    await importFormDataJsonCommand({
+      client,
+      onApplied: (value) => applied.push(value),
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(applied).toStrictEqual([{ version: asDocVersion(7), byteLength: 4096 }]);
+  });
+
+  it('OPENS THE FILE PROBLEM DIALOG for a file that did not import, and not for a dismissal', async () => {
+    // The two outcomes that look alike from outside — nothing changed either
+    // way — and must not be reported alike. Asserting both in one case is what
+    // stops a renderer treating *nothing happened* as one state.
+    const openedFor: Record<string, number> = {};
+
+    for (const kind of ['cancelled', 'unreadable'] as const) {
+      const opened: unknown[] = [];
+      const client = createClient(channels, () => Promise.resolve(ok({ kind })));
+      await importFormDataFdfCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          opened.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+      openedFor[kind] = opened.length;
+    }
+
+    expect(openedFor).toStrictEqual({ cancelled: 0, unreadable: 1 });
+  });
+
+  it('CARRIES THE LIMIT for a file that is too large, because a number is the actionable part', async () => {
+    const opened: { id: string; props: unknown }[] = [];
+    const client = createClient(channels, () =>
+      Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: 8 * 1024 * 1024 })),
+    );
+
+    await importFormDataJsonCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.import-form-data-problem',
+        props: { reason: 'too-large', limitBytes: 8 * 1024 * 1024 },
+      },
     ]);
   });
 

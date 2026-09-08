@@ -254,6 +254,24 @@ function kindOf(widget: PDFWidget): FormFieldKind {
  * `/AS` above rather than being confused by it.
  */
 function onState(widget: PDFWidget): boolean {
+  const key = onStateKey(widget);
+  // THE FIELD'S VALUE, not the widget's — measured, and it is what makes this
+  // comparison meaningful: both widgets of a group answer the same string, and
+  // only one of them has a key equal to it. Through {@link fieldValues} rather
+  // than `getValue()` so this module holds one reading of `/V` and not two; a
+  // button's is a name, so the list has exactly one entry or none.
+  return key !== undefined && key === fieldValues(widget)[0];
+}
+
+/**
+ * This widget's own name for *on* — the non-`Off` key of its `/AP` `/N`.
+ *
+ * Separated from {@link onState} because an IMPORT needs the key itself rather
+ * than the comparison: a file names the state it wants (`Yes`, `1`), and which
+ * widget of a radio group that is cannot be decided by asking each one whether
+ * it is currently on.
+ */
+export function onStateKey(widget: PDFWidget): string | undefined {
   const normal = widget.getObject().get('AP').get('N');
   // A STREAM ANSWERS `isDictionary()` TOO, measured 2026-09-07: `/AP` `/N` is a
   // state dictionary on a checkbox or radio and a STREAM on every other kind,
@@ -262,7 +280,7 @@ function onState(widget: PDFWidget): boolean {
   // here only for a stateful button, so this is the second line of defence
   // rather than the only one; it is here because the reading it prevents is
   // plausible-looking rather than obviously wrong.
-  if (normal.isStream() || !normal.isDictionary()) return false;
+  if (normal.isStream() || !normal.isDictionary()) return undefined;
   let name: string | undefined;
   normal.forEach((_appearance, key) => {
     // THE FIRST NON-`Off` KEY. The format allows several on-states and no
@@ -270,12 +288,7 @@ function onState(widget: PDFWidget): boolean {
     // unique, because a second would otherwise be silently ignored.
     if (name === undefined && String(key) !== 'Off') name = String(key);
   });
-  // THE FIELD'S VALUE, not the widget's — measured, and it is what makes this
-  // comparison meaningful: both widgets of a group answer the same string, and
-  // only one of them has a key equal to it. Through {@link fieldValues} rather
-  // than `getValue()` so this module holds one reading of `/V` and not two; a
-  // button's is a name, so the list has exactly one entry or none.
-  return name !== undefined && name === fieldValues(widget)[0];
+  return name;
 }
 
 /**
@@ -372,7 +385,7 @@ function widgetAt(loaded: PDFPage, index: number): PDFWidget {
  * choice is cleared, and it is what an inverse restoring an untouched field
  * has to be able to say.
  */
-function refuseUnfillable(widget: PDFWidget, value: FieldFill): void {
+export function refuseUnfillable(widget: PDFWidget, value: FieldFill): void {
   if (widget.isReadOnly()) {
     throw new Error(
       `The field "${widget.getName()}" is marked read-only by the document, so this build does ` +
@@ -445,6 +458,20 @@ function setButton(widget: PDFWidget, on: boolean): void {
         'refused rather than left holding the opposite of what was asked.',
     );
   }
+}
+
+/**
+ * Puts one value into one widget, having refused everything the document
+ * forbids.
+ *
+ * **Exported for the import**, which is the second caller of *what filling
+ * means* and must not be a second implementation of it (B3a): every type rule
+ * in {@link refuseUnfillable}, the toggle-and-read-back in {@link setButton}
+ * and the read-only refusal are the fill row's, and an import that wrote values
+ * its own way would agree with them until a document disagreed.
+ */
+export function fillWidget(widget: PDFWidget, value: FieldFill): void {
+  fill(widget, value);
 }
 
 /** Puts one value into one widget, having refused everything the document forbids. */

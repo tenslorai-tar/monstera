@@ -68,6 +68,7 @@ const handlers: ContractHandlers = {
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.snapshotRegion': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

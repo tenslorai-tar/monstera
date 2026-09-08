@@ -4,6 +4,7 @@ import {
   type ContractHandlers,
   type FormFieldKind,
   type Incident,
+  MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   channels,
   createClient,
@@ -248,6 +249,17 @@ export interface BrowserShimOptions {
    * insert and exercise the placement.
    */
   readonly placedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
+
+  /**
+   * What `document.importFormData` answers — its own switch, not the image's.
+   *
+   * Separate because a case that configures a picked image and exercises an
+   * import would be a case configuring one thing and asserting another, which
+   * is the exact hazard the shared `copyDestination` switch is documented as
+   * accepting for channels that really do run one path in production. These two
+   * do not: the import reads a data file and the placement reads a picture.
+   */
+  readonly importedFormData?: 'unreadable' | 'too-large' | { readonly byteLength: number };
   /**
    * The bytes each document is readable as, by id.
    *
@@ -733,6 +745,33 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           kind: 'placed' as const,
+          version,
+          byteLength: chosen.byteLength,
+          historyDropped: 0,
+        }),
+      );
+    },
+    // ITS OWN SWITCH, for the reason `importedFormData` carries: this reads a
+    // data file where the placement above reads a picture, and the format is
+    // ignored here because what a browser-shim case can assert is which channel
+    // the control reached and with which format — whether those bytes parse is
+    // `formData.test.ts`' case.
+    'document.importFormData': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.importedFormData;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
+      if (chosen === 'too-large') {
+        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_FORM_DATA_BYTES }));
+      }
+      const version = asDocVersion(current + 1);
+      versions.set(docId, version);
+      return Promise.resolve(
+        ok({
+          kind: 'imported' as const,
           version,
           byteLength: chosen.byteLength,
           historyDropped: 0,

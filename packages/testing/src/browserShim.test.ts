@@ -196,6 +196,7 @@ describe('browser shim', () => {
       'document.exportFormData',
       'document.extract',
       'document.formFields',
+      'document.importFormData',
       'document.insertImage',
       'document.layers',
       'document.open',

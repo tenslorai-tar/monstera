@@ -1,6 +1,8 @@
 import { dialog } from 'electron';
 
-import type { PickImage } from './documentCommands.js';
+import type { FormDataImportFormat } from '@monstera/contract';
+
+import { FORM_DATA_FILES, type PickFormDataFile, type PickImage } from './documentCommands.js';
 
 /**
  * The real image picker: Electron's open dialog, narrowed to what this build
@@ -50,6 +52,31 @@ export function createImagePicker(): PickImage {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'dontAddToRecent'],
       filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}
+
+/**
+ * The open dialog for a form-data file, narrowed to the format asked for.
+ *
+ * A PARAMETER for `createFormDataPicker`'s reason and not this file's: the
+ * format is the user's own choice, already made, and the filter comes from the
+ * same table the export's suggested name does — so there is one place that says
+ * what an FDF is called.
+ *
+ * **The filter is a convenience and not a check**, exactly as above, and the
+ * stakes are the same: a user may choose *All files* and pick anything. What
+ * refuses that is the parse, in the engine host, which is where a stranger's
+ * file belongs.
+ */
+export function createFormDataOpenPicker(): PickFormDataFile {
+  return async (format: FormDataImportFormat): Promise<string | null> => {
+    const file = FORM_DATA_FILES[format];
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: file.label, extensions: [file.extension] }],
     });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;

@@ -1180,6 +1180,39 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  importFormData: {
+    kind: 'importFormData',
+    // MuPDF, and for two reasons rather than one. It WRITES values, which §3's
+    // matrix puts on MuPDF; and it READS an FDF, which is PDF syntax and has no
+    // API of its own — measured 2026-09-08, `fdf` appears zero times in
+    // `mupdf.d.ts`. Both halves happen where the engine is.
+    writer: 'mupdf',
+    // NOT INVERTIBLE. The prior is every value of every field the file happens
+    // to name — a set the command cannot know until it has parsed, spread
+    // across the whole document. `flattenFormFields`' reason at a smaller
+    // scale: the checkpoint restores it exactly and an inverse would have to
+    // carry a second whole form.
+    invertible: false,
+    undo: 'checkpoint',
+    // The values in the file decide the writes, and `setTextValue`,
+    // `setChoiceValue` and the bounded toggle are the same three calls the fill
+    // row makes — none of which mints an identifier or stamps a date.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // MATCHES BY NAME, so it names nothing a walk answered. `flattenFormFields`'
+    // reason, which is also why the payload carries no version.
+    targets: 'none',
+    reads: 'none',
+    // THE SECOND COMMAND ON THIS AXIS, and the one that made the member's name
+    // wrong out loud (ADR-0044's 2026-09-08 correction). A picked file's bytes
+    // cannot cross a JSON wire, so they travel the granted directory the
+    // document itself arrives through.
+    asset: 'bytes',
+    // IT REMOVES NOTHING. Every write here replaces a value in place; no object
+    // is unlinked, so there is nothing for a collecting save to sweep.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

@@ -13,6 +13,7 @@ import {
   annotationRectSchema,
   formDataFormatSchema,
   formFieldKindSchema,
+  importFormDataSchema,
   channel,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -836,6 +837,11 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
+  // THE SECOND ASSET-BEARING KIND, and `.omit` for `placeImage`'s reason: two
+  // hand-kept shapes for one command would be a second opinion about what that
+  // command is, and the derivation runs in the direction 4c allows — a field
+  // added to the payload arrives here on its own, and the one removed is named.
+  importFormDataSchema.omit({ bytes: true }),
 ]);
 
 /** What travels in place of a command, once its asset has been taken out. */

@@ -106,6 +106,11 @@ export const SAVE_COPY_TITLE = messageKey('command.save-copy.title');
 export const EXPORT_FORM_DATA_JSON_TITLE = messageKey('command.export-form-data.json');
 export const EXPORT_FORM_DATA_XFDF_TITLE = messageKey('command.export-form-data.xfdf');
 export const EXPORT_FORM_DATA_FDF_TITLE = messageKey('command.export-form-data.fdf');
+export const IMPORT_FORM_DATA_JSON_TITLE = messageKey('command.import-form-data.json');
+export const IMPORT_FORM_DATA_FDF_TITLE = messageKey('command.import-form-data.fdf');
+export const IMPORT_FORM_DATA_PROBLEM_TITLE = messageKey('dialog.import-form-data.title');
+export const IMPORT_FORM_DATA_UNREADABLE = messageKey('dialog.import-form-data.unreadable');
+export const IMPORT_FORM_DATA_TOO_LARGE = messageKey('dialog.import-form-data.too-large');
 export const PAGE_TRANSITION_TITLE = messageKey('dialog.page-transition.title');
 export const PAGE_TRANSITION_REPLACE = messageKey('dialog.page-transition.replace');
 export const PAGE_TRANSITION_DISSOLVE = messageKey('dialog.page-transition.dissolve');
@@ -892,6 +897,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_FORM_DATA_JSON_TITLE]: 'Export form data as JSON…',
   [EXPORT_FORM_DATA_XFDF_TITLE]: 'Export form data as XFDF…',
   [EXPORT_FORM_DATA_FDF_TITLE]: 'Export form data as FDF…',
+  // TWO ENTRIES WHERE THE EXPORT HAS THREE, and the absence is the honest one:
+  // reading XFDF needs an XML reader this build does not have, so there is no
+  // menu entry for it rather than one that refuses.
+  [IMPORT_FORM_DATA_JSON_TITLE]: 'Import form data from JSON…',
+  [IMPORT_FORM_DATA_FDF_TITLE]: 'Import form data from FDF…',
+  [IMPORT_FORM_DATA_PROBLEM_TITLE]: 'That form data was not imported',
+  // NAMES ALL THREE CAUSES, because this build genuinely cannot tell them
+  // apart: the refusal happens inside the engine host and an apply's reason
+  // does not cross that boundary. Claiming one of the three would be a guess
+  // wearing a diagnosis's clothes, and the reader would act on it.
+  [IMPORT_FORM_DATA_UNREADABLE]:
+    'Nothing was changed. The file may not be form data in that format, it may name fields this document does not have, or it may hold a value one of those fields will not take.',
+  [IMPORT_FORM_DATA_TOO_LARGE]:
+    'Nothing was changed. Monstera reads form data files up to {megabytes} MB, and that one is larger.',
   [PAGE_TRANSITION_TITLE]: 'Page transition',
   [PAGE_TRANSITION_REPLACE]: 'None',
   [PAGE_TRANSITION_DISSOLVE]: 'Dissolve',

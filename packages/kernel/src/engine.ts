@@ -106,7 +106,14 @@ export {
   readFormFields,
 } from './formFields.js';
 export {
+  applyImportFormData,
+  captureImportFormData,
   type ExportedField,
+  type ImportedField,
+  invertImportFormData,
+  NoMatchingFieldsError,
+  parseFormData,
+  UnreadableFormDataError,
   UnrepresentableFormDataError,
   readFormData,
   serialiseFormData,

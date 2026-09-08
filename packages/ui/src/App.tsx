@@ -32,6 +32,8 @@ import {
   exportFormDataFdfCommand,
   exportFormDataJsonCommand,
   exportFormDataXfdfCommand,
+  importFormDataFdfCommand,
+  importFormDataJsonCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
@@ -85,6 +87,7 @@ import { BATES_NUMBER_DIALOG } from './dialogs/batesNumber.js';
 import { PAGE_TRANSITION_DIALOG } from './dialogs/pageTransition.js';
 import { RESIZE_PAGES_DIALOG } from './dialogs/resizePages.js';
 import { GENERATE_TOC_PROBLEM_DIALOG } from './dialogs/generateTocProblem.js';
+import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
 import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
@@ -286,6 +289,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         BATES_NUMBER_DIALOG,
         PAGE_TRANSITION_DIALOG,
         RESIZE_PAGES_DIALOG,
+        IMPORT_FORM_DATA_PROBLEM_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
         GENERATE_TOC_PROBLEM_DIALOG,
         MERGE_DOCUMENT_DIALOG,
@@ -1159,6 +1163,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         exportFormDataJsonCommand({ client, onApplied: applied, ask }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
         exportFormDataFdfCommand({ client, onApplied: applied, ask }),
+        importFormDataJsonCommand({ client, onApplied: applied, ask }),
+        importFormDataFdfCommand({ client, onApplied: applied, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.

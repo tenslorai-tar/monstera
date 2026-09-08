@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
 import {
+  applyImportFormData,
   type ExportedField,
+  NoMatchingFieldsError,
+  UnreadableFormDataError,
   UnrepresentableFormDataError,
   readFormData,
   serialiseFormData,
@@ -43,8 +46,14 @@ const HOSTILE = {
   'hostile.wide': 'ひらがな — em dash',
 };
 
-/** A form carrying one text field per hostile value, plus a tick box and a list. */
-async function form({ ticked = true } = {}): Promise<Uint8Array> {
+/**
+ * A form carrying one text field per hostile value, plus a tick box and a list.
+ *
+ * `filled: false` leaves every value empty, which is the fixture an IMPORT case
+ * needs: importing into the filled document would leave every value already
+ * correct, so an apply that wrote nothing would pass.
+ */
+async function form({ ticked = true, filled = true, multi = true } = {}): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([400, 700]);
   const font = await document.embedFont(StandardFonts.Helvetica);
@@ -53,7 +62,7 @@ async function form({ ticked = true } = {}): Promise<Uint8Array> {
   let y = 640;
   for (const [name, value] of Object.entries(HOSTILE)) {
     const text = fields.createTextField(name);
-    text.setText(value);
+    if (filled) text.setText(value);
     text.addToPage(page, { x: 20, y, width: 200, height: 18, font, borderWidth: 0 });
     y -= 30;
   }
@@ -68,7 +77,7 @@ async function form({ ticked = true } = {}): Promise<Uint8Array> {
   const radio = fields.createRadioGroup('applicant.post');
   radio.addOptionToPage('first', page, { x: 20, y, width: 16, height: 16, borderWidth: 0 });
   radio.addOptionToPage('second', page, { x: 60, y, width: 16, height: 16, borderWidth: 0 });
-  radio.select('second');
+  if (filled) radio.select('second');
   y -= 30;
 
   // A PUSH BUTTON, which carries no data and must not appear in the file.
@@ -79,10 +88,14 @@ async function form({ ticked = true } = {}): Promise<Uint8Array> {
   const list = fields.createOptionList('applicant.languages');
   list.addOptions(['English', 'Dutch', 'Welsh']);
   list.addToPage(page, { x: 20, y: y - 40, width: 100, height: 60, font, borderWidth: 0 });
-  const chosen = PDFArray.withContext(document.context);
-  chosen.push(PDFString.of('English'));
-  chosen.push(PDFString.of('Welsh'));
-  list.acroField.dict.set(PDFName.of('V'), chosen);
+  if (filled && multi) {
+    const chosen = PDFArray.withContext(document.context);
+    chosen.push(PDFString.of('English'));
+    chosen.push(PDFString.of('Welsh'));
+    list.acroField.dict.set(PDFName.of('V'), chosen);
+  } else if (filled) {
+    list.select('Welsh');
+  }
 
   return document.save();
 }
@@ -306,6 +319,162 @@ describe('serialiseFormData, XFDF', () => {
 function quoted(): ExportedField {
   return { name: 'a " name', values: ['plain'], asName: false };
 }
+
+describe('applyImportFormData', () => {
+  /** The document after an import of `bytes` in `format`, as the reader lists it. */
+  async function afterImport(
+    document: Uint8Array,
+    bytes: Uint8Array,
+    format: 'json' | 'fdf',
+  ): Promise<readonly ExportedField[]> {
+    return await onSession(document, async (session) => {
+      await applyImportFormData(session, { kind: 'importFormData', format, bytes });
+      return await readFormData(session);
+    });
+  }
+
+  it('ROUND-TRIPS A WHOLE FORM through FDF, values and states alike', async () => {
+    // THE WHOLE PAIR IN ONE CASE, which is what makes it a round trip rather
+    // than two half-proofs: the export is read out of one document and imported
+    // into a SECOND, emptied one, and what is compared is the two readings.
+    // Exporting and importing the same document would pass for a pair that both
+    // did nothing.
+    //
+    // `multi: false`, because the round trip is not lossless over a field
+    // holding two values and the case below says so out loud. Using the
+    // multi-valued fixture here would fold that limit into a round-trip failure
+    // and read as the import being broken.
+    const filled = await form({ multi: false });
+    const written = serialiseFormData(await exported(filled), 'fdf');
+
+    // THE EMPTY DOCUMENT IS THE FIXTURE THE BUG CANNOT HANDLE. Importing into
+    // the filled one would leave every value already correct, so an apply that
+    // wrote nothing would pass.
+    const blank = await form({ ticked: false, filled: false });
+    expect(await exported(blank)).not.toStrictEqual(await exported(filled));
+
+    expect(await afterImport(blank, written, 'fdf')).toStrictEqual(await exported(filled));
+  });
+
+  it('ROUND-TRIPS THROUGH JSON TOO, which is the format with an authority', async () => {
+    const filled = await form({ multi: false });
+    const written = serialiseFormData(await exported(filled), 'json');
+    expect(await afterImport(await form({ ticked: false, filled: false }), written, 'json')).toStrictEqual(
+      await exported(filled),
+    );
+  });
+
+  it('REFUSES A FIELD THE FILE GIVES TWO VALUES FOR, which this build cannot write', async () => {
+    // THE ASYMMETRY, STATED RATHER THAN DISCOVERED: the export writes both
+    // values of a multi-select faithfully and the import cannot put them back,
+    // because a fill carries one option. Importing the first and dropping the
+    // second would be a loss with no report — into a document the person then
+    // saves — so it refuses, which is the same sentence the panel and the
+    // capture say about the same shape.
+    const both = serialiseFormData(await exported(await form()), 'json');
+    await expect(
+      afterImport(await form({ ticked: false, filled: false }), both, 'json'),
+    ).rejects.toThrow(/writes one per field/u);
+  });
+
+  it('REFUSES JSON THAT IS NOT THIS BUILD’S, rather than importing nothing and succeeding', async () => {
+    // The marker's whole reason. Without it this file matches no field, fills
+    // nothing, and reports success — which is the reassuring answer, and is
+    // indistinguishable from importing the right file into the wrong document.
+    const foreign = new TextEncoder().encode(
+      JSON.stringify({ fields: [{ name: 'hostile.fdf', values: ['x'] }] }),
+    );
+    await expect(afterImport(await form(), foreign, 'json')).rejects.toBeInstanceOf(
+      UnreadableFormDataError,
+    );
+  });
+
+  it('REFUSES A FILE THAT NAMES NOTHING THIS DOCUMENT HAS', async () => {
+    // The likeliest mistake a person makes here is picking the wrong file, and
+    // a zero-field import that succeeds looks exactly like one that worked.
+    const elsewhere = serialiseFormData(
+      [{ name: 'nothing.here', values: ['x'], asName: false }],
+      'json',
+    );
+    await expect(afterImport(await form(), elsewhere, 'json')).rejects.toBeInstanceOf(
+      NoMatchingFieldsError,
+    );
+  });
+
+  it('CHANGES NOTHING when one value is refused — the whole import or none of it', async () => {
+    // A partial fill with no report is this row's own subject. The listbox
+    // offers `English, Dutch, Welsh`, so `Klingon` is a value the fill row
+    // refuses — and the entry BEFORE it in the file is one that would have
+    // applied, which is what makes this a case about atomicity rather than
+    // about the refusal. The order matters: an import that wrote as it went
+    // would have landed the first before meeting the second.
+    const document = await form({ ticked: false, filled: false });
+    const before = await exported(document);
+    const mixed = serialiseFormData(
+      [
+        { name: 'hostile.fdf', values: ['would have applied'], asName: false },
+        { name: 'applicant.languages', values: ['Klingon'], asName: false },
+      ],
+      'json',
+    );
+
+    // ONE SESSION FOR THE APPLY AND THE READ, and that is the whole case. The
+    // first spelling re-opened the fixture BYTES afterwards — which no apply
+    // can change, since a session holds the parsed document — so it compared
+    // the original with itself and passed for an import that wrote as it went.
+    // The mutation that writes inside the planning loop is what found it.
+    const { refused, after } = await onSession(document, async (session) => {
+      let thrown: unknown;
+      try {
+        await applyImportFormData(session, {
+          kind: 'importFormData',
+          format: 'json',
+          bytes: mixed,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      return { refused: thrown, after: await readFormData(session) };
+    });
+
+    expect(refused).toBeInstanceOf(Error);
+    expect((refused as Error).message).toMatch(/does not offer the option/u);
+    // AND THE FIRST ENTRY DID NOT LAND. Without this the case passes for an
+    // import that applied everything up to the failure — which is the state the
+    // two passes exist to prevent, and the one a throw alone says nothing about.
+    expect(after).toStrictEqual(before);
+  });
+
+  it('IGNORES an entry naming a field this document does not have', async () => {
+    // A form exported from another revision carries them, so this must not be a
+    // refusal — and the field that DOES match is asserted to have changed, so
+    // the case cannot pass for an import that ignored everything.
+    const document = await form({ ticked: false, filled: false });
+    const partly = serialiseFormData(
+      [
+        { name: 'gone.in.this.revision', values: ['x'], asName: false },
+        { name: 'hostile.fdf', values: ['landed'], asName: false },
+      ],
+      'json',
+    );
+    const after = await afterImport(document, partly, 'json');
+    expect(after.find((field) => field.name === 'hostile.fdf')?.values).toStrictEqual(['landed']);
+  });
+
+  it('PUTS A RADIO GROUP ON THE RIGHT WIDGET, which no widget can decide alone', async () => {
+    // The one place a field's value means different things to different
+    // widgets: the file names the chosen option's EXPORT value, and each widget
+    // is on exactly when its own on-state key equals it. A build that asked
+    // each widget *are you on* would answer from the document it is changing.
+    const document = await form({ ticked: false, filled: false });
+    const chooseSecond = serialiseFormData(
+      [{ name: 'applicant.post', values: ['1'], asName: true }],
+      'json',
+    );
+    const after = await afterImport(document, chooseSecond, 'json');
+    expect(after.find((field) => field.name === 'applicant.post')?.values).toStrictEqual(['1']);
+  });
+});
 
 describe('serialiseFormData, JSON', () => {
   it('CARRIES A MARKER, so an import can refuse a file that is not one of these', async () => {

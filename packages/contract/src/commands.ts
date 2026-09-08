@@ -2338,6 +2338,87 @@ export const flattenFormFieldsSchema = z.object({
 });
 
 /**
+ * How large a form-data file this build will read.
+ *
+ * A form's values are text — the largest real one anybody has put in front of
+ * this build is tens of kilobytes — so this is a bound on a file a **stranger**
+ * supplies rather than a promise about what a form may hold. It is checked
+ * before the read, for `MAX_IMAGE_BYTES`' reason: refusing a file after loading
+ * it into memory is a bound that costs exactly what it exists to avoid.
+ */
+export const MAX_FORM_DATA_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Which encodings an IMPORT can read, which is not the set an export writes.
+ *
+ * **A second enum and not `formDataFormatSchema`**, and the asymmetry is the
+ * honest shape rather than an oversight: FDF is PDF syntax, so MuPDF reads it,
+ * and JSON has an authority in the runtime — while XFDF needs an XML reader
+ * this repository does not have. A command admitting `'xfdf'` today would be a
+ * payload whose apply refuses, which is the display-only defect one layer below
+ * the surface. The member joins when the reader does.
+ */
+export const formDataImportFormatSchema = z.enum(['json', 'fdf']);
+
+/** See {@link formDataImportFormatSchema}. */
+export type FormDataImportFormat = z.infer<typeof formDataImportFormatSchema>;
+
+/**
+ * Fills every field a data file names, matching by the field's own name.
+ *
+ * ## THE BYTES ARE HERE, and they leave before the wire
+ *
+ * `placeImage`'s argument, unchanged: the file *is* the intent, it scales with
+ * the file and not with the document, and the renderer never holds it — main
+ * picks it, reads it and mints this. It is routed to MuPDF, whose pipe carries
+ * JSON, so the declaration says `asset: 'bytes'` and the transport moves them
+ * through the granted directory
+ * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md),
+ * corrected 2026-09-08 — the member was called `'image'` and the axis was never
+ * about images).
+ *
+ * **Decoding an FDF needs MuPDF** — an FDF is PDF syntax, and MuPDF declares no
+ * FDF symbol at all, so the file opens as a `PDFDocument` rather than through a
+ * reader. Invariant 20 keeps MuPDF out of `main`, so the parse happens where
+ * the engine is, which is also where hostile input belongs: an imported file is
+ * the most attacker-controlled thing this row touches.
+ *
+ * ## Matching is by NAME, so there is no version and no handle
+ *
+ * A data file names fields, not walk positions. So this command names nothing a
+ * walk answered and cannot be stale against an earlier read — `targets: 'none'`,
+ * for `flattenFormFields`' reason.
+ *
+ * ## What it refuses, and why refusing beats a partial fill
+ *
+ * An entry naming a field the document does not have is **ignored**: a form
+ * exported from another revision carries them, and that is ordinary. But a
+ * value the field's own type rules reject — an option a dropdown does not
+ * offer, text aimed at a tick box — refuses the **whole** command, naming the
+ * field. A half-applied form with no report is the reassuring failure this row
+ * exists to prevent, and `undo: 'checkpoint'` means there is no partial state
+ * to unwind.
+ *
+ * And a file that matches **nothing** refuses too. Filling zero fields
+ * successfully is indistinguishable from importing the wrong file, which is the
+ * most likely mistake a person makes here.
+ */
+export const importFormDataSchema = z.object({
+  kind: z.literal('importFormData'),
+  format: formDataImportFormatSchema,
+  // `z.custom` AND NOT `z.instanceof(...).refine(...)`, which is `placeImage`'s
+  // spelling and not a style choice: `instanceof` infers
+  // `Uint8Array<ArrayBuffer>` where the rest of this build passes
+  // `Uint8Array<ArrayBufferLike>`, so the narrower one fails to accept a buffer
+  // read off disk — the compiler said so at the transport, which is the right
+  // place for it to have said so.
+  bytes: z.custom<Uint8Array>(
+    (value) => value instanceof Uint8Array && value.byteLength <= MAX_FORM_DATA_BYTES,
+    { message: 'not form data this build will read, or larger than the bound' },
+  ),
+});
+
+/**
  * How long a created field's name may be.
  *
  * A **path**, not a label — measured 2026-09-08
@@ -2518,6 +2599,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   createFormFieldSchema,
+  importFormDataSchema,
 ]);
 
 /**
@@ -2638,7 +2720,12 @@ export type RenderableCommand = z.infer<typeof renderableCommandSchema>;
  * a new command quietly becoming unreachable from the renderer, which reads at
  * every call site as a control that does nothing.
  */
-type WithheldFromRenderer = 'insertImagePage' | 'placeImage';
+// `importFormData` JOINS THE TWO IMAGE KINDS, and for their reason exactly: it
+// carries a picked file's bytes, main is what picks and reads it, and a
+// renderer able to send one would be a renderer holding a multi-megabyte
+// payload. Withheld rather than merely unused — `renderableCommandSchema` has
+// it removed, so the capability is unrepresentable (B5).
+type WithheldFromRenderer = 'insertImagePage' | 'placeImage' | 'importFormData';
 type LeftOver = Exclude<Command['kind'], RenderableCommand['kind']>;
 const _withheldIsExactlyThat: LeftOver extends WithheldFromRenderer ? true : never = true;
 const _andNothingElseIsWithheld: WithheldFromRenderer extends LeftOver ? true : never = true;

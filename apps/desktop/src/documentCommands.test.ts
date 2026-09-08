@@ -298,7 +298,7 @@ const localSnapshot: SnapshotSource = {
   },
 };
 
-/** The form-data export composed the way `composition.ts` composes it. */
+/** The form-data source composed the way `composition.ts` composes it. */
 const localFormData: FormDataSource = {
   pick: () => Promise.reject(new Error('this case does not write a form data file')),
   encode: async (id, sessions, format) => {
@@ -306,6 +306,11 @@ const localFormData: FormDataSource = {
     if (held === undefined) throw new MissingSessionError(id, 'mupdf');
     return serialiseFormData(await readFormData(held), format);
   },
+  // BOTH REFUSE, for `noCopying`'s reason: a picker answering a path would let
+  // a case read a real file, and a `read` answering bytes would let one import
+  // into a document another case then measures.
+  open: () => Promise.reject(new Error('this case does not pick a form data file')),
+  read: () => Promise.reject(new Error('this case does not read a form data file')),
 };
 
 /**
@@ -1186,6 +1191,7 @@ describe('the form data export carries the format all the way to the file', () =
       bus: bus(),
       engine: held,
       formData: {
+        ...localFormData,
         pick: () => Promise.resolve(null),
         encode: () => Promise.reject(new Error('a dismissed picker must not reach the encoder')),
       },

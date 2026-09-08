@@ -1,9 +1,12 @@
-import type { PDFWidget } from 'mupdf';
+import * as mupdf from 'mupdf';
+import type { PDFObject, PDFWidget } from 'mupdf';
+import { z } from 'zod';
 
-import type { FormDataFormat } from '@monstera/contract';
+import type { FieldFill, FormDataFormat, FormDataImportFormat } from '@monstera/contract';
 
-import type { MupdfSession } from './engineSeam.js';
-import { fieldValues } from './formFields.js';
+import type { CaptureResult } from './commandLog.js';
+import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { fieldValues, fillWidget, onStateKey, refuseUnfillable } from './formFields.js';
 import { withDocument } from './mupdfWriter.js';
 
 /**
@@ -369,3 +372,320 @@ function fdfFormData(fields: readonly ExportedField[]): string {
     `startxref\n${String(startxref)}\n%%EOF\n`;
   return body;
 }
+
+/* ------------------------------------------------------------------ import */
+
+/**
+ * Reading a form-data file back in.
+ *
+ * ## The parse happens HERE, which is the contained process
+ *
+ * An imported file is the most attacker-controlled thing this row touches, and
+ * it arrives through ADR-0044's asset route rather than over the wire. That is
+ * forced for FDF — decoding one needs MuPDF and invariant 20 keeps MuPDF out of
+ * `main` — and it is *chosen* for JSON, because a parser for a stranger's file
+ * belongs on the same side of the boundary whatever the format.
+ *
+ * ## What a file may say, and what it may not
+ *
+ * A data file names **fields**, so an import matches by name and there is no
+ * handle and no version. An entry naming a field this document does not have is
+ * ignored, because a form exported from another revision carries them. A value
+ * the field's own type rules reject refuses the **whole** command — a
+ * half-applied form with nothing reported is the reassuring failure this row
+ * exists to prevent — and a file matching nothing refuses too, because filling
+ * zero fields successfully is what importing the wrong file looks like.
+ */
+
+/** One field a data file names. */
+export interface ImportedField {
+  readonly name: string;
+  readonly values: readonly string[];
+}
+
+/** How many fields an imported file may name. `MAX_LISTED_FIELDS`' argument. */
+const MAX_IMPORTED_FIELDS = 4096;
+
+/** How long an imported name or value may be. */
+const MAX_IMPORTED_TEXT = 4096;
+
+/** How many values one imported field may carry. The reader's bound, inbound. */
+const MAX_FIELD_VALUES_IN = 256;
+
+/**
+ * The JSON an import accepts.
+ *
+ * **The marker is required**, and it is what separates *this file holds no
+ * fields for this form* from *this is not a form-data file at all*. Without it
+ * an arbitrary JSON document matches nothing and the import reports success
+ * over a file that was never one of ours.
+ *
+ * Bounded at every axis a stranger controls, for the reason the channel schemas
+ * are: a list and a string are the two things a hostile file makes large.
+ */
+const importedJsonSchema = z.object({
+  format: z.literal(FORM_DATA_JSON_MARKER),
+  version: z.literal(FORM_DATA_JSON_VERSION),
+  fields: z
+    .array(
+      z.object({
+        name: z.string().max(MAX_IMPORTED_TEXT),
+        values: z.array(z.string().max(MAX_IMPORTED_TEXT)).max(MAX_FIELD_VALUES_IN),
+      }),
+    )
+    .max(MAX_IMPORTED_FIELDS),
+});
+
+/** A form-data file this build will not read. */
+export class UnreadableFormDataError extends Error {
+  constructor(detail: string) {
+    super(`This file is not form data this build can read: ${detail}.`);
+    this.name = 'UnreadableFormDataError';
+  }
+}
+
+/** A file whose fields name nothing in this document. */
+export class NoMatchingFieldsError extends Error {
+  constructor(named: number) {
+    super(
+      `The file names ${String(named)} field(s) and this document has none of them. Nothing was ` +
+        'changed. An import that filled nothing and reported success would be indistinguishable ' +
+        'from importing the wrong file.',
+    );
+    this.name = 'NoMatchingFieldsError';
+  }
+}
+
+/**
+ * What a data file says, whichever format it is in.
+ *
+ * **JSON is parsed with the runtime's own parser and a schema**, because
+ * `JSON.parse` throwing on malformed input is the authority doing the hard part
+ * and a hand-written check would be a second opinion about it. What the schema
+ * adds is the shape, the marker and the bounds.
+ */
+export function parseFormData(
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+): readonly ImportedField[] {
+  return format === 'json' ? parseJson(bytes) : parseFdf(bytes);
+}
+
+function parseJson(bytes: Uint8Array): readonly ImportedField[] {
+  let decoded: unknown;
+  try {
+    // `fatal: true` SO INVALID UTF-8 IS A REFUSAL rather than a run of
+    // replacement characters. The lenient decoder turns a binary file into a
+    // string of `U+FFFD`, which then fails to parse as JSON with a message
+    // about syntax — the right outcome by the wrong route, and the wrong
+    // outcome the day a binary file happens to decode into valid JSON.
+    decoded = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch (error) {
+    throw new UnreadableFormDataError(error instanceof Error ? error.message : String(error));
+  }
+  const parsed = importedJsonSchema.safeParse(decoded);
+  if (!parsed.success) {
+    throw new UnreadableFormDataError(
+      `it is JSON, but not this build's form data — ${parsed.error.issues[0]?.message ?? 'wrong shape'}`,
+    );
+  }
+  return parsed.data.fields;
+}
+
+/**
+ * An FDF, read as the PDF syntax it is.
+ *
+ * MuPDF declares no FDF API — measured, zero mentions in `mupdf.d.ts` 1.28.0 —
+ * so this opens the bytes as a document under the FDF magic string and walks
+ * `/Root /FDF /Fields`, which is the structure PDF 32000-1 Annex L describes.
+ *
+ * **A tolerant read of a hostile file.** Every entry that does not answer a
+ * name is skipped rather than throwing, because one malformed object in a file
+ * a stranger wrote should not cost the caller the fields that were fine — and
+ * the empty result is what refuses, one level up, where the message can say
+ * which of *nothing matched* and *nothing was there* happened.
+ */
+function parseFdf(bytes: Uint8Array): readonly ImportedField[] {
+  let document: mupdf.Document;
+  try {
+    document = mupdf.PDFDocument.openDocument(bytes, 'application/vnd.fdf');
+  } catch (error) {
+    throw new UnreadableFormDataError(error instanceof Error ? error.message : String(error));
+  }
+  if (!(document instanceof mupdf.PDFDocument)) {
+    throw new UnreadableFormDataError('it opened as something that is not PDF syntax');
+  }
+  try {
+    const list = document.getTrailer().get('Root').get('FDF').get('Fields');
+    if (!list.isArray()) {
+      throw new UnreadableFormDataError('it has no /Root /FDF /Fields array');
+    }
+    const found: ImportedField[] = [];
+    const length = Math.min(list.length, MAX_IMPORTED_FIELDS);
+    for (let index = 0; index < length; index += 1) {
+      const entry = list.get(index);
+      if (!entry.isDictionary()) continue;
+      const name = entry.get('T');
+      if (!name.isString()) continue;
+      found.push({
+        name: name.asString().slice(0, MAX_IMPORTED_TEXT),
+        values: fdfEntryValues(entry.get('V')),
+      });
+    }
+    return found;
+  } finally {
+    document.destroy();
+  }
+}
+
+/** What one FDF entry's `/V` holds, as strings. {@link fieldValues}' shape. */
+function fdfEntryValues(value: PDFObject): readonly string[] {
+  if (value.isArray()) {
+    const found: string[] = [];
+    const length = Math.min(value.length, MAX_FIELD_VALUES_IN);
+    for (let index = 0; index < length; index += 1) {
+      const entry = value.get(index);
+      const text = entry.isName() ? entry.asName() : entry.isString() ? entry.asString() : null;
+      if (text !== null) found.push(text.slice(0, MAX_IMPORTED_TEXT));
+    }
+    return found;
+  }
+  // A NAME IS A BUTTON'S STATE and a string is everything else's, which is the
+  // export's own branch read backwards.
+  if (value.isName()) return [value.asName().slice(0, MAX_IMPORTED_TEXT)];
+  if (value.isString()) return [value.asString().slice(0, MAX_IMPORTED_TEXT)];
+  return [];
+}
+
+/**
+ * What one widget should be set to, given what the file said about its field.
+ *
+ * **The value is turned into a `FieldFill`** so the write goes through the fill
+ * row's own primitive: every type rule, the read-only refusal and the
+ * toggle-and-read-back belong to that row, and an import writing values its own
+ * way would be a second implementation of what filling means (B3a).
+ *
+ * A stateful button is the one case where the same field value means different
+ * things to different widgets: a radio group's file value is the chosen
+ * option's export name, so each widget is on exactly when its OWN on-state key
+ * equals it. That is why {@link onStateKey} exists apart from the boolean.
+ */
+function fillFor(widget: PDFWidget, values: readonly string[]): FieldFill {
+  if (widget.isCheckbox() || widget.isRadioButton()) {
+    const key = onStateKey(widget);
+    return { set: 'button', on: key !== undefined && values[0] === key };
+  }
+  // SEVERAL VALUES IS A REFUSAL, and it is the third place this build says the
+  // same sentence: it READS a multi-select and WRITES one value. `FieldFill`
+  // carries one option, so importing two would put the first in and drop the
+  // second — silently, into a document the person then saves. The panel refuses
+  // to offer a control for such a field and the capture refuses to record one
+  // as a prior, for the same reason and with the same words.
+  if (values.length > 1) {
+    throw new MultiValuedImportError(widget.getName(), values.length);
+  }
+  if (widget.isChoice()) return { set: 'choice', option: values[0] ?? '' };
+  return { set: 'text', text: values[0] ?? '' };
+}
+
+/** A file naming more values for one field than a fill can carry. */
+export class MultiValuedImportError extends Error {
+  constructor(name: string, count: number) {
+    super(
+      `The file gives ${String(count)} values for the field "${name}", and this build writes one ` +
+        'per field. Nothing was changed: importing the first and dropping the rest would be a ' +
+        'loss with no report, which is worse than a refusal.',
+    );
+    this.name = 'MultiValuedImportError';
+  }
+}
+
+/**
+ * Fills every field the file names, or changes nothing at all.
+ *
+ * ## Two passes, and the first one is the point
+ *
+ * Everything is resolved and refused before anything is written, so a value the
+ * document forbids leaves the form exactly as it was rather than partly filled
+ * with no report. `fillWidget` refuses on its own terms — a read-only field, a
+ * dropdown option the document does not offer, text aimed at a tick box — and
+ * those refusals are what the first pass is collecting.
+ *
+ * ## A push button and a signature are skipped rather than refused
+ *
+ * They are absent from every file this build writes, and a file from elsewhere
+ * may carry them: a push button's value means nothing and a signature's is a
+ * dictionary. Refusing the import over one would make a foreign export
+ * unusable for the fields that are fine.
+ */
+export const applyImportFormData: Apply<'mupdf', 'importFormData'> = (session, command) =>
+  withDocument(session, (document) => {
+    const named = new Map<string, readonly string[]>();
+    for (const field of parseFormData(command.bytes, command.format)) {
+      named.set(field.name, field.values);
+    }
+
+    const planned: { widget: PDFWidget; value: FieldFill }[] = [];
+    const pages = document.countPages();
+    for (let page = 0; page < pages; page += 1) {
+      for (const widget of document.loadPage(page).getWidgets()) {
+        const values = named.get(widget.getName());
+        if (values === undefined) continue;
+        // SKIPPED, NOT REFUSED. See the note above: a foreign file may name
+        // them and they carry nothing this build could write.
+        if (widget.isPushButton() || widget.getFieldType() === 'signature') continue;
+        const value = fillFor(widget, values);
+        // REFUSED HERE AND NOT AT THE WRITE, which is what makes the two passes
+        // mean anything. The claim *nothing is written until everything is
+        // resolved* was a comment and not a mechanism until this line existed:
+        // `fillWidget` validates on its way in, so a plan pass that only built
+        // values left the first entries applied and the document half filled.
+        // A mutation writing inside this loop was supposed to find that and
+        // could not, because the case re-read the fixture BYTES — which no
+        // apply can change. Both defects are fixed here.
+        //
+        // The same function the write calls, so this is one set of type rules
+        // consulted twice rather than two sets (B3a).
+        refuseUnfillable(widget, value);
+        planned.push({ widget, value });
+      }
+    }
+
+    if (planned.length === 0) throw new NoMatchingFieldsError(named.size);
+    // THE SECOND PASS WRITES. `fillWidget` throws on the first value the
+    // document forbids, and because nothing has been written yet the form is
+    // untouched when it does — which is what makes *refuse the whole import*
+    // true rather than aspirational.
+    for (const { widget, value } of planned) fillWidget(widget, value);
+  });
+
+/**
+ * An import records no prior state, and says why.
+ *
+ * The prior is every value of every field the file happens to name — a set the
+ * command cannot know before it parses, spread across the whole document. It is
+ * expressible in principle and it is the checkpoint's job in practice: undo of
+ * one restores the document, where an inverse would have to carry a second
+ * whole form. `captureFlattenFormFields`' shape and its reason.
+ */
+export function captureImportFormData(): Promise<CaptureResult<never>> {
+  return Promise.resolve({
+    captured: false,
+    reason:
+      'an import writes every field the file names, so the prior state is a whole form rather ' +
+      'than a value — the checkpoint restores it exactly',
+  });
+}
+
+/**
+ * Unreachable, and required by `CommandSpec`'s shape.
+ *
+ * `invertFlattenFormFields`' reason exactly: `CommandPrior` is `never` here, so
+ * nothing can construct an argument, and throwing rather than resolving keeps a
+ * widened type from landing as an undo that did nothing.
+ */
+export const invertImportFormData: Invert<'mupdf', 'importFormData'> = (): Promise<void> => {
+  throw new Error(
+    'an imported form has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};

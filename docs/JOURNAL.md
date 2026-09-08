@@ -886,6 +886,81 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Import form data, and two mutations that each found a comment claiming a control
+
+Three commits: the B4 amendment, the rename it authorises, and the import.
+
+### 1. `asset: 'image'` was the wrong word on the day it was chosen
+
+ADR-0044's own header states the axis as *"does this command carry BYTES that
+cannot travel on the wire the writer is reached over"* — a transport question —
+and named the member after the payload that needed it first. Form-data import is
+the second, and declaring `'image'` for an FDF would have **worked**: the
+transport tests `asset === 'none'` and reads no further. A label nothing
+branches on is a label that stays wrong, so the correction is a rename rather
+than a second member beside it, and the amendment records it as a mislabel
+rather than as a widening learned since.
+
+### 2. Where the parse happens, and why it is not main
+
+An FDF is PDF syntax and MuPDF declares no FDF API, so decoding one reaches
+MuPDF — which invariant 20 keeps out of `main`. That forces the FDF route
+through ADR-0044's granted directory, and **JSON takes the same route by
+choice**: a parser for a stranger's file belongs on the same side of the
+boundary whatever the format, and the import is the most attacker-controlled
+thing this row touches.
+
+### 3. Two mutations, and each found a comment rather than a bug
+
+The apply is written in two passes so a value the document forbids leaves the
+form untouched rather than partly filled. Both halves of that claim were false
+when first written, and each was found by a mutation that was supposed to fail
+and did not:
+
+- **The observable was the fixture's BYTES.** The atomicity case re-read the
+  `Uint8Array` the document was built from — which no apply can change, since a
+  session holds the parsed document — so it compared the original with itself.
+  A mutation writing inside the planning loop left it green. The case now opens
+  one session, applies, catches, and reads **that** session.
+- **The plan pass validated nothing.** With the observable fixed, the case went
+  red *unmutated*: `fillWidget` refuses on its way in, so a first pass that only
+  built values left the earlier entries applied. `refuseUnfillable` is now
+  called during planning — the same function the write calls, so it is one set
+  of type rules consulted twice rather than two sets.
+
+The second is `a comment that claims a control` exactly: *nothing is written
+until everything is resolved* was prose, and the mutation is what turned it into
+a mechanism.
+
+### 4. The asymmetry the row now states out loud
+
+This build **reads** a field holding several values and **writes** one. Three
+places say so with one voice, and they were built in three different commits
+for what looked like three different reasons:
+
+| where | what it refuses |
+|---|---|
+| the panel | offering a control for a field holding several |
+| the capture | recording one as a prior a `FieldFill` could restore |
+| the import | a file that gives two values for one field |
+
+Each alone reads as a local limitation. Together they are one sentence about
+what `FieldFill` can carry, and the export is the odd one out: it writes both
+values faithfully, so an export/import round trip is **not** lossless over a
+multi-select. That is stated in the row rather than discovered by whoever tries
+it.
+
+### 5. What the channel does not promise
+
+`unreadable` covers three causes — not form data, names nothing here, holds a
+refused value — because all three are the **apply** refusing and an apply's
+refusal reason does not cross the engine host's boundary: it arrives as
+`internal` with the diagnostic withheld, by design. The message names all three
+as the things to check rather than picking one, and the same limit governs every
+shipped command that refuses on document state, `fillFormField` included.
+
+---
+
 ## 2026-09-08 — A field holding two values read as a field holding none, and the export half of the data row
 
 Three commits: the measurement that found it, the reader it corrected, and the

@@ -270,6 +270,10 @@ export interface ShellComposition {
    * `destinationPicker.ts` carries the argument for the difference.
    */
   readonly pickFormData: FormDataSource['pick'];
+  /** Which data file fills the form. The open dialog, narrowed to the format. */
+  readonly openFormData: FormDataSource['open'];
+  /** The bytes at a path, bound-checked first. `readImage`'s shape. */
+  readonly readFormData: FormDataSource['read'];
   /**
    * Which image becomes a page. Electron's open dialog, narrowed.
    *
@@ -329,6 +333,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickDestination,
     pickSnapshot,
     pickFormData,
+    openFormData,
+    readFormData,
     pickImage,
     pickDirectory,
     readImage,
@@ -567,6 +573,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
         return engineHost.exportFormData(session, format);
       },
+      // THE IMPORT NEEDS NO SESSION HERE, and that is the asset route working:
+      // main picks and reads the file, the command carries the bytes, and the
+      // transport takes them off the wire — so this side holds a picker and a
+      // filesystem read and nothing about the engine.
+      open: openFormData,
+      read: readFormData,
     },
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the

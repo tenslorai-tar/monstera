@@ -528,6 +528,29 @@ const CREATE_FIELD_SPEC = `  createFormField: {
   },`;
 
 /**
+ * The newest kind, and the one the `missing a command kind` case now omits.
+ *
+ * **The second command to declare an asset**, which is invisible here for the
+ * same reason `purpose` is: these fixtures exercise `CommandSpecs`' shape, and
+ * spelling every declared axis would make each of twenty-nine of them a copy of
+ * the declaration table. What it does hold is the routing — MuPDF, on the
+ * `/engine` subpath, because reading an FDF is reading PDF syntax.
+ */
+const IMPORT_DATA_SPEC = `  importFormData: {
+    kind: 'importFormData',
+    writer: 'mupdf',
+    apply: applyImportFormData,
+    capture: captureImportFormData,
+    invert: invertImportFormData,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
  * The first spec whose command declares `purpose: 'removal'`.
  *
  * That axis is not spelt in these fixtures for the reason none of the others is
@@ -673,6 +696,9 @@ const SPEC_IMPORTS = `import {
   applyFlattenFormFields,
   captureFlattenFormFields,
   invertFlattenFormFields,
+  applyImportFormData,
+  captureImportFormData,
+  invertImportFormData,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -752,6 +778,7 @@ export const handlers: ContractHandlers = {
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.snapshotRegion': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -817,6 +844,7 @@ export const handlers: ContractHandlers = {
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.snapshotRegion': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -957,6 +985,7 @@ export const shim: ContractClient = {
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.snapshotRegion': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1111,6 +1140,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
+${IMPORT_DATA_SPEC}
 };
 `,
   },
@@ -1146,7 +1176,7 @@ ${CREATE_FIELD_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'createFormField' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'importFormData' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1193,6 +1223,7 @@ ${PLACE_IMAGE_SPEC}
 ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
+${CREATE_FIELD_SPEC}
 };
 `,
   },
@@ -1306,6 +1337,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
+${IMPORT_DATA_SPEC}
 };
 `,
   },
@@ -1357,6 +1389,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
+${IMPORT_DATA_SPEC}
 };
 `,
   },
@@ -1417,6 +1450,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
+${IMPORT_DATA_SPEC}
 };
 `,
   },
@@ -1473,6 +1507,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
+${IMPORT_DATA_SPEC}
 };
 `,
   },
@@ -2349,7 +2384,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 23 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 24 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

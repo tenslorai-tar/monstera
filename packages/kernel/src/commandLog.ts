@@ -470,6 +470,18 @@ export interface CommandPrior {
    * is impossible here, and it is merely wrong.
    */
   readonly createFormField: never;
+
+  /**
+   * An import has no prior state, for the flatten's reason at a smaller scale
+   * and with one difference worth naming.
+   *
+   * The prior is every value of every field the imported file happens to name —
+   * which the command cannot know until it has parsed the file, and which is
+   * spread across the whole document rather than confined to a page. So unlike
+   * the create above it really is a size argument, and unlike the flatten it is
+   * a size the *file* decides rather than the document.
+   */
+  readonly importFormData: never;
 }
 
 /**

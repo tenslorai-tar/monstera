@@ -3,6 +3,8 @@ import {
   type CommandKind,
   type CommandOfKind,
   type FormDataFormat,
+  type FormDataImportFormat,
+  MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   sourceIdsOf,
 } from '@monstera/contract';
@@ -760,7 +762,39 @@ export interface FormDataSource {
   readonly pick: (sourceName: string, format: FormDataFormat) => Promise<string | null>;
   /** How the form's data becomes bytes. */
   readonly encode: DocumentFormDataReader;
+  /** Runs the platform's open dialog, narrowed to the chosen format. */
+  readonly open: PickFormDataFile;
+  /**
+   * The bytes at a path, and how big they are, **without reading them first**.
+   *
+   * `ImageSource.read`'s shape and its reason: the size decides whether the
+   * read happens, and refusing a picked file after loading it into memory is a
+   * bound that costs exactly what it exists to avoid.
+   */
+  readonly read: (path: string) => Promise<FormDataRead>;
 }
+
+/**
+ * The open dialog for a data file to import.
+ *
+ * `PickImage`'s shape with the format added, for the reason
+ * {@link FormDataSource.pick} takes one: it decides the filter, and it is the
+ * user's own choice rather than a branch between two dialogs.
+ */
+export type PickFormDataFile = (format: FormDataImportFormat) => Promise<string | null>;
+
+/** What {@link FormDataSource.read} answers. {@link ImageRead}'s shape. */
+export type FormDataRead =
+  | { readonly kind: 'read'; readonly bytes: Uint8Array }
+  | { readonly kind: 'too-large'; readonly byteLength: number }
+  | { readonly kind: 'unreadable' };
+
+/** What {@link DocumentCommands.importFormData} answers. */
+export type ImportFormDataOutcome =
+  | ({ readonly kind: 'imported' } & Applied)
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'too-large'; readonly limitBytes: number };
 
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
@@ -1797,6 +1831,64 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Fills the form from a data file the user picks.
+   *
+   * ## `placeImage`'s body and every one of its reasons
+   *
+   * The picker runs before the lane, because a dialog can be up for as long as
+   * a person takes; the bytes exist in this process and cross nothing, because
+   * the renderer asked with a `DocId` and an enum member; and the bound is
+   * checked before the read, because refusing a file after loading it costs
+   * exactly what the bound exists to avoid.
+   *
+   * ## `unreadable` covers three refusals and the catch is deliberately wide
+   *
+   * The file may not be form data, may name no field this document has, or may
+   * hold a value the field's type rules reject. All three are the **apply**
+   * refusing, and an apply's refusal reason does not cross the engine host's
+   * boundary — it arrives as `internal` with its diagnostic withheld, by
+   * design. So this catch is wide on purpose, and the outcomes it must not
+   * swallow are named individually above it, exactly as `placeImage`'s are.
+   *
+   * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
+   *   reason.
+   */
+  async importFormData(
+    docId: DocId,
+    format: FormDataImportFormat,
+  ): Promise<ImportFormDataOutcome> {
+    // READ BEFORE THE DIALOG, `insertImage`'s ordering and its reason.
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'import form data');
+    }
+
+    const picked = await this.#formData.open(format);
+    if (picked === null) return { kind: 'cancelled' };
+
+    const read = await this.#formData.read(picked);
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_FORM_DATA_BYTES };
+    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+
+    try {
+      const applied = await this.execute(docId, {
+        kind: 'importFormData',
+        format,
+        bytes: read.bytes,
+      });
+      return { kind: 'imported', ...applied };
+    } catch (error) {
+      // `placeImage`'s catch and its reason: the classes the handler already
+      // turns into declared codes are rethrown, and everything else is this
+      // file refusing to import.
+      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
+        throw error;
+      }
+      if (error instanceof DocumentNotOpenError) throw error;
+      return { kind: 'unreadable' };
+    }
   }
 
   /**

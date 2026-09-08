@@ -2,6 +2,7 @@ import type {
   AnnotationRect,
   ContractClient,
   FormDataFormat,
+  FormDataImportFormat,
   RenderableCommand,
 } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
@@ -21,6 +22,7 @@ import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
 import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
+import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
 import { EXTRACT_PAGES_DIALOG_ID } from '../dialogs/extractPages.js';
 import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
@@ -59,6 +61,8 @@ import {
   EXPORT_FORM_DATA_JSON_TITLE,
   EXPORT_FORM_DATA_XFDF_TITLE,
   EXTRACT_PAGES_COMMAND_TITLE,
+  IMPORT_FORM_DATA_FDF_TITLE,
+  IMPORT_FORM_DATA_JSON_TITLE,
   INSERT_FROM_PDF_COMMAND_TITLE,
   INSERT_IMAGE_COMMAND_TITLE,
   MERGE_DOCUMENT_COMMAND_TITLE,
@@ -1605,6 +1609,81 @@ export const exportFormDataFdfCommand = exportFormDataCommand(
   'document.export-form-data-fdf',
   EXPORT_FORM_DATA_FDF_TITLE,
   34,
+);
+
+/**
+ * The two form-data imports, from one factory.
+ *
+ * ## TWO where the export has three, and the gap is the honest part
+ *
+ * Reading XFDF needs an XML reader this build does not have, so there is no
+ * entry for it — rather than an entry whose command refuses, which is the
+ * display-only defect the wired rule is about. The menu says what works.
+ *
+ * ## No dialog, and no `onApplied` on the success path either
+ *
+ * `document.importFormData` answers a version and a byte length exactly as a
+ * mutation does, because it is one: main mints the command. So the success
+ * feeds `onApplied` like every other mutation here, and only the two file
+ * problems open anything.
+ */
+function importFormDataCommand(
+  format: FormDataImportFormat,
+  id: string,
+  title: MessageKey,
+  order: number,
+): (deps: DocumentCommandDeps) => UiCommand {
+  return (deps) => ({
+    id,
+    title,
+    placements: [{ surface: 'quick-toolbar', order }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = await deps.client['document.importFormData']({
+        docId: context.docId,
+        format,
+      });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      // A DISMISSAL SAYS NOTHING, for the save dialog's reason: the user is the
+      // one who cancelled.
+      if (answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'unreadable') {
+        void deps.ask(IMPORT_FORM_DATA_PROBLEM_DIALOG_ID, { reason: 'unreadable' });
+        return;
+      }
+      if (answer.value.kind === 'too-large') {
+        void deps.ask(IMPORT_FORM_DATA_PROBLEM_DIALOG_ID, {
+          reason: 'too-large',
+          limitBytes: answer.value.limitBytes,
+        });
+        return;
+      }
+      deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      // INVARIANT 18, after `onApplied` and guarded on a positive count, which
+      // is `applyDocumentCommand`'s ordering — this command takes the same
+      // route through the bus and can trim the same history.
+      if (answer.value.historyDropped > 0) {
+        void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
+      }
+    },
+  });
+}
+
+export const importFormDataJsonCommand = importFormDataCommand(
+  'json',
+  'document.import-form-data-json',
+  IMPORT_FORM_DATA_JSON_TITLE,
+  35,
+);
+export const importFormDataFdfCommand = importFormDataCommand(
+  'fdf',
+  'document.import-form-data-fdf',
+  IMPORT_FORM_DATA_FDF_TITLE,
+  36,
 );
 
 export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {

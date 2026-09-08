@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { MAX_IMAGE_BYTES } from '@monstera/contract';
+import { MAX_FORM_DATA_BYTES, MAX_IMAGE_BYTES } from '@monstera/contract';
 import { app, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
@@ -12,7 +12,7 @@ import {
 } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
-import { createImagePicker } from './imagePicker.js';
+import { createFormDataOpenPicker, createImagePicker } from './imagePicker.js';
 import { createEngineHostPlatform } from './engineHostPlatform.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -83,6 +83,8 @@ startShell(() =>
     // The fourth save dialog, on the line after its siblings for the reason
     // above: every Electron dialog this application opens is visible together.
     pickFormData: createFormDataPicker(),
+    // The fifth, and the first OPEN dialog added since the image picker.
+    openFormData: createFormDataOpenPicker(),
     // The third dialog, beside the two above so all of them are visible
     // together — and the first surface added since composition became an
     // object, which is why `pickerProbe.ts` is absent from this commit.
@@ -109,6 +111,20 @@ startShell(() =>
         // you picked it* and *permission denied* is one this build cannot act on
         // differently, so inventing two outcomes would be two sentences for one
         // situation.
+        return { kind: 'unreadable' as const };
+      }
+    },
+    // THE SAME SHAPE AGAINST A DIFFERENT BOUND, written out rather than shared
+    // with a size parameter: the two bounds are separate decisions about
+    // separate risks — an image is large because images are, a form-data file
+    // large enough to notice is one somebody built — and a helper taking a
+    // number would make them look like one rule with two settings.
+    readFormData: async (path: string) => {
+      try {
+        const { size } = await stat(path);
+        if (size > MAX_FORM_DATA_BYTES) return { kind: 'too-large' as const, byteLength: size };
+        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
+      } catch {
         return { kind: 'unreadable' as const };
       }
     },
