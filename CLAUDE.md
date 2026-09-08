@@ -332,6 +332,15 @@ is wrong** — fix the boundary, not the test.
   **`docs/ARCHITECTURE.md` §3's own claim that MuPDF is reached natively was
   false in the same way** and is corrected there, with the reach recorded as an
   open decision. ADR-0010 is not withdrawn — it is unbuilt.
+
+  **WHERE that engine loads is a different question and it is answered: the
+  contained host, never `main`** (§3, 2026-09-08, measured by an observed run —
+  `scripts/research/engineReach.mjs`). So the reach decision is **not** a
+  containment decision, and invariant 25 covers the process the document is
+  parsed in. What holds `main` clear is ADR-0026's barrel discipline, guarded by
+  `proof:kernelload`; **invariant 20's letter does not**, because it names
+  *native code* and this engine is WASM. A gap in the wording, not a breach —
+  and the same shape that let content generation through in Stage 2.
 - **An engine host contains a compromise, not only a crash.** Lowest workable
   integrity level, job object limits, no network, no filesystem beyond what it
   was handed (invariant 25). **All four now have a mechanism, and two of them
