@@ -887,6 +887,74 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Guards went red once on a case about process trees, and the observable conflates *dead* with *not scheduled*
+
+Read from the board rather than noticed: `NOT GREEN at 53c0112…: Guards=failure,
+CI=success`. Local typecheck, lint, 2,109 tests and `check:docs` were all green,
+which is the *my local sweep is not CI's set* shape — so the diagnosis came from
+the run.
+
+### What actually failed
+
+Job **Secret scan and file policy (ubuntu-latest)**, step *Prove the local check
+sweep can report a failure at all*, one case of 74:
+
+```
+- not win32: an ordinary grandchild SURVIVES, because nothing here ties it to its parent
+```
+
+The job log needs admin rights this account does not have; the **annotations**
+do not, and `annotate.mjs` writes the failing case into them. That is the
+mechanism paying for itself — without it this would have been a red board with
+no name attached.
+
+### It is intermittent, and that is read rather than assumed
+
+Twenty Guards runs back to 2026-09-07T20:21: **`53c0112` is the only failure**,
+and `0258c3f` — the very next commit, docs-only, so the same proof code on the
+same platform — is **green**. One in twenty.
+
+### The mechanism the case's own observable has
+
+`stillAdvancing` is `later > afterKill`: the grandchild's counter must move
+between two samples **600 ms apart** (`SAMPLE_GAP_MS`). So *the process is dead*
+and *the process did not get scheduled inside 600 ms on a loaded runner* are the
+same observation.
+
+That is this file's own sentence — *"it stopped" and "it never started" are the
+same observation* — arriving in the **other direction**, inside the case that
+carries it. The file already caught that once: `AAAA-34` records the cleanup
+control being fixed for exactly this conflation, in the stillness direction. The
+survival direction kept the same observable.
+
+The differential does not rule it out either. The failing run's paired control —
+*a detached grandchild survives too* — passed, which looks like evidence of a
+real teardown. But the two probes run **sequentially**, so they are not
+simultaneous samples under one load, and the ordinary one runs first, when a
+just-started step is at its most contended.
+
+### The fix, and why it is not landed here
+
+**Not a bigger `SAMPLE_GAP_MS`.** Raising a timeout is a banned reflex and would
+make the case slower without making it separate anything.
+
+The fix is a **directer observable**: the probe already reads the grandchild's
+pid from a file, and `process.kill(pid, 0)` asks the operating system whether
+that process exists — which is the question, rather than an inference from a
+counter moving inside a window. Survival then asserts *alive*, with
+`stillAdvancing` kept as corroboration; the win32 stop case gains the same
+reading in the other direction.
+
+It is **not landed in this commit** because it changes the meaning of an
+assertion on the one leg this machine cannot run, and a one-in-twenty flake
+cannot be verified green by a single push either. Recorded so the next range
+takes it with the measurement in hand rather than rediscovering a red board.
+
+**And `main` is green.** The board at `0258c3f` reports both jobs successful; the
+red was one run on one commit, and the tree has moved past it.
+
+---
+
 ## 2026-09-08 — nspell probed in a scratch tree: cheap to install, expensive to hold, and the dictionaries are an owner's decision
 
 Stage 5's last unblocked row is spell check, and its first step is the standing
