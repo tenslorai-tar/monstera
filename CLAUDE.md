@@ -345,6 +345,22 @@ is wrong** — fix the boundary, not the test.
   import the bare specifier, and §9.17's budgets and the four proofs that scan
   `monstera_mupdf.dll` move with them.
 
+  **AND NINETEEN IS NOT ITS SIZE — that sentence was written as what is NOT yet
+  settled, and was then read as the estimate.** Measured 2026-09-09
+  (`npm run proof:enginesurface`): those modules call **117 distinct MuPDF
+  members**, of which `PDFAnnotation` declares 41, `PDFDocument` 20, `PDFObject`
+  20 and `PDFWidget` 15 — an object model the shim's **24** exports do not
+  represent, because it hands back an opaque handle on purpose. Only **four** of
+  the nineteen load an engine; the other fifteen spell `import type`, are erased
+  by the compiler, and work on handles those four opened. **A count of import
+  statements measured the thing that does not have to change**, and the shape it
+  produced — one line each, nineteen times — is the wrong shape by an order of
+  magnitude. Ask what a count is a count *of* before it becomes a size.
+
+  **It does not gate Stage 5's editing rows either.** Those are PDFium's by
+  :257; PDFium's API is flat C, needs no shim, is provisioned, and koffi binds
+  it in research today — so they sit behind `pdfiumFfi.ts` and the second host.
+
   **WHERE that engine loads is a different question and it is answered: the
   contained host, never `main`** (§3, 2026-09-08, measured by an observed run —
   `scripts/research/engineReach.mjs`). So the reach decision is **not** a

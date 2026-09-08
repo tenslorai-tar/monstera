@@ -457,3 +457,65 @@ from the application's own module resolution rather than from a written-down
 path. When the resolution moves to the shim, the scan follows it with no edit —
 which is the whole reason it was built that way, and a path constant added
 during the migration would undo it.
+
+---
+
+## Correction, 2026-09-09 — how much moves, measured: 117 members, not 19 imports
+
+The section immediately above closes by saying what it does not settle: *"how
+much moves and in what order. Nineteen non-test kernel modules import the bare
+specifier `mupdf`."* That sentence has since been read as the size of the work,
+here and elsewhere, and it is not one. **Nineteen is a count of import
+statements, and an import statement is not a unit of work.** The number nobody
+held is the part of MuPDF's JavaScript API those modules **call**, because that
+is what an adapter over `monstera_mupdf.dll` has to expose.
+
+Read 2026-09-09 from `npm run proof:enginesurface`
+(`scripts/research/engineSurface.mjs`), against `node_modules/mupdf`'s shipped
+declarations and the kernel's own sources:
+
+| | |
+|---|---|
+| kernel modules importing `mupdf` (non-test) | **19** |
+| — of which load an engine at runtime (a value import) | **4** |
+| — of which import types only, and are erased by the compiler | **15** |
+| distinct MuPDF members those modules call | **117** |
+| C functions `monstera_mupdf.dll` exports today | **24** |
+
+And the shape matters more than the total. Grouped by the class declaring them,
+the four largest are **`PDFAnnotation` 41**, **`PDFDocument` 20**, **`PDFObject`
+20** and **`PDFWidget` 15** — an object model. The shim hands back an **opaque
+handle** and represents none of those classes by design (`native/mupdf-shim/README.md`:
+*"the caller never sees a `fitz` struct, so the ABI does not change when MuPDF's
+internals do"*), so for the great majority of the 117 there is no counterpart to
+move onto. They are not ported; they are **written**, in C, behind a flat ABI
+that has to be designed first.
+
+**Why the import count reads low, which is the transferable part.** Fifteen of
+the nineteen spell `import type`. A type-only import is erased and loads
+nothing — those modules receive a `PDFDocument` or a `PDFObject` that one of the
+other four opened, and operate on it. So the reading that looks like *nineteen
+places to change one line* is really *four modules that load an engine, and
+fifteen written against the object model it hands back*. Changing the engine
+changes the object model, so all nineteen **bodies** move and none of them moves
+by editing its first line. A count of import statements measured the thing that
+does not have to change.
+
+**This corrects a size, not the decision.** The reach ruling of 2026-09-08 —
+native, both engines, koffi — stands exactly as written, and every clause of the
+founding record it was taken against is unaffected. What is withdrawn is the
+implication carried by *"nineteen non-test kernel modules import the bare
+specifier"* that the MuPDF half is a commit. It is a body of work whose first
+deliverable is an ABI design, and it is the owner's to schedule.
+
+**What it does NOT block, stated because the opposite was assumed.** The Stage 5
+editing rows — in-place text editing, object-level edit, replace-all, the
+replace half of find-and-replace, HD render — are **PDFium's** by
+`BUILD-PROMPT.md`:257, in both columns. PDFium needs no shim: its API is already
+flat C, which is why `:203` draws it as *"PDFium via koffi FFI"* directly.
+`pdfium.dll` is provisioned (`scripts/provision/pdfium.mjs`), its export table
+is parsed rather than searched (`scripts/lib/peExports.mjs`), and koffi already
+binds and drives it in `scripts/research/pdfiumTextEdit.mjs`. So those rows sit
+behind `pdfiumFfi.ts` and a second engine host — the B4 amendment for which
+landed on 2026-09-08 — and not behind this migration. Sequencing them after it
+would have parked five rows behind an unrelated body of work.

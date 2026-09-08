@@ -887,6 +887,90 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — A count of import statements became an estimate, and a stage was queued behind it
+
+The reach ruling of 2026-09-08 is native, both engines, koffi. ADR-0010's
+correction that day closed by naming what it did **not** settle: *"how much
+moves and in what order. Nineteen non-test kernel modules import the bare
+specifier `mupdf`."*
+
+By the next morning that sentence had become the size of the work — a unit of
+nineteen import lines, ahead of five feature rows said to be waiting on it.
+Nobody had asked what nineteen was a count **of**.
+
+**Measured, `npm run proof:enginesurface`, 2026-09-09.** Those nineteen modules
+call **117 distinct MuPDF members**. Grouped by the class declaring them, the
+four largest are `PDFAnnotation` **41**, `PDFDocument` **20**, `PDFObject`
+**20**, `PDFWidget` **15** — an object model. `monstera_mupdf.dll` exports
+**24** C functions and hands back an **opaque handle**, which is not an
+oversight but the shim's stated design: *"the caller never sees a `fitz` struct,
+so the ABI does not change when MuPDF's internals do."* For most of the 117
+there is nothing to move onto. They are not ported, they are written, in C,
+behind an ABI that has to be designed first.
+
+### Why the import count read low, which is the part that transfers
+
+**Fifteen of the nineteen spell `import type`.** A type-only import is erased by
+the compiler and loads nothing at run time; those modules receive a
+`PDFDocument` or a `PDFObject` that one of the other **four** opened, and
+operate on it. So *nineteen places to change one line* was really *four modules
+that load an engine, and fifteen written against the object model it hands
+back*. Changing the engine changes the object model, so all nineteen **bodies**
+move and none of them moves by editing its first line.
+
+The count was correct. It measured the thing that does not have to change, and
+because it was correct nothing about it invited a second reading — the tell is
+not error, it is that a count answered a question nobody had asked it. **Ask
+what a count is a count of before it becomes a size.**
+
+### The second half: the dependency nobody had checked
+
+The five rows were queued behind this migration. They are **PDFium's** rows —
+`BUILD-PROMPT.md`:257 assigns in-place text editing, styled runs and HD render
+to PDFium in both columns — and PDFium needs no shim at all, which is why :203
+draws it as *"PDFium via koffi FFI"* with nothing in between. `pdfium.dll` is
+provisioned, its export table is parsed rather than searched, and
+`scripts/research/pdfiumTextEdit.mjs` binds and drives it today. What those rows
+wait on is `pdfiumFfi.ts` and the second engine host, whose B4 amendment landed
+on 2026-09-08.
+
+Sequencing them behind the MuPDF migration would have parked a stage behind
+unrelated work — and the reason it read as an ordering is that both are *"the
+native reach"*, which is one ruling covering two engines with nothing in common
+but the ruling.
+
+### What is corrected and what is not
+
+The reach decision is **unaltered**. Every founding-record clause it was taken
+against is unaffected, and ADR-0010's body is untouched: a dated correction is
+appended, because an ADR records what was believed when it was written.
+`docs/ARCHITECTURE.md` §3 and `CLAUDE.md` are **edited**, because a live
+specification that states a size wrongly is lying to the next reader. What is
+withdrawn is one implication of one sentence, and the sentence had said in terms
+that it was not settling the question.
+
+### The instrument
+
+`scripts/research/engineSurface.mjs`, registered as `proof:enginesurface` and
+invoked by `ci.yml` so the figure has a caller and cannot go stale silently. It
+is a search, and its reassuring answer is a small number, so it carries three
+controls and throws rather than printing when any fails: the declaration parse
+must find `loadPage`; it must **not** admit an invented name, which is the
+resolution test that separates *declared by MuPDF* from *any identifier at all*;
+and the call-site scan must find a module calling `loadPage`. A class table
+under twenty entries throws too — an empty intermediate result is a broken parse
+and never a small API.
+
+Mutation-tested before it was committed: widening the member pattern's leading
+whitespace so the parse sees nothing makes it exit **1** on the first control,
+naming the blindness rather than reporting 0 members.
+
+Its own figure is a **floor**, stated in the source: names JavaScript itself
+provides are excluded so a `Map`'s `.get()` is not counted, and that exclusion
+costs real MuPDF members as well.
+
+---
+
 ## 2026-09-09 — SHIP 1.0 is deferred, and until today that was recorded nowhere
 
 The owner deferred the 1.0 release on **2026-09-07**: *"I am more interested in

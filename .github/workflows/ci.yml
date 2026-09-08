@@ -258,6 +258,14 @@ jobs:
       - name: Prove the text-layer bound instrument can see a page it drew
         run: node scripts/ci/annotate.mjs scripts/research/textLayerBounds.mjs
 
+      # Needs only node_modules, so it runs everywhere and its answer moves as
+      # the adapter migration proceeds. Three controls make its silence worth
+      # something: the declaration parse must find a member MuPDF certainly has,
+      # must NOT admit an invented one, and the call-site scan must find a
+      # module calling loadPage. Each throws rather than reporting a zero.
+      - name: Measure the engine surface the kernel reaches
+        run: node scripts/ci/annotate.mjs scripts/research/engineSurface.mjs
+
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 
