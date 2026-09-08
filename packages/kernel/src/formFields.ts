@@ -58,6 +58,87 @@ const MAX_FIELD_TEXT = 512;
 /** How many options of a choice field cross. */
 const MAX_FIELD_OPTIONS = 512;
 
+/**
+ * How many values one field may carry across.
+ *
+ * A multi-select list's `/V` is an array a hostile document controls, so it is
+ * bounded where no real form reaches it — the same argument
+ * {@link MAX_LISTED_FIELDS} makes about the list of fields itself.
+ */
+const MAX_FIELD_VALUES = 256;
+
+/** How far up a `/Parent` chain an inherited key is looked for. */
+const MAX_FIELD_ANCESTRY = 32;
+
+/**
+ * What this field's `/V` holds, as a list — the ONE answer to *what value does
+ * this field have*, and the reason it is not `getValue()`.
+ *
+ * ## `getValue()` ANSWERS AN EMPTY STRING FOR A FIELD HOLDING TWO VALUES
+ *
+ * Measured 2026-09-08 (`scripts/research/formDataExport.mjs` question 9), on a
+ * listbox whose `/V` was built as an array of two strings:
+ *
+ * | `/V` | `isArray()` | `length` | `getValue()` |
+ * |---|---|---|---|
+ * | `[ (en) (de) ]` | `true` | 2 | **`""`** |
+ *
+ * So the accessor does not truncate the list, it reports the field as **empty**
+ * — which is the reassuring direction. A panel shows nothing, an export writes
+ * nothing, and an undo restores nothing, all agreeing with each other and none
+ * of them agreeing with the document.
+ *
+ * That shape is not exotic and this build simply could not produce one to look
+ * at: `@cantoo/pdf-lib`'s second `select()` **overwrites**, measured in the same
+ * run (`/V` a plain `(de)` after selecting `en` then `de`), so the fixture had
+ * to be built by hand. A form filled by any tool that writes the multi-select
+ * bit arrives with it.
+ *
+ * ## It is a REPLACEMENT for the accessor, not a second opinion beside it
+ *
+ * B3a is about two modules holding two views of what an authority said. Here
+ * the authority's accessor has a return type that cannot express the answer, so
+ * the choice is not *which reading* but *whether the shape is representable at
+ * all* — and everything in this module that asks what a field holds asks this,
+ * including {@link onState}, so there is one reading and not two.
+ *
+ * A name is answered without its slash, which is what `getValue()` does for a
+ * tick box's `/Yes` and what the on-state comparison below needs. A signature's
+ * `/V` is a dictionary and answers **no values**, which is the honest reading:
+ * it holds a signature, not text.
+ */
+export function fieldValues(widget: PDFWidget): readonly string[] {
+  let object: PDFObject = widget.getObject();
+  let value = object.get('V');
+  // `/V` IS INHERITABLE and pdf-lib puts it on the parent, which is where the
+  // create row found `/T` on the same day. A merged field carries it on the
+  // widget itself, so both shapes are walked rather than one assumed.
+  for (let hop = 0; value.isNull() && hop < MAX_FIELD_ANCESTRY; hop += 1) {
+    const parent = object.get('Parent');
+    if (!parent.isDictionary()) break;
+    object = parent;
+    value = object.get('V');
+  }
+
+  if (value.isArray()) {
+    const found: string[] = [];
+    const length = Math.min(value.length, MAX_FIELD_VALUES);
+    for (let index = 0; index < length; index += 1) {
+      const entry = value.get(index);
+      // A NAME INSIDE THE ARRAY is legal and rare; reading it as a string would
+      // answer `null` and drop the entry, which is this function's own subject.
+      const text = entry.isName() ? entry.asName() : entry.isString() ? entry.asString() : null;
+      if (text !== null) found.push(text.slice(0, MAX_FIELD_TEXT));
+    }
+    return found;
+  }
+  if (value.isName()) return [value.asName().slice(0, MAX_FIELD_TEXT)];
+  if (value.isString()) return [value.asString().slice(0, MAX_FIELD_TEXT)];
+  // NULL, A DICTIONARY OR A STREAM. The first is a field nobody filled; the
+  // second is a signature; the third is not a value any reader would take.
+  return [];
+}
+
 /** One AcroForm field's widget, as a surface may show it. */
 export interface ListedField {
   /** Zero-based, so a panel can hand it straight to a jump. */
@@ -76,12 +157,19 @@ export interface ListedField {
   readonly name: string;
   /**
    * The text of a field that has text — a text field's contents, a choice
-   * field's selected option.
+   * field's selected options.
    *
    * **Empty for every button kind**, which is the whole of the trap above made
    * structural: there is no string here for a caller to mistake for a state.
+   *
+   * **A LIST, because a multi-select choice field holds several.** It was a
+   * string until 2026-09-08, and `getValue()` answers `""` for a `/V` that is
+   * an array — so a field holding two options was reported as one holding none.
+   * {@link fieldValues} carries the reading. Nearly every field has zero or one
+   * entry here; the list is what makes the third case sayable rather than
+   * silently rounded to the second.
    */
-  readonly value: string;
+  readonly values: readonly string[];
   /**
    * Whether THIS widget is the one that is on, or `null` for a field that has
    * no on-state.
@@ -182,10 +270,12 @@ function onState(widget: PDFWidget): boolean {
     // unique, because a second would otherwise be silently ignored.
     if (name === undefined && String(key) !== 'Off') name = String(key);
   });
-  // `getValue()` IS THE FIELD'S VALUE, not the widget's — measured, and it is
-  // what makes this comparison meaningful: both widgets of a group answer the
-  // same string, and only one of them has a key equal to it.
-  return name !== undefined && name === widget.getValue();
+  // THE FIELD'S VALUE, not the widget's — measured, and it is what makes this
+  // comparison meaningful: both widgets of a group answer the same string, and
+  // only one of them has a key equal to it. Through {@link fieldValues} rather
+  // than `getValue()` so this module holds one reading of `/V` and not two; a
+  // button's is a name, so the list has exactly one entry or none.
+  return name !== undefined && name === fieldValues(widget)[0];
 }
 
 /**
@@ -223,9 +313,9 @@ export function readFormFields(
           kind,
           name: widget.getName().slice(0, MAX_FIELD_TEXT),
           // EMPTY FOR EVERY BUTTON KIND, which is the trap made unrepresentable
-          // rather than described: `getValue()` would answer the on-state name
-          // here, and a push button's is meaningless in a different way again.
-          value: stateful || kind === 'button' ? '' : widget.getValue().slice(0, MAX_FIELD_TEXT),
+          // rather than described: `/V` would answer the on-state name here,
+          // and a push button's is meaningless in a different way again.
+          values: stateful || kind === 'button' ? [] : fieldValues(widget),
           on: stateful ? onState(widget) : null,
           options: widget.getOptions().slice(0, MAX_FIELD_OPTIONS),
           readOnly: widget.isReadOnly(),
@@ -475,7 +565,22 @@ export function captureFillFormField(
     refuseUnfillable(widget, command.value);
 
     if (command.value.set !== 'button') {
-      const held = widget.getValue();
+      const holds = fieldValues(widget);
+      if (holds.length > 1) {
+        // THE PRIOR CANNOT BE SAID IN ONE FILL, and this is the same refusal as
+        // the one below with a different cause: `FieldFill` carries one option,
+        // so an inverse built from a field holding two would put back the first
+        // and delete the second — an undo that loses data, which is worse than
+        // no inverse. A checkpoint restores it exactly. Reachable only from a
+        // document another tool filled, because this build writes one value.
+        return {
+          captured: false,
+          reason:
+            `the field holds ${String(holds.length)} values, and a fill carries one — so an ` +
+            'inverse built from it would discard the rest rather than restore them',
+        };
+      }
+      const held = holds[0] ?? '';
       if (command.value.set === 'choice' && held !== '' && !widget.getOptions().includes(held)) {
         // THE DOCUMENT ARRIVED HOLDING SOMETHING IT DOES NOT OFFER, which
         // MuPDF permits and this build refuses to write. Recording it as a

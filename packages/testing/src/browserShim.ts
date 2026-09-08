@@ -174,7 +174,7 @@ export interface ShimFormField {
   readonly index: number;
   readonly kind: FormFieldKind;
   readonly name: string;
-  readonly value: string;
+  readonly values: readonly string[];
   readonly on: boolean | null;
   readonly options: readonly string[];
   readonly readOnly: boolean;

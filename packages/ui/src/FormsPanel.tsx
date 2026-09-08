@@ -19,6 +19,7 @@ import {
   FORMS_KIND_SIGNATURE,
   FORMS_KIND_TEXT,
   FORMS_LABEL,
+  FORMS_MANY_VALUES,
   FORMS_NOT_FILLABLE,
   FORMS_READ_ONLY,
   FORMS_ROW,
@@ -315,9 +316,9 @@ function FieldControl({
         // thing that distinguishes one row's control from another's to a screen
         // reader.
         aria-label={field.name}
-        defaultValue={field.value}
+        defaultValue={field.values[0] ?? ''}
         onBlur={(event) => {
-          if (event.currentTarget.value !== field.value) {
+          if (event.currentTarget.value !== (field.values[0] ?? '')) {
             onFill({ set: 'text', text: event.currentTarget.value });
           }
         }}
@@ -353,6 +354,21 @@ function FieldControl({
   }
 
   if (field.kind === 'dropdown' || field.kind === 'listbox') {
+    // SEVERAL VALUES IS NOT A CONTROL, and it is the wired rule cutting the way
+    // the row's own note says it cuts: a `<select>` here collects one option and
+    // the fill command carries one, so rendering it over a field holding two
+    // would offer a change that silently deletes the other. The kernel refuses
+    // to capture a prior for the same field, so there would not even be an undo.
+    // Reachable only from a document another tool filled — this build writes one
+    // value — which is exactly why it is rendered rather than assumed away.
+    if (field.values.length > 1) {
+      return (
+        <span className="m-forms-locked">
+          {i18n._(FORMS_MANY_VALUES, { values: field.values.join(', ') })}
+        </span>
+      );
+    }
+    const held = field.values[0] ?? '';
     return (
       <select
         className="m-forms-choice"
@@ -366,7 +382,7 @@ function FieldControl({
         // does not yet write, and offering it would be a control whose command
         // cannot express what it collected.
         size={field.kind === 'listbox' ? Math.min(field.options.length, LIST_ROWS) : undefined}
-        value={field.value}
+        value={held}
       >
         {/* THE EMPTY CHOICE IS ALWAYS OFFERED, because clearing is a fill: a
             document may arrive with a field already cleared, and a list with no
@@ -381,8 +397,8 @@ function FieldControl({
             MuPDF stores one without complaint — measured — so a form can arrive
             holding it, and a `<select>` whose value matches no option renders as
             blank, which reads as an empty field rather than as a strange one. */}
-        {field.value !== '' && !field.options.includes(field.value) ? (
-          <option value={field.value}>{field.value}</option>
+        {held !== '' && !field.options.includes(held) ? (
+          <option value={held}>{held}</option>
         ) : null}
       </select>
     );
@@ -436,8 +452,13 @@ interface PanelField {
   readonly kind: FormFieldKind;
   /** The document's own name for the field. Not unique across widgets. */
   readonly name: string;
-  /** Empty for every button kind, by construction — see the kernel's reader. */
-  readonly value: string;
+  /**
+   * Empty for every button kind, by construction — see the kernel's reader.
+   *
+   * A LIST because a choice field may hold several, which `getValue()` reported
+   * as none until 2026-09-08. Nearly every field has zero or one.
+   */
+  readonly values: readonly string[];
   /** Whether THIS widget is on, or `null` for a field with no on-state. */
   readonly on: boolean | null;
   readonly options: readonly string[];

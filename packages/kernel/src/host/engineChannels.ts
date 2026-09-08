@@ -273,6 +273,8 @@ export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
 export const ENGINE_FORM_FIELDS_MAX = 4096;
 export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
 export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
+/** How many values one field may carry. The contract's bound, on this wire. */
+export const ENGINE_FORM_FIELD_VALUES_MAX = 256;
 
 /**
  * One annotation, as it crosses from the host.
@@ -352,8 +354,17 @@ const engineFormFieldSchema = z
     kind: formFieldKindSchema,
     /** Not unique — a radio group is one field with several widgets. */
     name: z.string().max(ENGINE_FORM_FIELD_TEXT_MAX),
-    /** Empty for every button kind, by construction. See `formFields.ts`. */
-    value: z.string().max(ENGINE_FORM_FIELD_TEXT_MAX),
+    /**
+     * Empty for every button kind, by construction. See `formFields.ts`.
+     *
+     * A LIST, because a multi-select choice field's `/V` is an array — and
+     * measured 2026-09-08, `getValue()` answers `""` for one, so the string
+     * this replaced reported a field holding two options as holding none.
+     */
+    values: z
+      .array(z.string().max(ENGINE_FORM_FIELD_TEXT_MAX))
+      .max(ENGINE_FORM_FIELD_VALUES_MAX)
+      .readonly(),
     /** Whether THIS widget is on, or null for a field with no on-state. */
     on: z.boolean().nullable(),
     options: z

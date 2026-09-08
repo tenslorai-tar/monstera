@@ -269,6 +269,7 @@ export const FORMS_GO_TO_PAGE = messageKey('surface.forms.go-to-page');
 export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
 export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
+export const FORMS_MANY_VALUES = messageKey('surface.forms.many-values');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
@@ -632,6 +633,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // measured, clearing a dropdown stores the empty string, and a document may
   // arrive with one already cleared.
   [FORMS_CHOICE_EMPTY]: '(none)',
+  // A FIELD HOLDING SEVERAL VALUES, which this build can read and cannot write:
+  // a fill carries one option, so offering the control would collect a choice
+  // whose command discards the rest. It names the values so the reader can see
+  // what is there rather than being told only that they cannot change it.
+  [FORMS_MANY_VALUES]: 'This field holds several values ({values}), which cannot be changed here.',
   // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument
   // one walk along. The rows beside it name similar fields, and a bare verb on
   // a list of similar rows is the label a person clicks on the wrong line. It

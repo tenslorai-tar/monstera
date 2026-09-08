@@ -198,6 +198,47 @@ async function unclassifiable(): Promise<Uint8Array> {
   return document.save();
 }
 
+/**
+ * A form whose listbox holds TWO values, and one beside it that holds one.
+ *
+ * ## Built by hand because the library cannot produce the shape
+ *
+ * Measured 2026-09-08 (`scripts/research/formDataExport.mjs` question 8):
+ * `@cantoo/pdf-lib`'s second `select()` **overwrites**, so a fixture built
+ * through its API carries a plain string however many options are chosen. The
+ * multi-select bit is a document capability real forms have and this library
+ * does not write — which is exactly why the reader had never met one.
+ *
+ * ## The single-valued field beside it is the control
+ *
+ * Every assertion here is about a field holding several, and *nothing at all*
+ * is what a broken read answers for both. The neighbour holds one value and is
+ * asserted in the same case, so a reader that could see no values would fail
+ * there first rather than passing as a correct refusal.
+ */
+async function multiValued(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 600]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const fields = document.getForm();
+
+  const several = fields.createOptionList('applicant.languages');
+  several.addOptions(['English', 'Dutch', 'Welsh']);
+  several.addToPage(page, { x: 20, y: 340, width: 100, height: 60, font });
+
+  const chosen = PDFArray.withContext(document.context);
+  chosen.push(PDFString.of('English'));
+  chosen.push(PDFString.of('Welsh'));
+  several.acroField.dict.set(PDFName.of('V'), chosen);
+
+  const one = fields.createDropdown('applicant.title');
+  one.addOptions(['Dr', 'Mr', 'Ms']);
+  one.select('Dr');
+  one.addToPage(page, { x: 20, y: 420, width: 100, height: 20, font });
+
+  return document.save();
+}
+
 /** A page with a square on it and no fields at all. */
 async function marked(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
@@ -218,25 +259,41 @@ async function onSession<T>(
   }
 }
 
-/** Every field the reader lists, as `{kind, name, value, on}` quadruples. */
+/** Every field the reader lists, as `{kind, name, values, on}` quadruples. */
 async function listed(
   bytes: Uint8Array,
-): Promise<{ kind: string; name: string; value: string; on: boolean | null }[]> {
+): Promise<{ kind: string; name: string; values: readonly string[]; on: boolean | null }[]> {
   const answer = await onSession(bytes, (session) => readFormFields(session));
-  return answer.fields.map(({ kind, name, value, on }) => ({ kind, name, value, on }));
+  return answer.fields.map(({ kind, name, values, on }) => ({ kind, name, values, on }));
 }
 
 describe('readFormFields', () => {
   it('NAMES ALL SIX TYPES, and a radio group is two widgets of one field', async () => {
     expect(await listed(await form())).toStrictEqual([
-      { kind: 'text', name: 'applicant.name', value: 'Ada', on: null },
-      { kind: 'checkbox', name: 'applicant.agrees', value: '', on: true },
+      { kind: 'text', name: 'applicant.name', values: ['Ada'], on: null },
+      { kind: 'checkbox', name: 'applicant.agrees', values: [], on: true },
       // BOTH ANSWER THE SAME NAME, which is why the index is what points.
-      { kind: 'radio', name: 'applicant.post', value: '', on: true },
-      { kind: 'radio', name: 'applicant.post', value: '', on: false },
-      { kind: 'dropdown', name: 'applicant.title', value: 'Dr', on: null },
-      { kind: 'listbox', name: 'applicant.languages', value: 'Dutch', on: null },
-      { kind: 'signature', name: 'applicant.signature', value: '', on: null },
+      { kind: 'radio', name: 'applicant.post', values: [], on: true },
+      { kind: 'radio', name: 'applicant.post', values: [], on: false },
+      { kind: 'dropdown', name: 'applicant.title', values: ['Dr'], on: null },
+      { kind: 'listbox', name: 'applicant.languages', values: ['Dutch'], on: null },
+      { kind: 'signature', name: 'applicant.signature', values: [], on: null },
+    ]);
+  });
+
+  it('READS BOTH VALUES OF A MULTI-SELECT, which the accessor reported as none', async () => {
+    // THE DEFECT THIS REPLACED, measured 2026-09-08: `getValue()` answers `""`
+    // for a `/V` that is an array of two strings — not the first entry, not a
+    // joined string, but the answer a field nobody filled gives. So a listbox
+    // holding two options crossed as one holding nothing, and a panel, an
+    // export and an undo all agreed with each other and none with the document.
+    //
+    // The dropdown in the same fixture is the control: it holds one value, and
+    // a reader that could see no values would fail on it rather than passing
+    // here for the wrong reason.
+    expect(await listed(await multiValued())).toStrictEqual([
+      { kind: 'listbox', name: 'applicant.languages', values: ['English', 'Welsh'], on: null },
+      { kind: 'dropdown', name: 'applicant.title', values: ['Dr'], on: null },
     ]);
   });
 
@@ -261,7 +318,7 @@ describe('readFormFields', () => {
     // whole reason `kindOf` asks the predicates instead of reading `/FT`.
     const fields = await listed(await unclassifiable());
     expect(fields).toStrictEqual([
-      { kind: 'button', name: 'applicant.strange', value: '', on: null },
+      { kind: 'button', name: 'applicant.strange', values: [], on: null },
     ]);
   });
 
@@ -275,7 +332,7 @@ describe('readFormFields', () => {
     expect(button).toStrictEqual({
       kind: 'button',
       name: 'applicant.submit',
-      value: '',
+      values: [],
       on: null,
     });
   });
@@ -289,7 +346,7 @@ describe('readFormFields', () => {
     expect(unticked).toStrictEqual({
       kind: 'checkbox',
       name: 'applicant.agrees',
-      value: '',
+      values: [],
       on: false,
     });
   });
@@ -422,9 +479,9 @@ describe('applyFillFormField', () => {
 
   it('CHOOSES AN OPTION on a dropdown and on a listbox', async () => {
     const dropdown = await afterFill(await form(), filling(0, 4, { set: 'choice', option: 'Ms' }));
-    expect(dropdown[4]?.value).toBe('Ms');
+    expect(dropdown[4]?.values).toStrictEqual(['Ms']);
     const listbox = await afterFill(await form(), filling(0, 5, { set: 'choice', option: 'Welsh' }));
-    expect(listbox[5]?.value).toBe('Welsh');
+    expect(listbox[5]?.values).toStrictEqual(['Welsh']);
   });
 
   it('CLEARS A CHOICE with the empty option, which is a value and not an absence', async () => {
@@ -433,7 +490,10 @@ describe('applyFillFormField', () => {
     // passes the membership test deliberately — it is how a choice is cleared,
     // and an inverse restoring an untouched field has to be able to say it.
     const cleared = await afterFill(await form(), filling(0, 4, { set: 'choice', option: '' }));
-    expect(cleared[4]?.value).toBe('');
+    // `['']` AND NOT `[]`. The empty string is a value the document holds, and
+    // the empty list is a field with no `/V` at all — two states this reader
+    // separates and the string it replaced could not.
+    expect(cleared[4]?.values).toStrictEqual(['']);
   });
 
   it('TICKS A BOX WHOSE APPEARANCE IS STALE, which takes two toggles', async () => {
@@ -472,7 +532,7 @@ describe('applyFillFormField', () => {
     // AND THE DOCUMENT IS UNTOUCHED, which the throw alone does not say: a
     // refusal after the write is not a refusal.
     const held = await onSession(bytes, (session) => readFormFields(session));
-    expect(held.fields[1]?.value).toBe('LOCKED');
+    expect(held.fields[1]?.values).toStrictEqual(['LOCKED']);
   });
 
   it('REFUSES A PUSH BUTTON, a signature, and every mismatched pairing', async () => {
@@ -518,13 +578,13 @@ describe('captureFillFormField and invertFillFormField', () => {
       const captured = await captureFillFormField(session, command);
       if (!captured.captured) throw new Error(`the capture refused: ${captured.reason}`);
       await applyFillFormField(session, command);
-      const changed = (await readFormFields(session)).fields[0]?.value;
+      const changed = (await readFormFields(session)).fields[0]?.values;
       await invertFillFormField(session, captured.prior);
-      return { changed, restored: (await readFormFields(session)).fields[0]?.value };
+      return { changed, restored: (await readFormFields(session)).fields[0]?.values };
     });
     // BOTH HALVES. Without the middle reading, an inverse that did nothing and
     // an apply that did nothing produce the same final value.
-    expect(held).toStrictEqual({ changed: 'Grace', restored: 'Ada' });
+    expect(held).toStrictEqual({ changed: ['Grace'], restored: ['Ada'] });
   });
 
   it('RESTORES THE RADIO THAT WAS ON, which is a DIFFERENT widget from the one filled', async () => {
@@ -594,6 +654,33 @@ describe('captureFillFormField and invertFillFormField', () => {
     );
     expect(captured.captured).toBe(false);
     expect(captured.captured ? '' : captured.reason).toMatch(/not among the options/u);
+  });
+
+  it('REFUSES TO CAPTURE a field holding several values, because a fill carries one', async () => {
+    // THE SAME REFUSAL FOR A DIFFERENT REASON, and the reason is what makes it
+    // a second case rather than a duplicate: there the prior is a value this
+    // build would not write back, here it is a prior a `FieldFill` cannot
+    // SPELL. An inverse built from it would restore the first value and delete
+    // the second, which is an undo that loses data — worse than no inverse,
+    // because a checkpoint restores the field exactly.
+    const captured = await onSession(await multiValued(), (session) =>
+      captureFillFormField(session, filling(0, 0, { set: 'choice', option: 'Dutch' })),
+    );
+    expect(captured.captured).toBe(false);
+    expect(captured.captured ? '' : captured.reason).toMatch(/holds 2 values/u);
+  });
+
+  it('CONTROL: it captures the single-valued field in the SAME document', async () => {
+    // Without this, *every* capture on this fixture refusing would read as the
+    // rule above working. The dropdown holds one value and is captured, so the
+    // refusal is about the number of values and not about the document.
+    const captured = await onSession(await multiValued(), (session) =>
+      captureFillFormField(session, filling(0, 1, { set: 'choice', option: 'Mr' })),
+    );
+    expect(captured.captured ? captured.prior.value : null).toStrictEqual({
+      set: 'choice',
+      option: 'Dr',
+    });
   });
 
   it('FINDS THE SELECTED RADIO ON ANOTHER PAGE, rather than reading absence', async () => {

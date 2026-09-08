@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import {
+  type ChannelResult,
+  type ContractClient,
+  channels,
+  createClient,
+} from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -130,17 +135,29 @@ async function panel(
   return { jumps, fills, deletes, flattens: () => flattens, asked };
 }
 
-/** A field with everything a row needs, so a case names only what it is about. */
-function field(over: Record<string, unknown>): Record<string, unknown> {
+/**
+ * A field with everything a row needs, so a case names only what it is about.
+ *
+ * **The channel's own row type and not `Record<string, unknown>`**, which it was
+ * until 2026-09-08. A member renamed in the channel left every fixture here
+ * compiling and every case failing at run time with *no rows rendered* — the
+ * boundary refusing a shape it no longer knows, several layers from the
+ * literal. A fixture typed as a bag of unknowns is a fixture the compiler
+ * cannot hold against the contract, which is the one thing it is for.
+ */
+type ChannelField = ChannelResult<'document.formFields'>['fields'][number];
+
+function field(over: Partial<ChannelField>): ChannelField {
   return {
     page: 0,
     index: 0,
     kind: 'text',
     name: 'applicant.name',
-    value: '',
+    values: [],
     on: null,
     options: [],
     readOnly: false,
+    rect: null,
     ...over,
   };
 }
@@ -153,7 +170,7 @@ describe('FormsPanel', () => {
     // that showed the raw page index would be off by one on every row.
     await panel([
       field({ name: 'applicant.name', kind: 'text', page: 0 }),
-      field({ name: 'applicant.agrees', kind: 'checkbox', page: 4, on: false, value: '' }),
+      field({ name: 'applicant.agrees', kind: 'checkbox', page: 4, on: false, values: [] }),
     ]);
 
     expect(screen.getByText('applicant.name — Text, page 1')).toBeTruthy();
@@ -167,8 +184,8 @@ describe('FormsPanel', () => {
     // case: the two halves speak different index spaces and this is where they
     // meet.
     const { fills } = await panel([
-      field({ name: 'first', page: 0, index: 0, value: 'Ada' }),
-      field({ name: 'second', page: 1, index: 0, value: 'Grace' }),
+      field({ name: 'first', page: 0, index: 0, values: ['Ada'] }),
+      field({ name: 'second', page: 1, index: 0, values: ['Grace'] }),
     ]);
 
     const input = screen.getByLabelText('second');
@@ -189,7 +206,7 @@ describe('FormsPanel', () => {
     // A blur is not an edit. Without this the case above passes for a panel
     // that dispatches on every blur, which would be a command and a log entry
     // every time a person tabbed through a form reading it.
-    const { fills } = await panel([field({ name: 'first', value: 'Ada' })]);
+    const { fills } = await panel([field({ name: 'first', values: ['Ada'] })]);
     fireEvent.blur(screen.getByLabelText('first'));
     expect(fills).toStrictEqual([]);
   });
@@ -226,7 +243,7 @@ describe('FormsPanel', () => {
       field({
         name: 'applicant.title',
         kind: 'dropdown',
-        value: 'Dr',
+        values: ['Dr'],
         options: ['Dr', 'Mr', 'Ms'],
         index: 3,
       }),
@@ -244,6 +261,29 @@ describe('FormsPanel', () => {
     ]);
   });
 
+  it('RENDERS NO CONTROL for a choice holding several values, and names them', async () => {
+    // The wired rule again, and this is the case where it costs something: a
+    // `<select>` here collects ONE option and the fill command carries one, so
+    // offering it over a field holding two would be a control whose command
+    // deletes the other — and the kernel refuses to capture a prior for the
+    // same field, so there would not even be an undo. Reachable only from a
+    // document another tool filled: this build writes one value.
+    await panel([
+      field({
+        name: 'applicant.languages',
+        kind: 'listbox',
+        values: ['English', 'Welsh'],
+        options: ['English', 'Dutch', 'Welsh'],
+      }),
+    ]);
+    expect(screen.queryByLabelText('applicant.languages')).toBeNull();
+    // AND IT SAYS WHAT IS THERE. Told only that they cannot change it, a reader
+    // cannot tell a locked field from one holding data this build will not risk.
+    expect(
+      screen.getByText('This field holds several values (English, Welsh), which cannot be changed here.'),
+    ).toBeTruthy();
+  });
+
   it('SHOWS A VALUE THE DOCUMENT DOES NOT OFFER rather than dropping it', async () => {
     // MuPDF stores an unlisted value without complaint — measured — so a form
     // can arrive holding one. A `<select>` whose value matches no option
@@ -252,7 +292,7 @@ describe('FormsPanel', () => {
       field({
         name: 'applicant.title',
         kind: 'dropdown',
-        value: 'Professor',
+        values: ['Professor'],
         options: ['Dr', 'Mr'],
       }),
     ]);
@@ -267,7 +307,7 @@ describe('FormsPanel', () => {
     // control. The message names the document, because *disabled* would read as
     // a fault in the application.
     const { fills } = await panel([
-      field({ name: 'applicant.reference', value: 'LOCKED', readOnly: true }),
+      field({ name: 'applicant.reference', values: ['LOCKED'], readOnly: true }),
     ]);
     expect(screen.queryByLabelText('applicant.reference')).toBeNull();
     expect(screen.getByText('The document marks this field read-only.')).toBeTruthy();

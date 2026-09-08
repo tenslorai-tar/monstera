@@ -196,7 +196,7 @@ function field(kind: ListedField['kind'], index: number): ListedField {
     index,
     kind,
     name: `field.${kind}`,
-    value: '',
+    values: [],
     on: null,
     options: [],
     readOnly: false,
@@ -262,7 +262,10 @@ describe('engine/form-fields', () => {
         fields: [
           { ...field('radio', 0), on: false, options: ['first', 'second'], rect: null },
           { ...field('checkbox', 1), on: true, readOnly: true },
-          { ...field('listbox', 2), value: 'Dutch', options: ['English', 'Dutch'] },
+          // TWO VALUES, which is the state the wire carried as none until
+          // 2026-09-08: a schema whose `values` was a string would refine the
+          // array away, and a transport that took the first would answer one.
+          { ...field('listbox', 2), values: ['English', 'Dutch'], options: ['English', 'Dutch'] },
         ],
         truncated: false,
       }),
@@ -274,7 +277,7 @@ describe('engine/form-fields', () => {
           index: 0,
           kind: 'radio',
           name: 'field.radio',
-          value: '',
+          values: [],
           on: false,
           options: ['first', 'second'],
           readOnly: false,
@@ -285,7 +288,7 @@ describe('engine/form-fields', () => {
           index: 1,
           kind: 'checkbox',
           name: 'field.checkbox',
-          value: '',
+          values: [],
           on: true,
           options: [],
           readOnly: true,
@@ -296,7 +299,7 @@ describe('engine/form-fields', () => {
           index: 2,
           kind: 'listbox',
           name: 'field.listbox',
-          value: 'Dutch',
+          values: ['English', 'Dutch'],
           on: null,
           options: ['English', 'Dutch'],
           readOnly: false,

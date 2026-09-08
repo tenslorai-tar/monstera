@@ -270,10 +270,17 @@ export const MAX_ANNOTATION_CONTENTS = 512;
  * this differs from the annotation shape: a dropdown of every country is around
  * two hundred entries and is ordinary, so the bound sits where a list a
  * document controls is built.
+ *
+ * **The value bound is per field too, and it is smaller than the option bound
+ * on purpose**: a selection is a subset of what is offered, so a field naming
+ * more values than half its options is a document doing something other than
+ * recording a choice. It is a bound on an array a hostile document controls,
+ * not a promise about what a form may hold.
  */
 export const MAX_FORM_FIELDS = 4096;
 export const MAX_FORM_FIELD_TEXT = 512;
 export const MAX_FORM_FIELD_OPTIONS = 512;
+export const MAX_FORM_FIELD_VALUES = 256;
 
 /**
  * How long a document's name may be.
@@ -1559,7 +1566,7 @@ export const channels = {
             name: z.string().max(MAX_FORM_FIELD_TEXT),
             /**
              * The text of a field that has text — a text field's contents, a
-             * choice field's selected option.
+             * choice field's selected options.
              *
              * **Empty for every button kind, by construction.** MuPDF's
              * `getValue()` answers a checkbox's on-state name here and a
@@ -1567,8 +1574,18 @@ export const channels = {
              * export value is `"0"` where the options are labels. A surface
              * that matched one against the other would never match, so there is
              * no string here to mistake for a tick (B5 over a comment).
+             *
+             * **A LIST, and the third case is why.** A multi-select choice
+             * field's `/V` is an array, and measured 2026-09-08 `getValue()`
+             * answers `""` for one — so a field holding two options crossed as
+             * a field holding none. Zero or one entry is what nearly every
+             * field has; the array is what makes *several* sayable instead of
+             * being rounded down to *empty*.
              */
-            value: z.string().max(MAX_FORM_FIELD_TEXT),
+            values: z
+              .array(z.string().max(MAX_FORM_FIELD_TEXT))
+              .max(MAX_FORM_FIELD_VALUES)
+              .readonly(),
             /**
              * Whether THIS widget is the one that is on, or `null` for a field
              * that has no on-state.
