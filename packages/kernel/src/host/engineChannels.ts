@@ -860,7 +860,7 @@ export function splitAsset(command: CommandOfKind<KindsRoutedTo<'mupdf'>>): {
   if (declaredCommands[command.kind].asset === 'none') {
     return { command, asset: undefined };
   }
-  // A NARROWING, NOT A CAST. `CommandAsset<K>` admits `'image'` only for a kind
+  // A NARROWING, NOT A CAST. `CommandAsset<K>` admits `'bytes'` only for a kind
   // whose payload has `bytes`, so this cannot be false — and writing it as a
   // check means the day the axis gains a third member the compiler asks here
   // instead of a `Uint8Array` reaching `JSON.stringify` unremarked.
@@ -1467,7 +1467,7 @@ export const engineChannels = {
         source: sessionSchema.optional(),
         /**
          * The file in this session's snapshot directory holding the command's
-         * bytes, for a `asset: 'image'` command
+         * bytes, for an `asset: 'bytes'` command
          * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
          *
          * **A NAME, and the directory is the one this session was opened

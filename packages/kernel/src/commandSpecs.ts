@@ -329,7 +329,7 @@ const declared = {
     invert: invertPlaceAnnotation,
   },
   placeImage: {
-    // THE SPREAD CARRIES `asset: 'image'` IN, and nothing here reads it — the
+    // THE SPREAD CARRIES `asset: 'bytes'` IN, and nothing here reads it — the
     // same shape `removeAnnotation`'s comment describes for `targets`. This
     // apply is handed the whole command, bytes included; what the axis governs
     // happens in the transport, two modules away, and a spec that carried an

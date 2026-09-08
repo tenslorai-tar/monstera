@@ -986,7 +986,7 @@ const declarations = {
     // object of numeric keys and this command's own schema refines it away. So
     // the transport writes them into the directory `engine/open` already grants
     // the host READ on, and puts them back before the apply is called.
-    asset: 'image',
+    asset: 'bytes',
     purpose: 'ordinary',
   },
   styleAnnotation: {

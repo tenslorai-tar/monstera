@@ -2049,7 +2049,7 @@ export const MAX_IMAGE_PAGES = 4096;
  * to **MuPDF**, which is behind a pipe that carries JSON, and a `Uint8Array`
  * does not survive `JSON.stringify`
  * ([ADR-0044](../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
- * So the declaration says `asset: 'image'`, and the transport writes these
+ * So the declaration says `asset: 'bytes'`, and the transport writes these
  * bytes into the directory the host was already granted READ on — the one the
  * document itself arrives through. Nothing about that is visible here: the
  * command carries its whole intent, and the log stores it.

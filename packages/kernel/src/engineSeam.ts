@@ -366,15 +366,24 @@ export type SavePurpose = 'ordinary' | 'removal';
  *
  * ## Conditional on the command, so the illegal state cannot be written
  *
- * A kind whose payload has no `bytes` field cannot declare `'image'`: there is
+ * A kind whose payload has no `bytes` field cannot declare `'bytes'`: there is
  * no member of this union for it but `'none'`. That is B5 over a rule the
  * transport would otherwise have to enforce at runtime, where the failure is a
  * command whose asset the handler looks for and does not find — after the
  * frame has been sent.
+ *
+ * ## The member was spelt `'image'` until 2026-09-08
+ *
+ * ADR-0044 named it after the payload that needed it first, and the paragraph
+ * at the top of this comment is the argument that it was wrong from that day:
+ * the question is about the WIRE, and an image is a content type. Nothing ever
+ * branched on the member — the transport tests `asset === 'none'` — so an FDF
+ * declared as an image would have worked and been a lie, which is why the
+ * correction is a rename rather than a second member beside it.
  */
 export type CommandAsset<K extends CommandKind> =
   | 'none'
-  | (CommandOfKind<K> extends { readonly bytes: Uint8Array } ? 'image' : never);
+  | (CommandOfKind<K> extends { readonly bytes: Uint8Array } ? 'bytes' : never);
 
 /**
  * What a command's apply is handed that it could not read for itself.
