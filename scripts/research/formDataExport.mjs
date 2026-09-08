@@ -114,6 +114,60 @@ async function fixture() {
 }
 
 /**
+ * A second document, carrying the fields whose value nobody has SET.
+ *
+ * ## The first fixture cannot answer question 7 and its shape is why
+ *
+ * Every stateful field in {@link fixture} is on. So it measures what `/V` must
+ * be for a field a person filled and nothing at all about the one they left —
+ * which is the majority of every real form, and the branch an encoder has to
+ * take without knowing what the value will be.
+ *
+ * The rule about never building a fixture the bug also handles correctly, one
+ * step out: a fixture where every button is ticked round-trips through an
+ * encoder that cannot write an off state.
+ */
+async function unsetFixture() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 600]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const form = document.getForm();
+
+  // NOT ticked, where the first fixture's is.
+  const tick = form.createCheckBox('unset.tick');
+  tick.addToPage(page, { x: 20, y: 540, width: 16, height: 16, borderWidth: 0 });
+
+  // A GROUP WITH NO SELECTION, which is a different question from an unticked
+  // box: a radio field's off state is the absence of a choice among several
+  // rather than one widget's own key being unequal.
+  const group = form.createRadioGroup('unset.post');
+  group.addOptionToPage('first', page, { x: 20, y: 500, width: 16, height: 16, borderWidth: 0 });
+  group.addOptionToPage('second', page, { x: 60, y: 500, width: 16, height: 16, borderWidth: 0 });
+
+  // A PUSH BUTTON, which carries no data and is here to be seen carrying none.
+  const push = form.createButton('unset.send');
+  push.addToPage('Send', page, { x: 20, y: 460, width: 60, height: 18, font, borderWidth: 0 });
+
+  // A MULTI-SELECT LISTBOX. `getValue()` answers a STRING, and a field holding
+  // two selections has two — so this asks whether an export of it is lossy, and
+  // a single-selection listbox could never have told us.
+  const list = form.createOptionList('unset.langs');
+  list.addOptions(['en', 'fr', 'de']);
+  list.enableMultiselect();
+  list.select('en');
+  list.select('de');
+  list.addToPage(page, { x: 20, y: 380, width: 100, height: 60, font, borderWidth: 0 });
+
+  // A TEXT FIELD NOBODY TYPED IN, the control for the four above: if an unset
+  // text field and an unset tick box answer the same string, `getValue()` is
+  // not separating *no value* from *off* and the encoder cannot either.
+  const blank = form.createTextField('unset.blank');
+  blank.addToPage(page, { x: 20, y: 340, width: 200, height: 18, font, borderWidth: 0 });
+
+  return document.save();
+}
+
+/**
  * Opens with MuPDF and hands the document over, always destroying it.
  *
  * @template T
@@ -369,6 +423,98 @@ async function main() {
   console.log(`  names in the fixture: ${JSON.stringify(named)}`);
   console.log(`  as FDF /T, escaped:   ${JSON.stringify(named.map(pdfString))}`);
   console.log(`  as XFDF @name, escaped: ${JSON.stringify(named.map(xmlText))}`);
+  console.log('');
+
+  // ------------------------------------------- 7: the fields nobody filled
+  console.log('## 7. What an UNSET field answers, which is the branch an encoder must take');
+  const unset = fields(await unsetFixture());
+  for (const entry of unset) console.log(`  ${JSON.stringify(entry)}`);
+
+  // THE CONTROL FOR THIS TABLE. Every entry above is expected to answer an
+  // empty value, so `all empty` is also what a broken read produces — the same
+  // read is pointed at the FIRST fixture, where four of five values are known
+  // to be non-empty, before its silence about the second means anything.
+  const filled = read.filter((entry) => entry.value !== '');
+  if (filled.length === 0) {
+    throw new Error(
+      'the reader answers an empty value for every field of the FILLED fixture, so its answers ' +
+        'about the unset one are this script being broken rather than a fact about the format',
+    );
+  }
+  console.log(
+    `  control: the filled fixture answers ${String(filled.length)} non-empty value(s) — ` +
+      'the same read can see a value when there is one',
+  );
+  console.log('');
+
+  // ---------------------------------- 8: what the STRING could not carry
+  console.log('## 8. `/V` on the multi-select, read as an object rather than as a string');
+  console.log('   question 7 answered ONE selection for a field that has two. This asks whether');
+  console.log('   the second is in the document or was never written — a lossy READ and a lossy');
+  console.log('   WRITE are different defects and only one of them is this build’s to fix.');
+  const raw = withMupdf(await unsetFixture(), 'application/pdf', (document) => {
+    const found = [];
+    for (const widget of document.loadPage(0).getWidgets()) {
+      // `/V` IS ON THE FIELD AND THE WIDGET IS ITS KID, which the create row
+      // measured for `/T` on 2026-09-08 and is true of every inheritable key.
+      // The first spelling of this read the widget's own dictionary and printed
+      // `null` for all six — including `unset.langs`, which question 7 had just
+      // answered `"de"` for. That contradiction is what caught it: a read
+      // reporting *no value* for a field another read in the same script
+      // reports a value for is the read being wrong, and without the neighbour
+      // it would have printed six clean nulls.
+      let object = widget.getObject();
+      let value = object.get('V');
+      for (let hops = 0; value.isNull() && hops < 8; hops += 1) {
+        const parent = object.get('Parent');
+        if (parent.isNull() || !parent.isDictionary()) break;
+        object = parent;
+        value = object.get('V');
+      }
+      found.push({
+        name: widget.getName(),
+        vIsArray: value.isArray(),
+        vLength: value.isArray() ? value.length : null,
+        v: value.isArray()
+          ? Array.from({ length: value.length }, (_unused, index) => value.get(index).asString())
+          : value.isNull()
+            ? null
+            : value.isName()
+              ? `/${value.asName()}`
+              : value.asString(),
+      });
+    }
+    return found;
+  });
+  for (const entry of raw) console.log(`  ${JSON.stringify(entry)}`);
+  console.log('');
+
+  // ------------------- 9: the multi-valued `/V` this library cannot produce
+  console.log('## 9. What `getValue()` answers for a `/V` that IS an array');
+  console.log('   question 8 says pdf-lib’s second `select()` OVERWRITES, so the fixture above');
+  console.log('   cannot produce the shape the question is about. A form filled by another');
+  console.log('   tool can, so the array is built here by hand rather than left unmeasured.');
+  const multi = withMupdf(await unsetFixture(), 'application/pdf', (document) => {
+    for (const widget of document.loadPage(0).getWidgets()) {
+      if (widget.getName() !== 'unset.langs') continue;
+      let object = widget.getObject();
+      while (object.get('V').isNull() && object.get('Parent').isDictionary()) {
+        object = object.get('Parent');
+      }
+      const array = document.newArray();
+      array.push(document.newString('en'));
+      array.push(document.newString('de'));
+      object.put('V', array);
+      const after = object.get('V');
+      return {
+        vIsArray: after.isArray(),
+        vLength: after.isArray() ? after.length : null,
+        getValue: widget.getValue(),
+      };
+    }
+    return 'the listbox was not found, so this measures nothing';
+  });
+  console.log(`  ${JSON.stringify(multi)}`);
 }
 
 await main();
