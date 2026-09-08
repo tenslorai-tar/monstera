@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 
 import { WORD_COUNT_DIALOG_ID } from '../dialogs/wordCount.js';
-import { WORD_COUNT_COMMAND_TITLE } from '../messages/en.js';
+import { GROUP_PROOFING, WORD_COUNT_COMMAND_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
@@ -57,17 +57,12 @@ export function showWordCountCommand(deps: {
   return {
     id: 'document.word-count',
     title: WORD_COUNT_COMMAND_TITLE,
-    // EMPTY, AND THE PALETTE STILL REACHES IT. `paletteModel` reads no
-    // placements — *"a command absent from the registry is absent here for
-    // free"* — so a registered command is dispatchable whether or not any
-    // surface shows a button for it.
-    //
-    // `docs/FEATURES.md` puts D4 on the ribbon's **Edit** section, and no
-    // command in this build carries a `ribbon` placement yet because no ribbon
-    // projection renders one. Naming a section here would put this command on a
-    // surface that does not exist, which reads in the registry as a control
-    // somebody can find. When the ribbon lands, this is one line.
-    placements: [],
+    // THE RIBBON LANDED 2026-09-08 AND THIS IS THE ONE LINE IT PREDICTED. The
+    // note here said a section could not be named because no projection
+    // rendered one, and that a placement would read in the registry as a
+    // control nobody can find. `docs/FEATURES.md` puts D4 on **Edit**; the
+    // group is Proofing, which this shares with spell check.
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 20 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;

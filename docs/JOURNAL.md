@@ -887,6 +887,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — The ribbon, and a trigger keyed on an observable its own absence prevented
+
+The ribbon row's trigger read *"Stage 10's shell work, or the first stage that
+ships a section's worth of commands, whichever comes first"*. Asked whether the
+second clause had fired, the answer is that **it could not have**.
+
+A command reaches a ribbon section by declaring a `ribbon` placement. Nobody
+declared one, and the reason is written into six code comments: a placement into
+a surface nothing renders is a registration that projects into nothing, which is
+the display-only defect arriving through the registry. So the condition — *a
+section's worth of commands* — was keyed on an observable that only exists after
+the thing it gates. Measured before the work: **zero** ribbon placements in the
+tree, against four D4 rows done and Stage 4 closed at 7 of 7.
+
+That is not a trigger that had not fired. It is a trigger that **cannot** fire,
+and the two read identically from outside — `an-expiring-claim-needs-a-reader`
+and `a-conditional-invariant-hides-its-condition` are the same shape, one layer
+up. **The test to apply to any trigger: could the condition become true without
+the work it gates being done?** If not, it is a deadlock wearing a schedule's
+clothes, and it will sit green for as long as nobody asks.
+
+### What the pill had become
+
+The floating quick toolbar held **36 commands**. §10.3 gives it eight — *"select,
+hand, text selection, zoom in/out, crop, snapshot, bookmark, comment"* — so it
+had become the ribbon by default, in a vertical pill on the canvas edge, because
+there was nowhere else to put a control.
+
+So the placements **moved** rather than being added. That was not the first
+plan: adding a ribbon placement beside each quick-toolbar one keeps every test
+green and lands a complete ribbon in one commit. The test suite refused it — 51
+failures reading *"Found multiple elements with the role button and name …"* —
+and the failure was right. §7's own example of a command on several surfaces
+(Highlight in Home › Quick tools, Comment › Markup, and a context menu) is
+places a reader meets it at **different moments**; a ribbon section and the pill
+are visible at the same time, so a command on both is one button twice.
+
+The overlap that remains is exactly §10.3's list, and it is a named helper —
+`alsoOnThePill` — rather than a habit, so a thirty-seventh is a decision
+somebody makes with the reason in front of them.
+
+### Three things the compiler and the tests found
+
+**`toolCommand` builds two different families.** It is called for the annotation
+tools and for the five form-field tools, so a single section constant put *text
+field* under Comment › Markup — a correct-looking registration and a wrong
+answer to *where is this tool*. The section is a parameter now.
+
+**The ribbon rendered beside the start screen.** `document.open` is placed on
+both, and it has no `when` — correctly, since it is available with no document
+open, which is exactly when the start screen offers it. The fix is placement
+rather than a predicate: the ribbon is document chrome and moved inside the
+document branch.
+
+**Two assertions used `Open a document` as a proxy for the start screen.** Both
+now name `.m-start-screen`. The button is correctly present with a document
+open — opening another is a thing a reader does — so the old form would have
+failed for a build that is right.
+
+### The test helper is a stronger assertion, not a workaround
+
+A rail shows one section at a time, so a control in Organize is not in the
+document while Home is showing. `pressCommand` walks the rail the way a person
+does and throws, naming the sections it tried, when a command is placed nowhere.
+The cases that used it went from *this command is in a flat list of everything*
+to *a reader can reach this command*, which is the assertion the wired-tools rule
+is actually about.
+
+### Executed
+
+`npm run typecheck` 0 · `npm run lint` 0 · `npx vitest run` **154 files, 2,167
+tests** · `check:docs` 11/11 · `check:secondwiring` 0 over 8 surfaces ·
+`check:bordertokens`, `check:definedtokens`, `check:tokencontrast` clean.
+
+---
+
 ## 2026-09-08 — Both halves of D1's owed search work, and a trigger that fired unnoticed for the second time in one row
 
 `docs/FEATURES.md:73` — D1's search row — carried two owed items and a status

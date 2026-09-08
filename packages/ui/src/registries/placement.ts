@@ -1,3 +1,5 @@
+import type { MessageKey } from '@monstera/shared';
+
 /**
  * Where a command appears — declared BY the command, never by the surface.
  *
@@ -67,7 +69,23 @@ export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab';
  * even when two features pick the same number, which they will.
  */
 export type Placement =
-  | { readonly surface: 'ribbon'; readonly section: SectionId; readonly group: string; readonly order: number }
+  | {
+      readonly surface: 'ribbon';
+      readonly section: SectionId;
+      /**
+       * The captioned group this command sits in, as a catalogue key.
+       *
+       * **A `MessageKey` and not a `string`** (ARCHITECTURE amendment,
+       * 2026-09-08). §10.3 puts this on screen as the group's caption, so a
+       * plain string here is a visible user-facing literal reaching the ribbon
+       * through the one door the JSX lint rule cannot see — a variable. Free-
+       * form is preserved, which is what §7 needs so two features that never
+       * see each other's code can interleave; a `MessageKey` is a branded
+       * string, so ordering and map keying are unchanged.
+       */
+      readonly group: MessageKey;
+      readonly order: number;
+    }
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }
   | { readonly surface: 'start-screen'; readonly order: number };

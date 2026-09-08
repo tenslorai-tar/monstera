@@ -165,6 +165,7 @@ import type { SettingsStore } from './settingsStore.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
+import { Ribbon } from './surfaces/Ribbon.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
@@ -1337,6 +1338,17 @@ export function App({ client, settings }: AppProps): ReactElement {
           void openCommand.run(context);
         }}
       />
+      {/* THE RAIL AND THE RIBBON, directly under the tabs, which is §10.3's
+          order — and INSIDE the document branch, not above it.
+
+          Above it, the ribbon rendered beside the start screen, and `Open a
+          document` is placed on both: two buttons with one name, on screen at
+          once. That is the duplication this whole surface is supposed to remove,
+          arriving through the seam rather than through a hand-written list. A
+          `when` on the open command would have been the wrong fix — the command
+          is available with no document open, which is exactly when the start
+          screen offers it. The ribbon is DOCUMENT chrome; the start screen is
+          what there is instead. */}
       {open === undefined ? (
         <>
           <StartScreen registry={registry} context={context} problem={openProblem} />
@@ -1370,6 +1382,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         // seam that already exists for *put the reader here*, so the retry sets
         // it in the same event as the reset and the remounted view starts where
         // the reader was.
+        <>
+        <Ribbon registry={registry} context={context} />
         <ErrorBoundary
           key={open.docId}
           fallback={({ reset }) => (
@@ -1412,6 +1426,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           search={search ?? undefined}
         />
         </ErrorBoundary>
+        </>
       )}
       {palette ? (
         <CommandPalette registry={registry} context={context} onClose={closePalette} />

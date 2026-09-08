@@ -464,6 +464,42 @@ export const FIND_REFUSED = messageKey('surface.find.refused');
 export const UNDO_TITLE = messageKey('command.undo.title');
 export const SAVE_TITLE = messageKey('command.save.title');
 export const DOCUMENT_TOOLS_LABEL = messageKey('surface.quick-toolbar.label');
+
+/**
+ * The ribbon's own names: the rail, the tool area, the eight sections, and the
+ * captions of the groups commands declare themselves into.
+ *
+ * The group captions are keys because a ribbon placement's `group` is a
+ * `MessageKey` (§7, amended 2026-09-08): the caption is on screen, so it is a
+ * visible string and belongs in a catalogue like every other. They are grouped
+ * here rather than beside the commands that use them because several commands
+ * from different files share one group, which is the whole point of a group.
+ */
+export const RIBBON_RAIL_LABEL = messageKey('surface.ribbon.rail');
+export const RIBBON_TOOLS_LABEL = messageKey('surface.ribbon.tools');
+export const SECTION_HOME = messageKey('surface.ribbon.section.home');
+export const SECTION_COMMENT = messageKey('surface.ribbon.section.comment');
+export const SECTION_EDIT = messageKey('surface.ribbon.section.edit');
+export const SECTION_ORGANIZE = messageKey('surface.ribbon.section.organize');
+export const SECTION_FORMS = messageKey('surface.ribbon.section.forms');
+export const SECTION_REVIEW = messageKey('surface.ribbon.section.review');
+export const SECTION_PROTECT = messageKey('surface.ribbon.section.protect');
+export const SECTION_TOOLS = messageKey('surface.ribbon.section.tools');
+
+export const GROUP_FILE = messageKey('surface.ribbon.group.file');
+export const GROUP_HISTORY = messageKey('surface.ribbon.group.history');
+export const GROUP_FIND = messageKey('surface.ribbon.group.find');
+export const GROUP_PAGES = messageKey('surface.ribbon.group.pages');
+export const GROUP_ARRANGE = messageKey('surface.ribbon.group.arrange');
+export const GROUP_MARKS = messageKey('surface.ribbon.group.marks');
+export const GROUP_INSERT = messageKey('surface.ribbon.group.insert');
+export const GROUP_TEXT = messageKey('surface.ribbon.group.text');
+export const GROUP_PROOFING = messageKey('surface.ribbon.group.proofing');
+export const GROUP_MARKUP = messageKey('surface.ribbon.group.markup');
+export const GROUP_FIELDS = messageKey('surface.ribbon.group.fields');
+export const GROUP_DISPLAY = messageKey('surface.ribbon.group.display');
+export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
+export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
 export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
@@ -1082,6 +1118,30 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'This document has no bookmarks, so there are no headings to build a table of contents ' +
     'from. Your document has not changed.',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
+  [RIBBON_RAIL_LABEL]: 'Sections',
+  [RIBBON_TOOLS_LABEL]: 'Tools',
+  [SECTION_HOME]: 'Home',
+  [SECTION_COMMENT]: 'Comment',
+  [SECTION_EDIT]: 'Edit',
+  [SECTION_ORGANIZE]: 'Organize',
+  [SECTION_FORMS]: 'Forms',
+  [SECTION_REVIEW]: 'Review',
+  [SECTION_PROTECT]: 'Protect',
+  [SECTION_TOOLS]: 'Tools',
+  [GROUP_FILE]: 'File',
+  [GROUP_HISTORY]: 'History',
+  [GROUP_FIND]: 'Find',
+  [GROUP_PAGES]: 'Pages',
+  [GROUP_ARRANGE]: 'Arrange',
+  [GROUP_MARKS]: 'Marks',
+  [GROUP_INSERT]: 'Insert',
+  [GROUP_TEXT]: 'Text',
+  [GROUP_PROOFING]: 'Proofing',
+  [GROUP_MARKUP]: 'Markup',
+  [GROUP_FIELDS]: 'Fields',
+  [GROUP_DISPLAY]: 'Display',
+  [GROUP_NAVIGATE]: 'Navigate',
+  [GROUP_APPLICATION]: 'Application',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure
   // invites the reading that something was lost.

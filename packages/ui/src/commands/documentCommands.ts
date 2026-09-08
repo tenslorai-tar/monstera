@@ -48,6 +48,15 @@ import {
   FIND_TITLE,
   FIT_PAGE_TITLE,
   FIT_WIDTH_TITLE,
+  GROUP_ARRANGE,
+  GROUP_DISPLAY,
+  GROUP_FIELDS,
+  GROUP_FILE,
+  GROUP_FIND,
+  GROUP_HISTORY,
+  GROUP_INSERT,
+  GROUP_MARKS,
+  GROUP_PAGES,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -481,7 +490,20 @@ export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand 
     id: direction === 'in' ? 'view.zoom-in' : 'view.zoom-out',
     title: direction === 'in' ? ZOOM_IN_TITLE : ZOOM_OUT_TITLE,
     shortcut: direction === 'in' ? 'Ctrl+=' : 'Ctrl+-',
-    placements: [{ surface: 'quick-toolbar', order: direction === 'in' ? 50 : 60 }],
+    placements: [
+      // ON BOTH, and this is one of the six §10.3 names for the floating pill —
+      // "the always-needed tools (select, hand, text selection, zoom in/out,
+      // crop, snapshot, bookmark, comment)". A tool on the pill AND in a ribbon
+      // section is the same button twice on screen, so the overlap is exactly
+      // that list and nothing else.
+      { surface: 'quick-toolbar', order: direction === 'in' ? 50 : 60 },
+      {
+        surface: 'ribbon',
+        section: 'tools',
+        group: GROUP_DISPLAY,
+        order: direction === 'in' ? 10 : 20,
+      },
+    ],
     when: hasDocument,
     run: (): void => {
       // STEPPED FROM WHAT IS SHOWN, not from the mode. A reader at fit-width is
@@ -507,7 +529,14 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
     id: fit === 'width' ? 'view.fit-width' : 'view.fit-page',
     title: fit === 'width' ? FIT_WIDTH_TITLE : FIT_PAGE_TITLE,
     shortcut: fit === 'width' ? 'Ctrl+1' : 'Ctrl+0',
-    placements: [{ surface: 'quick-toolbar', order: fit === 'width' ? 70 : 80 }],
+    placements: [
+      {
+        surface: 'ribbon',
+        section: 'tools',
+        group: GROUP_DISPLAY,
+        order: fit === 'width' ? 30 : 40,
+      },
+    ],
     when: hasDocument,
     run: (): void => {
       deps.onZoom(() => mode);
@@ -520,7 +549,9 @@ export function findCommand(): UiCommand {
     id: 'document.find',
     title: FIND_TITLE,
     shortcut: 'Ctrl+F',
-    placements: [{ surface: 'quick-toolbar', order: 40 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_FIND, order: 10 },
+    ],
     when: hasDocument,
     run: (): void => {
       const field = document.querySelector('[data-find-input]');
@@ -562,7 +593,10 @@ export function rotatePageCommand(
   return {
     id,
     title,
-    placements: [{ surface: 'quick-toolbar', order }],
+    // THE TABLE'S OWN `order`, so the three rotations sit in the ribbon in the
+    // sequence it already fixed. A second number here would be a second opinion
+    // about how the three relate.
+    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       // BOTH, and neither is redundant. A document with no current page is a
@@ -601,7 +635,9 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-blank-page',
     title: INSERT_BLANK_PAGE_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 12 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 10 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -626,7 +662,9 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.duplicate-page',
     title: DUPLICATE_PAGE_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 13 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 10 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -669,7 +707,9 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-page',
     title: DELETE_PAGE_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 14 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -711,7 +751,9 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-pages',
     title: DELETE_PAGES_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 15 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 30 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
@@ -748,7 +790,11 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.crop-pages',
     title: CROP_PAGES_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 16 }],
+    placements: [
+      // On the pill too — §10.3 names crop in its list. See `zoomCommand`.
+      { surface: 'quick-toolbar', order: 16 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 10 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -796,7 +842,9 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.header-footer',
     title: HEADER_FOOTER_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 18 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 30 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -829,7 +877,9 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.bates-number',
     title: BATES_NUMBER_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 19 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 40 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -866,7 +916,9 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.page-transition',
     title: PAGE_TRANSITION_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 20 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -896,7 +948,9 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.resize-pages',
     title: RESIZE_PAGES_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 22 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -941,7 +995,9 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-image',
     title: INSERT_IMAGE_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 23 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 30 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -1013,7 +1069,9 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.generate-toc',
     title: GENERATE_TOC_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 24 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 40 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1063,7 +1121,9 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.merge',
     title: MERGE_DOCUMENT_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 24 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 60 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
@@ -1122,7 +1182,9 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-from-pdf',
     title: INSERT_FROM_PDF_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 25 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
@@ -1175,7 +1237,9 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.replace-page',
     title: REPLACE_PAGE_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 26 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 70 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -1217,7 +1281,9 @@ export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.page-background',
     title: PAGE_BACKGROUND_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 21 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 10 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1246,7 +1312,9 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.watermark-pages',
     title: WATERMARK_PAGES_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 17 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -1292,7 +1360,9 @@ export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand 
   return {
     id: 'document.find-duplicate-pages',
     title: FIND_DUPLICATES_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 17 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 80 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1333,7 +1403,9 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.undo',
     title: UNDO_TITLE,
     shortcut: 'Ctrl+Z',
-    placements: [{ surface: 'quick-toolbar', order: 20 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_HISTORY, order: 10 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1403,7 +1475,9 @@ export function saveCommand(deps: {
     id: 'document.save',
     title: SAVE_TITLE,
     shortcut: 'Ctrl+S',
-    placements: [{ surface: 'quick-toolbar', order: 30 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 20 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1473,7 +1547,9 @@ export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.extract-pages',
     title: EXTRACT_PAGES_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 27 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 40 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
@@ -1514,7 +1590,9 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.split',
     title: SPLIT_DOCUMENT_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 28 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 50 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;
@@ -1571,7 +1649,10 @@ function exportFormDataCommand(
   return (deps) => ({
     id,
     title,
-    placements: [{ surface: 'quick-toolbar', order }],
+    // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
+    // caller's, so import and export interleave by the numbering that already
+    // existed rather than by a second one.
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1640,7 +1721,10 @@ function importFormDataCommand(
   return (deps) => ({
     id,
     title,
-    placements: [{ surface: 'quick-toolbar', order }],
+    // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
+    // caller's, so import and export interleave by the numbering that already
+    // existed rather than by a second one.
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1724,7 +1808,9 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-flat-fields',
     title: FLAT_FIELDS_COMMAND_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 38 }],
+    placements: [
+      { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 10 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
@@ -1774,7 +1860,9 @@ export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.save-copy',
     title: SAVE_COPY_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 31 }],
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 30 },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;

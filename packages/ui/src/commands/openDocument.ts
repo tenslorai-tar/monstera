@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
-import { OPEN_DOCUMENT_TITLE } from '../messages/en.js';
+import { GROUP_FILE, OPEN_DOCUMENT_TITLE } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
 /**
@@ -97,7 +97,14 @@ export function openDocumentCommand(deps: {
     // So the strip takes this command's `run` rather than a placement: one
     // implementation with two triggers, which is not a second wiring place —
     // there is still exactly one thing that opens a document.
-    placements: [{ surface: 'start-screen', order: 0 }],
+    placements: [
+      { surface: 'start-screen', order: 0 },
+      // AND HOME › FILE. §7's own example is a command living on several
+      // surfaces at once; opening a document is reachable before there is one
+      // (the start screen) and after there is one (the ribbon), and those are
+      // two moments rather than two features.
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
+    ],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.open']({});
       // A failure here is `internal` — the channel declares no codes, because

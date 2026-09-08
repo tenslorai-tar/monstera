@@ -283,7 +283,11 @@ describe('the error boundary around the document view, in App', () => {
     // back.
     expect(container.querySelector('.m-thumbnails')).not.toBeNull();
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
-    expect(screen.queryByRole('button', { name: 'Open a document' })).toBeNull();
+    // THE START SCREEN ITSELF. `Open a document` was the proxy for it and
+    // stopped being one on 2026-09-08, when the ribbon gained Home › File: the
+    // control is correctly present with a document open, so the old assertion
+    // would fail for a build that is right.
+    expect(container.querySelector('.m-start-screen')).toBeNull();
 
     // AND THE PAGE, ASSERTED AS THE CALL RATHER THAN AS THE END STATE. The
     // remounted scroller seeds its first page as visible and reports it, so

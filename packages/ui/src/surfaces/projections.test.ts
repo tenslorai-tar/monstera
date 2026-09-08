@@ -66,9 +66,9 @@ describe('ribbonModel', () => {
 
   it('groups a section by group name, ordering entries by `order` and then by id', () => {
     const registry = new CommandRegistry([
-      command('edit.b', [{ surface: 'ribbon', section: 'edit', group: 'text', order: 2 }]),
-      command('edit.a', [{ surface: 'ribbon', section: 'edit', group: 'text', order: 2 }]),
-      command('edit.first', [{ surface: 'ribbon', section: 'edit', group: 'text', order: 1 }]),
+      command('edit.b', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.text'), order: 2 }]),
+      command('edit.a', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.text'), order: 2 }]),
+      command('edit.first', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.text'), order: 1 }]),
     ]);
 
     const edit = ribbonModel(registry, context).find((section) => section.section === 'edit');
@@ -80,8 +80,8 @@ describe('ribbonModel', () => {
 
   it('orders groups by their earliest member, not by name', () => {
     const registry = new CommandRegistry([
-      command('edit.z', [{ surface: 'ribbon', section: 'edit', group: 'alpha', order: 9 }]),
-      command('edit.y', [{ surface: 'ribbon', section: 'edit', group: 'omega', order: 1 }]),
+      command('edit.z', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.alpha'), order: 9 }]),
+      command('edit.y', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.omega'), order: 1 }]),
     ]);
 
     const edit = ribbonModel(registry, context).find((section) => section.section === 'edit');
@@ -89,13 +89,16 @@ describe('ribbonModel', () => {
     // Alphabetically 'alpha' would come first, so a name-ordered projection
     // produces the opposite of this. That is what makes the case separate
     // anything.
-    expect(edit?.groups.map((group) => group.group)).toStrictEqual(['omega', 'alpha']);
+    expect(edit?.groups.map((group) => group.group)).toStrictEqual([
+      messageKey('group.omega'),
+      messageKey('group.alpha'),
+    ]);
   });
 
   it('takes only ribbon placements, and one command may hold several', () => {
     const highlight = command('comment.highlight', [
-      { surface: 'ribbon', section: 'home', group: 'quick tools', order: 1 },
-      { surface: 'ribbon', section: 'comment', group: 'markup', order: 1 },
+      { surface: 'ribbon', section: 'home', group: messageKey('group.quick-tools'), order: 1 },
+      { surface: 'ribbon', section: 'comment', group: messageKey('group.markup'), order: 1 },
       { surface: 'context-menu', context: 'annotation', order: 1 },
     ]);
     const model = ribbonModel(new CommandRegistry([highlight]), context);
@@ -114,10 +117,10 @@ describe('ribbonModel', () => {
 
   it('omits a command whose `when` is false', () => {
     const registry = new CommandRegistry([
-      command('edit.hidden', [{ surface: 'ribbon', section: 'edit', group: 'text', order: 1 }], {
+      command('edit.hidden', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.text'), order: 1 }], {
         when: () => false,
       }),
-      command('edit.shown', [{ surface: 'ribbon', section: 'edit', group: 'text', order: 2 }]),
+      command('edit.shown', [{ surface: 'ribbon', section: 'edit', group: messageKey('group.text'), order: 2 }]),
     ]);
 
     const edit = ribbonModel(registry, context).find((section) => section.section === 'edit');
@@ -132,7 +135,9 @@ describe('the other placement surfaces', () => {
     command('a.page', [{ surface: 'context-menu', context: 'page', order: 1 }]),
     command('a.annotation', [{ surface: 'context-menu', context: 'annotation', order: 1 }]),
     command('a.start', [{ surface: 'start-screen', order: 1 }]),
-    command('a.ribbon', [{ surface: 'ribbon', section: 'home', group: 'g', order: 1 }]),
+    command('a.ribbon', [
+      { surface: 'ribbon', section: 'home', group: messageKey('group.g'), order: 1 },
+    ]),
   ];
   const registry = new CommandRegistry(everywhere);
 
@@ -161,7 +166,9 @@ describe('paletteModel', () => {
     // the obvious implementation — would return nothing here.
     const registry = new CommandRegistry([
       command('view.toggle-quick-toolbar', []),
-      command('edit.rotate', [{ surface: 'ribbon', section: 'edit', group: 'page', order: 1 }]),
+      command('edit.rotate', [
+        { surface: 'ribbon', section: 'edit', group: messageKey('group.page'), order: 1 },
+      ]),
     ]);
 
     expect(paletteModel(registry, context).map((c) => c.id)).toStrictEqual([

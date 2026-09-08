@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 
 import { ABOUT_DIALOG_ID } from '../dialogs/about.js';
-import { ABOUT_COMMAND_TITLE } from '../messages/en.js';
+import { ABOUT_COMMAND_TITLE, GROUP_APPLICATION } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
 /**
@@ -28,7 +28,10 @@ export function showAboutCommand(deps: {
   return {
     id: 'app.about',
     title: ABOUT_COMMAND_TITLE,
-    placements: [{ surface: 'start-screen', order: 1 }],
+    placements: [
+      { surface: 'start-screen', order: 1 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 20 },
+    ],
     run: async (): Promise<void> => {
       const answer = await deps.client['app.info']({});
       if (!answer.ok) return;

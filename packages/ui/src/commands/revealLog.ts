@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 
-import { REVEAL_LOG_TITLE } from '../messages/en.js';
+import { GROUP_APPLICATION, REVEAL_LOG_TITLE } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
 /**
@@ -32,7 +32,10 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     // The start screen, because that is where somebody who cannot open their
     // document goes looking. A document-scoped placement would put the
     // diagnostics behind the thing that is failing.
-    placements: [{ surface: 'start-screen', order: 2 }],
+    placements: [
+      { surface: 'start-screen', order: 2 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 10 },
+    ],
     run: async (): Promise<void> => {
       await deps.client['log.reveal']({});
     },

@@ -1121,6 +1121,90 @@ body {
  * Centred on the viewport's block axis by translation rather than by a computed
  * offset, so it stays centred as the window resizes with nothing listening.
  */
+/*
+ * §10.3's left section rail and top tool ribbon.
+ *
+ * The rail is horizontal here rather than down the left edge, and that is a
+ * stated limit rather than a reading of the law: §10.3 puts the rail beside the
+ * document panel, which does not exist yet, so a vertical rail today would be a
+ * column of eight labels against nothing. The anatomy it belongs to lands with
+ * the panels; the ORDER — sections, then the active section's tools, then the
+ * canvas — is §10.3's and is what this keeps.
+ *
+ * A disabled tab is a section of the product with nothing in it yet, which is a
+ * true thing to show. It is muted rather than hidden because a rail that gained
+ * an entry per stage would teach the reader that the layout moves.
+ */
+.m-ribbon {
+  display: flex;
+  flex-direction: column;
+  border-block-end: 1px solid var(--border-soft); /* decorative: the seam between chrome and canvas; it bounds nothing a person operates */
+  background: var(--surface);
+}
+
+.m-ribbon__rail {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-8) 0;
+}
+
+.m-ribbon__tab {
+  padding: var(--space-4) var(--space-8);
+  border: 0;
+  border-block-end: 2px solid transparent;
+  border-radius: var(--radius-4) var(--radius-4) 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-ribbon__tab:disabled {
+  /* Not `opacity`: a translucent label over a themed surface lands at a
+     different contrast in each theme, and the muted role is the one that has a
+     contrast guarantee. The cursor is what says the control is not for now. */
+  color: var(--faint);
+  cursor: default;
+}
+
+.m-ribbon__tab.is-active {
+  border-block-end-color: var(--accent);
+  color: var(--text);
+}
+
+.m-ribbon__tools {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-16);
+  padding: var(--space-8);
+  overflow-x: auto;
+}
+
+/* THE HAIRLINE SEPARATOR §10.3 names, on the group rather than between them:
+   a rule drawn between siblings needs a first-child exception that a group
+   added later silently changes. */
+.m-ribbon__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-inline-end: var(--space-16);
+  border-inline-end: 1px solid var(--border-soft); /* decorative: §10.3's hairline separator between captioned groups; each button draws its own boundary */
+}
+
+.m-ribbon__group:last-child {
+  border-inline-end: 0;
+}
+
+.m-ribbon__buttons {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.m-ribbon__caption {
+  color: var(--muted);
+  font-size: var(--font-chrome-10);
+  text-align: center;
+}
+
 .m-quick-toolbar {
   position: fixed;
   inset-inline-start: var(--space-16);

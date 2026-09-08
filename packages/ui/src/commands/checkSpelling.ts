@@ -2,7 +2,7 @@ import { MAX_TEXT_LAYER_LINES, type ContractClient } from '@monstera/contract';
 
 import { SPELL_CHECK_DIALOG_ID } from '../dialogs/spellCheck.js';
 import { SPELL_CHECK_RESULT } from '../dialogs/spellCheckResult.js';
-import { SPELL_CHECK_COMMAND_TITLE } from '../messages/en.js';
+import { GROUP_PROOFING, SPELL_CHECK_COMMAND_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { PERSONAL_DICTIONARY_SETTING } from '../settings/editing.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -72,11 +72,9 @@ export function checkSpellingCommand(deps: {
   return {
     id: 'document.spell-check',
     title: SPELL_CHECK_COMMAND_TITLE,
-    // EMPTY, AND THE PALETTE STILL REACHES IT — `showWordCount`'s note applies
-    // here word for word: D4 is the ribbon's Edit section, no ribbon projection
-    // renders one yet, and naming a section would put this on a surface that
-    // does not exist.
-    placements: [],
+    // EDIT › PROOFING, beside word count. Both read the whole document's text
+    // and both are things a person does to prose, which is what a group is.
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 10 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;

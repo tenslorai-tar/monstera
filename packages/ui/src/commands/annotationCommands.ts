@@ -52,6 +52,8 @@ import {
   FORM_FIELD_LISTBOX_TOOL_TITLE,
   FORM_FIELD_RADIO_TOOL_TITLE,
   FORM_FIELD_TEXT_TOOL_TITLE,
+  GROUP_FIELDS,
+  GROUP_MARKUP,
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
@@ -79,6 +81,7 @@ import {
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
+import type { SectionId } from '../registries/placement.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
@@ -147,17 +150,32 @@ export interface SelectionCommandDeps {
  *   that has to agree with it: the registries are joined by this value, and a
  *   command whose id merely resembled the tool's would select nothing, silently
  * @param order where its control sits among the others
+ * @param where which ribbon section and group the tool belongs to. **A
+ *   parameter and not a constant**, because this function builds the annotation
+ *   tools AND the form-field tools, and the two belong to different sections of
+ *   the product — a single section here would have put "text field" under
+ *   Comment › Markup, which reads as a correct registration and is a wrong
+ *   answer to *where is this tool*.
  */
 function toolCommand(
   id: string,
   title: MessageKey,
   order: number,
   deps: ToolCommandDeps,
+  where: { readonly section: SectionId; readonly group: MessageKey } = {
+    section: 'comment',
+    group: GROUP_MARKUP,
+  },
 ): UiCommand {
   return {
     id,
     title,
-    placements: [{ surface: 'quick-toolbar', order }],
+    // ONE SURFACE, and §7's own example is why this is not two. *"Highlight
+    // legitimately lives in Home › Quick tools, Comment › Markup, and the
+    // annotation context menu"* — those are places a reader meets the command
+    // at different moments; a ribbon section and the floating pill are both on
+    // screen at once, so a tool on both is the same button twice.
+    placements: [{ surface: 'ribbon', section: where.section, group: where.group, order }],
     // A page to draw on is what this needs, which is what `hasDocument` says.
     when: hasDocument,
     run: (): void => {
@@ -217,7 +235,7 @@ export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
  * gestured would be the overlay's dispatch table one layer up.
  */
 export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(STICKY_NOTE_TOOL_ID, TOOL_STICKY_NOTE_TITLE, 47, deps);
+  return alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, TOOL_STICKY_NOTE_TITLE, 47, deps), 47);
 }
 
 /**
@@ -321,7 +339,24 @@ export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
  * has never depended on what the tool does when it is on.
  */
 export function selectToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(SELECT_TOOL_ID, SELECT_TOOL_TITLE, 39, deps);
+  return alsoOnThePill(toolCommand(SELECT_TOOL_ID, SELECT_TOOL_TITLE, 39, deps), 39);
+}
+
+/**
+ * Adds the floating pill to a command that is already in a ribbon section.
+ *
+ * **The overlap is §10.3's list and nothing else** — *"the always-needed tools
+ * (select, hand, text selection, zoom in/out, crop, snapshot, bookmark,
+ * comment)"*. The pill and a ribbon section are both on screen at once, so any
+ * other command on both is the same button twice; a helper with this comment on
+ * it is what makes adding a thirty-seventh one a decision rather than a habit.
+ *
+ * Three of that list exist as commands today — select, snapshot and the sticky
+ * note. Hand, text selection and bookmark are not built; zoom and crop declare
+ * their own pair in `documentCommands.ts`, where they live.
+ */
+function alsoOnThePill(command: UiCommand, order: number): UiCommand {
+  return { ...command, placements: [...command.placements, { surface: 'quick-toolbar', order }] };
 }
 
 /**
@@ -526,7 +561,7 @@ export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
  * such factory somewhere else.
  */
 export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(SNAPSHOT_TOOL_ID, SNAPSHOT_TOOL_TITLE, 29, deps);
+  return alsoOnThePill(toolCommand(SNAPSHOT_TOOL_ID, SNAPSHOT_TOOL_TITLE, 29, deps), 29);
 }
 
 /**
@@ -606,11 +641,13 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
  * keeps them together.
  */
 export function formFieldToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
+  // FORMS › FIELDS, named once here rather than five times below.
+  const fields = { section: 'forms', group: GROUP_FIELDS } as const;
   return [
-    toolCommand(FORM_FIELD_TEXT_TOOL_ID, FORM_FIELD_TEXT_TOOL_TITLE, 70, deps),
-    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, FORM_FIELD_CHECKBOX_TOOL_TITLE, 71, deps),
-    toolCommand(FORM_FIELD_RADIO_TOOL_ID, FORM_FIELD_RADIO_TOOL_TITLE, 72, deps),
-    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, FORM_FIELD_DROPDOWN_TOOL_TITLE, 73, deps),
-    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, FORM_FIELD_LISTBOX_TOOL_TITLE, 74, deps),
+    toolCommand(FORM_FIELD_TEXT_TOOL_ID, FORM_FIELD_TEXT_TOOL_TITLE, 70, deps, fields),
+    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, FORM_FIELD_CHECKBOX_TOOL_TITLE, 71, deps, fields),
+    toolCommand(FORM_FIELD_RADIO_TOOL_ID, FORM_FIELD_RADIO_TOOL_TITLE, 72, deps, fields),
+    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, FORM_FIELD_DROPDOWN_TOOL_TITLE, 73, deps, fields),
+    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, FORM_FIELD_LISTBOX_TOOL_TITLE, 74, deps, fields),
   ];
 }

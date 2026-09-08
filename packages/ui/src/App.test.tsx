@@ -226,6 +226,53 @@ async function withDocumentOpen(): Promise<void> {
 }
 
 /**
+ * Clicks a command's control wherever the ribbon has put it.
+ *
+ * ## Why the cases stopped being able to say `getByRole` on their own
+ *
+ * The ribbon renders ONE section at a time — that is what a section rail is —
+ * so a control in Organize is not in the document while Home is showing. Before
+ * 2026-09-08 every command was on the floating pill, which renders all of them
+ * at once, and a case could reach any of them with no navigation.
+ *
+ * This walks the rail the way a person does: try here, and if the control is
+ * not here, select the next section that has anything in it. That makes the
+ * cases below assert something STRONGER than they did — a command reachable by
+ * a reader, rather than a command in a flat list — and it fails loudly, with
+ * the sections it tried, when a command is placed nowhere at all.
+ */
+async function pressCommand(name: string): Promise<void> {
+  const tried: string[] = [];
+  const found = (): HTMLElement | null => screen.queryByRole('button', { name });
+
+  let control = found();
+  if (control === null) {
+    for (const tab of screen.queryAllByRole('button', { name: /^(Home|Comment|Edit|Organize|Forms|Review|Protect|Tools)$/u })) {
+      if (tab.hasAttribute('disabled')) continue;
+      tried.push(tab.textContent);
+      await act(async () => {
+        tab.click();
+        await Promise.resolve();
+      });
+      control = found();
+      if (control !== null) break;
+    }
+  }
+  if (control === null) {
+    throw new Error(
+      `No control named "${name}" in any ribbon section. Tried: ${tried.join(', ') || 'none'}. ` +
+        `A command with no placement is reachable only from the palette, which is legitimate — ` +
+        `and then this case is asserting the wrong thing rather than finding a defect.`,
+    );
+  }
+  const target = control;
+  await act(async () => {
+    target.click();
+    await Promise.resolve();
+  });
+}
+
+/**
  * Every lazily-imported dialog body a case in this file waits for, loaded once
  * before any of them runs.
  *
@@ -363,7 +410,14 @@ describe('App', () => {
     // And the first page has a canvas: slots exist for every page, a canvas only
     // for the ones in view.
     expect(container.querySelector('canvas.m-page')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: 'Open a document' })).toBeNull();
+    // THE START SCREEN ITSELF, not the absence of an Open button.
+    //
+    // That button WAS the proxy, and it stopped being one on 2026-09-08 when
+    // the ribbon gained Home › File: opening another document with one already
+    // open is a thing a reader does, so the control is correctly present and
+    // the old assertion would now fail for a build that is right. The subject
+    // is the start screen, so the query names it.
+    expect(container.querySelector('.m-start-screen')).toBeNull();
   });
 
   it('a cancelled pick leaves the start screen alone', async () => {
@@ -537,10 +591,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Rotate page' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Rotate page');
 
       // THE PARAMS, not just the channel. A rotate that sent `quarterTurns: 0`
       // or an empty page list dispatches `document.execute` exactly as
@@ -578,10 +629,7 @@ describe('App', () => {
       await withDocumentOpen();
 
       for (const name of ['Rotate page', 'Rotate page 180°', 'Rotate page 270°']) {
-        await act(async () => {
-          screen.getByRole('button', { name }).click();
-          await Promise.resolve();
-        });
+        await pressCommand(name);
       }
 
       expect(
@@ -604,10 +652,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Delete pages…' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Delete pages…');
 
       const field = await screen.findByLabelText('Pages to delete');
       await act(async () => {
@@ -642,10 +687,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Delete pages…' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Delete pages…');
       await screen.findByLabelText('Pages to delete');
 
       await act(async () => {
@@ -673,10 +715,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Find duplicate pages…' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Find duplicate pages…');
 
       // ONE-BASED IN THE LABEL. The model's `[0, 3]` reads as pages 1 and 4,
       // and a body that showed the indices would name two pages the reader
@@ -712,10 +751,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Crop pages…' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Crop pages…');
 
       const top = await screen.findByLabelText('Top (points)');
       await act(async () => {
@@ -756,10 +792,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Insert blank page' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Insert blank page');
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
@@ -783,10 +816,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Duplicate page' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Duplicate page');
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
@@ -813,10 +843,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Delete page' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Delete page');
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
@@ -1297,10 +1324,7 @@ describe('App', () => {
       const before = sent.filter((call) => call.id === 'document.viewModel').length;
       expect(before).toBeGreaterThan(0);
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Rotate page' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Rotate page');
       await act(async () => {
         await Promise.resolve();
       });
@@ -1321,10 +1345,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Undo' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Undo');
       await act(async () => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }));
         await Promise.resolve();
@@ -1350,10 +1371,7 @@ describe('App', () => {
       await withDocumentOpen();
 
       const before = sent.filter((call) => call.id === 'document.readRange').length;
-      await act(async () => {
-        screen.getByRole('button', { name: 'Undo' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Undo');
       await act(async () => {
         await Promise.resolve();
       });
@@ -1457,10 +1475,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Rotate page' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Rotate page');
       await act(async () => {
         await Promise.resolve();
       });
@@ -1613,10 +1628,7 @@ describe('App', () => {
       // `settings.test.ts` covers, and the surface above, which renders it.
       const { settings } = await withDocument();
 
-      await act(async () => {
-        screen.getByRole('button', { name: 'Split view' }).click();
-        await Promise.resolve();
-      });
+      await pressCommand('Split view');
 
       expect(settings.get(SPLIT_VIEW_SETTING.id)).toBe(true);
       expect(document.querySelectorAll('.m-page-list')).toHaveLength(2);

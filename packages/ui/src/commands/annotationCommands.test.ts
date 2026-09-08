@@ -1,4 +1,6 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
+
+import { GROUP_MARKUP } from '../messages/en.js';
 import { describe, expect, it } from 'vitest';
 
 import { PLAIN_STYLE } from '../annotations/annotationStyle.js';
@@ -185,20 +187,37 @@ describe('rectangleToolCommand', () => {
   });
 
   it('gives each control its own place, so two do not claim one slot', () => {
-    const orders = shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined })
-      .flatMap((command) => command.placements)
-      .map((placement) => (placement.surface === 'quick-toolbar' ? placement.order : -1));
+    // THE RIBBON'S ORDERS NOW, because that is where these tools are. The
+    // surface moved on 2026-09-08 and the property did not: two tools sharing a
+    // number fall back to an id comparison, which is deterministic and is not
+    // what anybody meant to declare.
+    const placements = shapeToolCommands({
+      activeTool: () => undefined,
+      onSelect: () => undefined,
+    }).flatMap((command) => command.placements);
+    const orders = placements
+      .filter((placement) => placement.surface === 'ribbon')
+      .map((placement) => placement.order);
     expect(new Set(orders).size).toBe(orders.length);
-    expect(orders).not.toContain(-1);
+    // AND EVERY TOOL IS IN THE RIBBON, which is the half a filter can lose: a
+    // tool placed nowhere contributes no order, so the uniqueness above would
+    // pass for a set of one.
+    expect(orders).toHaveLength(
+      shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined }).length,
+    );
   });
 
-  it('is placed where a person can reach it, and not on a ribbon nothing renders', () => {
-    // §7 puts a drawing tool on the ribbon's Comment section, and
-    // `projections.ts` computes a ribbon model nothing renders — so a ribbon
-    // placement today would register into nothing, which is the display-only
-    // sin arriving through the registry rather than through a button.
+  it('is placed in the ribbon SECTION §7 names, and nowhere else', () => {
+    // This case read *"and not on a ribbon nothing renders"* while no ribbon
+    // projection was mounted, and it was right then: a placement into a surface
+    // that does not exist is the display-only sin arriving through the registry.
+    // The ribbon landed on 2026-09-08 and the reasoning inverts — a drawing tool
+    // ALSO on the floating pill would be the same button twice on screen, since
+    // both are visible at once. §10.3's pill list is select, hand, text
+    // selection, zoom, crop, snapshot, bookmark and comment; a rectangle is
+    // none of them.
     expect(built(undefined).command.placements).toStrictEqual([
-      { surface: 'quick-toolbar', order: 40 },
+      { surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 40 },
     ]);
   });
 });

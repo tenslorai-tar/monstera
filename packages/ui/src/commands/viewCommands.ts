@@ -1,6 +1,8 @@
 import {
   DARK_PAGE_TITLE,
   GRID_TITLE,
+  GROUP_DISPLAY,
+  GROUP_FIND,
   LOUPE_TITLE,
   PALETTE_TITLE,
   RULERS_TITLE,
@@ -70,7 +72,12 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
     id: 'view.toggle-rulers',
     title: RULERS_TITLE,
     shortcut: 'Ctrl+R',
-    placements: [{ surface: 'quick-toolbar', order: 90 }],
+    // TOOLS › DISPLAY, which is where `docs/FEATURES.md`'s D1 heading puts the
+    // display controls. Its row said "one line to move on the day the ribbon
+    // lands" and this is that line — MOVED rather than added, because the pill
+    // and a ribbon section are both on screen at once and §10.3's list for the
+    // pill does not include the rulers.
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 50 }],
     when: hasDocument,
     run: (): void => {
       // READ THROUGH THE STORE, not from a captured value: the command object is
@@ -102,7 +109,13 @@ export function commandPaletteCommand(deps: { readonly onOpen: () => void }): Ui
     id: 'view.command-palette',
     title: PALETTE_TITLE,
     shortcut: 'Ctrl+K',
-    placements: [],
+    // HOME › FIND, beside the find bar's own control, because both answer
+    // "where is the thing I am looking for" — one in the document, one in the
+    // application. §10.3 also puts a command search in the title bar; that is a
+    // second SURFACE for the same command when the title bar is built, not a
+    // reason for this one to appear nowhere. It carried an empty array while no
+    // ribbon existed, which was the honest state and is no longer.
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FIND, order: 20 }],
     run: (): void => {
       deps.onOpen();
     },
@@ -115,7 +128,9 @@ export function toggleGridCommand(deps: { readonly settings: SettingsStore }): U
     id: 'view.toggle-grid',
     title: GRID_TITLE,
     shortcut: 'Ctrl+G',
-    placements: [{ surface: 'quick-toolbar', order: 100 }],
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 60 },
+    ],
     when: hasDocument,
     run: (): void => {
       deps.settings.set(GRID_SETTING.id, deps.settings.get(GRID_SETTING.id) !== true);
@@ -129,7 +144,9 @@ export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): 
     id: 'view.toggle-loupe',
     title: LOUPE_TITLE,
     shortcut: 'Ctrl+Shift+L',
-    placements: [{ surface: 'quick-toolbar', order: 120 }],
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 80 },
+    ],
     when: hasDocument,
     run: (): void => {
       deps.settings.set(LOUPE_SETTING.id, deps.settings.get(LOUPE_SETTING.id) !== true);
@@ -148,7 +165,9 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
     id: 'view.toggle-split',
     title: SPLIT_VIEW_TITLE,
     shortcut: 'Ctrl+Shift+E',
-    placements: [{ surface: 'quick-toolbar', order: 130 }],
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90 },
+    ],
     when: hasDocument,
     run: (): void => {
       deps.settings.set(SPLIT_VIEW_SETTING.id, deps.settings.get(SPLIT_VIEW_SETTING.id) !== true);
@@ -167,7 +186,9 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
     id: 'view.toggle-dark-page',
     title: DARK_PAGE_TITLE,
     shortcut: 'Ctrl+Shift+D',
-    placements: [{ surface: 'quick-toolbar', order: 110 }],
+    placements: [
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70 },
+    ],
     when: hasDocument,
     run: (): void => {
       deps.settings.set(DARK_PAGE_SETTING.id, deps.settings.get(DARK_PAGE_SETTING.id) !== true);
