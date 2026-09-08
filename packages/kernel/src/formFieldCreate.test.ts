@@ -37,13 +37,42 @@ const PLACED: AnnotationRect = { x0: 100, y0: 100, x1: 220, y1: 124 };
 /** What `PLACED` must read as in the file, in the order `/Rect` holds. */
 const PLACED_RECT = [100, 100, 220, 124] as const;
 
-const TEXT_FIELD: CommandOfKind<'createFormField'> = {
-  kind: 'createFormField',
-  page: 0,
+/**
+ * The clause only THIS build's refusal carries.
+ *
+ * pdf-lib's own message says *"A field already exists with the specified
+ * name"*, and so did this build's until 2026-09-08 — at which point deleting
+ * the guard entirely left all 22 cases green, because the value fell through to
+ * a refusal that says the same words. Matching a clause pdf-lib never writes is
+ * what makes a green here mean the guard ran.
+ */
+const OURS = /either is a path prefix of the other/iu;
+
+/** One placement, which is what these cases vary. */
+const TEXT_FIELD: CommandOfKind<'createFormField'>['fields'][number] = {
   rect: PLACED,
   name: 'applicant.name',
   field: { type: 'text' },
 };
+
+/**
+ * The command placing one field, with whatever a case is about overridden.
+ *
+ * A builder rather than a constant since the payload became **plural** on
+ * 2026-09-08: the five drawing tools each send one field, and what made it a
+ * list is flat-field detection, where accepting twenty candidates is one
+ * decision and therefore one undo. Every case below is about a single
+ * placement, so the list shape belongs in one place rather than in each of them.
+ *
+ * @param over what this case changes about the placement
+ * @param page which page, for the one case that names a page it does not have
+ */
+function creating(
+  over: Partial<CommandOfKind<'createFormField'>['fields'][number]> = {},
+  page = 0,
+): CommandOfKind<'createFormField'> {
+  return { kind: 'createFormField', page, fields: [{ ...TEXT_FIELD, ...over }] };
+}
 
 /**
  * A page of a named shape, with an existing field when one is wanted.
@@ -136,7 +165,7 @@ async function textOf(bytes: Uint8Array, name: string): Promise<string> {
 
 describe('createFormField — the five kinds pdf-lib has a factory for', () => {
   it('creates a text field MuPDF reads back by name and kind', async () => {
-    const made = await applyCreateFormField(await pageOf({}), TEXT_FIELD);
+    const made = await applyCreateFormField(await pageOf({}), creating());
 
     expect(await widgets(made)).toStrictEqual([
       { type: 'text', name: 'applicant.name', options: [] },
@@ -148,41 +177,42 @@ describe('createFormField — the five kinds pdf-lib has a factory for', () => {
 
     expect(
       await widgets(
-        await applyCreateFormField(blank, { ...TEXT_FIELD, field: { type: 'checkbox' } }),
+        await applyCreateFormField(blank, creating({ field: { type: 'checkbox' } })),
       ),
     ).toStrictEqual([{ type: 'checkbox', name: 'applicant.name', options: [] }]);
 
     expect(
       await widgets(
-        await applyCreateFormField(blank, {
-          ...TEXT_FIELD,
-          field: { type: 'dropdown', options: ['Dr', 'Mr', 'Ms'] },
-        }),
+        await applyCreateFormField(
+          blank,
+          creating({ field: { type: 'dropdown', options: ['Dr', 'Mr', 'Ms'] } }),
+        ),
       ),
     ).toStrictEqual([{ type: 'combobox', name: 'applicant.name', options: ['Dr', 'Mr', 'Ms'] }]);
 
     expect(
       await widgets(
-        await applyCreateFormField(blank, {
-          ...TEXT_FIELD,
-          field: { type: 'listbox', options: ['English', 'Dutch'] },
-        }),
+        await applyCreateFormField(
+          blank,
+          creating({ field: { type: 'listbox', options: ['English', 'Dutch'] } }),
+        ),
       ),
     ).toStrictEqual([{ type: 'listbox', name: 'applicant.name', options: ['English', 'Dutch'] }]);
   });
 
   it('a radio group is ONE field, and a second option joins it rather than colliding', async () => {
-    const first = await applyCreateFormField(await pageOf({}), {
-      ...TEXT_FIELD,
-      name: 'applicant.post',
-      field: { type: 'radio', option: 'first' },
-    });
-    const both = await applyCreateFormField(first, {
-      ...TEXT_FIELD,
-      rect: { x0: 240, y0: 100, x1: 260, y1: 120 },
-      name: 'applicant.post',
-      field: { type: 'radio', option: 'second' },
-    });
+    const first = await applyCreateFormField(
+      await pageOf({}),
+      creating({ name: 'applicant.post', field: { type: 'radio', option: 'first' } }),
+    );
+    const both = await applyCreateFormField(
+      first,
+      creating({
+        rect: { x0: 240, y0: 100, x1: 260, y1: 120 },
+        name: 'applicant.post',
+        field: { type: 'radio', option: 'second' },
+      }),
+    );
 
     // TWO WIDGETS, ONE NAME, and both carry both options — which is what makes
     // this a group rather than two fields that happen to be near each other.
@@ -193,7 +223,7 @@ describe('createFormField — the five kinds pdf-lib has a factory for', () => {
   });
 
   it('creates no VALUE, because filling is MuPDF’s row', async () => {
-    const made = await applyCreateFormField(await pageOf({}), TEXT_FIELD);
+    const made = await applyCreateFormField(await pageOf({}), creating());
 
     // The one assertion that separates *created empty* from *created with
     // something*: a created field a person has not filled must read as empty,
@@ -204,7 +234,7 @@ describe('createFormField — the five kinds pdf-lib has a factory for', () => {
 
 describe('createFormField — where the rectangle lands', () => {
   it('writes the command’s rectangle into /Rect verbatim on an upright page', async () => {
-    const made = await applyCreateFormField(await pageOf({}), TEXT_FIELD);
+    const made = await applyCreateFormField(await pageOf({}), creating());
 
     expect((await placement(made)).rect).toStrictEqual([...PLACED_RECT]);
   });
@@ -215,14 +245,14 @@ describe('createFormField — where the rectangle lands', () => {
     // both answers agree on it.
     const made = await applyCreateFormField(
       await pageOf({ crop: [30, 70, 380, 560] }),
-      TEXT_FIELD,
+      creating(),
     );
 
     expect((await placement(made)).rect).toStrictEqual([...PLACED_RECT]);
   });
 
   it('writes the same rectangle on a /Rotate 90 page, and turns the CONTENT to match', async () => {
-    const made = await applyCreateFormField(await pageOf({ rotate: 90 }), TEXT_FIELD);
+    const made = await applyCreateFormField(await pageOf({ rotate: 90 }), creating());
     const landed = await placement(made);
 
     // BOTH HALVES, and neither alone is the property. The rectangle says where
@@ -238,7 +268,7 @@ describe('createFormField — where the rectangle lands', () => {
     // THE OTHER TWO TURNS, because the pre-image was written from the 90-degree
     // reading and a formula extrapolated from one turn is three assumptions.
     for (const rotate of [180, 270]) {
-      const made = await applyCreateFormField(await pageOf({ rotate }), TEXT_FIELD);
+      const made = await applyCreateFormField(await pageOf({ rotate }), creating());
       const landed = await placement(made);
       expect(landed.rect).toStrictEqual([...PLACED_RECT]);
       expect(landed.turn).toBe(rotate);
@@ -249,7 +279,7 @@ describe('createFormField — where the rectangle lands', () => {
     // The control for the three above: without it, a writer that turned
     // everything by 90 would satisfy every rotated case and this file would say
     // the turn tracks the page.
-    expect((await placement(await applyCreateFormField(await pageOf({}), TEXT_FIELD))).turn).toBe(
+    expect((await placement(await applyCreateFormField(await pageOf({}), creating()))).turn).toBe(
       0,
     );
   });
@@ -258,10 +288,10 @@ describe('createFormField — where the rectangle lands', () => {
     // The schema deliberately does not normalise — a drag runs in whichever
     // direction the pointer went — so the kernel does, and this is the case
     // that says so rather than a comment.
-    const made = await applyCreateFormField(await pageOf({}), {
-      ...TEXT_FIELD,
-      rect: { x0: PLACED.x1, y0: PLACED.y1, x1: PLACED.x0, y1: PLACED.y0 },
-    });
+    const made = await applyCreateFormField(
+      await pageOf({}),
+      creating({ rect: { x0: PLACED.x1, y0: PLACED.y1, x1: PLACED.x0, y1: PLACED.y0 } }),
+    );
 
     expect((await placement(made)).rect).toStrictEqual([...PLACED_RECT]);
   });
@@ -283,18 +313,21 @@ describe('createFormField — what it refuses', () => {
    * refuses. Verified by that mutation: with the guard removed, both cases go
    * red instead of green.
    */
-  const OURS = /either is a path prefix of the other/iu;
+  // AT MODULE SCOPE since 2026-09-08, because the plural payload gave it a
+  // second caller in another `describe` — and two spellings of the clause that
+  // separates this build's refusal from pdf-lib's would be exactly the thing
+  // the mutation caught, one file along.
 
   it('refuses a name the document already carries, and says so in its OWN words', async () => {
     const taken = await pageOf({ existing: 'applicant.name' });
 
-    await expect(applyCreateFormField(taken, TEXT_FIELD)).rejects.toThrow(OURS);
+    await expect(applyCreateFormField(taken, creating())).rejects.toThrow(OURS);
   });
 
   it('refuses a name that is a PREFIX of an existing one, because a dot makes a parent', async () => {
     const taken = await pageOf({ existing: 'applicant.name' });
 
-    await expect(applyCreateFormField(taken, { ...TEXT_FIELD, name: 'applicant' })).rejects.toThrow(
+    await expect(applyCreateFormField(taken, creating({ name: 'applicant' }))).rejects.toThrow(
       OURS,
     );
   });
@@ -306,7 +339,7 @@ describe('createFormField — what it refuses', () => {
     const taken = await pageOf({ existing: 'applicant' });
 
     await expect(
-      applyCreateFormField(taken, { ...TEXT_FIELD, name: 'applicant.name' }),
+      applyCreateFormField(taken, creating({ name: 'applicant.name' })),
     ).rejects.toThrow(OURS);
   });
 
@@ -318,7 +351,7 @@ describe('createFormField — what it refuses', () => {
     const taken = await pageOf({ existing: 'applicant.name' });
 
     expect(
-      (await widgets(await applyCreateFormField(taken, { ...TEXT_FIELD, name: 'applicant.age' })))
+      (await widgets(await applyCreateFormField(taken, creating({ name: 'applicant.age' }))))
         .map((widget) => widget.name),
     ).toStrictEqual(['applicant.name', 'applicant.age']);
   });
@@ -327,12 +360,12 @@ describe('createFormField — what it refuses', () => {
     const taken = await pageOf({ existing: 'applicant.name' });
 
     await expect(
-      applyCreateFormField(taken, { ...TEXT_FIELD, field: { type: 'radio', option: 'first' } }),
+      applyCreateFormField(taken, creating({ field: { type: 'radio', option: 'first' } })),
     ).rejects.toThrow(/not a radio group/u);
   });
 
   it('refuses a page index outside the document', async () => {
-    await expect(applyCreateFormField(await pageOf({}), { ...TEXT_FIELD, page: 4 })).rejects.toThrow(
+    await expect(applyCreateFormField(await pageOf({}), creating({}, 4))).rejects.toThrow(
       /outside this document/u,
     );
   });
@@ -341,7 +374,7 @@ describe('createFormField — what it refuses', () => {
     // Without this every refusal above could be a command that refuses
     // everything, which is the same observation as a command that refuses the
     // right thing.
-    await expect(applyCreateFormField(await pageOf({}), TEXT_FIELD)).resolves.toBeInstanceOf(
+    await expect(applyCreateFormField(await pageOf({}), creating())).resolves.toBeInstanceOf(
       Uint8Array,
     );
   });
@@ -350,7 +383,7 @@ describe('createFormField — what it refuses', () => {
 describe('createFormField — what it leaves alone', () => {
   it('preserves a field that was already there, and its value', async () => {
     const carrying = await pageOf({ existing: 'existing.text' });
-    const made = await applyCreateFormField(carrying, TEXT_FIELD);
+    const made = await applyCreateFormField(carrying, creating());
 
     expect((await widgets(made)).map((widget) => widget.name)).toStrictEqual([
       'existing.text',
@@ -361,8 +394,8 @@ describe('createFormField — what it leaves alone', () => {
 
   it('is reproducible, and preserves the document’s own /ModDate', async () => {
     const original = await pageOf({});
-    const once = await applyCreateFormField(original, TEXT_FIELD);
-    const twice = await applyCreateFormField(original, TEXT_FIELD);
+    const once = await applyCreateFormField(original, creating());
+    const twice = await applyCreateFormField(original, creating());
 
     expect(Buffer.from(twice)).toStrictEqual(Buffer.from(once));
 
@@ -384,7 +417,7 @@ describe('createFormField — what it leaves alone', () => {
 
 describe('createFormField — undo, and the schema’s own bounds', () => {
   it('captures nothing, and says why in terms of the /AcroForm rather than the page', async () => {
-    const refused = await captureCreateFormField(await pageOf({}), TEXT_FIELD);
+    const refused = await captureCreateFormField(await pageOf({}), creating());
 
     expect(refused.captured).toBe(false);
     // The REASON, not just the refusal: this command's is measured and differs
@@ -404,25 +437,69 @@ describe('createFormField — undo, and the schema’s own bounds', () => {
 
   it('the schema refuses a name with an empty segment', () => {
     // A dot makes a parent, so `a..b` asks for a node whose name is nothing.
-    expect(createFormFieldSchema.safeParse({ ...TEXT_FIELD, name: 'a..b' }).success).toBe(false);
-    expect(createFormFieldSchema.safeParse({ ...TEXT_FIELD, name: '.leading' }).success).toBe(false);
-    expect(createFormFieldSchema.safeParse({ ...TEXT_FIELD, name: 'trailing.' }).success).toBe(
-      false,
-    );
+    expect(createFormFieldSchema.safeParse(creating({ name: 'a..b' })).success).toBe(false);
+    expect(createFormFieldSchema.safeParse(creating({ name: '.leading' })).success).toBe(false);
+    expect(createFormFieldSchema.safeParse(creating({ name: 'trailing.' })).success).toBe(false);
   });
 
   it('the schema accepts an ordinary dotted name, so the refusal is not a ban on dots', () => {
     // The control the three refusals above need: a rule that rejected every
     // dotted name would satisfy all of them.
-    expect(createFormFieldSchema.safeParse(TEXT_FIELD).success).toBe(true);
+    expect(createFormFieldSchema.safeParse(creating()).success).toBe(true);
   });
 
   it('the schema refuses a choice field with no options', () => {
     expect(
-      createFormFieldSchema.safeParse({
-        ...TEXT_FIELD,
-        field: { type: 'dropdown', options: [] },
-      }).success,
+      createFormFieldSchema.safeParse(creating({ field: { type: 'dropdown', options: [] } }))
+        .success,
     ).toBe(false);
+  });
+
+  it('the schema refuses a create with NO fields, which would be a command that does nothing', () => {
+    // The payload became a list on 2026-09-08, and an empty one is the state
+    // the list made expressible: a version bump, a log entry and an undo step
+    // for a document nothing happened to. `.min(1)` makes it unrepresentable
+    // rather than a no-op the bus quietly records.
+    expect(createFormFieldSchema.safeParse({ kind: 'createFormField', page: 0, fields: [] }).success).toBe(
+      false,
+    );
+  });
+
+  it('MINTS SEVERAL FIELDS IN ONE COMMAND, which is what accepting a page of candidates is', async () => {
+    // ONE decision, one log entry, one undo. A loop in the surface would be
+    // three version bumps of which two are stale — `removeAnnotation`'s
+    // argument for a plural payload, on the other walk.
+    const made = await applyCreateFormField(await pageOf({}), {
+      kind: 'createFormField',
+      page: 0,
+      fields: [
+        { rect: PLACED, name: 'first', field: { type: 'text' } },
+        { rect: { x0: 100, y0: 140, x1: 220, y1: 164 }, name: 'second', field: { type: 'text' } },
+        { rect: { x0: 100, y0: 180, x1: 116, y1: 196 }, name: 'third', field: { type: 'checkbox' } },
+      ],
+    });
+
+    expect(await widgets(made)).toStrictEqual([
+      { type: 'text', name: 'first', options: [] },
+      { type: 'text', name: 'second', options: [] },
+      { type: 'checkbox', name: 'third', options: [] },
+    ]);
+  });
+
+  it('CONTROL: a batch naming one field twice is refused, and by THIS build’s rule', async () => {
+    // The name guard runs against the form as it stands, so the second
+    // placement meets the first. Matched on the clause only this build's
+    // message carries, for the reason the mutation on 2026-09-08 established:
+    // pdf-lib's own refusal says "already exists" too.
+    await expect(
+      applyCreateFormField(await pageOf({}), {
+        kind: 'createFormField',
+        page: 0,
+        fields: [
+          { rect: PLACED, name: 'twice', field: { type: 'text' } },
+          { rect: { x0: 100, y0: 140, x1: 220, y1: 164 }, name: 'twice', field: { type: 'text' } },
+        ],
+      }),
+    ).rejects.toThrow(OURS);
   });
 });

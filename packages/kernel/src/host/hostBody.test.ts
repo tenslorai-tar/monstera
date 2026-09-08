@@ -151,6 +151,9 @@ function start(stream: HostByteStream) {
       exportFormData: () => {
         throw new Error('no case here exports form data');
       },
+      flatFields: () => {
+        throw new Error('no case here proposes fields');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

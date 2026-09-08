@@ -381,6 +381,18 @@ export interface BrowserShimOptions {
   readonly formFields?: readonly (readonly ShimFormField[])[];
 
   /**
+   * What `document.flatFieldCandidates` proposes.
+   *
+   * A single list rather than a sequence like `formFields`, because nothing
+   * here re-reads it: a proposal is asked for once and reviewed.
+   */
+  readonly flatFieldCandidates?: readonly {
+    readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+    readonly label: string;
+    readonly name: string;
+  }[];
+
+  /**
    * What a previous run stored, as `settings.load` will answer it.
    *
    * A fixture rather than something a test writes first through
@@ -1035,6 +1047,26 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       const fields = fieldLists.length > 1 ? (fieldLists.shift() ?? []) : (fieldLists[0] ?? []);
       return Promise.resolve(ok({ version: asDocVersion(current), fields, truncated: false }));
+    },
+
+    /**
+     * The page's field candidates, from the scripted answer.
+     *
+     * SEEDED RATHER THAN EMPTY, for `document.formFields`' reason and one of
+     * its own: what this feeds is a review surface, and a review of nothing is
+     * a dialog with no rows — which cannot say whether the accept sends what
+     * was ticked.
+     */
+    'document.flatFieldCandidates': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          candidates: options.flatFieldCandidates ?? [],
+          truncated: false,
+        }),
+      );
     },
 
     'document.duplicatePages': ({ docId }) => {

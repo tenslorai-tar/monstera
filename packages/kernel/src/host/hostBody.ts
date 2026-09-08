@@ -13,6 +13,7 @@ import {
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
+  type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
@@ -99,6 +100,8 @@ export interface HostBodyDependencies {
   readonly snapshot: HostSnapshot;
   /** How this process encodes the form's data. `exportFormData`. */
   readonly exportFormData: HostFormDataExport;
+  /** How this process proposes fields on a flat page. `detectFlatFields`. */
+  readonly flatFields: HostFlatFieldsReader;
   /** Where session ids come from. `cryptoBytes`. */
   readonly tokens: TokenBytesSource;
   /**
@@ -178,6 +181,7 @@ export function startEngineHost(
       extract: dependencies.extract,
       snapshot: dependencies.snapshot,
       exportFormData: dependencies.exportFormData,
+      flatFields: dependencies.flatFields,
     }),
     transport: {
       write: stream.write,

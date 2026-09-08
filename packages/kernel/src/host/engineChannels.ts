@@ -279,6 +279,17 @@ export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
 export const ENGINE_FORM_FIELD_VALUES_MAX = 256;
 
 /**
+ * How many field candidates one page may propose, and how long a label may be.
+ *
+ * `MAX_FLAT_CANDIDATES`' number on this wire, and it is the create's bound
+ * rather than a second opinion about it: a proposal a person accepts becomes
+ * one `createFormField`, so a page that could propose more than that command
+ * carries would offer something the accept could not send.
+ */
+export const ENGINE_FLAT_CANDIDATES_MAX = 256;
+export const ENGINE_FLAT_LABEL_MAX = 128;
+
+/**
  * One annotation, as it crosses from the host.
  *
  * **`kind` is a closed union, not the document's `/Subtype`.** A subtype is a
@@ -1424,6 +1435,38 @@ export const engineChannels = {
     // the general code would tell them the export failed and nothing they could
     // act on.
     ['no-such-session', 'export-failed', 'unrepresentable'],
+  ),
+
+  /**
+   * Where one page's fields probably are, on a page that has none.
+   *
+   * **Per PAGE and not per document**, unlike `engine/form-fields` beside it,
+   * and the difference is what the answer is for: the field list feeds a panel
+   * that describes the whole form, and this feeds a proposal a person reviews
+   * on the page in front of them. Walking every page of a long document to
+   * offer a hundred candidates is a question nobody asked.
+   */
+  'engine/flat-fields': channel(
+    'Proposes where a flat page’s form fields probably are.',
+    z.object({ session: sessionSchema, page: z.number().int().nonnegative() }).strict(),
+    z
+      .object({
+        candidates: z
+          .array(
+            z
+              .object({
+                rect: annotationRectSchema,
+                label: z.string().max(ENGINE_FLAT_LABEL_MAX),
+                name: z.string().max(ENGINE_FLAT_LABEL_MAX),
+              })
+              .strict(),
+          )
+          .max(ENGINE_FLAT_CANDIDATES_MAX),
+        /** Whether the bound stopped the walk. See `engine/duplicate-pages`. */
+        truncated: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session'],
   ),
 
   'engine/duplicate-pages': channel(

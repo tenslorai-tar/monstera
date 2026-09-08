@@ -886,6 +886,269 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-08 — Stage audit `040be78..3d87cee`: a channel nothing drives, and a reader whose hard shape has no case
+
+21 commits, 95 files: the create, flatten, export, import and detection rows of
+D5, plus the asset-axis amendment. `npm run audit:scope` printed the range, and
+the scope's own columns are what this worked from.
+
+**The audit is recorded because the NEXT commit would have crossed the batch**,
+not because the range had — the gate blocks before the crossing rather than
+reporting after it, and the range was 95 files of 100 when it fired.
+
+### 1. Root cause or workaround?
+
+Every correction in the range names a mechanism, and three are root-cause fixes
+to a class rather than an instance: `snapRotation` moved to `@monstera/shared`
+because a pdf-lib module needed the one resolver and could not reach it behind a
+MuPDF value import; `fieldValues` **replaced** `getValue()` rather than sitting
+beside it, so the module holds one reading of `/V`; and `openForWriting` became
+the one pinned pdf-lib load with a lint rule making the bare form unavailable.
+
+**One instance was fixed and its class left open — AAAAAA-3.** `1f1de8c` fixed
+`--space-3` and its commit message said the class was owed. Nothing else did: no
+document named it, no check reported it, and the only thing between that
+sentence and its being forgotten was somebody re-reading a commit message —
+which is *a rule you must recall*, one layer along. Closed in the range after
+this one by `definedTokens.mjs`, and a finding anyway, because the owing lived
+for eight commits in the one place range-scoped tooling never looks.
+
+No repair in the range can regenerate, no override stands in for coverage, and
+no check was loosened (see item 4).
+
+### 2. Verified against the easy shape only?
+
+The create row was measured on `/Rotate 90` and on a CropBox starting at
+(30, 70) rather than on the upright page where every candidate answer agrees;
+the detector likewise. The export was measured against values chosen to close
+each format's constructs rather than ordinary words, and against the fields
+nobody filled — which the first fixture, where every stateful field is on, could
+not answer.
+
+**AAAAAA-2 — `fieldValues` has no case for the shape `deleteFormFields` calls
+the hard one.** It reads the widget's own `/V` first and walks `/Parent` after,
+because a merged field — `/FT`, `/T` and `/V` on the same dictionary as
+`/Subtype /Widget` — carries the value on the widget, and every field
+`@cantoo/pdf-lib` writes carries it on the parent. **Every fixture is
+pdf-lib's**, so the first read is exercised only by fields with no `/V`
+anywhere, where returning `[]` cannot be told from the walk finding nothing.
+`deleteFormFields` carries a case for the merged shape; the reader every panel,
+export and undo now depends on does not. **Open** — one fixture: a merged field
+carrying `/V`, read through `readFormFields`.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+No. Nothing moved between asserted and derived in either direction. The two
+bounds that arrived — `ENGINE_FLAT_CANDIDATES_MAX` and `MAX_FORM_DATA_BYTES` —
+are literals in schemas, as their neighbours are, and no verdict became
+unverifiable on a job that installs nothing.
+
+### 3. Would CI have caught it?
+
+**Answered from the affected set and from a run, not from what the range was
+about.** `affectedProofs.mjs` over the 95 changed files names **10** proofs:
+`proof:guards`, `proof:hookintegrity`, `proof:hookprobe`, `proof:preload`,
+`proof:rendererpolicy`, `proof:canvaspixels`, `proof:rendergeometry`,
+`proof:contract`, `proof:auditscope`, `proof:lintrules`. Every one is an
+unconditional step on both matrix legs.
+
+**AAAAAA-4 — the board is green two commits short of the range's end.** The
+reading is `GREEN at 8ae1cb2c68e29a7cefb87164d0695fb032aaf2b1: Guards=success,
+CI=success`; `1820cbd` is pushed and unread, `3d87cee` unpushed. So the affected
+set has run, on a sha that is not this range's last.
+
+**And two of this range's defects CI could not have seen at all**, which is the
+other half of the question: `--space-3`, because no check read CSS custom
+properties until the next range; and `getValue()` answering `""` for a
+multi-valued field, because nothing looked and every layer agreed with every
+other layer. Neither is a gap in the workflow's coverage of an existing check —
+both are checks that did not exist.
+
+**Is there a defect this machine cannot see?** The range added no branch keyed
+on provisioning. The one asymmetry is that the host round trip runs on Windows
+only, and `remoteLifecycle.test.ts` drives it here — which is what makes
+AAAAAA-1 a finding rather than an acceptable gap.
+
+### 4. Are the proofs non-vacuous?
+
+Six mutations were run and each reddened exactly what it should: the array
+branch of `fieldValues` (two cases), the `format` argument replaced by a literal
+in the desktop composition (one), the `<!DOCTYPE` refusal (two), the XFDF depth
+bound (one), the plan-pass refusal in the import (one), and the frame conversion
+in the detector (three).
+
+**Two mutations found comments rather than bugs**, and both are recorded in
+their own entries: the import's atomicity case re-read the fixture's BYTES,
+which no apply can change, so it compared the original with itself and survived
+a mutation that wrote inside the planning loop; and with the observable fixed it
+went red unmutated, because the plan pass validated nothing.
+
+**Proofs modified — 17 diffs, all read.** No check loosened. Two are
+strengthenings written in the previous audit's own recording commit:
+`pageImage.test.ts` and `pageToc.test.ts` gained a pinned `/ModDate` case,
+because byte equality is green whenever two saves land in one clock tick.
+`contract.proof.mjs`' `because` regex and union count MOVED with the new kinds
+rather than widening — the case still demands exactly one missing property.
+
+### 4a. Has every instrument passed a resolution test?
+
+Three arrived. `formDataExport.mjs` throws if the escaped and the naive encoder
+agree, and its symbol scan locates `getWidgets` before its silence about `fdf`
+means anything. `flatFieldDetection.mjs` carries a control on the walk and
+**caught two of its own defects before it measured anything** — a ground-truth
+join in the wrong coordinate frame, and a `holds text` column that read false
+for all thirty-two cells that visibly hold text. `formFieldCreate.mjs` was
+resolution-tested in the previous range.
+
+### 4b. Is any instrument a SEARCH with no positive control?
+
+`formDataExport.mjs`' symbol scan has one. `flatFieldDetection.mjs`' device walk
+has one, and its report prints matched and unmatched counts beside the score —
+which is what turned a table of `n/a` from *the rule decided nothing* into *the
+join is broken*. `definedTokens.mjs`, in the next range, carries two: the
+undeclared reference it must find and the valid one it must not report.
+
+### 4c. Does any check DERIVE its extent from the set it governs?
+
+One roster arrived — `definedTokens.proof.mjs`'s, in the next range — and its
+`cases` is a literal. Nothing in this range derived a count from the collection
+it polices.
+
+### 5. Executed, or asserted?
+
+Executed: every reading in the four measurement entries, the six mutations, and
+the round trips through MuPDF for all three export formats and all three import
+formats.
+
+**Asserted and not executed: AAAAAA-1.** `engine/exportFormData` has a channel,
+a handler, `remoteMupdfLifecycle.exportFormData`, a composition entry and a
+widened `RemoteMupdfWriter` type — and **no case calls it.**
+
+Every test that reaches the encoder goes through the LOCAL composition —
+`documentCommands.test.ts` builds `localFormData.encode` out of
+`serialiseFormData` directly — which bypasses the channel, the granted-directory
+write, the byte-count check and the whole round trip. `remoteLifecycle.test.ts`
+exists to drive exactly that trip and carries cases for `serialise`, `extract`
+and the snapshot; it gained `exportFormData` **in its dependency object** during
+this range and gained no case with it.
+
+*The first caller finds it* — and here the first caller is a person running the
+shipped application, because a seam whose every test injects its surfaces is
+unproven. Filling in a dependency to make a fixture compile is how a channel
+arrives looking covered.
+
+**Open.** The fix is one case in `remoteLifecycle.test.ts`: export through the
+joined halves and read the file back out of the granted directory, which is what
+the three beside it already do.
+
+### 6. Did architecture change BEFORE the feature, or underneath it?
+
+Before. The asset axis's rename is `d907d11`, an amendment with no code in it,
+and the code rename is `dc090ae` — both ahead of `8ae1cb2`, the import that
+needed them. The amendment records the member as a **mislabel corrected** rather
+than a widening learned since, because the second reading would be false and
+would leave the same mistake available next time.
+
+No feature in the range revealed an architecture that had to change underneath
+it. `createFormField`'s payload became plural, which is a payload change inside
+an existing seam rather than a seam moving.
+
+### 7. Do the documents still match the code?
+
+**The cross-document sweep NNN-4 asks for was run rather than assumed.**
+`npm run sweep:prose -- "asset: 'none' | 'image'"` finds the old spelling in
+four places, and each is correct where it stands: an amendment-log row and an
+ADR body are records of a moment, corrected by an appended note and never
+edited, and both notes are present. The ADR index row carries the correction
+too, which `check:docs` requires.
+
+**A comment claiming a control was corrected inside the range**, which is this
+item applied by the range to itself: `formFieldsChannel.test.ts` said *a member
+leaving is caught by `kindOf`'s cases*, which was true of six of the eight kinds
+and not of `other`. What holds it is the compiler.
+
+`docs/FEATURES.md`' D5 rows, `docs/ARCHITECTURE.md` §5 and §3's matrix, and
+ADR-0044 were read against the code they describe. §3's matrix is unmoved: this
+range added no writer of record.
+
+---
+
+### The four findings, in one place
+
+| # | finding | state |
+|---|---|---|
+| AAAAAA-1 | `engine/exportFormData` is registered, wired, and driven by nothing | **open** — one case in `remoteLifecycle.test.ts` |
+| AAAAAA-2 | `fieldValues` has no case for the merged field shape | **open** — one fixture |
+| AAAAAA-3 | the `--space-3` class stayed open for eight commits, carried only by a commit message | closed in the next range |
+| AAAAAA-4 | the board is green two commits short of the range's end | a reading to take, not a repair |
+
+Two of the four are cases nobody wrote, and both look identical to coverage from
+inside the files that would carry them — a dependency filled in to make a
+fixture compile, and a fixture set every one of whose members is the easy shape.
+
+---
+
+## 2026-09-08 — The detector proposes, and the scan the `--space-3` defect owed
+
+Two things, and the second is the tail item rather than the row.
+
+### 1. The row, built on the measurement above rather than on its name
+
+`createFormField`'s payload became a **list**. That is the change the row
+forced: accepting a page of proposed candidates is ONE decision, so it is one
+log entry and one undo, where a loop in the surface would be twenty version
+bumps of which nineteen are stale. The five drawing tools each send a
+one-element list, and the schema refuses an empty one — a create that mints
+nothing is a version bump for a document nothing happened to.
+
+**The detection is a read, the review is a dialog, and the accept is one
+command.** The dialog answers the NAMES that were ticked and the command rejoins
+them with the rectangles the channel returned, so there is one source for the
+geometry — a result carrying rectangles back out of a form control would be two,
+and the one that came through the control is the one that can be wrong.
+
+### 2. Two fixture findings, and the second was going to be the first
+
+**The rotated page's obvious fixture is the wrong one.** `/Rotate` turns the
+page for the reader and leaves the ink where it is, so a horizontal rule with
+`/Rotate 90` reads **sideways**: measured, a rule at user (150,700)–(540,700)
+arrives in display space at (699.5,149.5)–(700.5,540.5), vertical, with its
+label above rather than beside it. A detector that proposed a field there would
+be reading the file rather than the page — which is now its own case — and the
+geometry case draws its ink turned, so the rule is vertical in user space and
+horizontal on screen. Mutated: skipping the frame conversion reddens all three
+geometry cases and nothing else.
+
+**And the two readers do share a frame**, which had to be measured rather than
+assumed: the device and `toStructuredText` both report the rotated page.
+
+### 3. The scan the `--space-3` defect owed, and its own false positive
+
+`scripts/lib/definedTokens.mjs`: every `var(--name)` against every `--name:`
+declared, as a set difference. It exists because **nothing in this toolchain
+could have seen the defect** — TypeScript does not read CSS, ESLint lints none
+(ADR-0005 selects no CSS linter), the tests compute no styles, and the two CSS
+scans that do exist both ask whether a token's ROLE fits its context. Neither
+asks whether the token exists.
+
+Its first run over this repository **reported `app.css`' own explanation of the
+`--space-3` defect**, because the comment contains `var(--space-3)`. That is
+`withdrawnPhrases.mjs`' finding in another suit — match a unit the text actually
+has — and the unit is a declaration, not a line. Comments are blanked before the
+scan reads, with line breaks kept so a violation's line is still its line. The
+false positive is a case in the proof rather than a fixed bug with nothing
+pointing at it.
+
+Two controls, and the second is the one a *can it see* control cannot give: the
+fixture carries a reference to a property nothing declares **and** a valid one,
+and the scan refuses to report if it misses the first or flags the second — a
+scan that reported every reference would satisfy the first control perfectly.
+
+Clean over the tree: 3 files, 42 definitions, 256 references without a fallback,
+no violations.
+
+---
+
 ## 2026-09-08 — A field and an empty table cell are the same rectangle, and the measurement says what to do about it
 
 `scripts/research/flatFieldDetection.mjs`, before a line of *heuristic field

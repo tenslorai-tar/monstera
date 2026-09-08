@@ -119,6 +119,11 @@ export {
   serialiseFormData,
 } from './formData.js';
 export {
+  detectFlatFields,
+  type FlatFieldCandidate,
+  MAX_FLAT_CANDIDATES,
+} from './flatFields.js';
+export {
   NamelessFieldError,
   readXfdf,
   type XfdfField,

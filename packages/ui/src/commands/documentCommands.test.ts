@@ -12,6 +12,7 @@ import {
   exportFormDataFdfCommand,
   exportFormDataJsonCommand,
   exportFormDataXfdfCommand,
+  detectFlatFieldsCommand,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
@@ -808,6 +809,84 @@ describe('delete pages — the mutation-dialog gate', () => {
         props: { reason: 'too-large', limitBytes: 8 * 1024 * 1024 },
       },
     ]);
+  });
+
+  it('DETECTION ASKS, REVIEWS, AND SENDS ONE COMMAND CARRYING WHAT WAS TICKED', async () => {
+    // THE UI HALF, and the join no other case can make: the channel answers
+    // candidates, the dialog answers NAMES, and this rejoins them with the
+    // rectangles the channel returned. A command that sent the rectangles back
+    // out of the dialog would have two sources for one geometry, and the one
+    // that came through a form control is the one that can be wrong.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.flatFieldCandidates') {
+        return Promise.resolve(
+          ok({
+            version: asDocVersion(1),
+            candidates: [
+              { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name' },
+              { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, label: 'Date:', name: 'Date' },
+            ],
+            truncated: false,
+          }),
+        );
+      }
+      return Promise.resolve(
+        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0 }),
+      );
+    });
+
+    await detectFlatFieldsCommand({
+      client,
+      onApplied: () => undefined,
+      // ONE OF THE TWO REJECTED, which is what makes this a review rather than
+      // a confirmation: a command that sent everything it was offered would
+      // pass a case where the reader accepted both.
+      ask: () => Promise.resolve({ accepted: ['Date'] }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      { id: 'document.flatFieldCandidates', params: { docId: DOC, page: 3 } },
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'createFormField',
+            page: 3,
+            // ONE COMMAND, one entry, and the rectangle is the CHANNEL'S.
+            fields: [
+              {
+                rect: { x0: 10, y0: 60, x1: 110, y1: 80 },
+                name: 'Date',
+                field: { type: 'text' },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
+  it('SENDS NOTHING when the review is dismissed, which is the mutation-dialog gate', async () => {
+    // A dismissal must dispatch nothing, and the absence of a value is the
+    // guard rather than a flag beside it.
+    const sent: string[] = [];
+    const client = createClient(channels, (id) => {
+      sent.push(id);
+      return Promise.resolve(
+        ok({ version: asDocVersion(1), candidates: [], truncated: false }),
+      );
+    });
+
+    await detectFlatFieldsCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual(['document.flatFieldCandidates']);
   });
 
   it('BATES DISPATCHES THE PARTS, not a formatted identifier', async () => {

@@ -102,6 +102,8 @@
     "check:tokencontrast": "node scripts/lib/tokenContrast.mjs",
     "proof:bordertokens": "node scripts/proofs/borderTokens.proof.mjs",
     "check:bordertokens": "node scripts/lib/borderTokens.mjs",
+    "proof:definedtokens": "node scripts/proofs/definedTokens.proof.mjs",
+    "check:definedtokens": "node scripts/lib/definedTokens.mjs",
     "proof:typeonlyexports": "node scripts/proofs/typeOnlyExports.proof.mjs",
     "check:typeonlyexports": "node scripts/lib/typeOnlyExports.mjs",
     "proof:emittedsideeffects": "node scripts/proofs/emittedSideEffects.proof.mjs",

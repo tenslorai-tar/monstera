@@ -29,6 +29,7 @@ import {
   readLayers,
   readPageLinks,
   readPageText,
+  detectFlatFields,
   readFormData,
   serialiseFormData,
   snapshotRegion,
@@ -54,6 +55,7 @@ import {
   type CopySource,
   type ImageSource,
   type DocumentAnnotationsReader,
+  type DocumentFlatFieldsReader,
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
@@ -348,6 +350,16 @@ const localFormFields: DocumentFormFieldsReader = (id, sessions) => {
   return readFormFields(held);
 };
 
+const noFlatFields: DocumentFlatFieldsReader = () =>
+  Promise.reject(new Error('this case does not propose flat fields'));
+
+/** The candidate proposal's composition, per page. */
+const localFlatFields: DocumentFlatFieldsReader = (id, sessions, page) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return detectFlatFields(held, page);
+};
+
 const localDuplicates: DocumentDuplicatesReader = async (id, sessions) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
@@ -438,6 +450,7 @@ const INERT = {
   restore: noRestore,
   annotations: noAnnotations,
   formFields: noFormFields,
+  flatFields: noFlatFields,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -457,6 +470,7 @@ const LOCAL_READS = {
   layers: localLayers,
   annotations: localAnnotations,
   formFields: localFormFields,
+  flatFields: localFlatFields,
   duplicates: localDuplicates,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 

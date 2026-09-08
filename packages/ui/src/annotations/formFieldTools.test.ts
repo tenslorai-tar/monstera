@@ -94,13 +94,22 @@ describe('formFieldTools — each asks its own dialog and builds its own kind', 
     expect(command).toStrictEqual({
       kind: 'createFormField',
       page: 3,
-      // THE THIRD NUMBER. (20, 20) at zoom 2 on a crop starting at (50, 100) is
-      // (60, 390) in user space, and (120, 80) is (110, 360). A controller that
-      // passed pixels through would answer (20, 20) and (120, 80), which is a
-      // different rectangle on a different part of the page.
-      rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
-      name: 'applicant.name',
-      field: { type: 'text' },
+      // ONE FIELD IN A LIST. The payload became plural on 2026-09-08 for
+      // flat-field detection, where accepting a page of candidates is one
+      // decision; a drag is one field, and this asserts the tool sends exactly
+      // one rather than however many the list would accept.
+      fields: [
+        {
+          // THE THIRD NUMBER. (20, 20) at zoom 2 on a crop starting at (50, 100)
+          // is (60, 390) in user space, and (120, 80) is (110, 360). A
+          // controller that passed pixels through would answer (20, 20) and
+          // (120, 80), which is a different rectangle on a different part of
+          // the page.
+          rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
+          name: 'applicant.name',
+          field: { type: 'text' },
+        },
+      ],
     });
   });
 
@@ -110,7 +119,10 @@ describe('formFieldTools — each asks its own dialog and builds its own kind', 
     const command = await drag(toolWithId(tools, FORM_FIELD_CHECKBOX_TOOL_ID), [20, 20], [40, 40]);
 
     expect(asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_CHECKBOX_DIALOG_ID]);
-    expect(command).toMatchObject({ kind: 'createFormField', field: { type: 'checkbox' } });
+    expect(command).toMatchObject({
+      kind: 'createFormField',
+      fields: [{ field: { type: 'checkbox' } }],
+    });
   });
 
   it('the radio tool carries the option, and the name is the GROUP’s', async () => {
@@ -121,8 +133,7 @@ describe('formFieldTools — each asks its own dialog and builds its own kind', 
     expect(asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_RADIO_DIALOG_ID]);
     expect(command).toMatchObject({
       kind: 'createFormField',
-      name: 'applicant.post',
-      field: { type: 'radio', option: 'first' },
+      fields: [{ name: 'applicant.post', field: { type: 'radio', option: 'first' } }],
     });
   });
 
@@ -132,13 +143,13 @@ describe('formFieldTools — each asks its own dialog and builds its own kind', 
     const dropdown = toolsAnswering(answer);
     expect(
       await drag(toolWithId(dropdown.tools, FORM_FIELD_DROPDOWN_TOOL_ID), [20, 20], [120, 60]),
-    ).toMatchObject({ field: { type: 'dropdown', options: ['Dr', 'Mr'] } });
+    ).toMatchObject({ fields: [{ field: { type: 'dropdown', options: ['Dr', 'Mr'] } }] });
     expect(dropdown.asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_DROPDOWN_DIALOG_ID]);
 
     const listbox = toolsAnswering(answer);
     expect(
       await drag(toolWithId(listbox.tools, FORM_FIELD_LISTBOX_TOOL_ID), [20, 20], [120, 60]),
-    ).toMatchObject({ field: { type: 'listbox', options: ['Dr', 'Mr'] } });
+    ).toMatchObject({ fields: [{ field: { type: 'listbox', options: ['Dr', 'Mr'] } }] });
     expect(listbox.asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_LISTBOX_DIALOG_ID]);
   });
 

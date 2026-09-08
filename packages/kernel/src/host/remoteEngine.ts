@@ -14,6 +14,7 @@ import {
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
+  HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
   HostPageLinksReader,
@@ -344,6 +345,26 @@ export function remoteMupdfFormFields(
       await client['engine/form-fields']({ session: sessions.handleFor(session) }),
     );
     return { fields: answer.fields, truncated: answer.truncated };
+  };
+}
+
+/**
+ * One page's field candidates, over the boundary.
+ *
+ * `remoteMupdfFormFields`' shape with a page, and both halves come back for its
+ * reason: the truncation flag has one consumer and there is no reader shape
+ * here to strip it for.
+ */
+export function remoteMupdfFlatFields(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostFlatFieldsReader {
+  return async (session, page) => {
+    const answer = answered(
+      'engine/flat-fields',
+      await client['engine/flat-fields']({ session: sessions.handleFor(session), page }),
+    );
+    return { candidates: answer.candidates, truncated: answer.truncated };
   };
 }
 

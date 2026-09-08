@@ -15,6 +15,7 @@ import {
 import {
   type ByteImage,
   type CommandBus,
+  type FlatFieldCandidate,
   DocumentNotOpenError,
   type DocumentService,
   type PageGeometry,
@@ -796,6 +797,25 @@ export type ImportFormDataOutcome =
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'too-large'; readonly limitBytes: number };
 
+/**
+ * Proposes fields on one flat page, through whichever host is live.
+ *
+ * Per page, unlike every reader beside it, because what it feeds is a review of
+ * the page in front of the reader rather than a description of the document.
+ */
+export type DocumentFlatFieldsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }>;
+
+/** The candidates, stamped with the version the lane read them at. */
+export interface DocumentFlatFields {
+  readonly version: DocVersion;
+  readonly candidates: readonly FlatFieldCandidate[];
+  readonly truncated: boolean;
+}
+
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
   docId: DocId,
@@ -962,6 +982,7 @@ export interface DocumentCommandsParts {
    */
   readonly annotations: DocumentAnnotationsReader;
   readonly formFields: DocumentFormFieldsReader;
+  readonly flatFields: DocumentFlatFieldsReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -985,6 +1006,7 @@ export class DocumentCommands {
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
   readonly #formFields: DocumentFormFieldsReader;
+  readonly #flatFields: DocumentFlatFieldsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -1006,6 +1028,7 @@ export class DocumentCommands {
     this.#restore = parts.restore;
     this.#annotations = parts.annotations;
     this.#formFields = parts.formFields;
+    this.#flatFields = parts.flatFields;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -1269,6 +1292,28 @@ export class DocumentCommands {
     });
 
     return { version, fields: value.fields, truncated: value.truncated };
+  }
+
+  /**
+   * Where one page's fields probably are, on a page that has none.
+   *
+   * {@link formFields}' body with a page, and in the lane for its reason: the
+   * walk reads the document the adapter holds, which a command mutates in
+   * place. The version comes back with the answer, which is what lets a
+   * proposal be discarded when the page it describes has moved.
+   */
+  async flatFieldCandidates(docId: DocId, page: number): Promise<DocumentFlatFields> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#flatFields(docId, sessions, page);
+    });
+
+    return { version, candidates: value.candidates, truncated: value.truncated };
   }
 
   /**

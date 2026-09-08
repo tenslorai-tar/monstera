@@ -160,7 +160,15 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
       const field = shape.build(answered.data);
       if (field === undefined) return undefined;
 
-      return { kind: 'createFormField', page, rect, name: answered.data.name, field };
+      // ONE FIELD IN A LIST, because a drag is one field and the payload became
+      // plural for a different caller — flat-field detection, where accepting a
+      // page of candidates is one decision. A tool that sent several would be a
+      // gesture nobody makes.
+      return {
+        kind: 'createFormField',
+        page,
+        fields: [{ rect, name: answered.data.name, field }],
+      };
     },
     preview: drawn,
   };

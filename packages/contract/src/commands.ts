@@ -2563,15 +2563,43 @@ export type CreatedField = z.infer<typeof createdFieldSchema>;
  * refusal at apply rather than staleness — the document is the only thing that
  * knows, exactly as it is for every type rule on the fill.
  */
-export const createFormFieldSchema = z.object({
-  kind: z.literal('createFormField'),
-  /** Zero-based index of the page to put it on. */
-  page: z.number().int().nonnegative(),
+/**
+ * How many fields one create may mint.
+ *
+ * The drawing tools send one. What sends many is flat-field detection, which
+ * proposes a page's worth of candidates a person accepts — and a page of a real
+ * form carries tens rather than thousands.
+ */
+export const MAX_CREATED_FIELDS = 256;
+
+/** One field a create mints: where it goes, what it is called, and what it is. */
+export const createdFieldPlacementSchema = z.object({
   /** Where it goes, in PDF user space. See {@link annotationRectSchema}. */
   rect: annotationRectSchema,
   /** What the field is called. A path, not a label — see {@link MAX_FIELD_NAME}. */
   name: fieldNameSchema,
   field: createdFieldSchema,
+});
+
+export const createFormFieldSchema = z.object({
+  kind: z.literal('createFormField'),
+  /** Zero-based index of the page to put it on. */
+  page: z.number().int().nonnegative(),
+  /**
+   * The fields to mint, all on the page above.
+   *
+   * **A LIST, and the drawing tools send one.** What made it plural is flat
+   * field detection, which proposes a page's worth of candidates a person ticks
+   * — and accepting twenty is ONE decision, so it is one log entry and one
+   * undo. A loop in the surface would be twenty version bumps of which nineteen
+   * are stale, which is `removeAnnotation`'s argument for a plural payload
+   * arriving on the other walk.
+   *
+   * The page is shared for the same reason the rectangle is shared on
+   * `placeImage`: *these fields, on this page* is what the request means, and a
+   * per-field page would be a different feature nobody asked for.
+   */
+  fields: z.array(createdFieldPlacementSchema).min(1).max(MAX_CREATED_FIELDS),
 });
 
 export const commandSchema = z.discriminatedUnion('kind', [

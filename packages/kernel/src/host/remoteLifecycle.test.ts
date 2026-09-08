@@ -8,6 +8,7 @@ import { type ClientApi, createClient, type Incident, wrapHandlers } from '@mons
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
+import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
@@ -241,6 +242,7 @@ function joined(
       // round trip through the granted area.
       exportFormData: async (session, format) =>
         serialiseFormData(await readFormData(session), format),
+      flatFields: detectFlatFields,
     }),
     (incident) => incidents.push(incident),
   );
@@ -452,6 +454,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         exportFormData: () => {
           throw new Error('the byte-size case must not export form data');
+        },
+        flatFields: () => {
+          throw new Error('the byte-size case must not propose fields');
         },
       }),
       () => undefined,

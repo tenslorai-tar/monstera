@@ -285,6 +285,16 @@ export const MAX_FORM_FIELD_OPTIONS = 512;
 export const MAX_FORM_FIELD_VALUES = 256;
 
 /**
+ * How many field candidates one page may propose, and how long a label may be.
+ *
+ * `MAX_CREATED_FIELDS`' number, and deliberately so rather than by coincidence:
+ * accepting a page of candidates becomes one `createFormField`, so a page that
+ * proposed more than that command carries would offer an accept it cannot send.
+ */
+export const MAX_FLAT_FIELD_CANDIDATES = 256;
+export const MAX_FLAT_FIELD_LABEL = 128;
+
+/**
  * How long a document's name may be.
  *
  * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
@@ -1711,6 +1721,55 @@ export const channels = {
       truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Where one page's form fields probably are, on a page that has none.
+   *
+   * ## It answers CANDIDATES, and the distinction is the row's finding
+   *
+   * Measured 2026-09-08: **a field and an empty table cell are the same
+   * rectangle.** A filled cell is not a field because it holds a value already;
+   * an empty ruled box beside a label is a place to write, which is what a field
+   * is — so on a blank timesheet the two are indistinguishable, and the label
+   * *cell* is an assumption rather than a fact about the page.
+   *
+   * So this proposes and a person accepts. Accepting is one `createFormField`
+   * carrying the list they ticked — one decision, one log entry, one undo.
+   *
+   * ## Per PAGE, unlike `document.formFields`
+   *
+   * The field list describes the whole form because a panel asks about all of
+   * it. This feeds a review of the page in front of the reader, and walking a
+   * hundred pages to offer a thousand candidates is a question nobody asked.
+   *
+   * ## No `document-busy`
+   *
+   * It mutates nothing, which is `document.searchPage`'s argument: queueing a
+   * read behind a running command serialises a reader against themselves.
+   */
+  'document.flatFieldCandidates': channel(
+    'Proposes where a flat page’s form fields probably are.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    z.object({
+      version: docVersionSchema,
+      candidates: z
+        .array(
+          z.object({
+            /** Where it would go, in PDF user space. */
+            rect: annotationRectSchema,
+            /** The text beside it, as a person reads it. */
+            label: z.string().max(MAX_FLAT_FIELD_LABEL),
+            /** A name derived from the label, unique within this answer. */
+            name: z.string().max(MAX_FLAT_FIELD_LABEL),
+          }),
+        )
+        .max(MAX_FLAT_FIELD_CANDIDATES)
+        .readonly(),
+      /** Whether the bound stopped the walk. `document.annotations`' flag. */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-poisoned'],
   ),
 
   'document.duplicatePages': channel(

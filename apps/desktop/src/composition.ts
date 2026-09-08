@@ -15,6 +15,7 @@ import {
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
+  type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
@@ -39,6 +40,7 @@ import {
   remoteMupdfDestinations,
   remoteMupdfAnnotations,
   remoteMupdfDuplicateReport,
+  remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
   remoteMupdfPageLinks,
@@ -522,6 +524,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.formFields(session);
     },
+    // THE CANDIDATE PROPOSAL, composed the same way and per PAGE for the reason
+    // the channel carries: it feeds a review of the page in front of the reader.
+    flatFields: (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.flatFields(session, page);
+    },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
     duplicates: (docId, sessions) => {
@@ -690,6 +699,8 @@ function engineSessionOpener(
   /** Every annotation in the document, from whichever host is live. */
   readonly annotations: HostAnnotationsReader;
   readonly formFields: HostFormFieldsReader;
+  /** One page's field candidates, from whichever host is live. */
+  readonly flatFields: HostFlatFieldsReader;
   /** The document's duplicate pages, from whichever host is live. */
   readonly duplicates: DuplicateReport;
   /**
@@ -921,6 +932,20 @@ function engineSessionOpener(
     return formFields(session);
   };
 
+  /** The candidate proposal's half of the same registration. See {@link pageText}. */
+  let flatFields: HostFlatFieldsReader | null = null;
+
+  const readFlatFieldsThroughHost: HostFlatFieldsReader = (session, page) => {
+    if (flatFields === null) {
+      throw new Error(
+        'A flat field read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return flatFields(session, page);
+  };
+
   /** The duplicate report's half of the same registration. See {@link pageText}. */
   let duplicates: DuplicateReport | null = null;
 
@@ -1090,6 +1115,7 @@ function engineSessionOpener(
     layers = remoteMupdfLayers(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
+    flatFields = remoteMupdfFlatFields(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
     return live.value;
   };
@@ -1259,6 +1285,7 @@ function engineSessionOpener(
     layers: readLayersThroughHost,
     annotations: readAnnotationsThroughHost,
     formFields: readFormFieldsThroughHost,
+    flatFields: readFlatFieldsThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
     snapshot: snapshotThroughHost,

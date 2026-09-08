@@ -21,6 +21,8 @@ import { GENERATE_TOC_PROBLEM_DIALOG_ID } from '../dialogs/generateTocProblem.js
 import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
 import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
+import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
+import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
@@ -61,6 +63,7 @@ import {
   EXPORT_FORM_DATA_JSON_TITLE,
   EXPORT_FORM_DATA_XFDF_TITLE,
   EXTRACT_PAGES_COMMAND_TITLE,
+  FLAT_FIELDS_COMMAND_TITLE,
   IMPORT_FORM_DATA_FDF_TITLE,
   IMPORT_FORM_DATA_JSON_TITLE,
   IMPORT_FORM_DATA_XFDF_TITLE,
@@ -1692,6 +1695,80 @@ export const importFormDataFdfCommand = importFormDataCommand(
   IMPORT_FORM_DATA_FDF_TITLE,
   37,
 );
+
+/**
+ * Proposes fields on the page in view, and creates the ones a person keeps.
+ *
+ * ## THE ORDER IS ASK, REVIEW, THEN ONE COMMAND
+ *
+ * The detection is a read, the review is a dialog, and the accept is a single
+ * `createFormField` carrying everything ticked. That last part is the payload's
+ * whole reason for being a list: accepting twenty candidates is one decision,
+ * so it is one version bump and one undo — a loop here would be twenty, of
+ * which nineteen would be stale.
+ *
+ * ## The rectangles never make the round trip through the dialog
+ *
+ * The dialog answers the NAMES that were ticked, and this rejoins them with the
+ * candidates the channel returned. A result carrying geometry would give the
+ * command two sources for one rectangle, and the one that came out of a form
+ * control is the one that can be wrong.
+ *
+ * ## Every accepted candidate becomes a TEXT field
+ *
+ * The detector proposes places, not kinds — it measured nothing about what
+ * separates a tick box from a rule. The dialog says so, and the five drawing
+ * tools are the answer for the rest.
+ */
+export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.find-flat-fields',
+    title: FLAT_FIELDS_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 38 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+
+      const found = await deps.client['document.flatFieldCandidates']({
+        docId: context.docId,
+        page: context.page,
+      });
+      if (!found.ok) {
+        reportProblem(deps, found.error);
+        return;
+      }
+
+      const chosen = (await deps.ask(FLAT_FIELDS_DIALOG_ID, {
+        candidates: found.value.candidates.map((candidate) => ({
+          name: candidate.name,
+          label: candidate.label,
+        })),
+        truncated: found.value.truncated,
+      })) as FlatFieldsAnswer | undefined;
+      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
+      // absence of a value is the guard rather than a flag beside it.
+      if (chosen === undefined) return;
+
+      const fields = found.value.candidates
+        .filter((candidate) => chosen.accepted.includes(candidate.name))
+        .map((candidate) => ({
+          rect: candidate.rect,
+          name: candidate.name,
+          field: { type: 'text' } as const,
+        }));
+      // NOTHING TICKED CANNOT REACH HERE — the result schema refuses an empty
+      // list and the button is disabled — but the command refuses one too, so
+      // the check is here rather than trusting two layers above it.
+      if (fields.length === 0) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'createFormField',
+        page: context.page,
+        fields,
+      });
+    },
+  };
+}
 
 export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
   return {

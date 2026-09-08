@@ -538,6 +538,39 @@ body {
 }
 
 /*
+ * The detected-field review.
+ *
+ * TWO RULES, for the same reason the create dialogs have one: every other
+ * dialog body carries no CSS and relies on the dialog primitive's own layout,
+ * and what these two add is a list of tick boxes — which without a gap puts the
+ * document's own caption hard against the derived name, so a reader cannot tell
+ * where one ends.
+ */
+.m-flat-fields__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-flat-fields__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding-block: var(--space-2);
+}
+
+/*
+ * The derived name, set apart from the document's own words beside it.
+ *
+ * `--muted` because the caption is what a reader recognises on the page and the
+ * name is what the field will be called — a distinction that has to survive
+ * being read quickly, and colour is what carries it without a second line.
+ */
+.m-flat-fields__name {
+  color: var(--muted);
+}
+
+/*
  * The choice list in the create-field dialogs.
  *
  * THE ONLY RULE THESE FIVE DIALOGS NEED, and that is deliberate rather than

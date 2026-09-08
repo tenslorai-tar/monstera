@@ -164,6 +164,9 @@ async function joined(): Promise<{
       exportFormData: () => {
         throw new Error('unused');
       },
+      flatFields: () => {
+        throw new Error('unused');
+      },
     }),
     (incident) => incidents.push(incident),
   );

@@ -11,6 +11,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
@@ -190,6 +191,7 @@ async function joined(): Promise<{
       snapshot: snapshotRegion,
       exportFormData: async (session, format) =>
         serialiseFormData(await readFormData(session), format),
+      flatFields: detectFlatFields,
     }),
     (incident) => incidents.push(incident),
   );
@@ -463,6 +465,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         exportFormData: () => {
           throw new Error('unused');
         },
+        flatFields: () => {
+          throw new Error('unused');
+        },
       }),
       (incident) => incidents.push(incident),
     );
@@ -554,6 +559,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         exportFormData: () => {
           throw new Error('the rotation-refusal case must not export form data');
+        },
+        flatFields: () => {
+          throw new Error('the rotation-refusal case must not propose fields');
         },
       }),
       (incident) => incidents.push(incident),

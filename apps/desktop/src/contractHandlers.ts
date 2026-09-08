@@ -159,6 +159,7 @@ export function createContractHandlers(deps: {
     'document.layers': layersHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
+    'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -763,6 +764,32 @@ function annotationsHandler(
  * The document's form fields. A READ, for `annotationsHandler`'s reason: what a
  * person does with a field is fill it, and filling is a command.
  */
+/**
+ * The candidate proposal's handler.
+ *
+ * {@link formFieldsHandler} with a page and one refusal fewer: the channel
+ * declares no `document-busy`, because a read that mutates nothing has no
+ * reason to queue behind a command — `document.searchPage`'s argument. A busy
+ * error reaching here would therefore be a defect, and it is left to throw.
+ */
+function flatFieldCandidatesHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.flatFieldCandidates'] {
+  return async ({
+    docId,
+    page,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.flatFieldCandidates']>>> => {
+    try {
+      const { version, candidates, truncated } = await commands.flatFieldCandidates(docId, page);
+      return ok({ version, candidates, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
 function formFieldsHandler(commands: DocumentCommands): ContractHandlers['document.formFields'] {
   return async ({
     docId,

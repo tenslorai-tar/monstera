@@ -171,6 +171,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       exportFormData: () => {
         throw new Error('a field read must not encode an export');
       },
+      flatFields: () => {
+        throw new Error('a field read must not propose candidates');
+      },
     }),
     (incident) => incidents.push(incident),
   );

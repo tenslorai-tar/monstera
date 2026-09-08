@@ -279,6 +279,13 @@ export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
 export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
 export const FORMS_MANY_VALUES = messageKey('surface.forms.many-values');
+export const FLAT_FIELDS_COMMAND_TITLE = messageKey('command.flat-fields.title');
+export const FLAT_FIELDS_TITLE = messageKey('dialog.flat-fields.title');
+export const FLAT_FIELDS_GUESSED = messageKey('dialog.flat-fields.guessed');
+export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
+export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
+export const FLAT_FIELDS_ALL_TEXT = messageKey('dialog.flat-fields.all-text');
+export const FLAT_FIELDS_ACCEPT = messageKey('dialog.flat-fields.accept');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
@@ -648,6 +655,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // whose command discards the rest. It names the values so the reader can see
   // what is there rather than being told only that they cannot change it.
   [FORMS_MANY_VALUES]: 'This field holds several values ({values}), which cannot be changed here.',
+  // "COULD BE" AND NEVER "ARE", because the measurement says the detector
+  // cannot tell a field from an empty table cell — that is a fact about pages
+  // rather than about this build, and a title claiming otherwise would be a
+  // guess wearing an observation's clothes.
+  [FLAT_FIELDS_COMMAND_TITLE]: 'Find fields on this page…',
+  [FLAT_FIELDS_TITLE]: 'Fields this page could have',
+  [FLAT_FIELDS_GUESSED]:
+    'Monstera looked for ruled lines and boxes with a label beside them and nothing written in them. An empty box in a table looks the same, so check the list before accepting it.',
+  [FLAT_FIELDS_NONE]: 'Nothing on this page looks like a place to write.',
+  [FLAT_FIELDS_TRUNCATED]: 'There were more than Monstera lists here, so this page may have others.',
+  [FLAT_FIELDS_ALL_TEXT]:
+    'These are all created as text fields. Use the Forms tools to draw a tick box, a dropdown or a list.',
+  [FLAT_FIELDS_ACCEPT]: 'Create {count} field(s)',
   // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument
   // one walk along. The rows beside it name similar fields, and a bare verb on
   // a list of similar rows is the label a person clicks on the wrong line. It

@@ -111,6 +111,7 @@ export {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
@@ -130,6 +131,9 @@ export {
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './host/remoteLifecycle.js';
+// A TYPE ONLY, which is what keeps it on this barrel: `flatFields.ts` binds the
+// native library, and main reads its answers without ever calling it.
+export type { FlatFieldCandidate } from './flatFields.js';
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
@@ -147,6 +151,7 @@ export {
   remoteMupdfGeometry,
   remoteMupdfDestinations,
   remoteMupdfDuplicateReport,
+  remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
   remoteMupdfPageLinks,

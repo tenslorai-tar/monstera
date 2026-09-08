@@ -245,6 +245,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.layers': 'needs an engine session',
   'document.annotations': 'needs an engine session',
   'document.formFields': 'needs an engine session',
+  // BOUNDED AT 256 CANDIDATES AND 128 CHARACTERS, and per PAGE rather than per
+  // document — so the answer's size is a function of one page's ruled lines,
+  // never of how long the document is.
+  'document.flatFieldCandidates': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

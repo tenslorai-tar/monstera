@@ -224,6 +224,18 @@ jobs:
       - name: No decorative border token bounds an unmarked control
         run: node scripts/ci/annotate.mjs scripts/lib/borderTokens.mjs
 
+      # The scan the two above could not have made. Both ask whether a token's
+      # ROLE fits its context; neither asks whether the token EXISTS — and
+      # `--space-3` shipped a button with no padding at all, because an
+      # undefined custom property invalidates the whole declaration and warns
+      # about nothing. Nothing in this toolchain could see it: TypeScript does
+      # not read CSS, ESLint lints none, and the tests compute no styles.
+      - name: Prove the defined-token scan can see, refuse and tolerate
+        run: node scripts/ci/annotate.mjs scripts/proofs/definedTokens.proof.mjs
+
+      - name: Every var() names a custom property something declares
+        run: node scripts/ci/annotate.mjs scripts/lib/definedTokens.mjs
+
       - name: Prove the second-wiring-place scan can see, refuse and tolerate
         run: node scripts/ci/annotate.mjs scripts/proofs/secondWiringPlace.proof.mjs
 

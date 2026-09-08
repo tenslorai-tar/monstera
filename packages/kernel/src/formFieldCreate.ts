@@ -328,15 +328,16 @@ export const applyCreateFormField: Apply<'pdf-lib', 'createFormField'> = async (
   const rotation = snapRotation(page.getRotation().angle);
   const font = await document.embedFont(StandardFonts.Helvetica);
 
-  put(
-    document.getForm(),
-    page,
-    font,
-    command.name,
-    command.field,
-    preImage(command.rect, rotation),
-    rotation,
-  );
+  // ONE FORM, RESOLVED ONCE, and the loop is what makes accepting twenty
+  // detected candidates one decision rather than twenty. `put` refuses a
+  // colliding name against the form as it stands, so a batch naming the same
+  // field twice is refused on the second — mid-way through, which is safe here
+  // and not by luck: this apply builds a **new byte image** from the one it was
+  // handed, so a throw leaves the caller's bytes untouched by construction.
+  const form = document.getForm();
+  for (const placement of command.fields) {
+    put(form, page, font, placement.name, placement.field, preImage(placement.rect, rotation), rotation);
+  }
 
   // NO APPEARANCE PASS. `updateFieldAppearances` regenerates every field in the
   // form, and `addToPage` has already built this one's: measured 2026-09-08,

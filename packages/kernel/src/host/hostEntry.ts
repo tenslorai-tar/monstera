@@ -9,6 +9,7 @@ import { mupdfWriter } from '../mupdfWriter.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
@@ -150,6 +151,9 @@ startEngineHost(
     // AND A THIRD, for the first's reason: reading the fields reaches MuPDF.
     // The bounds on `engine/form-fields` exist for a panel a person reads, so
     // an export built from that answer would be silently truncated at both.
+    // A READ, and it runs here for the field list's reason: the walk reaches
+    // MuPDF, which invariant 20 keeps out of main.
+    flatFields: detectFlatFields,
     exportFormData: async (session, format) =>
       serialiseFormData(await readFormData(session), format),
     tokens: cryptoBytes,

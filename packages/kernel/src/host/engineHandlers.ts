@@ -6,6 +6,7 @@ import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
 import type { Layer } from '../layers.js';
+import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
 import type { PageLink } from '../pageLinks.js';
@@ -144,6 +145,17 @@ export type HostFormDataExport = (
 ) => Promise<ByteImage>;
 
 /**
+ * Where a flat page's fields probably are — a READ, unlike the three above.
+ *
+ * Per page rather than per document, because what it feeds is a proposal a
+ * person reviews on the page in front of them.
+ */
+export type HostFlatFieldsReader = (
+  session: MupdfSession,
+  page: number,
+) => Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }>;
+
+/**
  * The engine host's side of Decision 10: it looks the spec up and calls it
  * against a session **it** holds.
  *
@@ -268,6 +280,8 @@ export interface EngineHandlerParts {
   readonly snapshot: HostSnapshot;
   /** How this process writes the form's data out. `engine/exportFormData`. */
   readonly exportFormData: HostFormDataExport;
+  /** How this process proposes fields on a flat page. `detectFlatFields`. */
+  readonly flatFields: HostFlatFieldsReader;
 }
 
 export function createEngineHandlers({
@@ -287,6 +301,7 @@ export function createEngineHandlers({
   extract,
   snapshot,
   exportFormData,
+  flatFields,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -544,6 +559,17 @@ export function createEngineHandlers({
       // what knows there was more. Both halves are forwarded.
       const listed = await formFields(held.session);
       return { ok: true, value: { fields: [...listed.fields], truncated: listed.truncated } };
+    },
+
+    'engine/flat-fields': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for `engine/page-geometry`'s reason: a page index outside
+      // the document is a caller that has lost track of the page count rather
+      // than a state to report, and the reader answers an empty list for a page
+      // that displays no region.
+      const found = await flatFields(held.session, page);
+      return { ok: true, value: { candidates: [...found.candidates], truncated: found.truncated } };
     },
 
     'engine/exportFormData': async ({ session, format, into }) => {
