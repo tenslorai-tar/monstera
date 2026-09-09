@@ -175,7 +175,26 @@ export function sharedPainter(): HighlightPainter | null {
   return shared;
 }
 
-/** Drops the resolved painter, so a test can arrange a different environment. */
+/**
+ * Drops the resolved painter, so a test can arrange a different environment.
+ *
+ * **A shipped export with only test callers, and the rule that permits it**
+ * (finding CCCCCC-5). `editFidelity.proof.mjs` refuses the same move in words —
+ * *an unused render API added to a shipped module for a proof's convenience is
+ * an abstraction with one caller* — and both decisions were taken in one range,
+ * with nothing to point at.
+ *
+ * The line between them is **who owns the state**. A capability an instrument
+ * wants is the instrument's to bind; it can rasterise a page itself, and adding
+ * a `render` to the adapter would put an abstraction in shipped code for a
+ * caller outside it. Memoised module state is the opposite: this module owns
+ * it, nothing else can reach it, and *the platform has no Custom Highlight API*
+ * is a branch that would otherwise be unreachable on any runner where it does.
+ *
+ * So: **expose a reset only for state this module itself memoises, never a
+ * capability a caller could bind for itself.** Three callers here, all tests,
+ * and that is the whole surface.
+ */
 export function resetSharedPainter(): void {
   shared = undefined;
 }
