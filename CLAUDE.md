@@ -398,8 +398,12 @@ is wrong** — fix the boundary, not the test.
   declared in Stage 0: an edit that mutated a session inside a host would be
   sound, undoable, savable and **invisible**, because the renderer reads main's
   canonical image and the view model carries only rotations. The bytes have to
-  come back either way — so a writer holding nothing between commands costs
-  nothing extra and keeps `savePipeline.ts`'s *which bytes win* question
+  come back either way. A live session would still save the **input** serialise
+  — bounded, about 60 ms of 190 on a 997 KB document, and available inside this
+  shape once `current()` learns that main's image is already current after a
+  byte-image command. What it would cost is not a number: `savePipeline.ts`'s
+  *which bytes win* rule, a session table inside a contained host, and staleness
+  in both directions. Holding nothing between commands keeps that question
   **unaskable** rather than answering it under a feature. A PDFium host
   therefore needs **no session table**: the seven engine-agnostic channels plus
   its own reads. **An edit also generates content once per COMMAND, never once

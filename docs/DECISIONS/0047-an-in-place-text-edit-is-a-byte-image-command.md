@@ -83,6 +83,14 @@ Three things follow rather than being chosen:
 - **The PDFium host needs no session table**, so the `hostBody.ts`
   generalisation is the seven engine-agnostic channels rather than a second copy
   of the MuPDF host's machinery.
+
+  That claim rests on one measured fact and is stated with it: the bus calls
+  `capture` and `apply` separately, so a host holding nothing between them must
+  **re-open** the document for each. `FPDF_LoadMemDocument` is 0.1–3.5 ms across
+  every cell `proof:editcost` builds, against a `GenerateContent` that is the
+  whole cost of the edit — so a second open is inside the noise of the operation
+  it belongs to. Were that reversed, the choice would be between a session table
+  and one wire call doing both, and this bullet would be a different sentence.
 - **`SessionsByWriter` gains no second live entry**, so its own sentence — *"a
   document acquires a session per engine lazily"* — stays true without acquiring
   a second meaning.
@@ -195,3 +203,66 @@ document that silently stops updating.
 on the answer, so deferring means building the larger host and discovering the
 smaller one was available — and it answers `savePipeline.ts`'s B4 in passing,
 which is what B4 exists to stop.
+
+## Correction, 2026-09-09 — "buys nothing" was too strong, and the repository had already said so
+
+Decision 1 says a live session *"buys nothing the renderer can use"*. The clause
+after the comma is true and the sentence overstates it: **a live session avoids
+the INPUT half of the round trip**, and this build's own test file had the
+arithmetic written down before this ADR was drafted.
+
+`commandDeclarations.test.ts`, on the case that guards ADR-0039's pricing:
+
+> *"for a NON-INVERTIBLE byte-image command the serialise doubles as the
+> checkpoint the bus was going to take anyway, and nothing extra is paid. For an
+> INVERTIBLE one there is no checkpoint, and the serialise is a cost its
+> live-session equivalent — `rotatePages`, say — does not pay."*
+
+**A text replacement is invertible** — its prior is the object's old string, and
+`FPDFTextObj_GetText` is exported — so it is precisely the case that sentence
+carves out. `#sessionFor` obtains a byte-image session by calling
+`ByteImageAccess.current()`, a full serialise of the live session, on **every**
+byte-image command whatever its invertibility.
+
+So the honest shape of the difference, per command in a **run** of consecutive
+PDFium edits: a live session pays a serialise and an adopt for visibility; a
+byte-image command pays those **plus** an input serialise and an open. From this
+range's reconnaissance on a 997 KB document that is roughly 60 ms of about
+190 ms. It is not nothing.
+
+**The decision stands, for two reasons that are about kind rather than size.**
+
+1. **The saving is available inside this design and is not owed to the other
+   one.** `#install`'s `adopt` rebuilds the live session from the new bytes *and*
+   makes them main's canonical image, so immediately after a byte-image command
+   main's image **is** the document's current bytes — and `current()`
+   re-serialises MuPDF to reproduce them. `ByteImageAccess.current`'s reason for
+   existing is that main's image is stale *for the life of an open document*
+   (finding OOOOO-1), which is true after a live-session command and false after
+   a byte-image one. Skipping the re-serialise on that branch is an optimisation
+   this shape can take; the coherence rule the other shape costs is not
+   optional.
+2. **What the live session costs is not a number.** It is
+   `savePipeline.ts`'s B4, a session table inside a contained host, and a
+   staleness protocol in both directions — after any MuPDF command PDFium's
+   session is stale, and after any PDFium command MuPDF's is. Trading a bounded
+   per-command cost for an unbounded design question is the wrong direction, and
+   it is the direction ADR-0039 already refused for pdf-lib.
+
+**Owed, with its trigger:** the `current()` branch above is unbuilt and is not
+built here. Its trigger is the first command routed to PDFium, because that is
+the first command that pays for it — and it must not be taken on the
+live-session branch, where main's image genuinely is stale.
+
+**And a trigger elsewhere will fire on that same command, by design.**
+`commandDeclarations.test.ts` asserts that no byte-image command declares
+`invertible: true`, and says of itself: *"the fact is true today and is not a
+rule. This case is the trigger: the first byte-image command declared
+`invertible: true` turns it red, and the failure message says what to do rather
+than what not to."* A text replacement is that command. The case working is what
+that looks like.
+
+Recorded as a correction rather than an edit because what was believed is the
+record, and because the overstatement is instructive: the sentence was written
+for its rhythm, and the file that refuted it was one this range had already
+read.

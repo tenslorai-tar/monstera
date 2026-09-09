@@ -103,7 +103,22 @@ export type WriterShape = 'live-session' | 'byte-image';
  */
 export type MupdfSession = Brand<{ readonly engine: 'mupdf' }, 'MupdfSession'>;
 
-/** A live PDFium session. `pdfiumFfi.ts` is behind it, as of 2026-09-09. */
+/**
+ * A live PDFium session. `pdfiumFfi.ts` is behind it, as of 2026-09-09.
+ *
+ * **It is NOT `WriterSession['pdfium']`, and that stopped being the same thing
+ * on 2026-09-09**
+ * ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)).
+ * PDFium is a byte-image writer of record, so what the **bus** hands its writer
+ * is the document's bytes; this brand names the handle `pdfiumFfi.ts` holds
+ * *inside one command*, between its own `open` and `close`, which is where a
+ * live PDFium document exists and the only place it does.
+ *
+ * The distinction is worth the paragraph because the two used to coincide and
+ * a reader who assumes they still do will look for a session table that is
+ * deliberately absent: a writer that holds nothing between commands is what
+ * keeps *which bytes win* unaskable.
+ */
 export type PdfiumSession = Brand<{ readonly engine: 'pdfium' }, 'PdfiumSession'>;
 
 /**
@@ -115,7 +130,16 @@ export type PdfiumSession = Brand<{ readonly engine: 'pdfium' }, 'PdfiumSession'
  */
 export interface WriterSession {
   readonly mupdf: MupdfSession;
-  readonly pdfium: PdfiumSession;
+  /**
+   * The document's **bytes**, not a handle — ADR-0047, 2026-09-09.
+   *
+   * This read `PdfiumSession` from Stage 0, when nothing was behind either. An
+   * in-place text edit is a byte-image command, so the bus mints this for one
+   * call from the live writer's `serialise` and never stores it. The live
+   * PDFium handle exists only inside `pdfiumFfi.ts`, between its own `open` and
+   * `close`, and never reaches this table.
+   */
+  readonly pdfium: ByteImage;
   readonly 'pdf-lib': ByteImage;
   readonly signpdf: ByteImage;
 }
@@ -170,7 +194,22 @@ export type SessionsByWriter = {
  */
 export const writerShapes = {
   mupdf: 'live-session',
-  pdfium: 'live-session',
+  // 'live-session' FROM STAGE 0 UNTIL 2026-09-09, declared with nothing behind
+  // it and changed on the first evidence (ADR-0047). An edit that mutated a
+  // session inside a host would be sound, undoable, savable and invisible: the
+  // renderer reads main's canonical image and the view model carries only
+  // rotations, so the bytes must come back either way.
+  //
+  // A live session would still save the INPUT serialise `#sessionFor` takes
+  // from `ByteImageAccess.current`, which for an invertible command — a text
+  // replacement is one — is not a checkpoint the bus was taking anyway. That is
+  // bounded and available inside this shape, since `adopt` makes the new bytes
+  // main's canonical image. What the live session costs is not a number:
+  // savePipeline.ts's *which bytes win* rule, a session table inside a
+  // contained host, and staleness in both directions. Holding nothing between
+  // commands keeps that question unaskable rather than answered under a
+  // feature.
+  pdfium: 'byte-image',
   'pdf-lib': 'byte-image',
   signpdf: 'byte-image',
 } as const satisfies Readonly<Record<keyof WriterSession, WriterShape>>;

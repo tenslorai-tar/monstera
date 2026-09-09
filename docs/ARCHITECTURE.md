@@ -402,8 +402,20 @@ behind it. **An in-place text edit is a byte-image command**, and the reason is
 the paragraph above rather than a cost: replaced text is no more expressible in
 a view model carrying rotations than a watermark is, so a live-session PDFium
 edit would be correct, undoable, savable and **unseen**. Making it visible means
-the bytes become main's image — which is exactly what a byte-image command does,
-so the live session buys nothing the renderer can use.
+the bytes become main's image — which is exactly what a byte-image command does.
+
+**What a live session WOULD save is the input half, and it is bounded.**
+`#sessionFor` obtains a byte-image session from `ByteImageAccess.current`, a
+full serialise, on every such command — and for an *invertible* one, which a
+text replacement is, that serialise is not a checkpoint the bus was taking
+anyway. Roughly 60 ms of 190 on a 997 KB document. It is **available inside this
+shape**: `adopt` makes the new bytes main's canonical image, so after a
+byte-image command that image *is* the document's current bytes and the
+re-serialise reproduces them. That branch is **owed** and must never be taken
+after a live-session command, where main's image is genuinely stale (OOOOO-1).
+What the live session costs instead is not a number — the *which bytes win*
+rule, a session table inside a contained host, and staleness in both
+directions.
 
 What it would have cost is written down and was **already queued against this
 moment**: `savePipeline.ts` records that *two live-session writers each return

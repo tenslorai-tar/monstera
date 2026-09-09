@@ -888,6 +888,72 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — PDFium's writer shape, and the note that could not fire
+
+ADR-0047's code: `writerShapes.pdfium` becomes `'byte-image'`,
+`WriterSession['pdfium']` becomes `ByteImage`, and `PdfiumSession` stays as what
+it now is — the handle `pdfiumFfi.ts` holds *inside one command*, which is never
+what the bus is handed.
+
+### The change was unobservable, and that is the finding
+
+Typecheck, lint, build and **154 files / 2,176 tests** pass identically before
+and after. Nothing routes to PDFium, so no case in this repository could tell
+`'live-session'` from `'byte-image'` there. **That is the same state that let the
+wrong declaration sit since Stage 0** — it was made when neither shape had
+anything behind it, and nothing since could contradict it.
+
+The question it would have answered by accident is written down twice, in
+`savePipeline.ts` and in `apps/desktop/src/documentCommands.ts`: *two
+live-session writers each return the whole document from `serialise`, and
+nothing in the law says which bytes win. That is a B4.* Neither statement can
+fire. A note is read by whoever opens the file, and the author about to declare
+the second live-session writer is not obviously that person — I was one commit
+from being them, and what stopped it was reading ADR-0039, not a mechanism.
+
+### So the note got a caller
+
+`commandDeclarations.test.ts` gains one case: **exactly one writer of record is
+`live-session`**, derived from `writerShapes` rather than listed, with a failure
+message that names the question and says where it is answered — *where the flush
+thunk is composed* — and tells the reader not to widen the case to green a
+build.
+
+Derived, and 4c says which direction: the failure feared is a member
+**arriving**, which makes the set bigger, so a derived count tracks it exactly.
+A hand-kept list would agree with any shrink, and would have to be edited by the
+very author the case exists to interrupt. It also cannot pass vacuously — an
+empty or unreadable table answers zero and fails rather than reporting the
+reassuring answer through a set with nothing in it.
+
+Mutation-tested: restoring `pdfium: 'live-session'` reddens **that case and
+nothing else** — four neighbours, typecheck, lint and the build all stay green.
+So it is now the only thing in this repository that can see a wrong PDFium
+shape, which is exactly the hole it was written for.
+
+### And a correction to ADR-0047, the same day, on this file's evidence
+
+The ADR said a live session *"buys nothing the renderer can use"*. Too strong,
+and `commandDeclarations.test.ts` had the arithmetic before the ADR was drafted:
+*"for an INVERTIBLE one there is no checkpoint, and the serialise is a cost its
+live-session equivalent does not pay."* A text replacement is invertible —
+`FPDFTextObj_GetText` is exported, checked against the shipped DLL — so it is
+exactly that carve-out, and a live session would save the **input** serialise,
+roughly 60 ms of 190 on a 997 KB document.
+
+The decision stands on kind rather than size: that saving is available *inside*
+the byte-image shape, because `adopt` makes the new bytes main's canonical image
+and `current()` then re-serialises to reproduce them, while the coherence rule
+the other shape costs is not optional. The `current()` branch is owed, triggered
+by the first PDFium-routed command, and must never be taken after a live-session
+command where main's image is genuinely stale.
+
+**The sentence was written for its rhythm and the file that refuted it was one
+this range had already read.** That is the whole lesson; a correction is a claim
+too, and this one is dated and appended rather than edited away.
+
+---
+
 ## 2026-09-09 — What an in-place text edit charges for, and it is not the edit
 
 Five D4 rows replace text through PDFium. `proof:pdfiumadapter` settled that it

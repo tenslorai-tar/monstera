@@ -209,3 +209,47 @@ describe('the declaration table', () => {
     );
   });
 });
+
+describe('the writer-shape table', () => {
+  it('EXACTLY ONE writer of record is live-session, which is what keeps a B4 unaskable', () => {
+    // ## A prose note in two files, given a caller
+    //
+    // `savePipeline.ts` and `apps/desktop/src/documentCommands.ts` both record
+    // the same open question: *two live-session writers each return the whole
+    // document from `serialise`, and nothing in the law says which bytes win.
+    // That is a B4.* Neither can fire. A note is read by whoever happens to
+    // open the file, and the person about to declare the second live-session
+    // writer is not obviously that person.
+    //
+    // That is not hypothetical. `writerShapes` declared `pdfium:
+    // 'live-session'` from Stage 0, and building Stage 5's host on it would
+    // have answered the question by accident — under a feature, which is the
+    // one thing B4 exists to stop. It was caught by reading ADR-0039 rather
+    // than by any mechanism, and ADR-0047 changed the declaration to
+    // `'byte-image'` on the first evidence. This case is the mechanism that
+    // reading was standing in for.
+    //
+    // ## Derived, and 4c says which direction
+    //
+    // The failure feared is a member ARRIVING, which makes this set bigger, so
+    // a derived count tracks it exactly. A hand-kept list would agree with any
+    // shrink — and, worse here, would have to be edited by the very author this
+    // case exists to interrupt.
+    //
+    // It also cannot pass vacuously: an empty or unreadable table answers zero
+    // and fails, rather than reporting the reassuring answer through a set with
+    // nothing in it.
+    const liveSession = Object.entries(writerShapes)
+      .filter(([, shape]) => shape === 'live-session')
+      .map(([writer]) => writer);
+
+    expect(
+      liveSession,
+      `${liveSession.join(', ')} are declared live-session. Two live-session writers each ` +
+        `answer \`serialise\` with the WHOLE document, and nothing in the law says which bytes ` +
+        `win — savePipeline.ts and apps/desktop/src/documentCommands.ts both record that as an ` +
+        `open B4, and it is answered where the flush thunk is composed. Answer it there before ` +
+        `declaring a second one. Do not widen this case to make a build green.`,
+    ).toStrictEqual(['mupdf']);
+  });
+});
