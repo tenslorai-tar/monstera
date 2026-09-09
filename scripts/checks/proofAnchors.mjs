@@ -10,20 +10,25 @@
  * Usage: node scripts/checks/proofAnchors.mjs
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
-import { classifyProofs, UNANCHORED } from '../lib/proofAnchors.mjs';
+import { classifyProofs, proofFiles, UNANCHORED } from '../lib/proofAnchors.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const ROOT = repoRoot();
-const DIRECTORY = join(ROOT, 'scripts', 'proofs');
 
 try {
-  const proofs = readdirSync(DIRECTORY)
-    .filter((name) => name.endsWith('.proof.mjs'))
-    .map((name) => ({ name, source: readFileSync(join(DIRECTORY, name), 'utf8') }));
+  // THE SET IS THE CLASS, NOT A DIRECTORY (finding CCCCCC-1). This walked
+  // `scripts/proofs/` alone until 2026-09-09, and printed its total as
+  // "N of M proof(s)" — which reads as every proof in the repository while
+  // eleven `proof:*` scripts under `scripts/research/`, `proof:guards`' four
+  // components and `proof:escapeguard` were outside it.
+  const proofs = proofFiles(ROOT).map((name) => ({
+    name,
+    source: readFileSync(join(ROOT, name), 'utf8'),
+  }));
 
   const { missing, stale, gone, anchored } = classifyProofs(proofs);
 

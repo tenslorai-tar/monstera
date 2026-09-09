@@ -36,6 +36,9 @@
  * never comes back, because removing an anchor makes this check red.
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 /** A file carries an anchor if it does one of these. */
 const ANCHORS = [
   // `createRoster(failures, { cases: N })` — throws on a mismatch in `format`.
@@ -46,37 +49,127 @@ const ANCHORS = [
 ];
 
 /**
- * Proofs with no anchor as of 2026-09-01, each owing one.
+ * Proofs with no anchor, each owing one. **Repo-relative paths since
+ * 2026-09-09**, because the set stopped being one directory.
  *
  * Sorted, so an addition is a one-line diff and cannot hide in a reordering.
  * **Do not add to this list to make a new proof pass** — a proof written today
  * has `createRoster` available and no reason to be here.
+ *
+ * ## The fourteen that arrived without moving (finding CCCCCC-1, 2026-09-09)
+ *
+ * This list held 23 bare filenames, all of them in `scripts/proofs/`, because
+ * the check walked that one directory. **Eleven `proof:*` npm scripts run
+ * `scripts/research/…` and fourteen research instruments are `ci.yml` steps**,
+ * and none of them was ever asked. Nor were `proof:guards`' four components,
+ * `proof:escapeguard`, `proof:secretscan` or the six other proofs under
+ * `scripts/hooks/` and `scripts/lib/`.
+ *
+ * ZZZZZ-4 named this axis on 2026-09-01 — *the anchor check's ROOT is
+ * `scripts/proofs/`, and the class it guards lives in 32 `.test.ts` files as
+ * well* — and enumerated one of the two excluded sets. The ruling it made about
+ * `.test.ts` is right and stands: a vitest file's cases are `it()` blocks no
+ * roster sees, so the honest anchor there is a pinned suite total, a different
+ * mechanism. **None of that is true of the files below.** They are `.mjs` that
+ * count their own cases, the remedy is `createRoster`, and the eight research
+ * instruments not on this list already use it — by habit, in the one place the
+ * check could not look.
+ *
+ * The load-bearing one is `blockEscapeResolvingWrites.proof.mjs`. It prints
+ * `${passed.length} escape-guard cases passed` — a total derived from what ran
+ * — and its cases are **generated from the rule table**, so a rule leaving that
+ * table takes its cases and the total with it. That is YYYYY-1's exact shape on
+ * the guard `CLAUDE.md` calls the mechanism, and it is the first entry to pay.
  */
 export const UNANCHORED = [
-  'auditScope.proof.mjs',
-  'boundaries.proof.mjs',
-  'documentHandlers.proof.mjs',
-  'documentScope.proof.mjs',
-  'emittedTemplates.proof.mjs',
-  'hookProbe.proof.mjs',
-  'licenceProvenance.proof.mjs',
-  'lintIgnores.proof.mjs',
-  'lintRules.proof.mjs',
-  'mainNeverCancels.proof.mjs',
-  'memoryBudgets.proof.mjs',
-  'nativeAddon.proof.mjs',
-  'ocrDoors.proof.mjs',
-  'pageGeometry.proof.mjs',
-  'pathDispatch.proof.mjs',
-  'peakRss.proof.mjs',
-  'proseSweep.proof.mjs',
-  'purgeCensus.proof.mjs',
-  'shimReach.proof.mjs',
-  'testResolution.proof.mjs',
-  'threatModelTopics.proof.mjs',
-  'toolchainPin.proof.mjs',
-  'workflowPins.proof.mjs',
+  'scripts/bootstrapHooks.proof.mjs',
+  'scripts/hooks/blockEscapeResolvingWrites.proof.mjs',
+  'scripts/hooks/guardFiles.proof.mjs',
+  'scripts/hooks/preCommit.proof.mjs',
+  'scripts/lib/hookIntegrity.proof.mjs',
+  'scripts/lib/scannerCanary.proof.mjs',
+  'scripts/lib/secretScan.proof.mjs',
+  'scripts/lib/shimBinary.proof.mjs',
+  'scripts/lib/verdict.proof.mjs',
+  'scripts/lib/withdrawnPhrases.proof.mjs',
+  'scripts/proofs/auditScope.proof.mjs',
+  'scripts/proofs/boundaries.proof.mjs',
+  'scripts/proofs/documentHandlers.proof.mjs',
+  'scripts/proofs/documentScope.proof.mjs',
+  'scripts/proofs/emittedTemplates.proof.mjs',
+  'scripts/proofs/hookProbe.proof.mjs',
+  'scripts/proofs/licenceProvenance.proof.mjs',
+  'scripts/proofs/lintIgnores.proof.mjs',
+  'scripts/proofs/lintRules.proof.mjs',
+  'scripts/proofs/mainNeverCancels.proof.mjs',
+  'scripts/proofs/memoryBudgets.proof.mjs',
+  'scripts/proofs/nativeAddon.proof.mjs',
+  'scripts/proofs/ocrDoors.proof.mjs',
+  'scripts/proofs/pageGeometry.proof.mjs',
+  'scripts/proofs/pathDispatch.proof.mjs',
+  'scripts/proofs/peakRss.proof.mjs',
+  'scripts/proofs/proseSweep.proof.mjs',
+  'scripts/proofs/purgeCensus.proof.mjs',
+  'scripts/proofs/shimReach.proof.mjs',
+  'scripts/proofs/testResolution.proof.mjs',
+  'scripts/proofs/threatModelTopics.proof.mjs',
+  'scripts/proofs/toolchainPin.proof.mjs',
+  'scripts/proofs/workflowPins.proof.mjs',
+  'scripts/research/engineSurface.mjs',
+  'scripts/research/lineAgreement.mjs',
+  'scripts/research/textLayerBounds.mjs',
+  'scripts/spike/engineSpike.mjs',
 ];
+
+/**
+ * Every file this repository calls a proof, as repo-relative paths.
+ *
+ * ## The authority is `package.json`, and the directory is the belt beside it
+ *
+ * A `proof:*` script is what makes a file a proof here — `proof:guards` names
+ * four of them in one command, `proof:hostcontainment` names
+ * `scripts/research/lowboxSpike.mjs`, and `proof:shim` names one under
+ * `scripts/provision/`. Deriving from the script table is what makes the set
+ * the class rather than a directory.
+ *
+ * The `scripts/proofs/` walk is **unioned in** rather than replaced, because
+ * the two fail in opposite directions: a proof that loses its npm script would
+ * leave a derived-from-scripts set silently, and a proof written outside that
+ * directory is invisible to the walk. Neither alone can only grow.
+ *
+ * @param {string} repoRoot
+ * @param {{ readdir?: typeof readdirSync, readFile?: typeof readFileSync }} [io]
+ * @returns {string[]} sorted, `/`-separated
+ */
+export function proofFiles(repoRoot, io = {}) {
+  const readdir = io.readdir ?? readdirSync;
+  const readFile = io.readFile ?? readFileSync;
+
+  /** @type {Record<string, string>} */
+  const scripts = JSON.parse(readFile(join(repoRoot, 'package.json'), 'utf8')).scripts ?? {};
+  /** @type {Set<string>} */
+  const named = new Set();
+  for (const [name, command] of Object.entries(scripts)) {
+    if (!name.startsWith('proof:')) continue;
+    for (const path of command.match(/scripts\/[A-Za-z0-9/._-]+\.mjs/gu) ?? []) named.add(path);
+  }
+
+  for (const entry of readdir(join(repoRoot, 'scripts', 'proofs'))) {
+    if (entry.endsWith('.proof.mjs')) named.add(`scripts/proofs/${entry}`);
+  }
+
+  // AN EMPTY SET IS A BROKEN WALK, not a repository with no proofs — and it
+  // would report no missing anchors and no stale entries, which is this
+  // check's own reassuring answer. `classifyProofs` refuses one too; this
+  // refuses earlier, where the cause is legible.
+  if (named.size === 0) {
+    throw new Error(
+      'No proof files were derived from package.json or scripts/proofs. An empty set answers ' +
+        'every question this check asks with the result it is hoping for, so it is refused.',
+    );
+  }
+  return [...named].sort();
+}
 
 /**
  * Whether one proof's source carries an anchor.

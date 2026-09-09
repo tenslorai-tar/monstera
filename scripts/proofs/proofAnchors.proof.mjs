@@ -10,17 +10,16 @@
  * Usage: node scripts/proofs/proofAnchors.proof.mjs
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { classifyProofs, hasAnchor, UNANCHORED } from '../lib/proofAnchors.mjs';
+import { classifyProofs, hasAnchor, proofFiles, UNANCHORED } from '../lib/proofAnchors.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -108,12 +107,33 @@ try {
   );
 
   // -------------------------------------------------------------------------
+  // 3a. THE SET IS THE CLASS. A positive control on the ROOT, which is the axis
+  //     that was wrong until 2026-09-09 (finding CCCCCC-1).
+  //
+  //     The check's own output — "N of M proof(s) declare a case count" — reads
+  //     as a statement about this repository's proofs, and it was a statement
+  //     about one directory. A walk that silently narrows back to
+  //     `scripts/proofs/` produces a smaller M and no other symptom, which is
+  //     the reassuring answer arriving through a root rather than a pattern.
+  // -------------------------------------------------------------------------
+  const reach = proofFiles(ROOT);
+  check(
+    'the proof set reaches OUTSIDE scripts/proofs, because the class does',
+    reach.includes('scripts/hooks/blockEscapeResolvingWrites.proof.mjs') &&
+      reach.includes('scripts/research/lineAgreement.mjs') &&
+      reach.includes('scripts/proofs/contract.proof.mjs'),
+    `derived ${String(reach.length)} proof file(s). proof:escapeguard runs a file under ` +
+      `scripts/hooks/ and proof:lineagreement one under scripts/research/; both must be in ` +
+      `the set, or the walk has narrowed to a directory again and every count it prints is ` +
+      `about a subset while reading as the whole.`,
+  );
+
+  // -------------------------------------------------------------------------
   // 4. THE ALLOWLIST DESCRIBES THIS TREE, which is what stops it drifting into
   //    a list of names that no longer exist.
   // -------------------------------------------------------------------------
-  const present = new Set(
-    readdirSync(join(ROOT, 'scripts', 'proofs')).filter((name) => name.endsWith('.proof.mjs')),
-  );
+  const derived = proofFiles(ROOT);
+  const present = new Set(derived);
   const ghosts = UNANCHORED.filter((name) => !present.has(name));
   check(
     'every allowlist entry names a proof that exists',

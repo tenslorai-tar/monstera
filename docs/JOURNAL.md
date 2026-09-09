@@ -888,6 +888,58 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — Closing CCCCCC-1: the anchor check went from 79 files to 110, and the first debt it found is the escape guard's
+
+`check:proofanchors` walked `scripts/proofs/` and printed *"ok N of M proof(s)
+declare a case count"*. The set is now derived from **`package.json`'s `proof:*`
+table**, unioned with that directory walk, and the numbers moved from
+**73 of 79** to **73 of 110**. Thirty-one files that this repository calls
+proofs had never been asked the question; the allowlist goes from 23 entries to
+37, and it is keyed by repo-relative path because the set stopped being one
+directory.
+
+**The union is deliberate and neither half is enough alone.** A proof that loses
+its npm script leaves a derived-from-scripts set in silence; a proof written
+outside `scripts/proofs/` is invisible to the walk. `win32Handle.proof.mjs`
+demonstrated the first half of that during the measurement — an early pattern
+here read `"proof:[a-z]*"` and missed every script name containing a digit, so
+the file appeared to be named by nothing. **The pattern axis, in the
+measurement, while auditing the root axis.**
+
+**The first debt to pay is `blockEscapeResolvingWrites.proof.mjs`**, and it is
+the one that matters most. It prints `${passed.length} escape-guard cases
+passed` — a total computed from the cases that ran — and **its cases are
+generated from the rule table**, so a rule leaving that table takes its cases
+and the total with it and the run stays green. That is YYYYY-1's exact shape on
+the guard `CLAUDE.md` calls *the* mechanism, the one that has fired 65 times in
+a single session. Not fixed here: it is a real change to a generated roster and
+it is not an audit commit's business.
+
+**ZZZZZ-4 named this axis eight days ago and answered it for one of the two sets
+it excludes.** Its title is *the anchor check's ROOT is `scripts/proofs/`, and
+the class it guards lives in 32 `.test.ts` files as well* — and its ruling about
+`.test.ts` is right and stands, because a vitest file's cases are `it()` blocks
+no roster sees and the honest anchor there is a pinned suite total, a different
+mechanism with a different noise profile. **None of that is true of the thirty-one.**
+They are `.mjs` files that count their own cases; the remedy is `createRoster`;
+and the eight research instruments that were *not* on the list already use it —
+by habit, in the one place the check could not look, which is the tell that the
+discipline was holding on convention there.
+
+So the transferable form is not *check your roots*. It is: **a finding that
+enumerates where else a class lives has the same three axes as the classifier it
+is about, and listing one omitted set reads exactly like listing all of them.**
+`VV-1` is the precedent and it is the same directory — the emitted-template scan
+reported *"11 emitted-source templates carry no backtick"* and meant *"11 of the
+15 I can see"*, the four it could not see being in `scripts/research/`.
+
+Mutation-tested: narrowing `proofFiles` back to the directory reddens two cases
+— the new reach control, and the ghost-entry case, which reports fourteen
+allowlist entries as naming files that do not exist. Both messages name what
+narrowed.
+
+---
+
 ## 2026-09-09 — Closing CCCCCC-4 found a fourth B3a: a private mtime comparison, missing the half that asks the compiler
 
 The finding was *three instruments read a built artefact with no freshness
