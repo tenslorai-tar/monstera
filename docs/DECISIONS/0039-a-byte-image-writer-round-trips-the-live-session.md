@@ -282,3 +282,73 @@ Recorded rather than edited, because what this document believed on 2026-09-04
 is the record. **The prediction was not wrong to make** — it named the trigger
 and the file, and that is what let the question be seen a day before the host
 that would have answered it by accident.
+
+## Addition, 2026-09-09 — an invertible byte-image command, priced against the choice a declaration actually makes
+
+The 2026-09-04 correction closed with *"That case does not exist today and this
+document did not cover it."* Stage 5's `replaceTextObject` is that case, and
+`commandDeclarations.test.ts`' failure message names this document as what has
+to be amended before it lands. This is that amendment; the command lands in a
+later commit (B4).
+
+### The comparison that correction made is not the comparison a declaration makes
+
+It compared an invertible byte-image command against **its live-session
+equivalent** — *"its serialise is a cost its live-session equivalent does not
+pay"* — and that sentence is true and unchanged. It is not the choice in front
+of whoever writes a declaration. A command's writer of record is settled by §3's
+matrix before invertibility is asked; `BUILD-PROMPT.md`:257 assigns in-place
+text editing to PDFium, and ADR-0047 makes PDFium byte-image. So the axis being
+chosen is **invertible against terminal, both byte-image**, and against that
+comparison the serialise is common to both.
+
+Read from the code, the same way the correction above was:
+
+- `CommandBus.#sessionFor` calls `ByteImageAccess.current()` for **every**
+  byte-image command, before `capture` has run — so the serialise happens under
+  either declaration, and neither pays for it.
+- `RegisteredWriter`'s `serialise` is the identity for a byte-image writer
+  (`pdfLibWriter.ts:70`; a remote PDFium writer's is the same, its session being
+  the image). So a terminal entry's checkpoint is the array `#sessionFor`
+  already produced, exactly as the correction says.
+
+### So the marginal cost of invertibility here is negative, and it is in RETENTION
+
+`CommandLog.trimTo` states the other half in its own comment: *"An invertible
+entry retains no document-scaled bytes."* A terminal entry retains one whole
+document image per command; an invertible one retains a prior string.
+
+| | serialise per command | retained per entry |
+|---|---|---|
+| byte-image, terminal | one (the input) | **one document image** |
+| byte-image, invertible | one (the input) | the inverse — for a text edit, a string |
+
+Text editing is the workload that makes the difference structural rather than
+tidy: a person replacing runs issues many small commands against one document,
+and declaring them terminal would put a full image in the log for each. §4
+reserves checkpoints for redaction, flatten, encryption and OCR *because* they
+are the exception, and a text edit is not one of them.
+
+### What is still NOT covered, said plainly
+
+**The serialise itself remains unmeasured on a large document.** The 2026-09-04
+correction says so and this addition does not improve on it. What is priced here
+is the *difference* between two declarations, which is exactly the quantity a
+declaration decides; the shared term is unchanged and still unread.
+
+**And it prices nothing about a remote byte-image writer's round trip** — the
+bytes out to a granted directory and back — which is ADR-0047's open *how do the
+input bytes reach the host* and is answered by the commit that wires the first
+PDFium command, not here.
+
+### The case that fires becomes the case that holds this rule
+
+`commandDeclarations.test.ts`' *every byte-image command is non-invertible* was
+written as a **trigger**, with a message saying what to do. Its instruction has
+now been carried out, so it stops being a trigger and becomes the wrong shape to
+keep: a case asserting a fact this document has just made legitimate would be
+red for a correct table. The commit that lands `replaceTextObject` replaces it
+with the property this addition actually establishes — that a byte-image
+command's declaration is a statement about **retention** — and keeps the control
+that the byte-image set is non-empty, without which either version passes
+vacuously.
