@@ -888,6 +888,385 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — Stage audit of `642b262..63f10be`: a case-count check that cannot see a third of its class, and a comment falsified eleven lines from the edit that falsified it
+
+Thirty commits, 98 files, against a batch of 100. **Called with three files of
+headroom rather than at the crossing**, because the next unit is the host
+generalisation and it touches far more than three: the gate blocks *before* the
+crossing, so a unit begun here would reach `git commit` unable to land and would
+have to be split around a bookkeeping commit. `npm run audit:scope` printed
+*"Within one batch. An audit is not yet owed"* — the same disagreement the
+previous audit recorded between the report and the gate, and this time neither
+fired. **What called it was arithmetic about the next commit**, which is the
+question neither instrument answers.
+
+The range is two stages wide. It opens in Stage 4's tail — spell check, the
+ribbon, the launcher, the text layer's bounds — crosses into Stage 5 at the
+substrate work, and ends on ADR-0047. So the modified-proofs column carries two
+kinds of change: UI surfaces moving onto the ribbon, and a second engine
+arriving.
+
+### 1. Root cause, or workaround?
+
+Every correction in the range names a mechanism, and the two loudest are in
+`9035e5d`, which corrects two reds it did not hide: `check:proofanchors` refusing
+a total derived from the cases that ran, and `ARTEFACT_EDGES` losing its `@type`
+because a constant was inserted between a JSDoc block and the declaration it
+annotated. Both are root causes; the second names the habit under both — a
+partial local sweep — and answers it with two commands rather than a resolution.
+
+**No repair could regenerate. No check was loosened.** Two candidates were read
+in full and both are exemptions taken deliberately, with the thing that would
+have to change to widen them written down:
+
+- `electronImports.proof.mjs` gains an allowance for
+  `scripts/research/engineReachProbe.mjs`, whose specifier is computed **because
+  the specifier is the variable the whole instrument varies**. It pins
+  `sites: 1`, so a second computed specifier in that file is red.
+- `payloadBounds.test.ts` gains `spelling.dictionary` in `EXCLUDED`, on the
+  ground that a dictionary's size is the language's and no document contributes
+  to it. That is a **compound claim** — *bounded at the read and at the schema* —
+  and both halves were checked rather than the sentence read: `MAX_AFFIX_BYTES`
+  and `MAX_DICTIONARY_BYTES` are enforced in `spellingDictionaries.ts` at the
+  read and in `channels.ts:2290` at the schema.
+
+### 2. Verified against the easy shape only?
+
+The range's headline hard shape arrived on its own and is written up in
+`1aeb3eb`: the character score compared two squashed texts **position by
+position** and reported 14.9% to 47.2% over the corpus, for two engines that had
+read almost exactly the same glyphs. `FZ_STEXT_SEGMENT` reorders a multi-column
+page into column-major and PDFium emits content-stream order, so the multi-column
+page is the hard shape and a positional measure of two correct readings of one
+scores near zero. The measure became a multiset and the positional one was kept
+and **renamed** `order`, which is the axis `segment` exists to change.
+
+The second is `textSearch.ts`: a per-line search answers *not found* for a phrase
+the typesetter wrapped, in exactly the voice of a genuine absence. The fixture
+set now carries the wrap, the non-wrap control, the padding an extractor leaves,
+and a same-line match asserting `endLine === line` — without which a build
+reporting the page's last line as every match's end passes every spanning case.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+One, and it is a **strengthening that reads like a loosening**.
+`AppErrorBoundary.test.tsx` and `App.test.tsx` both asserted the start screen's
+absence through `queryByRole('button', { name: 'Open a document' })`. The ribbon
+gained Home › File on 2026-09-08, so that control is now correctly present with a
+document open and the old assertion would fail **for a build that is right**.
+Both now query `.m-start-screen`, which is the subject rather than something that
+travelled with it. Recorded because the diff — a role query replaced by a class
+query — reads as a weakening in review and is the opposite.
+
+The second is `pressCommand` in `App.test.tsx`, which walks the section rail
+rather than calling `getByRole` on a flat surface. Eleven cases moved onto it and
+they assert something stronger afterwards: a command **reachable by a reader**.
+Its section list is hand-kept, which is the right direction here — a section
+arriving that a command was placed in makes the helper throw, naming the sections
+it tried, rather than passing.
+
+### 3. Would CI have caught it?
+
+Answered from runs, in both directions, and the range contains the answer to
+itself: **CI caught what the local sweep missed.** `83eae3a` reddened CI on five
+jobs and Guards on two, `796a7f3` and `1aeb3eb` carried the Guards red forward,
+and `9035e5d` corrected both. The board reads **GREEN at
+`63f10be3e36a6830fdd4b0e617e2062db1d64e29`: Guards=success, CI=success**, read
+from the API on 2026-09-09 rather than inferred from the workflow file.
+
+The other direction — *is there a defect this machine cannot see* — has a real
+answer for the two new PDFium proofs. `proof:pdfiumadapter` and
+`proof:editfidelity` are provisioning-branched, and the branch that never
+executes locally is the **absent-library** one: everything here has `pdfium.dll`.
+That side runs on ubuntu, where `Provision PDFium` is skipped and the
+UNVERIFIABLE path is what executes, and it was observed doing so — the
+`Attribute the cost of one in-place text edit` step appears twice in run
+`34316420902`, once beside a successful provision and once beside a skipped one.
+
+**And of the four findings below, CI could have caught none**, which is not a gap
+to close with a case: three of them are questions no check in this repository
+asks, and the fourth is a comment.
+
+### 4. Are the proofs non-vacuous?
+
+Four things were mutated rather than read.
+
+- **The writer-shape case.** Restoring `pdfium: 'live-session'` in
+  `engineSeam.ts` reddens `commandDeclarations.test.ts`' new case **and nothing
+  else in the repository** — typecheck, lint, build and the other 2,175 tests
+  pass identically. That is the case working and it is also the measurement of
+  why it was needed: the declaration had been wrong since Stage 0 and nothing
+  could contradict it.
+- **`proof:editfidelity`'s seven.** The comparator's resolution control (one
+  pixel, one level) is what the whole file rests on, and the positive case — *the
+  edited band DID change*, 2523 of 35200 — is what stops the three zeros passing
+  on a build where editing does nothing. Mutating the sampler is finding
+  **CCCCCC-3** and is written up there.
+- **`proof:lineagreement`'s three.** Control 1 requires both engines to find the
+  three lines this file drew; control 2 feeds the scorer two line sets differing
+  by one and requires less than 100%; control 3 gives the **character** score its
+  own resolution case, one character added to one line, because the corpus rows
+  report 100% for it and a function returning 1 would too. All three throw by
+  name. What it has no anchor for is its case **count** — finding CCCCCC-1.
+- **`showWordCount.test.ts`'s cancel case** carries its own record of a mutation
+  that bit: the post-call abort check was separated by nothing, because the next
+  iteration stops the walk either way. The case now asserts the one `step` that
+  differs.
+
+**No case count fell anywhere in the range.** Measured across the seventeen
+modified vitest files: `textSearch` 23 → **30**, `showWordCount` 6 → **10**,
+`StatusBar` 10 → **13**, `FindBar` 4 → **6**, `commandDeclarations` 4 → **5**,
+`App` 54 → **55**, and eleven unchanged. `annotationCommands` is 18 → 18 with one
+case **replaced**, read below.
+
+### 4a. Has every instrument passed a resolution test?
+
+Every instrument added in the range carries one and refuses to report without it:
+`editFidelity` (one pixel changed by one level, before anything real is
+compared), `lineAgreement` (two line sets differing by one line, **and** one
+character added to one line for the character score, because the corpus rows
+report 100% for it), `textLayerBounds` (a constructed page of 37 lines whose
+longest is 300 characters), `editCost` (a clock that must separate 1 ms from
+50 ms, and k=1 demanding the two strategies agree).
+
+`pdfiumAdapter`'s retention case is the one worth naming, because it is a
+**control on a control**: the reassuring answer to *the bytes were copied* is
+*the text is still right*, which is also what happens if the overwrite never
+landed — so it asserts the caller's array really is all zeros before it believes
+the round trip.
+
+### 4b. Is the instrument a search? Then it needs a positive control.
+
+`engineSurface.mjs` is the range's search — it counts MuPDF members against
+`mupdf.d.ts` and call sites across the kernel — and it carries four controls that
+throw by name, including *an empty intermediate result is a broken parse, not a
+small API* and one requiring a module to be seen calling `loadPage`, which the
+kernel certainly does.
+
+The cross-document sweep for item 7 was run through `npm run sweep:prose`, not
+`grep`, for the reason `withdrawnPhrases.mjs` states in its own header: this
+repository hard-wraps prose, so any phrase long enough to wrap escapes a
+line-scoped search in silence. The sweep reports its own control found.
+
+### 4c. Does the check derive its extent from the set it governs?
+
+Three rosters were added and all three take a **literal**: `editFidelity`
+`cases: 7`, `pdfiumAdapter` `cases: 17`, `editCost` `cases: 7`. The fidelity
+proof's corpus cases are deliberately outside the roster, with their own anchor —
+every document must reach the comparison — because their number is the corpus's
+and a literal there would be pinned to something designed to change.
+
+Two derivations were checked for direction and both run the right way: the
+live-session case derives from `writerShapes` where the danger is a member
+**arriving**, and `pressCommand`'s section list is hand-kept where the danger is a
+section arriving. **The one that runs the wrong way is finding CCCCCC-4.**
+
+### 5. Executed, or asserted?
+
+The asserted column is short and every entry in it says so where it is written.
+ADR-0023 Decision 16 records route A as **unmeasured** in the decision itself.
+ADR-0047's *"the untouched-save half already covers object-level edit, region
+replacement and replace-all, because they share one `serialise`"* is asserted, and
+CCCCCC-3 is the reason it is worth naming.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Four amendments, each in its own commit, each ahead of the code it enabled:
+`56fb4a8` (a ribbon placement's group is a `MessageKey`) before `493d9c7`'s
+ribbon; `c7917e0` (ADR-0010's open question answered — native, both engines,
+koffi) and `783c852` (one host body parameterised by engine) before `83eae3a`'s
+PDFium adapter; `df7e110` (ADR-0047) before `63f10be`'s code. **Nothing was
+retrofitted.**
+
+### 7. Do the documents still match the code?
+
+Two source comments do not. Finding **CCCCCC-2**.
+
+---
+
+### CCCCCC-1 — the case-count check's ROOT excludes eleven `proof:` scripts, and the finding that named the root axis enumerated one of the two sets it misses
+
+`check:proofanchors` walks `join(ROOT, 'scripts', 'proofs')` and filters
+`.proof.mjs`. Its output line is *"ok N of M proof(s) declare a case count"*,
+which reads as a statement about this repository's proofs.
+
+**Measured 2026-09-09.** `package.json` registers **eleven** `proof:*` scripts
+whose command is `node scripts/research/…`; **fourteen** distinct
+`scripts/research/` instruments are steps in `ci.yml`; and **six of the fourteen
+declare no case count at all** — `baselineSpread.mjs`, `containedStart.mjs`,
+`engineSurface.mjs`, `hostFixedCost.mjs`, `lineAgreement.mjs` and
+`textLayerBounds.mjs`. The other eight take `createRoster` **by habit**, which is
+the tell: the discipline is holding by convention in precisely the place the
+check cannot look.
+
+This is X-1's *root* axis, and what makes it worth filing rather than noting is
+that **it has already been found here and answered for one of the two excluded
+sets**. ZZZZZ-4, 2026-09-01, is titled *the anchor check's ROOT is
+`scripts/proofs/`, and the class it guards lives in 32 `.test.ts` files as well* —
+and it names `.test.ts` and stops. It rules the remedy there *genuinely
+different*, correctly: a vitest file's cases are `it()` blocks no roster sees, so
+the honest anchor is a pinned suite total, a different mechanism with a different
+noise profile. **None of that is true of `scripts/research/`.** Those are `.mjs`
+files that count their own cases, the remedy is `createRoster`, and eight of them
+already have it.
+
+So the enumeration was the defect, not the ruling: a finding that lists where
+else the class lives has the same three axes as the classifier it is about, and
+listing one omitted set reads exactly like listing all of them. **`VV-1` is the
+precedent and it is the same directory** — the emitted-template scan reported
+*"11 emitted-source templates carry no backtick"* and meant *"11 of the 15 I can
+see"*, the four it could not see being in `scripts/research/`.
+
+Not latent. `proof:lineagreement` and `proof:textbounds` are unconditional CI
+steps today and neither declares a count.
+
+**Open.** The fix is one root change plus six dispositions, and the dispositions
+are not uniform — `hostFixedCost.mjs` and `baselineSpread.mjs` are measurement
+runs invoked with `--always`, whose *cases* may honestly be zero, and deciding
+that inside an audit commit is the retrofit this checklist exists to prevent.
+
+### CCCCCC-2 — two comments falsified by `63f10be`, one of them the paragraph that exists to record this exact hole
+
+`63f10be` changed `writerShapes.pdfium` to `'byte-image'`. Two source comments
+still say otherwise:
+
+- **`packages/kernel/src/pdfiumFfi.ts:451`** — *"The shape is `live-session`, as
+  `writerShapes` already records"*. Flatly false, and it **cites the table that
+  now contradicts it**. The sentence continues *"a PDFium edit mutates a loaded
+  document and the bytes come back from `serialise`"*, which is still an accurate
+  description of the adapter's own API — so this is item 7's half-true compound
+  claim, where the live clause vouches for the dead one and nothing about reading
+  it feels wrong. `63f10be` never opened this file.
+- **`packages/kernel/src/engineSeam.ts:24`** — *"`pdfiumFfi.ts` put a second
+  live-session one there on 2026-09-09. Three adapters now, on both shapes."*
+  Three adapters is right; *live-session* is not.
+
+The second is the sharp one. That paragraph is the one added in `9035e5d` to
+record NNN-4 — *a claim a range falsifies without touching the sentence, which no
+range-scoped sweep can reach* — and it went stale **eleven lines above an edit in
+the same file, in a commit that opened it.** So NNN-4's stated compensation is
+narrower than it reads: *sweep every other statement of the relationship* was
+performed across the documents and did not include the file being edited, because
+the edit was three lines long and the sentence was above it.
+
+The transferable form is already in `CLAUDE.md` and is worth reading as a
+prediction that came true: *ask it of the changed function's own comment first,
+and ask it precisely — when a commit removes a behaviour, does that comment still
+assert the behaviour EARLIER IN ITS OWN TEXT?* It does. Twice before, and now a
+third time, in the paragraph warning about it.
+
+A third statement is in `ADR-0039:92` — *"a second **live-session** writer
+arrives, which is PDFium in Stage 5"*. That is an ADR, so it takes a dated
+correction rather than an edit, and ADR-0047 already names it from the other
+side.
+
+**Open**, and the two source comments are edited to be currently true rather than
+corrected underneath, because a comment is a live description and not a record of
+a moment.
+
+### CCCCCC-3 — the fidelity comparator samples one channel and calls it grey; measured, and it is a gap rather than a defect
+
+`editFidelity.proof.mjs` names its samples `grey` and its function *"Greyscale
+samples of one page"*, and fills them with `pixels[y * stride + x * 4]`. The
+shipped header settles what that byte is:
+`.tools/pdfium/155.0.8044.0/include/fpdfview.h:1121` — *"4 bytes per pixel, byte
+order: blue, green, red, alpha"*. **It is the blue channel.** A page whose red
+and green changed and whose blue did not scores zero differing, which is this
+file's own reassuring answer.
+
+**Measured rather than argued.** The sampler was replaced with
+`0.114·B + 0.587·G + 0.299·R` and the proof re-run against the five-document
+corpus. All five still report **0 of ~2,000,000 differing**, and the ink figures
+moved — `corpus-2` 29.48% → 29.52%, `corpus-5` 35.21% → 37.41% — which is the
+resolution check on the mutation itself: it reached the corpus renders, and the
+answer under test did not move. So the untouched-save claim survives the
+widening, and this is a **gap with an expiry** rather than a live defect.
+
+The expiry is a Stage 5 row. Object-level edit is *move, scale, recolor, delete*,
+and a text object recoloured from black to red changes **no blue sample at all**:
+0 before, 0 after. A fidelity case written for the recolor row against this
+comparator could not fail, and the file's own *"what it does not cover"* list —
+which does state page-1-only, constructed-page-only and text-replacement-only —
+does not state this one.
+
+**Open, with the remedy measured**: the luminance sampler above costs nothing,
+changes no current answer, and makes the instrument able to see the row that is
+coming.
+
+### CCCCCC-4 — three instruments read a built artefact with no freshness guard, and the anchor that would name them derives from the guard's own callers
+
+`buildFreshness.mjs` gained `TEXT_STRUCTURE` this range so that
+`lineAgreement.mjs` refuses a stale parser. Its JSDoc discloses the gap in
+passing: *"`textLayerBounds.mjs` imports the same built module and does NOT guard
+it."*
+
+**Measured**: four `scripts/` files import `packages/kernel/dist/textStructure.js`
+— `lineAgreement.mjs`, `textLayerBounds.mjs`, `textFrames.mjs` and
+`textLayerAgreement.mjs` — and **one** of them takes `refuseStaleBuild`.
+`textLayerBounds.mjs` is `proof:textbounds` and an unconditional CI step, so it
+can score the previous parser and print the answer under this one's name.
+
+The reason nothing reports it is 4c, and it is stated as a strength in
+`ARTEFACT_EDGES`' own comment: the required set *"comes from the set of proofs
+that IMPORT `refuseStaleBuild`, which an omission here cannot reach."* That is
+exactly right for the failure it was built for — an entry **missing** from the
+map for a proof that takes the guard. It is exactly wrong for this one: **a proof
+that never imports the guard is not in the set the anchor derives from**, so the
+danger that makes the set smaller is invisible, which is the direction 4c says a
+derivation cannot see.
+
+A comment naming the gap is not a mechanism — and this one passes the disclaimer
+test badly, because it could have been written before the change it sits in.
+
+**Open.** The remedy is a set difference in `buildFreshness.proof.mjs` against
+the scripts that import a `dist/` path, which is the independent set.
+
+### CCCCCC-5 — a test-only export in a shipped module, decided the other way in the same range
+
+`packages/ui/src/searchHighlight.ts` exports `resetSharedPainter`, whose callers
+are `App.test.tsx` and `searchHighlight.test.ts` and nothing else. Six lines away
+in the same range, `editFidelity.proof.mjs` refuses the identical move and says
+why: *"an unused render API added to a shipped module for a proof's convenience
+is an abstraction with one caller."*
+
+Small, and filed because the two decisions were taken by one author in one range
+with nothing to point at. The honest disposition is a rule, not a deletion: a
+module-level memo that resolves a platform capability once has to be resettable
+for anything to test the null branch, and that is a different case from an API
+added for a proof's convenience.
+
+### Read and sound
+
+- **All nineteen modified-proof diffs.** Ten are one-line stubs following the
+  `spelling.dictionary` channel and the `endLine`/`endOffset` pair across every
+  fixture that names a match. Two carry real deletions and both are corrections
+  rather than weakenings: `annotationCommands.test.ts` replaces *"not on a ribbon
+  nothing renders"*, whose premise expired when the ribbon landed, and **adds**
+  the half a filter loses — every tool must be in the ribbon, or uniqueness over
+  an empty set passes; and `textSearch.test.ts` moves the shared-cursor fixture
+  from two lines of one page to two pages, because joining a page into one unit
+  made the old fixture unable to fail however the cursor behaved. **A fixture
+  that stopped separating anything, found and moved by its own author.**
+- **Sixteen source files added**, of which six are instruments; each carries its
+  own control, and `pdfiumFfi.ts` is covered by a 17-case proof driven against
+  the real DLL rather than a stub.
+- **No proofs removed, and no source files removed.**
+- `App.test.tsx`'s `renderPage` stub gained `crop` and `rotation`, which is a
+  **harness fix** — and the rule that a harness fix needs a case reading the
+  harness is met here by consequence rather than by a note: the new painting case
+  asserts `.m-text-line` has length 1 before it believes the empty highlight
+  registry, and the comment records that this is exactly how the case failed on
+  its first run.
+
+### The watermark
+
+`docs/audit-watermark.json` advances to **`63f10be`** in this commit. Five
+findings, CCCCCC-1 to CCCCCC-5, all open, none closed here — the gate had three
+files of headroom and this entry plus the watermark is two of them, so the fixes
+are their own commits with the range reset behind them.
+
+---
+
 ## 2026-09-09 — PDFium's writer shape, and the note that could not fire
 
 ADR-0047's code: `writerShapes.pdfium` becomes `'byte-image'`,
