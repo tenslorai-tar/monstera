@@ -25,7 +25,7 @@
  *    *the edit worked and rewrote the rest of the page* are one observation on
  *    the whole page, and only the second is a defect.
  *
- * ## Three controls, because every claim here has a reassuring answer
+ * ## Four controls, because every claim here has a reassuring answer
  *
  * The answer wanted from all of it is **zero**, which is what a broken
  * instrument produces too. So:
@@ -33,6 +33,11 @@
  * - **RESOLUTION** (item 4a): the comparator is fed two renders differing by one
  *   pixel at one level and must report exactly that, before it compares anything
  *   real. A comparator returning 0 for everything satisfies claim 1 perfectly.
+ * - **CHANNELS**: two pages differing only in a run's RED component must be
+ *   reported as different, and this one runs through the real rasteriser rather
+ *   than over arrays this file built. The resolution control above passes on a
+ *   sampler that reads one byte of a BGRA pixel; this one does not, which is
+ *   finding CCCCCC-3 and the guard against it coming back.
  * - **INK**: every render's inked fraction is measured and asserted non-zero. A
  *   page PDFium failed to draw renders white, and white differs from white by
  *   nothing — a blank render and a perfectly preserved one are the same 0.
@@ -136,6 +141,25 @@ function renderer() {
 /**
  * Greyscale samples of one page of a document, from its bytes.
  *
+ * ## THIS READ ONE CHANNEL AND CALLED IT GREY (finding CCCCCC-3, 2026-09-09)
+ *
+ * `FPDFBitmap_Create(w, h, 1)` produces BGRA — `fpdfview.h`:1121, *"4 bytes per
+ * pixel, byte order: blue, green, red, alpha"* — so `pixels[at]` alone is the
+ * **blue** sample. A page whose red and green moved and whose blue did not
+ * scored zero differing, which is this file's own reassuring answer.
+ *
+ * The claim it was supporting survived the widening, and that was **measured
+ * rather than assumed**: with the combination below, all five corpus documents
+ * still report 0 of ~2,000,000 differing, and the inked fractions moved
+ * (`corpus-2` 29.48% → 29.52%, `corpus-5` 35.21% → 37.41%) — which is the
+ * resolution check on the change itself, since a combination that never reached
+ * the corpus renders would have moved nothing.
+ *
+ * It is fixed anyway because of what is coming: the object-level edit row is
+ * *move, scale, recolor, delete*, and a text object recoloured black to red
+ * changes **no blue sample at all** — 0 before and 0 after. A fidelity case
+ * written for that row against a blue-only sampler could not fail.
+ *
  * @param {ReturnType<typeof renderer>} api
  * @param {Uint8Array} bytes
  * @param {number} index
@@ -160,7 +184,15 @@ function renderPageOf(api, bytes, index) {
       );
       const grey = new Float64Array(width * height);
       for (let y = 0; y < height; y += 1) {
-        for (let x = 0; x < width; x += 1) grey[y * width + x] = pixels[y * stride + x * 4] ?? 0;
+        for (let x = 0; x < width; x += 1) {
+          // Rec. 601 luma over all three channels, in BGRA order. A colour
+          // change confined to red or green is invisible to any one of them.
+          const at = y * stride + x * 4;
+          grey[y * width + x] =
+            0.114 * (pixels[at] ?? 0) +
+            0.587 * (pixels[at + 1] ?? 0) +
+            0.299 * (pixels[at + 2] ?? 0);
+        }
       }
       api.destroyBitmap(bitmap);
       return { width, height, grey };
@@ -221,6 +253,24 @@ function inked(render) {
   return count / render.grey.length;
 }
 
+/**
+ * One text run in a given colour. The input for the channel control.
+ *
+ * Black and red differ in **red alone** — blue is 0 in both and green is 0 in
+ * both — so a sampler reading any single channel reports two of these as
+ * identical, and this is the fixture a blue-only sampler survives.
+ *
+ * @param {import('@cantoo/pdf-lib').RGB} colour
+ * @returns {Promise<Uint8Array>}
+ */
+async function oneRunPage(colour) {
+  const document = await PDFDocument.create();
+  const page = document.addPage([PAGE.width, PAGE.height]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText(FIRST, { x: 30, y: 230, size: 11, font, color: colour });
+  return document.save();
+}
+
 /** A page with three text runs and a filled rectangle. */
 async function threeRunPage() {
   const document = await PDFDocument.create();
@@ -236,7 +286,7 @@ async function threeRunPage() {
 /**
  * The roster, over the cases that exist on EVERY runner.
  *
- * Seven, and it is an independent claim rather than a count of what ran — a
+ * Eight, and it is an independent claim rather than a count of what ran — a
  * total printed from the cases that executed agrees with any collection,
  * including one that has quietly shrunk (audit item 4c, `check:proofanchors`).
  *
@@ -250,7 +300,7 @@ async function threeRunPage() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 8 });
 
 /**
  * @param {string} name
@@ -305,6 +355,20 @@ async function main() {
     'CONTROL: and reports nothing for two equal renders held separately',
     identical.differing === 0,
     'so a zero below is a reading and not the comparator',
+  );
+
+  // CONTROL 3 — THE CHANNELS, and it runs through `renderPageOf` rather than
+  // over arrays this file built. The two controls above are satisfied by a
+  // sampler that reads one byte of a BGRA pixel, which is what this file did
+  // until 2026-09-09 (finding CCCCCC-3): black and red share a blue sample and
+  // a green one, so a single-channel reading of these two pages is identical.
+  const blackRun = renderPageOf(api, await oneRunPage(rgb(0, 0, 0)), 0);
+  const redRun = renderPageOf(api, await oneRunPage(rgb(1, 0, 0)), 0);
+  const recoloured = compare(blackRun, redRun);
+  record(
+    'CONTROL: a run recoloured black to RED is reported as changed',
+    recoloured.differing > 0,
+    `${String(recoloured.differing)} of ${String(recoloured.total)} differ — the object-level edit row is what needs this`,
   );
 
   const original = await threeRunPage();
