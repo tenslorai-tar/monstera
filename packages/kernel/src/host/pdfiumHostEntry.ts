@@ -156,14 +156,10 @@ const handlers = createPdfiumHandlers({
     },
   },
   probe: probeContainment,
-  // PARSES AND DISCARDS (ADR-0048 Decision 3), so `open-failed` means *this
-  // engine cannot read this document* at the same point in the protocol from
-  // both hosts. The session is closed immediately: nothing is kept, which is
-  // the whole of what byte-image means for a host.
-  parses: async (image) => {
-    const session = await pdfiumWriter.open(image);
-    await pdfiumWriter.close(session);
-  },
+  // NO PARSE PROBE. `engine/open` registers an area and nothing else
+  // (ADR-0048's withdrawn Decision 3), so a document PDFium cannot read is
+  // refused by the call that wanted it — `engine-refused` — rather than at a
+  // moment when there is no document to speak of.
   textObjects: async (image, page) => {
     const session = await pdfiumWriter.open(image);
     try {

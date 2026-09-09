@@ -1026,40 +1026,60 @@ const probeOutcomeSchema = z.discriminatedUnion('kind', [
 ]);
 
 /**
- * The three schemas a core channel set cannot be built without.
+ * How a WRITER SHAPE looks on the wire — everything about a host's protocol
+ * that is decided by `writerShapes` rather than by which library is behind it
+ * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
+ * as corrected 2026-09-09).
  *
- * Every other core channel carries the same shape for every engine — a session
- * token, a name, a directory. These three carry the engine's own **commands**,
- * and that is exactly what `CommandExecution<W>` binds per writer, so they are
- * parameters rather than imports.
+ * ## Why this is one object and not six parameters
+ *
+ * The first attempt spread these across `CoreChannelSchemas` beside the command
+ * union, and that spelling said the differences are each engine's — which is
+ * exactly what the correction found to be false. They are `byte-image`'s and
+ * `live-session`'s, and there are two of them: {@link liveSessionWire} and
+ * {@link byteImageWire}. A third engine of either shape takes the matching
+ * constant and supplies only its commands, which is what makes *one host body,
+ * parameterised by engine* a claim about a parameter rather than about a set of
+ * parallel ones.
  */
-export interface CoreChannelSchemas<
-  TCommand extends z.ZodType,
-  TCapture extends z.ZodType,
-  TInverse extends z.ZodType,
+export interface WireShape<
+  TOpen extends z.ZodRawShape,
+  TOpenFailure extends readonly string[],
   TRead extends z.ZodRawShape,
   TWrite extends z.ZodRawShape,
   TWrote extends z.ZodType,
   TTransferFailure extends readonly string[],
 > {
-  /** The union of commands routed to this engine. `mupdfCommandSchema`. */
-  readonly command: TCommand;
-  /** What a capture answers for those commands. */
-  readonly capture: TCapture;
-  /** The prior state an invert restores. */
-  readonly inverse: TInverse;
+  /**
+   * What `engine/open` carries beyond the two granted directories.
+   *
+   * `{ snapshotName }` for a **live-session** engine: its open opens a
+   * *document* and keeps the parse. Empty for a **byte-image** engine, whose
+   * open registers the granted area and nothing else — at that moment there is
+   * no document, and the area's lifetime is the host's rather than any
+   * document's.
+   */
+  readonly open: TOpen;
+  /**
+   * What `engine/open` can fail with.
+   *
+   * `['open-failed']` for a live-session engine, which parses. **Empty** for a
+   * byte-image one, which does not: registering an area the host was granted
+   * has nothing in it that can go wrong, and declaring a failure it cannot
+   * produce is what ADR-0048 refuses one channel up.
+   */
+  readonly openFailures: TOpenFailure;
   /**
    * Where this engine READS the document image it is about to work on.
    *
-   * Empty for a **live-session** engine, whose session *is* the parse it is
-   * holding — there is nothing to name. `{ from: outputNameSchema }` for a
-   * **byte-image** engine, which holds no parse between commands and is handed
-   * the bytes each time (ADR-0047).
+   * Empty for a live-session engine, whose session *is* the parse it is
+   * holding. `{ from: outputNameSchema }` for a byte-image engine, which holds
+   * no parse between commands and is handed the bytes each time (ADR-0047).
    *
-   * A NAME, never a place: the directory is the one this session's area
-   * granted, exactly as `engine/open`'s `snapshotName` is. So nothing here lets
-   * a caller point the host at a path it was not granted, and Decision 2's
-   * containment property survives a decision about where a parse lives.
+   * A NAME, never a place: the directory is the one this host's area granted.
+   * So nothing here lets a caller point the host at a path it was not granted,
+   * and Decision 2's containment property survives a decision about where a
+   * parse lives.
    */
   readonly read: TRead;
   /**
@@ -1077,34 +1097,110 @@ export interface CoreChannelSchemas<
    * `z.object({}).strict()` for a live-session engine; a byte count for a
    * byte-image one, which is `engine/serialise`'s own result schema and is not
    * a coincidence: a byte-image `engine/apply` **is** that channel's job and
-   * this engine's apply in one call (ADR-0048's correction of 2026-09-09).
+   * this engine's apply in one call.
    *
    * `CommandExecution<W>` declared this asymmetry before any of it was built —
    * `apply` returns `Promise<ByteImage>` for a byte-image writer and
-   * `Promise<void>` for a live-session one — so this parameter is that sentence
-   * reaching the wire rather than a new idea.
+   * `Promise<void>` for a live-session one — so this is that sentence reaching
+   * the wire rather than a new idea.
    */
   readonly wrote: TWrote;
   /**
-   * The failures naming an engine's own **transfer** can produce, beyond the
-   * ones every host declares.
+   * What a call that names a **transfer** can fail with, beyond the codes every
+   * host declares.
    *
-   * Empty for a live-session engine: an invert against a parse the host is
-   * holding can only miss the session. `['asset-missing']` for a byte-image
-   * engine, whose invert reads an input image out of the granted directory and
-   * can find it gone — main wrote it and it went, or main did not write it.
+   * Empty for a live-session engine: an apply against a parse the host is
+   * holding can miss the session or the ADR-0044 asset, and both are already
+   * declared. A byte-image engine adds two — the input image can be gone
+   * (`asset-missing`, ours), and the engine can refuse the call against those
+   * bytes (`engine-refused`, nobody's fault but not the host's health).
    *
-   * **It travels with {@link read} and {@link write} because it IS them**: the
-   * failure a channel can produce is decided by what its params name, so a
-   * separate list here would be a second statement of the same fact and the two
-   * would drift. What it must not become is a widening of `engine/apply`'s and
-   * `engine/capture`'s lists, which already declare `asset-missing` for both
-   * engines — ADR-0044's asset is MuPDF's too, and a declared failure with
-   * nothing behind it on one host is exactly what ADR-0048 refuses one channel
-   * up.
+   * **The second is the correction's own consequence.** Decision 3 put that
+   * failure at `engine/open`; withdrawing it moves the failure to the call that
+   * needed the engine, which is the moment it actually matters — a document the
+   * viewer can display and PDFium cannot parse refuses one command rather than
+   * being poisoned.
    */
   readonly transferFailures: TTransferFailure;
 }
+
+/**
+ * The three schemas a core channel set cannot be built without, plus the wire
+ * shape of the writer it serves.
+ *
+ * The three carry the engine's own **commands**, which is exactly what
+ * `CommandExecution<W>` binds per writer. The fourth carries everything
+ * `writerShapes` decides, and is one of two constants rather than a set of
+ * fields.
+ */
+export interface CoreChannelSchemas<
+  TCommand extends z.ZodType,
+  TCapture extends z.ZodType,
+  TInverse extends z.ZodType,
+  TWire,
+> {
+  /** The union of commands routed to this engine. `mupdfCommandSchema`. */
+  readonly command: TCommand;
+  /** What a capture answers for those commands. */
+  readonly capture: TCapture;
+  /** The prior state an invert restores. */
+  readonly inverse: TInverse;
+  /** {@link liveSessionWire} or {@link byteImageWire}. */
+  readonly wire: TWire;
+}
+
+/**
+ * The wire of a writer whose session is a parse the host holds.
+ *
+ * MuPDF's, and any future live-session engine's. Read it against
+ * {@link byteImageWire} — the pair is the whole of what `writerShapes` decides
+ * about a host's protocol, and the two being constants is what stops an engine
+ * inventing a third arrangement.
+ */
+export const liveSessionWire = {
+  open: { snapshotName: outputNameSchema },
+  openFailures: ['open-failed'],
+  read: {},
+  write: {},
+  wrote: z.object({}).strict(),
+  transferFailures: [],
+} as const satisfies WireShape<
+  z.ZodRawShape,
+  readonly string[],
+  z.ZodRawShape,
+  z.ZodRawShape,
+  z.ZodType,
+  readonly string[]
+>;
+
+/**
+ * The wire of a writer whose session is the document's bytes.
+ *
+ * PDFium's, and any future byte-image engine's that runs in a host. Every call
+ * names where its image is; a write also names where its result goes and
+ * answers how many bytes arrived.
+ *
+ * **`engine-refused` is where ADR-0048's withdrawn Decision 3 went.** That
+ * decision put *this engine cannot read this document* at `engine/open`; main's
+ * answer to a failed open is to poison the document, which is right for the
+ * engine a document is read through and wrong for one only needed to edit. So
+ * the failure belongs to the call that wanted the engine.
+ */
+export const byteImageWire = {
+  open: {},
+  openFailures: [],
+  read: { from: outputNameSchema },
+  write: { into: outputNameSchema },
+  wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
+  transferFailures: ['asset-missing', 'engine-refused'],
+} as const satisfies WireShape<
+  z.ZodRawShape,
+  readonly string[],
+  z.ZodRawShape,
+  z.ZodRawShape,
+  z.ZodType,
+  readonly string[]
+>;
 
 /**
  * The **six** channels a contained host owes whatever engine it holds
@@ -1150,6 +1246,8 @@ export function coreEngineChannels<
   TCommand extends z.ZodType,
   TCapture extends z.ZodType,
   TInverse extends z.ZodType,
+  TOpen extends z.ZodRawShape,
+  const TOpenFailure extends readonly string[],
   TRead extends z.ZodRawShape,
   TWrite extends z.ZodRawShape,
   TWrote extends z.ZodType,
@@ -1159,12 +1257,10 @@ export function coreEngineChannels<
     TCommand,
     TCapture,
     TInverse,
-    TRead,
-    TWrite,
-    TWrote,
-    TTransferFailure
+    WireShape<TOpen, TOpenFailure, TRead, TWrite, TWrote, TTransferFailure>
   >,
 ) {
+  const wire = schemas.wire;
   return {
     /**
      * ADR-0023 §5's startup check, and the ONE channel whose answer decides
@@ -1225,28 +1321,35 @@ export function coreEngineChannels<
      * convenience: `HostSession`'s own comment says a `serialise` that carried
      * a directory would be a channel through which a confused main could
      * redirect the document's bytes on every save. A byte-image host holds no
-     * parse between commands and still holds the area, for exactly that reason
-     * — and it **parses once here and discards it**, so `open-failed` means
-     * *this engine cannot read this document* at the same point in the protocol
-     * whichever host answers.
+     * parse between commands and still holds the area, for exactly that reason.
+     *
+     * **What it does NOT do is parse**, and that is ADR-0048's withdrawn
+     * Decision 3. A byte-image open registers the area and stops: at that
+     * moment there is no document, its area's lifetime is the host's rather
+     * than any document's, and *this engine cannot read this document* belongs
+     * to the call that wanted the engine — because main answers a failed open
+     * by poisoning the document, which is right for the engine a document is
+     * read through and wrong for one only needed to edit.
+     *
+     * So `snapshotName` and `open-failed` come from the wire shape rather than
+     * from this literal.
      */
     'engine/open': channel(
-      'Opens a document image the host reads from a directory it was granted.',
+      'Registers a granted area, and for a live-session engine opens the document in it.',
       z
         .object({
           /** The directory main granted this session READ on. */
           snapshotDirectory: pathSchema,
-          /** The file inside it holding the canonical bytes. */
-          snapshotName: outputNameSchema,
           /** The directory main granted this session MODIFY on. */
           outputDirectory: pathSchema,
+          ...wire.open,
         })
         .strict(),
       // The host mints the identity (Decision 10b). Main holds a token it
       // cannot dereference, and this string is what the adapter records beside
       // it.
       z.object({ session: sessionSchema }).strict(),
-      ['open-failed'],
+      wire.openFailures,
     ),
 
     'engine/close': channel(
@@ -1307,12 +1410,12 @@ export function coreEngineChannels<
            * field a caller cannot express (B5). Main's MuPDF client has no
            * `into` to fill in; main's PDFium client cannot leave one out.
            */
-          ...schemas.read,
-          ...schemas.write,
+          ...wire.read,
+          ...wire.write,
         })
         .strict(),
-      schemas.wrote,
-      ['no-such-session', 'asset-missing'],
+      wire.wrote,
+      ['no-such-session', 'asset-missing', ...wire.transferFailures],
     ),
 
     'engine/capture': channel(
@@ -1345,20 +1448,25 @@ export function coreEngineChannels<
            * are separate parameters rather than one *transfer* shape, and this
            * channel is where that separation earns its keep.
            */
-          ...schemas.read,
+          ...wire.read,
         })
         .strict(),
       schemas.capture,
-      ['no-such-session', 'asset-missing'],
+      ['no-such-session', 'asset-missing', ...wire.transferFailures],
     ),
 
     'engine/invert': channel(
       'Restores prior state recorded by an earlier capture.',
       z
-        .object({ session: sessionSchema, inverse: schemas.inverse, ...schemas.read, ...schemas.write })
+        .object({
+          session: sessionSchema,
+          inverse: schemas.inverse,
+          ...wire.read,
+          ...wire.write,
+        })
         .strict(),
-      schemas.wrote,
-      ['no-such-session', ...schemas.transferFailures],
+      wire.wrote,
+      ['no-such-session', ...wire.transferFailures],
     ),
   };
 }
@@ -1408,19 +1516,12 @@ export const engineChannels = {
     command: mupdfCommandSchema,
     capture: captureResultSchema,
     inverse: inverseSchema,
-    // EMPTY, BOTH OF THEM, and that is MuPDF's writer shape on the wire. A
-    // live-session engine's session IS the parse it holds, so there is no image
-    // to name on the way in and nothing to write on the way out — the apply
-    // mutates what the host is already holding, and `engine/serialise` below is
-    // how the bytes come back when main asks for them.
-    read: {},
-    write: {},
-    // AND SO AN APPLY ANSWERS NOTHING. `CommandExecution<'mupdf'>.apply`
-    // returns `Promise<void>`; this is that on the wire.
-    wrote: z.object({}).strict(),
-    // NOTHING EXTRA. An invert against a parse this host is holding can only
-    // miss the session; there is no input file for it to fail to find.
-    transferFailures: [],
+    // THE SHAPE, NOT A SET OF FIELDS. MuPDF is `writerShapes`' one live-session
+    // entry, so its wire is the constant every live-session engine takes: an
+    // open that opens a document, no image named on the way in, nothing written
+    // on the way out, and an apply that answers nothing — which is
+    // `CommandExecution<'mupdf'>.apply`'s `Promise<void>` on the wire.
+    wire: liveSessionWire,
   }),
   // THE LIVE-SESSION CHANNEL. MuPDF holds a parse between commands, so it owes
   // the channel that hands the parse's bytes back (ADR-0048's correction).
@@ -1850,10 +1951,16 @@ export type EngineFailureCode =
   // handler calling an apply with no bytes to give it, and a distinguishable
   // answer is what stops the supervisor reading our own bug as a sick host.
   | 'asset-missing'
-  // THE DOCUMENT'S FAULT, and the first code that belongs to the SECOND engine.
-  // A page PDFium cannot load, or an image it cannot parse, is a statement
-  // about that document — `extract-failed`'s class, and it is a separate code
-  // rather than a reuse because the two channels are on different hosts and a
-  // supervisor reading one code from two engines could not say which model the
-  // refusal was about.
-  | 'text-objects-failed';
+  // NOT THE HOST'S, and it is where ADR-0048's withdrawn Decision 3 went. A
+  // byte-image host is handed an image per call, so a document it cannot parse
+  // is a per-call outcome; that used to be `open-failed` at `engine/open`, and
+  // main answers a failed open by POISONING the document — right for the engine
+  // a document is read through, wrong for one only needed to edit.
+  //
+  // ONE CODE FOR TWO CAUSES, deliberately: a document this engine cannot parse,
+  // and a request this document cannot satisfy — a page or an object index it
+  // does not have. They are one code because the axis a code exists to separate
+  // is *is the host sick*, and neither of them is; main refuses the command
+  // either way, and the supervisor rebuilds for neither. A pair of codes here
+  // would be two names for one decision.
+  | 'engine-refused';

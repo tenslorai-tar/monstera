@@ -70,22 +70,6 @@ export type HostTextObjectsReader = (
   page: number,
 ) => Promise<{ readonly indices: readonly number[]; readonly truncated: boolean }>;
 
-/**
- * How this host validates a document image it has been handed.
- *
- * ADR-0048 Decision 3: a byte-image host's `engine/open` **parses once and
- * discards it**, so `open-failed` means *this engine cannot read this document*
- * at the same point in the protocol from both hosts. The alternative — an open
- * that validates nothing — puts that failure at the first command instead, and
- * main's `open-failed` handling would then be correct for one host and dead
- * code for the other.
- *
- * A surface rather than a call into the adapter, for {@link
- * HostTextObjectsReader}'s reason. The real implementation opens and closes;
- * it answers nothing because nothing is kept.
- */
-export type HostImageProbe = (image: ByteImage) => Promise<void>;
-
 /** What the PDFium host's handlers are built from. */
 export interface PdfiumHandlerParts {
   /** The granted areas this host holds. Byte-image, so areas and no parses. */
@@ -96,8 +80,6 @@ export interface PdfiumHandlerParts {
   readonly files: HostFilesystem;
   /** How this process attempts the two paths ADR-0023 §5's check names. */
   readonly probe: (paths: ContainmentProbePaths) => Promise<ContainmentReport>;
-  /** How this process decides an image is readable at all. See {@link HostImageProbe}. */
-  readonly parses: HostImageProbe;
   /** How this process lists a page's text objects. `engine/text-objects`. */
   readonly textObjects: HostTextObjectsReader;
 }
@@ -107,7 +89,6 @@ export function createPdfiumHandlers({
   execution,
   files,
   probe,
-  parses,
   textObjects,
 }: PdfiumHandlerParts): Handlers<PdfiumChannels> {
   // THE MISS IS RETURNED, NEVER THROWN — `engineHandlers.ts`'s rule, and it is
@@ -151,31 +132,22 @@ export function createPdfiumHandlers({
       value: await probe({ positive, negative, loopbackPort }),
     }),
 
-    'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory }) => {
-      // THE PARSE HAPPENS AND IS DISCARDED (ADR-0048 Decision 3). What it buys
-      // is that `open-failed` means the same thing from both hosts at the same
-      // point in the same protocol; what it costs is one parse that would
-      // otherwise happen at the first command anyway.
-      //
-      // What that parse costs on a LARGE document through PDFium is not
-      // measured, and the ADR says so rather than claiming the figure
-      // `proof:editcost` reports for small ones.
-      let image: Uint8Array;
-      try {
-        image = await files.readSnapshot(snapshotDirectory, snapshotName);
-      } catch (error) {
-        return failed('open-failed', error);
-      }
-      try {
-        await parses(image);
-      } catch (error) {
-        return failed('open-failed', error);
-      }
-      // ISSUED ONLY AFTER THE PARSE SUCCEEDED, for `engineHandlers.ts`' reason:
-      // an id handed out for a document this engine cannot read is one main
-      // would run commands against, and every one of those would fail.
-      return { ok: true, value: { session: areas.issue({ outputDirectory, snapshotDirectory }) } };
-    },
+    // IT REGISTERS AN AREA AND NOTHING ELSE, which is ADR-0048's withdrawn
+    // Decision 3. There is no document at this moment: the area is a transfer
+    // buffer whose lifetime is this host's, and *this engine cannot read this
+    // document* belongs to the call that wanted the engine — because main
+    // answers a failed open by poisoning the document, which is right for the
+    // engine a document is read through and wrong for one only needed to edit.
+    //
+    // So there is nothing here that can fail, and the channel declares no
+    // failure. The path is used and not validated, for `engineHandlers.ts`'
+    // reason: main composed these directories and wrote their DACLs, and this
+    // process reaches them because it was GRANTED them.
+    'engine/open': ({ snapshotDirectory, outputDirectory }) =>
+      Promise.resolve({
+        ok: true,
+        value: { session: areas.issue({ outputDirectory, snapshotDirectory }) },
+      }),
 
     'engine/close': async ({ session }) => {
       const held = areas.lookup(session);
@@ -208,7 +180,15 @@ export function createPdfiumHandlers({
       // site rather than only at its own declaration. `engineHandlers.ts` needs
       // one because MuPDF's wire union omits two commands' bytes; nothing here
       // is omitted, so nothing has to be asserted back.
-      const captured = await execution.capture(image, command);
+      //
+      // WRAPPED, because this engine PARSES on every call: a document it cannot
+      // read is an outcome rather than a defect. See {@link refused}.
+      let captured;
+      try {
+        captured = await execution.capture(image, command);
+      } catch (error) {
+        return failed('engine-refused', error);
+      }
       return captured.captured
         ? // The kind is stamped from the COMMAND THIS CALL CARRIED, so the tag
           // and the prior cannot disagree at the source — `engineHandlers.ts`'
@@ -237,7 +217,17 @@ export function createPdfiumHandlers({
       // where it asked for the bytes and cannot know how many arrived, and
       // comparing that against the file it reads separates "the host wrote
       // nothing" from "the read found nothing".
-      const applied = await execution.apply(image, command);
+      //
+      // NOTHING IS WRITTEN IF THE ENGINE REFUSED, which is why the write is
+      // outside the `try`: a half-written output file under a name main is
+      // about to read is the state `engine/apply`'s own *refuse without having
+      // touched the target* rule exists to prevent, one layer out.
+      let applied;
+      try {
+        applied = await execution.apply(image, command);
+      } catch (error) {
+        return failed('engine-refused', error);
+      }
       const written = await files.writeOutput(held.outputDirectory, into, applied);
       return { ok: true, value: { bytes: written } };
     },
@@ -251,7 +241,15 @@ export function createPdfiumHandlers({
       } catch (error) {
         return failed('asset-missing', error);
       }
-      const inverted = await execution.invert(image, inverse.kind, inverse.prior);
+      // `engine/apply`'s shape exactly, including the write staying outside the
+      // `try`. An inverse that could not be applied must leave main's output
+      // name unwritten, so undo refuses rather than adopting a partial file.
+      let inverted;
+      try {
+        inverted = await execution.invert(image, inverse.kind, inverse.prior);
+      } catch (error) {
+        return failed('engine-refused', error);
+      }
       const written = await files.writeOutput(held.outputDirectory, into, inverted);
       return { ok: true, value: { bytes: written } };
     },
@@ -285,7 +283,11 @@ export function createPdfiumHandlers({
         // supervisor as evidence of a sick host, because a rebuild-and-retry
         // loop driven by a request that will never succeed is the runaway
         // Decision 9a bounds.
-        return failed('text-objects-failed', error);
+        //
+        // `engine-refused` and not a code of its own, for that same reason: the
+        // axis a code separates is *is the host sick*, and a second name for
+        // *no* would be two names for one decision.
+        return failed('engine-refused', error);
       }
     },
   };

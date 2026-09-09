@@ -4,6 +4,7 @@ import { channel, replaceTextObjectSchema } from '@monstera/contract';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import {
+  byteImageWire,
   coreEngineChannels,
   outputNameSchema,
   sessionSchema,
@@ -147,19 +148,14 @@ export const pdfiumChannels = {
     command: pdfiumCommandSchema,
     capture: pdfiumCaptureSchema,
     inverse: pdfiumPriorSchema,
-    // THE BYTE-IMAGE TRANSFER SHAPE. This host holds no parse between commands,
-    // so every write names where its input image is and where its result goes.
-    // Names, never places: the directories are the ones this session's area
-    // granted, which is `engine/open`'s `snapshotName` shape and the reason
-    // Decision 2's containment property survives ADR-0047.
-    read: { from: outputNameSchema },
-    write: { into: outputNameSchema },
-    // A COUNT, which is `engine/serialise`'s own result. See this file's header.
-    wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
-    // AN INVERT READS AN INPUT IMAGE HERE, so it can find it gone — main wrote
-    // it and it went, or main did not write it. MuPDF's invert cannot, which is
-    // why this is a per-engine field rather than a widening of the shared list.
-    transferFailures: ['asset-missing'],
+    // THE SHAPE, NOT A SET OF FIELDS. PDFium is a byte-image writer of record
+    // (ADR-0047), so its wire is the constant every byte-image engine takes: an
+    // open that registers a granted area and parses nothing, a name for the
+    // image on the way in and for the result on the way out, a byte count as
+    // the answer, and `unreadable-image` where a document this engine cannot
+    // read is refused — at the call that wanted the engine rather than at the
+    // open (ADR-0048's withdrawn Decision 3).
+    wire: byteImageWire,
   }),
 
   /**
@@ -204,9 +200,13 @@ export const pdfiumChannels = {
         truncated: z.boolean(),
       })
       .strict(),
-    // `asset-missing` for the reason every call to this host declares it: the
-    // read opens the image too, so it can find the file gone.
-    ['no-such-session', 'asset-missing', 'text-objects-failed'],
+    // THE BYTE-IMAGE WIRE'S CODES, spelt out because this channel is not one of
+    // the six and so does not get them from the factory. It reads an image, so
+    // the file can be gone (`asset-missing`, ours) and the engine can refuse
+    // the call against those bytes — a document it cannot parse, or a page this
+    // one does not have. Both are `engine-refused`, because the axis a code
+    // separates is *is the host sick* and neither of them is.
+    ['no-such-session', 'asset-missing', 'engine-refused'],
   ),
 } as const;
 

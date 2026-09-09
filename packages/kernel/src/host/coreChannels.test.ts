@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { coreEngineChannels, engineChannels } from './engineChannels.js';
+import { byteImageWire, coreEngineChannels, engineChannels } from './engineChannels.js';
 
 /**
  * The split [ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)
@@ -77,13 +77,15 @@ const OTHER = {
   command: z.object({ kind: z.literal('replaceTextObject') }).strict(),
   capture: z.object({ captured: z.literal(false) }).strict(),
   inverse: z.object({ kind: z.literal('replaceTextObject') }).strict(),
-  // A BYTE-IMAGE ENGINE'S TRANSFER SHAPE, so the fixture exercises the half of
-  // the factory MuPDF's own call leaves empty. With `{}` here the two spreads
+  // THE REAL BYTE-IMAGE WIRE, so the fixture exercises the half of the factory
+  // MuPDF's own call leaves empty — with the live-session wire here the spreads
   // would contribute nothing and a factory that dropped them would pass.
-  read: { from: z.string().min(1) },
-  write: { into: z.string().min(1) },
-  wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
-  transferFailures: ['asset-missing'],
+  //
+  // The constant rather than a hand-built shape, because the pair IS the
+  // subject: ADR-0048's correction says the wire belongs to `writerShapes` and
+  // not to an engine, and a fixture inventing a third arrangement would be
+  // testing something the design says cannot exist.
+  wire: byteImageWire,
 } as const;
 
 describe('the core channel set', () => {
@@ -111,18 +113,18 @@ describe('the core channel set', () => {
     const command = { kind: 'replaceTextObject' };
 
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, from: 'in', into: 'out' })
+      channels['engine/apply'].params.safeParse({ session, command, from: 'ab', into: 'cd' })
         .success,
     ).toBe(true);
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, from: 'in' }).success,
+      channels['engine/apply'].params.safeParse({ session, command, from: 'ab' }).success,
       'an apply without `into` must be refused: a byte-image write with nowhere to land',
     ).toBe(false);
 
-    expect(channels['engine/capture'].params.safeParse({ session, command, from: 'in' }).success)
+    expect(channels['engine/capture'].params.safeParse({ session, command, from: 'ab' }).success)
       .toBe(true);
     expect(
-      channels['engine/capture'].params.safeParse({ session, command, from: 'in', into: 'out' })
+      channels['engine/capture'].params.safeParse({ session, command, from: 'ab', into: 'cd' })
         .success,
       'a capture must not carry `into`: it reads prior state and produces no bytes',
     ).toBe(false);
@@ -137,8 +139,41 @@ describe('the core channel set', () => {
     expect(coreEngineChannels(OTHER)['engine/invert'].failures).toStrictEqual([
       'no-such-session',
       'asset-missing',
+      'engine-refused',
     ]);
     expect(engineChannels['engine/invert'].failures).toStrictEqual(['no-such-session']);
+  });
+
+  it('a byte-image OPEN registers an area: no snapshotName, and no declared failure', () => {
+    // ADR-0048's withdrawn Decision 3, asserted as a property of the wire.
+    // Both halves, because either alone is satisfied by the wrong thing: a
+    // schema that merely ACCEPTED a message without `snapshotName` would pass
+    // the first if it were not `.strict()`, and an empty failure list means
+    // nothing unless the live-session side is checked to be non-empty.
+    const open = coreEngineChannels(OTHER)['engine/open'];
+    expect(
+      open.params.safeParse({ snapshotDirectory: 'C:\\a', outputDirectory: 'C:\\b' }).success,
+    ).toBe(true);
+    expect(
+      open.params.safeParse({
+        snapshotDirectory: 'C:\\a',
+        outputDirectory: 'C:\\b',
+        snapshotName: 'abc',
+      }).success,
+      'a byte-image open must not accept a document name: at that moment there is no document',
+    ).toBe(false);
+    expect(open.failures).toStrictEqual([]);
+
+    // AND THE LIVE-SESSION SIDE, which is what makes the pair a property rather
+    // than a description of one object.
+    expect(engineChannels['engine/open'].failures).toStrictEqual(['open-failed']);
+    expect(
+      engineChannels['engine/open'].params.safeParse({
+        snapshotDirectory: 'C:\\a',
+        outputDirectory: 'C:\\b',
+      }).success,
+      'a live-session open must REQUIRE the document it is going to parse',
+    ).toBe(false);
   });
 
   it('answers a write with the engine’s own result shape', () => {
@@ -159,8 +194,8 @@ describe('the core channel set', () => {
     const accepted = apply.safeParse({
       session: 'a'.repeat(43),
       command: { kind: 'replaceTextObject' },
-      from: 'in',
-      into: 'out',
+      from: 'ab',
+      into: 'cd',
     });
     expect(accepted.success, JSON.stringify(accepted.error?.issues ?? [])).toBe(true);
 
@@ -171,8 +206,8 @@ describe('the core channel set', () => {
       apply.safeParse({
         session: 'a'.repeat(43),
         command: { kind: 'rotatePages' },
-        from: 'in',
-        into: 'out',
+        from: 'ab',
+        into: 'cd',
       }).success,
     ).toBe(false);
   });
