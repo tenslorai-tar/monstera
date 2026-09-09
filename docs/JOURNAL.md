@@ -13,6 +13,7 @@ the fact is not a baseline, it is a rationalisation.
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **in progress** — opens at the commit after Stage 4's close | — (the 3× gate arms at **9 days**) |
+| 6 — OCR | **2 working days** (owner, 2026-09-09) | **not started** — Stage 5 has not closed | — (the 3× gate arms at **6 days**) |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -884,6 +885,74 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-09 — Stage 6's two preconditions, recorded before the stage opens
+
+Neither of these is Stage 6 work. Both are things that stop being recordable the
+moment Stage 6 starts, so they are written now.
+
+### Stage 6's baseline: 2 working days
+
+**Owner's decision, 2026-09-09, taken before the stage begins** — the same
+ordering that made Stage 2's, 3's, 4's and 5's baselines baselines rather than
+rationalisations. It is in the table at the top of this file **before Stage 6's
+first commit**, because a gate with no recorded baseline is inert and one
+recorded afterwards is not a baseline, it is a rationalisation.
+
+**The trigger is six days**, and it is **never revised to meet an actual.** An
+estimate rewritten to match what happened is the abort condition deleted, which
+is the whole failure the gate exists to prevent.
+
+Owner-set and **not derived**. No formula produces it, and none should: D6 is
+where the second engine's consumers land, and its cost is dominated by
+provisioning and by an accuracy question rather than by a row count.
+
+### Azure Document Intelligence is Stage 6's, and it does not touch Stage 9
+
+Carried up as an open question and **settled by checking rather than by
+escalating**, which is the part worth recording — the block that raised it had
+two documents apparently disagreeing, and they were answering different
+questions.
+
+`BUILD-PROMPT.md`:475-476 puts Azure Document Intelligence in D6. :621 puts
+*"Azure DI endpoint + key (secret)"* in the **AI settings group**, which is E5's
+and Stage 9's. That reads as a conflict of the same kind that moved translate
+out of Stage 5 — until you ask what each line is naming.
+
+**E5's registry is a chat-and-vision interface.** `BUILD-PROMPT.md`:580 gives
+`AiProvider` as `{id, displayName, models[], validateKey(), chat(messages,
+opts), vision?(image, prompt)}`, shipping Anthropic, OpenAI and Google Gemini.
+Azure Document Intelligence implements none of that and appears in none of it.
+It is a document-analysis service, not a model provider.
+
+**And a settings group is not a registry dependency.** :621 is a Part F
+category — *where a control renders in the Settings dialog* — so putting a key's
+control beside the AI keys says nothing about which registry owns the feature.
+Two different things were reading as one, and the tell was that only one of them
+is a code seam.
+
+**What it genuinely owes is substrate neither D6 nor E5 has built: secret
+storage.** Measured rather than assumed:
+
+- `packages/ui/src/registries/settings.ts` carries `secret?: boolean` on an
+  entry, and export exclusion is **derived** from it —
+  `filter((setting) => setting.secret !== true)` — with the case at
+  `registries.test.ts`:210 using `ai.key … secret: true` by name.
+- `grep -rn safeStorage packages/ apps/ --include=*.ts --include=*.tsx` returns
+  **nothing**.
+
+So the flag exists, the export rule is enforced, and **no secret setting has a
+storage path at all.** Azure DI would be the first one to need one, which is why
+this is its precondition rather than its implementation.
+
+**E5 fixes the rule and anyone may implement it**, which is the ordering that
+keeps the writer single: keys live in the OS keychain via `safeStorage`, and if
+`safeStorage` reports itself unavailable the application **says so and refuses
+to store** — a silent plaintext fallback is banned. That sentence is now in the
+row that owns it rather than in this entry alone, because a rule stated only in
+a journal is a rule the implementing range does not read.
 
 ---
 

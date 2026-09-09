@@ -176,7 +176,7 @@ planner counting a table of rows as a table of untouched work.
 | Export searchable PDF | — |
 | OCR region (drag a rectangle) | — |
 | Local handwriting OCR (TrOCR small/base, on-demand download, cached, offline) | — |
-| Azure Document Intelligence integration | — |
+| Azure Document Intelligence integration. **RULED Stage 6's, 2026-09-09, and it does not touch Stage 9** — checked rather than escalated. `BUILD-PROMPT.md`:475-476 puts it in D6 while :621 puts *"Azure DI endpoint + key (secret)"* in the **AI settings group**, which is E5's. Those answer different questions: E5's registry is `AiProvider = {id, displayName, models[], validateKey(), chat(), vision?()}` (:580), a chat-and-vision interface Azure DI neither implements nor appears in; and a settings group is a Part F category — *where a control renders* — not a registry dependency. **What it genuinely owes is substrate neither stage has built: secret storage.** `registries/settings.ts` carries `secret?: boolean` and derives export exclusion from it (case at `registries.test.ts`:210), but `safeStorage` appears nowhere under `packages/` or `apps/`, so **no secret setting has a storage path** and this would be the first to need one. The rule is E5's row below and anyone may implement it. | **Stage 6's; blocked on secret storage, not on a stage ruling** |
 
 ## D7 — Security and signatures · ribbon: Protect · Stage 7
 
