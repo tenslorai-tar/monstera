@@ -292,3 +292,93 @@ constant and supplies its commands. That is what makes *one host body,
 parameterised by engine* a real claim rather than a set of parallel
 parameters — and it is `writerShapes` reaching the wire, which is where a
 declaration table that decides behaviour ought to reach.
+
+## Addition, 2026-09-09 — what the factory and the composition root actually do, now that both exist
+
+An addition rather than a correction: nothing above is withdrawn. This records
+how the two decided properties — *its own principal* and *one granted area* —
+are built, and the three things that were undecided until something had to run.
+
+### The second platform is DERIVED from the first
+
+`createPdfiumHostPlatform(base)` takes MuPDF's `EngineHostPlatform` and replaces
+exactly two things. Everything else is shared **because it is a property of the
+application rather than of an engine**: the session root, the directory surface,
+this process's user SID, and the containment negative. Building a second
+platform from scratch would run `sweepSessionDirectories` a second time — a
+second writer of a concern one instance establishes (B3) — and write the negative
+file again, after which the two copies would be free to disagree about where a
+session root is.
+
+What differs is the **container moniker** and the **program**. The correction
+above says a shared moniker makes the two hosts one principal, so each would hold
+read on the other's granted areas; the monikers live in
+`apps/desktop/src/engineHostPrograms.ts` as a `Record` over the engine, beside
+the entry file each host executes and the argument order `pdfiumHostEntry.ts`
+reads. **That module exists because `engineHostPlatform.ts` binds Win32 at module
+scope and nothing in it is reachable from a test on any platform** — and what
+decides whether two hosts are contained from each other is a pair of strings,
+which is testable anywhere. A copy-paste that gave PDFium `monstera-engine-host`
+would start, serve, and pass every other check in the repository.
+
+The **positive probe target moves with the program**: it is *the script this host
+is executing*, so PDFium's is PDFium's entry. Handing it MuPDF's would make the
+check pass against a file that happens to be readable, which is the reassuring
+answer with a control that proves nothing.
+
+### Each host takes its OWN containment verdict
+
+A verdict is about one process's token, and these run under two profiles — so
+inheriting the first host's would be a claim about a principal nobody probed.
+What must **not** be duplicated is the loopback listener and main's own read of
+the negative path, which are the rigour: `containmentOf` therefore became a
+function of the probe rather than of the connection, and both hosts reach one
+implementation of the control.
+
+### Three things that were open until something ran
+
+- **When the host is built: at the first COMMAND.** `engineSessionOpener` builds
+  MuPDF's at the first open because a document needs a session. This engine has
+  no such moment — a document can be opened, read, rotated and saved without
+  PDFium being asked anything — so building at startup or at open would pay for
+  a `CreateProcessW`, an AppContainer and a job object for a feature most
+  sessions never reach.
+- **What a death costs: the calls in flight, and nothing else.**
+  `onEngineHostEnded` is deliberately not called. It walks the open documents and
+  schedules a reopen for each, which is right for the host a document's session
+  lives in and wrong for one that holds nothing — every document keeps its MuPDF
+  session and stays exactly as usable as it was. The granted pair is *not* removed
+  on the ending either, because that path includes the host dying mid-call and a
+  directory removed while a `finally` is still writing into it turns one failure
+  into two; the startup sweep collects it, which is the same mechanism that
+  collects a pair left by a crash — and that is what this is.
+- **The shutdown sends no `engine/close`.** A document's session is closed on the
+  wire because the document outlives the call; this area's only holder is the
+  process about to end. Invariant 25 makes the host hostile and nothing in the
+  boundary client bounds a call, so the channel would buy nothing and would put a
+  possible hang on the one path where a hang is least recoverable.
+
+### Absent is a decided state, and it is the common one
+
+`writers.pdfium` is registered by a **conditional spread**, so a machine with no
+`pdfium.dll` has the key genuinely missing rather than present and `undefined` —
+`CommandBus` refuses the route by name instead of calling into nothing. Three
+roads lead there: no Win32 surfaces, no library path, or no container SID.
+
+Where the library path comes from is the part with no shipped answer yet.
+`scripts/provision/pdfium.mjs` owns *where a provisioned PDFium lives*, the
+kernel and the shell may not import a script, and
+`docs/ARCHITECTURE.md`'s packaged answer — `app.asar.unpacked` — describes a
+mechanism no installer has built. So `scripts/launch.mjs` passes the resolver's
+answer down and a packaged run gets `null`, which is honest: by ADR-0023's
+premise-P1 correction a Store install cannot start *any* contained host today.
+
+### What this addition does NOT claim
+
+The refusal is a **defect**, not an outcome: `UnregisteredWriterError` reaches the
+boundary as `internal`. That is correct — a command reaching the bus is one the UI
+offered — and it means the editing control owes a capability gate, not a friendly
+message here. Found by the first end-to-end case rather than by reading, which is
+also how the payload's `version` requirement surfaced: `targets: 'text-object'`
+makes the command staleness-checked, and `CommandBus.#refuseIfStale` calls a
+targeting command that names no version a registration defect.

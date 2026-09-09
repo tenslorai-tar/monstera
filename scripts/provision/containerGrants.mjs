@@ -82,6 +82,7 @@ import { dirname, join } from 'node:path';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from './electron.mjs';
+import { pdfiumLibrary } from './pdfium.mjs';
 
 /**
  * `ALL APPLICATION PACKAGES`, by SID rather than by name.
@@ -110,6 +111,23 @@ export function grantSet(root = repoRoot()) {
     // direction, since the failure to fear is a MISSING grant.
     { path: join(root, 'node_modules'), rights: 'RX', why: 'the dependency graph the host resolves' },
     { path: dirname(shimPath(root)), rights: 'RX', why: 'the engine shim' },
+    // THE SECOND ENGINE'S LIBRARY, and it is `dirname(pdfiumLibrary(root))` for
+    // the shim entry's reason word for word: the resolver that owns *where a
+    // provisioned PDFium lives* is `pdfium.mjs`, and a path spelled here would
+    // carry `PDFIUM_VERSION` as a literal and point at a directory that stops
+    // existing on the next pin bump.
+    //
+    // The PDFium host is a SECOND AppContainer profile
+    // (`engineHostPrograms.ts`), and it needs no second grant: every ACE here
+    // names `ALL APPLICATION PACKAGES`, which every AppContainer is a member of
+    // whatever moniker it was derived from. The separation between the two hosts
+    // is in what each is HANDED — its own granted session pair, DACL'd to its own
+    // SID — and never in this durable set, which both must read to start at all.
+    {
+      path: dirname(pdfiumLibrary(root)),
+      rights: 'RX',
+      why: 'the PDFium engine library the second host binds',
+    },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and
     // which SSSS-1 measured the host dying on: `Cannot find module
     // …dist/host/hostEntry.js`, from a token that could not read it.

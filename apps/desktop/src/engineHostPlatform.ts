@@ -4,6 +4,11 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import type { EngineHostPlatform } from './composition.js';
+import {
+  ENGINE_HOST_CONTAINER,
+  ENGINE_HOST_ENTRY_FILE,
+  hostCommandArguments,
+} from './engineHostPrograms.js';
 import { createReaderHostSurface } from './readerHostSurface.js';
 import {
   type SessionDirectoryName,
@@ -51,20 +56,61 @@ import {
  * values — a SID, a SID, a directory and a path — and hands over four objects.
  */
 
-/** The AppContainer profile the engine hosts run inside. */
-const CONTAINER = 'monstera-engine-host';
-
 /**
- * Where the host's entry script sits, resolved THROUGH THE PACKAGE.
+ * Where one host's entry script sits, resolved THROUGH THE PACKAGE.
  *
  * The same idiom `readerEntryPath` uses, and for the same reason: a path built
  * by walking up from `__dirname` is one that breaks silently the day the build
  * layout moves, whereas a resolution failure names the package it could not
  * find.
+ *
+ * **The file name is a parameter and comes from `ENGINE_HOST_ENTRY_FILE`**,
+ * which is where the two engines' entries are written down together. It was a
+ * literal here while one host existed; a second literal beside it would be the
+ * second opinion, and the map is what a case can read.
  */
-function hostEntryPath(): string {
+function hostEntryPath(file: string): string {
   const entry = createRequire(import.meta.url).resolve('@monstera/kernel');
-  return join(dirname(entry), 'host', 'hostEntry.js');
+  return join(dirname(entry), 'host', file);
+}
+
+/**
+ * Where `pdfium.dll` is, or `null` — and this process never searches for one.
+ *
+ * ## Who owns the answer, and why it arrives through the environment
+ *
+ * `scripts/provision/pdfium.mjs` owns *where a provisioned PDFium lives*, and
+ * `packages/kernel/src/pdfiumFfi.ts` already records the consequence: the path
+ * is a parameter with no fallback and no search, because a second resolver is
+ * the B3a defect this project has paid for three times. This file cannot call
+ * that resolver — `scripts/` is plain Node tooling and is not shipped — so the
+ * value is handed in by `scripts/launch.mjs`, which already calls
+ * `electronBinaryPath` for exactly this reason and is the one process that both
+ * knows the repository root and starts the shell.
+ *
+ * ## `null` IS A REAL STATE AND IT IS THE PACKAGED ONE
+ *
+ * A packaged build has no launcher and no `.tools/` tree, and
+ * `docs/ARCHITECTURE.md` says a provisioned binary is *"resolved from
+ * `app.asar.unpacked` when packaged"* — a mechanism that does not exist yet,
+ * because no installer has been built. Guessing at it here would be a resolver
+ * written against an unobserved layout, so this answers `null` instead and the
+ * PDFium host is simply not created: a command routed to `pdfium` is then
+ * refused **by name** at the registry, which is `CommandBus`' existing answer
+ * for an unregistered writer rather than a native call into nothing.
+ *
+ * The `docs/FEATURES.md` HD-render and text-editing rows carry that as owed
+ * work with packaging as the trigger, which is where an event-expiring claim
+ * belongs.
+ */
+function pdfiumLibraryPath(): string | null {
+  const supplied = process.env['MONSTERA_PDFIUM_LIBRARY'];
+  // EMPTY IS ABSENT. A variable set to nothing is what a shell produces from an
+  // unset variable it expanded, and passing `''` on would make the host's own
+  // refusal — which is correct and loud — fire in a process whose stderr goes to
+  // an inherited handle nobody is reading.
+  if (supplied === undefined || supplied.length === 0) return null;
+  return supplied;
 }
 
 /**
@@ -100,10 +146,10 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
 
   const user = currentUserSid();
   if (!user.ok) return null;
-  const container = hostContainerSid(CONTAINER);
+  const container = hostContainerSid(ENGINE_HOST_CONTAINER.mupdf);
   if (!container.ok) return null;
 
-  const entry = hostEntryPath();
+  const entry = hostEntryPath(ENGINE_HOST_ENTRY_FILE.mupdf);
   const binary = electronBinaryOfThisProcess();
   mkdirSync(sessionRoot, { recursive: true });
 
@@ -151,13 +197,13 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
       hostFor: (pipeName) =>
         createWin32HostSurface({
           executablePath: binary,
-          commandArguments: [entry, pipeName],
+          commandArguments: [...hostCommandArguments({ kind: 'mupdf' }, entry, pipeName)],
           // Inside the grant set, for the reason the acceptance test's is: a
           // working directory of our own would be a path whose rights differ
           // from everything else the host can reach, and a difference nobody
           // chose is one nobody checks.
           workingDirectory: dirname(binary),
-          containerName: CONTAINER,
+          containerName: ENGINE_HOST_CONTAINER.mupdf,
           // WHERE A HOST THAT DIES BEFORE IT CONNECTS SAYS WHY. It was `null`
           // in the shipped app while `lowboxSpike.mjs` and `roleMupdfHost.mjs`
           // both passed one, so the two instruments could read a startup
@@ -187,6 +233,72 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
       // branch `install-root` selects, and why the origin is not decoration.
       positive: { path: entry, origin: 'install-root' },
       negative: { path: negative, origin: 'app-created' },
+    },
+  };
+}
+
+/**
+ * PDFium's platform, DERIVED from MuPDF's rather than built beside it.
+ *
+ * ## What is shared, and why sharing it is the point
+ *
+ * The session root, the directory surface, the pipe and reader surfaces, this
+ * process's own user SID and the containment negative are all properties of
+ * **the application**, not of an engine. Building a second platform from
+ * scratch would run `sweepSessionDirectories` a second time — a second writer of
+ * a concern one instance establishes (B3) — and write the negative file again,
+ * and the two copies would then be free to disagree about where a session root
+ * is.
+ *
+ * ## What is NOT shared is exactly the two things ADR-0048 names
+ *
+ * The **container** and the **program**. The moniker gives this host its own
+ * SID, so `hostSessionDirectoryDacl` grants each host's areas to that host alone
+ * — see `engineHostPrograms.ts` for why a shared moniker is invariant 25(d)
+ * failing between two of our own processes. The entry script and its second
+ * argument are PDFium's, and `hostCommandArguments` is what writes them in the
+ * order `pdfiumHostEntry.ts` reads them.
+ *
+ * The positive probe target moves with the program: it is *the script this host
+ * is executing*, so PDFium's must be PDFium's entry. Handing it MuPDF's would
+ * make the containment check pass against a file this process happens to be able
+ * to read, which is the reassuring answer with a control that proves nothing.
+ *
+ * @returns the platform, or `null` where no `pdfium.dll` path was supplied —
+ *   which is every packaged run today. See {@link pdfiumLibraryPath}.
+ */
+export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {
+  const libraryPath = pdfiumLibraryPath();
+  if (libraryPath === null) return null;
+
+  const container = hostContainerSid(ENGINE_HOST_CONTAINER.pdfium);
+  if (!container.ok) return null;
+
+  const entry = hostEntryPath(ENGINE_HOST_ENTRY_FILE.pdfium);
+  const binary = electronBinaryOfThisProcess();
+
+  return {
+    ...base,
+    surfaces: {
+      ...base.surfaces,
+      hostFor: (pipeName) =>
+        createWin32HostSurface({
+          executablePath: binary,
+          commandArguments: [
+            ...hostCommandArguments({ kind: 'pdfium', libraryPath }, entry, pipeName),
+          ],
+          workingDirectory: dirname(binary),
+          containerName: ENGINE_HOST_CONTAINER.pdfium,
+          // A NAME OF ITS OWN, per host and per creation, exactly as MuPDF's is
+          // — two hosts writing one diagnostic path would leave the survivor's
+          // reason overwritten by whichever died second.
+          diagnosticPath: hostDiagnosticPath(base.sessionRoot, diagnosticName()),
+        }),
+    },
+    container: container.value,
+    probe: {
+      positive: { path: entry, origin: 'install-root' },
+      negative: base.probe.negative,
     },
   };
 }

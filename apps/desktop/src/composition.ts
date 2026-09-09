@@ -3,11 +3,17 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { join } from 'node:path';
 
-import { ENGINE_HOST_MAX_IN_FLIGHT, type IncidentSink, createClient } from '@monstera/contract';
+import {
+  ENGINE_HOST_MAX_IN_FLIGHT,
+  type ClientApi,
+  type IncidentSink,
+  createClient,
+} from '@monstera/contract';
 import {
   CapabilityRegistry,
   CommandBus,
   type ContainmentVerdict,
+  type EngineChannels,
   DocumentNotOpenError,
   DocumentService,
   EngineOpenFailed,
@@ -23,7 +29,10 @@ import {
   type HostPageTextReader,
   type HostTermination,
   type PageGeometryReader,
+  type PdfiumArea,
+  type PdfiumTransfer,
   type ProbeTarget,
+  type RegisteredWriter,
   type RemoteMupdfWriter,
   type MupdfSession,
   type SessionAreaSurface,
@@ -36,6 +45,9 @@ import {
   localPdfLibWriter,
   nodeFileSurface,
   parsePageText,
+  pdfiumChannels,
+  remotePdfiumTextObjects,
+  remotePdfiumWriter,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
   remoteMupdfAnnotations,
@@ -320,6 +332,23 @@ export interface ShellComposition {
    */
   readonly enginePlatform?: EngineHostPlatform | null;
   /**
+   * The same surfaces under the SECOND AppContainer profile, or `null`.
+   *
+   * A separate field rather than a flag on the one above, because the two
+   * differ in the property that makes them two hosts: the container SID, which
+   * `createSessionDirectories` writes into each granted pair's DACL. One
+   * platform used twice would give both engines one principal, and each would
+   * hold read on the other's areas
+   * ([ADR-0048](../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)).
+   *
+   * `null` is a real state and it is the common one: no Win32 surfaces, no
+   * `pdfium.dll` supplied, or no container SID. `writers.pdfium` is then absent
+   * from the registry and `CommandBus` refuses a command routed to it **by
+   * name** — which is the answer a user without `npm run provision:pdfium`
+   * should get.
+   */
+  readonly pdfiumPlatform?: EngineHostPlatform | null;
+  /**
    * Where diagnostics go. Optional, and this is the one surface where that is
    * right: the absent case is `stderr`, a real destination that every test and
    * every harness already reads. Required, it would make `createShellLog` run
@@ -344,6 +373,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     settings,
     recent,
     enginePlatform = null,
+    pdfiumPlatform = null,
     log = null,
   } = composition;
   const capabilities = new CapabilityRegistry();
@@ -394,6 +424,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   const failures = log?.failures ?? reportShellFailure;
 
   const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures);
+
+  // THE SECOND HOST, and it is built beside the first rather than inside it.
+  // `engineSessionOpener`'s whole subject is *one document's session* — it holds
+  // the supervisor, it poisons on a failed open, and its host's death schedules a
+  // reopen per document. A byte-image host has none of that: it holds no parse
+  // between commands (ADR-0047), so its death costs the calls in flight and
+  // nothing else, and no document is poisoned by it.
+  //
+  // `null` when there is no platform, which is what leaves `writers.pdfium`
+  // absent below.
+  const pdfiumHost = pdfiumPlatform === null ? null : pdfiumHostBinding(pdfiumPlatform, failures);
   // THE BACK-REFERENCE CLOSED, one line after the only thing that could close
   // it. `recycleHandle` above was written against this because `create` opens
   // documents from `documents`, so the service exists first and the factory can
@@ -408,7 +449,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // it runs commands in the engine host rather than in this process —
   // invariant 20 is satisfied by *where the session is*, not by the registry
   // being empty.
-  const bus = new CommandBus(engineHost.writers);
+  //
+  // AND `pdfium` IS SPREAD IN RATHER THAN ASSIGNED, which is the difference
+  // between a writer that is absent and one that is present and broken. A
+  // registry entry set to `undefined` still has the key, and `CommandBus`'
+  // refusal is keyed on the LOOKUP — so a machine with no PDFium would answer a
+  // `replaceTextObject` by calling into `undefined` instead of by refusing the
+  // route. The conditional spread leaves the property genuinely missing.
+  const bus = new CommandBus({
+    ...engineHost.writers,
+    ...(pdfiumHost === null ? {} : { pdfium: pdfiumHost.writer }),
+  });
 
   // The real supervisor rather than two inline arrows: a stubbed lookup and a
   // stubbed predicate are a second implementation of a rule the supervisor owns
@@ -646,6 +697,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         await documents.close(docId);
       }
       await engineHost.closeHost();
+      // AND THE SECOND HOST, after the first for the documents-then-host reason
+      // one line up rather than in parallel with it: its granted area is a
+      // directory this process created under the same session root, and the
+      // sweep that would otherwise find it runs at the NEXT launch — so a quit
+      // that skipped this leaves a granted pair behind exactly the way a crash
+      // does, which is the state the sweep exists to distinguish.
+      await pdfiumHost?.close();
       // LAST, and after the awaits rather than before them. The marker says
       // *this run reached the end of its shutdown*, so writing it first would
       // set it for a run that then hung closing the host — which is exactly the
@@ -1091,7 +1149,10 @@ function engineSessionOpener(
     // A host whose verdict is anything but `contained` is closed and reported.
     // The failure it exists to catch is not a crash — it is a host that WORKS
     // and is not contained, which every cheap question answers `yes` for.
-    const verdict = await containmentOf(live.value, platform);
+    const verdict = await containmentOf(
+      (request) => createClient(engineChannels, live.value.client.invoke)['engine/probe-containment'](request),
+      platform,
+    );
     if (verdict.kind !== 'contained') {
       live.value.close();
       throw new Error(
@@ -1298,6 +1359,236 @@ function engineSessionOpener(
   };
 }
 
+/** One page's text-object indices, over the second host's wire. */
+type PdfiumTextObjects = ReturnType<typeof remotePdfiumTextObjects>;
+
+/**
+ * The PDFium host's lifetime, its one granted area, and the writer the bus
+ * routes `replaceTextObject` to.
+ *
+ * ## Why this is not `engineSessionOpener` with a parameter
+ *
+ * That function's subject is *a document's session*: it holds the supervisor,
+ * poisons a document whose open failed, and answers a host death by scheduling a
+ * reopen per open document. **None of it applies here.** ADR-0047 makes PDFium a
+ * byte-image writer, so this host holds no parse between commands and issues no
+ * per-document handle — there is nothing for a document to be sessioned in, and
+ * therefore nothing a death can invalidate. What a death costs is the calls in
+ * flight, which reject, and the next command builds a new host.
+ *
+ * Parameterising the other function by engine would have meant threading *does
+ * this engine hold sessions* through every branch of it, which is a second shape
+ * living inside the first rather than beside it.
+ *
+ * ## ONE AREA, and its lifetime is the host's
+ *
+ * ADR-0048's withdrawn Decision 3: a byte-image `engine/open` registers a
+ * granted directory pair and parses nothing, so one area serves every document
+ * this host is ever asked about. It is created when the host connects and
+ * removed when it ends. Two documents in flight are safe because **every call
+ * mints its own file names** — `sessionAreas`' existing rule — so neither can
+ * name the other's file.
+ *
+ * The pair is DACL'd to `platform.container`, which is the second AppContainer
+ * profile's SID and not the first's. That is the containment between the two
+ * hosts and it lives here, in the descriptor, rather than in the fact that they
+ * are two processes.
+ *
+ * ## The host is built at the first COMMAND, not at the first open
+ *
+ * `engineSessionOpener` builds at the first open because a document needs a
+ * session. This one has no such moment: a document can be opened, read, rotated
+ * and saved without PDFium ever being asked anything. Building it at startup
+ * would make every launch pay for a `CreateProcessW` with an AppContainer and a
+ * job object for a feature most sessions never reach, and building it at open
+ * would do the same one step later.
+ */
+function pdfiumHostBinding(
+  platform: EngineHostPlatform,
+  failures: ShellFailureSink,
+): {
+  readonly writer: RegisteredWriter<'pdfium'>;
+  readonly textObjects: PdfiumTextObjects;
+  readonly close: () => Promise<void>;
+} {
+  /** What one built host holds. Cleared together, or not at all. */
+  interface Live {
+    readonly connection: EngineHostConnection;
+    readonly writer: RegisteredWriter<'pdfium'>;
+    readonly textObjects: PdfiumTextObjects;
+    /** The granted pair, so `close` can remove exactly what `connect` created. */
+    readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
+    readonly session: string;
+  }
+
+  let host: Promise<Live> | null = null;
+
+  const transfer: PdfiumTransfer = {
+    ...sessionAreas(platform),
+    // THE INPUT LEG, and it writes into the SNAPSHOT directory — the one the
+    // host holds READ on, and the one a document's bytes already arrive through
+    // for the other engine. An image written into the output directory would be
+    // one the host could rewrite under main's feet between the write and the
+    // call.
+    writeSnapshot: (area, name, bytes) => writeFile(join(area.snapshotDirectory, name), bytes),
+    // `force` BECAUSE THIS IS CALLED FROM A `finally`, which is `sessionAssets`'
+    // reason word for word: a removal that threw on an absent file would replace
+    // the call's own error with a complaint about cleanup.
+    removeSnapshot: (area, name) => rm(join(area.snapshotDirectory, name), { force: true }),
+  };
+
+  const connect = async (): Promise<Live> => {
+    const live = await createEngineHostConnection(platform.surfaces, {
+      pipeName: `\\\\.\\pipe\\monstera-pdfium-${randomBytes(16).toString('hex')}`,
+      user: platform.user,
+      container: platform.container,
+      readBytes: 64 * 1024,
+      maxOutstandingWrites: 16,
+      maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
+      processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+      correlate: () => randomBytes(8).toString('hex'),
+      onEnded: (termination: HostTermination) => {
+        // CLEARED, AND THAT IS ALL. `onEngineHostEnded` is not called and must
+        // not be: it walks the open documents and schedules a reopen for each,
+        // which is right for the host a document's session lives in and wrong
+        // for one that holds nothing. Every document keeps its MuPDF session and
+        // stays exactly as usable as it was.
+        //
+        // The granted pair is NOT removed here. This runs on the connection's
+        // ending, which includes the host dying mid-call, and a directory
+        // removed while a `finally` is still writing into it would turn one
+        // failure into two. The startup sweep is what collects it — the same
+        // mechanism that collects a pair left by a crash, which this is.
+        host = null;
+        // THE DECLARED EVENT, and the engine is named in the DETAIL rather than
+        // in a new member of `ShellFailureEvent`. The event set is what a reader
+        // of the log filters on, and *an engine host is gone* is one thing that
+        // happened whichever engine it held; a second name for it would split
+        // that filter without adding a distinction anybody acts on.
+        failures({
+          event: 'engine-host-gone',
+          detail:
+            `the PDFium host ended (${termination.code}): ${termination.detail}. No document is ` +
+            'affected: this engine holds no session, so the next edit builds a new host.',
+        });
+      },
+    });
+    if (!live.ok) {
+      throw new Error(`the PDFium host was refused at ${live.error.stage}: ${live.error.detail}`);
+    }
+
+    const client = createClient(pdfiumChannels, live.value.client.invoke);
+
+    // ADR-0023 §5's STARTUP CHECK, asked of THIS host and not inherited from the
+    // first. A containment verdict is about one process's token, and the second
+    // host runs under a different profile — so reusing the first host's verdict
+    // would be a claim about a principal nobody probed.
+    const verdict = await containmentOf(
+      (request) => client['engine/probe-containment'](request),
+      platform,
+    );
+    if (verdict.kind !== 'contained') {
+      live.value.close();
+      throw new Error(
+        `the PDFium host was created and is not contained (${verdict.kind}): ` +
+          ('detail' in verdict ? verdict.detail : 'no detail'),
+      );
+    }
+
+    const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
+    if (!minted.ok) throw new Error(`the PDFium area name was refused: ${minted.error}`);
+    const paths = sessionDirectoryPaths(platform.sessionRoot, minted.value);
+    const made = createSessionDirectories(
+      platform.directories,
+      paths,
+      platform.user,
+      platform.container,
+    );
+    if (!made.ok) {
+      live.value.close();
+      throw new Error(`the PDFium area was not created: ${made.error.stage}: ${made.error.detail}`);
+    }
+
+    const opened = await client['engine/open']({
+      snapshotDirectory: paths.snapshot,
+      outputDirectory: paths.output,
+    });
+    if (!opened.ok) {
+      // UNREACHABLE THROUGH THE WIRE TODAY, and written anyway. `byteImageWire`
+      // declares NO failures for `engine/open`, because registering an area
+      // parses nothing and has nothing to refuse — so this branch exists for a
+      // transport-level refusal and for the day that list is not empty. The
+      // directories go either way, which is the half that would leak.
+      removeSessionDirectories(platform.directories, paths);
+      live.value.close();
+      throw new Error(`the PDFium host refused its area: ${opened.error.code}`);
+    }
+
+    const held = (): PdfiumArea => ({
+      session: opened.value.session,
+      area: { snapshotDirectory: paths.snapshot, outputDirectory: paths.output },
+    });
+
+    return {
+      connection: live.value,
+      writer: remotePdfiumWriter(client, held, transfer),
+      textObjects: remotePdfiumTextObjects(client, held, transfer),
+      paths,
+      session: opened.value.session,
+    };
+  };
+
+  const ensure = (): Promise<Live> =>
+    (host ??= connect().catch((error: unknown) => {
+      // CLEARED ON FAILURE, for `engineSessionOpener`'s reason: a rejected
+      // promise left in place refuses every later edit with the first attempt's
+      // error, which is a cache that has learnt a transient failure permanently.
+      host = null;
+      throw error;
+    }));
+
+  return {
+    // WRITTEN OUT, four members, for the reason `engineSessionOpener`'s registry
+    // states: four named members are what a reader can check against
+    // `RegisteredWriter`, and a delegating proxy would keep compiling after the
+    // interface changed.
+    writer: {
+      capture: async (image, command) => (await ensure()).writer.capture(image, command),
+      apply: async (image, command) => (await ensure()).writer.apply(image, command),
+      invert: async (image, kind, inverse) => (await ensure()).writer.invert(image, kind, inverse),
+      // NO `ensure()`, AND THAT IS THE POINT. `remotePdfiumWriter.serialise` is
+      // the identity and makes no call, so awaiting a host here would make a
+      // checkpoint on the terminal branch start a process. It is written as the
+      // identity directly rather than delegated, because delegating it would
+      // require a host to exist in order to return the argument.
+      serialise: (session) => Promise.resolve(session),
+    },
+    textObjects: async (image, page) => (await ensure()).textObjects(image, page),
+    close: async () => {
+      const live = host;
+      host = null;
+      if (live === null) return;
+      const built = await live.catch(() => null);
+      if (built === null) return;
+      // THE HOST FIRST, THEN THE DIRECTORIES, which is `buildSessions`' ordering
+      // and its reason: the pair is what the contained process reads, so it is
+      // removed once nothing is left to read it. `close()` is the deliberate
+      // path — `onEnded` sees `shutdown` — so the clearing above is what stops
+      // that handler's `host = null` racing this one.
+      //
+      // NO `engine/close` FIRST, and that is a decision rather than an omission.
+      // A document's session is closed on the wire because the document outlives
+      // the call; this area's only holder is the process about to end, so the
+      // channel would buy nothing and would cost a round trip on the quit path.
+      // Invariant 25 makes the host hostile and nothing in the boundary client
+      // bounds a call — a host that accepts the frame and never answers hangs
+      // the shutdown, which is the one place a hang is least recoverable.
+      built.connection.close();
+      removeSessionDirectories(platform.directories, built.paths);
+    },
+  };
+}
+
 /**
  * How a session's granted directories are reached once it exists.
  *
@@ -1434,7 +1725,26 @@ async function loopbackControl(): Promise<{
 }
 
 /**
+ * The one channel {@link containmentOf} asks, as a function of the request.
+ *
+ * The **channel's own type**, taken from `EngineChannels`, rather than a shape
+ * written out here: `engine/probe-containment` is one of the six
+ * `coreEngineChannels` builds for every engine, so PDFium's client member is
+ * structurally this and a hand-written signature would be a second opinion about
+ * a schema the factory owns (B3a). If the two ever stop agreeing, the PDFium
+ * caller stops compiling — which is the right moment to find out.
+ */
+type ContainmentProbe = ClientApi<EngineChannels>['engine/probe-containment'];
+
+/**
  * ADR-0023 §5's check, asked of one live host.
+ *
+ * **A function of the probe rather than of the connection**, because there are
+ * now two hosts and each owes its own verdict: the check is about one process's
+ * token, and the second host runs under a different AppContainer profile. What
+ * must NOT be duplicated is the loopback control and the negative read below —
+ * they are the rigour, and a second copy of them is where one of the two would
+ * quietly lose its control.
  *
  * ## Main reads the negative path FIRST, and that is the whole rigour
  *
@@ -1450,11 +1760,9 @@ async function loopbackControl(): Promise<{
  * could not establish the premise, so no verdict about the host is available.
  */
 async function containmentOf(
-  live: EngineHostConnection,
+  probe: ContainmentProbe,
   platform: EngineHostPlatform,
 ): Promise<ContainmentVerdict> {
-  const client = createClient(engineChannels, live.client.invoke);
-
   let readableBytes: number;
   try {
     readableBytes = (await readFile(platform.probe.negative.path)).byteLength;
@@ -1467,7 +1775,7 @@ async function containmentOf(
 
   const loopback = await loopbackControl();
   try {
-    const report = await client['engine/probe-containment']({
+    const report = await probe({
       positive: platform.probe.positive.path,
       negative: platform.probe.negative.path,
       loopbackPort: loopback.port,

@@ -138,6 +138,24 @@ export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
 export type { RemoteMupdfWriter } from './host/remoteWriter.js';
+// MAIN'S SIDE OF THE SECOND HOST, and it is on THIS barrel rather than behind
+// `@monstera/kernel/pdfium` — which is the split ADR-0026 clause 2 is about, so
+// the reason is worth stating. `remotePdfium.ts` and `pdfiumChannels.ts` name
+// `pdfiumFfi.ts` in neither their imports nor their types: one builds messages
+// and the other declares schemas, and the engine is at the far end of a pipe.
+// The subpath exists to keep `koffi` out of main's graph, and nothing here loads
+// it — `proof:kernelload` is what says so rather than this comment.
+export {
+  ENGINE_TEXT_OBJECTS_MAX,
+  type PdfiumChannels,
+  pdfiumChannels,
+} from './host/pdfiumChannels.js';
+export {
+  type PdfiumArea,
+  type PdfiumTransfer,
+  remotePdfiumTextObjects,
+  remotePdfiumWriter,
+} from './host/remotePdfium.js';
 export type { RegionRequest } from './pageSnapshot.js';
 export {
   EngineCallFailed,

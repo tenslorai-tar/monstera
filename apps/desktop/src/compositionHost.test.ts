@@ -694,6 +694,226 @@ describe('the composition root, with an engine host platform', () => {
   });
 });
 
+/**
+ * A MuPDF peer that also answers `engine/serialise` with a REAL FILE.
+ *
+ * {@link ENGINE} does not, because no case above reaches the terminal branch
+ * against a live host. A **byte-image** command reaches it on every run:
+ * `CommandBus.#sessionFor` calls `ByteImageAccess.current()` before `capture`,
+ * and that is `remoteMupdfWriter.serialise` — which mints a name, asks this
+ * channel for it, and then reads the file out of the granted output directory.
+ * A peer answering a count with nothing behind it makes the PDFium case below
+ * die in `takeOutput`, which reads as a transport failure.
+ *
+ * The directory is remembered from what the product SENT on `engine/open`,
+ * never recomputed from the root: a fixture that derives a path independently
+ * is one that can agree with a directory the product never made.
+ */
+function serialisingEngine(): FakePeer {
+  let output: string | null = null;
+  return (channel, params) => {
+    if (channel === 'engine/open') {
+      output = (params as { outputDirectory: string }).outputDirectory;
+      return SESSION;
+    }
+    if (channel !== 'engine/serialise') return ENGINE(channel, params);
+    if (output === null) throw new Error('engine/serialise before engine/open');
+    const { into } = params as { into: string };
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
+    writeFileSync(join(output, into), bytes);
+    return { ok: true, value: { bytes: bytes.length } };
+  };
+}
+
+/** What a PDFium peer was asked, so a case can assert the four-step dance. */
+interface PdfiumPeerLog {
+  readonly peer: FakePeer;
+  /** Every `from` name the host was told to read, in order. */
+  readonly inputs: string[];
+  /** Whether each input file still existed at the moment the peer was called. */
+  readonly inputsPresent: boolean[];
+}
+
+/**
+ * A PDFium peer that reads its input and writes its output, on the real disk.
+ *
+ * ## It CHECKS the input rather than assuming it
+ *
+ * `inputsPresent` is what makes the dance's first step provable. Main writes
+ * the image, calls, reads back and removes — and a writer that called before it
+ * wrote would satisfy every assertion made after the call returns, because the
+ * file is gone by then either way. The only moment the input can be observed is
+ * from inside the peer, which is where this looks.
+ */
+function pdfiumPeer(): PdfiumPeerLog {
+  let area: { snapshot: string; output: string } | null = null;
+  const inputs: string[] = [];
+  const inputsPresent: boolean[] = [];
+
+  const noteInput = (params: unknown): void => {
+    const { from } = params as { from: string };
+    if (area === null) throw new Error('a PDFium call arrived before engine/open');
+    inputs.push(from);
+    inputsPresent.push(existsSync(join(area.snapshot, from)));
+  };
+
+  const answerWrite = (params: unknown): unknown => {
+    noteInput(params);
+    if (area === null) throw new Error('unreachable');
+    const { into } = params as { into: string };
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
+    writeFileSync(join(area.output, into), bytes);
+    return { ok: true, value: { bytes: bytes.length } };
+  };
+
+  return {
+    inputs,
+    inputsPresent,
+    peer: (channel, params) => {
+      switch (channel) {
+        case 'engine/probe-containment':
+          return CONTAINED;
+        case 'engine/open': {
+          const sent = params as { snapshotDirectory: string; outputDirectory: string };
+          area = { snapshot: sent.snapshotDirectory, output: sent.outputDirectory };
+          return { ok: true, value: { session: 'cd12' } };
+        }
+        case 'engine/capture':
+          noteInput(params);
+          return {
+            ok: true,
+            value: {
+              captured: true,
+              value: { kind: 'replaceTextObject', prior: { page: 0, index: 2, text: 'WAS' } },
+            },
+          };
+        case 'engine/apply':
+        case 'engine/invert':
+          return answerWrite(params);
+        default:
+          return null;
+      }
+    },
+  };
+}
+
+describe('the composition root, with BOTH engine hosts', () => {
+  it('routes replaceTextObject to the PDFium host and installs the bytes it answered', async () => {
+    // TWO PLATFORMS, TWO HARNESSES. Handing one platform to both fields would
+    // make the two hosts one AppContainer profile and one pipe — the exact
+    // merge `engineHostPrograms.ts` exists to prevent — and every assertion
+    // below would still pass, because a single host answering both channel sets
+    // is indistinguishable from two at this layer. The separation is asserted
+    // where it lives, on the monikers; this case asserts the ROUTING.
+    const mupdf = platformAnswering(serialisingEngine());
+    const pdfium = pdfiumPeer();
+    const second = platformAnswering(pdfium.peer);
+
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('edited.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      // THE VERSION IS PART OF THE PAYLOAD, because `targets: 'text-object'`
+      // makes this command staleness-checked: an index means nothing except
+      // against the document the user was looking at. `CommandBus.#refuseIfStale`
+      // throws a REGISTRATION defect when a targeting command names none, which
+      // is what the first draft of this case met — and it is the same thing the
+      // UI half has to send.
+      command: { kind: 'replaceTextObject', page: 0, index: 2, text: 'hi', version: opened.value.version },
+    });
+    expect(executed.ok, JSON.stringify(executed)).toBe(true);
+    if (!executed.ok) throw new Error('the edit should have succeeded');
+    expect(executed.value.version).toBeGreaterThan(opened.value.version);
+
+    // THE SECOND HOST WAS BUILT AND PROBED. Its own containment verdict, not
+    // the first host's — the two run under different profiles, so a verdict
+    // inherited from the other would be a claim about a token nobody asked.
+    expect(second.harness.calls).toContain('host.createSuspended');
+    expect(second.harness.calls).toContain('peer.request:engine/probe-containment');
+    expect(second.harness.calls).toContain('peer.request:engine/open');
+    expect(second.harness.calls).toContain('peer.request:engine/apply');
+
+    // AND THE FIRST HOST NEVER SAW THE COMMAND, which is the routing property
+    // rather than a restatement of the one above: a registry that fell back to
+    // `mupdf` would reach a host whose `mupdfCommandSchema` refuses this kind,
+    // and the refusal would arrive as a malformed envelope rather than as a
+    // route.
+    expect(mupdf.harness.calls).not.toContain('peer.request:engine/apply');
+
+    // THE INPUT IMAGE WAS THERE WHEN THE HOST WAS CALLED, every time. This is
+    // the leg `remoteMupdfExecution` does not have, and the only assertion that
+    // can separate *written, then called* from *called, then written* — the
+    // file is removed on the way out either way.
+    expect(pdfium.inputsPresent.length).toBeGreaterThan(0);
+    expect(pdfium.inputsPresent.every(Boolean)).toBe(true);
+
+    // A FRESH NAME PER CALL. One area serves every document and every command
+    // (ADR-0048's withdrawn Decision 3), which is safe only because no two
+    // calls name one file — two in flight would otherwise overwrite each other
+    // in a directory neither can see the other in.
+    expect(new Set(pdfium.inputs).size).toBe(pdfium.inputs.length);
+
+    // AND THE BYTES CAME BACK AND WERE INSTALLED. `#install` adopts them, which
+    // rebuilds the MuPDF session from the new image — so a SECOND `engine/open`
+    // on the first host is what says the answer reached the canonical image
+    // rather than being read and dropped.
+    expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(1);
+  });
+
+  it('refuses the command BY NAME when there is no PDFium platform', async () => {
+    // THE CONTROL, and it is the state most machines are in: no `pdfium.dll`,
+    // so no host, so no registration. The refusal must come from the ROUTE —
+    // `CommandBus` looking the writer up and not finding it — and not from a
+    // native call into `undefined`, which is what a registry entry set to
+    // `undefined` would produce. The conditional spread in the root is what
+    // makes the key genuinely absent, and this is what reads it back.
+    const mupdf = platformAnswering(serialisingEngine());
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('unedited.pdf')),
+      enginePlatform: mupdf.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    // A REJECTION, NOT AN OUTCOME, and that is the shape rather than an
+    // accident: `UnregisteredWriterError` is a DEFECT by `CommandBus`'
+    // definition — the boundary turns it into `internal` with the diagnostic
+    // kept main-side — because a command that reaches the bus is one the UI
+    // offered. So this case is also the statement of what the UI half owes: the
+    // control is gated on the capability, never mounted and then refused here.
+    await expect(
+      handlers['document.execute']({
+        docId: opened.value.docId,
+        command: {
+          kind: 'replaceTextObject',
+          page: 0,
+          index: 2,
+          text: 'hi',
+          version: opened.value.version,
+        },
+      }),
+    ).rejects.toThrow(/'pdfium' writer of record, which has no adapter registered/u);
+
+    // AND NOTHING WAS SERIALISED. A refusal that happened AFTER the bus took
+    // the document's bytes would have cost a whole-document round trip through
+    // the first host for a command that was never going to run — and it would
+    // read as this same failure.
+    expect(mupdf.harness.calls).not.toContain('peer.request:engine/serialise');
+  });
+});
+
 /** How many times a call appears. Named so a case reads as a count. */
 function spy(calls: readonly string[], call: string): number {
   return calls.filter((entry) => entry === call).length;

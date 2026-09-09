@@ -39,7 +39,7 @@ import {
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 12 });
+const roster = createRoster(failures, { cases: 13 });
 
 /** The program a contained host runs, which the grant set must cover. */
 const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
@@ -98,6 +98,15 @@ try {
     paths.some((path) => /[\\/]\.tools[\\/]electron[\\/]\d+\.\d+\.\d+$/u.test(path)),
     `paths: ${JSON.stringify(paths)}. A literal version here would be a second opinion about ` +
       `what \`electronRoot\` already answers, and the two would drift on the next bump.`,
+  );
+
+  check(
+    'the SECOND engine’s library is in the set, and derived from its own resolver',
+    paths.some((path) => /[\\/]\.tools[\\/]pdfium[\\/][\d.]+[\\/]bin$/u.test(path)),
+    `paths: ${JSON.stringify(paths)}. The PDFium host binds pdfium.dll at startup, before its ` +
+      `first handler runs, so a token that cannot read it dies with no pipe to report on — ` +
+      `SSSS-1's failure on the second engine. The version segment is what says the path came ` +
+      `from \`pdfiumLibrary\` rather than being spelled here.`,
   );
 
   // THE FFI SIBLING NO LONGER HAS ITS OWN ENTRY, and its case is replaced

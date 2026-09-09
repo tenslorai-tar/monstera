@@ -50,6 +50,7 @@ import { fileURLToPath } from 'node:url';
 import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
+import { pdfiumLibrary } from './provision/pdfium.mjs';
 import { formatError } from './lib/reportError.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -84,11 +85,46 @@ async function resolveRuntime() {
   );
 }
 
+/**
+ * Where the shell should look for `pdfium.dll`, or nothing.
+ *
+ * ## Why the launcher answers this and the application does not
+ *
+ * `electronBinaryPath` is here for a stated reason — a second opinion about
+ * where a provisioned artefact lives is B3a — and this is the same sentence with
+ * a different binary. `apps/desktop` cannot call `pdfiumLibrary` itself:
+ * `scripts/` is plain Node tooling and is not part of what a packaged
+ * application ships, so an import would resolve in a checkout and vanish in a
+ * build. So the one process that knows both the repository root and how to start
+ * the shell passes the answer down.
+ *
+ * ## Absent is a decided state, not a failure to raise
+ *
+ * Unlike the runtime, PDFium is not needed to start: it backs the Stage 5
+ * editing commands and nothing else. `engineHostPlatform.ts` answers `null` for
+ * an unset variable and creates no PDFium host, and a command routed to a writer
+ * with no registration is refused **by name** — which is what a user without
+ * `npm run provision:pdfium` should get, rather than a shell that will not open.
+ *
+ * @returns {Promise<Record<string, string>>} the variables to add to the child's
+ *   environment — empty when the library is not provisioned.
+ */
+async function pdfiumEnvironment() {
+  const library = pdfiumLibrary(REPO_ROOT);
+  if (!(await fileExists(library))) return {};
+  return { MONSTERA_PDFIUM_LIBRARY: library };
+}
+
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
   const child = spawn(binary, [APP_DIRECTORY, ...process.argv.slice(2)], {
     stdio: 'inherit',
+    // THE PARENT'S ENVIRONMENT PLUS ONE, spelled out rather than left to the
+    // default: `spawn` inherits the whole environment when `env` is omitted, and
+    // an object holding only the addition would start the shell with no PATH,
+    // no APPDATA and no TEMP.
+    env: { ...process.env, ...(await pdfiumEnvironment()) },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to
     // contain — a space, an ampersand — and that is a quoting bug waiting for

@@ -13,7 +13,7 @@ import {
 import { createDocumentPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
 import { createFormDataOpenPicker, createImagePicker } from './imagePicker.js';
-import { createEngineHostPlatform } from './engineHostPlatform.js';
+import { createEngineHostPlatform, createPdfiumHostPlatform } from './engineHostPlatform.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
@@ -58,8 +58,21 @@ import { startShell } from './main.js';
  * what makes "after the lock" a property of the code rather than of the reading
  * order.
  */
-startShell(() =>
-  createShellDependencies({
+startShell(() => {
+  // NAMED, BECAUSE PDFIUM'S PLATFORM IS DERIVED FROM IT. `createPdfiumHostPlatform`
+  // takes MuPDF's rather than building a second one from scratch, so that the
+  // session root, the directory surface and the containment negative are
+  // established exactly once — see that function for why a second build is a
+  // second writer of a concern this process establishes on the way in.
+  //
+  // Evaluated inside the lambda, which is the whole of what the lambda is for:
+  // everything here reads the single-instance lock as *this process owns the
+  // session root*, and `createEngineHostPlatform` sweeps that root.
+  const enginePlatform = createEngineHostPlatform(
+    join(app.getPath('sessionData'), 'engine-sessions'),
+  );
+
+  return createShellDependencies({
     appInfo: {
       version: app.getVersion(),
       installChannel: 'development',
@@ -141,12 +154,16 @@ startShell(() =>
     recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
-    // question and nobody else's — is resolved here and handed down. Under
+    // question and nobody else's — is resolved above and handed down. Under
     // `sessionData` rather than `temp`: a directory the OS may empty underneath
     // a live host is not one to hand a granted DACL to.
-    enginePlatform: createEngineHostPlatform(
-      join(app.getPath('sessionData'), 'engine-sessions'),
-    ),
+    enginePlatform,
+    // THE SECOND ENGINE'S PLATFORM, and `null` on three separate roads: no
+    // Win32 surfaces at all, no `pdfium.dll` path supplied, or a container SID
+    // that could not be derived. All three end the same way and that is
+    // deliberate — no PDFium host is created, and a command routed to `pdfium`
+    // is refused by name at the registry rather than reaching a native call.
+    pdfiumPlatform: enginePlatform === null ? null : createPdfiumHostPlatform(enginePlatform),
     // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
     // packaged run: a Store application has no terminal attached, so until this
     // existed every failure this repository takes care to describe went to a
@@ -165,5 +182,5 @@ startShell(() =>
       const problem = await shell.openPath(directory);
       return problem === '';
     }),
-  }),
-);
+  });
+});
