@@ -40,11 +40,23 @@
  * Usage: MONSTERA_CORPUS=<dir> node scripts/research/textLayerBounds.mjs
  */
 
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 
+import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { STEXT_OPTION_STRING, linesOf, parsePageText } from '../../packages/kernel/dist/textStructure.js';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// The subject is what the built parser produces, so a stale build would measure
+// the previous one and print the answer under this one's name. Added by finding
+// CCCCCC-4, which is this instrument being named by a comment in another file
+// for a range rather than by a check.
+refuseStaleBuild(root, TEXT_STRUCTURE, 1);
 
 /**
  * The two figures the bounds are about, for one document — plus what the ENGINE

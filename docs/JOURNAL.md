@@ -888,6 +888,53 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — Closing CCCCCC-4 found a fourth B3a: a private mtime comparison, missing the half that asks the compiler
+
+The finding was *three instruments read a built artefact with no freshness
+guard*. Fixing it found something the audit had not: **one of the three was not
+unguarded — it had written its own.**
+
+`textLayerAgreement.mjs` carried `refuseStaleSubstrate()`, twenty lines
+comparing two mtimes and throwing. Correct in isolation, and a **second opinion
+about an authority `buildFreshness.mjs` already owns**. The half it did not have
+is the one that matters: `refuseStaleBuild` asks **tsc** when the timestamps say
+stale, because a checkout, a `git stash pop` or a formatter rewriting a file
+identically all move an mtime without changing content — and `tsc --build`
+correctly leaves the output alone. The private version refused on the timestamp
+alone, and the documented answer to that refusal is a rebuild somebody performs
+to satisfy a check rather than to fix anything.
+
+That is B3a's exact shape and its stated danger: **a partial reimplementation
+agrees with the authority most of the time.** It had never been observed
+failing, because the case where the two disagree is the case where the
+timestamps lie.
+
+**Its stated reason for not taking the shared guard had expired.** The comment
+said adding a research script to `ARTEFACT_EDGES` *"would put a non-proof in a
+roster derived from proofs"*. `lineAgreement.mjs` is a research script, takes
+the guard, and has an entry — landed on 2026-09-09, four commits before this one
+in the same range. A justification written beside a decision outlives the fact
+under it, which is the standing lesson and the fourth time it has been paid for
+here.
+
+**And the new check survived its own first mutation**, which is what produced
+its final form. The case scans for the guard's identifier; the mutation renamed
+the *import binding* in `textLayerBounds.mjs` and the file still read as
+guarded, because the call site's spelling was still in the text. A word in a
+comment would have satisfied it too. The pattern now matches the **import
+clause**, and the same mutation reddens exactly one case naming exactly one
+file.
+
+`READS_NO_BUILD` is empty, and it was written with one entry: the control
+reported `electronImports.proof.mjs` as **dead** on its first run, because that
+file names `dist/` paths as data in an allowance table and the import pattern
+correctly does not match them. A list built for a member the classifier never
+had is furniture on day one. It stays as an empty declared route rather than an
+absolute rule, because a check with no way to say *this one genuinely reads no
+artefact* is a check the first honest exception gets weakened.
+
+---
+
 ## 2026-09-09 — Stage audit of `642b262..63f10be`: a case-count check that cannot see a third of its class, and a comment falsified eleven lines from the edit that falsified it
 
 Thirty commits, 98 files, against a batch of 100. **Called with three files of

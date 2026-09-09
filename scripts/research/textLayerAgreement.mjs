@@ -60,8 +60,7 @@
  *
  * It prints readings, never a verdict.
  */
-import { statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
@@ -69,6 +68,7 @@ import * as mupdf from 'mupdf';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 import { STEXT_OPTION_STRING, parsePageText, plainTextOf } from '../../packages/kernel/dist/textStructure.js';
+import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -76,27 +76,23 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * The substrate is read through the kernel's BUILD, so a stale one answers for
  * code that is no longer there.
  *
- * Importing the source is not available — it is TypeScript — and reimplementing
- * the parse here would be a second opinion about a format `textStructure.ts`
- * owns (B3a), which is worse than the staleness. So the edge is checked instead.
- * `scripts/lib/buildFreshness.mjs` does this properly for proofs, keyed by
- * `proof:*` name and anchored against the set of proofs that import it; this is
- * a research script and adding it to that map would put a non-proof in a roster
- * derived from proofs.
+ * ## THIS FILE HELD ITS OWN mtime COMPARISON UNTIL 2026-09-09 (CCCCCC-4)
+ *
+ * Twenty lines, correct in isolation, and a **second opinion about an authority
+ * `buildFreshness.mjs` already owns** — B3a's exact shape, and a partial
+ * reimplementation, which is the dangerous kind because it agrees most of the
+ * time. What it lacked is the half that matters: `refuseStaleBuild` asks the
+ * COMPILER when the timestamps say stale, because a checkout or a formatter
+ * moves an mtime without changing content and `tsc --build` correctly leaves
+ * the output alone. The private version refused on the timestamp alone, and the
+ * documented answer to that is a rebuild somebody performs to satisfy a check.
+ *
+ * Its stated reason for not taking the shared guard — *adding a research script
+ * to that map would put a non-proof in a roster derived from proofs* — was
+ * overtaken the same day: `lineAgreement.mjs` is a research script, takes the
+ * guard, and has an `ARTEFACT_EDGES` entry. A justification written beside a
+ * decision outlives the fact under it.
  */
-function refuseStaleSubstrate() {
-  const source = join(root, 'packages', 'kernel', 'src', 'textStructure.ts');
-  const built = join(root, 'packages', 'kernel', 'dist', 'textStructure.js');
-  const sourceAt = statSync(source).mtimeMs;
-  const builtAt = statSync(built).mtimeMs;
-  if (sourceAt > builtAt) {
-    throw new Error(
-      `packages/kernel/src/textStructure.ts is newer than its build, so this run would compare ` +
-        `PDF.js against a substrate that no longer exists. Run: npm run build`,
-    );
-  }
-}
-
 /** The page every fixture uses, in points. */
 const PAGE = { width: 500, height: 400 };
 
@@ -349,7 +345,7 @@ async function main() {
   console.log('');
 
   console.log('## 0. The comparison can see a difference that would change a decision');
-  refuseStaleSubstrate();
+  refuseStaleBuild(root, TEXT_STRUCTURE, 1);
   resolutionTest();
   console.log('');
 

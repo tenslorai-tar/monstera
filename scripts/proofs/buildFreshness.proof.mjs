@@ -39,7 +39,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ARTEFACT_EDGES, newestMtime, refuseStaleBuild } from '../lib/buildFreshness.mjs';
@@ -66,6 +66,8 @@ const CASES = [
   'CONTROL: a BUNDLER pair with the same shape is refused without asking anybody',
   'every proof that CALLS the guard has an ARTEFACT_EDGES entry, so the sweep can order it',
   'CONTROL: and the scan found the callers it is known to be able to find',
+  'every script that IMPORTS a build takes the guard, or is named as owing none',
+  'CONTROL: and that scan sees the importers, and its allowlist has no dead entry',
 ];
 
 const roster = createRoster(failures, { cases: CASES.length });
@@ -441,6 +443,117 @@ try {
         `refuseStaleBuild, so their absence means this scan is blind — and a blind scan reports ` +
         `an empty caller list, which passes the case above for the wrong reason. A missing ` +
         `exclusion file means that name went stale in a rename.`,
+    );
+  }
+
+  // THE OTHER DIRECTION, AND THE CASE ABOVE IS STRUCTURALLY BLIND TO IT
+  // (finding CCCCCC-4, 2026-09-09).
+  //
+  // The anchor above derives its extent from the scripts that IMPORT the guard,
+  // and says so as a strength: an omission from `ARTEFACT_EDGES` cannot reach
+  // that set. True, and it leaves the larger danger unwatched — **a script that
+  // reads a build and never imports the guard at all is not in the set the
+  // anchor derives from**, so it can never be missed. That is item 4c in the
+  // direction it warns about, one layer up from the map: derive from a set only
+  // when the failure you fear makes it BIGGER, and a forgotten guard makes this
+  // one smaller.
+  //
+  // Measured when this case was written: `textLayerBounds.mjs` (a CI step),
+  // `textFrames.mjs` and `textLayerAgreement.mjs` all imported
+  // `packages/kernel/dist/textStructure.js` unguarded, and the third had
+  // reimplemented the mtime comparison privately — a second opinion about an
+  // authority `buildFreshness.mjs` owns (B3a), missing the half that asks the
+  // compiler. One of the three was named in a COMMENT in `buildFreshness.mjs`
+  // for a whole range, which is a note rather than a mechanism.
+  //
+  // The extent here comes from the import graph, which no forgotten call can
+  // shrink. The allowlist is hand-kept and that is the right direction for it:
+  // the failure feared is a NEW dist-reader arriving, which makes the set
+  // bigger, and a hand-kept list fails loudly on exactly that.
+  {
+    /**
+     * Imports a build and owes no edge, with the reason. Not an exemption list.
+     *
+     * **Empty, and it was written with one entry.** `electronImports.proof.mjs`
+     * was put here because it names `dist/` paths — and the control below
+     * reported the entry as dead, because those paths are DATA in an allowance
+     * table and the pattern correctly does not match them. A list built for a
+     * member the classifier never had is furniture on its first run.
+     *
+     * It stays as an empty declared route rather than an absolute rule, because
+     * a check with no way to say *this one genuinely reads no artefact* is a
+     * check the first honest exception gets weakened.
+     *
+     * @type {Map<string, string>}
+     */
+    const READS_NO_BUILD = new Map();
+
+    /** @type {string[]} */
+    const files = [];
+    /** @param {string} directory */
+    const walk = (directory) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name.endsWith('.mjs')) files.push(path);
+      }
+    };
+    walk(join(REPO_ROOT, 'scripts'));
+
+    // A STATIC OR DYNAMIC IMPORT, not a mention. `\s` spans the newline that
+    // `editFidelity.proof.mjs` puts between `await import(` and its specifier,
+    // which a line-scoped pattern would miss — a line is not a unit of meaning.
+    const IMPORTS_A_BUILD = /(?:\bfrom\s*|\bimport\s*\(\s*)['"][^'"]*\/dist\/[^'"]*['"]/u;
+
+    /** @type {string[]} */
+    const importers = [];
+    /** @type {string[]} */
+    const unguarded = [];
+    for (const path of files) {
+      const name = relative(REPO_ROOT, path).split('\\').join('/');
+      // This file drives the guard against fixture trees and imports no build,
+      // so it is not in the set by construction rather than by exclusion.
+      const source = readFileSync(path, 'utf8');
+      if (!IMPORTS_A_BUILD.test(source)) continue;
+      importers.push(name);
+      // THE IMPORT CLAUSE, not the identifier anywhere in the file. A bare
+      // `\brefuseStaleBuild\b` was tried and **survived its own mutation**:
+      // renaming the import binding left the call site's spelling in the text,
+      // so the file still read as guarded. A word in a comment would satisfy it
+      // too, which is the version that would have shipped unnoticed.
+      if (/import\s*\{[^}]*\brefuseStaleBuild\b[^}]*\}\s*from/u.test(source)) continue;
+      if (READS_NO_BUILD.has(name)) continue;
+      unguarded.push(name);
+    }
+
+    check(
+      'every script that IMPORTS a build takes the guard, or is named as owing none',
+      unguarded.length === 0,
+      `${String(unguarded.length)} script(s) import a module under a package's dist/ and never ` +
+        `import refuseStaleBuild: ${unguarded.length > 0 ? unguarded.join(', ') : '(none)'}. ` +
+        `Such a script measures whatever was last built and prints the answer under this ` +
+        `build's name. Take the guard with the edges it reads, or add it to READS_NO_BUILD ` +
+        `with the reason it depends on no artefact.`,
+    );
+
+    // TWO WAYS TO GO QUIET, and both produce an empty `unguarded`. The walk can
+    // fail to find — a moved directory, a pattern that stopped matching the
+    // import forms in use — and the allowlist can hold an entry whose file no
+    // longer imports a build, which the loop above cannot report because it
+    // walks the importers that exist (ZZZZZ-3's shape, in a second list).
+    const dead = [...READS_NO_BUILD.keys()].filter((name) => !importers.includes(name));
+    check(
+      'CONTROL: and that scan sees the importers, and its allowlist has no dead entry',
+      importers.includes('scripts/proofs/editFidelity.proof.mjs') &&
+        importers.includes('scripts/research/lineAgreement.mjs') &&
+        importers.length >= 5 &&
+        dead.length === 0,
+      `the walk found ${String(importers.length)} importer(s): ${importers.join(', ')}. ` +
+        `editFidelity.proof.mjs imports a build through a MULTI-LINE await import( and ` +
+        `lineAgreement.mjs through a plain from — both must be seen, or the pattern has ` +
+        `stopped matching the forms in use and an empty result reads as a clean tree. ` +
+        `${String(dead.length)} allowlist entry(ies) name a script that imports no build: ` +
+        `${dead.length > 0 ? dead.join(', ') : '(none)'}.`,
     );
   }
 

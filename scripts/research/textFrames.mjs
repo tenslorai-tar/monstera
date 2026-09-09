@@ -66,8 +66,14 @@ import {
   linesOf,
   parsePageText,
 } from '../../packages/kernel/dist/textStructure.js';
+import { SHARED_INDEX, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// TWO EDGES, because this instrument reads the parse from one build and the
+// coordinate conversion from another, and a stale `shared` would move the
+// answer without touching the parser. Added by finding CCCCCC-4.
+refuseStaleBuild(root, [...TEXT_STRUCTURE, ...SHARED_INDEX], 2);
 
 /** A deliberately non-square page, so a swapped axis cannot hide. */
 const PAGE = { width: 400, height: 700 };

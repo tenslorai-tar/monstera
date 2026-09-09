@@ -99,14 +99,31 @@ export const PDFIUM_ADAPTER = [
  * The instrument's whole subject is what `textStructure.ts` produces, so a stale
  * build would score the previous parser and attribute the answer to this one.
  *
- * `textLayerBounds.mjs` imports the same built module and does NOT guard it,
- * which is the same gap one instrument along — recorded here rather than fixed
- * in passing, because that file's edges are its own commit's business.
+ * **THE COMMENT HERE USED TO SAY that `textLayerBounds.mjs` imports the same
+ * built module and does not guard it, "recorded rather than fixed in passing".**
+ * A comment naming a gap is not a mechanism, and this one failed the disclaimer
+ * test badly — it could have been written before the change it sat in. Finding
+ * CCCCCC-4 closed it: `textLayerBounds.mjs`, `textFrames.mjs` and
+ * `textLayerAgreement.mjs` all take this edge now, and
+ * `buildFreshness.proof.mjs` derives the requirement from the scripts that
+ * IMPORT a build rather than from the scripts that call the guard.
  *
  * @type {BuildEdge[]}
  */
 export const TEXT_STRUCTURE = [
   ['packages/kernel/src/textStructure.ts', 'packages/kernel/dist/textStructure.js', 'tsc'],
+];
+
+/**
+ * `packages/shared`'s barrel, for an instrument that reads geometry through it.
+ *
+ * A directory source rather than the one module, because the barrel re-exports
+ * and an edit two files away is the change a named file would miss.
+ *
+ * @type {BuildEdge[]}
+ */
+export const SHARED_INDEX = [
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
 ];
 
 /**
@@ -168,6 +185,10 @@ export const ARTEFACT_EDGES = {
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
   'proof:lineagreement': TEXT_STRUCTURE,
+  // The bounds instrument reads the same built parser and had no edge until
+  // CCCCCC-4, which is what made the requirement derive from the scripts that
+  // import a build rather than from the ones that already call the guard.
+  'proof:textbounds': TEXT_STRUCTURE,
 };
 
 /**
