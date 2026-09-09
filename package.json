@@ -109,6 +109,7 @@
     "proof:enginesurface": "node scripts/research/engineSurface.mjs",
     "proof:pdfiumadapter": "node scripts/proofs/pdfiumAdapter.proof.mjs",
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
+    "proof:lineagreement": "node scripts/research/lineAgreement.mjs",
     "proof:definedtokens": "node scripts/proofs/definedTokens.proof.mjs",
     "check:definedtokens": "node scripts/lib/definedTokens.mjs",
     "proof:typeonlyexports": "node scripts/proofs/typeOnlyExports.proof.mjs",

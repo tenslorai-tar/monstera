@@ -94,6 +94,22 @@ export const PDFIUM_ADAPTER = [
 ];
 
 /**
+ * The substrate `lineAgreement.mjs` scores this application's reading through.
+ *
+ * The instrument's whole subject is what `textStructure.ts` produces, so a stale
+ * build would score the previous parser and attribute the answer to this one.
+ *
+ * `textLayerBounds.mjs` imports the same built module and does NOT guard it,
+ * which is the same gap one instrument along — recorded here rather than fixed
+ * in passing, because that file's edges are its own commit's business.
+ *
+ * @type {BuildEdge[]}
+ */
+export const TEXT_STRUCTURE = [
+  ['packages/kernel/src/textStructure.ts', 'packages/kernel/dist/textStructure.js', 'tsc'],
+];
+
+/**
  * Which sources a proof reads **through a build** rather than through an import.
  *
  * ## Why this map exists, and it is not a convenience (finding PPPPP-2)
@@ -151,6 +167,7 @@ export const ARTEFACT_EDGES = {
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
+  'proof:lineagreement': TEXT_STRUCTURE,
 };
 
 /**

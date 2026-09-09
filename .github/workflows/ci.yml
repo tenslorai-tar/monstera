@@ -292,6 +292,16 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/editFidelity.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # E2's accuracy score. The corpus is not here, so what runs on the Windows
+      # leg is the pair of controls — a constructed page both engines must agree
+      # on completely, and two resolution cases proving the scorer can report a
+      # disagreement of one line and of one character. Those are what make the
+      # corpus figures, read on a machine that has the documents, worth quoting.
+      - name: Score where two engines agree a line ends
+        run: >
+          node scripts/ci/annotate.mjs scripts/research/lineAgreement.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 

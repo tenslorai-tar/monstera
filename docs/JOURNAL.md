@@ -887,6 +887,88 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — E2's accuracy score, and the clause that has no constant to govern
+
+`BUILD-PROMPT.md`:541-551 owes *one text-structure module, line clustering
+implemented exactly once, tuned against the fixture corpus with a measurable
+accuracy score*, and adds that **constants change only with a corpus score in
+the commit message**.
+
+Read against the code before writing anything: **there is no constant.**
+`packages/kernel/src/textStructure.ts` implements no clustering. It parses
+MuPDF's structured-text JSON and flattens it; the clustering happens in MuPDF's
+`stext-device.c`. The only lever this project holds is the option set —
+`segment` on, `table-hunt` off — and those are two flags chosen by measurement on
+2026-09-02, not thresholds anybody can nudge.
+
+So the clause anticipated an implementation this build does not have. Neither
+response that suggests itself is honest: inventing a constant so there is
+something to tune would be building work to satisfy a sentence, and recording the
+obligation as met would be claiming a score nobody computed. What is left is to
+measure the thing the clause was reaching for — **is the segmentation we ship
+right?** — and to say plainly what the answer can and cannot support.
+
+### The oracle, and why it is not a second opinion
+
+A corpus PDF carries no labelled lines, so there is no ground truth. What there
+is, now that `pdfiumFfi.ts` exists, is a genuinely **independent reader**: PDFium
+extracts text with its own algorithm and its own idea of a break.
+
+That is not B3a's defect. B3a forbids a second implementation of a rule the
+product depends on, and nothing here ships. Two independent readers disagreeing
+is the only evidence available about a question neither can answer alone.
+
+### The reading, `npm run proof:lineagreement`, 2026-09-09
+
+| id | pages | our lines | theirs | characters | order | ours in theirs | theirs in ours |
+|---|---|---|---|---|---|---|---|
+| corpus-1 | 1 | — | — | no text from either engine — a scan | | | |
+| corpus-2 | 2 | 114 | 100 | 100.00% | 28.2% | 76.3% | 87.0% |
+| corpus-3 | 1 | 78 | 27 | 100.00% | 14.9% | 17.9% | 51.9% |
+| corpus-4 | 1 | — | — | no text from either engine — a scan | | | |
+| corpus-5 | 2 | 96 | 79 | 100.00% | 47.2% | 64.6% | 78.5% |
+
+**Characters 100.00% on all three.** The two engines read exactly the same
+glyphs. Every disagreement in this table is about *where a line ends* and *in
+what order the page is laid out* — and the order column is `segment` doing what
+it was turned on to do, so a low number there is the feature working.
+
+The one worth the next reading is corpus-3: 78 of our lines against 27 of
+theirs, with only 17.9% of ours found among them and 51.9% the other way. That
+is a merging difference of nearly 3×, and three documents cannot say which
+reader is right.
+
+### The instrument's own defect, kept rather than corrected away
+
+The first version scored characters **positionally** and reported 14.9% to
+47.2%. That is a conclusion about the product — *the engines disagree badly* —
+drawn from a defect in the instrument: `segment` reorders a multi-column page
+into column-major and PDFium emits content-stream order, so a positional
+comparison of two *correct* readings of a two-column page scores near zero.
+
+The score is now a character **census**, which order cannot touch, and the
+positional measure is kept under its true name, `order`. It is a real question
+and it belongs in the table — it just is not the one labelled *characters*.
+
+The tell was available before the run: a measure whose name says *glyphs* and
+whose method reads *positions* is measuring the axis the option set exists to
+change.
+
+### Three controls, because a score's reassuring answer is a high number
+
+A constructed page of three known lines, on which both engines must find three
+and agree completely. A line-score resolution case — one line removed, which
+must report 66.7%. And a **character-score** resolution case, added after the
+corpus rows came back at 100.00%, because a function returning 1 satisfies the
+first control perfectly: one character added to one line reports 99.03%. Each
+throws rather than printing.
+
+Two corpus documents produce no text from either engine, and are **attributed as
+scans rather than scored** — a page with no text agrees perfectly with a page
+with no text, and that zero would otherwise have entered the mean as agreement.
+
+---
+
 ## 2026-09-09 — The fidelity proof, which asks the question in pixels because nothing else can see it
 
 `BUILD-PROMPT.md`:706 owes *fidelity proofs — pixel-diff untouched runs*, and
