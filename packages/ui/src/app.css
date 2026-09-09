@@ -648,6 +648,53 @@ body {
   gap: var(--space-4);
 }
 
+/*
+ * The run chooser in the replace-text dialog.
+ *
+ * A `fieldset` carries a browser default border, margin and padding that no
+ * other body in this application has to undo, because no other body groups
+ * radios — so this is the one rule the grouping costs, and it is here rather
+ * than in the component for the reason every rule in this file is.
+ *
+ * The options are a WRAPPING ROW rather than a column. A run index is one or two
+ * characters, and a column of five hundred numbers is a scroll where a wrapped
+ * block is a glance; `MAX_TEXT_OBJECTS` is what bounds it at five hundred and
+ * the truncation notice is what says when a page had more.
+ */
+.m-replace-text-object__choice {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+/*
+ * The legend, laid out as a heading for the group rather than as a border
+ * caption: with the border removed a legend's default inline placement leaves
+ * it sitting in the first row of options.
+ */
+.m-replace-text-object__legend {
+  flex: 1 0 100%;
+  padding: 0;
+}
+
+.m-replace-text-object__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/*
+ * The index itself, in the tabular figures every column of digits here uses.
+ * These are numbers a reader compares against each other, and proportional
+ * digits make 11 narrower than 88.
+ */
+.m-replace-text-object__index {
+  font-variant-numeric: tabular-nums;
+}
+
 .m-annotations-remove {
   flex: 0 0 auto;
   padding: var(--space-2) var(--space-4);

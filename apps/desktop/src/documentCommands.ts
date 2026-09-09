@@ -826,6 +826,56 @@ export interface DocumentFlatFields {
   readonly truncated: boolean;
 }
 
+/**
+ * An engine this installation does not have was asked for.
+ *
+ * ## Why it is a class here and not `UnregisteredWriterError`
+ *
+ * That one is `CommandBus`' and means *no adapter is registered for this
+ * command's writer of record*. This is a READ, so no command and no writer are
+ * involved — the editing engine is simply absent, which is a state the shipped
+ * product is deliberately in wherever PDFium was not provisioned. Constructing
+ * the bus's error about a command that does not exist would be a lie with a
+ * matching type.
+ *
+ * Both become `engine-unavailable` at the boundary, and that is one code for two
+ * causes on the axis that matters — *can this installation do it at all* — which
+ * is the same reasoning `engine-refused` carries on the host wire.
+ */
+export class EngineUnavailableError extends Error {
+  override readonly name = 'EngineUnavailableError';
+
+  constructor(what: string) {
+    super(
+      `${what} needs an engine this installation does not have. The document is untouched. ` +
+        'PDFium is provisioned separately and no host was created for it, so nothing was asked.',
+    );
+  }
+}
+
+/**
+ * Which of a page's objects are text objects, in the EDITING engine's numbering.
+ *
+ * `DocumentFlatFieldsReader`'s shape and its per-page reason, against the other
+ * engine — and it may be absent, which is what the `null`-returning composition
+ * point turns into {@link EngineUnavailableError}. The indices are PDFium's own
+ * and are never joined to MuPDF's structured text: `commandDeclarations.ts`
+ * gives `replaceTextObject` `targets: 'text-object'` precisely because that is a
+ * third index space.
+ */
+export type DocumentTextObjectsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<{ readonly indices: readonly number[]; readonly truncated: boolean }>;
+
+/** The indices, stamped with the version the lane read them at. */
+export interface DocumentTextObjects {
+  readonly version: DocVersion;
+  readonly indices: readonly number[];
+  readonly truncated: boolean;
+}
+
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
   docId: DocId,
@@ -1011,6 +1061,15 @@ export interface DocumentCommandsParts {
   readonly annotations: DocumentAnnotationsReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
+  /**
+   * The editing engine's text-object list, or a thrower.
+   *
+   * Required and undefaulted like every other reader here: an installation with
+   * no PDFium supplies one that raises {@link EngineUnavailableError}, which is
+   * a decided answer, and a default of `undefined` would make *this build cannot
+   * edit text* a state a caller reaches by saying nothing.
+   */
+  readonly textObjects: DocumentTextObjectsReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -1035,6 +1094,7 @@ export class DocumentCommands {
   readonly #annotations: DocumentAnnotationsReader;
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
+  readonly #textObjects: DocumentTextObjectsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -1057,6 +1117,7 @@ export class DocumentCommands {
     this.#annotations = parts.annotations;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
+    this.#textObjects = parts.textObjects;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -1413,6 +1474,37 @@ export class DocumentCommands {
     });
 
     return { version, candidates: value.candidates, truncated: value.truncated };
+  }
+
+  /**
+   * Which of a page's objects the editing engine calls text objects.
+   *
+   * {@link flatFieldCandidates}' body against the other engine, and IN THE LANE
+   * for a reason that is stronger here than there: this read serialises the
+   * document to hand PDFium its bytes, so a read interleaved with an `apply`
+   * would answer indices for a page that no longer exists. The version comes
+   * back with the answer, and it is what `replaceTextObject` carries — a chooser
+   * built on a stale list would name an object the document has moved past, and
+   * `#refuseIfStale` is what catches that.
+   *
+   * The poison guard comes first, as everywhere. The **session** guard is here
+   * too and names `mupdf` deliberately: the bytes this read hands PDFium come
+   * from the live MuPDF session, so a document with none has nothing to ask
+   * about — the missing engine is a different state and {@link
+   * EngineUnavailableError} is the one that says so.
+   */
+  async textObjects(docId: DocId, page: number): Promise<DocumentTextObjects> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#textObjects(docId, sessions, page);
+    });
+
+    return { version, indices: value.indices, truncated: value.truncated };
   }
 
   /**

@@ -213,6 +213,7 @@ describe('browser shim', () => {
       'document.searchPage',
       'document.snapshotRegion',
       'document.split',
+      'document.textObjects',
       'document.undo',
       'document.viewModel',
       'log.reveal',

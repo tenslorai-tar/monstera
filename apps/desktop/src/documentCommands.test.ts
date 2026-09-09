@@ -56,6 +56,8 @@ import {
   type ImageSource,
   type DocumentAnnotationsReader,
   type DocumentFlatFieldsReader,
+  type DocumentTextObjectsReader,
+  EngineUnavailableError,
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
@@ -353,6 +355,19 @@ const localFormFields: DocumentFormFieldsReader = (id, sessions) => {
 const noFlatFields: DocumentFlatFieldsReader = () =>
   Promise.reject(new Error('this case does not propose flat fields'));
 
+/**
+ * The reader an installation with no PDFium supplies.
+ *
+ * It REFUSES with the shipped class rather than with a bare `Error`, unlike
+ * every other `no…` here, and the difference is the point: those absences are
+ * *no case exercises this*, and this one is a state the product ships in — the
+ * composition root builds exactly this when `pdfiumPlatform` is `null`. A case
+ * that reached it and saw a bare `Error` would be reading a fixture; seeing
+ * `EngineUnavailableError` it is reading the boundary's own input.
+ */
+const noTextObjects: DocumentTextObjectsReader = () =>
+  Promise.reject(new EngineUnavailableError('reading a page’s text objects'));
+
 /** The candidate proposal's composition, per page. */
 const localFlatFields: DocumentFlatFieldsReader = (id, sessions, page) => {
   const held = sessions.mupdf;
@@ -451,6 +466,7 @@ const INERT = {
   annotations: noAnnotations,
   formFields: noFormFields,
   flatFields: noFlatFields,
+  textObjects: noTextObjects,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -471,6 +487,11 @@ const LOCAL_READS = {
   annotations: localAnnotations,
   formFields: localFormFields,
   flatFields: localFlatFields,
+  // STAYS THE REFUSING ONE even in the local-reads set, and that is not an
+  // omission. Every other reader here has a local composition because MuPDF is
+  // in this process for these cases; PDFium is not, and a fixture that answered
+  // plausible indices would be this file inventing an engine.
+  textObjects: noTextObjects,
   duplicates: localDuplicates,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 

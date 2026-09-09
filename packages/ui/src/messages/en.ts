@@ -310,6 +310,15 @@ export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
 export const FLAT_FIELDS_ALL_TEXT = messageKey('dialog.flat-fields.all-text');
 export const FLAT_FIELDS_ACCEPT = messageKey('dialog.flat-fields.accept');
+export const REPLACE_TEXT_OBJECT_TITLE = messageKey('dialog.replace-text-object.title');
+export const REPLACE_TEXT_OBJECT_EXPLAINS = messageKey('dialog.replace-text-object.explains');
+export const REPLACE_TEXT_OBJECT_CHOOSE = messageKey('dialog.replace-text-object.choose');
+export const REPLACE_TEXT_OBJECT_NEW_TEXT = messageKey('dialog.replace-text-object.new-text');
+export const REPLACE_TEXT_OBJECT_NONE = messageKey('dialog.replace-text-object.none');
+export const REPLACE_TEXT_OBJECT_TRUNCATED = messageKey('dialog.replace-text-object.truncated');
+export const REPLACE_TEXT_OBJECT_TOO_LONG = messageKey('dialog.replace-text-object.too-long');
+export const REPLACE_TEXT_OBJECT_APPLY = messageKey('dialog.replace-text-object.apply');
+export const REPLACE_TEXT_OBJECT_COMMAND_TITLE = messageKey('command.document.replace-text-object');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
@@ -618,6 +627,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // for a shorter one, and a reader quoting it has no way to tell.
   [WORD_COUNT_PARTIAL]: 'Counted {counted} of {total} pages — these totals are incomplete.',
   [SPELL_CHECK_COMMAND_TITLE]: 'Spell check',
+  // NAMES THE PAGE, because the command acts on the one in front of the reader
+  // and the ribbon has no other way to say so. "Replace text" alone reads as
+  // find-and-replace, which is a different row and a different scope.
+  [REPLACE_TEXT_OBJECT_COMMAND_TITLE]: 'Replace text on page',
   [SPELL_CHECK_TITLE]: 'Spell check',
   [SPELL_CHECK_LANGUAGE]: 'Checked against {language}',
   [SPELL_CHECK_LANGUAGE_EN]: 'English',
@@ -772,6 +785,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_ALL_TEXT]:
     'These are all created as text fields. Use the Forms tools to draw a tick box, a dropdown or a list.',
   [FLAT_FIELDS_ACCEPT]: 'Create {count} field(s)',
+  [REPLACE_TEXT_OBJECT_TITLE]: 'Replace text on this page',
+  // EXPLAINS THE NUMBER BEFORE OFFERING ONE. The engine answers positions in
+  // the page's own object order and nothing a reader recognises, so a bare list
+  // reads as error codes. It also says where the words are — the page itself —
+  // because that is the only way to tell one run from another today.
+  [REPLACE_TEXT_OBJECT_EXPLAINS]:
+    'A page is built from separate runs of text, and Monstera numbers them in the order the page stores them. Pick a number, type what should replace that run, and check the page afterwards — you can undo it.',
+  [REPLACE_TEXT_OBJECT_CHOOSE]: 'Which run of text',
+  [REPLACE_TEXT_OBJECT_NEW_TEXT]: 'Replace it with',
+  [REPLACE_TEXT_OBJECT_NONE]: 'This page has no text that can be replaced.',
+  [REPLACE_TEXT_OBJECT_TRUNCATED]:
+    'There were more runs than Monstera lists here, so this page may have others.',
+  [REPLACE_TEXT_OBJECT_TOO_LONG]: 'That is longer than one run of text can hold.',
+  [REPLACE_TEXT_OBJECT_APPLY]: 'Replace',
   // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument
   // one walk along. The rows beside it name similar fields, and a bare verb on
   // a list of similar rows is the label a person clicks on the wrong line. It

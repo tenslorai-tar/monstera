@@ -411,6 +411,19 @@ export const MAX_FORM_FIELD_VALUES = 256;
  * proposed more than that command carries would offer an accept it cannot send.
  */
 export const MAX_FLAT_FIELD_CANDIDATES = 256;
+
+/**
+ * How many of a page's text objects one answer may name.
+ *
+ * A page-scaled read, bounded like every other one that crosses. **Not the
+ * engine wire's `ENGINE_TEXT_OBJECTS_MAX`**, which is 8192 and bounds a
+ * different hop: that one exists so a hostile host cannot hand main an
+ * unbounded array, and this one exists so main cannot hand the renderer a list
+ * no person can work through. The smaller number is the honest one here — a
+ * chooser of 8192 rows is not a chooser — and the flag beside it says when the
+ * page had more, exactly as the flat-field and duplicate reports do.
+ */
+export const MAX_TEXT_OBJECTS = 512;
 export const MAX_FLAT_FIELD_LABEL = 128;
 
 /**
@@ -845,13 +858,17 @@ export const channels = {
     // thing that names existing state (ADR-0041 Decision 2). A read answers with
     // whatever is there now and cannot be stale; the version it carries is what
     // lets a caller notice, not something it can get wrong.
-    // `engine-unavailable` IS ON THIS CHANNEL ALONE for the same reason, one
-    // step further: a command is routed to a writer of record and a read is not,
-    // so only a command can meet an engine this installation does not have. It
-    // is a property of the MACHINE rather than of the document — PDFium backs
-    // the editing commands and is provisioned separately — and a user whose
-    // machine cannot run one deserves that sentence rather than `internal` and
-    // an incident id for a build that is working exactly as it was assembled.
+    // `engine-unavailable` IS A PROPERTY OF THE MACHINE rather than of the
+    // document: PDFium backs the editing commands, it is provisioned separately,
+    // and a user whose installation has none deserves that sentence rather than
+    // `internal` and an incident id for a build working exactly as assembled.
+    //
+    // This comment said *on this channel alone* when the code arrived, reasoning
+    // that a command is routed to a writer of record and a read is not. That
+    // clause lasted one commit: `document.textObjects` is a read answered by the
+    // same engine, so it declares the code too. The reason above is the half
+    // that was load-bearing; the exclusivity was an observation about which
+    // channels existed that day.
     ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target', 'engine-unavailable'],
   ),
 
@@ -2039,6 +2056,46 @@ export const channels = {
       truncated: z.boolean(),
     }),
     ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * Which of a page's objects are text objects, in the editing engine's own
+   * numbering.
+   *
+   * ## The index is PDFium's and is never joined to anything
+   *
+   * `replaceTextObject` names an object by its index in the page's object list,
+   * and that list is the engine's own. This channel is the ONLY source of such
+   * an index a renderer may use: a number derived from `document.pageTextLayer`
+   * — MuPDF's structured text — would be two engines' numbering of one page
+   * silently swapped, which is `pageNumbering.ts`' lesson one frame worse. The
+   * two indices are not convertible and nothing here converts them.
+   *
+   * ## Indices and not text
+   *
+   * A `FPDF_PAGEOBJECT` is owned by the page it came from, so no handle can
+   * cross; and the object's string is **prior state**, which arrives when the
+   * command captures it. A caller that wants the page's words has
+   * `document.pageTextLayer`. The consequence is stated rather than hidden: a
+   * chooser built on this alone offers numbers, and the rows that give a person
+   * something to recognise are line-level editing and find-and-replace.
+   *
+   * ## `engine-unavailable` is declared here for `document.execute`'s reason
+   *
+   * The engine that answers this is the one that applies the edit, so an
+   * installation without it cannot answer either — and the read is where a
+   * surface finds out first, before offering anything.
+   */
+  'document.textObjects': channel(
+    'Which of a page’s objects are text objects, in the editing engine’s numbering.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    z.object({
+      version: docVersionSchema,
+      indices: z.array(z.number().int().nonnegative()).max(MAX_TEXT_OBJECTS).readonly(),
+      /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),
 
   'document.duplicatePages': channel(

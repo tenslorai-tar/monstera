@@ -12,6 +12,7 @@ import {
 import {
   CapabilityRegistry,
   CommandBus,
+  type ByteImage,
   type ContainmentVerdict,
   type EngineChannels,
   DocumentNotOpenError,
@@ -76,6 +77,7 @@ import {
   type PickImage,
   type DocumentDuplicatesReader,
   type DocumentSessions,
+  EngineUnavailableError,
   MissingSessionError,
 } from './documentCommands.js';
 
@@ -461,6 +463,31 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     ...(pdfiumHost === null ? {} : { pdfium: pdfiumHost.writer }),
   });
 
+  /**
+   * The document's current bytes, through the live session.
+   *
+   * Named rather than written inline where the save path needs it, because it
+   * now has TWO callers: §4's flush, and the PDFium read, which is asked about a
+   * document by being handed its bytes. Two inline copies would be two answers
+   * to *what is this document right now* (B3a), and the one that drifted would
+   * be the one nothing saves through.
+   *
+   * The refusal is `MissingSessionError` — a DEFECT, not an outcome, and the
+   * same one for both callers: the holder of sessions and the open-document
+   * index have diverged, or a document is being worked on through a writer that
+   * was never registered. Reported as a class so the boundary turns it into
+   * `internal` with the diagnostic kept main-side, rather than telling a user
+   * their save was refused for a reason they can act on.
+   */
+  const currentBytes = (docId: DocId, sessions: DocumentSessions): Promise<ByteImage> => {
+    const writer = engineHost.writers.mupdf;
+    const session = sessions.mupdf;
+    if (writer === undefined || session === undefined) {
+      throw new MissingSessionError(docId, 'mupdf');
+    }
+    return writer.serialise(session);
+  };
+
   // The real supervisor rather than two inline arrows: a stubbed lookup and a
   // stubbed predicate are a second implementation of a rule the supervisor owns
   // (B3a). It is no longer empty by construction — {@link onDocumentOpened}
@@ -488,20 +515,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         names: siblingNames,
         wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       },
-      flush: (docId, sessions) => {
-        const writer = engineHost.writers.mupdf;
-        const session = sessions.mupdf;
-        // A DEFECT, not an outcome, and the same one `MissingSessionError`
-        // names for a command: the holder of sessions and the open-document
-        // index have diverged, or a document is being saved through a writer
-        // that was never registered. Reported as a class so the boundary turns
-        // it into `internal` with the diagnostic kept main-side, rather than
-        // telling a user their save was refused for a reason they can act on.
-        if (writer === undefined || session === undefined) {
-          throw new MissingSessionError(docId, 'mupdf');
-        }
-        return writer.serialise(session);
-      },
+      flush: currentBytes,
     },
     // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
     // geometry reader and the session are both in scope here and nowhere else.
@@ -582,6 +596,21 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.flatFields(session, page);
+    },
+    // THE OTHER ENGINE'S READ, and the only composition point here that reaches
+    // a second host. It is two steps rather than one, and both are forced:
+    // PDFium is a byte-image engine, so it is asked about a document by being
+    // handed its bytes — `flush` produces them through the MuPDF session, which
+    // is `ByteImageAccess.current()`'s route and not a second one (B3a).
+    //
+    // The cost is stated rather than discovered: one whole-document serialise
+    // and one PDFium open per read. ADR-0047 priced that shape and ADR-0048
+    // records it as the open question of whether an open can be shared; nothing
+    // here answers it, and a chooser that refreshed on every keystroke would be
+    // the first thing to make it matter.
+    textObjects: async (docId, sessions, page) => {
+      if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text objects');
+      return pdfiumHost.textObjects(await currentBytes(docId, sessions), page);
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.

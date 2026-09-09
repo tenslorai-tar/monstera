@@ -13,6 +13,7 @@ import {
   exportFormDataJsonCommand,
   exportFormDataXfdfCommand,
   detectFlatFieldsCommand,
+  replaceTextObjectCommand,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
@@ -867,6 +868,115 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('REPLACE TEXT SENDS THE ENGINE’S OWN INDEX, and the version the LIST was read at', async () => {
+    // THE UI HALF OF THE WIRED PAIR for `replaceTextObject`. Its kernel half is
+    // `proof:pdfiumcommand`, which drives the real library and cannot see which
+    // numbers a control sends; this sees the numbers and cannot see a document.
+    //
+    // TWO of them are the point, and they are the two the pair's blind spot is
+    // about:
+    //
+    // - the INDEX is the one `document.textObjects` answered, unchanged. It is
+    //   PDFium's numbering of the page's objects, and the page's structured text
+    //   numbers runs differently — so a command that sent a POSITION in the list
+    //   (0 for the first option) instead of the engine's number would agree with
+    //   this fixture for a page whose objects happen to start at zero and be
+    //   contiguous, and replace the wrong run on every other page. The indices
+    //   here are `[4, 9]` for exactly that reason.
+    // - the VERSION is the read's, not the context's. They differ here (7
+    //   against the context's 1) because `#refuseIfStale` asks *is this the
+    //   document the list described*, and a command carrying the shell's current
+    //   version would answer that question with itself.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.textObjects') {
+        return Promise.resolve(
+          ok({ version: asDocVersion(7), indices: [4, 9], truncated: false }),
+        );
+      }
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+    });
+
+    await replaceTextObjectCommand({
+      client,
+      onApplied: () => undefined,
+      // THE SECOND OPTION, not the first: a command that ignored the dialog's
+      // answer and took `indices[0]` passes every case that chooses the first.
+      ask: () => Promise.resolve({ index: 9, text: 'Hello' }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      { id: 'document.textObjects', params: { docId: DOC, page: 3 } },
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'replaceTextObject',
+            // ZERO-BASED AND UNCONVERTED. `pageNumbering.ts` is the only place
+            // that turns a PDF.js page into a kernel one, and `context.page` is
+            // already the kernel's — a command applying `kernelPageOf` here
+            // would send 2 and edit the page above the one on screen.
+            page: 3,
+            index: 9,
+            text: 'Hello',
+            version: 7,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('REPLACE TEXT SENDS NOTHING when the chooser is dismissed', async () => {
+    // The mutation-dialog gate on a DESTRUCTIVE command, which is where it
+    // matters most: this one overwrites text rather than adding something the
+    // reader can see and remove.
+    const sent: string[] = [];
+    const client = createClient(channels, (id) => {
+      sent.push(id);
+      return Promise.resolve(ok({ version: asDocVersion(1), indices: [2], truncated: false }));
+    });
+
+    await replaceTextObjectCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual(['document.textObjects']);
+  });
+
+  it('REPLACE TEXT SENDS NOTHING when the machine has no editing engine', async () => {
+    // THE STATE MOST MACHINES ARE IN, and the one that separates *reported* from
+    // *silent*: `document.textObjects` answers `engine-unavailable` where PDFium
+    // was never provisioned, and the command must stop there — asking the dialog
+    // for a choice among no indices, or dispatching anyway, are both worse than
+    // the sentence.
+    let asked = 0;
+    const sent: string[] = [];
+    const client = createClient(channels, (id) => {
+      sent.push(id);
+      return Promise.resolve(err({ code: 'engine-unavailable' as const }));
+    });
+
+    await replaceTextObjectCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id) => {
+        asked += 1;
+        // THE PROBLEM DIALOG AND NOT THE CHOOSER, asserted by id rather than by
+        // a count alone: `reportProblem` opening is the difference between a
+        // refusal a person meets and a control that did nothing.
+        expect(id).toBe('dialog.command-problem');
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual(['document.textObjects']);
+    expect(asked).toBe(1);
   });
 
   it('SENDS NOTHING when the review is dismissed, which is the mutation-dialog gate', async () => {

@@ -14,6 +14,7 @@ import { executeCommandHandler } from './commandHandlers.js';
 import {
   type DocumentCommands,
   DocumentPoisonedError,
+  EngineUnavailableError,
   InvalidSearchPatternError,
 } from './documentCommands.js';
 import type { RecentFiles } from './recentFiles.js';
@@ -172,6 +173,7 @@ export function createContractHandlers(deps: {
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
+    'document.textObjects': textObjectsHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -887,6 +889,33 @@ function flatFieldCandidatesHandler(
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The editing engine's text-object list.
+ *
+ * {@link flatFieldCandidatesHandler} against the other engine, plus the one
+ * refusal only this pair of channels has: an installation without PDFium
+ * answers `engine-unavailable` rather than throwing into `internal`. That is
+ * the read half of what `executeCommandHandler` does for the command half, and
+ * it matters MORE here — a surface asks this first, so it is where a person
+ * finds out before being offered anything.
+ */
+function textObjectsHandler(commands: DocumentCommands): ContractHandlers['document.textObjects'] {
+  return async ({
+    docId,
+    page,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.textObjects']>>> => {
+    try {
+      const { version, indices, truncated } = await commands.textObjects(docId, page);
+      return ok({ version, indices, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
     }
   };

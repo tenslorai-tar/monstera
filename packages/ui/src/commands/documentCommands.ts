@@ -23,6 +23,8 @@ import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
+import { REPLACE_TEXT_OBJECT_DIALOG_ID } from '../dialogs/replaceTextObject.js';
+import type { ReplaceTextObjectAnswer } from '../dialogs/replaceTextObjectResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
@@ -57,6 +59,8 @@ import {
   GROUP_INSERT,
   GROUP_MARKS,
   GROUP_PAGES,
+  GROUP_TEXT,
+  REPLACE_TEXT_OBJECT_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -1877,6 +1881,88 @@ export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
       if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
+/**
+ * Replaces one run of text on the page in view, in place.
+ *
+ * ## `detectFlatFieldsCommand`'s order — ask, review, then ONE command
+ *
+ * The read is `document.textObjects`, the review is the dialog, and the apply is
+ * a single `replaceTextObject`. What is different is which engine answers: this
+ * is the first UI command whose read and whose write both go to PDFium, and the
+ * indices it offers are that engine's own numbering of the page's objects.
+ *
+ * ## THE INDEX IS NEVER DERIVED HERE, and that is the whole of the frames rule
+ *
+ * `pageNumbering.ts` exists because a rotate reached the engine for page 2 while
+ * the renderer displayed page 1, and both halves of the pair were green in their
+ * own frame. The same trap is one step worse for an object index, because there
+ * is no *shown* value to disagree with: the page's structured text
+ * (`document.pageTextLayer`, MuPDF's) numbers runs differently from the page's
+ * object list (PDFium's), and a number taken from the first and sent as the
+ * second replaces text nobody chose — silently, with an undo that restores what
+ * the user did not mean to change.
+ *
+ * So the index makes a round trip and no arithmetic: the channel answers it, the
+ * dialog offers it, the dialog returns it, and it is sent. **The page, meanwhile,
+ * is `context.page` and is already zero-based** — `pageNumbering.ts` is the only
+ * place that converts, and there is nothing to convert here.
+ *
+ * ## The VERSION rides on the payload because this command TARGETS
+ *
+ * `commandDeclarations.ts` gives `replaceTextObject` `targets: 'text-object'`,
+ * so `CommandBus.#refuseIfStale` requires a version and calls a targeting
+ * command without one a registration defect rather than a race.
+ *
+ * ## A machine with no editing engine meets a SENTENCE
+ *
+ * Both the read and the write answer `engine-unavailable` where PDFium was never
+ * provisioned, and `reportProblem` renders it. The command is still REGISTERED
+ * there, deliberately: `when` hides what does not exist *yet*, and this exists —
+ * what is absent is an engine on this installation, which is the same state a
+ * document with no host is in for every other command in this file.
+ */
+export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.replace-text-object',
+    title: REPLACE_TEXT_OBJECT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+
+      const found = await deps.client['document.textObjects']({
+        docId: context.docId,
+        page: context.page,
+      });
+      if (!found.ok) {
+        reportProblem(deps, found.error);
+        return;
+      }
+
+      const chosen = (await deps.ask(REPLACE_TEXT_OBJECT_DIALOG_ID, {
+        indices: [...found.value.indices],
+        truncated: found.value.truncated,
+      })) as ReplaceTextObjectAnswer | undefined;
+      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
+      // absence of a value is the guard rather than a flag beside it.
+      if (chosen === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'replaceTextObject',
+        page: context.page,
+        index: chosen.index,
+        text: chosen.text,
+        // THE READ'S VERSION, not the shell's, and the difference is the whole
+        // point of the check. `context.version` is what the tab holds now; this
+        // is the document the INDICES describe. A command carrying the newer of
+        // the two would name an object from a list the document has already
+        // moved past, and nothing would refuse it.
+        version: found.value.version,
       });
     },
   };

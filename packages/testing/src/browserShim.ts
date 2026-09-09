@@ -392,6 +392,16 @@ export interface BrowserShimOptions {
     readonly label: string;
     readonly name: string;
   }[];
+  /**
+   * Which of a page's objects `document.textObjects` calls text objects.
+   *
+   * A list, for `flatFieldCandidates`' reason. **`null` is a third state and
+   * not the same as `[]`**: an installation with no PDFium answers
+   * `engine-unavailable`, and a page with no text objects answers an empty
+   * list — a shim that could only express the second would leave the branch
+   * a user without the engine actually takes untested, which is most of them.
+   */
+  readonly textObjects?: readonly number[] | null;
 
   /**
    * What a previous run stored, as `settings.load` will answer it.
@@ -1147,6 +1157,23 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           candidates: options.flatFieldCandidates ?? [],
           truncated: false,
         }),
+      );
+    },
+
+    'document.textObjects': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      // THE ENGINE'S ABSENCE IS THE DEFAULT HERE, and that is deliberate rather
+      // than lazy. `undefined` means *this case said nothing about PDFium*, and
+      // the honest answer for a shim with no engine behind it is the refusal a
+      // machine without one gives — so a surface that assumed the read succeeds
+      // fails in the browser shim first, which is where it is cheap.
+      const indices = options.textObjects;
+      if (indices === undefined || indices === null) {
+        return Promise.resolve(err({ code: 'engine-unavailable' }));
+      }
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), indices, truncated: false }),
       );
     },
 
