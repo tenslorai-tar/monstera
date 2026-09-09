@@ -968,9 +968,19 @@ undoable, savable and **invisible**.
 
 Making it visible means the new bytes reach main. That round trip is what a
 byte-image writer already does, on a path the bus already has. So the live
-session buys nothing the renderer can use, and it costs the question
-`savePipeline.ts` has been carrying: *two live-session writers each return the
-whole document from `serialise`, and nothing in the law says which bytes win.*
+session buys nothing the renderer can use, and it costs a question this build
+has been carrying **in writing, in two files**: *two live-session writers each
+return the whole document from `serialise`, and nothing in the law says which
+bytes win.* `savePipeline.ts` states it where the constraint bites;
+`apps/desktop/src/documentCommands.ts` states it beside `SaveSource`, which is
+where the thunk is composed and so where an answer would have to live.
+
+**I nearly filed that second file as a stale citation.** ADR-0039 points at
+`documentCommands.ts`, `grep` found nothing, and the finding wrote itself — the
+grep was scoped to `packages/kernel` and the file is under `apps/desktop`. A
+search's reassuring answer, from the wrong root, which is an axis this project
+has already paid for once and which the prose sweep surfaced here only because
+it reads every document rather than one.
 
 The decision that follows is an ADR and is taken in the next commit, not here.
 

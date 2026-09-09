@@ -202,6 +202,24 @@ contained hosts since Stage 0 and the body serving them is one implementation:
 exactly one engine, and a host that does not is unrepresentable rather than
 discouraged.
 
+**THAT SENTENCE IS A SPECIFICATION AND NOT A DESCRIPTION, said plainly
+2026-09-09.** `hostBody.ts` takes `CommandExecution<'mupdf'>` today and is not
+generic over anything; the amendment was written ahead of `pdfiumHost`, which is
+what B4 asks for, and *"is generic"* still reads as a fact about code. This
+document has been ahead of its code once before — the bare y-flip ban was law
+for a range before a rule existed — and the cost then was that the only thing
+standing between the tree and a defect was somebody recalling a line. Nothing is
+withdrawn here: what the paragraph requires is still what will be built, and the
+tense is what is corrected.
+
+**And its SIZE is now smaller than when it was written**
+([ADR-0047](DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)).
+PDFium's writer holds no session between commands, so of the five mechanisms
+listed below as too costly to duplicate, the **session table** is not among what
+a PDFium host needs at all — it serves the seven engine-agnostic channels plus
+its own reads. The argument for one body is unchanged; the work it names is
+less than it was.
+
 The alternative is the pathology B3 exists to forbid, and it is the one that
 arrives by itself: a second host is *the first host with a different import*, so
 copying it is the cheapest edit at the moment somebody needs one. What that
@@ -376,6 +394,39 @@ serialise that produces its *input* is the one `CommandBus.execute` already
 performs for every entry recorded as `terminal`, which every content command is.
 The refresh ADR-0032 rejected was one per command, on a path that performed
 none; this is none per command, on a path that already performed one.
+
+**AND PDFIUM IS ONE OF THEM — amended 2026-09-09**
+([ADR-0047](DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)).
+`writerShapes` declared `pdfium: 'live-session'` from Stage 0 with nothing
+behind it. **An in-place text edit is a byte-image command**, and the reason is
+the paragraph above rather than a cost: replaced text is no more expressible in
+a view model carrying rotations than a watermark is, so a live-session PDFium
+edit would be correct, undoable, savable and **unseen**. Making it visible means
+the bytes become main's image — which is exactly what a byte-image command does,
+so the live session buys nothing the renderer can use.
+
+What it would have cost is written down and was **already queued against this
+moment**: `savePipeline.ts` records that *two live-session writers each return
+the whole document from `serialise`, and nothing in the law says which bytes
+win*, and ADR-0039 Decision 2a names PDFium in Stage 5 as the day that fires. A
+writer holding nothing between commands cannot hold a competing opinion, so the
+question stays **unaskable** rather than being answered under a feature.
+
+**And an edit generates content ONCE PER COMMAND.** Measured
+(`npm run proof:editcost`): `FPDFText_SetText` is flat at 0.007–0.029 ms while
+`FPDFPage_GenerateContent` after a set runs 0.17 ms on 3 KB to 29.18 ms on
+997 KB, and tracks the **document's content** rather than the edited page — 500
+pages of one line costs 12.54 ms against 500 of forty at 29.18, and 50 pages of
+four hundred costs 23.93 with a tenth of the pages. Forty replacements on one
+page cost **199.6 ms** regenerating per call against **14.6 ms** regenerating
+once. So generation belongs to the command, which is §4's removal rule one
+operation along, and for the same reason: a document-level operation performed
+once per small edit.
+
+**A READER's session is not this rule's business.** HD render rasterises through
+PDFium and wants a session that outlives a call; a read-only session recycled
+when the version moves cannot answer `serialise` and is not the two-writers
+question.
 
 **AND A REMOVAL'S PURPOSE IS CARRIED BY THE SESSION, NOT BY THAT CALL.**
 `EngineWriter.serialise(session)` takes no mode
@@ -1960,6 +2011,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-09 | **An in-place text edit is a byte-image command, and it generates content once** (§2, §8). `writerShapes` declared `pdfium: 'live-session'` from Stage 0 with nothing behind it, and building the second host on that would have answered **by accident** a B4 `savePipeline.ts` carries in writing — *two live-session writers each return the whole document from `serialise`, and nothing in the law says which bytes win* — which [ADR-0039](DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md) Decision 2a names as firing on *"PDFium in Stage 5"*. **The shape argument needs no timing**: the renderer reads main's canonical image through `PDFDataRangeTransport` and the view model carries `{version, pageCount, rotations}`, so a live-session edit would be correct, undoable, savable and **invisible** — ADR-0039 Decision 3's defect arriving in a second engine. Making it visible means the bytes become main's image, which is the round trip a byte-image command already performs; so the live session buys nothing the renderer can use and costs the rule, a session table inside a contained host, and a second live entry in `SessionsByWriter`. **The second decision is measured** (`proof:editcost`, seven controls, ordinal assertions only): `FPDFText_SetText` is 0.007–0.029 ms and flat, while `FPDFPage_GenerateContent` after a set runs 0.17 → 29.18 ms and tracks the **document's content** rather than the edited page — 500 pages of one line costs 12.54 ms against 500 × 40 at 29.18, and 50 × 400 costs 23.93 with a tenth of the pages. Forty replacements on one page: **199.6 ms per-call against 14.6 ms once, 13.7×**, one generate flat in k and the k=1 case demanding the two strategies AGREE as its control. So generation belongs to the command — [ADR-0045](DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)'s shape one operation along — and `replaceTextObject`'s set-and-generate is correct for exactly one replacement. **The PDFium mechanism behind the scaling is not established and is not guessed at.** **Not decided:** how the input bytes reach the host (`ByteImageAccess.current` answers a `ByteImage` in main, the 2.00× [ADR-0030](DECISIONS/0030-a-remote-writer-does-not-open-from-an-image.md) exists because of; the candidate is `adopt`'s `SnapshotWrite`), whether capture and apply share one open, and the host's generalisation. A **reader's** session is explicitly outside the rule, so HD render is not blocked by it. **Amendment only: nothing is built on it.** Also corrected here: §2's *"`hostBody` is generic over the writer of record"* is a specification, not a description — `hostBody.ts` takes `CommandExecution<'mupdf'>` — and the tense is fixed rather than the requirement | §2's byte-image paragraph, which named only `@cantoo/pdf-lib`'s shape; and `engineSeam.ts`'s `writerShapes` entry for PDFium | [ADR-0047](DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md) |
 | 2026-09-09 | **Invariant 25's containment is correct and cannot start on a Store install, and that half had never been written down** (invariant 25). ADR-0023 §5's premise P1 — *MSIX-installed files inherit read+execute for `ALL APPLICATION PACKAGES`, and every AppContainer is a member of it* — was carried unmeasured with three expiry conditions. The second fired: the owner's elevated read on 2026-09-09 returned three packages, `ALL APPLICATION PACKAGES` in none of them and `ALL RESTRICTED APPLICATION PACKAGES` in none either, with a per-package `S-1-15-3-…:(OI)(CI)(RX)` written instead — identical across two packages of one application and **not inherited**. An AppContainer's access check grants on the token's own package SID, that principal, or a capability the token holds; the host's SID is derived from a moniker `engineHostPlatform.ts` mints and `win32HostSurface.ts` encodes `CapabilityCount: 0`, so all three routes are closed under the install root, which is where the runtime, koffi and the shim live. **The failure lands earlier than the diagnostic designed for it**: `probeContainment` runs *inside* the host, so §5's P1 verdict cannot fire — the host dies before its first line, measured twice already (ADR-0025's re-extracted Electron, and `containerGrants.mjs`'s header). **And this machine is blind by construction**: the development grant names `ALL APPLICATION PACKAGES` *because* production was believed to, so the two configurations now differ in the principal, which is the one axis the choice existed to hold constant. Nothing about (c) and (d) is withdrawn and neither is ADR-0022; what is added is that a correct, unreachable mechanism is not a shipped one. Which of three routes restores the reach — a capability in the token, an app-writable copy, or retaking ADR-0022 — is Decision 16's, and it is undecided **and unmeasured** rather than chosen. | Nothing in the founding record; invariant 25's own silence about whether its mechanism can start where it ships, and ADR-0023 §5's premise P1 | [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md), corrected 2026-09-09 and Decision 16 |
 | 2026-09-08 | **The asset axis is `'none' \| 'bytes'`, and the widening is a MISLABEL corrected rather than news** (§5). [ADR-0044](DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md) added the axis with the member spelt `'image'`, and its own header states the question as *"does this command carry BYTES that cannot travel on the wire the writer is reached over"* — a transport question, beside a content label. **The label was narrower than the concept from the day it was written**, and this amendment says so rather than presenting the widening as something learned since. The trigger is form-data import: an FDF is PDF syntax, so decoding it needs MuPDF, invariant 20 keeps MuPDF out of `main`, and the picked file's bytes must therefore reach the engine host by the one route bytes have. Declaring `'image'` for an FDF would have **worked** — the transport branches on `asset === 'none'` and reads no further — which is the argument for renaming rather than reusing: a label nothing reads is a label that stays wrong, and the next reader of the declaration table would have been told this command carries a picture. **`CommandAsset<K>`'s conditional is unchanged**: a kind whose payload has no `bytes` field still cannot declare the member, so the illegal state stays unrepresentable. **Nothing else moves** — the same granted `snapshotDirectory`, the same two transport modules, the same untouched `apply` signature, the same bytes in the log. **Rejected:** leaving the name and importing FDFs as `'image'` (a lie no mechanism can catch, since nothing compares the label to the payload); a second member per content type (`'image' \| 'form-data'`, which puts a content taxonomy on a transport axis and grows with every row); and inferring the axis from a payload carrying a `Uint8Array`, which ADR-0044 rejected on its own terms and which `insertImagePage` — bytes, `asset: 'none'` — is the standing counterexample to. | §5's *"A command declares `asset: 'none' \| 'image'`"*, and [ADR-0044](DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)'s member name | [ADR-0044](DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md), corrected 2026-09-08 |
 | 2026-09-07 | **A removal's garbage collection belongs to the command that removes, not to the save pipeline** (§4, §8). §4 has required a removal-purpose command to classify itself since 2026-08-16, and flatten is the first one — with nowhere to put the classification: `commandDeclarations.ts` has nine axes and none is purpose, and `serialise(session)` takes no mode. Measured: `bake(false, true)` unlinks nine widgets and `saveToBuffer('')` writes all nine out again, the object count **growing** 49 to 55, so every flattened field's value stays readable to anything walking the xref rather than the catalog. A command declares `purpose: 'ordinary' \| 'removal'` and the adapter that owns its session records the removal and collects from then on — `serialise` takes no mode, because a live-session command produces no bytes of its own and a parameter would be one rule five callers apply. The second half is the amendment §4 did not already contain: `saveDocument` takes a `flush` and cannot collect bytes handed to it already serialised, and deferring to the disk save leaves the canonical image, the checkpoint, `readRange` and every copy/extract/export path re-deriving the rule. Collecting every save rejected on ADR-0008's *never a default* and on `foreignAnnotations.test.ts` pinning a divergence set measured for the plain path only | Nothing in the founding record — Part C4 states one pipeline and is silent on where a mode is applied | [ADR-0045](DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md) |

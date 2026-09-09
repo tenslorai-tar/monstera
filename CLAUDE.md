@@ -388,6 +388,24 @@ is wrong** — fix the boundary, not the test.
   routing table per writer, so a command routed elsewhere is a compile error
   rather than a native library handed a pointer where bytes were expected.
 
+  **THAT IS OWED, NOT BUILT.** `hostBody.ts` takes `CommandExecution<'mupdf'>`
+  today, and §2 states the generic form in the present tense. Read it as the
+  specification it is.
+
+  **And it is SMALLER than when it was written, 2026-09-09**
+  ([ADR-0047](docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)).
+  PDFium is a **byte-image** writer, not the live-session one `writerShapes`
+  declared in Stage 0: an edit that mutated a session inside a host would be
+  sound, undoable, savable and **invisible**, because the renderer reads main's
+  canonical image and the view model carries only rotations. The bytes have to
+  come back either way — so a writer holding nothing between commands costs
+  nothing extra and keeps `savePipeline.ts`'s *which bytes win* question
+  **unaskable** rather than answering it under a feature. A PDFium host
+  therefore needs **no session table**: the seven engine-agnostic channels plus
+  its own reads. **An edit also generates content once per COMMAND, never once
+  per object** — measured at 13.7× over forty replacements, which is exactly the
+  document-wide replace-all row.
+
   **AND IT CANNOT START ON A STORE INSTALL — measured 2026-09-09, and it is a
   different sentence from any of the above.** ADR-0023 §5 carried premise P1
   unmeasured: *MSIX-installed files inherit read+execute for `ALL APPLICATION
