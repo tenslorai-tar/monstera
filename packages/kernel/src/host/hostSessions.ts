@@ -1,5 +1,5 @@
 import { type TokenBytesSource, mintToken } from '../token.js';
-import type { HostSession, HostSessions } from './engineHandlers.js';
+import type { HostArea, HostSession, HostSessions } from './engineHandlers.js';
 
 /**
  * The sessions one engine host process holds, and the mint that names them
@@ -26,9 +26,22 @@ import type { HostSession, HostSessions } from './engineHandlers.js';
  * one — `engine/close` forgets first and then closes, so that a second call
  * cannot reach the adapter's double-close path. Putting the close here would put
  * that ordering in two places (B3).
+ *
+ * ## Generic over the entry, because that is where the two hosts differ
+ *
+ * A live-session host's entry is a {@link HostSession} — an area and the parse
+ * it holds — and a byte-image host's is the area alone
+ * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)
+ * Decision 2). Nothing in this file reads either, which is what makes one
+ * implementation right rather than a shared abstraction over two: the mint, the
+ * collision refusal and the *forgetting is not closing* rule are the same
+ * whatever an entry contains, and the default keeps every existing caller's
+ * spelling unchanged.
  */
-export function createHostSessions(source: TokenBytesSource): HostSessions {
-  const held = new Map<string, HostSession>();
+export function createHostSessions<TEntry extends HostArea = HostSession>(
+  source: TokenBytesSource,
+): HostSessions<TEntry> {
+  const held = new Map<string, TEntry>();
 
   return {
     lookup: (id) => held.get(id),

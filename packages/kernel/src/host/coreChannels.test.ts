@@ -31,12 +31,24 @@ import { coreEngineChannels, engineChannels } from './engineChannels.js';
 const CORE = [
   'engine/probe-containment',
   'engine/open',
-  'engine/serialise',
   'engine/close',
   'engine/apply',
   'engine/capture',
   'engine/invert',
 ] as const;
+
+/**
+ * The channel a **live-session** engine owes on top of the six.
+ *
+ * `engine/serialise` was in {@link CORE} until 2026-09-09, and its leaving is
+ * ADR-0048's correction rather than a tidy-up: a byte-image host's session has
+ * no current bytes to write, so the channel has nothing behind it there. This
+ * list is one name long and is a list anyway, because the question it answers —
+ * *which channels belong to a writer SHAPE rather than to an engine* — is the
+ * one the seven-way split got wrong, and a bare constant would not be a place
+ * for a second such channel to arrive.
+ */
+const LIVE_SESSION = ['engine/serialise'] as const;
 
 /** MuPDF's document model, which is the half a second engine owes none of. */
 const MUPDF_READS = [
@@ -65,11 +77,78 @@ const OTHER = {
   command: z.object({ kind: z.literal('replaceTextObject') }).strict(),
   capture: z.object({ captured: z.literal(false) }).strict(),
   inverse: z.object({ kind: z.literal('replaceTextObject') }).strict(),
-};
+  // A BYTE-IMAGE ENGINE'S TRANSFER SHAPE, so the fixture exercises the half of
+  // the factory MuPDF's own call leaves empty. With `{}` here the two spreads
+  // would contribute nothing and a factory that dropped them would pass.
+  read: { from: z.string().min(1) },
+  write: { into: z.string().min(1) },
+  wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
+  transferFailures: ['asset-missing'],
+} as const;
 
 describe('the core channel set', () => {
-  it('is EXACTLY the seven a host owes whatever engine it holds', () => {
+  it('is EXACTLY the six a host owes whatever engine it holds', () => {
     expect(Object.keys(coreEngineChannels(OTHER)).sort()).toStrictEqual([...CORE].sort());
+  });
+
+  it('does NOT include engine/serialise, which belongs to the live-session shape', () => {
+    // The half the case above cannot state on its own: a set of six that
+    // happened to contain `engine/serialise` and to be missing something else
+    // would fail that case with a confusing diff, and a reader would fix the
+    // list rather than the factory. This names the channel and the reason.
+    expect(Object.keys(coreEngineChannels(OTHER))).not.toContain('engine/serialise');
+  });
+
+  it('carries the engine’s READ and WRITE fields on apply, and only the read on capture', () => {
+    // ADR-0048's correction in the wire shape: a byte-image engine names where
+    // its image is and where the result goes, and a capture produces no bytes
+    // so it names only the first. Asserted by REFUSAL as well as acceptance —
+    // `.strict()` means a field the schema does not carry is rejected, so the
+    // second half is what separates *the spread reached this channel* from
+    // *the schema accepts anything*.
+    const channels = coreEngineChannels(OTHER);
+    const session = 'a'.repeat(43);
+    const command = { kind: 'replaceTextObject' };
+
+    expect(
+      channels['engine/apply'].params.safeParse({ session, command, from: 'in', into: 'out' })
+        .success,
+    ).toBe(true);
+    expect(
+      channels['engine/apply'].params.safeParse({ session, command, from: 'in' }).success,
+      'an apply without `into` must be refused: a byte-image write with nowhere to land',
+    ).toBe(false);
+
+    expect(channels['engine/capture'].params.safeParse({ session, command, from: 'in' }).success)
+      .toBe(true);
+    expect(
+      channels['engine/capture'].params.safeParse({ session, command, from: 'in', into: 'out' })
+        .success,
+      'a capture must not carry `into`: it reads prior state and produces no bytes',
+    ).toBe(false);
+  });
+
+  it('declares the engine’s own transfer failure on invert, and MuPDF’s does not', () => {
+    // A byte-image invert reads an input image and can find it gone; a
+    // live-session one cannot, because there is no file for it to look for.
+    // Both halves, because a list that always carried `asset-missing` would
+    // satisfy the first and put a failure with nothing behind it on MuPDF's
+    // wire — which is what ADR-0048 refuses one channel up.
+    expect(coreEngineChannels(OTHER)['engine/invert'].failures).toStrictEqual([
+      'no-such-session',
+      'asset-missing',
+    ]);
+    expect(engineChannels['engine/invert'].failures).toStrictEqual(['no-such-session']);
+  });
+
+  it('answers a write with the engine’s own result shape', () => {
+    // `CommandExecution<W>.apply` returns a `ByteImage` for a byte-image writer
+    // and nothing for a live-session one. This is that on the wire, and the
+    // refusal is what says the parameter was used rather than defaulted to
+    // `z.object({})`, which accepts an empty object and would pass on both.
+    const applied = coreEngineChannels(OTHER)['engine/apply'].result;
+    expect(applied.safeParse({ bytes: 12 }).success).toBe(true);
+    expect(applied.safeParse({}).success).toBe(false);
   });
 
   it('takes the engine’s command union rather than closing over MuPDF’s', () => {
@@ -80,6 +159,8 @@ describe('the core channel set', () => {
     const accepted = apply.safeParse({
       session: 'a'.repeat(43),
       command: { kind: 'replaceTextObject' },
+      from: 'in',
+      into: 'out',
     });
     expect(accepted.success, JSON.stringify(accepted.error?.issues ?? [])).toBe(true);
 
@@ -87,24 +168,40 @@ describe('the core channel set', () => {
     // from *the schema accepts anything*: a MuPDF command must be refused by a
     // core set built for a different engine.
     expect(
-      apply.safeParse({ session: 'a'.repeat(43), command: { kind: 'rotatePages' } }).success,
+      apply.safeParse({
+        session: 'a'.repeat(43),
+        command: { kind: 'rotatePages' },
+        from: 'in',
+        into: 'out',
+      }).success,
     ).toBe(false);
   });
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core seven plus its own twelve reads, and nothing else', () => {
+  it('is the core six, the live-session one, and its own twelve reads', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
-      [...CORE, ...MUPDF_READS].sort(),
+      [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );
   });
 
-  it('shares no member between the two halves', () => {
-    // The property the two lists above cannot state on their own: a name in
-    // both would satisfy each of them separately and make the union's length
-    // disagree with the sum, which nothing here reads.
-    const overlap = MUPDF_READS.filter((id) => (CORE as readonly string[]).includes(id));
-    expect(overlap).toStrictEqual([]);
-    expect(CORE.length + MUPDF_READS.length).toBe(Object.keys(engineChannels).length);
+  it('shares no member between the three groups', () => {
+    // The property the lists above cannot state on their own: a name in two of
+    // them would satisfy each separately and make the union's length disagree
+    // with the sum, which nothing here reads.
+    const all = [...CORE, ...LIVE_SESSION, ...MUPDF_READS];
+    expect(new Set(all).size).toBe(all.length);
+    expect(all.length).toBe(Object.keys(engineChannels).length);
+  });
+
+  it('answers an apply with NOTHING, which is the live-session shape on the wire', () => {
+    // The other side of the byte-image case above, and the pair is what makes
+    // either mean anything: `CommandExecution<'mupdf'>.apply` returns
+    // `Promise<void>`, so this result must accept an empty object and refuse a
+    // byte count. Without the refusal a schema of `z.object({})` non-strict
+    // would satisfy both engines and the parameter would be doing nothing.
+    const applied = engineChannels['engine/apply'].result;
+    expect(applied.safeParse({}).success).toBe(true);
+    expect(applied.safeParse({ bytes: 12 }).success).toBe(false);
   });
 });

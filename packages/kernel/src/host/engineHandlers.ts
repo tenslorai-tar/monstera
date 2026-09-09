@@ -166,17 +166,25 @@ export type HostFlatFieldsReader = (
  */
 
 /**
- * One live session and where its bytes are allowed to go.
+ * **The granted area** — where a session's bytes are allowed to come from and
+ * go to, and the whole of what a byte-image host's table holds
+ * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)
+ * Decision 2).
  *
- * The output directory is held **here**, against the session, rather than
- * arriving on each `serialise` call. That is the difference between a peer
- * naming a directory per request and a peer naming one at open: main states it
- * once, this process records it, and no later message can move where the bytes
- * land. A `serialise` that carried a directory would be a channel through which
- * a confused main could redirect the document's bytes on every save.
+ * The directories are held **here**, against the id, rather than arriving on
+ * each call. That is the difference between a peer naming a directory per
+ * request and a peer naming one at open: main states it once, this process
+ * records it, and no later message can move where the bytes land. A `serialise`
+ * that carried a directory would be a channel through which a confused main
+ * could redirect the document's bytes on every save.
+ *
+ * **A byte-image host holds no parse between commands and still holds this**,
+ * which is the decision the ADR spends its second half on: the obvious reading
+ * of ADR-0047 is that such a host needs no table and can take its directories
+ * per call, and that is exactly the shape the sentence above refuses. The
+ * containment property is not ADR-0047's to spend.
  */
-export interface HostSession {
-  readonly session: MupdfSession;
+export interface HostArea {
   /** The directory main granted this session MODIFY on. */
   readonly outputDirectory: string;
   /**
@@ -194,17 +202,39 @@ export interface HostSession {
   readonly snapshotDirectory: string;
 }
 
-/** The sessions one host process holds, keyed by the id it issued. */
-export interface HostSessions {
+/**
+ * A **live-session** engine's entry: the area, plus the parse it is holding.
+ *
+ * ADR-0048 Decision 2's second half, and the extension is deliberately in this
+ * direction. The area is what both hosts hold; a document session is what one
+ * of them adds. Writing it the other way — an optional `session` on one type —
+ * would make *is this host holding a parse* a runtime question at every handler
+ * rather than a fact about which type the host was built with.
+ */
+export interface HostSession extends HostArea {
+  readonly session: MupdfSession;
+}
+
+/**
+ * The entries one host process holds, keyed by the id it issued.
+ *
+ * Generic over what an entry IS, because that is precisely what differs between
+ * the two writer shapes: a byte-image host's table holds
+ * {@link HostArea} and a live-session host's holds {@link HostSession}. The
+ * constraint is `HostArea`, so every host's entry carries its granted
+ * directories whatever else it carries — which is the property Decision 2 is
+ * about, stated as a bound rather than as a rule.
+ */
+export interface HostSessions<TEntry extends HostArea = HostSession> {
   /** What is behind an id this host issued, or `undefined`. */
-  readonly lookup: (id: string) => HostSession | undefined;
+  readonly lookup: (id: string) => TEntry | undefined;
   /**
-   * Records a session this host just opened and returns the id it issues.
+   * Records an entry this host just opened and returns the id it issues.
    *
    * The host mints identity (Decision 10b), so this is where an id comes from —
    * main receives it and holds a token it cannot dereference.
    */
-  readonly issue: (held: HostSession) => string;
+  readonly issue: (held: TEntry) => string;
   /** Forgets an id. A later call through it gets `no-such-session`. */
   readonly forget: (id: string) => void;
 }

@@ -48,10 +48,21 @@ export { localPdfiumExecution, pdfiumSpecs } from './pdfiumSpecs.js';
  *
  * What uncrosses it is moving MuPDF's spec entries into their own module beside
  * `pdfLibSpecs` and `pdfiumSpecs`, leaving `commandSpecs.ts` as the assembly
- * point nothing imports at run time. That is the next unit and it is named here
- * rather than left for someone to discover, because a subpath that looks like
- * separation while the graph still crosses is exactly the shape that reads as
- * covered.
+ * point nothing imports at run time. It is named here rather than left for
+ * someone to discover, because a subpath that looks like separation while the
+ * graph still crosses is exactly the shape that reads as covered.
+ *
+ * **This paragraph said *that is the next unit* and it was not**, which is
+ * recorded rather than quietly edited because a claim about what happens next
+ * is one a reader takes as a plan. The PDFium host went first, on the reading
+ * that the crossing is a cleanliness debt and not a containment one: koffi is in
+ * `node_modules` and the MuPDF host is Node, so binding it grants that process
+ * nothing it did not already have, and no `pdfium.dll` is loaded because
+ * `openPdfium` is an explicit call that host never makes. **The trigger is
+ * therefore a measurement rather than a mood** — the first time the MuPDF
+ * host's startup or resident size is held to a budget, this edge is in it, and
+ * `proof:kernelload`'s PDFium cases are what would show the graph if it ever
+ * reached `main`.
  *
  * ## Who may import this
  *
