@@ -108,6 +108,12 @@ const {
   textObjectText,
   textRuns,
   replaceTextObjects,
+  pageObjects,
+  placeObject,
+  objectMatrix,
+  setObjectMatrix,
+  setObjectFills,
+  removeObjects,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
@@ -141,13 +147,13 @@ async function threeRunsAndARectangle() {
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed **agrees with any collection**,
  * including one that has quietly shrunk — audit item 4c, and `check:proofanchors`
- * is the scan that refuses a proof without one. Twenty-two is an independent
+ * is the scan that refuses a proof without one. Forty-two is an independent
  * claim about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 26 });
+const roster = createRoster(failures, { cases: 42 });
 
 /**
  * @param {string} name
@@ -435,12 +441,262 @@ async function main() {
     reclosed ?? 'it was accepted',
   );
 
+  await objectCases();
+
   process.stdout.write(
     failures.length > 0
       ? `\n${String(failures.length)} PDFium adapter case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
       : roster.format('PDFium adapter case'),
   );
   process.exitCode = failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * Reads page 0's objects out of BYTES, never out of the session that wrote them.
+ *
+ * Every object case below compares two of these. A getter answering what a
+ * setter was just given proves nothing about what was stored, and for these
+ * calls that risk is not theoretical: `FPDFPage_GenerateContent` is what carries
+ * an object edit into the content stream, and skipping it leaves a live session
+ * that reports the edit and a file that does not have it — measured.
+ *
+ * @param {Uint8Array} bytes
+ */
+async function objectsOf(bytes) {
+  const session = await pdfiumWriter.open(bytes);
+  try {
+    return await pageObjects(session, 0);
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/**
+ * Applies `work` to a fresh fixture and answers the reopened bytes.
+ *
+ * The session's type is taken from an adapter function's own signature rather
+ * than written as `unknown` and cast at each call: `PdfiumSession` is branded,
+ * so `unknown` would need thirteen assertions and each one would be a place the
+ * brand stopped meaning *this adapter produced it*.
+ *
+ * @param {(session: Parameters<typeof pageObjects>[0]) => Promise<void>} work
+ */
+async function edited(work) {
+  const session = await pdfiumWriter.open(await threeRunsAndARectangle());
+  try {
+    await work(session);
+    return await pdfiumWriter.serialise(session);
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/**
+ * Moving, scaling, recolouring and removing a page's objects.
+ *
+ * Its own function rather than more lines in `main`, because these share a
+ * fixture shape and read through one helper — and because the case count in the
+ * roster is an independent claim about the file, which a reader checks by
+ * counting `record` calls rather than by scrolling one four-hundred-line body.
+ */
+async function objectCases() {
+  const original = await objectsOf(await threeRunsAndARectangle());
+  // THE RECTANGLE, found by KIND rather than by a literal index. `drawRectangle`
+  // is called first in the fixture, so it is object 0 today; a case pinned to
+  // that number would be about the fixture's authoring order rather than about
+  // the page.
+  const rectangle = original.find((object) => object.kind === 'path');
+  const text = original.find((object) => object.kind === 'text');
+  record(
+    'pageObjects answers EVERY object with a kind, not only the text ones',
+    original.length === 4 && rectangle !== undefined && text !== undefined,
+    `${String(original.length)} object(s): ${original.map((object) => object.kind).join(', ')}`,
+  );
+  const box = rectangle ?? { index: -1, left: 0, bottom: 0, right: 0, top: 0, fill: null };
+  record(
+    'and a box in PAGE space, which is what a surface draws a handle on',
+    box.right > box.left && box.top > box.bottom,
+    `the path is ${box.left.toFixed(1)},${box.bottom.toFixed(1)} .. ${box.right.toFixed(1)},${box.top.toFixed(1)}`,
+  );
+
+  // A MOVE. The fixture's rectangle is at x=20..140, y=20..60.
+  const moved = await objectsOf(
+    await edited((session) =>
+      placeObject(session, 0, box.index, { moveBy: { x: 30, y: 12 }, scaleBy: { x: 1, y: 1 } }),
+    ),
+  );
+  const movedBox = moved[box.index] ?? box;
+  record(
+    'placeObject moves an object by exactly what it was given, in the SAVED bytes',
+    Math.abs(movedBox.left - (box.left + 30)) < 0.01 &&
+      Math.abs(movedBox.bottom - (box.bottom + 12)) < 0.01,
+    `${box.left.toFixed(1)},${box.bottom.toFixed(1)} -> ${movedBox.left.toFixed(1)},${movedBox.bottom.toFixed(1)}`,
+  );
+  record(
+    'and its SIZE is unchanged, so a move is not a transform that also scales',
+    Math.abs(movedBox.right - movedBox.left - (box.right - box.left)) < 0.01 &&
+      Math.abs(movedBox.top - movedBox.bottom - (box.top - box.bottom)) < 0.01,
+    `${(box.right - box.left).toFixed(1)} wide before, ${(movedBox.right - movedBox.left).toFixed(1)} after`,
+  );
+
+  // A SCALE, AND THE CASE THE WHOLE COMPOSITION EXISTS FOR. PDFium's own
+  // transform scales about the PAGE's origin: measured, a rectangle at
+  // x=200..320 scaled by 2 landed at 400..640. The fixture's rectangle starts
+  // at x=20, so a raw transform would put it at 40..280 and this asserts
+  // 20..260 — the two differ by exactly the anchor, which is the finding.
+  const scaled = await objectsOf(
+    await edited((session) =>
+      placeObject(session, 0, box.index, { moveBy: { x: 0, y: 0 }, scaleBy: { x: 2, y: 1 } }),
+    ),
+  );
+  const scaledBox = scaled[box.index] ?? box;
+  record(
+    'a scale keeps the object’s own bottom-left corner, rather than the PAGE’s origin',
+    Math.abs(scaledBox.left - box.left) < 0.01,
+    `left ${box.left.toFixed(1)} -> ${scaledBox.left.toFixed(1)}; PDFium's raw transform would answer ${(box.left * 2).toFixed(1)}`,
+  );
+  record(
+    'and it is twice as wide and exactly as tall, so the axes did not swap',
+    Math.abs(scaledBox.right - scaledBox.left - 2 * (box.right - box.left)) < 0.01 &&
+      Math.abs(scaledBox.top - scaledBox.bottom - (box.top - box.bottom)) < 0.01,
+    `${(scaledBox.right - scaledBox.left).toFixed(1)} wide, ${(scaledBox.top - scaledBox.bottom).toFixed(1)} tall`,
+  );
+
+  // THE INVERSE. Read the matrix, move, put it back — and assert the bounds are
+  // what they were, not merely that the call succeeded.
+  const restored = await objectsOf(
+    await edited(async (session) => {
+      const before = await objectMatrix(session, 0, box.index);
+      await placeObject(session, 0, box.index, { moveBy: { x: 90, y: 40 }, scaleBy: { x: 3, y: 3 } });
+      await setObjectMatrix(session, 0, box.index, before);
+    }),
+  );
+  const restoredBox = restored[box.index] ?? box;
+  record(
+    'setObjectMatrix(what was read) restores the box EXACTLY, which is the inverse',
+    Math.abs(restoredBox.left - box.left) < 0.01 &&
+      Math.abs(restoredBox.bottom - box.bottom) < 0.01 &&
+      Math.abs(restoredBox.right - box.right) < 0.01 &&
+      Math.abs(restoredBox.top - box.top) < 0.01,
+    `${restoredBox.left.toFixed(1)},${restoredBox.bottom.toFixed(1)} .. ${restoredBox.right.toFixed(1)},${restoredBox.top.toFixed(1)}`,
+  );
+  record(
+    'CONTROL: that placement DID move the box, so the equality above separates something',
+    Math.abs(scaledBox.right - box.right) > 0.01,
+    'without this, a placeObject that did nothing would satisfy the restore case',
+  );
+
+  // A RECOLOUR, on the TEXT object. The row says *any page object*, and text is
+  // the kind a person is most likely to recolour — and the kind an adapter that
+  // only handled paths would silently refuse.
+  const recoloured = await objectsOf(
+    await edited((session) =>
+      setObjectFills(session, 0, [{ index: text?.index ?? -1, red: 255, green: 0, blue: 0, alpha: 255 }]),
+    ),
+  );
+  const recolouredText = recoloured[text?.index ?? 0];
+  record(
+    'setObjectFills recolours a TEXT object, and it survives the round trip',
+    recolouredText?.fill?.red === 255 &&
+      recolouredText.fill.green === 0 &&
+      recolouredText.fill.blue === 0,
+    recolouredText?.fill === null
+      ? 'PDFium would not say what the fill is'
+      : `fill ${String(recolouredText?.fill?.red)},${String(recolouredText?.fill?.green)},${String(recolouredText?.fill?.blue)}`,
+  );
+  record(
+    'CONTROL: it was NOT red before, so the case above is about the recolour',
+    text?.fill?.red !== 255,
+    `the fixture's text starts at ${String(text?.fill?.red)},${String(text?.fill?.green)},${String(text?.fill?.blue)}`,
+  );
+
+  // REMOVAL, AND THE RENUMBERING HAZARD. Removing two indices ascending would
+  // delete whatever slid down into the second; this asserts that the objects
+  // LEFT are the ones that were not named, by their text and kind rather than
+  // by a count — a count of two survives either way.
+  const afterRemoval = await objectsOf(
+    await edited((session) => removeObjects(session, 0, [box.index, text?.index ?? -1])),
+  );
+  record(
+    'removeObjects drops exactly the objects named, however the indices are ordered',
+    afterRemoval.length === 2 && afterRemoval.every((object) => object.kind === 'text'),
+    `${String(afterRemoval.length)} left: ${afterRemoval.map((object) => object.kind).join(', ')}`,
+  );
+  const survivingText = await (async () => {
+    const bytes = await edited((session) => removeObjects(session, 0, [box.index, text?.index ?? -1]));
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return await pageText(session, 0);
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  })();
+  record(
+    'and the run it removed is the one that is gone, not a neighbour that slid down',
+    !survivingText.includes(FIRST) && survivingText.includes(SECOND) && survivingText.includes(THIRD),
+    `the page now reads ${JSON.stringify(survivingText)}`,
+  );
+
+  // ORDER-INDEPENDENCE, ASSERTED RATHER THAN ASSUMED. Removing an index shifts
+  // every later object down, so the ordering question is real — and the answer
+  // here is that it cannot bite, because every index is resolved to a HANDLE
+  // against the untouched page and a handle does not renumber.
+  //
+  // This function sorted descending to be safe, and the mutation written to
+  // redden that (sorting ascending) left every case green. The sort is gone and
+  // this case is what replaces it: the two orders must produce the same page,
+  // which is a claim about the resolution rather than about the sort.
+  const ascendingBytes = await edited((session) =>
+    removeObjects(session, 0, [box.index, text?.index ?? -1]),
+  );
+  const descendingBytes = await edited((session) =>
+    removeObjects(session, 0, [text?.index ?? -1, box.index]),
+  );
+  const ascendingKinds = (await objectsOf(ascendingBytes)).map((object) => object.kind).join(',');
+  const descendingKinds = (await objectsOf(descendingBytes)).map((object) => object.kind).join(',');
+  record(
+    'the two orderings of one removal produce the SAME page',
+    ascendingKinds === descendingKinds && ascendingKinds === 'text,text',
+    `ascending left ${ascendingKinds}; descending left ${descendingKinds}`,
+  );
+
+  // THE DUPLICATE GUARD, and the mutation is what says what it guards. Deleting
+  // the `Set` and running this throws `FPDFPage_RemoveObject refused object 0`:
+  // PDFium declines to unlink an object that has already left the page, so the
+  // hazard is not a double free — it is a command that removed one object and
+  // then failed, leaving the page half-edited and the caller with an error for
+  // an input whose meaning is obvious.
+  const twice = await objectsOf(
+    await edited((session) => removeObjects(session, 0, [box.index, box.index])),
+  );
+  record(
+    'an index named twice removes it ONCE rather than failing halfway',
+    twice.length === 3 && twice.every((object) => object.kind === 'text'),
+    `${String(twice.length)} left: ${twice.map((object) => object.kind).join(', ')}`,
+  );
+
+  // THE THREE EMPTY-LIST REFUSALS, together. A command naming nothing would
+  // regenerate a page's content stream for no change, which is the whole cost
+  // of an edit paid for nothing.
+  const emptyFill = await refusal(async () => {
+    await edited((session) => setObjectFills(session, 0, []));
+  });
+  const emptyRemoval = await refusal(async () => {
+    await edited((session) => removeObjects(session, 0, []));
+  });
+  record(
+    'a recolour and a removal that name nothing are both refused',
+    emptyFill !== null && emptyRemoval !== null,
+    `${emptyFill ?? 'the recolour was accepted'} / ${emptyRemoval ?? 'the removal was accepted'}`,
+  );
+  const badIndex = await refusal(async () => {
+    await edited((session) => placeObject(session, 0, 99, { moveBy: { x: 1, y: 1 }, scaleBy: { x: 1, y: 1 } }));
+  });
+  record(
+    'an index the page does not have is refused by NAME, not by a native crash',
+    badIndex !== null && badIndex.includes('names none'),
+    badIndex ?? 'it was accepted',
+  );
 }
 
 await main();
