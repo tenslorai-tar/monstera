@@ -93,7 +93,7 @@ if (!existsSync(library)) {
 
 refuseStaleBuild(root, PDFIUM_ADAPTER, 1);
 
-const { openPdfium, pdfiumWriter, textObjectIndices, replaceTextObject } = await import(
+const { openPdfium, pdfiumWriter, textObjectIndices, replaceTextObjects } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'
 );
 
@@ -394,7 +394,7 @@ async function main() {
   // CLAIM 2 — an edit changes only where it was made.
   const session = await pdfiumWriter.open(original);
   const texts = await textObjectIndices(session, 0);
-  await replaceTextObject(session, 0, texts[1] ?? -1, REPLACEMENT);
+  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }]);
   const editedBytes = await pdfiumWriter.serialise(session);
   await pdfiumWriter.close(session);
   const editedRender = renderPageOf(api, editedBytes, 0);

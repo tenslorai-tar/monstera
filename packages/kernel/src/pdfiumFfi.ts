@@ -71,6 +71,7 @@ interface Bound {
   readonly closeTextPage: Native;
   readonly countChars: Native;
   readonly getText: Native;
+  readonly textObjectText: Native;
 }
 
 /**
@@ -161,6 +162,22 @@ export function openPdfium(libraryPath: string): void {
     countChars: native(library.func('int FPDFText_CountChars(void *textPage)')),
     getText: native(
       library.func('int FPDFText_GetText(void *textPage, int start, int count, _Out_ uint16_t *buffer)'),
+    ),
+    // ONE OBJECT'S TEXT, and it needs the page's TEXT PAGE as well as the
+    // object. That second parameter is why this is not the same read as
+    // `getText` above with a range: PDFium answers a text object's own string
+    // by looking it up in a text page it was given, and the mapping from an
+    // object to a character range is not something the C API offers.
+    //
+    // The length is in BYTES, not characters, and the answer includes the
+    // terminator — both differ from `FPDFText_GetText` beside it, which counts
+    // characters and excludes it. Two conventions in one header, so each call
+    // site narrows at the point it crosses rather than sharing a helper that
+    // would have to hold both.
+    textObjectText: native(
+      library.func(
+        'unsigned long FPDFTextObj_GetText(void *object, void *textPage, _Out_ uint16_t *buffer, unsigned long length)',
+      ),
     ),
   };
   api.initialise();
@@ -361,45 +378,177 @@ export function pageText(session: PdfiumSession, page: number): Promise<string> 
 }
 
 /**
- * Replaces the text of one text object, and regenerates the page's content.
+ * The text one text object currently carries.
  *
- * `FPDFPage_GenerateContent` is what writes the change into the page's content
- * stream; without it the edit lives only in PDFium's in-memory object and the
- * saved bytes are unchanged. That is the failure this call exists to prevent and
- * it is silent — an edit that reads back correctly from the same session and is
- * absent from the file.
+ * ## Two conventions in one header, and this one is the odd half
  *
- * @throws when the index is not a text object, rather than editing whatever is
- * there. `FPDFText_SetText` on a path object is undefined behaviour.
+ * `FPDFTextObj_GetText` answers a length in **bytes** including the
+ * terminator, where `FPDFText_GetText` beside it answers **characters**
+ * excluding it. The two are read at their own call sites rather than through a
+ * shared helper: a helper would have to carry both conventions and a caller
+ * would then pick between them by reading a comment, which is the shape QQQ-3
+ * is about.
+ *
+ * ## Sized by asking, never by guessing
+ *
+ * A null buffer makes PDFium answer the size it needs. Allocating a fixed
+ * buffer and reading back whatever fits would silently truncate exactly the
+ * long run an edit is most likely to be about — and the truncation would be
+ * invisible, because a shorter string is what a shorter run also produces.
+ *
+ * @throws when the index is not a text object. The prior state of something
+ * that is not text is not a string, and answering `''` for it would put an
+ * empty prior in an undo log.
  */
-export function replaceTextObject(
+export function textObjectText(
   session: PdfiumSession,
   page: number,
   index: number,
-  text: string,
+): Promise<string> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const object = textObjectAt(bindings, handle, page, index);
+      const textPage: unknown = bindings.loadTextPage(handle);
+      if (textPage === null) throw new Error('PDFium could not load the page for text reading.');
+      try {
+        const bytes = numberFrom(
+          bindings.textObjectText(object, textPage, null, 0),
+          'FPDFTextObj_GetText',
+        );
+        // TWO BYTES IS THE TERMINATOR ALONE, which is what an object carrying
+        // no text answers. Returning '' for it is right; allocating a
+        // zero-length buffer and calling again is not, and PDFium's own
+        // refusal for that case is not documented.
+        if (bytes <= 2) return '';
+        const buffer = new Uint16Array(bytes / 2);
+        const written = numberFrom(
+          bindings.textObjectText(object, textPage, buffer, bytes),
+          'FPDFTextObj_GetText',
+        );
+        // `written` is bytes and includes the terminator, so the character
+        // count is one short of half of it.
+        return String.fromCharCode(...buffer.subarray(0, Math.max(0, written / 2 - 1)));
+      } finally {
+        bindings.closeTextPage(textPage);
+      }
+    }),
+  );
+}
+
+/** One text object's new text, named by its index in the page's object order. */
+export interface TextReplacement {
+  /** The object's index, as {@link textObjectIndices} reports it. */
+  readonly index: number;
+  /** What it should say. */
+  readonly text: string;
+}
+
+/**
+ * The object at `index`, checked to be a text object.
+ *
+ * Shared by the read and the write because both refuse the same two things for
+ * the same reason, and their messages are what a case asserts on: a wrong index
+ * and a non-text object both fail somewhere, and only the message separates the
+ * rule under test from the one downstream of it.
+ */
+function textObjectAt(bindings: Bound, handle: unknown, page: number, index: number): unknown {
+  const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  if (index < 0 || index >= total) {
+    throw new Error(
+      `Page ${String(page)} has ${String(total)} objects, so index ${String(index)} names none.`,
+    );
+  }
+  const object: unknown = bindings.getObject(handle, index);
+  if (
+    object === null ||
+    numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT
+  ) {
+    throw new Error(
+      `Object ${String(index)} on page ${String(page)} is not a text object, and FPDFText_SetText is defined only for one.`,
+    );
+  }
+  return object;
+}
+
+/**
+ * Replaces the text of one or more of a page's text objects, and regenerates
+ * the page's content **once**.
+ *
+ * ## Once, and that is a measurement rather than a tidiness
+ *
+ * [ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)
+ * Decision 2, `npm run proof:editcost`: `FPDFText_SetText` is 0.007–0.029 ms
+ * and flat, while `FPDFPage_GenerateContent` after a set runs 0.17 → 29.18 ms
+ * and tracks the **document's** content rather than the edited page's. Over
+ * forty replacements on one page of a 199 KB document, generating per call is
+ * 199.6 ms against 14.6 ms generating once — **13.7×, growing without bound**.
+ *
+ * This function took one index and generated inside the same call until
+ * 2026-09-09, which is correct for exactly one replacement and wrong for every
+ * command that touches more than one. The plural signature is what makes the
+ * expensive call impossible to write per object (B5 over a comment): there is
+ * no spelling of *set one and generate* left for a caller to reach for.
+ *
+ * ## Every index is checked BEFORE anything is set, and what that is worth is MEASURED
+ *
+ * A command that cannot be completed must refuse **without having touched the
+ * page** — `engine/apply`'s rule about assets and sources, one layer down.
+ *
+ * **Its effect is not observable from outside this module today**, and saying
+ * so is the honest version of the rule. `proof:pdfiumadapter` carried a case
+ * for it; the mutation that should have reddened that case — validating inside
+ * the set loop, so a valid first entry lands and an invalid second throws —
+ * left every case green. Read against the library on 2026-09-09, with a
+ * control: a `FPDFText_SetText` never followed by `FPDFPage_GenerateContent`
+ * does **not** survive `FPDF_ClosePage`. A second `FPDF_LoadPage` of the same
+ * page, a different set and a generate wrote only the second pass's string —
+ * the first pass's was absent from the saved bytes, and the second pass's
+ * present.
+ *
+ * So {@link onPage}'s per-call page lifetime is what prevents the half-write,
+ * and this check is a second mechanism for the same thing. It is kept rather
+ * than removed because the plural signature invites the caller this does
+ * protect — one that holds a page across several sets — and because the rule
+ * it states is true whether or not anything can currently see it. The case was
+ * removed instead, a check that cannot fail being worse than no check.
+ *
+ * @throws on an empty list. A replacement that names nothing would regenerate
+ * a page's content stream for no change, which is the whole cost of an edit
+ * paid for nothing — and a caller reaching this with an empty list has a bug
+ * upstream that a silent success would hide.
+ * @throws when an index is not a text object, rather than editing whatever is
+ * there. `FPDFText_SetText` on a path object is undefined behaviour.
+ */
+export function replaceTextObjects(
+  session: PdfiumSession,
+  page: number,
+  replacements: readonly TextReplacement[],
 ): Promise<void> {
   return promised(() => {
     onPage(session, page, (handle) => {
       const bindings = api();
-      const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-      if (index < 0 || index >= total) {
+      if (replacements.length === 0) {
         throw new Error(
-          `Page ${String(page)} has ${String(total)} objects, so index ${String(index)} names none.`,
+          `A replacement on page ${String(page)} named no text object. Regenerating a page's ` +
+            'content stream is the whole cost of an edit, and this one would change nothing.',
         );
       }
-      const object: unknown = bindings.getObject(handle, index);
-      if (
-        object === null ||
-        numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT
-      ) {
-        throw new Error(
-          `Object ${String(index)} on page ${String(page)} is not a text object, and FPDFText_SetText is defined only for one.`,
-        );
-      }
-      if (numberFrom(bindings.setText(object, wideString(text)), 'FPDFText_SetText') !== 1) {
-        throw new Error(
-          `FPDFText_SetText refused the replacement (FPDF_GetLastError ${String(bindings.lastError())}).`,
-        );
+      // RESOLVED IN FULL FIRST. See the note above: a refusal must not leave
+      // the page holding part of a replacement.
+      const objects = replacements.map((replacement) =>
+        textObjectAt(bindings, handle, page, replacement.index),
+      );
+      for (const [at, replacement] of replacements.entries()) {
+        if (
+          numberFrom(bindings.setText(objects[at], wideString(replacement.text)), 'FPDFText_SetText') !==
+          1
+        ) {
+          throw new Error(
+            `FPDFText_SetText refused the replacement for object ${String(replacement.index)} ` +
+              `(FPDF_GetLastError ${String(bindings.lastError())}).`,
+          );
+        }
       }
       if (numberFrom(bindings.generateContent(handle), 'FPDFPage_GenerateContent') !== 1) {
         throw new Error(

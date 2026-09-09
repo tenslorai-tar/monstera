@@ -35,6 +35,25 @@
  *   non-text object both fail somewhere; only the message separates the rule
  *   under test from the one downstream of it.
  *
+ * ## The plural signature brought two cases with it, 2026-09-09
+ *
+ * `replaceTextObjects` takes a list and generates content **once** (ADR-0047
+ * Decision 2). Two properties of that are not observable through a single
+ * replacement, so the file would have kept its old coverage and read as
+ * complete:
+ *
+ * - **two sets and one generate**, asserted from a reopened document. The
+ *   change that would break it — the second set living in memory only — is
+ *   exactly what moving the generate to the end could produce;
+ * - **a replacement naming nothing is refused**, because regenerating a
+ *   content stream is the whole cost of an edit and this one would change
+ *   nothing.
+ *
+ * A third was written and removed. See the note at the refusals below: the
+ * partial-write guard is real and its effect is not observable through this
+ * surface, which the mutation showed and a direct reading of the library
+ * explained.
+ *
  * ## The retained-bytes case is the one worth reading
  *
  * `FPDF_LoadMemDocument` does not copy: PDFium parses lazily out of the caller's
@@ -86,7 +105,8 @@ const {
   countObjects,
   textObjectIndices,
   pageText,
-  replaceTextObject,
+  textObjectText,
+  replaceTextObjects,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
@@ -120,13 +140,13 @@ async function threeRunsAndARectangle() {
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed **agrees with any collection**,
  * including one that has quietly shrunk — audit item 4c, and `check:proofanchors`
- * is the scan that refuses a proof without one. Seventeen is an independent
+ * is the scan that refuses a proof without one. Twenty-two is an independent
  * claim about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 17 });
+const roster = createRoster(failures, { cases: 22 });
 
 /**
  * @param {string} name
@@ -198,18 +218,50 @@ async function main() {
   // THE NON-TEXT REFUSAL, asserted by WHICH RULE refused. The rectangle's index
   // is whichever one is not in `texts`.
   const rectangle = [0, 1, 2, 3].find((index) => !texts.includes(index)) ?? -1;
-  const nonText = await refusal(() => replaceTextObject(session, 0, rectangle, 'nope'));
+  const nonText = await refusal(() =>
+    replaceTextObjects(session, 0, [{ index: rectangle, text: 'nope' }]),
+  );
   record(
     'replacing a non-text object is refused as a non-text object',
     nonText !== null && nonText.includes('is not a text object'),
     nonText ?? 'it was accepted',
   );
-  const outOfRange = await refusal(() => replaceTextObject(session, 0, 99, 'nope'));
+  const outOfRange = await refusal(() =>
+    replaceTextObjects(session, 0, [{ index: 99, text: 'nope' }]),
+  );
   record(
     'an out-of-range index is refused as an index, not as a type',
     outOfRange !== null && outOfRange.includes('names none'),
     outOfRange ?? 'it was accepted',
   );
+  const named = await refusal(() => replaceTextObjects(session, 0, []));
+  record(
+    'a replacement naming no object is refused rather than regenerating for nothing',
+    named !== null && named.includes('named no text object'),
+    named ?? 'it was accepted',
+  );
+
+  // THERE IS NO CASE FOR THE PARTIAL REFUSAL, and the absence is deliberate.
+  //
+  // `replaceTextObjects` resolves every index before it sets anything, so a
+  // list whose second entry is invalid touches nothing. A case for that was
+  // written, and the mutation that should have reddened it — validating inside
+  // the set loop, so the first entry lands and the second throws — left all
+  // twenty-two green.
+  //
+  // The reason is measured rather than guessed (2026-09-09, against the
+  // library, with a control): an `FPDFText_SetText` that is never followed by
+  // `FPDFPage_GenerateContent` does **not** survive `FPDF_ClosePage`. A second
+  // load of the same page and a generate wrote only the second pass's set;
+  // the first pass's string was absent from the saved bytes while the second
+  // pass's was present.
+  //
+  // So the guard protects a property this module's surface cannot observe,
+  // because `onPage`'s page lifetime already prevents the half-write. It is
+  // kept — it encodes a true rule for any caller that holds a page across sets,
+  // which the plural signature invites — and the case is not, because a case
+  // that cannot fail is a green check that verifies nothing (item 4, and NNN-3's
+  // third animal: an effect no assertion on this surface can see).
 
   // The refusals must not have edited anything on their way to throwing.
   const afterRefusals = await pageText(session, 0);
@@ -219,7 +271,23 @@ async function main() {
     'the page reads exactly as it did before the two refusals',
   );
 
-  await replaceTextObject(session, 0, texts[1] ?? -1, REPLACEMENT);
+  // THE PRIOR, read before the edit that replaces it. This is what makes the
+  // command invertible, so the case asserts it names the run it is about — an
+  // empty string would be the reassuring answer for a read that could not see.
+  const prior = await textObjectText(session, 0, texts[1] ?? -1);
+  record(
+    'one text object answers its own text, not the whole page',
+    prior.includes(SECOND) && !prior.includes(FIRST) && !prior.includes(THIRD),
+    `it answered ${JSON.stringify(prior)}`,
+  );
+  const priorOfNonText = await refusal(() => textObjectText(session, 0, rectangle));
+  record(
+    'reading the text of a non-text object is refused rather than answered empty',
+    priorOfNonText !== null && priorOfNonText.includes('is not a text object'),
+    priorOfNonText ?? "it answered a string for something that has no text",
+  );
+
+  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }]);
   const saved = await pdfiumWriter.serialise(session);
 
   // READ BACK FROM A REOPENED DOCUMENT. A setter agreeing with itself proves
@@ -254,6 +322,38 @@ async function main() {
   );
   await pdfiumWriter.close(untouched);
   await pdfiumWriter.close(session);
+
+  // TWO OBJECTS IN ONE CALL, which is the property the plural signature exists
+  // for and the one the single-index version could not express. ADR-0047
+  // Decision 2 measures generating per object at 13.7× over forty
+  // replacements; what this asserts is the correctness half — that generating
+  // ONCE at the end still writes every set into the content stream.
+  //
+  // Read back from a REOPENED document, for the reason every read here is: a
+  // session agreeing with itself says nothing about what was stored, and
+  // "generated once" is precisely the change that could leave the second set
+  // in memory only.
+  const both = await pdfiumWriter.open(await threeRunsAndARectangle());
+  const bothTexts = await textObjectIndices(both, 0);
+  await replaceTextObjects(both, 0, [
+    { index: bothTexts[0] ?? -1, text: 'FIRST REPLACED IN THE SAME CALL' },
+    { index: bothTexts[2] ?? -1, text: 'THIRD REPLACED IN THE SAME CALL' },
+  ]);
+  const bothReopened = await pdfiumWriter.open(await pdfiumWriter.serialise(both));
+  const bothText = await pageText(bothReopened, 0);
+  record(
+    'two replacements in one call both reach the saved bytes',
+    bothText.includes('FIRST REPLACED IN THE SAME CALL') &&
+      bothText.includes('THIRD REPLACED IN THE SAME CALL'),
+    'one generate at the end wrote both sets, not only the last',
+  );
+  record(
+    'and neither original run survives, nor does the one between them change',
+    !bothText.includes(FIRST) && !bothText.includes(THIRD) && bothText.includes(SECOND),
+    'presence alone would pass on a page that carried both strings already',
+  );
+  await pdfiumWriter.close(bothReopened);
+  await pdfiumWriter.close(both);
 
   // THE RETAINED-BYTES CASE. FPDF_LoadMemDocument reads the caller's memory for
   // the document's whole life, so an adapter that passed a ByteImage through

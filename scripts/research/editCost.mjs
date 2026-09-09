@@ -7,10 +7,13 @@
  * Five `docs/FEATURES.md` rows in D4 replace text through PDFium, and the
  * question that decides how they are built is not *can it edit* — the adapter
  * and `proof:pdfiumadapter` settled that — but **what an edit charges for**.
- * `pdfiumFfi.ts`'s `replaceTextObject` performs two calls that look like halves
- * of one operation, `FPDFText_SetText` and `FPDFPage_GenerateContent`, and this
- * instrument exists because those two turn out to have nothing in common: one
- * is free and page-local, the other is neither.
+ * The adapter performs two calls that look like halves of one operation,
+ * `FPDFText_SetText` and `FPDFPage_GenerateContent`, and this instrument exists
+ * because those two turn out to have nothing in common: one is free and
+ * page-local, the other is neither. **This reading is what separated them.**
+ * `replaceTextObject` set one object and generated inside the same call until
+ * 2026-09-09; it is `replaceTextObjects` now, taking a list and generating
+ * once, which is ADR-0047 Decision 2 built rather than recorded.
  *
  * The reading it was built for is document-wide replace-all, which is a row in
  * the same stage and touches many objects in one command. A design that pays
