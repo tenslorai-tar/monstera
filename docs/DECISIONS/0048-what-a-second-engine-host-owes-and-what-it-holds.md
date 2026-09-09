@@ -140,3 +140,87 @@ this call on a large file and this document does not claim one.
 - **Deferring this until the second PDFium command needs it.** The retrofit B4
   exists to prevent, and here it has a specific cost: the first command would
   decide the table's shape, and the table's shape is a containment argument.
+
+## Correction, 2026-09-09 — `engine/serialise` is not one of the seven, and a second host in the same AppContainer is not contained from the first
+
+Both of these were found by writing the PDFium host against this document, on
+the same day it was written. They are corrections rather than edits, because
+what this document believed is the record — and the first one is a warning
+about the shape of Decision 1's argument, not only about its answer.
+
+### `engine/serialise` is the LIVE-SESSION shape's channel, and a byte-image host owes six
+
+Decision 1's table lists seven as *engine-agnostic in shape*. Six of them are.
+`engine/serialise` is not, and the reason is ADR-0047's, arriving one layer
+down:
+
+> Writes the session's current bytes into the output directory, under a name
+> main chose.
+
+A byte-image host's session **has** no current bytes. It holds a granted area
+and no parse (Decision 2), so there is nothing for this channel to serialise —
+and a host that declared it would answer it by copying its input to its output,
+which is this document's own *process answering questions with nothing behind
+it* wearing the shape of a channel that does something.
+
+**What replaces it is not a seventh channel; it is `engine/apply`.** A
+byte-image apply reads the image it is given, applies, and writes the result
+into the granted output directory, answering a **count** — which is exactly
+`engine/serialise`'s result schema. `CommandExecution<W>` has said so since it
+was written: `apply` returns `Promise<ByteImage>` for a byte-image writer and
+`Promise<void>` for a live-session one. So the asymmetry was already declared in
+the type, and Decision 1 read the channel list without reading it.
+
+The general form is worth more than the instance. **A channel is not
+engine-agnostic because every engine can be asked it; it is engine-agnostic
+because the answer means the same thing.** Six do. The seventh means *hand back
+what you are holding*, and holding is precisely what ADR-0047 removed.
+
+### How the input bytes reach a byte-image host, which ADR-0047 left for this commit
+
+ADR-0047: *"**Settled by the commit that wires the first PDFium command**, and
+named here so it is not discovered there."* It is settled here instead, one
+commit earlier, because it turned out to be the same question as the one above
+and answering it under a feature is what B4 forbids.
+
+`engine/apply`, `engine/capture` and `engine/invert` carry, for a byte-image
+engine only, the **names** of two files inside the directories the area already
+grants: where the input image is, and where the output goes. Both are names and
+neither is a place, which is `engine/open`'s `snapshotName` shape and
+`engine/apply`'s `asset` shape — so nothing new can be expressed, and Decision
+2's property is untouched. A live-session engine carries neither, and the type
+says so rather than a comment: the fields come from the schema set an engine
+supplies to `coreEngineChannels`, so main's MuPDF client **cannot** name an
+output file and main's PDFium client cannot omit one.
+
+**The cost is two whole-image writes and one read per command**, because the
+bus calls `capture` and `apply` separately and neither may hold the file for
+the other. That is the open question *whether capture and apply share one open*
+arriving as a byte cost rather than a parse cost, and it is **not answered
+here**: it stays open, now with a second reason to measure it.
+
+### A second host needs its own AppContainer profile, or the separation is nominal
+
+The rejected alternative *one host process serving both engines over one pipe*
+was rejected because *a breach of one engine would then hold the other's
+documents*. **That argument does not turn on the process.** It turns on the
+principal in the DACL, and `hostSessionDirectoryDacl` names the AppContainer's
+SID — which comes from a profile moniker, `monstera-engine-host`, that this
+build resolves once and shares.
+
+So two host processes created from the same moniker have the same SID, and each
+one's granted areas are readable and writable by the other. The separation
+would be a second process with the first's reach.
+
+**This document therefore owes a third thing it did not name: a second engine
+owes its own container profile, and its own areas within it.** What that costs
+is a second moniker and the provisioning grant that goes with it; what it is
+worth is the sentence the rejected alternative already relied on.
+
+**And it is not free of ADR-0023's open branch.** The grant
+`scripts/provision/containerGrants.mjs` writes names `ALL APPLICATION
+PACKAGES`, which every AppContainer is a member of, so a second profile reaches
+the install root in development exactly as the first does. Under a Store
+install neither does — premise P1 is false, measured 2026-09-09 — and that is
+Decision 16's, unmeasured, gating the containment branch and not the body.
+Nothing here changes which of the three routes is taken.
