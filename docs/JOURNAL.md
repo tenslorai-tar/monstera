@@ -887,6 +887,43 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — Find and replace is split, and the split names the row's real work
+
+`| Find and replace | — |` sat in D4 with a bare dash while **find had shipped
+seven days earlier**: `document.searchPage`, the find bar, the line-break match
+and the CSS Highlight API all landed, and D1's search row went *done* on
+2026-09-08. A reader of D4 could only take the whole row as not started.
+
+The row is now the **replace half alone**, and two things fall out of writing
+that down.
+
+**It was never blocked on find.** The dash invited the reading that the two
+halves were one unit waiting on the first; they are not. What replace waits on
+is PDFium's contained host, of which `pdfiumFfi.ts` is now the half that exists.
+
+**It is the same primitive as document-wide replace-all**, which is this applied
+over every page rather than one match. Those two rows share a command and differ
+in scope, so building them apart would be two writers of one concern (B3). They
+are now written as such, which stops the second from arriving as a copy of the
+first — the same pathology the 2026-09-08 host amendment named for a second
+engine host.
+
+### The gap the split exposes, which is the actual work
+
+A match today is a `(line, offset)` pair in `textMatch.ts`'s frame. An edit needs
+a **page object index** in PDFium's. **Nothing joins the two**, and no amount of
+work on either side produces the join.
+
+That is `SHOWN_PAGE`'s lesson at a different boundary, and it is worth naming
+before the row is built rather than after: a rotate command once rotated page 2
+while the renderer displayed page 1, with both halves green, because the 1-based
+and 0-based frames met only in a literal at a call site. The remedy was a third
+thing stating the correspondence once. The same shape is owed here, and the
+temptation will be identical — the replacement itself is one call, and the
+correspondence will look like a detail of it.
+
+---
+
 ## 2026-09-09 — Two reds on `main` from one habit, and the sweep that catches both in four minutes
 
 **`83eae3a` reddened CI on five jobs and Guards on two. `796a7f3` and `1aeb3eb`
