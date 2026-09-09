@@ -1955,8 +1955,11 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'replaceTextObject',
         page: context.page,
-        index: chosen.index,
-        text: chosen.text,
+        // ONE ENTRY, because this chooser names one object. The command carries
+        // a list so a visual line — several runs, measured — is one edit, one
+        // undo and one content regeneration; a surface that names one run sends
+        // a list of one rather than a different command.
+        replacements: [{ index: chosen.index, text: chosen.text }],
         // THE READ'S VERSION, not the shell's, and the difference is the whole
         // point of the check. `context.version` is what the tab holds now; this
         // is the document the INDICES describe. A command carrying the newer of

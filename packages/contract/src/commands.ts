@@ -2616,8 +2616,31 @@ export const createFormFieldSchema = z.object({
 export const MAX_REPLACED_TEXT = 4096;
 
 /**
- * Replaces the text of one text object on one page — **region replacement**,
- * the first command routed to PDFium.
+ * How many of one page's text objects a single replacement command may name.
+ *
+ * ## The number is a PAGE's worth, and the page read is what fixes it
+ *
+ * `MAX_CREATED_FIELDS`' relationship to `MAX_FLAT_FIELD_CANDIDATES`, one row
+ * along: a surface that offers a person everything a page read answered, and
+ * then sends what they accepted as one command, must be able to send all of it
+ * — so a read bound larger than this one would offer an accept that cannot be
+ * dispatched. `MAX_TEXT_OBJECTS` is therefore **derived from this**, in
+ * `channels.ts`, rather than written as the same digit twice.
+ *
+ * ## What it is NOT a bound on, stated because the row above needs one
+ *
+ * Document-wide replace-all is not this command with a longer list. A payload
+ * carrying every occurrence in a document scales with the document, which the
+ * *mutations are commands* rule refuses whatever number sits here — that row
+ * carries the find and replace strings and lets the engine find the
+ * occurrences. This bound is a page's, and raising it would not make the other
+ * shape legal.
+ */
+export const MAX_TEXT_REPLACEMENTS = 512;
+
+/**
+ * Replaces the text of one or more text objects on one page — **in-place text
+ * editing**, the first command routed to PDFium.
  *
  * ## Named by its place in the page's OBJECT order, and by a version
  *
@@ -2636,18 +2659,73 @@ export const MAX_REPLACED_TEXT = 4096;
  * string, and there is no API for a substring of one — so a payload naming a
  * character range would be an intent this writer of record cannot keep, and the
  * kernel would have to reconstruct the whole string anyway to honour it.
+ *
+ * ## A LIST, because a content stream is regenerated once per command
+ *
+ * [ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)
+ * Decision 2, measured at **13.7× over forty replacements**: the cost of an
+ * edit is `FPDFPage_GenerateContent`, and it is paid per command. A visual line
+ * is several text objects — PDFium answers one rect per run, measured, which is
+ * why the editor groups them at all — so a line edit written as one command per
+ * run would pay that cost once per run, and would arrive in the undo log as
+ * several steps for one thing the person did.
+ *
+ * So the plural is not generality kept in reserve. It is what makes *one edit,
+ * one undo, one regeneration* expressible, and `replaceTextObjects` in the
+ * adapter has taken a list since the day it was written for exactly this.
+ *
+ * ## Distinct indices, refused HERE rather than resolved downstream
+ *
+ * Two entries naming one object are two opinions about what it should say, and
+ * every rule for picking between them (last wins, first wins, concatenate) is a
+ * rule someone has to look up. B5: the boundary refuses it, so no layer below
+ * needs one — and the capture, which records one prior per index, cannot be
+ * handed a list whose priors would collide.
+ *
+ * `deletePages` accepts duplicates for the opposite reason and it is worth
+ * seeing why the two differ: a page named twice is a set operation with an
+ * obvious answer, and de-duplicating it would be work pushed onto a UI that
+ * gathered a selection. There is no obvious answer here.
  */
-export const replaceTextObjectSchema = z.object({
-  kind: z.literal('replaceTextObject'),
-  /** Zero-based index of the page the object sits on. */
-  page: z.number().int().nonnegative(),
-  /** Its position in the page-object walk that produced the answer this names. */
-  index: z.number().int().nonnegative(),
-  /** What it should say. */
-  text: z.string().max(MAX_REPLACED_TEXT),
-  /** The version that answer carried. Refused if the document has moved. */
-  version: docVersionSchema,
-});
+export const replaceTextObjectSchema = z
+  .object({
+    kind: z.literal('replaceTextObject'),
+    /** Zero-based index of the page the objects sit on. */
+    page: z.number().int().nonnegative(),
+    /**
+     * What each named object should say, in the page-object walk's numbering.
+     *
+     * The page is shared, `createFormField`'s reason: *these objects, on this
+     * page* is what the request means, and a per-entry page would be a
+     * different feature — one whose regeneration cost is per page again, which
+     * is the whole thing this shape exists to pay once.
+     */
+    replacements: z
+      .array(
+        z
+          .object({
+            /** Its position in the page-object walk that produced the answer this names. */
+            index: z.number().int().nonnegative(),
+            /** What it should say. Empty is legal: it clears the run's text. */
+            text: z.string().max(MAX_REPLACED_TEXT),
+          })
+          // `.strict()`, as every nested object in this file is. It is the shape
+          // that refuses a per-entry `page` rather than dropping it silently —
+          // and a caller who sent one believing it honoured would have written a
+          // command whose cost model is not the one this shape promises.
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_TEXT_REPLACEMENTS),
+    /** The version that answer carried. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .refine(
+    (command) =>
+      new Set(command.replacements.map((replacement) => replacement.index)).size ===
+      command.replacements.length,
+    { message: 'names one text object more than once', path: ['replacements'] },
+  );
 
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,

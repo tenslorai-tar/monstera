@@ -1,6 +1,15 @@
 // @ts-check
 /**
- * Region replacement, as a COMMAND, against the real library.
+ * In-place text editing, as a COMMAND, against the real library.
+ *
+ * ## The command names a LIST, and both arities are cased here
+ *
+ * `replaceTextObject` carries `replacements: [{index, text}]` so that a visual
+ * line — several text objects, because PDFium answers one rect per run — is one
+ * command, one `FPDFPage_GenerateContent` and one undo step. The single-entry
+ * cases below are region replacement; the two-object ones are the line edit's
+ * shape, and they exist because an execution that took `replacements[0]` and
+ * dropped the rest would pass every single-entry case in this file.
  *
  * ## What this is and what `proof:pdfiumadapter` already is
  *
@@ -106,13 +115,13 @@ async function threeRunsAndARectangle() {
  *
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed agrees with any collection, including
- * one that has quietly shrunk — audit item 4c. Thirteen is an independent claim
+ * one that has quietly shrunk — audit item 4c. Eighteen is an independent claim
  * about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 18 });
 
 /**
  * @param {string} name
@@ -158,7 +167,7 @@ async function textIndicesOf(bytes) {
 }
 
 async function main() {
-  process.stdout.write('# Region replacement as a command, against the real library\n\n');
+  process.stdout.write('# In-place text editing as a command, against the real library\n\n');
   process.stdout.write(`  PDFium ${PDFIUM_VERSION}\n  ${library}\n\n`);
 
   openPdfium(library);
@@ -196,8 +205,7 @@ async function main() {
   const command = /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
     kind: 'replaceTextObject',
     page: 0,
-    index: texts[1] ?? -1,
-    text: REPLACEMENT,
+    replacements: [{ index: texts[1] ?? -1, text: REPLACEMENT }],
     version: 1,
   });
 
@@ -205,18 +213,19 @@ async function main() {
   const captured = await localPdfiumExecution.capture(original, command);
   record(
     'capture answers the prior STRING, not merely success',
-    captured.captured === true && captured.prior.text.includes(SECOND),
+    captured.captured === true && (captured.prior.objects[0]?.text ?? '').includes(SECOND),
     captured.captured === true
-      ? `it recorded ${JSON.stringify(captured.prior.text)}`
+      ? `it recorded ${JSON.stringify(captured.prior.objects[0]?.text ?? null)}`
       : `it refused: ${captured.reason}`,
   );
   record(
     'and the prior carries the object it came from, so the inverse names no command',
     captured.captured === true &&
       captured.prior.page === 0 &&
-      captured.prior.index === (texts[1] ?? -1),
+      captured.prior.objects.length === 1 &&
+      captured.prior.objects[0]?.index === (texts[1] ?? -1),
     captured.captured === true
-      ? `page ${String(captured.prior.page)} object ${String(captured.prior.index)}`
+      ? `page ${String(captured.prior.page)} object ${String(captured.prior.objects[0]?.index)}`
       : 'nothing was captured',
   );
 
@@ -224,11 +233,35 @@ async function main() {
   // own branch value rather than that something went wrong. A throw here would
   // reach the bus as `internal`, which it answers by treating the host as
   // unhealthy — a rebuild for a page index the caller got wrong.
-  const missed = await localPdfiumExecution.capture(original, { ...command, index: 99 });
+  const missed = await localPdfiumExecution.capture(original, {
+    ...command,
+    replacements: [{ index: 99, text: REPLACEMENT }],
+  });
   record(
     'a capture naming no text object reports captured:false with a reason',
     missed.captured === false && missed.reason.length > 0,
     missed.captured === false ? missed.reason : 'it claimed to capture something',
+  );
+
+  // ONE UNREADABLE INDEX AMONG READABLE ONES REFUSES THE WHOLE CAPTURE, which
+  // is the plural payload's own rule and it needs its own case: a capture that
+  // recorded the readable half would produce an inverse restoring some of a
+  // line's runs, leaving a state nobody saw and no further undo can leave. The
+  // fixture puts the good index FIRST, so a capture that stopped at the first
+  // failure and kept what it had would answer `captured: true` here.
+  const partly = await localPdfiumExecution.capture(original, {
+    ...command,
+    replacements: [
+      { index: texts[0] ?? -1, text: REPLACEMENT },
+      { index: 99, text: REPLACEMENT },
+    ],
+  });
+  record(
+    'a capture whose list is partly unreadable refuses the WHOLE command',
+    partly.captured === false,
+    partly.captured === false
+      ? partly.reason
+      : `it captured ${String(partly.prior.objects.length)} object(s) of two`,
   );
 
   const applied = await localPdfiumExecution.apply(original, command);
@@ -282,6 +315,53 @@ async function main() {
     'CONTROL: the apply changed that same text, so the equality above separates something',
     after !== originalText,
     'an apply that did nothing would satisfy the case above and this is what refuses it',
+  );
+
+  // TWO OBJECTS IN ONE COMMAND — the shape a visual line edit takes, and the
+  // reason the payload carries a list at all. `proof:pdfiumadapter` already
+  // proves `replaceTextObjects` writes several; what is unproven one layer up
+  // is that the COMMAND carries them there, so an execution that quietly took
+  // `replacements[0]` and dropped the rest would pass every case above.
+  const bothCommand = /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
+    kind: 'replaceTextObject',
+    page: 0,
+    replacements: [
+      { index: texts[0] ?? -1, text: 'FIRST RUN is edited too' },
+      { index: texts[2] ?? -1, text: 'THIRD RUN is edited too' },
+    ],
+    version: 1,
+  });
+  const bothPrior = await localPdfiumExecution.capture(original, bothCommand);
+  const bothApplied = await localPdfiumExecution.apply(original, bothCommand);
+  const bothText = await textOf(bothApplied);
+  record(
+    'one command replaces BOTH named objects, which is what a line edit is',
+    bothText.includes('FIRST RUN is edited too') && bothText.includes('THIRD RUN is edited too'),
+    // The two named runs are the outer ones, so an execution that applied only
+    // the first and one that applied only the last both fail — a fixture naming
+    // adjacent runs would let a partial apply look like an ordering question.
+    `read back: ${JSON.stringify(bothText)}`,
+  );
+  record(
+    'and the run BETWEEN them is untouched, so the command edited what it named',
+    bothText.includes(SECOND),
+    'a command that rewrote the page rather than its named objects would lose this',
+  );
+  const bothRestored =
+    bothPrior.captured === true
+      ? await textOf(
+          await localPdfiumExecution.invert(bothApplied, 'replaceTextObject', bothPrior.prior),
+        )
+      : bothText;
+  record(
+    'ONE inverse puts both runs back, so a line edit is a single undo step',
+    bothRestored === originalText,
+    `restored ${JSON.stringify(bothRestored)} against ${JSON.stringify(originalText)}`,
+  );
+  record(
+    'CONTROL: the two-object apply changed the text the equality above compares',
+    bothText !== originalText,
+    'without this, an apply that did nothing would satisfy the restore case',
   );
 
   // A COMMAND ROUTED ELSEWHERE IS REFUSED BY NAME. `specFor` throws rather than

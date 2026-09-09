@@ -43,17 +43,24 @@ import { pdfiumWriter, replaceTextObjects, textObjectText } from './pdfiumFfi.js
  */
 
 /**
- * What a replacement has to put back, and **which object puts it back**.
+ * What a replacement has to put back, and **which objects put it back**.
  *
- * The page and the index travel with the string because an inverse RESTORES
+ * The page and the indices travel with the strings because an inverse RESTORES
  * rather than derives (ADR-0009 §3): an invert that reached for the command to
  * find out where to write would be an inverse computed from the intent, which
  * is the one shape §3 forbids. See `CommandPrior.replaceTextObject`.
+ *
+ * ## One prior per named object, and the undo is ONE step
+ *
+ * A command names a page's objects as a list, so its inverse is the same list
+ * with the strings that were there. Recording one prior per object and
+ * restoring them in one call is what keeps a line edit a single undo — and it
+ * is the same reason the command carries a list rather than the caller sending
+ * several commands.
  */
-export interface PriorTextObject {
+export interface PriorTextObjects {
   readonly page: number;
-  readonly index: number;
-  readonly text: string;
+  readonly objects: readonly { readonly index: number; readonly text: string }[];
 }
 
 /**
@@ -94,64 +101,77 @@ async function onImage<T>(
 export async function captureReplaceTextObject(
   image: ByteImage,
   command: CommandOfKind<'replaceTextObject'>,
-): Promise<CaptureResult<PriorTextObject>> {
+): Promise<CaptureResult<PriorTextObjects>> {
   return onImage(image, async (session) => {
-    try {
-      const text = await textObjectText(session, command.page, command.index);
-      return { captured: true, prior: { page: command.page, index: command.index, text } };
-    } catch {
-      return {
-        captured: false,
-        reason:
-          `page ${String(command.page)} object ${String(command.index)} is not a text object ` +
-          'this document has, so there is no prior string to record',
-      };
+    const objects: { index: number; text: string }[] = [];
+    for (const replacement of command.replacements) {
+      try {
+        // SEQUENTIALLY, on one session. `textObjectText` loads and closes a text
+        // page per call, and PDFium's page handles are not safe to work through
+        // concurrently — a `Promise.all` here would interleave loads against one
+        // document for no gain, the whole read being in-memory.
+        const text = await textObjectText(session, command.page, replacement.index);
+        objects.push({ index: replacement.index, text });
+      } catch {
+        // ALL OR NOTHING, and that is the capture's own rule rather than a
+        // convenience: a partial prior would invert a line edit into some of the
+        // runs it changed, leaving the document in a state the user never saw
+        // and no further undo can leave. One unreadable index makes the whole
+        // command take a checkpoint instead, which is what `captured: false`
+        // asks the bus for.
+        return {
+          captured: false,
+          reason:
+            `page ${String(command.page)} object ${String(replacement.index)} is not a text ` +
+            'object this document has, so there is no prior string to record',
+        };
+      }
     }
+    return { captured: true, prior: { page: command.page, objects } };
   });
 }
 
 /**
- * Replaces one text object's string and answers the document's new bytes.
+ * Replaces the named text objects' strings and answers the document's new bytes.
  *
- * ## One entry in the list, and the list is the adapter's shape rather than
- * this command's
+ * ## The whole list in ONE call, which is where the cost is
  *
  * `replaceTextObjects` takes several because a content stream is regenerated
- * once per command and not once per object — ADR-0047 Decision 2, measured at
- * 13.7× over forty replacements. Region replacement names one object, so it
- * passes one; **document-wide replace-all is the caller that passes many**, and
- * it will pass them through this same adapter call rather than looping over
- * this function, which is what the plural signature exists to make possible.
+ * once per call and not once per object — ADR-0047 Decision 2, measured at
+ * 13.7× over forty replacements. Passing the command's list straight through is
+ * therefore the point of the plural payload rather than an implementation
+ * detail: a loop over this function would pay `FPDFPage_GenerateContent` per
+ * run, and a visual line is several runs.
  */
 export async function applyReplaceTextObject(
   image: ByteImage,
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
-    await replaceTextObjects(session, command.page, [
-      { index: command.index, text: command.text },
-    ]);
+    await replaceTextObjects(session, command.page, command.replacements);
     return pdfiumWriter.serialise(session);
   });
 }
 
 /**
- * Puts the recorded string back, and answers the document's new bytes.
+ * Puts the recorded strings back, and answers the document's new bytes.
  *
- * Reads nothing off a command, which is what {@link PriorTextObject} carrying
- * page and index is for. `applyReplaceTextObject`'s body with the prior's three
- * fields in place of the command's — written out rather than shared, because a
- * helper taking *(page, index, text)* would be one call away from an invert
+ * Reads nothing off a command, which is what {@link PriorTextObjects} carrying
+ * the page and the indices is for. `applyReplaceTextObject`'s body with the
+ * prior's fields in place of the command's — written out rather than shared,
+ * because a helper taking *(page, list)* would be one call away from an invert
  * that took its coordinates from the intent.
+ *
+ * One call for the whole list, for the apply's reason and one of its own: an
+ * undo that regenerated per run would also arrive as several byte images, and a
+ * single inverse is what makes the step reversible in one move.
  */
 export async function invertReplaceTextObject(
   image: ByteImage,
-  inverse: PriorTextObject,
+  inverse: PriorTextObjects,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
-    await replaceTextObjects(session, inverse.page, [
-      { index: inverse.index, text: inverse.text },
-    ]);
+    await replaceTextObjects(session, inverse.page, inverse.objects);
     return pdfiumWriter.serialise(session);
   });
 }

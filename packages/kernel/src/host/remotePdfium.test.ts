@@ -99,8 +99,7 @@ function harness(peer: Peer, transfer: PdfiumTransfer) {
 const COMMAND = {
   kind: 'replaceTextObject',
   page: 0,
-  index: 2,
-  text: 'hi',
+  replacements: [{ index: 2, text: 'hi' }],
   version: 1,
 } as never;
 
@@ -215,7 +214,7 @@ describe('main’s PDFium writer', () => {
         ok: true,
         value: {
           captured: true,
-          value: { kind, prior: { page: 0, index: 2, text: 'WAS' } },
+          value: { kind, prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } },
         },
       }),
     };
@@ -224,7 +223,7 @@ describe('main’s PDFium writer', () => {
     const captured = await writer.capture(new Uint8Array([1]), COMMAND);
     expect(captured).toStrictEqual({
       captured: true,
-      prior: { page: 0, index: 2, text: 'WAS' },
+      prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
     });
     // A CAPTURE WRITES NOTHING OUT. Its params carry no `into`, so an output
     // name minted here would be one nothing ever reads.

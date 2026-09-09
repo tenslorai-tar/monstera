@@ -81,6 +81,25 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
 >;
 
 /**
+ * How many text objects one page's answer may name.
+ *
+ * A page-scaled read, so it is bounded like every other one here
+ * (`ENGINE_ANNOTATIONS_MAX`'s reason). Far past what any producer emits for one
+ * page and far short of a payload that could carry a document.
+ *
+ * ## It bounds the PRIOR's list too, and that is one question rather than two
+ *
+ * A prior is one recorded string per object the command named, and a command
+ * names objects on one page — so the largest honest prior is a page's worth,
+ * which is the number this already is. Main knows how many it asked for and
+ * this schema does not, which is the whole reason the wire carries its own
+ * bound: a host that answered a longer list is refused here rather than
+ * believed. Declared above the schemas because a `const` referenced during
+ * module evaluation cannot be declared below them.
+ */
+export const ENGINE_TEXT_OBJECTS_MAX = 8192;
+
+/**
  * How long a captured run's text may be on this wire.
  *
  * **Deliberately larger than `MAX_REPLACED_TEXT`, and the asymmetry is the
@@ -109,19 +128,40 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('replaceTextObject'),
       /**
-       * The string that object held, and **which object puts it back**.
+       * The strings those objects held, and **which objects put them back**.
        *
-       * The page and index travel because an inverse RESTORES rather than
+       * The page and the indices travel because an inverse RESTORES rather than
        * derives (ADR-0009 §3) — see `CommandPrior.replaceTextObject`. The text
-       * is bounded by the same constant the command's is: a prior read off a
-       * document is not a payload a renderer chose, and it is bounded anyway
-       * because every field on this wire is.
+       * is bounded by this file's own constant rather than the command's: a
+       * prior read off a document is not a payload a renderer chose, and it is
+       * bounded anyway because every field on this wire is.
+       *
+       * A LIST, matching the command's: a line edit names several objects, and
+       * an inverse that restored one of them would leave a state the person
+       * never saw. Nothing here requires the list to match the command's — the
+       * caller checks the kind and the schema checks the shape, and a host that
+       * answered a prior for objects it was not asked about would still restore
+       * only what it named. What that could cost is bounded by the page.
        */
       prior: z
         .object({
           page: z.number().int().nonnegative(),
-          index: z.number().int().nonnegative(),
-          text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
+          objects: z
+            .array(
+              z
+                .object({
+                  index: z.number().int().nonnegative(),
+                  text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(ENGINE_TEXT_OBJECTS_MAX)
+            // `.readonly()` because `CommandPrior.replaceTextObject` is, and a
+            // wire type that inferred a mutable array would make main's own
+            // prior unassignable to the channel it travels on — which is the
+            // compile error that put this line here rather than a cast.
+            .readonly(),
         })
         .strict(),
     })
@@ -133,15 +173,6 @@ const pdfiumCaptureSchema = z.discriminatedUnion('captured', [
   z.object({ captured: z.literal(true), value: pdfiumPriorSchema }).strict(),
   z.object({ captured: z.literal(false), reason: z.string().min(1) }).strict(),
 ]);
-
-/**
- * How many text objects one page's answer may name.
- *
- * A page-scaled read, so it is bounded like every other one here
- * (`ENGINE_ANNOTATIONS_MAX`'s reason). Far past what any producer emits for one
- * page and far short of a payload that could carry a document.
- */
-export const ENGINE_TEXT_OBJECTS_MAX = 8192;
 
 export const pdfiumChannels = {
   ...coreEngineChannels({

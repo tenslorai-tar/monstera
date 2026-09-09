@@ -19,7 +19,7 @@ import type { PriorFieldValue } from './formFields.js';
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
 // The import is erased, so the edge the header above warns about is not
 // created — the same care the `ByteImage` line records, on a second engine.
-import type { PriorTextObject } from './pdfiumTextEdit.js';
+import type { PriorTextObjects } from './pdfiumTextEdit.js';
 import type { PriorLayerVisibility } from './layers.js';
 import type {
   PriorPageCopy,
@@ -504,18 +504,19 @@ export interface CommandPrior {
    * replaces the object it is given — so the honest reason is the plainer one
    * ADR-0009 §3 gives: an inverse that reached for `entry.command` to find out
    * where to write would be an inverse derived from the intent, which is the
-   * one shape §3 forbids. `PriorTextObject` therefore carries the whole
+   * one shape §3 forbids. `PriorTextObjects` therefore carries the whole
    * restoring instruction.
    *
-   * ## It is a STRING and that is why this command is not a checkpoint one
+   * ## It is STRINGS and that is why this command is not a checkpoint one
    *
    * `deletePages`, `watermarkPages` and the four `never`s above are `never`
-   * because their prior is document-scaled or unserialisable. One text run is
-   * neither, bounded by `MAX_REPLACED_TEXT` on the way in — so the entry
-   * retains no document-scaled bytes, which is exactly what ADR-0039's addition
-   * of 2026-09-09 prices.
+   * because their prior is document-scaled or unserialisable. Text runs are
+   * neither: each is bounded by `MAX_REPLACED_TEXT` on the way in and the list
+   * by `MAX_TEXT_REPLACEMENTS`, so the entry is bounded by a **page** and not by
+   * the document — which is what ADR-0039's addition of 2026-09-09 prices, and
+   * it is the same bound whether the command names one run or a line's worth.
    */
-  readonly replaceTextObject: PriorTextObject;
+  readonly replaceTextObject: PriorTextObjects;
 }
 
 /**

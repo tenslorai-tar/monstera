@@ -129,6 +129,7 @@ export {
   type NamesATextObject,
   type NamesASecondDocument,
   MAX_REPLACED_TEXT,
+  MAX_TEXT_REPLACEMENTS,
   replaceTextObjectSchema,
   type FieldFill,
   type FormFieldKind,

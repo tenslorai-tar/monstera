@@ -784,7 +784,10 @@ function pdfiumPeer(): PdfiumPeerLog {
             ok: true,
             value: {
               captured: true,
-              value: { kind: 'replaceTextObject', prior: { page: 0, index: 2, text: 'WAS' } },
+              value: {
+                kind: 'replaceTextObject',
+                prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
+              },
             },
           };
         case 'engine/apply':
@@ -828,7 +831,12 @@ describe('the composition root, with BOTH engine hosts', () => {
       // throws a REGISTRATION defect when a targeting command names none, which
       // is what the first draft of this case met — and it is the same thing the
       // UI half has to send.
-      command: { kind: 'replaceTextObject', page: 0, index: 2, text: 'hi', version: opened.value.version },
+      command: {
+        kind: 'replaceTextObject',
+        page: 0,
+        replacements: [{ index: 2, text: 'hi' }],
+        version: opened.value.version,
+      },
     });
     expect(executed.ok, JSON.stringify(executed)).toBe(true);
     if (!executed.ok) throw new Error('the edit should have succeeded');
@@ -897,8 +905,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       command: {
         kind: 'replaceTextObject',
         page: 0,
-        index: 2,
-        text: 'hi',
+        replacements: [{ index: 2, text: 'hi' }],
         version: opened.value.version,
       },
     });

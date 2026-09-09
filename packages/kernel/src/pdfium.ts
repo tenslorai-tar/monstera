@@ -16,7 +16,7 @@ export {
   applyReplaceTextObject,
   captureReplaceTextObject,
   invertReplaceTextObject,
-  type PriorTextObject,
+  type PriorTextObjects,
 } from './pdfiumTextEdit.js';
 export { localPdfiumExecution, pdfiumSpecs } from './pdfiumSpecs.js';
 

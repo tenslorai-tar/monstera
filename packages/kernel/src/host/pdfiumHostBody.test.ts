@@ -134,7 +134,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         if (image.length === 1) throw new Error('PDFium refused the document');
         return Promise.resolve({
           captured: true,
-          prior: { page: 0, index: 2, text: 'WAS' },
+          prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
         } as never);
       },
       invert: (image) => {
@@ -257,7 +257,12 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
-        command: { kind: 'replaceTextObject', page: 0, index: 2, text: 'hi', version: 1 },
+        command: {
+          kind: 'replaceTextObject',
+          page: 0,
+          replacements: [{ index: 2, text: 'hi' }],
+          version: 1,
+        },
         from: IN,
         into: OUT,
       }),
@@ -282,7 +287,12 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
-        command: { kind: 'replaceTextObject', page: 0, index: 2, text: 'hi', version: 1 },
+        command: {
+          kind: 'replaceTextObject',
+          page: 0,
+          replacements: [{ index: 2, text: 'hi' }],
+          version: 1,
+        },
         from: IN,
         into: OUT,
       }),
@@ -312,7 +322,12 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
-        command: { kind: 'replaceTextObject', page: 0, index: 2, text: 'hi', version: 1 },
+        command: {
+          kind: 'replaceTextObject',
+          page: 0,
+          replacements: [{ index: 2, text: 'hi' }],
+          version: 1,
+        },
         // A WELL-FORMED NAME NOTHING WROTE. It has to satisfy the schema, or
         // the refusal under test would be the boundary's rather than the
         // handler's — the two produce different codes and only one of them is
@@ -344,7 +359,12 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('c1', 'engine/capture', {
         session,
-        command: { kind: 'replaceTextObject', page: 0, index: 2, text: 'hi', version: 1 },
+        command: {
+          kind: 'replaceTextObject',
+          page: 0,
+          replacements: [{ index: 2, text: 'hi' }],
+          version: 1,
+        },
         from: IN,
       }),
     );
@@ -355,7 +375,10 @@ describe('the PDFium host body', () => {
         ok: true,
         value: {
           captured: true,
-          value: { kind: 'replaceTextObject', prior: { page: 0, index: 2, text: 'WAS' } },
+          value: {
+            kind: 'replaceTextObject',
+            prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
+          },
         },
       },
     });

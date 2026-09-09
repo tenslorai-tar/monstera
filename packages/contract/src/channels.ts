@@ -5,6 +5,7 @@ import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } 
 import {
   MAX_ANNOTATION_BORDER,
   MAX_IMAGE_PAGES,
+  MAX_TEXT_REPLACEMENTS,
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
@@ -422,8 +423,18 @@ export const MAX_FLAT_FIELD_CANDIDATES = 256;
  * no person can work through. The smaller number is the honest one here — a
  * chooser of 8192 rows is not a chooser — and the flag beside it says when the
  * page had more, exactly as the flat-field and duplicate reports do.
+ *
+ * ## DERIVED from the command's bound, and not the same digit written twice
+ *
+ * A surface offers what this read answered and sends what the person accepted
+ * as one `replaceTextObject`, so a read bound above `MAX_TEXT_REPLACEMENTS`
+ * would offer an accept the command cannot carry. `MAX_FLAT_FIELD_CANDIDATES`
+ * states that same relationship in prose beside a literal `256`, which is a
+ * copy this file can avoid: it imports `commands.ts` already, so the reader can
+ * reach the source and CLAUDE.md's rule says not to keep a copy that nothing
+ * compares.
  */
-export const MAX_TEXT_OBJECTS = 512;
+export const MAX_TEXT_OBJECTS = MAX_TEXT_REPLACEMENTS;
 export const MAX_FLAT_FIELD_LABEL = 128;
 
 /**

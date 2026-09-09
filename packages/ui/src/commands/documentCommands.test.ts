@@ -921,8 +921,7 @@ describe('delete pages — the mutation-dialog gate', () => {
             // already the kernel's — a command applying `kernelPageOf` here
             // would send 2 and edit the page above the one on screen.
             page: 3,
-            index: 9,
-            text: 'Hello',
+            replacements: [{ index: 9, text: 'Hello' }],
             version: 7,
           },
         },
