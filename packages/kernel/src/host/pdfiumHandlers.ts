@@ -54,8 +54,7 @@ import { ENGINE_TEXT_OBJECTS_MAX, type PdfiumChannels } from './pdfiumChannels.j
  */
 
 /**
- * Which of a page's objects are text objects, and whether the walk was cut
- * short.
+ * A page's text runs, and whether the walk was cut short.
  *
  * Injected rather than imported for the reason every surface in this package
  * is: `packages/kernel` is the host **body**, and a handler proof must be able
@@ -65,10 +64,18 @@ import { ENGINE_TEXT_OBJECTS_MAX, type PdfiumChannels } from './pdfiumChannels.j
  * here, because only the walk knows there was more — `engine/annotations`' rule
  * on a second engine.
  */
-export type HostTextObjectsReader = (
+export type HostTextRunsReader = (
   image: ByteImage,
   page: number,
-) => Promise<{ readonly indices: readonly number[]; readonly truncated: boolean }>;
+) => Promise<{
+  readonly runs: readonly {
+    readonly index: number;
+    readonly text: string;
+    readonly bottom: number;
+    readonly top: number;
+  }[];
+  readonly truncated: boolean;
+}>;
 
 /** What the PDFium host's handlers are built from. */
 export interface PdfiumHandlerParts {
@@ -80,8 +87,8 @@ export interface PdfiumHandlerParts {
   readonly files: HostFilesystem;
   /** How this process attempts the two paths ADR-0023 §5's check names. */
   readonly probe: (paths: ContainmentProbePaths) => Promise<ContainmentReport>;
-  /** How this process lists a page's text objects. `engine/text-objects`. */
-  readonly textObjects: HostTextObjectsReader;
+  /** How this process reads a page's text runs. `engine/text-runs`. */
+  readonly textRuns: HostTextRunsReader;
 }
 
 export function createPdfiumHandlers({
@@ -89,7 +96,7 @@ export function createPdfiumHandlers({
   execution,
   files,
   probe,
-  textObjects,
+  textRuns,
 }: PdfiumHandlerParts): Handlers<PdfiumChannels> {
   // THE MISS IS RETURNED, NEVER THROWN — `engineHandlers.ts`'s rule, and it is
   // the supervisor's ability to act that depends on it. A throw crossing this
@@ -254,7 +261,7 @@ export function createPdfiumHandlers({
       return { ok: true, value: { bytes: written } };
     },
 
-    'engine/text-objects': async ({ session, from, page }) => {
+    'engine/text-runs': async ({ session, from, page }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       let image: Uint8Array;
@@ -264,7 +271,7 @@ export function createPdfiumHandlers({
         return failed('asset-missing', error);
       }
       try {
-        const found = await textObjects(image, page);
+        const found = await textRuns(image, page);
         // BOUNDED WHERE THE WALK IS and forwarded rather than re-derived: a
         // handler computing `truncated` from the array's length would answer
         // *you asked for that many* every time. The slice here is belt to the
@@ -273,7 +280,7 @@ export function createPdfiumHandlers({
         return {
           ok: true,
           value: {
-            indices: [...found.indices].slice(0, ENGINE_TEXT_OBJECTS_MAX),
+            runs: found.runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
             truncated: found.truncated,
           },
         };

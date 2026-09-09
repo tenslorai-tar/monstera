@@ -5,25 +5,34 @@ import { REPLACE_TEXT_OBJECT_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import { REPLACE_TEXT_OBJECT_RESULT } from './replaceTextObjectResult.js';
 
-/** The id `replaceTextObjectCommand` opens to choose an object and its new text. */
+/** The id `replaceTextObjectCommand` opens to choose a line and edit its text. */
 export const REPLACE_TEXT_OBJECT_DIALOG_ID = 'dialog.replace-text-object';
 
 /**
- * Which run of text on this page is being replaced, and with what.
+ * Which line of text on this page is being edited, and what it should say.
  *
- * ## The choice is over INDICES, and this dialog cannot show the words
+ * ## The choice is over LINES, and the person reads the words
  *
- * `document.textObjects` answers the editing engine's own numbering and nothing
- * else — no handles, because a `FPDF_PAGEOBJECT` dies with the page it came
- * from, and no text, because an object's string is **prior state** that arrives
- * when the command captures it. So the list a reader is offered is a list of
- * positions in the page's object order, and that is a real limitation stated
- * here rather than papered over: what gives a person something to *recognise*
- * is line-level editing and find-and-replace, which are the two rows after this
- * one. This is the primitive they are built from.
+ * This dialog offered a list of INDICES until 2026-09-09, because
+ * `document.textObjects` answered the engine's own numbering and nothing else.
+ * A chooser of numbers is what the region-replacement row shipped and said so;
+ * `document.textLines` closes it, and this is the surface that closes.
  *
- * The consequence for the wording is that the dialog says what an index is
- * before it offers any: a number with no explanation reads as an error code.
+ * There is exactly one control in the Edit section for editing a page's text.
+ * Two — one naming numbers and one naming words, where the second obsoletes the
+ * first — would be the second wiring place the command registry exists to
+ * forbid, so this dialog was converted rather than joined by a sibling.
+ *
+ * ## The line is a person's unit and the OBJECT is the engine's
+ *
+ * A visual line is several text objects: PDFium answers one rect per run
+ * whether two runs on a baseline sit 170pt or 3pt apart, measured, so it has no
+ * opinion about lines and the editor forms one by vertical overlap
+ * ([ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)).
+ * **That ADR permits the grouping only while its output reaches a dialog a
+ * person answers, and this is that dialog** — the grouping's whole consumer.
+ * The runs travel with each line because the command names objects, and
+ * `lineEdit.ts` turns the person's edit back into the objects it touched.
  *
  * ## The list is not derived from anything MuPDF said
  *
@@ -31,10 +40,10 @@ export const REPLACE_TEXT_OBJECT_DIALOG_ID = 'dialog.replace-text-object';
  * 'text-object'` both exist for this: the page's structured text and the page's
  * object list are two engines' numbering of one page, and joining them is
  * `pageNumbering.ts`' lesson one frame worse — two halves each correct in its
- * own frame for ever. The indices here come from the channel that asks PDFium,
- * and there is no other route to one.
+ * own frame for ever. Every index here came from the channel that asks PDFium
+ * and is copied, never computed.
  *
- * ## It opens even when the page has NO text objects, which is `flatFields`' rule
+ * ## It opens even when the page has NO text, which is `flatFields`' rule
  *
  * A command that silently did nothing on a page of images is one a person
  * presses twice. The empty case is reported in words with the apply disabled.
@@ -49,7 +58,20 @@ export const REPLACE_TEXT_OBJECT_DIALOG = declareDialog({
   title: REPLACE_TEXT_OBJECT_TITLE,
   props: z
     .object({
-      indices: z.array(z.number().int().nonnegative()),
+      lines: z.array(
+        z
+          .object({
+            runs: z.array(
+              z
+                .object({
+                  index: z.number().int().nonnegative(),
+                  text: z.string(),
+                })
+                .strict(),
+            ),
+          })
+          .strict(),
+      ),
       truncated: z.boolean(),
     })
     .strict(),

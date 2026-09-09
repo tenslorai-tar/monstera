@@ -870,21 +870,22 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('REPLACE TEXT SENDS THE ENGINE’S OWN INDEX, and the version the LIST was read at', async () => {
+  it('REPLACE TEXT SENDS THE ENGINE’S OWN INDICES, and the version the LINES were read at', async () => {
     // THE UI HALF OF THE WIRED PAIR for `replaceTextObject`. Its kernel half is
     // `proof:pdfiumcommand`, which drives the real library and cannot see which
     // numbers a control sends; this sees the numbers and cannot see a document.
     //
-    // TWO of them are the point, and they are the two the pair's blind spot is
-    // about:
+    // THREE of them are the point:
     //
-    // - the INDEX is the one `document.textObjects` answered, unchanged. It is
-    //   PDFium's numbering of the page's objects, and the page's structured text
-    //   numbers runs differently — so a command that sent a POSITION in the list
-    //   (0 for the first option) instead of the engine's number would agree with
-    //   this fixture for a page whose objects happen to start at zero and be
-    //   contiguous, and replace the wrong run on every other page. The indices
-    //   here are `[4, 9]` for exactly that reason.
+    // - the INDICES are the ones `document.textLines` answered, unchanged. They
+    //   are PDFium's numbering of the page's objects, and the page's structured
+    //   text numbers runs differently — so a command that sent a POSITION (0 for
+    //   the first run of the first line) would agree with a page whose objects
+    //   happen to start at zero and be contiguous, and replace the wrong run on
+    //   every other page. The fixture's are `[4, 9]` and `[2]` for that reason.
+    // - the SECOND line is the one edited, and only the run its edit touched is
+    //   named. A command that sent every run of the chosen line, or every run on
+    //   the page, would pass an assertion about the text alone.
     // - the VERSION is the read's, not the context's. They differ here (7
     //   against the context's 1) because `#refuseIfStale` asks *is this the
     //   document the list described*, and a command carrying the shell's current
@@ -892,9 +893,21 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      if (id === 'document.textObjects') {
+      if (id === 'document.textLines') {
         return Promise.resolve(
-          ok({ version: asDocVersion(7), indices: [4, 9], truncated: false }),
+          ok({
+            version: asDocVersion(7),
+            lines: [
+              {
+                runs: [
+                  { index: 4, text: 'The quick ' },
+                  { index: 9, text: 'brown fox' },
+                ],
+              },
+              { runs: [{ index: 2, text: 'jumps over' }] },
+            ],
+            truncated: false,
+          }),
         );
       }
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
@@ -903,13 +916,15 @@ describe('delete pages — the mutation-dialog gate', () => {
     await replaceTextObjectCommand({
       client,
       onApplied: () => undefined,
-      // THE SECOND OPTION, not the first: a command that ignored the dialog's
-      // answer and took `indices[0]` passes every case that chooses the first.
-      ask: () => Promise.resolve({ index: 9, text: 'Hello' }),
+      // THE DIALOG'S OWN ANSWER, forwarded. The dialog is what holds the line's
+      // runs and the person's text, so the payload is built there; this asserts
+      // the command COPIES it, which a command that rebuilt the list from the
+      // read would not.
+      ask: () => Promise.resolve({ replacements: [{ index: 9, text: 'brown dog' }] }),
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([
-      { id: 'document.textObjects', params: { docId: DOC, page: 3 } },
+      { id: 'document.textLines', params: { docId: DOC, page: 3 } },
       {
         id: 'document.execute',
         params: {
@@ -921,12 +936,53 @@ describe('delete pages — the mutation-dialog gate', () => {
             // already the kernel's — a command applying `kernelPageOf` here
             // would send 2 and edit the page above the one on screen.
             page: 3,
-            replacements: [{ index: 9, text: 'Hello' }],
+            replacements: [{ index: 9, text: 'brown dog' }],
             version: 7,
           },
         },
       },
     ]);
+  });
+
+  it('REPLACE TEXT OFFERS THE LINES IT WAS ANSWERED, runs and all', async () => {
+    // WHAT THE DIALOG IS HANDED, which the case above cannot see: it asserts the
+    // dispatch and would pass on a command that offered the chooser an empty
+    // list, since the answer is stubbed either way. A person choosing from
+    // nothing is the display-only defect one step in from the button.
+    //
+    // The runs travel because the command names OBJECTS: a dialog handed only
+    // the joined words could show them and could not say which object an edit
+    // touched.
+    let offered: unknown = null;
+    const client = createClient(channels, (id) => {
+      if (id === 'document.textLines') {
+        return Promise.resolve(
+          ok({
+            version: asDocVersion(7),
+            lines: [{ runs: [{ index: 4, text: 'ONE ' }, { index: 9, text: 'TWO' }] }],
+            truncated: true,
+          }),
+        );
+      }
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+    });
+
+    await replaceTextObjectCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        expect(id).toBe('dialog.replace-text-object');
+        offered = props;
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(offered).toStrictEqual({
+      lines: [{ runs: [{ index: 4, text: 'ONE ' }, { index: 9, text: 'TWO' }] }],
+      // FORWARDED, not dropped. A reader choosing from a clipped list would pick
+      // from part of the page believing they had seen it.
+      truncated: true,
+    });
   });
 
   it('REPLACE TEXT SENDS NOTHING when the chooser is dismissed', async () => {
@@ -936,7 +992,13 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: string[] = [];
     const client = createClient(channels, (id) => {
       sent.push(id);
-      return Promise.resolve(ok({ version: asDocVersion(1), indices: [2], truncated: false }));
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(1),
+          lines: [{ runs: [{ index: 2, text: 'SOMETHING' }] }],
+          truncated: false,
+        }),
+      );
     });
 
     await replaceTextObjectCommand({
@@ -945,14 +1007,14 @@ describe('delete pages — the mutation-dialog gate', () => {
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual(['document.textObjects']);
+    expect(sent).toStrictEqual(['document.textLines']);
   });
 
   it('REPLACE TEXT SENDS NOTHING when the machine has no editing engine', async () => {
     // THE STATE MOST MACHINES ARE IN, and the one that separates *reported* from
-    // *silent*: `document.textObjects` answers `engine-unavailable` where PDFium
+    // *silent*: `document.textLines` answers `engine-unavailable` where PDFium
     // was never provisioned, and the command must stop there — asking the dialog
-    // for a choice among no indices, or dispatching anyway, are both worse than
+    // for a choice among no lines, or dispatching anyway, are both worse than
     // the sentence.
     let asked = 0;
     const sent: string[] = [];
@@ -974,7 +1036,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual(['document.textObjects']);
+    expect(sent).toStrictEqual(['document.textLines']);
     expect(asked).toBe(1);
   });
 

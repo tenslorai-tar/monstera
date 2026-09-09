@@ -854,7 +854,7 @@ export class EngineUnavailableError extends Error {
 }
 
 /**
- * Which of a page's objects are text objects, in the EDITING engine's numbering.
+ * A page's editable text as visual lines, in the EDITING engine's numbering.
  *
  * `DocumentFlatFieldsReader`'s shape and its per-page reason, against the other
  * engine — and it may be absent, which is what the `null`-returning composition
@@ -862,17 +862,24 @@ export class EngineUnavailableError extends Error {
  * and are never joined to MuPDF's structured text: `commandDeclarations.ts`
  * gives `replaceTextObject` `targets: 'text-object'` precisely because that is a
  * third index space.
+ *
+ * The grouping into lines happens at the composition point rather than here or
+ * in the host — ADR-0049 permits it only while its output reaches a dialog a
+ * person answers, and one call site is what makes that readable.
  */
-export type DocumentTextObjectsReader = (
+export type DocumentTextLinesReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
-) => Promise<{ readonly indices: readonly number[]; readonly truncated: boolean }>;
+) => Promise<{
+  readonly lines: readonly { readonly runs: readonly { index: number; text: string }[] }[];
+  readonly truncated: boolean;
+}>;
 
-/** The indices, stamped with the version the lane read them at. */
-export interface DocumentTextObjects {
+/** The lines, stamped with the version the lane read them at. */
+export interface DocumentTextLines {
   readonly version: DocVersion;
-  readonly indices: readonly number[];
+  readonly lines: readonly { readonly runs: readonly { index: number; text: string }[] }[];
   readonly truncated: boolean;
 }
 
@@ -1062,14 +1069,14 @@ export interface DocumentCommandsParts {
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
   /**
-   * The editing engine's text-object list, or a thrower.
+   * The editing engine's reading of a page's text, or a thrower.
    *
    * Required and undefaulted like every other reader here: an installation with
    * no PDFium supplies one that raises {@link EngineUnavailableError}, which is
    * a decided answer, and a default of `undefined` would make *this build cannot
    * edit text* a state a caller reaches by saying nothing.
    */
-  readonly textObjects: DocumentTextObjectsReader;
+  readonly textLines: DocumentTextLinesReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -1094,7 +1101,7 @@ export class DocumentCommands {
   readonly #annotations: DocumentAnnotationsReader;
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
-  readonly #textObjects: DocumentTextObjectsReader;
+  readonly #textLines: DocumentTextLinesReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -1117,7 +1124,7 @@ export class DocumentCommands {
     this.#annotations = parts.annotations;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
-    this.#textObjects = parts.textObjects;
+    this.#textLines = parts.textLines;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -1493,7 +1500,7 @@ export class DocumentCommands {
    * about — the missing engine is a different state and {@link
    * EngineUnavailableError} is the one that says so.
    */
-  async textObjects(docId: DocId, page: number): Promise<DocumentTextObjects> {
+  async textLines(docId: DocId, page: number): Promise<DocumentTextLines> {
     const { version, value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -1501,10 +1508,10 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return this.#textObjects(docId, sessions, page);
+      return this.#textLines(docId, sessions, page);
     });
 
-    return { version, indices: value.indices, truncated: value.truncated };
+    return { version, lines: value.lines, truncated: value.truncated };
   }
 
   /**

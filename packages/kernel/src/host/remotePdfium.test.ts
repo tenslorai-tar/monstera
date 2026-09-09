@@ -8,7 +8,7 @@ import { EngineSerialiseMismatch } from './remoteLifecycle.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
 import {
   type PdfiumTransfer,
-  remotePdfiumTextObjects,
+  remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './remotePdfium.js';
 
@@ -92,7 +92,7 @@ function harness(peer: Peer, transfer: PdfiumTransfer) {
   const held = () => ({ session: 'a'.repeat(43), area: AREA });
   return {
     writer: remotePdfiumWriter(client, held, transfer),
-    textObjects: remotePdfiumTextObjects(client, held, transfer),
+    textRuns: remotePdfiumTextRuns(client, held, transfer),
   };
 }
 
@@ -266,22 +266,27 @@ describe('main’s PDFium writer', () => {
     });
   });
 
-  it('reads a page’s text objects through the same input write', async () => {
+  it('reads a page’s text runs through the same input write', async () => {
     const transfer = stubTransfer();
+    const runs = [
+      { index: 1, text: 'ONE', bottom: 229.9, top: 238.0 },
+      { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
+    ];
     const peer: Peer = {
       asked: [],
       answer: (channel, params) => {
-        expect(channel).toBe('engine/text-objects');
+        expect(channel).toBe('engine/text-runs');
         expect(params).toMatchObject({ page: 4 });
-        return { ok: true, value: { indices: [1, 3], truncated: false } };
+        return { ok: true, value: { runs, truncated: false } };
       },
     };
-    const { textObjects } = harness(peer, transfer);
+    const { textRuns } = harness(peer, transfer);
 
-    expect(await textObjects(new Uint8Array([5]), 4)).toStrictEqual({
-      indices: [1, 3],
-      truncated: false,
-    });
+    // EQUALITY AND NOT A SUBSET, because this reader's whole job is to forward
+    // what the host said: a `toMatchObject` on the indices would pass against
+    // one that dropped the text and the extent, and both are what the grouping
+    // and the chooser above it are made of.
+    expect(await textRuns(new Uint8Array([5]), 4)).toStrictEqual({ runs, truncated: false });
     expect(transfer.log).toStrictEqual(['write:001', 'remove:001']);
   });
 });

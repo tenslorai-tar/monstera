@@ -50,18 +50,41 @@ export interface GroupableRun {
   readonly top: number;
 }
 
-/** One visual line: the runs it is made of, in reading order, and what it says. */
-export interface TextLine {
+/**
+ * One visual line: the runs it is made of, in reading order.
+ *
+ * ## NOT `TextLine`, and the collision is the reason
+ *
+ * `textStructure.ts` already exports a `TextLine`: MuPDF's structured text, the
+ * reading engine's own lines, which feed the renderer's text layer, search and
+ * extraction. This is PDFium's runs grouped by the editor for an edit, and the
+ * two are different readings of the same page — `proof:lineagreement` scored
+ * **52.9%** of ours verbatim among an independent reader's.
+ *
+ * One name for both would put that 52.9% inside a type, where a caller holding
+ * either would compile. The name says which reading it is, and the collision
+ * that forced it is a better guard than a comment saying not to mix them.
+ */
+export interface EditableLine {
   /**
-   * The object indices this line covers, in the order their text appears.
+   * The runs this line covers, in the order their text appears.
    *
-   * The engine's own numbering, unconverted. It is what `replaceTextObject`
-   * names, and the whole of ADR-0049's first decision is that no other index
-   * space reaches it.
+   * ## The RUNS and not a concatenated string, which is a decision
+   *
+   * A line arriving as one string reads better and cannot be edited back: a run
+   * is a text object with its own font, `replaceTextObject` names objects, and
+   * something would have to work out which characters of the string belonged to
+   * which object. That something would hold no run boundaries, so it would be
+   * re-deriving what this function already knows and threw away.
+   *
+   * The display text is `runs.map((run) => run.text).join('')` and is derived
+   * where it is shown. A field carrying it here would be a second copy of the
+   * same fact, and the two could disagree only by a bug.
+   *
+   * The index is the engine's own numbering, unconverted — the whole of
+   * ADR-0049's first decision is that no other index space reaches it.
    */
-  readonly indices: readonly number[];
-  /** The line's text: its runs' text, concatenated in the same order. */
-  readonly text: string;
+  readonly runs: readonly { readonly index: number; readonly text: string }[];
 }
 
 /**
@@ -87,9 +110,13 @@ export interface TextLine {
  *
  * @param runs the page's text runs, in reading order
  */
-export function groupIntoLines(runs: readonly GroupableRun[]): readonly TextLine[] {
+export function groupIntoLines(runs: readonly GroupableRun[]): readonly EditableLine[] {
   /** Lines under construction, each carrying the extent it has grown to. */
-  const open: { indices: number[]; text: string; bottom: number; top: number }[] = [];
+  const open: {
+    runs: { index: number; text: string }[];
+    bottom: number;
+    top: number;
+  }[] = [];
 
   for (const run of runs) {
     // OVERLAP IS `bottom < other.top && top > other.bottom`, strictly — two runs
@@ -98,14 +125,21 @@ export function groupIntoLines(runs: readonly GroupableRun[]): readonly TextLine
     // which is the failure mode the conservative direction exists to avoid.
     const line = open.find((held) => run.bottom < held.top && run.top > held.bottom);
     if (line === undefined) {
-      open.push({ indices: [run.index], text: run.text, bottom: run.bottom, top: run.top });
+      open.push({
+        runs: [{ index: run.index, text: run.text }],
+        bottom: run.bottom,
+        top: run.top,
+      });
       continue;
     }
-    line.indices.push(run.index);
-    line.text += run.text;
+    line.runs.push({ index: run.index, text: run.text });
     line.bottom = Math.min(line.bottom, run.bottom);
     line.top = Math.max(line.top, run.top);
   }
 
-  return open.map((line) => ({ indices: line.indices, text: line.text }));
+  // THE EXTENT DOES NOT LEAVE. It is what the grouping decided by, and a
+  // consumer holding it would be one step from deciding something else with a
+  // coordinate — which is the question ADR-0034's test asks of any second
+  // reader. What leaves is the answer, not the working.
+  return open.map((line) => ({ runs: line.runs }));
 }

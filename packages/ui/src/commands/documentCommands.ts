@@ -1887,14 +1887,17 @@ export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
- * Replaces one run of text on the page in view, in place.
+ * Edits a line of text on the page in view, in place.
  *
  * ## `detectFlatFieldsCommand`'s order — ask, review, then ONE command
  *
- * The read is `document.textObjects`, the review is the dialog, and the apply is
- * a single `replaceTextObject`. What is different is which engine answers: this
- * is the first UI command whose read and whose write both go to PDFium, and the
- * indices it offers are that engine's own numbering of the page's objects.
+ * The read is `document.textLines`, the review is the dialog, and the apply is
+ * a single `replaceTextObject` — one command however many objects the line
+ * turned out to be, because a content stream is regenerated once per command
+ * and a person who edited one line expects one undo. What is different from
+ * every other command in this file is which engine answers: this is the only UI
+ * command whose read and whose write both go to PDFium, and the indices it
+ * carries are that engine's own numbering of the page's objects.
  *
  * ## THE INDEX IS NEVER DERIVED HERE, and that is the whole of the frames rule
  *
@@ -1907,10 +1910,12 @@ export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
  * second replaces text nobody chose — silently, with an undo that restores what
  * the user did not mean to change.
  *
- * So the index makes a round trip and no arithmetic: the channel answers it, the
- * dialog offers it, the dialog returns it, and it is sent. **The page, meanwhile,
- * is `context.page` and is already zero-based** — `pageNumbering.ts` is the only
- * place that converts, and there is nothing to convert here.
+ * So the index makes a round trip and no arithmetic: the channel answers it
+ * inside a line, the dialog offers the line's words, and the answer carries the
+ * same indices back. `lineEdit.ts` decides *which of them* an edit touched and
+ * copies them; it computes no index and reads no coordinate. **The page,
+ * meanwhile, is `context.page` and is already zero-based** — `pageNumbering.ts`
+ * is the only place that converts, and there is nothing to convert here.
  *
  * ## The VERSION rides on the payload because this command TARGETS
  *
@@ -1935,7 +1940,7 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
 
-      const found = await deps.client['document.textObjects']({
+      const found = await deps.client['document.textLines']({
         docId: context.docId,
         page: context.page,
       });
@@ -1945,7 +1950,7 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
       }
 
       const chosen = (await deps.ask(REPLACE_TEXT_OBJECT_DIALOG_ID, {
-        indices: [...found.value.indices],
+        lines: found.value.lines.map((line) => ({ runs: [...line.runs] })),
         truncated: found.value.truncated,
       })) as ReplaceTextObjectAnswer | undefined;
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
@@ -1955,11 +1960,12 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'replaceTextObject',
         page: context.page,
-        // ONE ENTRY, because this chooser names one object. The command carries
-        // a list so a visual line — several runs, measured — is one edit, one
-        // undo and one content regeneration; a surface that names one run sends
-        // a list of one rather than a different command.
-        replacements: [{ index: chosen.index, text: chosen.text }],
+        // COPIED FROM THE DIALOG'S ANSWER, unchanged. The dialog holds both the
+        // line's runs and what the person typed, so it is the only place that
+        // can say which objects an edit touched; `lineEdit.ts` is the whole of
+        // what sits between the read and this payload, and it reads no
+        // coordinate and computes no index.
+        replacements: chosen.replacements,
         // THE READ'S VERSION, not the shell's, and the difference is the whole
         // point of the check. `context.version` is what the tab holds now; this
         // is the document the INDICES describe. A command carrying the newer of

@@ -8,7 +8,7 @@ import {
   localPdfiumExecution,
   openPdfium,
   pdfiumWriter,
-  textObjectIndices,
+  textRuns,
 } from '../pdfium.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
@@ -160,16 +160,16 @@ const handlers = createPdfiumHandlers({
   // (ADR-0048's withdrawn Decision 3), so a document PDFium cannot read is
   // refused by the call that wanted it — `engine-refused` — rather than at a
   // moment when there is no document to speak of.
-  textObjects: async (image, page) => {
+  textRuns: async (image, page) => {
     const session = await pdfiumWriter.open(image);
     try {
-      const indices = await textObjectIndices(session, page);
+      const runs = await textRuns(session, page);
       // THE WALK IS WHAT KNOWS THERE WAS MORE, so the flag is computed here
       // rather than by the handler from the array it is handed — which would
       // answer *you asked for that many* every time.
       return {
-        indices: indices.slice(0, ENGINE_TEXT_OBJECTS_MAX),
-        truncated: indices.length > ENGINE_TEXT_OBJECTS_MAX,
+        runs: runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
+        truncated: runs.length > ENGINE_TEXT_OBJECTS_MAX,
       };
     } finally {
       await pdfiumWriter.close(session);

@@ -269,12 +269,14 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // document — so the answer's size is a function of one page's ruled lines,
   // never of how long the document is.
   'document.flatFieldCandidates': 'needs an engine session',
-  // BOUNDED AT 512 INDICES, per PAGE, and answered by a SECOND engine — this is
-  // the one exclusion here that needs two hosts rather than one, so it is
-  // further out of this file's reach than its neighbours rather than merely as
-  // far. The payload is a list of small integers whose length is a function of
-  // one page's text runs and never of the document's size.
-  'document.textObjects': 'needs an engine session',
+  // BOUNDED AT 512 LINES OF 512 RUNS, per PAGE, and answered by a SECOND engine
+  // — this is the one exclusion here that needs two hosts rather than one, so
+  // it is further out of this file's reach than its neighbours rather than
+  // merely as far. It carries a page's WORDS as of 2026-09-09, which is a
+  // genuinely larger payload than the indices it used to carry, and still a
+  // function of one page: each run's text is bounded by `MAX_REPLACED_TEXT` and
+  // the runs by `MAX_TEXT_OBJECTS`, neither of which the document's size moves.
+  'document.textLines': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

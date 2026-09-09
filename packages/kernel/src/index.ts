@@ -153,9 +153,15 @@ export {
 export {
   type PdfiumArea,
   type PdfiumTransfer,
-  remotePdfiumTextObjects,
+  remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './host/remotePdfium.js';
+// THE GROUPING, and it is on the BARREL rather than behind `pdfium.ts` because
+// it binds no engine: it takes runs and answers lines, and `proof:kernelload`'s
+// rule is about what a specifier LOADS. Main is its one caller — the
+// composition point that feeds `document.textLines` — which is what ADR-0049's
+// *does its output reach any consumer other than a dialog?* is asked of.
+export { type EditableLine, type GroupableRun, groupIntoLines } from './textLines.js';
 export type { RegionRequest } from './pageSnapshot.js';
 export {
   EngineCallFailed,

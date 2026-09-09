@@ -5,6 +5,7 @@ import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } 
 import {
   MAX_ANNOTATION_BORDER,
   MAX_IMAGE_PAGES,
+  MAX_REPLACED_TEXT,
   MAX_TEXT_REPLACEMENTS,
   annotationKindNameSchema,
   annotationRectSchema,
@@ -414,7 +415,8 @@ export const MAX_FORM_FIELD_VALUES = 256;
 export const MAX_FLAT_FIELD_CANDIDATES = 256;
 
 /**
- * How many of a page's text objects one answer may name.
+ * How many of a page's text objects one answer may name — and, because a page
+ * cannot have more lines than runs, how many **lines** one answer may carry.
  *
  * A page-scaled read, bounded like every other one that crosses. **Not the
  * engine wire's `ENGINE_TEXT_OBJECTS_MAX`**, which is 8192 and bounds a
@@ -423,6 +425,10 @@ export const MAX_FLAT_FIELD_CANDIDATES = 256;
  * no person can work through. The smaller number is the honest one here — a
  * chooser of 8192 rows is not a chooser — and the flag beside it says when the
  * page had more, exactly as the flat-field and duplicate reports do.
+ *
+ * One number for both because they bound the same collection counted two ways:
+ * grouping runs into lines can only make the list shorter, so a separate line
+ * bound would be a second constant that could never be the binding one.
  *
  * ## DERIVED from the command's bound, and not the same digit written twice
  *
@@ -876,7 +882,7 @@ export const channels = {
     //
     // This comment said *on this channel alone* when the code arrived, reasoning
     // that a command is routed to a writer of record and a read is not. That
-    // clause lasted one commit: `document.textObjects` is a read answered by the
+    // clause lasted one commit: `document.textLines` is a read answered by the
     // same engine, so it declares the code too. The reason above is the half
     // that was load-bearing; the exclusivity was an observation about which
     // channels existed that day.
@@ -2070,8 +2076,8 @@ export const channels = {
   ),
 
   /**
-   * Which of a page's objects are text objects, in the editing engine's own
-   * numbering.
+   * A page's editable text, as **visual lines** carrying the editing engine's
+   * own object numbering.
    *
    * ## The index is PDFium's and is never joined to anything
    *
@@ -2082,14 +2088,32 @@ export const channels = {
    * silently swapped, which is `pageNumbering.ts`' lesson one frame worse. The
    * two indices are not convertible and nothing here converts them.
    *
-   * ## Indices and not text
+   * ## LINES, because a run is not what a person recognises
    *
-   * A `FPDF_PAGEOBJECT` is owned by the page it came from, so no handle can
-   * cross; and the object's string is **prior state**, which arrives when the
-   * command captures it. A caller that wants the page's words has
-   * `document.pageTextLayer`. The consequence is stated rather than hidden: a
-   * chooser built on this alone offers numbers, and the rows that give a person
-   * something to recognise are line-level editing and find-and-replace.
+   * This channel answered `indices` alone until 2026-09-09, and the row that
+   * shipped on it offered a chooser of numbers — which the row's own note said
+   * was what line-level editing would close. It is closed here rather than
+   * beside it, because two Edit-section controls where one obsoletes the other
+   * is the second wiring place the registry exists to forbid.
+   *
+   * A line is several runs, measured: PDFium answers one rect per run whether
+   * two runs on a baseline sit 170pt apart or 3pt apart, so no engine here has
+   * an opinion about lines and the editor forms its own by vertical overlap
+   * ([ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)).
+   * That ADR permits the grouping **only while its output reaches a dialog a
+   * person answers**, and this channel is that path: a second consumer is the
+   * moment the grouping has become the second extraction path Part E2 bans.
+   *
+   * ## Each line carries its RUNS, not one string
+   *
+   * A run is a text object with its own font, and `replaceTextObject` names
+   * objects. A line that arrived as one string would have to be diffed back
+   * onto runs by something holding no run boundaries — so the boundaries
+   * travel, and the surface concatenates for display.
+   *
+   * A handle never crosses: a `FPDF_PAGEOBJECT` is owned by the page it came
+   * from. The index is what survives, and the text is the page's own words
+   * bounded per run and per page.
    *
    * ## `engine-unavailable` is declared here for `document.execute`'s reason
    *
@@ -2097,12 +2121,37 @@ export const channels = {
    * installation without it cannot answer either — and the read is where a
    * surface finds out first, before offering anything.
    */
-  'document.textObjects': channel(
-    'Which of a page’s objects are text objects, in the editing engine’s numbering.',
+  'document.textLines': channel(
+    'A page’s editable text as visual lines, in the editing engine’s own object numbering.',
     z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
     z.object({
       version: docVersionSchema,
-      indices: z.array(z.number().int().nonnegative()).max(MAX_TEXT_OBJECTS).readonly(),
+      lines: z
+        .array(
+          z.object({
+            /**
+             * The runs this line is made of, in reading order.
+             *
+             * At least one: a line with no runs is not a line, and an empty
+             * entry would be a row a chooser could offer and nothing could
+             * edit.
+             */
+            runs: z
+              .array(
+                z.object({
+                  /** The object's index in the engine's own page-object order. */
+                  index: z.number().int().nonnegative(),
+                  /** What that run says. */
+                  text: z.string().max(MAX_REPLACED_TEXT),
+                }),
+              )
+              .min(1)
+              .max(MAX_TEXT_OBJECTS)
+              .readonly(),
+          }),
+        )
+        .max(MAX_TEXT_OBJECTS)
+        .readonly(),
       /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
       truncated: z.boolean(),
     }),

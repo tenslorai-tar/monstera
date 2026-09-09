@@ -190,7 +190,8 @@ export const pdfiumChannels = {
   }),
 
   /**
-   * PDFium's one read: which of a page's objects are **text** objects.
+   * PDFium's one read: the page's **text runs**, each with what it says and
+   * where it sits vertically.
    *
    * ## Why this is owed at all
    *
@@ -201,25 +202,77 @@ export const pdfiumChannels = {
    * comparable — so a surface that wanted to name a run would otherwise have to
    * join two frames, which is `SHOWN_PAGE`'s defect one engine apart.
    *
-   * ## Indices, not handles and not text
+   * ## THE TEXT TRAVELS, and that is a change of 2026-09-09
+   *
+   * This channel answered indices alone, on the reasoning that an object's
+   * string is prior state and arrives when a command captures it. That is true
+   * of a string a caller is about to REPLACE and it is not true of one a person
+   * has to RECOGNISE: a chooser built on indices offers numbers, which is what
+   * the region-replacement row shipped and what the line-level row exists to
+   * close.
+   *
+   * The words are the page's own and are bounded twice — `PDFIUM_PRIOR_TEXT_MAX`
+   * per run, `ENGINE_TEXT_OBJECTS_MAX` runs — so the answer is bounded by a
+   * PAGE, which is what L11 asks of it. `document.pageTextLayer` is still where
+   * a caller goes for the page's words as *text*: this one exists to say which
+   * OBJECT each run is, and the text rides along because the object index alone
+   * cannot be shown to anybody.
+   *
+   * ## The extent, and only the vertical one
+   *
+   * [ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)
+   * groups runs into visual lines by vertical **overlap**, so `bottom` and
+   * `top` are what a grouping needs and a horizontal position decides nothing.
+   * A fuller rectangle would be geometry travelling further than the question
+   * it answers, and the next reader would take it as available for a second.
+   *
+   * **The grouping is not done here.** The host answers the engine's facts; the
+   * editor's own opinion about what a line is belongs to `textLines.ts` in
+   * main, where ADR-0049's checkable rule — *does this grouping's output reach
+   * any consumer other than a dialog a person answers?* — can be applied to one
+   * module rather than to a wire.
+   *
+   * ## Handles do not cross
    *
    * A `FPDF_PAGEOBJECT` is owned by the page it came from and invalid once that
    * page is closed, so a handle crossing this wire would be a dangling pointer
-   * as a value. The text is not here either: a caller that wants one object's
-   * string asks for it as prior state when it edits, and a caller wanting the
-   * page's words has `document.pageTextLayer`, which is MuPDF's and bounded.
+   * as a value. The index is what survives the page's close.
    *
    * ## It carries `from`, like every other call to this host
    *
    * The host holds no parse, so a read opens the image too. That is the cost
    * ADR-0047 priced at 0.1–3.5 ms per `FPDF_LoadMemDocument` and accepted.
    */
-  'engine/text-objects': channel(
-    'Answers which of a page’s objects are text objects, in the page’s own object order.',
+  'engine/text-runs': channel(
+    'Answers a page’s text runs: which object each is, what it says, and its vertical extent.',
     z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
     z
       .object({
-        indices: z.array(z.number().int().nonnegative()).max(ENGINE_TEXT_OBJECTS_MAX),
+        runs: z
+          .array(
+            z
+              .object({
+                /** The object's index in the page's own object order. */
+                index: z.number().int().nonnegative(),
+                /** What the run says, as PDFium read it off this page. */
+                text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
+                /**
+                 * The run's vertical extent, in the page's own coordinates.
+                 *
+                 * `z.number()` alone, and that is finite: zod 4 refuses `NaN`
+                 * and both infinities by default — measured 2026-09-09 against
+                 * zod 4.4.3, which is also why `.finite()` is deprecated as a
+                 * no-op. It matters here rather than being incidental: a `NaN`
+                 * reaching the grouping makes every overlap comparison false, so
+                 * every run becomes its own line and the page reads as having no
+                 * lines rather than as a refusal.
+                 */
+                bottom: z.number(),
+                top: z.number(),
+              })
+              .strict(),
+          )
+          .max(ENGINE_TEXT_OBJECTS_MAX),
         /**
          * Whether the page carried more than the bound.
          *

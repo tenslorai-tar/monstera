@@ -21,6 +21,21 @@ const run = (index: number, text: string, bottom: number, top: number): Groupabl
   top,
 });
 
+/**
+ * What a line says, derived the way its consumers derive it.
+ *
+ * A line carries its RUNS and not a concatenated string, because a run is the
+ * thing `replaceTextObject` names. Every assertion about the words therefore
+ * goes through this, which is also the check that the runs are in the right
+ * order — a line whose runs were reordered reads wrong here.
+ */
+const say = (line: { readonly runs: readonly { readonly text: string }[] }): string =>
+  line.runs.map((part) => part.text).join('');
+
+/** The object indices a line covers, in the order its runs appear. */
+const covers = (line: { readonly runs: readonly { readonly index: number }[] }): number[] =>
+  line.runs.map((part) => part.index);
+
 describe('grouping runs into visual lines', () => {
   it('joins runs whose extents overlap, however far apart they are horizontally', () => {
     // THE CASE THE ROW EXISTS FOR. PDFium answers one rect per run whether these
@@ -32,7 +47,12 @@ describe('grouping runs into visual lines', () => {
       run(2, 'RIGHT HALF', 229.9, 238.0),
     ]);
 
-    expect(lines).toStrictEqual([{ indices: [1, 2], text: 'LEFT HALF RIGHT HALF' }]);
+    expect(lines).toHaveLength(1);
+    expect(lines.map(say)).toStrictEqual(['LEFT HALF RIGHT HALF']);
+    // THE RUNS SURVIVE, which is what the line is for: a grouping that answered
+    // one joined string would pass the assertion above and leave nothing for
+    // `replaceTextObject` to name.
+    expect(lines.map(covers)).toStrictEqual([[1, 2]]);
   });
 
   it('does NOT join runs a tenth of a point apart VERTICALLY when they do not overlap', () => {
@@ -46,7 +66,7 @@ describe('grouping runs into visual lines', () => {
     ]);
 
     expect(lines).toHaveLength(2);
-    expect(lines.map((line) => line.text)).toStrictEqual(['ABOVE', 'BELOW']);
+    expect(lines.map(say)).toStrictEqual(['ABOVE', 'BELOW']);
   });
 
   it('treats runs that merely TOUCH at an edge as two lines', () => {
@@ -69,7 +89,8 @@ describe('grouping runs into visual lines', () => {
       run(3, 'FIRST', 229.9, 238.0),
     ]);
 
-    expect(lines).toStrictEqual([{ indices: [7, 3], text: 'SECOND FIRST' }]);
+    expect(lines.map(covers)).toStrictEqual([[7, 3]]);
+    expect(lines.map(say)).toStrictEqual(['SECOND FIRST']);
   });
 
   it('carries the ENGINE’S indices, and never a position in its own output', () => {
@@ -85,8 +106,13 @@ describe('grouping runs into visual lines', () => {
     ]);
 
     expect(lines).toStrictEqual([
-      { indices: [4, 9], text: 'AB' },
-      { indices: [2], text: 'C' },
+      {
+        runs: [
+          { index: 4, text: 'A' },
+          { index: 9, text: 'B' },
+        ],
+      },
+      { runs: [{ index: 2, text: 'C' }] },
     ]);
   });
 

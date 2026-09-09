@@ -269,7 +269,7 @@ export function remotePdfiumWriter(
 }
 
 /**
- * One page's text objects, over the boundary.
+ * One page's text runs, over the boundary.
  *
  * `remoteMupdfGeometry`'s sibling on the second engine, and a **query** rather
  * than a member of the writer: nothing in `CommandBus` reads it, so putting it
@@ -278,13 +278,23 @@ export function remotePdfiumWriter(
  *
  * It takes the document's bytes because that is what a byte-image engine is
  * asked things about, and it pays the same input write every call here does.
+ *
+ * **It does not group them.** What comes back is the engine's own reading, run
+ * by run; turning that into visual lines is `textLines.ts`' job in main, which
+ * is where ADR-0049's rule about where a grouping's output may go can be read
+ * off one module.
  */
-export function remotePdfiumTextObjects(
+export function remotePdfiumTextRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
 ): (image: ByteImage, page: number) => Promise<{
-  readonly indices: readonly number[];
+  readonly runs: readonly {
+    readonly index: number;
+    readonly text: string;
+    readonly bottom: number;
+    readonly top: number;
+  }[];
   readonly truncated: boolean;
 }> {
   return async (image, page) => {
@@ -293,8 +303,8 @@ export function remotePdfiumTextObjects(
     await transfer.writeSnapshot(area, from, image);
     try {
       return answered(
-        'engine/text-objects',
-        await client['engine/text-objects']({ session, from, page }),
+        'engine/text-runs',
+        await client['engine/text-runs']({ session, from, page }),
       );
     } finally {
       await transfer.removeSnapshot(area, from);

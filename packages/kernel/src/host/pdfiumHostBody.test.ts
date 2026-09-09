@@ -159,9 +159,15 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         negative: { kind: 'refused', code: 'EACCES' },
         loopback: { kind: 'refused', code: 'ETIMEDOUT' },
       }),
-    textObjects: (image, page) => {
-      calls.push(`text-objects:${String(page)}:${[...image].join(',')}`);
-      return Promise.resolve({ indices: [1, 3], truncated: false });
+    textRuns: (image, page) => {
+      calls.push(`text-runs:${String(page)}:${[...image].join(',')}`);
+      return Promise.resolve({
+        runs: [
+          { index: 1, text: 'ONE', bottom: 229.9, top: 238.0 },
+          { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
+        ],
+        truncated: false,
+      });
     },
   });
 
@@ -388,21 +394,34 @@ describe('the PDFium host body', () => {
     expect(calls).toStrictEqual(['capture:6,6']);
   });
 
-  it('answers the page’s text objects, from the named file', async () => {
+  it('answers the page’s text runs, from the named file', async () => {
     stream = stubStream();
     const files = emptyFiles();
     const { session, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
 
-    stream.feed(request('t1', 'engine/text-objects', { session, from: IN, page: 3 }));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 3 }));
     await stream.whenSent(2);
 
     expect(answerIn(stream.sent[1])).toMatchObject({
-      body: { ok: true, value: { indices: [1, 3], truncated: false } },
+      body: {
+        ok: true,
+        // THE TEXT AND THE EXTENT CROSS, not merely the indices. The wire
+        // carried numbers alone until 2026-09-09, and a `toMatchObject` on the
+        // index would pass against a host that had dropped both — which is
+        // exactly the answer the line grouping and the chooser need.
+        value: {
+          runs: [
+            { index: 1, text: 'ONE', bottom: 229.9, top: 238.0 },
+            { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
+          ],
+          truncated: false,
+        },
+      },
     });
     // THE PAGE REACHED THE READER. Without this the case passes on a handler
     // that hard-codes a page, and the answer would be right for page 0 for ever.
-    expect(calls).toStrictEqual(['text-objects:3:7']);
+    expect(calls).toStrictEqual(['text-runs:3:7']);
   });
 
   it('has NO engine/serialise, because a host holding nothing has nothing to hand back', async () => {
@@ -429,7 +448,7 @@ describe('the PDFium host body', () => {
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true } });
 
-    stream.feed(request('t1', 'engine/text-objects', { session, from: IN, page: 0 }));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 0 }));
     await stream.whenSent(3);
     // ORDINARY, NOT TERMINAL: a rebuilt host holds none of the previous one's
     // areas, so an id it does not hold is an outcome the supervisor answers

@@ -393,15 +393,17 @@ export interface BrowserShimOptions {
     readonly name: string;
   }[];
   /**
-   * Which of a page's objects `document.textObjects` calls text objects.
+   * The visual lines `document.textLines` answers, each with its runs.
    *
    * A list, for `flatFieldCandidates`' reason. **`null` is a third state and
    * not the same as `[]`**: an installation with no PDFium answers
-   * `engine-unavailable`, and a page with no text objects answers an empty
-   * list — a shim that could only express the second would leave the branch
-   * a user without the engine actually takes untested, which is most of them.
+   * `engine-unavailable`, and a page with no text answers an empty list — a
+   * shim that could only express the second would leave the branch a user
+   * without the engine actually takes untested, which is most of them.
    */
-  readonly textObjects?: readonly number[] | null;
+  readonly textLines?:
+    | readonly { readonly runs: readonly { readonly index: number; readonly text: string }[] }[]
+    | null;
 
   /**
    * What a previous run stored, as `settings.load` will answer it.
@@ -1160,7 +1162,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
-    'document.textObjects': ({ docId }) => {
+    'document.textLines': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       // THE ENGINE'S ABSENCE IS THE DEFAULT HERE, and that is deliberate rather
@@ -1168,13 +1170,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // the honest answer for a shim with no engine behind it is the refusal a
       // machine without one gives — so a surface that assumed the read succeeds
       // fails in the browser shim first, which is where it is cheap.
-      const indices = options.textObjects;
-      if (indices === undefined || indices === null) {
+      const lines = options.textLines;
+      if (lines === undefined || lines === null) {
         return Promise.resolve(err({ code: 'engine-unavailable' }));
       }
-      return Promise.resolve(
-        ok({ version: asDocVersion(current), indices, truncated: false }),
-      );
+      return Promise.resolve(ok({ version: asDocVersion(current), lines, truncated: false }));
     },
 
     'document.duplicatePages': ({ docId }) => {

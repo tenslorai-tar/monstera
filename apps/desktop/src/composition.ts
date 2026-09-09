@@ -43,11 +43,12 @@ import {
   classifyContainment,
   createRemoteSessions,
   engineChannels,
+  groupIntoLines,
   localPdfLibWriter,
   nodeFileSurface,
   parsePageText,
   pdfiumChannels,
-  remotePdfiumTextObjects,
+  remotePdfiumTextRuns,
   remotePdfiumWriter,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
@@ -608,9 +609,22 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // records it as the open question of whether an open can be shared; nothing
     // here answers it, and a chooser that refreshed on every keystroke would be
     // the first thing to make it matter.
-    textObjects: async (docId, sessions, page) => {
-      if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text objects');
-      return pdfiumHost.textObjects(await currentBytes(docId, sessions), page);
+    textLines: async (docId, sessions, page) => {
+      if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
+      const found = await pdfiumHost.textRuns(await currentBytes(docId, sessions), page);
+      // THE GROUPING IS MAIN'S, and this is the only place it happens.
+      //
+      // ADR-0049 permits a grouping of ours where no engine answers, and its
+      // rule is checkable rather than a judgement: *does this grouping's output
+      // reach any consumer other than a dialog a person answers?* Keeping the
+      // call here — one composition point, one caller, feeding one channel —
+      // is what makes that answerable by reading rather than by tracing.
+      //
+      // In the host it would have been a wire's shape, and a second surface
+      // wanting runs would have had to un-group them; below `textLines.ts` it
+      // would have been the engine's opinion about lines, which PDFium
+      // measurably does not have.
+      return { lines: groupIntoLines(found.runs), truncated: found.truncated };
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
@@ -1388,8 +1402,8 @@ function engineSessionOpener(
   };
 }
 
-/** One page's text-object indices, over the second host's wire. */
-type PdfiumTextObjects = ReturnType<typeof remotePdfiumTextObjects>;
+/** One page's text runs, over the second host's wire. */
+type PdfiumTextRuns = ReturnType<typeof remotePdfiumTextRuns>;
 
 /**
  * The PDFium host's lifetime, its one granted area, and the writer the bus
@@ -1437,14 +1451,14 @@ function pdfiumHostBinding(
   failures: ShellFailureSink,
 ): {
   readonly writer: RegisteredWriter<'pdfium'>;
-  readonly textObjects: PdfiumTextObjects;
+  readonly textRuns: PdfiumTextRuns;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
   interface Live {
     readonly connection: EngineHostConnection;
     readonly writer: RegisteredWriter<'pdfium'>;
-    readonly textObjects: PdfiumTextObjects;
+    readonly textRuns: PdfiumTextRuns;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
     readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
     readonly session: string;
@@ -1561,7 +1575,7 @@ function pdfiumHostBinding(
     return {
       connection: live.value,
       writer: remotePdfiumWriter(client, held, transfer),
-      textObjects: remotePdfiumTextObjects(client, held, transfer),
+      textRuns: remotePdfiumTextRuns(client, held, transfer),
       paths,
       session: opened.value.session,
     };
@@ -1592,7 +1606,7 @@ function pdfiumHostBinding(
       // require a host to exist in order to return the argument.
       serialise: (session) => Promise.resolve(session),
     },
-    textObjects: async (image, page) => (await ensure()).textObjects(image, page),
+    textRuns: async (image, page) => (await ensure()).textRuns(image, page),
     close: async () => {
       const live = host;
       host = null;

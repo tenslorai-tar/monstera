@@ -831,8 +831,8 @@ export const handlers: ContractHandlers = {
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
-  'document.textObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), indices: [], truncated: false })),
+  'document.textLines': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -916,8 +916,8 @@ export const handlers: ContractHandlers = {
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
-  'document.textObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), indices: [], truncated: false })),
+  'document.textLines': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1076,8 +1076,8 @@ export const shim: ContractClient = {
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
-  'document.textObjects': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), indices: [], truncated: false })),
+  'document.textLines': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

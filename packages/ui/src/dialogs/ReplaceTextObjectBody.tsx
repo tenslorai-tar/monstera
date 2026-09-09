@@ -2,6 +2,7 @@ import { useLingui } from '@lingui/react';
 import { MAX_REPLACED_TEXT } from '@monstera/contract';
 import { type ReactElement, useState } from 'react';
 
+import { type LineRun, lineText, replacementsForLine } from '../lineEdit.js';
 import {
   REPLACE_TEXT_OBJECT_APPLY,
   REPLACE_TEXT_OBJECT_CHOOSE,
@@ -16,51 +17,82 @@ import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ReplaceTextObjectAnswer } from './replaceTextObjectResult.js';
 
+/** One line as the dialog is handed it. */
+interface OfferedLine {
+  readonly runs: readonly LineRun[];
+}
+
 /**
- * Choosing one of the page's text objects and typing what replaces it.
+ * Choosing one of the page's lines and editing what it says.
  *
- * ## WHAT AN INDEX IS, SAID BEFORE ANY IS OFFERED
+ * ## THE PERSON CONFIRMS THE GROUPING, which is a decision and not a courtesy
  *
- * `FlatFieldsBody`'s rule — *what was guessed is said before the list* — with a
- * different thing to say. The engine answers positions in the page's object
- * order and nothing a reader recognises, so a bare list of numbers reads as
- * error codes. The sentence above it is what makes the control usable at all,
- * and it is the honest form of a limitation the two rows after this one close.
+ * ADR-0049 Decision 3: the editor's line grouping is the editor's own, no
+ * engine having an opinion about lines, so **nothing is written until a person
+ * has seen the line the editor formed and agreed it is a line.** Choosing a row
+ * here is that confirmation. It is why the grouping is allowed to exist at all,
+ * and why this dialog is its only consumer.
+ *
+ * ## The text is shown, and that is the whole difference from what shipped
+ *
+ * The predecessor listed object indices, because the channel behind it answered
+ * numbers. `FlatFieldsBody`'s rule — *what was guessed is said before the list*
+ * — still applies to the sentence above the rows, but the rows themselves are
+ * now words a reader recognises, so the sentence explains what a line is rather
+ * than what an index is.
  *
  * ## NOTHING IS PRESELECTED
  *
  * The opposite of the flat-field review, and for the opposite reason: there,
  * the list is a proposal and most of it is right, so starting ticked makes
  * rejecting the odd one the whole job. Here every option is equally likely and
- * the edit is destructive — an apply that landed on whichever object happened
- * to be first would be one keystroke from replacing text the reader never
- * looked at. So the apply is disabled until somebody has chosen.
+ * the edit is destructive — an apply that landed on whichever line happened to
+ * be first would be one keystroke from replacing text the reader never looked
+ * at. So the apply is disabled until somebody has chosen.
+ *
+ * ## Choosing a line FILLS the input with what it says
+ *
+ * An empty box beside a chosen line would mean *clear this line*, and a person
+ * who clicked a row to read it more closely and then pressed apply would erase
+ * it. Filling the box makes the default action **change nothing**, which is
+ * also what disables the button: an unedited line produces no replacements.
+ *
+ * ## The apply is disabled when the diff names NOTHING
+ *
+ * `replaceTextObjectSchema` refuses an empty list, because regenerating a
+ * page's content stream for no change is the whole cost of an edit paid for
+ * nothing. Meeting that as a disabled button rather than as a refusal over the
+ * document is the same argument the length rule below makes.
  *
  * ## The length rule is shown, not enforced afterwards
  *
- * `MAX_REPLACED_TEXT` is the command's own bound, imported rather than
- * restated (`LinkAddressBody`'s argument). Meeting it as a disabled button and
- * a sentence beats meeting it as a refusal over the document.
+ * `MAX_REPLACED_TEXT` is the command's own bound, imported rather than restated
+ * (`LinkAddressBody`'s argument). It is checked against the **longest
+ * replacement the diff produced** and not against the whole line, because that
+ * is what the command carries: a line longer than the bound spread over several
+ * runs is legal, and refusing it would be this dialog inventing a limit.
  *
  * **An empty replacement is allowed**, which is why there is no *empty* message
- * beside the too-long one: emptying a run is an edit somebody means to make,
- * and the schema accepts it.
+ * beside the too-long one: clearing a line is an edit somebody means to make.
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function ReplaceTextObjectBody({
-  indices,
+  lines,
   truncated,
   resolve,
 }: {
-  readonly indices: readonly number[];
+  readonly lines: readonly OfferedLine[];
   readonly truncated: boolean;
 } & DialogAnswering<ReplaceTextObjectAnswer>): ReactElement {
   const { _ } = useLingui();
   const [chosen, setChosen] = useState<number | null>(null);
   const [text, setText] = useState('');
 
-  const tooLong = text.length > MAX_REPLACED_TEXT;
+  const line = chosen === null ? undefined : lines[chosen];
+  const replacements = line === undefined ? [] : replacementsForLine(line.runs, text);
+  const tooLong = replacements.some((replacement) => replacement.text.length > MAX_REPLACED_TEXT);
+  const unchanged = replacements.length === 0;
 
   return (
     <div className="m-replace-text-object">
@@ -70,7 +102,7 @@ export default function ReplaceTextObjectBody({
           {_(REPLACE_TEXT_OBJECT_TRUNCATED)}
         </p>
       ) : null}
-      {indices.length === 0 ? (
+      {lines.length === 0 ? (
         <p className="m-replace-text-object__none">{_(REPLACE_TEXT_OBJECT_NONE)}</p>
       ) : (
         <>
@@ -78,46 +110,52 @@ export default function ReplaceTextObjectBody({
             <legend className="m-replace-text-object__legend">
               {_(REPLACE_TEXT_OBJECT_CHOOSE)}
             </legend>
-            {indices.map((index) => (
-              <label className="m-replace-text-object__option" key={index}>
+            {lines.map((offered, at) => (
+              <label
+                className="m-replace-text-object__option"
+                // THE ROW'S POSITION, and it is a React key rather than an
+                // identifier that goes anywhere: two lines may say the same
+                // words, so the text is not unique, and the object index is the
+                // engine's and must not become a list position by habit. What
+                // travels on the wire is copied from `offered.runs`.
+                key={at}
+              >
                 <input
-                  checked={chosen === index}
+                  checked={chosen === at}
                   name="m-replace-text-object"
                   onChange={() => {
-                    setChosen(index);
+                    setChosen(at);
+                    // FILLED FROM THE LINE, so the default action changes
+                    // nothing. See the header: an empty box beside a chosen row
+                    // would make *look closer, then apply* an erasure.
+                    setText(lineText(offered.runs));
                   }}
                   type="radio"
                 />
-                {/* THE ENGINE'S OWN NUMBER, rendered as itself. A position in
-                    this list would be a second numbering of the same page —
-                    the one thing the channel's own header forbids — and it
-                    would agree with the engine's exactly until a page had a
-                    non-text object before a text one. */}
-                <span className="m-replace-text-object__index">{index}</span>
+                <span className="m-replace-text-object__line">{lineText(offered.runs)}</span>
               </label>
             ))}
           </fieldset>
-          <Input
-            label={REPLACE_TEXT_OBJECT_NEW_TEXT}
-            onValueChange={setText}
-            value={text}
-          />
+          <Input label={REPLACE_TEXT_OBJECT_NEW_TEXT} onValueChange={setText} value={text} />
           {tooLong ? (
             <p className="m-replace-text-object__too-long" role="alert">
               {_(REPLACE_TEXT_OBJECT_TOO_LONG)}
             </p>
           ) : null}
           <Button
-            disabled={chosen === null || tooLong}
+            disabled={chosen === null || tooLong || unchanged}
             label={REPLACE_TEXT_OBJECT_APPLY}
             onClick={() => {
               // GUARDED AGAIN rather than trusting the disabled attribute, for
-              // `FlatFieldsBody`'s reason: the result schema refuses a text
-              // past the bound and has no shape for an absent index, and a
-              // resolve that reached either would surface as an internal error
-              // over a button the reader could press.
-              if (chosen === null || tooLong) return;
-              resolve({ index: chosen, text });
+              // `FlatFieldsBody`'s reason: the result schema refuses an empty
+              // list and a text past the bound, and a resolve that reached
+              // either would surface as an internal error over a button the
+              // reader could press.
+              if (chosen === null || tooLong || unchanged) return;
+              // COPIED, because the result schema infers a mutable array and
+              // `replacementsForLine` answers a readonly one. A cast would have
+              // compiled and handed the caller this render's array.
+              resolve({ replacements: [...replacements] });
             }}
             variant="primary"
           />

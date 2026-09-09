@@ -649,25 +649,26 @@ body {
 }
 
 /*
- * The run chooser in the replace-text dialog.
+ * The line chooser in the edit-text dialog.
  *
  * A `fieldset` carries a browser default border, margin and padding that no
  * other body in this application has to undo, because no other body groups
  * radios — so this is the one rule the grouping costs, and it is here rather
  * than in the component for the reason every rule in this file is.
  *
- * The options are a WRAPPING ROW rather than a column. A run index is one or two
- * characters, and a column of five hundred numbers is a scroll where a wrapped
- * block is a glance; `MAX_TEXT_OBJECTS` is what bounds it at five hundred and
- * the truncation notice is what says when a page had more.
+ * The options are a COLUMN, and that is a change of 2026-09-10 rather than the
+ * default. They were a wrapping row while each option was a one- or two-digit
+ * index; an option is now a line of the document, so a row would put two
+ * sentences beside each other and a reader would have to work out where one
+ * ended. A column of lines reads the way the page does.
  */
 .m-replace-text-object__choice {
   border: none;
   margin: 0;
   padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 /*
@@ -687,12 +688,17 @@ body {
 }
 
 /*
- * The index itself, in the tabular figures every column of digits here uses.
- * These are numbers a reader compares against each other, and proportional
- * digits make 11 narrower than 88.
+ * A line's text.
+ *
+ * It does NOT wrap: a document line that wrapped here would look like two lines
+ * in a list whose whole job is to say which pieces of text are one line, which
+ * is the one misreading this chooser cannot afford. Overflow is clipped with an
+ * ellipsis and the input below shows the whole thing once a line is chosen.
  */
-.m-replace-text-object__index {
-  font-variant-numeric: tabular-nums;
+.m-replace-text-object__line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .m-annotations-remove {
