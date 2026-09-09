@@ -888,6 +888,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — B4: a host's reader set is its own engine's, and what a host holds between commands is a granted area
+
+[ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
+ahead of `pdfiumHost` and carrying no code. §3 has required *one host body,
+parameterised by engine* since 2026-09-08, and the two questions a second host
+cannot be built without were both left open by it — which is exactly the pair
+the first PDFium command would otherwise have answered while somebody was making
+that row work.
+
+**Which of the fifteen readers a second engine owes: none of the twelve.**
+`engineChannels` holds nineteen, and the split is clean rather than a judgement
+call — seven are engine-agnostic in shape (`probe-containment`, `open`,
+`serialise`, `close`, `apply`, `capture`, `invert`) and twelve are MuPDF's
+document model. The cheap wrong answer is a PDFium host that declares the twelve
+and stubs them, and it is the **wired-tools rule at process scale**: a process
+answering questions with nothing behind it. The expensive wrong answer is
+implementing them, which is a second reading of a model `packages/kernel`
+already has one reader for.
+
+**What a host holds: a granted area.** This is the one that could have been
+lost by accident. ADR-0047 says a byte-image host holds no parse between
+commands, and the obvious next step is *therefore it needs no table and can take
+its directories per call* — which is precisely the shape `HostSession`'s own
+comment refuses: *a `serialise` that carried a directory would be a channel
+through which a confused main could redirect the document's bytes on every
+save.* A containment property would have been given up as a side effect of a
+decision about where a parse lives, and nothing would have reported it, because
+the feature would have worked.
+
+The vocabulary already existed on the other side of the pipe: `remoteEngine.ts`
+calls the pair of granted directories a `SessionArea`. What the host holds is
+that, and a document session is what a **live-session** engine adds to it.
+
+**And `engine/open` parses once on a byte-image host and discards it**, so
+`open-failed` means *this engine cannot read this document* from both hosts at
+the same point in the same protocol. Without it, main's `open-failed` handling
+would be live for one host and dead code for the other. **What that parse costs
+on a large document through PDFium is not measured, and the ADR says so rather
+than reasoning from `FPDF_LoadMemDocument` being lazy.**
+
+Left open, and named so nobody re-derives them: how input bytes reach a
+byte-image host, whether capture and apply share one open (under Decision 3 as
+written, a command that captures then applies parses twice — and what the second
+parse costs is the same unmeasured number), HD render's reader session, and the
+containment branch, which ADR-0023 Decision 16 gates and which no editing
+command reaches.
+
+---
+
 ## 2026-09-09 — Closing CCCCCC-1: the anchor check went from 79 files to 110, and the first debt it found is the escape guard's
 
 `check:proofanchors` walked `scripts/proofs/` and printed *"ok N of M proof(s)
