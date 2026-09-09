@@ -20,8 +20,19 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { CONTRACT_TYPES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TSC_BIN = join(REPO_ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
+
+// EVERY PROBE BELOW IS COMPILED AGAINST THE BUILT DECLARATIONS, because
+// `import type … from '@monstera/contract'` resolves to the package's `dist`.
+// So a stale build makes this file a confident statement about the contract as
+// it was — a compile-fail proof whose expected errors are yesterday's, reported
+// as today's. It had no such refusal until 2026-09-09 and no edge in
+// `ARTEFACT_EDGES` either, which is why `affectedProofs.mjs` could not name it
+// for a contract change: this script imports nothing from the package it tests.
+refuseStaleBuild(REPO_ROOT, CONTRACT_TYPES, 2);
 
 // Inside the repository so `@monstera/*` resolves through the workspace links,
 // and gitignored so a probe can never be committed.

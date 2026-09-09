@@ -143,6 +143,28 @@ export const TEXT_STRUCTURE = [
 ];
 
 /**
+ * The declarations `contract.proof.mjs`' probes are compiled against.
+ *
+ * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
+ * `CommandOfKind`, all of which the barrel re-exports from these two modules —
+ * so the pair is what a probe's `import type` actually resolves to, and a `dist`
+ * older than either makes the whole file a confident statement about a contract
+ * that has been superseded.
+ *
+ * **The `.d.ts` rather than the `.js`, which is the difference from every other
+ * edge here.** Nothing in this proof executes contract code: `tsc` type-checks
+ * against declarations and never loads a module. An edge naming the JavaScript
+ * would be watching an artefact this proof does not read, which is the shape
+ * that reports the reassuring answer.
+ *
+ * @type {BuildEdge[]}
+ */
+export const CONTRACT_TYPES = [
+  ['packages/contract/src/channels.ts', 'packages/contract/dist/channels.d.ts', 'tsc'],
+  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.d.ts', 'tsc'],
+];
+
+/**
  * `packages/shared`'s barrel, for an instrument that reads geometry through it.
  *
  * A directory source rather than the one module, because the barrel re-exports
@@ -221,6 +243,20 @@ export const ARTEFACT_EDGES = {
   // CCCCCC-4, which is what made the requirement derive from the scripts that
   // import a build rather than from the ones that already call the guard.
   'proof:textbounds': TEXT_STRUCTURE,
+  // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
+  // and are compiled by a spawned `tsc`. That import resolves to the package's
+  // built declarations, so this proof reads the same artefact every other entry
+  // here does — it simply reads it through a compiler instead of through
+  // `import`.
+  //
+  // It had NO entry until 2026-09-09 and no `refuseStaleBuild` call either,
+  // which cost twice. A stale `dist` made every case assert about a previous
+  // contract while reporting on this one; and `affectedProofs.mjs` could not
+  // name it for a contract change, because the walk it does is over import
+  // specifiers and this script imports nothing from the package it tests. The
+  // second cost is the one that was met — a channel added, the proof red, and
+  // the sweep's affected list silent.
+  'proof:contract': CONTRACT_TYPES,
 };
 
 /**
