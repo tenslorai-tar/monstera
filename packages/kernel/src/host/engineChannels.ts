@@ -1025,82 +1025,250 @@ const probeOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('error'), code: probeCodeSchema }).strict(),
 ]);
 
+/**
+ * The three schemas a core channel set cannot be built without.
+ *
+ * Every other core channel carries the same shape for every engine — a session
+ * token, a name, a directory. These three carry the engine's own **commands**,
+ * and that is exactly what `CommandExecution<W>` binds per writer, so they are
+ * parameters rather than imports.
+ */
+export interface CoreChannelSchemas<
+  TCommand extends z.ZodType,
+  TCapture extends z.ZodType,
+  TInverse extends z.ZodType,
+> {
+  /** The union of commands routed to this engine. `mupdfCommandSchema`. */
+  readonly command: TCommand;
+  /** What a capture answers for those commands. */
+  readonly capture: TCapture;
+  /** The prior state an invert restores. */
+  readonly inverse: TInverse;
+}
+
+/**
+ * The seven channels a contained host owes whatever engine it holds
+ * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)).
+ *
+ * ## Why a factory and not a constant
+ *
+ * Four of the seven are engine-agnostic outright: a probe, an open, a serialise
+ * and a close say nothing about which library is behind them. Three carry the
+ * engine's command union, and **that union is derived per writer** from the
+ * routing table — so a constant would have to name one engine's, which is the
+ * thing §3's amendment forbids a second host from copying.
+ *
+ * ## It infers with no cast, which is what made this shape available
+ *
+ * `channel()` is generic in its params, result and failure tuple, and this
+ * function's three type parameters flow straight into it. Nothing here needs an
+ * assertion, and that matters: a factory that needed one would be a place where
+ * the schemas and the types could disagree, inside the boundary discipline
+ * every other channel in the repository takes from `packages/contract`.
+ *
+ * **The twelve document-model reads are NOT here**, and that is Decision 1: they
+ * are MuPDF's model, answered by MuPDF's host. A second engine owes none of
+ * them, and a host that declared them and stubbed them would be a process
+ * answering questions with nothing behind it.
+ */
+export function coreEngineChannels<
+  TCommand extends z.ZodType,
+  TCapture extends z.ZodType,
+  TInverse extends z.ZodType,
+>(schemas: CoreChannelSchemas<TCommand, TCapture, TInverse>) {
+  return {
+    /**
+     * ADR-0023 §5's startup check, and the ONE channel whose answer decides
+     * whether this host is allowed to see a document at all.
+     *
+     * ## The request carries two paths and nothing else
+     *
+     * `classifyContainment` takes a request AND a report, and the request half
+     * stays in main: `negative.readableBytes` is main's own reading taken
+     * immediately before the ask, and `positive.origin` is main's knowledge of
+     * which path it named. Neither crosses. So the host supplies
+     * **observations** and main supplies **everything the observations are
+     * judged against** — a host that wanted a `contained` verdict cannot reach
+     * the inputs that produce one, which is the split `containment.ts`
+     * describes as *measured inside, decided outside* expressed in the wire
+     * shape rather than in a comment (B5).
+     *
+     * ## And the answer carries no path, like every other answer here
+     *
+     * Two outcomes and, at most, an errno. The paths in the report's detail
+     * lines are the ones main sent, joined on this side. That is the same
+     * asymmetry the lifecycle channels have, for the same reason.
+     *
+     * No declared failures. A probe that could not read is not a failed call —
+     * it is an observation, and `absent`/`error` are how it says so. Collapsing
+     * that into a channel failure would put *could not look* and *the call
+     * broke* in one output, which is the distinction this whole mechanism turns
+     * on.
+     */
+    'engine/probe-containment': channel(
+      'Attempts two paths and one loopback port, reporting what happened and judging nothing.',
+      z
+        .object({
+          positive: pathSchema,
+          negative: pathSchema,
+          // A port and nothing else. `mainReadBytes` — the evidence the verdict
+          // is reached against — stays in main and never crosses (ADR-0023
+          // Decision 15).
+          loopbackPort: z.number().int().min(1).max(65_535),
+        })
+        .strict(),
+      z
+        .object({
+          positive: probeOutcomeSchema,
+          negative: probeOutcomeSchema,
+          loopback: probeOutcomeSchema,
+        })
+        .strict(),
+    ),
+
+    /**
+     * Registers a granted area, and — for a live-session engine — the parse it
+     * keeps
+     * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)).
+     *
+     * The two directories are held against the id this answers with, never
+     * carried per call, and that is a containment property rather than a
+     * convenience: `HostSession`'s own comment says a `serialise` that carried
+     * a directory would be a channel through which a confused main could
+     * redirect the document's bytes on every save. A byte-image host holds no
+     * parse between commands and still holds the area, for exactly that reason
+     * — and it **parses once here and discards it**, so `open-failed` means
+     * *this engine cannot read this document* at the same point in the protocol
+     * whichever host answers.
+     */
+    'engine/open': channel(
+      'Opens a document image the host reads from a directory it was granted.',
+      z
+        .object({
+          /** The directory main granted this session READ on. */
+          snapshotDirectory: pathSchema,
+          /** The file inside it holding the canonical bytes. */
+          snapshotName: outputNameSchema,
+          /** The directory main granted this session MODIFY on. */
+          outputDirectory: pathSchema,
+        })
+        .strict(),
+      // The host mints the identity (Decision 10b). Main holds a token it
+      // cannot dereference, and this string is what the adapter records beside
+      // it.
+      z.object({ session: sessionSchema }).strict(),
+      ['open-failed'],
+    ),
+
+    'engine/serialise': channel(
+      'Writes the session’s current bytes into the output directory, under a name main chose.',
+      z.object({ session: sessionSchema, into: outputNameSchema }).strict(),
+      // A COUNT, NOT A NAME. Main already knows where it asked for the bytes;
+      // what it cannot know without being told is how many arrived, and
+      // comparing that against the file it reads separates "the host wrote
+      // nothing" from "the read found nothing" — which are otherwise the same
+      // empty buffer.
+      z.object({ bytes: z.number().int().nonnegative() }).strict(),
+      ['no-such-session', 'serialise-failed'],
+    ),
+
+    'engine/close': channel(
+      'Releases the session’s native resources.',
+      z.object({ session: sessionSchema }).strict(),
+      z.object({}).strict(),
+      ['no-such-session'],
+    ),
+
+    'engine/apply': channel(
+      'Applies one command routed to this host’s engine to a session it holds.',
+      z
+        .object({
+          session: sessionSchema,
+          command: schemas.command,
+          /**
+           * The source document's session, for a `sources: 'one'` command.
+           *
+           * **A second SESSION TOKEN, which is why ADR-0040 needs no new
+           * process shape**: both documents are sessions in this same host, so
+           * what crosses is another handle this host already holds — never
+           * bytes, and never a path.
+           *
+           * Optional because eleven of the twelve MuPDF-routed commands name no
+           * second document. It is `.optional()` rather than nullable for the
+           * reason `mergeDocumentSchema` is not: this is a field that may be
+           * absent from the message, not a value that may be null, and the two
+           * spellings mean different things to a caller.
+           *
+           * A token this host does not hold answers `no-such-session` exactly
+           * as the target's does — the handler looks both up the same way, so a
+           * closed source is the same ordinary race as a closed target.
+           */
+          source: sessionSchema.optional(),
+          /**
+           * The file in this session's snapshot directory holding the command's
+           * bytes, for an `asset: 'bytes'` command
+           * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
+           *
+           * **A NAME, and the directory is the one this session was opened
+           * from** — the host already holds it, so nothing here lets a caller
+           * name a place. That is the same shape `engine/open`'s `snapshotName`
+           * has and deliberately so: an asset arrives by the door the document
+           * arrived by, in the direction the host may only read.
+           *
+           * Optional because twenty-three of the twenty-four MuPDF-routed
+           * commands carry no asset, and `.optional()` rather than nullable for
+           * `source`'s reason — a field absent from the message, not a value
+           * that may be null.
+           */
+          asset: outputNameSchema.optional(),
+        })
+        .strict(),
+      z.object({}).strict(),
+      ['no-such-session', 'asset-missing'],
+    ),
+
+    'engine/capture': channel(
+      'Reads prior state for one command routed to this host’s engine, before it is applied.',
+      z
+        .object({
+          session: sessionSchema,
+          command: schemas.command,
+          /**
+           * `engine/apply`'s field, and a capture needs it for a reason that is
+           * not the obvious one: **no capture reads an asset** — prior state is
+           * what was there before, and bytes arriving with the command are not
+           * that. It is here because the command must be whole to be handed to
+           * `CommandExecution.capture`, whose parameter is the command.
+           *
+           * So this costs one extra write and read of the image per placement,
+           * and the alternative was measured against and rejected on shape
+           * rather than on cost: keeping the file alive from capture until
+           * apply makes its lifetime span two calls, and a capture with no
+           * apply after it — a refusal, a closed document, a dead host — leaks
+           * it with nothing left holding the name.
+           */
+          asset: outputNameSchema.optional(),
+        })
+        .strict(),
+      schemas.capture,
+      ['no-such-session', 'asset-missing'],
+    ),
+
+    'engine/invert': channel(
+      'Restores prior state recorded by an earlier capture.',
+      z.object({ session: sessionSchema, inverse: schemas.inverse }).strict(),
+      z.object({}).strict(),
+      ['no-such-session'],
+    ),
+  };
+}
+
 export const engineChannels = {
-  /**
-   * ADR-0023 §5's startup check, and the ONE channel whose answer decides
-   * whether this host is allowed to see a document at all.
-   *
-   * ## The request carries two paths and nothing else
-   *
-   * `classifyContainment` takes a request AND a report, and the request half
-   * stays in main: `negative.readableBytes` is main's own reading taken
-   * immediately before the ask, and `positive.origin` is main's knowledge of
-   * which path it named. Neither crosses. So the host supplies **observations**
-   * and main supplies **everything the observations are judged against** — a
-   * host that wanted a `contained` verdict cannot reach the inputs that produce
-   * one, which is the split `containment.ts` describes as *measured inside,
-   * decided outside* expressed in the wire shape rather than in a comment (B5).
-   *
-   * ## And the answer carries no path, like every other answer here
-   *
-   * Two outcomes and, at most, an errno. The paths in the report's detail lines
-   * are the ones main sent, joined on this side. That is the same asymmetry the
-   * lifecycle channels have, for the same reason.
-   *
-   * No declared failures. A probe that could not read is not a failed call — it
-   * is an observation, and `absent`/`error` are how it says so. Collapsing that
-   * into a channel failure would put *could not look* and *the call broke* in
-   * one output, which is the distinction this whole mechanism turns on.
-   */
-  'engine/probe-containment': channel(
-    'Attempts two paths and one loopback port, reporting what happened and judging nothing.',
-    z
-      .object({
-        positive: pathSchema,
-        negative: pathSchema,
-        // A port and nothing else. `mainReadBytes` — the evidence the verdict
-        // is reached against — stays in main and never crosses (ADR-0023
-        // Decision 15).
-        loopbackPort: z.number().int().min(1).max(65_535),
-      })
-      .strict(),
-    z
-      .object({
-        positive: probeOutcomeSchema,
-        negative: probeOutcomeSchema,
-        loopback: probeOutcomeSchema,
-      })
-      .strict(),
-  ),
-
-  'engine/open': channel(
-    'Opens a document image the host reads from a directory it was granted.',
-    z
-      .object({
-        /** The directory main granted this session READ on. */
-        snapshotDirectory: pathSchema,
-        /** The file inside it holding the canonical bytes. */
-        snapshotName: outputNameSchema,
-        /** The directory main granted this session MODIFY on. */
-        outputDirectory: pathSchema,
-      })
-      .strict(),
-    // The host mints the identity (Decision 10b). Main holds a token it cannot
-    // dereference, and this string is what the adapter records beside it.
-    z.object({ session: sessionSchema }).strict(),
-    ['open-failed'],
-  ),
-
-  'engine/serialise': channel(
-    'Writes the session’s current bytes into the output directory, under a name main chose.',
-    z.object({ session: sessionSchema, into: outputNameSchema }).strict(),
-    // A COUNT, NOT A NAME. Main already knows where it asked for the bytes; what
-    // it cannot know without being told is how many arrived, and comparing that
-    // against the file it reads separates "the host wrote nothing" from "the
-    // read found nothing" — which are otherwise the same empty buffer.
-    z.object({ bytes: z.number().int().nonnegative() }).strict(),
-    ['no-such-session', 'serialise-failed'],
-  ),
+  ...coreEngineChannels({
+    command: mupdfCommandSchema,
+    capture: captureResultSchema,
+    inverse: inverseSchema,
+  }),
 
   'engine/extract': channel(
     'Writes a NEW document made of the named pages into the output directory.',
@@ -1158,13 +1326,6 @@ export const engineChannels = {
     // arrived without being told.
     z.object({ bytes: z.number().int().nonnegative() }).strict(),
     ['no-such-session', 'snapshot-failed'],
-  ),
-
-  'engine/close': channel(
-    'Releases the session’s native resources.',
-    z.object({ session: sessionSchema }).strict(),
-    z.object({}).strict(),
-    ['no-such-session'],
   ),
 
   /**
@@ -1489,87 +1650,6 @@ export const engineChannels = {
     ['no-such-session'],
   ),
 
-  'engine/apply': channel(
-    'Applies one MuPDF-routed command to a session this host holds.',
-    z
-      .object({
-        session: sessionSchema,
-        command: mupdfCommandSchema,
-        /**
-         * The source document's session, for a `sources: 'one'` command.
-         *
-         * **A second SESSION TOKEN, which is why ADR-0040 needs no new process
-         * shape**: both documents are MuPDF sessions in this same host, so what
-         * crosses is another handle this host already holds — never bytes, and
-         * never a path.
-         *
-         * Optional because eleven of the twelve MuPDF-routed commands name no
-         * second document. It is `.optional()` rather than nullable for the
-         * reason `mergeDocumentSchema` is not: this is a field that may be
-         * absent from the message, not a value that may be null, and the two
-         * spellings mean different things to a caller.
-         *
-         * A token this host does not hold answers `no-such-session` exactly as
-         * the target's does — the handler looks both up the same way, so a
-         * closed source is the same ordinary race as a closed target.
-         */
-        source: sessionSchema.optional(),
-        /**
-         * The file in this session's snapshot directory holding the command's
-         * bytes, for an `asset: 'bytes'` command
-         * ([ADR-0044](../../../../docs/DECISIONS/0044-an-image-reaches-the-engine-the-way-the-document-does.md)).
-         *
-         * **A NAME, and the directory is the one this session was opened
-         * from** — the host already holds it, so nothing here lets a caller
-         * name a place. That is the same shape `engine/open`'s `snapshotName`
-         * has and deliberately so: an asset arrives by the door the document
-         * arrived by, in the direction the host may only read.
-         *
-         * Optional because twenty-three of the twenty-four MuPDF-routed
-         * commands carry no asset, and `.optional()` rather than nullable for
-         * `source`'s reason — a field absent from the message, not a value that
-         * may be null.
-         */
-        asset: outputNameSchema.optional(),
-      })
-      .strict(),
-    z.object({}).strict(),
-    ['no-such-session', 'asset-missing'],
-  ),
-
-  'engine/capture': channel(
-    'Reads prior state for one MuPDF-routed command, before it is applied.',
-    z
-      .object({
-        session: sessionSchema,
-        command: mupdfCommandSchema,
-        /**
-         * `engine/apply`'s field, and a capture needs it for a reason that is
-         * not the obvious one: **no capture reads an asset** — prior state is
-         * what was there before, and bytes arriving with the command are not
-         * that. It is here because the command must be whole to be handed to
-         * `CommandExecution.capture`, whose parameter is the command.
-         *
-         * So this costs one extra write and read of the image per placement,
-         * and the alternative was measured against and rejected on shape rather
-         * than on cost: keeping the file alive from capture until apply makes
-         * its lifetime span two calls, and a capture with no apply after it —
-         * a refusal, a closed document, a dead host — leaks it with nothing
-         * left holding the name.
-         */
-        asset: outputNameSchema.optional(),
-      })
-      .strict(),
-    captureResultSchema,
-    ['no-such-session', 'asset-missing'],
-  ),
-
-  'engine/invert': channel(
-    'Restores prior state recorded by an earlier capture.',
-    z.object({ session: sessionSchema, inverse: inverseSchema }).strict(),
-    z.object({}).strict(),
-    ['no-such-session'],
-  ),
 } as const;
 
 export type EngineChannels = typeof engineChannels;
