@@ -388,6 +388,27 @@ is wrong** — fix the boundary, not the test.
   routing table per writer, so a command routed elsewhere is a compile error
   rather than a native library handed a pointer where bytes were expected.
 
+  **AND IT CANNOT START ON A STORE INSTALL — measured 2026-09-09, and it is a
+  different sentence from any of the above.** ADR-0023 §5 carried premise P1
+  unmeasured: *MSIX-installed files inherit read+execute for `ALL APPLICATION
+  PACKAGES`, and every AppContainer is a member of it.* The owner's elevated
+  read retired it — three packages, that principal in none of them, a
+  per-package `S-1-15-3-…` ACE written instead. An AppContainer is granted on
+  its own package SID, that principal, or a capability it holds; this host's SID
+  comes from a moniker we mint and its token carries `CapabilityCount: 0`, so
+  under the install root — where the runtime, koffi and the shim are — all three
+  routes are closed, and it dies before its first line.
+
+  **The diagnostic written to announce exactly this cannot fire**, because the
+  probe runs inside the host. And development is blind by construction: the
+  provisioning grant names `ALL APPLICATION PACKAGES` *because* production was
+  believed to, so the two configurations now differ in the principal that was
+  chosen to hold them identical. **A containment mechanism that is correct and
+  unreachable is not a shipped one**; which of three routes restores the reach
+  is ADR-0023 Decision 16's, undecided and unmeasured. It gates no Stage 5 row —
+  no editing command reaches the install root — and it does gate generalising
+  this branch to a second host.
+
   **The rule that got us there is worth more than the decision:** *only
   kernel-enforced mechanisms contain native code.* Node's permission model is
   enforced inside Node's own filesystem bindings, so a `CreateFileW` walks past

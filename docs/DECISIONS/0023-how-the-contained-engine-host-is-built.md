@@ -3128,3 +3128,216 @@ and would make a green board conditional on a host we do not run.
 Nothing about (b)'s under-determined LowBox spawn axis, which is recorded at §5
 and unchanged. Nothing about what the host may do with a network it is one day
 granted — there is no such grant and this decision does not open one.
+
+## Correction, 2026-09-09 — premise P1 is FALSE, and the diagnostic designed for it cannot run
+
+§5's second expiry condition — *an elevated read of the install root becomes
+available* — fired. The owner ran it on 2026-09-09 and reported three readings,
+which agree:
+
+| what was read | what it carried |
+|---|---|
+| `C:\Program Files\WindowsApps` itself | no `ALL APPLICATION PACKAGES` |
+| a resource package | no `ALL APPLICATION PACKAGES` |
+| a main package carrying executables (`22450.MarkdownViewerUWP_1.0.0.0_x64__0aqw1zw0x2snt`) | no `ALL APPLICATION PACKAGES` |
+
+`ALL RESTRICTED APPLICATION PACKAGES` appears in none of them either.
+
+What the installer writes instead is
+`S-1-15-3-2708545350-743021937-…:(OI)(CI)(RX)` — **identical on both packages of
+the same application, and not inherited**. That is the package's own identity
+granted read-and-execute to its own files. `BUILTIN\Users` is present and does
+not help: an AppContainer's access check *additionally* requires the DACL to
+grant the token's own package SID, `ALL APPLICATION PACKAGES`, or a capability
+the token holds — which is §4's 2026-08-24 correction, applied one directory
+over.
+
+**So P1's stated mechanism is false.** A packaged app reads its install folder
+because Windows grants *that package*, not because caged processes get in by
+membership. P1 is retired.
+
+### What that costs, traced through this repository's code rather than restated
+
+Three facts, each already readable here, and the conjunction is the finding:
+
+1. `engineHostPlatform.ts` passes `containerName: CONTAINER` — a moniker **this
+   application chooses** — and `win32HostSurface.ts` turns it into a SID with
+   `CreateAppContainerProfile` followed by
+   `DeriveAppContainerSidFromAppContainerName`. The SID is derived from our own
+   name, so it is not, and cannot be, the SID the installer's ACE names.
+2. `win32HostSurface.ts` encodes `Capabilities: null, CapabilityCount: 0`. The
+   token holds no capability, so the third route through the access check is
+   closed as well.
+3. The install-root ACE names neither `ALL APPLICATION PACKAGES` nor our SID.
+
+On a real Store install the contained host's token is therefore granted
+**nothing** under the install root — which is where the Electron binary, the
+entry script, koffi's own binding and the MuPDF shim all live. The reach the
+host needs is exactly the reach it does not have.
+
+### And the failure lands EARLIER than the branch §5 designed for it
+
+§5 says of its diagnostic table that the first row *"is the one this section
+exists for"*: a positive probe refused on an install-root path, naming P1.
+**That row cannot execute.**
+
+The probe runs *inside* the host — `probeContainment`, reached from
+`hostEntry.ts` — and a host with no reach to the install root never gets that
+far. **This is measured rather than predicted, twice, in this repository:**
+`containerGrants.mjs`'s header states it as *"the token cannot execute the image
+and the process dies before its first line"*, and
+[ADR-0025](0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)
+records an accidental instance of exactly it — a re-extracted Electron carrying
+no application-package ACE, whose host *"dies before its first line rather than
+reporting why. The ICU line is what that death looks like from outside."*
+Whether the refusal lands at `CreateProcessW` or at image load, it lands before
+anything in `packages/kernel` runs.
+
+That instance is worth its own sentence, because it is the closest thing to a
+rehearsal of a Store install this project has had: the condition arrived by
+accident, and what it produced was a host that would not start and a diagnostic
+pointing at ICU. Nobody reading that would have reached P1.
+
+What a Store install would actually produce is a host that never connects,
+which `remoteLifecycle.ts` classifies as a dead host and rebuilds against a
+permanent condition until Decision 9's bound is spent. The diagnostic written to
+name P1 is unreachable by construction — a designed failure path with no caller,
+which is a shape this repository has met before and did not expect inside the
+mechanism designed to announce a premise failure.
+
+### This machine is structurally blind to it, and the blindness was chosen
+
+`containerGrants.mjs` grants `ALL APPLICATION PACKAGES` in development, and its
+header states the reason: *"Production reaches the runtime because MSIX grants
+exactly this principal, so granting the same one here leaves **how the ACE
+arrived** as the only difference between the two configurations."*
+
+That premise is P1. With P1 false, development and production differ **in the
+principal** — the one axis the choice existed to hold constant — and the
+configuration that works is the only one anybody runs. This is audit item 3's
+second question in its plainest form: *is there a defect this machine cannot
+see?* There was, for as long as the branch has existed.
+
+The grant itself stays correct as a development accommodation, because nothing
+in a checkout supplies any principal at all. What is retired is its stated
+reason, and `containerGrants.mjs` now says so rather than citing a premise that
+has been withdrawn.
+
+### Withdrawn, and not withdrawn
+
+**Withdrawn:** P1. §5's heading that the no-runtime-grant branch is *primary*.
+§5's diagnostic table's first row as a *reachable* diagnostic — its wording is
+still what should be said, and there is no longer a place it can be said from.
+
+The rejected alternative *"Assuming the Store install root grants `ALL
+APPLICATION PACKAGES`, silently"* **keeps its conclusion and loses its premise**:
+not assuming was right, and the startup check it argued for is what would have
+caught this had a package ever been built. It caught nothing only because no
+package exists.
+
+**Not withdrawn:** that an MSIX application cannot write ACLs on its own
+installed files. That is the constraint P1 was the other half of, and it is now
+doing *more* work, not less — it is what makes the five measured grants
+unavailable as a shipped mechanism whatever replaces P1.
+
+**Not withdrawn:** ADR-0022. Nothing here is about the process type; a
+`utilityProcess.fork` host would reach the install root and would have neither
+of the two properties the AppContainer supplies.
+
+## Decision 16 — install-root reach is a capability the token carries, and it is UNMEASURED (decided 2026-09-09)
+
+P1's failure sharpens one question, and it needs no further elevated read: *if
+the container's SID is one this application minted, what grants the host
+anything?* The answer above is **nothing does**. This decides what follows from
+that, and — as carefully — what it does not.
+
+### Decided
+
+**1. Nothing may assume install-root reach.** Not by membership, not by
+inheritance, not by the container SID. Any design that needs the host to read the
+install root owes a mechanism that names how, and the mechanism is not yet
+chosen.
+
+**2. The candidate set is these three, and the leading one is named.**
+
+| | route | why it is or is not leading |
+|---|---|---|
+| **A** | carry the install root's own ACE **in the token's capability list** | Leading. The ACE is `S-1-15-3-…`, the capability authority, and `SECURITY_CAPABILITIES.Capabilities` is the array an AppContainer access check consults. It writes no ACL and gives up no containment, which makes it the only candidate compatible with the constraint that outlived P1 |
+| **B** | run from an app-writable copy — runtime, koffi and shim into local app data at first run, where the app *can* set ACLs | Not leading: it duplicates the whole Electron payload, makes that copy's integrity this application's problem, and puts a second set of native binaries on disk whose provenance nothing checks |
+| **C** | retake ADR-0022 — the utility-process host with grants (a) and (b) | §5 already names this as the fallback. It gives up the AppContainer, which is what supplies invariant 25's network and filesystem halves, so it is where this goes if A cannot be made to work |
+
+Under **A** the capability SID is **read back from the install root's own DACL**
+and never derived from the package family name. Windows owns that derivation,
+and re-implementing it here would be a second opinion about an external
+authority's answer (B3a) — the same shape that produced three findings in one
+day.
+
+**3. A is unmeasured, and it does not ship until it is measured.** What is
+unproven is one sentence: *whether a lowbox token this application creates,
+carrying a capability SID this application did not declare, is granted by an ACE
+naming that SID.* Nothing in this repository has ever put a capability in a
+token — `lowboxSpike.mjs` says so in its own *what this does not answer* list:
+*"The container is created with none. A host that needs one is a different
+measurement."* The gap is declared, which is why it can be pointed at rather
+than discovered.
+
+**4. The measurement is a differential in `lowboxSpike.mjs`, never a new
+instrument.** WW-1 consolidated the second containment instrument away and the
+file records why — *"two instruments measuring two process types breaks RR-2's
+premise that every containment conclusion comes from one"*. The cells it needs
+are the ordinary four: a contained cell **with** the capability against a
+directory granting only that capability; the same cell **without** it; an
+uncontained cell reading the same path, so a refusal is attributable to the ACL
+and not to a missing file; and a directory granting neither, so the first cell's
+success is attributable to the capability and not to something ambient. The
+negative target must be one the **absent** mechanism would let through, which is
+this project's standing rule for negative probes.
+
+**5. The measurement needs a surface change, and that ordering is stated so it
+is not taken as licence.** `win32HostSurface.ts` hard-codes
+`CapabilityCount: 0`; a capability cannot be measured through it as written. The
+change that unblocks the measurement is an **optional** capability list on the
+surface with `engineHostPlatform.ts` passing none — the spike being the only
+caller that passes one. That is a parameter, not a default and not a shipped
+grant, and it is B4-legal only in that order: this decision first, the parameter
+second, the measurement third, and a shipped default never until the measurement
+says what it should be.
+
+**6. The second engine's host does not generalise the containment branch.** The
+host body — pipe framing, session table, command routing, the per-writer derived
+schema — depends on none of this and is built now. What waits is any move that
+makes one containment mechanism serve two hosts, because generalising a
+mechanism whose premise is known false fixes the wrong shape in two places
+instead of one.
+
+### Rejected here, with mechanisms
+
+**Concluding that A works because the SID's class says it is a capability.** The
+class is what makes A *plausible* and is not evidence that a token may carry an
+undeclared one. This is the difference between a configuration and an
+enforcement, which Decision 15 already rejected an assertion for — *"a
+capability list is what was asked for, not what is enforced"* — and it applies
+with more force to a capability list nobody has ever tried.
+
+**Deciding A, B or C now on the readings alone.** The readings settle what is
+*broken* and say nothing about which repair holds. A decision taken here would
+be a preference wearing a measurement's clothes, and this ADR has one of those
+in its history already.
+
+**Leaving §5's P1 diagnostic where it is.** It cannot fire from inside a host
+that cannot start, so leaving it is keeping a branch that reads as coverage. Its
+wording moves to where a host fails to *start* — which is the factory, and which
+is owed on `docs/FEATURES.md`'s packaging row with the rest of this.
+
+**Treating this as a Stage 5 blocker.** It is not. No editing row reaches the
+install root, the containment branch is orthogonal to what a command does, and a
+stage held behind a packaging decision would be the ordering failure ADR-0010's
+correction just cost a day to unpick.
+
+### What this does not decide
+
+Which of A, B or C ships. What the capability list's contents are on a machine
+where the install root cannot be read at all. Whether the development grant's
+principal should change to match production once production's principal is
+known — that is a question for the range that takes A, and changing it now would
+be a second guess at a mechanism that has not been measured.

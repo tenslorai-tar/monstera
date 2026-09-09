@@ -194,6 +194,17 @@ export type ContainmentVerdict =
    * because it cannot write ACLs on its own installed files.
    *
    * A decision to retake, not a bug to fix and not a condition to retry.
+   *
+   * **P1 IS NOW MEASURED FALSE, AND THIS VERDICT CANNOT FIRE ON THE
+   * INSTALLATION IT WAS WRITTEN FOR** (ADR-0023's correction of 2026-09-09).
+   * The probe runs inside the host; a host with no reach to the install root
+   * dies before its first line, so on a Store install main sees a host that
+   * never connected and never sees this. Kept rather than deleted, because the
+   * fact it encodes is true and the branch is still the right answer for the
+   * case where a host *does* start and *is* refused an install-root path — a
+   * layout that granted the image and not a sibling. What it can no longer be
+   * is the place P1's failure gets named; that is owed at the factory, where a
+   * host fails to start, and it is carried on the packaging row.
    */
   | { readonly kind: 'premise-p1-false'; readonly path: string; readonly detail: string }
   /** A grant this application is responsible for did not take. Actionable. */

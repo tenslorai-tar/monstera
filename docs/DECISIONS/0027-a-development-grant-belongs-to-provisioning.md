@@ -267,3 +267,40 @@ anything outside those paths: no user profile, no credentials directory, no
 sibling checkout. `provision:grants --revoke` removes every ACE it added, and
 `--check` reports the current state, so the exposure is reversible and readable
 rather than permanent and silent.
+
+## Correction, 2026-09-09 — the FIDELITY reason is retired; the decision is not
+
+This ADR's stated reason for choosing `ALL APPLICATION PACKAGES` over the
+container SID was fidelity: *"Production reaches the runtime because MSIX
+inheritance grants exactly that principal; granting the same one in development
+leaves how the ACE arrived as the only difference between the two
+configurations."* The sentence beginning *"MSIX-installed files are read-only to
+the app itself and the install root grants this principal by inheritance"* says
+the same thing one section down.
+
+**The second half of both sentences is false.** An elevated read of the install
+root on 2026-09-09 retired premise P1
+([ADR-0023](0023-how-the-contained-engine-host-is-built.md)'s correction of that
+date): three packages read, `ALL APPLICATION PACKAGES` in none of them, and what
+MSIX writes is a per-package `S-1-15-3-…` ACE. So development and production
+differ **in the principal**, which is the axis the choice existed to hold
+constant, and development is the side that works.
+
+**What survives, and it is the whole decision.** *The thing that installs an
+artefact owns its state* is untouched — it is a B3 argument about writers, not
+about which principal is granted. So is the ADR's core finding that a contained
+host cannot start from a checkout at all: that came from reading a real ACL, and
+that reading is unaffected.
+
+**What changes is a claim about transfer, not a choice.** The principal stays
+`ALL APPLICATION PACKAGES` here, for the reason that now stands alone: nothing
+in a checkout supplies any principal, and the container SID would add a second
+axis of difference on top of the one now known to exist. What may no longer be
+said is that a development result about **reach** transfers to production. It
+does not, and until ADR-0023 Decision 16 is measured nothing here can say what
+would.
+
+**The exposure paragraph above is unaffected** — every word of it is about this
+machine, and the sentence *"Nothing here ships"* is still true for a stronger
+reason than the one it gives: the shipped configuration takes none of these ACEs
+because it **cannot**, not because it does not need to.

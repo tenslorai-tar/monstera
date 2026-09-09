@@ -19,13 +19,29 @@
  * provisioning already establishes — and, worse, security-relevant code that
  * executes only in the configuration nobody audits.
  *
- * ## The principal is `ALL APPLICATION PACKAGES`, deliberately
+ * ## The principal is `ALL APPLICATION PACKAGES`, and ITS STATED REASON IS
+ * RETIRED — measured 2026-09-09
  *
- * Not the container SID. Production reaches the runtime because MSIX grants
- * exactly this principal, so granting the same one here leaves **how the ACE
- * arrived** as the only difference between the two configurations. The specific
- * container SID would also work and would make them differ in the principal as
- * well — one more axis along which a development result could fail to transfer.
+ * This said: *"Production reaches the runtime because MSIX grants exactly this
+ * principal, so granting the same one here leaves how the ACE arrived as the
+ * only difference between the two configurations."* That is premise P1, and an
+ * elevated read of the install root retired it
+ * ([ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)'s
+ * correction of 2026-09-09): three packages read, `ALL APPLICATION PACKAGES` in
+ * none of them, and what MSIX writes is a per-package `S-1-15-3-…` ACE instead.
+ *
+ * So the two configurations differ **in the principal** — the one axis this
+ * paragraph existed to hold constant — and development is the side that works.
+ * That is the blindness, not a bug in this script: nothing in a checkout
+ * supplies any principal, so a grant here is still required and still correct,
+ * and the specific container SID would still be one more axis of difference on
+ * top of the one now known to exist. What changed is that a development result
+ * about *reach* no longer transfers to production at all, and nothing about
+ * running this script will ever say so.
+ *
+ * The principal that production actually names is Decision 16's subject, and
+ * this file does not follow it: matching it would be a second guess at a
+ * mechanism nothing has measured.
  *
  * ## The path set is DERIVED
  *

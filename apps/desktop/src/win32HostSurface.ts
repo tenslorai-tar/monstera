@@ -26,12 +26,18 @@
  *
  * ## What this surface deliberately does NOT do
  *
- * No ACL is granted on any install-root path. ADR-0023 §5's premise P1 is that
- * MSIX-installed files are already readable by `ALL APPLICATION PACKAGES`, and a
- * design needing a runtime grant there could not execute on a real install at
- * all — a packaged app cannot modify ACLs on its own installed files. The five
- * grants the spike makes are a development accommodation for a checkout under a
- * user's profile, not the shipped mechanism.
+ * No ACL is granted on any install-root path, and **the reason is now the
+ * constraint alone**: a packaged app cannot modify ACLs on its own installed
+ * files, so a design needing a runtime grant there could not execute on a real
+ * install. The five grants the spike makes are a development accommodation for
+ * a checkout under a user's profile, not the shipped mechanism.
+ *
+ * What this paragraph used to add — that MSIX already grants `ALL APPLICATION
+ * PACKAGES`, so no grant is *needed* — was premise P1, and an elevated read
+ * retired it on 2026-09-09 (ADR-0023's correction). Three packages read, that
+ * principal in none of them. So this surface grants nothing **and** the token it
+ * builds reaches nothing under a Store install root; the second half is
+ * Decision 16's subject and is not repaired here.
  *
  * No pipe, either. The transport is a named pipe main creates whose DACL names
  * this user AND the container SID (ADR-0023 §4 with its 2026-08-24 correction —
@@ -753,6 +759,16 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
         if (!sid.ok) return err(sid.error);
 
         const capabilities = Buffer.alloc(koffi.sizeof('MONSTERA_SECURITY_CAPABILITIES'));
+        // NO CAPABILITIES, and as of 2026-09-09 that is a known gap rather than
+        // a setting nobody needed. An AppContainer's access check grants on the
+        // token's own package SID, `ALL APPLICATION PACKAGES`, or a capability
+        // the token holds; this SID is derived from a moniker we chose, MSIX
+        // grants neither of the first two under its install root, and this line
+        // closes the third. ADR-0023 Decision 16 names carrying the install
+        // root's own `S-1-15-3-…` ACE here as the leading repair and records
+        // that nothing has measured whether a token may carry an undeclared
+        // capability. Until that measurement exists this stays zero: a default
+        // chosen ahead of evidence is how a withdrawn number returns.
         koffi.encode(capabilities, 'MONSTERA_SECURITY_CAPABILITIES', {
           AppContainerSid: sid.value,
           Capabilities: null,

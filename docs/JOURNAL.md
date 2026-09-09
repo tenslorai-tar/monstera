@@ -887,6 +887,127 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — Premise P1 is false, and the diagnostic written to announce it cannot run
+
+ADR-0023 §5 carried one unmeasured sentence and built a branch on it. **Premise
+P1:** *under the shipped install root the runtime, the FFI and the engine shim
+are reachable by an AppContainer without any grant this application makes,
+because MSIX-installed files inherit read+execute for `ALL APPLICATION
+PACKAGES`, and every AppContainer is a member of it.*
+
+It was carried honestly — named, with three expiry conditions, and with the
+failure mode written out in a table rather than left to be discovered. The
+second condition fired today: the owner ran an elevated read of the install
+root, which no seat here could do.
+
+**Three readings, and they agree.** `C:\Program Files\WindowsApps` itself, a
+resource package, and a main package carrying executables
+(`22450.MarkdownViewerUWP_1.0.0.0_x64__0aqw1zw0x2snt`). `ALL APPLICATION
+PACKAGES` appears in none of them; neither does `ALL RESTRICTED APPLICATION
+PACKAGES`. What the installer writes instead is
+`S-1-15-3-2708545350-743021937-…:(OI)(CI)(RX)` — identical on both packages of
+one application, and **not inherited**. `BUILTIN\Users` is present and does not
+help, because an AppContainer's access check additionally requires the DACL to
+grant the token's own package SID, that principal, or a capability the token
+holds.
+
+So the mechanism P1 named is not how a packaged app reads its own files. It
+reads them because Windows granted **that package**, not because caged processes
+get in by membership.
+
+### The cost was not the premise; it was the conjunction nobody had written down
+
+The reading alone says *MSIX does not grant AAP*. What it costs took three facts
+already sitting in this repository, none of which is surprising on its own:
+
+1. `engineHostPlatform.ts` passes `containerName: CONTAINER` — a moniker **this
+   application chooses** — which `win32HostSurface.ts` turns into a SID with
+   `CreateAppContainerProfile` and `DeriveAppContainerSidFromAppContainerName`.
+   Derived from our name, so never the SID the installer's ACE carries.
+2. That same file encodes `Capabilities: null, CapabilityCount: 0`.
+3. The install-root ACE names neither AAP nor our SID.
+
+Three routes through the access check, and each fact closes one. Under a Store
+install the host's token is granted **nothing** where the Electron binary, the
+entry script, koffi and the shim all live.
+
+### And the failure lands earlier than the branch designed for it
+
+§5's diagnostic table says its first row *"is the one this section exists for"*:
+a positive probe refused on an install-root path, naming P1 by name and saying
+the branch is unavailable. **That row cannot execute.** `probeContainment` runs
+*inside* the host, and a host with no reach to the install root does not reach
+its own first line.
+
+This is measured rather than reasoned, twice, and both readings were already
+here. `containerGrants.mjs`'s header: *"the token cannot execute the image and
+the process dies before its first line."* And ADR-0025 records an accidental
+instance — a re-extracted Electron carrying no application-package ACE, whose
+host *"dies before its first line rather than reporting why. The ICU line is
+what that death looks like from outside."*
+
+That second one is the closest thing to a rehearsal of a Store install this
+project has had. The condition arrived by accident, and what it produced was a
+host that would not start and a diagnostic pointing at ICU. **Nobody reading
+that would have reached P1** — and nobody did; it was diagnosed as a missing
+grant, which it was, on a machine where a grant is available.
+
+### The finding worth carrying: a premise's expiry does not carry its blast radius
+
+P1 had an expiry, a watcher, and a written failure mode. All three worked. What
+none of them covered is that **the mechanism written to announce the premise's
+failure runs downstream of the failure itself** — the probe is inside the thing
+the premise makes unable to start.
+
+The general shape: when a claim's failure disables a component, a diagnostic
+*inside* that component cannot report it. Ask where the announcement runs
+relative to what the claim enables. It is the same question as *who enforces a
+containment mechanism* — asked about a report instead of a guard.
+
+### And this machine is blind to it by construction, deliberately
+
+`containerGrants.mjs` grants `ALL APPLICATION PACKAGES` in development, and its
+header states why: *"Production reaches the runtime because MSIX grants exactly
+this principal, so granting the same one here leaves how the ACE arrived as the
+only difference between the two configurations."*
+
+That premise is P1. With P1 false, development and production differ **in the
+principal** — the one axis the choice existed to hold constant — and the
+configuration that works is the only one anybody runs. Audit item 3's second
+question, in its plainest form, and the answer had been *yes* since the branch
+existed.
+
+The grant stays; nothing in a checkout supplies any principal. What is retired is
+its stated reason, in the file and in ADR-0027, whose fidelity argument rested on
+the same sentence.
+
+### What was decided, and what deliberately was not
+
+ADR-0023 gains a correction retiring P1 and **Decision 16**, which fixes the
+candidate set at three — carry the install root's own `S-1-15-3-…` ACE as a
+**capability** in the token; run from an app-writable copy; or retake ADR-0022
+for the utility-process host — names the first as leading on the constraint that
+outlived P1, and records that **it is unmeasured**. Nothing in this repository
+has ever put a capability in a token; `lowboxSpike.mjs` says so in its own *what
+this does not answer* list, which is why the gap could be pointed at rather than
+discovered.
+
+Deciding a route today would have been a preference wearing a measurement's
+clothes. What the readings settle is what is broken.
+
+Five documents move because five documents carried the premise: ADR-0023
+(correction, appended), ADR-0027 (correction, appended), `docs/ARCHITECTURE.md`
+invariant 25 and its amendment log, `docs/FEATURES.md`'s packaging row and the
+1.0 row whose trigger sentence had gone stale, and `CLAUDE.md`. Plus three
+comments — `win32HostSurface.ts` twice, `containment.ts` once — because a
+comment asserting a withdrawn premise is the digest failure one layer down.
+
+**It gates no Stage 5 row.** No editing command reaches the install root. What
+it does gate is generalising the containment branch to a second host, which is
+why it was taken before the second host and not after.
+
+---
+
 ## 2026-09-09 — Find and replace is split, and the split names the row's real work
 
 `| Find and replace | — |` sat in D4 with a bare dash while **find had shipped
