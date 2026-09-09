@@ -258,3 +258,27 @@ amending. Derived rather than listed, because the failure feared is a member
 **Not measured, and named as such:** what that serialise actually costs in
 wall-clock on a large document. The bound is unchanged — one whole image
 transiently in main, which ADR-0021 already prices.
+
+## Correction, 2026-09-09 — PDFium is not the second live-session writer this document names
+
+Decision 2a's closing sentence reads *"the note stays live for the day a
+genuinely second **live-session** writer arrives, which is PDFium in Stage 5."*
+
+**The clause after the comma is withdrawn.** The general half stands: a session
+that does not outlive its command cannot hold a competing opinion, so
+`savePipeline.ts`'s *which bytes win* remains unaskable rather than answered, and
+it stays live for whatever second live-session writer may one day arrive.
+
+What is false is the identification.
+[ADR-0047](0047-an-in-place-text-edit-is-a-byte-image-command.md), 2026-09-09,
+makes `writerShapes.pdfium` **`byte-image`**: a live-session PDFium edit would be
+sound, undoable, savable and **invisible**, because the renderer reads main's
+canonical image and the view model carries only rotations — which is Decision 3's
+defect arriving in a second engine. So the note this document expected PDFium to
+fire is one PDFium now cannot fire, and `commandDeclarations.test.ts` carries a
+case asserting exactly one writer of record is live-session.
+
+Recorded rather than edited, because what this document believed on 2026-09-04
+is the record. **The prediction was not wrong to make** — it named the trigger
+and the file, and that is what let the question be seen a day before the host
+that would have answered it by accident.

@@ -448,9 +448,18 @@ function saveAsCopy(document: unknown): Buffer {
  * The second adapter behind the engine seam.
  *
  * `engineSeam.ts` declared `PdfiumSession` with nothing behind it and said so;
- * this is what goes behind it. The shape is `live-session`, as `writerShapes`
- * already records — a PDFium edit mutates a loaded document and the bytes come
- * back from `serialise`, exactly as MuPDF's do.
+ * this is what goes behind it. A PDFium edit mutates a loaded document and the
+ * bytes come back from `serialise`, exactly as MuPDF's do — but the writer of
+ * record's shape is **`byte-image`** ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)),
+ * so this session is minted for one command and never survives it.
+ * `PdfiumSession` is the handle held *inside* a command; `WriterSession['pdfium']`
+ * is a `ByteImage` and they are different types on purpose.
+ *
+ * **This said *"the shape is `live-session`, as `writerShapes` already records"*
+ * until 2026-09-09** and cited the table that by then contradicted it — a
+ * compound claim whose second clause, the mechanism, stayed true and vouched
+ * for the dead one beside it (finding CCCCCC-2). Nothing in `63f10be` opened
+ * this file.
  */
 export const pdfiumWriter: EngineWriter<PdfiumSession> = {
   /**

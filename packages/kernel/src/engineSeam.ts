@@ -22,10 +22,19 @@ import type { CaptureResult, CommandPrior } from './commandLog.js';
  * **THIS PARAGRAPH SAID *exactly one adapter implements it* AND *the byte-image
  * side has nothing behind it*, AND BOTH WENT STALE WITHOUT ANY COMMIT OPENING
  * THIS FILE.** `pdfLibWriter.ts` put a byte-image writer behind the seam under
- * ADR-0039, and `pdfiumFfi.ts` put a second live-session one there on
- * 2026-09-09. Three adapters now, on both shapes. NNN-4's hole exactly: a claim
- * a range falsifies without touching the sentence, which no range-scoped sweep
- * can reach and no link check can see, because both readings parse.
+ * ADR-0039, and `pdfiumFfi.ts` put a second one there on 2026-09-09. Three
+ * adapters now, one live-session and two byte-image. NNN-4's hole exactly: a
+ * claim a range falsifies without touching the sentence, which no range-scoped
+ * sweep can reach and no link check can see, because both readings parse.
+ *
+ * **AND IT WENT STALE AGAIN THE SAME DAY, ELEVEN LINES ABOVE AN EDIT IN THIS
+ * FILE** (finding CCCCCC-2). The sentence above read *"a second live-session
+ * one"* until ADR-0047 made PDFium a byte-image writer — in `63f10be`, which
+ * changed `writerShapes` a few lines below and did not read up. So NNN-4's
+ * compensation is narrower than it sounds: *sweep every other statement of the
+ * relationship* was performed across the documents and skipped the file being
+ * edited, because the edit was three lines long. **Read the whole comment of
+ * anything you touch, starting above the change.**
  *
  * The control below is kept and is *not* the argument it was written as. It was
  * *an unimplemented variant nobody constructs is a vacuous check*, and the
