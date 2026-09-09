@@ -97,20 +97,50 @@ export const ALL_APPLICATION_PACKAGES = 'S-1-15-2-1';
 /**
  * What a contained host must reach, each derived from the resolver that owns it.
  *
+ * ## `required` — and it exists because a flat list broke `main`
+ *
+ * Every entry was required until 2026-09-09, and {@link apply} says why in one
+ * line: *absent is not done*, because reporting a missing path as fine makes the
+ * step green on a machine where the host still cannot start. That is right for
+ * everything the host's own program needs.
+ *
+ * It stopped being right the moment there were **two** hosts with different
+ * needs. `pdfium.dll` is provisioned separately and the MuPDF host never loads
+ * it; a machine without it starts a MuPDF host perfectly and creates no PDFium
+ * one — which is a decided state the shipped code already expresses, since
+ * `createPdfiumHostPlatform` answers `null` and the writer goes unregistered.
+ *
+ * Adding it as a required entry made `containedStart.mjs` — an acceptance test
+ * about whether **a** contained host starts — fail on a CI job that provisions
+ * no PDFium. The classifier was asked *is this machine broken* and answered
+ * about a different engine's availability. So an entry now says which of those
+ * two its absence means, and the answer is not a property of the path but of
+ * **who needs it**.
+ *
  * @param {string} [root]
- * @returns {Array<{ path: string, rights: string, why: string }>}
+ * @returns {Array<{ path: string, rights: string, why: string, required: boolean }>}
  */
 export function grantSet(root = repoRoot()) {
   return [
-    { path: electronRoot(root), rights: 'RX', why: 'the runtime binary and its resources' },
+    {
+      path: electronRoot(root),
+      rights: 'RX',
+      why: 'the runtime binary and its resources',
+      required: true,
+    },
     // NODE_MODULES WHOLE, which subsumes the two koffi entries this list used to
     // name separately. The host's program is ordinary Node code: it resolves
     // `@monstera/contract`, `@monstera/shared`, `mupdf`, `@cantoo/pdf-lib` and
     // `zod` by walking node_modules, and a set naming only the packages known
     // today is one that goes stale the next time a dependency is added — 4c's
     // direction, since the failure to fear is a MISSING grant.
-    { path: join(root, 'node_modules'), rights: 'RX', why: 'the dependency graph the host resolves' },
-    { path: dirname(shimPath(root)), rights: 'RX', why: 'the engine shim' },
+    {
+      path: join(root, 'node_modules'),
+      rights: 'RX',
+      why: 'the dependency graph the host resolves',
+      required: true,
+    },
+    { path: dirname(shimPath(root)), rights: 'RX', why: 'the engine shim', required: true },
     // THE SECOND ENGINE'S LIBRARY, and it is `dirname(pdfiumLibrary(root))` for
     // the shim entry's reason word for word: the resolver that owns *where a
     // provisioned PDFium lives* is `pdfium.mjs`, and a path spelled here would
@@ -122,11 +152,20 @@ export function grantSet(root = repoRoot()) {
     // names `ALL APPLICATION PACKAGES`, which every AppContainer is a member of
     // whatever moniker it was derived from. The separation between the two hosts
     // is in what each is HANDED — its own granted session pair, DACL'd to its own
-    // SID — and never in this durable set, which both must read to start at all.
+    // SID — and never in this durable set.
+    //
+    // NOT REQUIRED, and this is the entry the field was added for. The MuPDF
+    // host never loads this library, so its absence says *no PDFium host will be
+    // created here* rather than *this machine cannot start a host* — the state
+    // `createPdfiumHostPlatform` already answers `null` for, and the one a CI
+    // job that provisions no PDFium is in. Marking it required made
+    // `containedStart.mjs` fail on exactly such a job, which is a classifier
+    // answering a question it was not asked.
     {
       path: dirname(pdfiumLibrary(root)),
       rights: 'RX',
       why: 'the PDFium engine library the second host binds',
+      required: false,
     },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and
     // which SSSS-1 measured the host dying on: `Cannot find module
@@ -144,6 +183,7 @@ export function grantSet(root = repoRoot()) {
       path,
       rights: /** @type {const} */ ('RX'),
       why: 'a workspace package the host loads',
+      required: true,
     })),
   ];
 }
@@ -297,10 +337,25 @@ export function apply({ root = repoRoot(), revoke = false } = {}) {
 
   for (const entry of grantSet(root)) {
     if (!existsSync(entry.path)) {
-      // ABSENT IS NOT DONE. A path that is not provisioned cannot be granted,
-      // and reporting it as fine would make this step green on a machine where
-      // the host still cannot start.
-      failed.push(`${entry.path} — not provisioned (${entry.why}). Provision it, then re-run.`);
+      // ABSENT IS NOT DONE — for a REQUIRED entry. A path the host's own program
+      // needs cannot be granted while it is missing, and reporting that as fine
+      // would make this step green on a machine where the host still cannot
+      // start.
+      //
+      // An OPTIONAL one is the opposite: its absence is a decided state that the
+      // application already expresses — no PDFium, no PDFium host, and a command
+      // routed to it refused by name. It is reported as a line rather than
+      // swallowed, because *this machine has no second engine* is worth reading
+      // and is not worth failing over. See {@link grantSet} for what a flat
+      // required-everything list cost.
+      const line = entry.required
+        ? null
+        : `  --  skipped   ${entry.path} — not provisioned (${entry.why})`;
+      if (line === null) {
+        failed.push(`${entry.path} — not provisioned (${entry.why}). Provision it, then re-run.`);
+      } else {
+        lines.push(line);
+      }
       continue;
     }
 

@@ -24,13 +24,16 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { electronRoot } from '../provision/electron.mjs';
+import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import {
   ALL_APPLICATION_PACKAGES,
+  apply,
   grantSet,
   lostGrants,
   namesApplicationPackages,
@@ -39,7 +42,7 @@ import {
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 16 });
 
 /** The program a contained host runs, which the grant set must cover. */
 const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
@@ -135,6 +138,57 @@ try {
     set.every((entry) => entry.rights === 'RX'),
     `rights: ${JSON.stringify(set.map((entry) => entry.rights))}. A contained host that could ` +
       `write the runtime or the shim could rewrite what it next executes.`,
+  );
+
+  // -------------------------------------------------------------------------
+  // WHOSE ABSENCE IS A FAILURE — the distinction that reddened `main`.
+  //
+  // Every entry was required until 2026-09-09, and adding PDFium's library made
+  // `containedStart.mjs` fail on a CI job that provisions no PDFium: an
+  // acceptance test about whether **a** contained host starts was answering
+  // about a different engine's availability. The MuPDF host never loads that
+  // library, so its absence is a decided state the application already
+  // expresses — `createPdfiumHostPlatform` answers `null` and the writer goes
+  // unregistered.
+  // -------------------------------------------------------------------------
+  check(
+    'the ONLY entry whose absence is not a failure is the second engine’s library',
+    set.filter((entry) => !entry.required).map((entry) => entry.path).join('|') ===
+      dirname(pdfiumLibrary(root)),
+    `optional: ${JSON.stringify(set.filter((entry) => !entry.required).map((e) => e.path))}. ` +
+      `Everything else here is the host's OWN program — the runtime, its dependency graph, the ` +
+      `shim, this application's packages — and a machine missing any of them cannot start a ` +
+      `contained host at all. Marking one of those optional would restore the shape SSSS-1 ` +
+      `measured: a green step on a machine where the host dies before its first line.`,
+  );
+
+  // A ROOT WITH NOTHING IN IT, which makes every path absent at once — the only
+  // way to reach the branch from outside, since `apply` derives its set from the
+  // root it is given and nothing can be injected.
+  const bare = mkdtempSync(join(tmpdir(), 'monstera-grants-bare-'));
+  let absent;
+  try {
+    absent = apply({ root: bare });
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+  }
+
+  check(
+    'an OPTIONAL path that is not provisioned is reported and NOT failed',
+    absent.failed.every((line) => !line.startsWith(dirname(pdfiumLibrary(bare)))) &&
+      absent.lines.some((line) => line.includes(dirname(pdfiumLibrary(bare)))),
+    `failed: ${JSON.stringify(absent.failed)}\nlines: ${JSON.stringify(absent.lines)}. ` +
+      `It must appear in one of them: silently dropping it would make "this machine has no ` +
+      `second engine" — which is worth reading — indistinguishable from a set that never ` +
+      `named it.`,
+  );
+
+  check(
+    'CONTROL: a REQUIRED path that is not provisioned IS a failure',
+    absent.failed.some((line) => line.startsWith(electronRoot(bare))),
+    `failed: ${JSON.stringify(absent.failed)}. Without this the case above is satisfied by an ` +
+      `\`apply\` that stopped failing on ANY absent path, which is the original defect — ` +
+      `"absent is not done" — reintroduced while looking like the fix for it.`,
   );
 
   // ---- The round trip, on a throwaway ----
