@@ -20,6 +20,9 @@ import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
+import { engineChannels } from './engineChannels.js';
+import { createEngineHandlers } from './engineHandlers.js';
+import { createHostSessions } from './hostSessions.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
 
 /**
@@ -117,46 +120,61 @@ function pipeNameFrom(argv: readonly string[]): string {
 
 const pipeName = pipeNameFrom(process.argv);
 
+/**
+ * MuPDF's channel set and its handlers, composed HERE rather than in the body
+ * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)).
+ *
+ * This is the engine-specific statement — every import at the top of this file
+ * is MuPDF's writer or one of MuPDF's twelve document-model readers, and a
+ * PDFium entry brings its own seven-channel set instead. `hostBody.ts` takes
+ * the pair and knows neither, which is what *one host body, parameterised by
+ * engine* means once it is built rather than specified.
+ */
+const engineHandlers = createEngineHandlers({
+  sessions: createHostSessions(cryptoBytes),
+  execution: localMupdfExecution,
+  writer: mupdfWriter,
+  files: {
+    readSnapshot: async (directory, name) => new Uint8Array(await readFile(join(directory, name))),
+    writeOutput: async (directory, name, bytes) => {
+      await writeFile(join(directory, name), bytes);
+      return bytes.length;
+    },
+  },
+  probe: probeContainment,
+  geometry: readPageGeometry,
+  // THE JSON, not a parsed page: `parsePageText` is the one reader of MuPDF's
+  // format and it lives main-side, so this process ships no opinion about the
+  // structure it computed.
+  pageText: readPageTextJson,
+  pageLinks: readPageLinks,
+  destinations: readDestinations,
+  layers: readLayers,
+  annotations: readAnnotations,
+  formFields: readFormFields,
+  duplicates: findDuplicatePages,
+  // RUNS HERE, which is the whole reason `engine/extract` is a channel:
+  // `extractPages` reaches MuPDF, and invariant 20 keeps that out of `main`.
+  extract: extractPages,
+  // AND FOR THE SAME REASON, with a second one on top: a raster is the one
+  // payload that scales with what the user dragged, so it is built here and
+  // written into the granted directory rather than crossing the pipe.
+  snapshot: snapshotRegion,
+  // AND A THIRD, for the first's reason: reading the fields reaches MuPDF.
+  // The bounds on `engine/form-fields` exist for a panel a person reads, so
+  // an export built from that answer would be silently truncated at both.
+  // A READ, and it runs here for the field list's reason: the walk reaches
+  // MuPDF, which invariant 20 keeps out of main.
+  flatFields: detectFlatFields,
+  exportFormData: async (session, format) =>
+    serialiseFormData(await readFormData(session), format),
+});
+
 startEngineHost(
   pipeStream(pipeName),
   {
-    execution: localMupdfExecution,
-    writer: mupdfWriter,
-    files: {
-      readSnapshot: async (directory, name) => new Uint8Array(await readFile(join(directory, name))),
-      writeOutput: async (directory, name, bytes) => {
-        await writeFile(join(directory, name), bytes);
-        return bytes.length;
-      },
-    },
-    probe: probeContainment,
-    geometry: readPageGeometry,
-    // THE JSON, not a parsed page: `parsePageText` is the one reader of MuPDF's
-    // format and it lives main-side, so this process ships no opinion about the
-    // structure it computed.
-    pageText: readPageTextJson,
-    pageLinks: readPageLinks,
-    destinations: readDestinations,
-    layers: readLayers,
-    annotations: readAnnotations,
-    formFields: readFormFields,
-    duplicates: findDuplicatePages,
-    // RUNS HERE, which is the whole reason `engine/extract` is a channel:
-    // `extractPages` reaches MuPDF, and invariant 20 keeps that out of `main`.
-    extract: extractPages,
-    // AND FOR THE SAME REASON, with a second one on top: a raster is the one
-    // payload that scales with what the user dragged, so it is built here and
-    // written into the granted directory rather than crossing the pipe.
-    snapshot: snapshotRegion,
-    // AND A THIRD, for the first's reason: reading the fields reaches MuPDF.
-    // The bounds on `engine/form-fields` exist for a panel a person reads, so
-    // an export built from that answer would be silently truncated at both.
-    // A READ, and it runs here for the field list's reason: the walk reaches
-    // MuPDF, which invariant 20 keeps out of main.
-    flatFields: detectFlatFields,
-    exportFormData: async (session, format) =>
-      serialiseFormData(await readFormData(session), format),
-    tokens: cryptoBytes,
+    channels: engineChannels,
+    handlers: engineHandlers,
     // Where a handler's thrown diagnostic goes. Never the pipe: main gets
     // `internal` and an id, and the text stays on this side — which is the
     // inherited stderr handle, the one channel a container cannot close.

@@ -1,27 +1,10 @@
-import { ENGINE_HOST_FRAME_MAX_BYTES, type IncidentSink } from '@monstera/contract';
-
-import type { CommandExecution } from '../commandSpecs.js';
-import type { EngineWriter, MupdfSession } from '../engineSeam.js';
-import type { PageGeometryReader } from '../pageGeometry.js';
-import type { TokenBytesSource } from '../token.js';
-import { engineChannels } from './engineChannels.js';
 import {
-  type HostContainmentProbe,
-  type HostFilesystem,
-  type HostDestinationsReader,
-  type HostDuplicatesReader,
-  type HostExtract,
-  type HostSnapshot,
-  type HostAnnotationsReader,
-  type HostFlatFieldsReader,
-  type HostFormDataExport,
-  type HostFormFieldsReader,
-  type HostLayersReader,
-  type HostPageLinksReader,
-  type HostPageTextReader,
-  createEngineHandlers,
-} from './engineHandlers.js';
-import { createHostSessions } from './hostSessions.js';
+  ENGINE_HOST_FRAME_MAX_BYTES,
+  type ChannelMap,
+  type Handlers,
+  type IncidentSink,
+} from '@monstera/contract';
+
 import { type HostTermination, createHostRuntime } from './runtime.js';
 
 /**
@@ -68,42 +51,32 @@ export interface HostByteStream {
   readonly close: () => void;
 }
 
-/** What the host body needs that only the real process has. */
-export interface HostBodyDependencies {
-  /** How this process runs a command. `localMupdfExecution`. */
-  readonly execution: CommandExecution<'mupdf'>;
-  /** The engine. `mupdfWriter`. */
-  readonly writer: EngineWriter<MupdfSession>;
-  /** The two handed directories, and only ever those. */
-  readonly files: HostFilesystem;
-  /** ADR-0023 §5's startup check. `probeContainment`. */
-  readonly probe: HostContainmentProbe;
-  /** How this process reads the view model's geometry. `readPageGeometry`. */
-  readonly geometry: PageGeometryReader;
-  /** How this process reads one page's structured text, as MuPDF's JSON. */
-  readonly pageText: HostPageTextReader;
-  /** How this process reads one page's links. `readPageLinks`. */
-  readonly pageLinks: HostPageLinksReader;
-  /** How this process reads the document's outline. `readDestinations`. */
-  readonly destinations: HostDestinationsReader;
-  /** How this process reads the document's layers. `readLayers`. */
-  readonly layers: HostLayersReader;
-  /** How this process lists the document's annotations. `readAnnotations`. */
-  readonly annotations: HostAnnotationsReader;
-  /** How this process lists the document's form fields. `readFormFields`. */
-  readonly formFields: HostFormFieldsReader;
-  /** How this process groups identical pages. `findDuplicatePages`. */
-  readonly duplicates: HostDuplicatesReader;
-  /** How this process builds a new document from named pages. `extractPages`. */
-  readonly extract: HostExtract;
-  /** How this process rasterises a region of a page. `snapshotRegion`. */
-  readonly snapshot: HostSnapshot;
-  /** How this process encodes the form's data. `exportFormData`. */
-  readonly exportFormData: HostFormDataExport;
-  /** How this process proposes fields on a flat page. `detectFlatFields`. */
-  readonly flatFields: HostFlatFieldsReader;
-  /** Where session ids come from. `cryptoBytes`. */
-  readonly tokens: TokenBytesSource;
+/**
+ * What the host body needs that only the real process has.
+ *
+ * ## The engine arrives as a CHANNEL SET AND ITS HANDLERS, not as seventeen
+ * readers ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md))
+ *
+ * This interface held every MuPDF reader by name until 2026-09-09, and
+ * `startEngineHost` composed `engineChannels` with `createEngineHandlers`
+ * itself. That made the body the one place that knew which engine it served —
+ * which is precisely what §3's *one host body, parameterised by engine* says it
+ * must not be, and what a second host would otherwise have had to copy.
+ *
+ * The entry composes now, because the entry is already the engine-specific
+ * statement: `hostEntry.ts` imports `mupdfWriter` and the twelve readers, and a
+ * PDFium entry brings its own. What is left here — framing, dispatch bounds and
+ * the single ending — is the part that is the same for both.
+ *
+ * `TMap` is the channel set and `Handlers<TMap>` is derived from it, so a
+ * handler for a channel the map does not declare is a compile error rather than
+ * a function nothing ever calls.
+ */
+export interface HostBodyDependencies<TMap extends ChannelMap> {
+  /** This host's channels. `engineChannels` for MuPDF. */
+  readonly channels: TMap;
+  /** One handler per channel, already bound to this engine's surfaces. */
+  readonly handlers: Handlers<TMap>;
   /**
    * Where a handler's thrown diagnostic is recorded.
    *
@@ -140,9 +113,9 @@ export interface EngineHostBody {
  *   the process; this module does not call `process.exit`, because a body that
  *   ends the process cannot be driven by a case.
  */
-export function startEngineHost(
+export function startEngineHost<TMap extends ChannelMap>(
   stream: HostByteStream,
-  dependencies: HostBodyDependencies,
+  dependencies: HostBodyDependencies<TMap>,
   ended: (reason: HostTermination) => void,
 ): EngineHostBody {
   /**
@@ -163,26 +136,8 @@ export function startEngineHost(
   };
 
   const runtime = createHostRuntime({
-    channels: engineChannels,
-    handlers: createEngineHandlers({
-      sessions: createHostSessions(dependencies.tokens),
-      execution: dependencies.execution,
-      writer: dependencies.writer,
-      files: dependencies.files,
-      probe: dependencies.probe,
-      geometry: dependencies.geometry,
-      pageText: dependencies.pageText,
-      pageLinks: dependencies.pageLinks,
-      destinations: dependencies.destinations,
-      layers: dependencies.layers,
-      annotations: dependencies.annotations,
-      formFields: dependencies.formFields,
-      duplicates: dependencies.duplicates,
-      extract: dependencies.extract,
-      snapshot: dependencies.snapshot,
-      exportFormData: dependencies.exportFormData,
-      flatFields: dependencies.flatFields,
-    }),
+    channels: dependencies.channels,
+    handlers: dependencies.handlers,
     transport: {
       write: stream.write,
       terminate: finish,

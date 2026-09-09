@@ -8,6 +8,9 @@ import {
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { TOKEN_BYTES } from '../token.js';
+import { engineChannels } from './engineChannels.js';
+import { createEngineHandlers } from './engineHandlers.js';
+import { createHostSessions } from './hostSessions.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
 import type { HostTermination } from './runtime.js';
 
@@ -86,75 +89,85 @@ function stubStream(): HostByteStream & {
 
 function start(stream: HostByteStream) {
   const endings: HostTermination[] = [];
+  // THE ENGINE IS COMPOSED HERE, exactly as `hostEntry.ts` composes it
+  // (ADR-0048). The body took seventeen readers by name until 2026-09-09 and
+  // built the handlers itself; it takes a channel set and its handlers now.
+  // Every dependency below is unchanged — what moved is who assembles them,
+  // and these cases still drive the same program through the same frames.
+  const handlers = createEngineHandlers({
+    sessions: createHostSessions(() => new Uint8Array(TOKEN_BYTES).fill(7)),
+    execution: localMupdfExecution,
+    // Every engine dependency throws. No case here opens a document, so a
+    // body that reached for one fails loudly instead of passing against a
+    // surface that happened to work.
+    writer: {
+      open: () => {
+        throw new Error('no case here opens a document');
+      },
+      serialise: () => {
+        throw new Error('no case here serialises');
+      },
+      close: () => {
+        throw new Error('no case here closes');
+      },
+    },
+    files: {
+      readSnapshot: () => {
+        throw new Error('no case here reads a snapshot');
+      },
+      writeOutput: () => {
+        throw new Error('no case here writes output');
+      },
+    },
+    probe: () =>
+      Promise.resolve({
+        positive: { kind: 'read', bytes: 64 },
+        negative: { kind: 'refused', code: 'EACCES' },
+        loopback: { kind: 'refused', code: 'ETIMEDOUT' },
+      }),
+    geometry: () => {
+      throw new Error('no case here reads a page tree');
+    },
+    pageText: () => {
+      throw new Error('no case here reads page text');
+    },
+    pageLinks: () => {
+      throw new Error('no case here reads page links');
+    },
+    destinations: () => {
+      throw new Error('no case here reads the outline');
+    },
+    layers: () => {
+      throw new Error('no case here reads the layers');
+    },
+    annotations: () => {
+      throw new Error('no case here lists annotations');
+    },
+    formFields: () => {
+      throw new Error('no case here lists form fields');
+    },
+    duplicates: () => {
+      throw new Error('no case here looks for duplicates');
+    },
+    extract: () => {
+      throw new Error('no case here builds a document');
+    },
+    snapshot: () => {
+      throw new Error('no case here rasterises a page');
+    },
+    exportFormData: () => {
+      throw new Error('no case here exports form data');
+    },
+    flatFields: () => {
+      throw new Error('no case here proposes fields');
+    },
+  });
+
   const body = startEngineHost(
     stream,
     {
-      execution: localMupdfExecution,
-      // Every engine dependency throws. No case here opens a document, so a
-      // body that reached for one fails loudly instead of passing against a
-      // surface that happened to work.
-      writer: {
-        open: () => {
-          throw new Error('no case here opens a document');
-        },
-        serialise: () => {
-          throw new Error('no case here serialises');
-        },
-        close: () => {
-          throw new Error('no case here closes');
-        },
-      },
-      files: {
-        readSnapshot: () => {
-          throw new Error('no case here reads a snapshot');
-        },
-        writeOutput: () => {
-          throw new Error('no case here writes output');
-        },
-      },
-      probe: () =>
-        Promise.resolve({
-          positive: { kind: 'read', bytes: 64 },
-          negative: { kind: 'refused', code: 'EACCES' },
-          loopback: { kind: 'refused', code: 'ETIMEDOUT' },
-        }),
-      geometry: () => {
-        throw new Error('no case here reads a page tree');
-      },
-      pageText: () => {
-        throw new Error('no case here reads page text');
-      },
-      pageLinks: () => {
-        throw new Error('no case here reads page links');
-      },
-      destinations: () => {
-        throw new Error('no case here reads the outline');
-      },
-      layers: () => {
-        throw new Error('no case here reads the layers');
-      },
-      annotations: () => {
-        throw new Error('no case here lists annotations');
-      },
-      formFields: () => {
-        throw new Error('no case here lists form fields');
-      },
-      duplicates: () => {
-        throw new Error('no case here looks for duplicates');
-      },
-      extract: () => {
-        throw new Error('no case here builds a document');
-      },
-      snapshot: () => {
-        throw new Error('no case here rasterises a page');
-      },
-      exportFormData: () => {
-        throw new Error('no case here exports form data');
-      },
-      flatFields: () => {
-        throw new Error('no case here proposes fields');
-      },
-      tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
+      channels: engineChannels,
+      handlers,
       incidents: () => undefined,
       maxInFlight: 4,
     },
