@@ -271,7 +271,7 @@ jobs:
       # pins — the product ships to the Microsoft Store and nowhere else.
       - name: Provision PDFium
         if: runner.os == 'Windows'
-        run: node scripts/provision/pdfium.mjs
+        run: node scripts/ci/annotate.mjs scripts/provision/pdfium.mjs
 
       # Runs on BOTH legs deliberately. On Windows it is required, so a
       # could-not-look is red. On Linux it prints UNVERIFIABLE and exits 0 —

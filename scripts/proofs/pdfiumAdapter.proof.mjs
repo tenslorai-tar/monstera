@@ -57,6 +57,7 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { PDFIUM_ADAPTER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -113,8 +114,19 @@ async function threeRunsAndARectangle() {
   return document.save();
 }
 
-/** @type {{ name: string, ok: boolean, detail: string }[]} */
-const cases = [];
+/**
+ * The case roster.
+ *
+ * `createRoster` rather than a total printed from what ran, because a total
+ * computed over the cases that executed **agrees with any collection**,
+ * including one that has quietly shrunk — audit item 4c, and `check:proofanchors`
+ * is the scan that refuses a proof without one. Seventeen is an independent
+ * claim about this file, not a count of it.
+ *
+ * @type {string[]}
+ */
+const failures = [];
+const roster = createRoster(failures, { cases: 17 });
 
 /**
  * @param {string} name
@@ -122,7 +134,9 @@ const cases = [];
  * @param {string} detail
  */
 function record(name, ok, detail) {
-  cases.push({ name, ok, detail });
+  const mark = roster.mark();
+  if (!ok) failures.push(`${name}\n      ${detail}`);
+  roster.record(mark, `${name} — ${detail}`);
 }
 
 /**
@@ -277,15 +291,12 @@ async function main() {
     reclosed ?? 'it was accepted',
   );
 
-  const failed = cases.filter((entry) => !entry.ok);
-  for (const entry of cases) {
-    process.stdout.write(`  ${entry.ok ? 'ok  ' : 'FAIL'}  ${entry.name}\n`);
-    process.stdout.write(`          ${entry.detail}\n`);
-  }
   process.stdout.write(
-    `\n  ${String(cases.length - failed.length)} of ${String(cases.length)} case(s) passed.\n`,
+    failures.length > 0
+      ? `\n${String(failures.length)} PDFium adapter case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
+      : roster.format('PDFium adapter case'),
   );
-  if (failed.length > 0) process.exitCode = 1;
+  process.exitCode = failures.length === 0 ? 0 : 1;
 }
 
 await main();

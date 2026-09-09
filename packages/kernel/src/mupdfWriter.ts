@@ -3,15 +3,24 @@ import * as mupdf from 'mupdf';
 import type { ByteImage, EngineWriter, MupdfSession, SavePurpose } from './engineSeam.js';
 
 /**
- * The one adapter behind the engine seam today.
+ * The structural writer of record, behind the engine seam.
  *
  * MuPDF is the writer of record for page-tree work because invariant L6 needs
  * the tree rewritten **in place** through its own `PDFObject` API — rebuilding
  * into a new document drops `/AcroForm`, `/Outlines`, `/Names` and
  * `/OCProperties`, which ADR-0006 measured rather than assumed.
  *
- * The byte-image side of the seam has no adapter and is not missing one; see
- * `engineSeam.ts`.
+ * **THIS HEADER SAID *the one adapter behind the engine seam today* AND *the
+ * byte-image side of the seam has no adapter*, and both were false by
+ * 2026-09-09** — `pdfLibWriter.ts` under ADR-0039, and `pdfiumFfi.ts` on that
+ * date. Neither commit opened this file, which is why nothing caught it: a
+ * range-scoped sweep reads the diffs a range produced, and a *count of one*
+ * stated in a neighbouring module goes stale from outside.
+ *
+ * The lesson is cheap and general enough to keep: **a comment that counts its
+ * siblings expires whenever a sibling arrives**, and it names no file the new
+ * sibling's author would grep for. Say what this module IS, not how many of it
+ * there are.
  */
 
 /**

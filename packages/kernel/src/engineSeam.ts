@@ -17,22 +17,31 @@ import type { CaptureResult, CommandPrior } from './commandLog.js';
  * and produce whole byte images, and a seam that cannot describe them would be
  * a seam redesign underneath Stage 4's features.
  *
- * So: **both shapes live in the type; exactly one adapter implements it.** The
- * live-session one, because that is what the first command needs. The
- * byte-image side has nothing behind it, and that is deliberate.
+ * So: **both shapes live in the type.**
  *
- * An unimplemented variant nobody constructs is a vacuous check, so its control
- * is a **type-level fixture in `scripts/proofs/contract.proof.mjs`** that builds
- * a byte-image writer and a byte-image `Apply`, satisfying these types with no
- * type assertion in it. If that fixture ever needs an assertion to compile, the
+ * **THIS PARAGRAPH SAID *exactly one adapter implements it* AND *the byte-image
+ * side has nothing behind it*, AND BOTH WENT STALE WITHOUT ANY COMMIT OPENING
+ * THIS FILE.** `pdfLibWriter.ts` put a byte-image writer behind the seam under
+ * ADR-0039, and `pdfiumFfi.ts` put a second live-session one there on
+ * 2026-09-09. Three adapters now, on both shapes. NNN-4's hole exactly: a claim
+ * a range falsifies without touching the sentence, which no range-scoped sweep
+ * can reach and no link check can see, because both readings parse.
+ *
+ * The control below is kept and is *not* the argument it was written as. It was
+ * *an unimplemented variant nobody constructs is a vacuous check*, and the
+ * variant is implemented now — so what the fixture proves is narrower and still
+ * worth having: a **type-level fixture in `scripts/proofs/contract.proof.mjs`**
+ * builds a byte-image writer and a byte-image `Apply`, satisfying these types
+ * with no type assertion in it. If it ever needs an assertion to compile, the
  * type does not express the shape and that is the finding — not an obstacle to
  * route around.
  *
- * The precedent for a deliberately empty seam is ADR-0018's
+ * The precedent that was cited for a deliberately empty seam is ADR-0018's
  * `WebUpdateProvider`, registered with nothing behind it and explicitly not to
- * be deleted as dead code. The difference is that an empty registration is
- * visible on inspection and a type's expressiveness is not, which is why this
- * one needs a fixture and that one does not.
+ * be deleted as dead code. **It no longer applies**, the seam having stopped
+ * being empty, and it is recorded rather than deleted because the reason it was
+ * reached for is the thing that expired: an empty registration is visible on
+ * inspection and a type's expressiveness is not.
  *
  * ## §8's second constraint is ENABLED here, not satisfied
  *
@@ -94,7 +103,7 @@ export type WriterShape = 'live-session' | 'byte-image';
  */
 export type MupdfSession = Brand<{ readonly engine: 'mupdf' }, 'MupdfSession'>;
 
-/** A live PDFium session. Declared, with no adapter behind it yet. */
+/** A live PDFium session. `pdfiumFfi.ts` is behind it, as of 2026-09-09. */
 export type PdfiumSession = Brand<{ readonly engine: 'pdfium' }, 'PdfiumSession'>;
 
 /**

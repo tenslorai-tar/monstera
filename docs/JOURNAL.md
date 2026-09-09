@@ -887,6 +887,97 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — Two reds on `main` from one habit, and the sweep that catches both in four minutes
+
+**`83eae3a` reddened CI on five jobs and Guards on two. `796a7f3` and `1aeb3eb`
+carried the Guards red forward.** Read from the board rather than inferred:
+
+| sha | CI | Guards |
+|---|---|---|
+| `a455cdf` | no runs found — superseded by the next push before it started | — |
+| `83eae3a` | **failure** — `Typecheck and build`, on all five jobs that build | **failure** |
+| `796a7f3` | success | **failure** |
+| `1aeb3eb` | success | **failure** |
+
+Both are corrected here, by a new commit. Nothing is rewritten (B10).
+
+### The Guards red: two proofs with no case count
+
+`check:proofanchors` refuses a proof that prints a total computed from the cases
+that ran, because such a total **agrees with any collection**, including one that
+has quietly shrunk (audit item 4c). Both new proofs did exactly that —
+`17 of 17 case(s) passed` counted from the array it had just filled.
+
+Fixed with `createRoster(failures, { cases: N })`, whose `format` throws when
+the recorded total disagrees with the declared one. `pdfiumAdapter` declares
+**17**. `editFidelity` declares **7** and deliberately leaves the corpus cases
+outside the roster, because their number is the corpus's and not the file's — a
+literal there would be a fixture pinned to something designed to change. The
+corpus half takes its own anchor instead: **every document must reach the
+comparison**, asserted against the count read, which is the relation a `continue`
+somebody adds later would break.
+
+### The CI red: a structural edit after the last typecheck
+
+`proof:buildfreshness` correctly demanded an `ARTEFACT_EDGES` entry for the new
+proof. Adding it meant moving `PDFIUM_ADAPTER` above that map — and the move put
+it **between a JSDoc block and the declaration it annotated**, so
+`ARTEFACT_EDGES` lost its `@type` and three files went red on `TS7053`.
+
+`proof:buildfreshness` was re-run and passed. **Typecheck was not**, and the
+pre-commit hook does not typecheck. The error was found and fixed an hour later
+by an unrelated run, which is why `796a7f3` is green on CI — the repair was
+accidental, and the commit that made it said nothing about it.
+
+### The root cause is one habit, and both reds are instances of it
+
+`npm run local` derives its set from every `check:*` and `proof:*` script and
+runs `typecheck` among them. **It would have caught both.** It was not run,
+because `proof:guards` alone takes 1093s against a 540s discovery bound, so the
+full sweep cannot seal on this machine — a tail item that has been carried as a
+curiosity and has now been paid for twice in one range, publicly.
+
+What the sweep is for is exactly this: *a green check set is not a green board*,
+and my substitute for it was a hand-picked list of the checks I thought a change
+reached. Reading `my local sweep is not CI's set` at the start of the session did
+not put it in reach at the moment of pushing, which is the same sentence the
+escape guard's section has paid for seven times.
+
+**The mechanism adopted, and it is two commands rather than a resolution:**
+
+```
+npm run typecheck && npm run lint && npm run build && npm run test
+npm run local -- --only "check:"
+```
+
+The second runs **30 of the 144 scripts the workflows run**, in 4 minutes, and
+seals its own verdict on the last line. Run against this range it failed
+immediately on `check:proofanchors` — and named a **second** defect nothing else
+had: `ci.yml:274`, the new *Provision PDFium* step, was not wrapped by
+`annotate.mjs`, which `check:annotatecoverage` refuses. That one had not reached
+the board yet.
+
+`--only "check:"` does **not** include the typecheck, whose label in the harness
+is `check:types` while its script is `typecheck`; hence two commands and not one.
+
+### What the advisor could not have told me
+
+`affectedProofs.mjs` names the proofs a changed set reaches, and its report also
+names the nine tree-scanning proofs no import walk can reach. It named neither
+failure, and could not have: `check:proofanchors` and `check:annotatecoverage`
+are **checks**, and `SCANNING_PROOFS` holds `proof:*` names only —
+`scanningProofRoster` refuses an entry that is not a proof script.
+
+So `scanningProofs.mjs`' own stated residual — *"a genuinely new tree-scanning
+proof that nobody adds to the list is not caught by anything here"* — fired in a
+variant it cannot express: the tree-scanner that caught this **cannot be added to
+that list at all**. Recorded rather than fixed in passing, because widening the
+roster to carry checks changes a module with its own proof and its own anchor,
+and that is its own unit. The interim answer is the sweep above, which runs every
+check regardless of what any advisor names.
+
+---
+
 ## 2026-09-09 — E2's accuracy score, and the clause that has no constant to govern
 
 `BUILD-PROMPT.md`:541-551 owes *one text-structure module, line clustering

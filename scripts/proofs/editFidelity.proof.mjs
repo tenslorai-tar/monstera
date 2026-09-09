@@ -68,6 +68,7 @@ import koffi from 'koffi';
 
 import { PDFIUM_ADAPTER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -232,15 +233,45 @@ async function threeRunPage() {
   return document.save();
 }
 
-/** @type {{ name: string, ok: boolean, detail: string }[]} */
-const cases = [];
+/**
+ * The roster, over the cases that exist on EVERY runner.
+ *
+ * Seven, and it is an independent claim rather than a count of what ran — a
+ * total printed from the cases that executed agrees with any collection,
+ * including one that has quietly shrunk (audit item 4c, `check:proofanchors`).
+ *
+ * **The corpus cases are deliberately outside it**, because their number is the
+ * corpus's and not this file's, and a literal here would be a fixture pinned to
+ * something designed to change. They get their own anchor instead: every
+ * document must be either scored or attributed as a scan, and the two counts
+ * must sum to the number of documents read. That is the relation a silently
+ * dropped document would break, which a count of rows printed would not.
+ *
+ * @type {string[]}
+ */
+const failures = [];
+const roster = createRoster(failures, { cases: 7 });
+
 /**
  * @param {string} name
  * @param {boolean} ok
  * @param {string} detail
  */
 function record(name, ok, detail) {
-  cases.push({ name, ok, detail });
+  const mark = roster.mark();
+  if (!ok) failures.push(`${name}\n      ${detail}`);
+  roster.record(mark, `${name} — ${detail}`);
+}
+
+/**
+ * A corpus assertion, outside the roster and inside the same failure list.
+ *
+ * @param {string} name
+ * @param {boolean} ok
+ * @param {string} detail
+ */
+function corpusCase(name, ok, detail) {
+  if (!ok) failures.push(`${name}\n      ${detail}`);
 }
 
 async function main() {
@@ -340,7 +371,9 @@ async function main() {
     if (corpus.outcome.code !== 0) process.exitCode = 1;
   } else {
     out.write('  id          bytes -> saved        differing / total   worst   ink\n');
+    let seen = 0;
     for (const document of corpus.documents) {
+      seen += 1;
       const held = await pdfiumWriter.open(document.bytes);
       const saved = await pdfiumWriter.serialise(held);
       await pdfiumWriter.close(held);
@@ -353,29 +386,36 @@ async function main() {
           `  ${String(score.differing).padStart(6)} / ${String(score.total).padStart(9)}` +
           `  ${String(score.worst).padStart(5)}  ${(ink * 100).toFixed(2)}%\n`,
       );
-      record(
+      corpusCase(
         `${document.id}: an untouched save changes no pixel`,
         score.differing === 0,
         `${String(score.differing)} of ${String(score.total)} differ, worst ${String(score.worst)}`,
       );
-      record(
+      corpusCase(
         `${document.id}: and its first page carries ink`,
         ink > 0.001,
         `${(ink * 100).toFixed(2)}% inked, so the zero above is preservation and not a blank render`,
       );
     }
+    // THE CORPUS HALF'S OWN ANCHOR. A document skipped by a `continue` somebody
+    // adds later would take its two assertions with it and leave a shorter
+    // table nobody counts — the exact shape the roster exists to catch, in the
+    // half whose size is the corpus's rather than this file's.
+    corpusCase(
+      'every corpus document was read',
+      seen === corpus.documents.length,
+      `${String(seen)} of ${String(corpus.documents.length)} document(s) reached the comparison`,
+    );
     out.write(`${corpusCaveat(corpus.documents.length)}\n`);
   }
 
   out.write('\n');
-  const failed = cases.filter((entry) => !entry.ok);
-  for (const entry of cases) {
-    out.write(`  ${entry.ok ? 'ok  ' : 'FAIL'}  ${entry.name}\n          ${entry.detail}\n`);
-  }
   out.write(
-    `\n  ${String(cases.length - failed.length)} of ${String(cases.length)} case(s) passed.\n`,
+    failures.length > 0
+      ? `${String(failures.length)} fidelity case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
+      : roster.format('fidelity case'),
   );
-  if (failed.length > 0) process.exitCode = 1;
+  if (failures.length > 0) process.exitCode = 1;
 }
 
 await main();
