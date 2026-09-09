@@ -2602,6 +2602,53 @@ export const createFormFieldSchema = z.object({
   fields: z.array(createdFieldPlacementSchema).min(1).max(MAX_CREATED_FIELDS),
 });
 
+/**
+ * How many characters one replaced text run may carry.
+ *
+ * {@link MAX_FIELD_VALUE}'s number and, deliberately, not its argument — two
+ * bounds that happen to agree are not one bound (`MAX_ANNOTATIONS`' own note).
+ * This one bounds **a page object's string**, and the reasoning is the
+ * document's rather than a person's typing: a PDF text object is one show
+ * operation's worth of glyphs, and a page's whole text is what `MAX_PAGE_TEXT`
+ * bounds on the read side. Generous past any run a producer emits, and far
+ * short of a payload that could carry a page.
+ */
+export const MAX_REPLACED_TEXT = 4096;
+
+/**
+ * Replaces the text of one text object on one page — **region replacement**,
+ * the first command routed to PDFium.
+ *
+ * ## Named by its place in the page's OBJECT order, and by a version
+ *
+ * `fillFormField`'s shape on a third walk
+ * ([ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)
+ * Decision 3), and the walk is a different one again: PDFium's page objects are
+ * neither the annotation walk nor the widget walk, and an index means something
+ * different under each. The index comes from **PDFium's own read of this page**
+ * and never from a join against MuPDF's structured text — those two number the
+ * same page differently, and a correspondence held in a literal at a call site
+ * is `SHOWN_PAGE`'s defect with the two frames one engine apart.
+ *
+ * ## The text, not a range
+ *
+ * A text object is replaced whole. PDFium's `FPDFText_SetText` sets an object's
+ * string, and there is no API for a substring of one — so a payload naming a
+ * character range would be an intent this writer of record cannot keep, and the
+ * kernel would have to reconstruct the whole string anyway to honour it.
+ */
+export const replaceTextObjectSchema = z.object({
+  kind: z.literal('replaceTextObject'),
+  /** Zero-based index of the page the object sits on. */
+  page: z.number().int().nonnegative(),
+  /** Its position in the page-object walk that produced the answer this names. */
+  index: z.number().int().nonnegative(),
+  /** What it should say. */
+  text: z.string().max(MAX_REPLACED_TEXT),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -2632,6 +2679,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   flattenFormFieldsSchema,
   createFormFieldSchema,
   importFormDataSchema,
+  replaceTextObjectSchema,
 ]);
 
 /**
@@ -2733,6 +2781,15 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // None of that is spellable here: the surface says where the box goes and the
   // kernel, which is the only side that knows the page's `/Rotate`, says how.
   createFormFieldSchema,
+  // RENDERABLE, and `fillFormField`'s shape on the page-object walk: the
+  // renderer names a row of an answer it was given and says what that row
+  // should say. The payload is a page, an index, a bounded string and a
+  // version, whatever the document weighs.
+  //
+  // What it cannot express is WHERE the string goes in the content stream, or
+  // what happens to the glyphs around it — that is PDFium's, and the renderer
+  // cannot even name the object except through an answer PDFium produced.
+  replaceTextObjectSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -2879,6 +2936,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'styleAnnotation') return command.version;
   if (command.kind === 'fillFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
+  if (command.kind === 'replaceTextObject') return command.version;
   return undefined;
 }
 
@@ -2913,3 +2971,22 @@ void _thatNameIsACommandKind;
 export type NamesAFormField = 'fillFormField' | 'deleteFormFields';
 const _theFieldNameIsACommandKind: NamesAFormField extends CommandKind ? true : never = true;
 void _theFieldNameIsACommandKind;
+
+/**
+ * Which kinds {@link targetVersionOf} answers for on the PAGE-OBJECT walk.
+ *
+ * A **third** type rather than a member of either above, for
+ * {@link NamesAFormField}'s reason one walk further out — and here the reason
+ * is stronger than it was there, because this walk is a different **engine's**.
+ * An annotation index and a widget index are two of MuPDF's walks; a page-object
+ * index is PDFium's, and the two engines do not number a page the same way.
+ * Folding this into either name would make three index spaces read as one, which
+ * is exactly what a caller must never be able to assume.
+ *
+ * Anchored the same way, in `commandDeclarations.test.ts`, against the union of
+ * all three: this package cannot import the kernel, so the half checkable here
+ * is only that the name is a real kind.
+ */
+export type NamesATextObject = 'replaceTextObject';
+const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
+void _theObjectNameIsACommandKind;

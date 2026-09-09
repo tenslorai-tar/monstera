@@ -551,6 +551,35 @@ const IMPORT_DATA_SPEC = `  importFormData: {
   },`;
 
 /**
+ * The newest kind, and the FIRST routed to a third writer of record.
+ *
+ * Its import line is the interesting part rather than its body: PDFium is
+ * behind `@monstera/kernel/pdfium`, a third entry point, because
+ * `@monstera/kernel/engine` means *binds a native library* and there are now
+ * two of those — a single subpath would make importing either engine load both
+ * ([ADR-0048](../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)'s
+ * correction, one layer down from the AppContainer). So this fixture failing to
+ * resolve would mean somebody had folded the two engines into one specifier.
+ *
+ * **The first `invertible: true` in these fixtures that routes to a byte-image
+ * writer**, which ADR-0039's addition of 2026-09-09 priced: the choice is about
+ * retention, not about a serialise both declarations pay.
+ */
+const REPLACE_TEXT_SPEC = `  replaceTextObject: {
+    kind: 'replaceTextObject',
+    writer: 'pdfium',
+    apply: applyReplaceTextObject,
+    capture: captureReplaceTextObject,
+    invert: invertReplaceTextObject,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
  * The first spec whose command declares `purpose: 'removal'`.
  *
  * That axis is not spelt in these fixtures for the reason none of the others is
@@ -728,7 +757,17 @@ import {
   applyCreateFormField,
   captureCreateFormField,
   invertCreateFormField,
-} from '@monstera/kernel';`;
+} from '@monstera/kernel';
+// A THIRD IMPORT LINE, and it is a claim about the module graph rather than a
+// convenience. \`@monstera/kernel/engine\` means "binds a native library", and
+// from 2026-09-09 there are two of those -- so PDFium has its own entry point
+// and importing either engine does not load the other. This line failing to
+// resolve would mean the two had been folded into one specifier.
+import {
+  applyReplaceTextObject,
+  captureReplaceTextObject,
+  invertReplaceTextObject,
+} from '@monstera/kernel/pdfium';`;
 
 /**
  * One probe.
@@ -1192,6 +1231,7 @@ ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
+${REPLACE_TEXT_SPEC}
 };
 `,
   },
@@ -1209,7 +1249,8 @@ ${IMPORT_DATA_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `createFormField` on 2026-09-08;
+    // table has to grow. `replaceTextObject` on 2026-09-09;
+    // `importFormData` and `createFormField` on 2026-09-08;
     // `flattenFormFields`, `deleteFormFields`,
     // `fillFormField`, `placeImage` and
     // `styleAnnotation` on 2026-09-07; `addLink`,
@@ -1227,7 +1268,7 @@ ${IMPORT_DATA_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'importFormData' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'replaceTextObject' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1275,6 +1316,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
+${IMPORT_DATA_SPEC}
 };
 `,
   },
@@ -1389,6 +1431,7 @@ ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
+${REPLACE_TEXT_SPEC}
 };
 `,
   },
@@ -1441,6 +1484,7 @@ ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
+${REPLACE_TEXT_SPEC}
 };
 `,
   },
@@ -1502,6 +1546,7 @@ ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
+${REPLACE_TEXT_SPEC}
 };
 `,
   },
@@ -1559,6 +1604,7 @@ ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
+${REPLACE_TEXT_SPEC}
 };
 `,
   },
@@ -2416,8 +2462,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
     // three since `movePage` (2026-09-03), eight since `deletePages`,
     // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`, nine
-    // since `watermarkPages` (all 2026-09-04), and 23 since `createFormField`
-    // (2026-09-08).
+    // since `watermarkPages` (all 2026-09-04), 23 since `createFormField`
+    // (2026-09-08) and 29 since `replaceTextObject` (2026-09-09).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2435,7 +2481,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 24 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 25 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

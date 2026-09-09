@@ -1213,6 +1213,54 @@ const declarations = {
     // is unlinked, so there is nothing for a collecting save to sweep.
     purpose: 'ordinary',
   },
+  replaceTextObject: {
+    kind: 'replaceTextObject',
+    // THE FIRST COMMAND ROUTED TO PDFIUM, which is what makes the second host
+    // buildable at all: `KindsRoutedTo<'pdfium'>` was `never` until this line,
+    // and a zod union of zero options cannot be built. `BUILD-PROMPT.md`:257
+    // assigns in-place text editing to PDFium in both columns and ADR-0006 kept
+    // that row; MuPDF's text API is extraction, so this is a classification
+    // rather than a preference.
+    writer: 'pdfium',
+    // INVERTIBLE, and it is the first byte-image command that is — which
+    // `commandDeclarations.test.ts` carried a trigger for and
+    // [ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)'s
+    // addition of 2026-09-09 priced before this landed.
+    //
+    // The comparison that decides it is invertible-against-terminal with the
+    // writer held fixed, not against a live-session equivalent: `#sessionFor`
+    // calls `ByteImageAccess.current()` for every byte-image command whatever
+    // its invertibility, so the serialise is common to both and the whole
+    // difference is RETENTION. `CommandLog.trimTo`: *an invertible entry
+    // retains no document-scaled bytes*, against one whole document image per
+    // terminal entry. Text editing is many small commands against one document,
+    // and §4 reserves checkpoints for redaction, flatten, encryption and OCR
+    // because they are the exception.
+    invertible: true,
+    undo: 'inverse',
+    // The prior is one object's string put back into the object it came from.
+    // Nothing here mints an identifier, stamps a date or asks a model — setting
+    // the same text twice produces the same content stream.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // PDFIUM'S PAGE-OBJECT WALK, which is a third index space and not a widening
+    // of either MuPDF one — `CommandTargets`' own note says why the two engines'
+    // numberings must never be assumed comparable.
+    targets: 'text-object',
+    reads: 'none',
+    // The replacement is a bounded string in the payload. Nothing about a text
+    // edit carries bytes a JSON wire cannot express.
+    asset: 'none',
+    // IT REMOVES NOTHING. `FPDFText_SetText` replaces an object's string in
+    // place and `FPDFPage_GenerateContent` rewrites the page's content stream;
+    // no object is unlinked, so there is nothing for a collecting save to
+    // sweep. **The old glyphs do not survive** — the content stream is
+    // regenerated whole — which is the question a reader of `SavePurpose`
+    // should be asking here and is a fact about the regeneration rather than
+    // about the classification.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

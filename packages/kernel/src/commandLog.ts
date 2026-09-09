@@ -15,6 +15,11 @@ import type { Brand } from '@monstera/shared';
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
+// TYPE-ONLY, and here that is load-bearing rather than habitual: this module is
+// reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
+// The import is erased, so the edge the header above warns about is not
+// created — the same care the `ByteImage` line records, on a second engine.
+import type { PriorTextObject } from './pdfiumTextEdit.js';
 import type { PriorLayerVisibility } from './layers.js';
 import type {
   PriorPageCopy,
@@ -482,6 +487,35 @@ export interface CommandPrior {
    * a size the *file* decides rather than the document.
    */
   readonly importFormData: never;
+
+  /**
+   * The string a text object held, and **which object puts it back**.
+   *
+   * {@link fillFormField}'s shape on PDFium's page-object walk, and the first
+   * entry here belonging to a second engine. The reason it can be an inverse at
+   * all is the same one: a replacement names ONE object, so its prior is one
+   * value.
+   *
+   * ## The page and index travel with it, for the fill's reason and not its
+   * mechanism
+   *
+   * A radio group made the fill's index load-bearing because the inverse acts
+   * on a *different* widget. Nothing like that happens here — `FPDFText_SetText`
+   * replaces the object it is given — so the honest reason is the plainer one
+   * ADR-0009 §3 gives: an inverse that reached for `entry.command` to find out
+   * where to write would be an inverse derived from the intent, which is the
+   * one shape §3 forbids. `PriorTextObject` therefore carries the whole
+   * restoring instruction.
+   *
+   * ## It is a STRING and that is why this command is not a checkpoint one
+   *
+   * `deletePages`, `watermarkPages` and the four `never`s above are `never`
+   * because their prior is document-scaled or unserialisable. One text run is
+   * neither, bounded by `MAX_REPLACED_TEXT` on the way in — so the entry
+   * retains no document-scaled bytes, which is exactly what ADR-0039's addition
+   * of 2026-09-09 prices.
+   */
+  readonly replaceTextObject: PriorTextObject;
 }
 
 /**

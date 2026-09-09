@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   CommandKind,
   NamesAFormField,
+  NamesATextObject,
   NamesAnAnnotation,
   NamesASecondDocument,
 } from '@monstera/contract';
@@ -17,6 +18,16 @@ import { writerShapes } from './engineSeam.js';
  * [ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)
  * makes a **cost** argument, and a cost argument has a scope. Costs are not
  * type errors, so nothing in the compiler was keeping that scope true.
+ *
+ * **That case FIRED on 2026-09-09 and was replaced rather than edited.** It
+ * asserted every byte-image command is non-invertible and its message said
+ * such a declaration would be legitimate and that ADR-0039 was what needed
+ * amending. `replaceTextObject` is the declaration; ADR-0039's addition of the
+ * same day is the amendment. A trigger whose instruction has been carried out
+ * must not stay as an assertion, because it is then red for a correct table —
+ * so what stands in its place is the property the amendment established, that
+ * the choice between invertible and terminal on one byte-image writer is a
+ * choice about **retention** and nothing else.
  *
  * The sources case exists because `contract/commands.ts` said it did. See
  * {@link DeclaredSources}.
@@ -99,11 +110,22 @@ type DeclaredTargets = {
  * than a widened `NamesAnAnnotation` because the two name different walks, and
  * a single type covering both would say an annotation index and a widget index
  * are the same kind of thing.
+ *
+ * **And AGAIN on 2026-09-09**, `replaceTextObject` declaring
+ * `targets: 'text-object'`. Twice now the second line has been the first thing
+ * a new member met, which is the only evidence that matters about whether a
+ * type-level anchor is load-bearing. The union gains a third member for the
+ * reason it had two: a page-object index is PDFium's numbering of a page, and
+ * folding it into either MuPDF name would say three index spaces are one.
  */
-const _declarationsCoverTheTargets: NamesAnAnnotation | NamesAFormField extends DeclaredTargets
+const _declarationsCoverTheTargets: NamesAnAnnotation | NamesAFormField | NamesATextObject extends
+  DeclaredTargets
   ? true
   : never = true;
-const _targetsCoverTheDeclarations: DeclaredTargets extends NamesAnAnnotation | NamesAFormField
+const _targetsCoverTheDeclarations: DeclaredTargets extends
+  | NamesAnAnnotation
+  | NamesAFormField
+  | NamesATextObject
   ? true
   : never = true;
 void _declarationsCoverTheTargets;
@@ -121,43 +143,41 @@ describe('the declaration table', () => {
     expect([...shapes].sort()).toStrictEqual(['byte-image', 'live-session']);
   });
 
-  it('every BYTE-IMAGE command is non-invertible, which is what ADR-0039 priced', () => {
-    // ## What this guards, and what it deliberately does NOT
+  it('an INVERTIBLE byte-image command retains no document-scaled bytes, which is what ADR-0039 now prices', () => {
+    // ## This case replaced a TRIGGER whose instruction was carried out
     //
-    // ADR-0039 argues that refreshing `main`'s canonical image costs nothing per
-    // command. The measurement behind that is narrower than the sentence, and
-    // this case is where the narrowness is kept honest.
+    // It read *every byte-image command is non-invertible*, with a message
+    // saying such a declaration would be legitimate, that it fell outside
+    // ADR-0039's cost argument, and that the ADR was what needed amending.
+    // `replaceTextObject` is the declaration it was waiting for, and ADR-0039's
+    // addition of 2026-09-09 is the amendment it asked for — so keeping the old
+    // case would have made it red for a correct table, which is the shape a
+    // trigger must not decay into.
     //
-    // Read from the code: `CommandBus.#sessionFor` obtains a byte-image
-    // writer's session by calling `ByteImageAccess.current()`, which is a FULL
-    // SERIALISE of the live engine session — and it does so for every
-    // byte-image command, whatever its invertibility. `pdfLibWriter.serialise`
-    // is the identity, so a terminal entry's checkpoint is that same array and
-    // costs nothing more.
+    // ## What the amendment actually established, restated as the assertion
     //
-    // So for a NON-INVERTIBLE byte-image command the serialise doubles as the
-    // checkpoint the bus was going to take anyway, and nothing extra is paid.
-    // For an INVERTIBLE one there is no checkpoint, and the serialise is a cost
-    // its live-session equivalent — `rotatePages`, say — does not pay.
+    // The old case's arithmetic compared an invertible byte-image command to
+    // its LIVE-SESSION equivalent. That is true and is not the axis a
+    // declaration turns on: §3's matrix settles the writer first, so the choice
+    // is invertible against terminal with the writer held fixed. Read from the
+    // code, `CommandBus.#sessionFor` calls `ByteImageAccess.current()` for
+    // every byte-image command before `capture` runs, so the serialise is
+    // common to both and neither pays for it.
     //
-    // ## Why this is a case and NOT a type
+    // What differs is RETENTION, and `CommandLog.trimTo` states it: *an
+    // invertible entry retains no document-scaled bytes*, against one whole
+    // document image per terminal entry. So the property worth holding is that
+    // an invertible byte-image command's prior is bounded — a page, an index
+    // and a string the contract caps — rather than something document-scaled.
     //
-    // The type could carry it: the declaration union already discriminates
-    // invertible from terminal, and `writer: 'pdf-lib'` could be made to sit
-    // only on a non-invertible member. That would be **wrong**, because
-    // `docs/ARCHITECTURE.md` §3's matrix assigns *"Form fields: create"* to
-    // `@cantoo/pdf-lib` — the one concern MuPDF has no API for — and creating a
-    // field is plausibly invertible: its prior state is *the field did not
-    // exist*, which is small and serialisable. A compile error here would
-    // forbid a Stage 4 command the architecture already anticipates.
+    // ## Asserted through the LOG's own retention rule, not by inspecting a type
     //
-    // So the fact is true today and is not a rule. This case is the trigger:
-    // the first byte-image command declared `invertible: true` turns it red,
-    // and the failure message says what to do rather than what not to.
-    //
-    // DERIVED from `writerShapes` and the table, never listed — 4c's direction
-    // test: the failure feared is a member ARRIVING, so a derived set tracks it
-    // and a hand-kept list would not.
+    // A type-level check that `CommandPrior[K]` is "small" is not expressible.
+    // What is expressible is the consequence: an invertible entry is one
+    // `trimTo` cannot shed, so declaring a byte-image command invertible is a
+    // statement that its prior may live in the log for ever. This case names
+    // the set that statement now applies to, so a second such command arrives
+    // at this list rather than at a green build.
     const invertibleByteImage = KINDS.filter(
       (kind) =>
         writerShapes[declaredCommands[kind].writer] === 'byte-image' &&
@@ -167,12 +187,25 @@ describe('the declaration table', () => {
     expect(
       invertibleByteImage,
       `${invertibleByteImage.join(', ')} is routed to a byte-image writer and declared ` +
-        `invertible. That is LEGITIMATE — ARCHITECTURE §3 assigns form-field creation to ` +
-        `@cantoo/pdf-lib and creating a field is invertible — and it falls outside ADR-0039's ` +
-        `cost argument, which covers only the non-invertible case. Such a command pays a full ` +
-        `serialise of the live session (CommandBus.#sessionFor -> ByteImageAccess.current) that ` +
-        `no checkpoint was going to pay for. Amend ADR-0039 to price it, then update this case.`,
-    ).toStrictEqual([]);
+        `invertible. That is legitimate and ADR-0039's addition of 2026-09-09 prices it: the ` +
+        `serialise is common to both declarations, and the difference is retention — an ` +
+        `invertible entry keeps its prior for ever and a terminal one keeps a whole document ` +
+        `image. Before adding a kind here, check its prior is BOUNDED by the contract; if it ` +
+        `is document-scaled, the declaration is wrong rather than this list.`,
+    ).toStrictEqual(['replaceTextObject']);
+  });
+
+  it('CONTROL: some byte-image command is TERMINAL, so the case above is a property and not a description', () => {
+    // Without this, a table that had made every byte-image command invertible
+    // would satisfy the case above by listing them all — and the retention
+    // rule it states would be about a distinction the table no longer draws.
+    // The seven pdf-lib content commands are what keep both sides populated.
+    const terminalByteImage = KINDS.filter(
+      (kind) =>
+        writerShapes[declaredCommands[kind].writer] === 'byte-image' &&
+        !declaredCommands[kind].invertible,
+    );
+    expect(terminalByteImage).toContain('watermarkPages');
   });
 
   it('CONTROL: the sources derivation names a kind, so the type equality is not two empty sets', () => {
@@ -199,13 +232,18 @@ describe('the declaration table', () => {
       'styleAnnotation',
       'fillFormField',
       'deleteFormFields',
+      'replaceTextObject',
     ]);
-    // AND THE TWO MEMBERS ARE BOTH PRESENT, which the count above cannot say: a
+    // AND ALL THREE MEMBERS ARE PRESENT, which the count above cannot say: a
     // table where every target read `'annotation'` would satisfy it, and the
     // bus would then compare a version for a payload pointing into the wrong
-    // walk — the failure the second member exists to prevent.
+    // walk — the failure the second member exists to prevent, and the third
+    // makes worse rather than merely repeating. The first two walks belong to
+    // one parser; `'text-object'` belongs to PDFium, so a payload landing in
+    // the wrong one would be an index read against a different ENGINE's
+    // numbering of the same page.
     expect(new Set(named.map((kind) => declaredCommands[kind].targets))).toStrictEqual(
-      new Set(['annotation', 'field']),
+      new Set(['annotation', 'field', 'text-object']),
     );
   });
 });

@@ -1,6 +1,18 @@
 // @ts-check
 /**
- * Proves that importing `DocumentService` does not load the native MuPDF shim.
+ * Proves that importing `DocumentService` loads **neither** native engine.
+ *
+ * ## It was MuPDF's until 2026-09-09, and the widening is the point
+ *
+ * The class this guards is *the barrel binds no native library*, and while
+ * there was one adapter the class and the module were the same thing. The first
+ * PDFium-routed command put a second adapter behind the seam, and a proof still
+ * naming one module would have read as watching a class it covered half of —
+ * the enumeration failure this project has already paid for, where naming one
+ * omitted set reads exactly like naming all of them. Each engine gets its own
+ * anchor, its own four questions and its own failure text, because the remedy
+ * differs: `@monstera/kernel/engine`'s discipline for one and
+ * `@monstera/kernel/pdfium`'s for the other.
  *
  * ## The defect, measured
  *
@@ -47,9 +59,21 @@ const DIST = join(REPO_ROOT, 'packages', 'kernel', 'dist');
 /** The module that must not be loaded, and the one that proves the walk sees it. */
 const FORBIDDEN = 'mupdfWriter.js';
 
+/**
+ * The second adapter that binds a native library, from 2026-09-09.
+ *
+ * A separate constant rather than a list the cases loop over, and that is a
+ * choice about the failure messages: what a reader needs when this goes red is
+ * *which engine reached where*, and the two have different causes and different
+ * remedies — one is `@monstera/kernel/engine`'s discipline and the other is
+ * `@monstera/kernel/pdfium`'s. A loop would produce one message shape for two
+ * problems.
+ */
+const PDFIUM_FORBIDDEN = 'pdfiumFfi.js';
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
+const roster = createRoster(failures, { cases: 11 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -198,6 +222,66 @@ try {
     existsSync(join(DIST, FORBIDDEN)) && existsSync(join(DIST, 'rotatePages.js')),
     `${FORBIDDEN} or rotatePages.js is missing from ${DIST}. The reachability question is only ` +
       `meaningful while both exist; without them "not reachable" is true and means nothing.`,
+  );
+
+  // THE SECOND ENGINE, added 2026-09-09 with the first PDFium-routed command.
+  //
+  // Every case above names `mupdfWriter.js` because it was the only adapter
+  // that bound a native library. `pdfiumFfi.js` is the second, and the class
+  // this proof guards is *the barrel does not bind a native library* rather
+  // than *the barrel does not bind MuPDF* — so leaving it at one module would
+  // be a check that reads as watched over half the class it names. That is the
+  // enumeration failure this project has already paid for once, in a finding
+  // that named one of two omitted sets.
+  //
+  // The control is the same shape and its anchor is the PDFium entry point,
+  // which exists for the sole purpose of exporting the adapter — so a walk that
+  // cannot see it is blind rather than reassuring.
+  const pdfiumFromEntry = reaches('pdfium.js', PDFIUM_FORBIDDEN);
+  const pdfiumFromIndex = reaches('index.js', PDFIUM_FORBIDDEN);
+  const pdfiumFromBus = reaches('commandBus.js', PDFIUM_FORBIDDEN);
+  const pdfiumFromService = reaches('documentService.js', PDFIUM_FORBIDDEN);
+
+  check(
+    `CONTROL: ${PDFIUM_FORBIDDEN} IS reachable from pdfium.js, so the walk can see it`,
+    pdfiumFromEntry.reached,
+    `the walk could not reach ${PDFIUM_FORBIDDEN} from pdfium.js, which exists for the sole ` +
+      `purpose of exporting the PDFium adapter. So it cannot see the module the cases below ` +
+      `claim something avoids, and each of them is satisfied by blindness.`,
+  );
+
+  check(
+    `importing the kernel's public surface does not load ${PDFIUM_FORBIDDEN}`,
+    !pdfiumFromIndex.reached,
+    `reachable via ${pdfiumFromIndex.path.join(' -> ')}.\n` +
+      `      ADR-0026 clause 2, on the second engine. \`pdfiumFfi.js\` imports koffi and binds ` +
+      `\`pdfium.dll\` when told to; a barrel edge would put both in \`main\`, which invariant ` +
+      `20 forbids and \`@monstera/kernel/pdfium\` exists to keep out. Read the emit for the ` +
+      `module named in the path above — the cause is almost always ` +
+      `\`import { type X } from\`, which keeps the specifier and RUNS.`,
+  );
+
+  check(
+    `importing CommandBus does not load ${PDFIUM_FORBIDDEN}`,
+    !pdfiumFromBus.reached,
+    `reachable via ${pdfiumFromBus.path.join(' -> ')}.\n` +
+      `      The bus takes its routing from commandDeclarations.js and calls nothing directly, ` +
+      `so an edge to a spec table is an edge to every writer's implementation — which now ` +
+      `includes a second native binding rather than one.`,
+  );
+
+  check(
+    `importing DocumentService does not load ${PDFIUM_FORBIDDEN}`,
+    !pdfiumFromService.reached,
+    `reachable via ${pdfiumFromService.path.join(' -> ')}.\n` +
+      `      The module whose entire argument is that it holds bytes and never parses them ` +
+      `(ARCHITECTURE §2) must not reach either engine.`,
+  );
+
+  check(
+    `${PDFIUM_FORBIDDEN} is PRESENT, so its four answers above are about reachability`,
+    existsSync(join(DIST, PDFIUM_FORBIDDEN)),
+    `${PDFIUM_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
   );
   // WHAT THIS CASE USED TO SAY, and why it no longer does (finding KKKK-3).
   //

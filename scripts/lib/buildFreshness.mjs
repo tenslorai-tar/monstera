@@ -94,6 +94,34 @@ export const PDFIUM_ADAPTER = [
 ];
 
 /**
+ * The routing a PDFium COMMAND is dispatched through, plus the adapter beneath
+ * it.
+ *
+ * Three edges rather than one, because `pdfiumCommand.proof.mjs`'s subject is
+ * the pair: an adapter that edits correctly and an execution that hands it the
+ * right session are different facts. A stale `pdfiumSpecs.js` would dispatch
+ * yesterday's routing against today's adapter and report it as this diff's
+ * answer — which is the shape this whole module exists to refuse, arriving one
+ * layer above the boundary rather than at it.
+ *
+ * `commandDeclarations.js` is here because the proof reads the routing table
+ * before it runs anything through it: a case asserting `writer === 'pdfium'`
+ * against a stale build is a case asserting what the table used to say.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_COMMAND = [
+  ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
+  ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
+  ['packages/kernel/src/pdfiumTextEdit.ts', 'packages/kernel/dist/pdfiumTextEdit.js', 'tsc'],
+  [
+    'packages/kernel/src/commandDeclarations.ts',
+    'packages/kernel/dist/commandDeclarations.js',
+    'tsc',
+  ],
+];
+
+/**
  * The substrate `lineAgreement.mjs` scores this application's reading through.
  *
  * The instrument's whole subject is what `textStructure.ts` produces, so a stale
@@ -181,6 +209,10 @@ export const ARTEFACT_EDGES = {
   // first run — from the set of proofs that IMPORT the guard, which no omission
   // here can reach.
   'proof:pdfiumadapter': PDFIUM_ADAPTER,
+  // The command proof drives the ROUTING above the same adapter, so its edges
+  // are the adapter's plus the two modules that dispatch to it and the table
+  // that says they should.
+  'proof:pdfiumcommand': PDFIUM_COMMAND,
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,

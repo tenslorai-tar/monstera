@@ -346,8 +346,25 @@ export type CommandSources = 'none' | 'one';
  * What the bus does with them is identical, and that is the axis working rather
  * than a missed abstraction: staleness is one comparison, and the member is
  * what says which answer the payload's index points into.
+ *
+ * ## `'text-object'` ARRIVED, 2026-09-09, and it is the first member from a
+ * SECOND ENGINE
+ *
+ * The two members above are two of MuPDF's walks. This one is PDFium's page
+ * objects, and the gap between them is wider than the gap between the first
+ * two: annotations and widgets are disjoint lists produced by one parser, where
+ * a page-object index is a **different engine's numbering of the same page**.
+ * Nothing joins them, and nothing here should ever try — `docs/FEATURES.md`'s
+ * find-and-replace row names that join as the row's real work, and
+ * `SHOWN_PAGE`'s lesson says where the correspondence would have to live if one
+ * were ever built.
+ *
+ * So the member says *this index came from PDFium's read of this page at this
+ * version*, and the refusal it enables is that the document has moved since.
+ * What it does NOT do — and this is the paragraph above cashed a second time —
+ * is make the three index spaces comparable.
  */
-export type CommandTargets = 'none' | 'annotation' | 'field';
+export type CommandTargets = 'none' | 'annotation' | 'field' | 'text-object';
 
 /**
  * What a command's bytes are FOR, which decides how they are serialised.

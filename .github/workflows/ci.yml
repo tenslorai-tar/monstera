@@ -283,6 +283,17 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumAdapter.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # The layer above that one: does the COMMAND `commandSpecs.ts` routes to
+      # PDFium produce the document effect and survive a round trip. An adapter
+      # that edits correctly and an execution that hands it the right session
+      # are different facts, and only this step asserts the second. Both legs,
+      # for the step above's reason — UNVERIFIABLE on Linux is a stated absence
+      # rather than a step that silently did not exist.
+      - name: Prove region replacement as a command
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/pdfiumCommand.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       # BUILD-PROMPT.md:706's owed fidelity proof. The corpus is not here, so its
       # corpus half reports UNVERIFIABLE and exits 0; the half that runs on every
       # runner is the load-bearing one — a constructed page whose untouched save

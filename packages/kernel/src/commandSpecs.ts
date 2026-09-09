@@ -93,6 +93,7 @@ import {
 } from './pageTransition.js';
 import type { CommandExecution } from './commandRouting.js';
 import { pdfLibSpecs } from './pdfLibWriter.js';
+import { pdfiumSpecs } from './pdfiumSpecs.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
 /**
@@ -394,6 +395,14 @@ const declared = {
   // importable from `main`, and this file is not: it reaches `rotatePages.ts` →
   // `mupdfWriter.ts` → the native library.
   ...pdfLibSpecs,
+  // AND SPREAD FROM `pdfiumSpecs.ts`, for `pdfLibSpecs`' reason with the
+  // direction of the hazard reversed. That file must be reachable WITHOUT a
+  // native library, because it runs in `main`; this one must be reachable
+  // without **MuPDF**, because it runs in the contained PDFium host and this
+  // file reaches `rotatePages.ts` → `mupdfWriter.ts`. So the edge runs this way
+  // and cannot run the other, and the PDFium host imports `pdfiumSpecs.js`
+  // directly rather than reaching for this table.
+  ...pdfiumSpecs,
 } satisfies CommandSpecs;
 
 /** The table as declared, with each writer's literal type intact. */
