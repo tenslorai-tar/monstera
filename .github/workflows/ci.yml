@@ -302,6 +302,16 @@ jobs:
           node scripts/ci/annotate.mjs scripts/research/lineAgreement.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # What an in-place text edit charges for, before the five rows that make
+      # the charge. Nothing here asserts a millisecond: the cases are relations
+      # with margins far wider than the spread, so a loaded runner moves both
+      # sides of every comparison together. The one that matters on a runner is
+      # the k=1 control, which requires the two batching strategies to AGREE.
+      - name: Attribute the cost of one in-place text edit
+        run: >
+          node scripts/ci/annotate.mjs scripts/research/editCost.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 

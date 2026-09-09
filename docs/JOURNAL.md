@@ -888,6 +888,106 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-09 — What an in-place text edit charges for, and it is not the edit
+
+Five D4 rows replace text through PDFium. `proof:pdfiumadapter` settled that it
+*can*; nothing had asked what it **costs**, and the answer decides how the rows
+are built rather than how fast they run.
+
+`npm run proof:editcost` — `scripts/research/editCost.mjs`, seven controls.
+
+### The attribution
+
+`pdfiumFfi.ts`'s `replaceTextObject` makes two calls that read as halves of one
+operation. They have nothing in common.
+
+| cell | KB | objects | `FPDFText_SetText` | `FPDFPage_GenerateContent` | generate, page clean |
+|---|---|---|---|---|---|
+| 1 × 40 | 3 | 40 | 0.007 | **0.17** | 0.002 |
+| 100 × 40 | 199 | 40 | 0.022 | **5.44** | 0.007 |
+| 500 × 40 | 997 | 40 | 0.016 | **29.18** | 0.002 |
+| 500 × 1 | 203 | 1 | 0.029 | **12.54** | 0.001 |
+| 50 × 400 | 820 | 400 | 0.017 | **23.93** | 0.005 |
+
+Setting the text is free and flat. **Regenerating the page's content stream is
+the entire cost of an edit**, and it is not the page's cost: 500 × 1 has the
+same five hundred pages as 500 × 40 and costs a fifth as much, while 50 × 400
+has a tenth of the pages and costs nearly as much. It tracks the **document's
+content**, not the page being edited and not the page count.
+
+What inside PDFium makes that true is **not established here** and is not
+guessed at. The scaling is measured; the mechanism is not, and saying otherwise
+would be a label wearing an observation's clothes.
+
+### The instrument's own defect, kept in the output rather than corrected away
+
+An earlier reading timed `GenerateContent` on a **clean** page, got 0.00 ms at
+every document size, and read it as *the call is free*. It measured nothing: a
+page with nothing changed has nothing to regenerate. That is a fixture the
+answer also handles correctly — the case survives the exact mistake it exists to
+catch, and its name says it is covered.
+
+The fix was not to delete the reading but to print it **beside its dirty twin**,
+so a future 0.00 is visibly the clean column rather than the answer. Case 5
+asserts the separation, so a run where they converge goes red instead of
+reassuring.
+
+### The finding the rows will live or die on
+
+`replaceTextObject` regenerates on **every call**. Document-wide replace-all is a
+row in this same stage and touches many objects in one command.
+
+| k replacements, one page of a 199 KB document | generate per call | generate once |
+|---|---|---|
+| k = 1 | 15.5 ms | 14.8 ms |
+| k = 40 | **199.6 ms** | **14.6 ms** |
+
+One generate is **flat in k**. Regenerating per object is linear — **13.7× at
+forty replacements**, and the gap grows without bound.
+
+The k = 1 row is the control, not a data point: with one replacement the two
+strategies are the same two calls in the same order, so they must agree. A win
+there would mean this measures something other than batching, and the case
+demands the agreement rather than only the win.
+
+**So content generation belongs to the command, not to each object edit** —
+which is [ADR-0045](DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)'s
+shape exactly, one operation along: *a removal's garbage collection belongs to
+the command that removes, not to the save pipeline.* The same argument, the same
+reason, and the same failure if it is not taken — an expensive document-level
+operation performed once per small edit.
+
+### And a second consequence, which came from the renderer rather than the clock
+
+A live-session PDFium edit mutates a session in a host. **The renderer cannot
+see it.** It reads the document through `PDFDataRangeTransport` over main's
+canonical image (ADR-0031), and the view model carries `{version, pageCount,
+rotations}` — there is no honest way to express replaced text in it. That is
+exactly the defect ADR-0039 Decision 3 was written to prevent: correct,
+undoable, savable and **invisible**.
+
+Making it visible means the new bytes reach main. That round trip is what a
+byte-image writer already does, on a path the bus already has. So the live
+session buys nothing the renderer can use, and it costs the question
+`savePipeline.ts` has been carrying: *two live-session writers each return the
+whole document from `serialise`, and nothing in the law says which bytes win.*
+
+The decision that follows is an ADR and is taken in the next commit, not here.
+
+### Every assertion is ordinal, deliberately
+
+No case names a millisecond. A timing proof with a budget in it is one that goes
+red on a loaded runner and gets turned off. The cases assert **relations** with
+margins far wider than the spread — the measured separations are 13.7× and the
+cases demand 4× — so a slow runner moves both sides of every comparison
+together. The figures above are this machine's and are labelled as such.
+
+Mutation-tested rather than assumed: making the per-call strategy generate once,
+so the two are identical, turns case 7 red and the process exits **1**. Read
+without a pipe in the way, because a pipeline's exit code is its last stage's.
+
+---
+
 ## 2026-09-09 — Stage 6's two preconditions, recorded before the stage opens
 
 Neither of these is Stage 6 work. Both are things that stop being recordable the
