@@ -250,7 +250,7 @@ planner counting a table of rows as a table of untouched work.
 | Vision analysis (table reading assist) | — |
 | Provider registry: Anthropic, OpenAI, Google Gemini | — |
 | First-run onboarding: choose provider → paste key → `validateKey()` → or Skip | — |
-| Keys via `safeStorage`; refuse-and-say-so if unavailable | — |
+| Keys via `safeStorage`; refuse-and-say-so if unavailable. **E5 FIXES THE RULE AND ANYONE MAY IMPLEMENT IT — stated 2026-09-09, because the first caller is not E5's.** Azure Document Intelligence (D6) needs a stored secret before this stage opens, so the range that implements storage will not be the range that owns the rule. **The rule in full:** a key lives in the OS keychain through `safeStorage`, and where `safeStorage` reports itself unavailable the application **says so and refuses to store** — **a silent plaintext fallback is banned**, and so is a control that looks saved and is not. **Measured 2026-09-09:** `registries/settings.ts` carries `secret?: boolean` and derives export exclusion from it (case at `registries.test.ts`:210), and `safeStorage` appears nowhere under `packages/` or `apps/` — so the flag is enforced on export while **no secret setting has anywhere to be stored.** | **rule fixed; unimplemented, and its first caller is Stage 6's** |
 | Honest no-key empty states everywhere | — |
 
 ## D12 — Shell and UX · Stage 0/1 substrate, completed Stage 10
