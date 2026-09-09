@@ -106,6 +106,7 @@ const {
   textObjectIndices,
   pageText,
   textObjectText,
+  textRuns,
   replaceTextObjects,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 
@@ -146,7 +147,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 22 });
+const roster = createRoster(failures, { cases: 26 });
 
 /**
  * @param {string} name
@@ -213,6 +214,49 @@ async function main() {
     'the page reads back before any edit',
     before.includes(FIRST) && before.includes(SECOND) && before.includes(THIRD),
     'all three runs are present, so a later absence means the edit and not the fixture',
+  );
+
+  // ---- THE RUNS, which line-level editing is grouped from (ADR-0049) ----
+  const runs = await textRuns(session, 0);
+  record(
+    'textRuns answers one entry per TEXT object and none for the rectangle',
+    runs.length === 3 && runs.every((entry) => texts.includes(entry.index)),
+    `${String(runs.length)} runs at indices ${JSON.stringify(runs.map((r) => r.index))}, ` +
+      `against text objects ${JSON.stringify(texts)}. A rectangle contributes no characters, ` +
+      `so a run for it would mean the address table matched the wrong object.`,
+  );
+
+  record(
+    'each run carries the text its own object carries',
+    runs.some((entry) => entry.text === FIRST) &&
+      runs.some((entry) => entry.text === SECOND) &&
+      runs.some((entry) => entry.text === THIRD),
+    `texts: ${JSON.stringify(runs.map((r) => r.text))}. The walk maps each CHARACTER back to ` +
+      `its object through FPDFText_GetTextObject; a run holding another's text means the ` +
+      `mapping is off by an object, which a count alone cannot see.`,
+  );
+
+  // GENERATED CHARACTERS ARE SKIPPED, and this is what says so: PDFium inserts
+  // spaces it believes are implied by spacing, they belong to no object, and a
+  // walk that did not ask `FPDFText_IsGenerated` would either attribute them to
+  // a neighbour or drop the character silently. The runs' text summed against
+  // the objects' own text is the check that separates those.
+  const own = await Promise.all(texts.map((index) => textObjectText(session, 0, index)));
+  record(
+    'no run carries a character its object does not, so generated spaces were skipped',
+    runs.every((entry) => own.includes(entry.text)),
+    `runs: ${JSON.stringify(runs.map((r) => r.text))}\nobjects: ${JSON.stringify(own)}. ` +
+      `FPDFTextObj_GetText is the independent reader here — it asks the OBJECT rather than ` +
+      `walking the text page — so agreement between the two is what makes the walk's grouping ` +
+      `worth anything.`,
+  );
+
+  record(
+    'a run’s vertical extent covers its characters and is not a point',
+    runs.every((entry) => entry.top > entry.bottom),
+    `extents: ${JSON.stringify(runs.map((r) => [r.bottom, r.top]))}. The grouping joins runs ` +
+      `whose extents OVERLAP, and an empty interval overlaps nothing — a run sized from one ` +
+      `character, or from none, would be a line of its own whatever it sits beside.`,
   );
 
   // THE NON-TEXT REFUSAL, asserted by WHICH RULE refused. The rectangle's index

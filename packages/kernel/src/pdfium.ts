@@ -8,7 +8,9 @@ export {
   replaceTextObjects,
   textObjectIndices,
   textObjectText,
+  textRuns,
   type TextReplacement,
+  type TextRun,
 } from './pdfiumFfi.js';
 export {
   applyReplaceTextObject,

@@ -72,6 +72,9 @@ interface Bound {
   readonly countChars: Native;
   readonly getText: Native;
   readonly textObjectText: Native;
+  readonly charObject: Native;
+  readonly charGenerated: Native;
+  readonly charBox: Native;
 }
 
 /**
@@ -177,6 +180,31 @@ export function openPdfium(libraryPath: string): void {
     textObjectText: native(
       library.func(
         'unsigned long FPDFTextObj_GetText(void *object, void *textPage, _Out_ uint16_t *buffer, unsigned long length)',
+      ),
+    ),
+    // THE OBJECT A CHARACTER CAME FROM, which is the whole basis of line-level
+    // editing ([ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)).
+    // It answers a `FPDF_PAGEOBJECT`, and the caller turns that into an INDEX by
+    // comparing it against the objects `getObject` hands back — PDFium offers no
+    // index for an object, so the address table is the only route and it is
+    // built from this page's own objects, never assumed.
+    //
+    // Measured 2026-09-09: 40 of 45 characters resolve. The other five are
+    // PDFium's GENERATED characters — spaces it believes are implied by spacing
+    // rather than drawn — which belong to no object at all.
+    charObject: native(
+      library.func('void *FPDFText_GetTextObject(void *textPage, int index)'),
+    ),
+    // WHICH CHARACTERS PDFIUM INVENTED. Without it a generated space is a
+    // character whose object lookup fails, and *this character belongs to no
+    // object* and *the lookup is broken* are the same observation.
+    charGenerated: native(library.func('int FPDFText_IsGenerated(void *textPage, int index)')),
+    // ONE CHARACTER'S BOX, in page space. The grouping reads only the vertical
+    // extent — `bottom` and `top` — because ADR-0049 groups by overlap and a
+    // horizontal position decides nothing there.
+    charBox: native(
+      library.func(
+        'int FPDFText_GetCharBox(void *textPage, int index, _Out_ double *left, _Out_ double *right, _Out_ double *bottom, _Out_ double *top)',
       ),
     ),
   };
@@ -429,6 +457,122 @@ export function textObjectText(
         // `written` is bytes and includes the terminator, so the character
         // count is one short of half of it.
         return String.fromCharCode(...buffer.subarray(0, Math.max(0, written / 2 - 1)));
+      } finally {
+        bindings.closeTextPage(textPage);
+      }
+    }),
+  );
+}
+
+/**
+ * One text object as the editor sees it: which object, what it says, and where
+ * it sits vertically.
+ *
+ * The vertical extent and nothing else, because
+ * [ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)
+ * groups by **overlap** and a horizontal position decides nothing there. A
+ * fuller rectangle would be geometry travelling further than the one question
+ * it answers, and the next reader would take it as available for a second.
+ */
+export interface TextRun {
+  /** The object's index in the page's object order. `textObjectIndices`' unit. */
+  readonly index: number;
+  /** What it currently says. */
+  readonly text: string;
+  /** The bottom of its characters, in PDF user space. */
+  readonly bottom: number;
+  /** The top of its characters, in PDF user space. */
+  readonly top: number;
+}
+
+/**
+ * Every text run on a page, with its text and its vertical extent.
+ *
+ * ## The extent comes from the CHARACTERS, not from the object's bounds
+ *
+ * `FPDFPageObj_GetBounds` answers the object's box, which for a text object
+ * includes the font's ascent and descent whether or not any glyph in this run
+ * reaches them — so two runs set in different sizes on one baseline have boxes
+ * that overlap generously and two runs on adjacent lines can too. The
+ * characters' own boxes are what a reader sees, and `FPDFText_GetCharBox` is
+ * PDFium's answer for them.
+ *
+ * ## Which characters belong to which object is PDFium's answer, not a guess
+ *
+ * `FPDFText_GetTextObject` maps a character to its `FPDF_PAGEOBJECT`, and the
+ * index comes from comparing that against this page's own objects. **PDFium
+ * offers no index for an object**, so the address table below is the only
+ * route — and it is built from `FPDFPage_GetObject` rather than assumed to
+ * match content-stream order.
+ *
+ * A character PDFium **generated** — a space it believes is implied by spacing
+ * rather than drawn — belongs to no object and is skipped. Without
+ * `FPDFText_IsGenerated`, *this character belongs to nothing* and *the lookup
+ * is broken* would be the same observation, which is audit item 4b's shape
+ * inside a mapping.
+ *
+ * ## One text page for the whole walk
+ *
+ * `textObjectText` loads a text page per object, which is right for one object
+ * and quadratic for a page of them. This walks the characters once.
+ */
+export function textRuns(session: PdfiumSession, page: number): Promise<readonly TextRun[]> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const textPage: unknown = bindings.loadTextPage(handle);
+      if (textPage === null) throw new Error('PDFium could not load the page for text reading.');
+      try {
+        const objects = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+        /** Address -> index, from this page's own objects. */
+        const indexOf = new Map<string, number>();
+        for (let at = 0; at < objects; at += 1) {
+          indexOf.set(String(koffi.address(bindings.getObject(handle, at))), at);
+        }
+
+        const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
+        /** index -> the run being accumulated. Insertion order is reading order. */
+        const runs = new Map<number, { text: string; bottom: number; top: number }>();
+
+        for (let at = 0; at < chars; at += 1) {
+          if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) {
+            continue;
+          }
+          const index = indexOf.get(String(koffi.address(bindings.charObject(textPage, at))));
+          if (index === undefined) continue;
+
+          const buffer = new Uint16Array(2);
+          numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
+
+          const left = [0];
+          const right = [0];
+          const bottom = [0];
+          const top = [0];
+          numberFrom(
+            bindings.charBox(textPage, at, left, right, bottom, top),
+            'FPDFText_GetCharBox',
+          );
+          const [low = 0] = bottom;
+          const [high = 0] = top;
+
+          const held = runs.get(index);
+          if (held === undefined) {
+            runs.set(index, {
+              text: String.fromCharCode(buffer[0] ?? 0),
+              bottom: low,
+              top: high,
+            });
+          } else {
+            held.text += String.fromCharCode(buffer[0] ?? 0);
+            // THE UNION, so a run's extent covers every character in it. A run
+            // sized from its first character alone would lose an ascender and
+            // stop overlapping the neighbour it shares a line with.
+            held.bottom = Math.min(held.bottom, low);
+            held.top = Math.max(held.top, high);
+          }
+        }
+
+        return [...runs.entries()].map(([index, run]) => ({ index, ...run }));
       } finally {
         bindings.closeTextPage(textPage);
       }
