@@ -224,3 +224,71 @@ the install root in development exactly as the first does. Under a Store
 install neither does — premise P1 is false, measured 2026-09-09 — and that is
 Decision 16's, unmeasured, gating the containment branch and not the body.
 Nothing here changes which of the three routes is taken.
+
+## Correction, 2026-09-09 — Decision 3 is withdrawn: a byte-image host's `engine/open` registers an AREA and parses nothing, and the wire differences belong to the writer SHAPE
+
+Decision 3 said a byte-image host's `engine/open` parses once and discards it,
+*so `open-failed` means the same thing from both hosts*. It was written before
+main's side of the call existed. Writing that side showed the premise is false
+in two independent ways, and either one is enough.
+
+### It has nowhere to keep a per-document id, and that is a fact about the seam
+
+An `engine/open` that parses **a document** mints an id **per document**, and
+main has to hold it somewhere. There is nowhere.
+
+`CommandBus` hands a writer `WriterSession[W]`. For a byte-image writer that is
+the document's **bytes** — ADR-0039's whole point, and what makes *which bytes
+win* unaskable. Bytes carry no identity, so a registered PDFium writer receives
+nothing it could look an area up by. `SessionsByWriter` cannot hold it either:
+its `pdfium` slot is typed `ByteImage` for the same reason.
+
+The alternative is to change what the bus hands a byte-image writer, which is to
+put a document identity back into the one type ADR-0039 spent a decision
+removing it from. That is a worse trade than the one Decision 3 was making.
+
+### And `open-failed` does NOT mean the same thing to main, which was the whole argument
+
+Decision 3's benefit was that *main's `open-failed` handling would be correct
+for one host and dead code for the other* if the protocols differed. Read
+main's handling: an engine session that cannot be created **poisons the
+document** (ADR-0023 Decision 9a) — commands answer `document-poisoned` and
+close-and-reopen is what clears it.
+
+That is right for MuPDF, which is how the document is read at all. It is
+**wrong** for PDFium, where the honest meaning is *this document cannot be
+text-edited* — a refused command and nothing more. So making the two protocols
+identical at that point would have made main's existing handling wrong for the
+second host, which is the opposite of what the decision was buying.
+
+### What replaces it
+
+- **A byte-image host's `engine/open` registers a granted area and parses
+  nothing.** It carries the two directories and no `snapshotName`, because at
+  that moment there is no document. Decision 2 is untouched and is the reason
+  the channel still exists: the place is named once and no later message can
+  move it.
+- **The area's lifetime is the HOST's, not a document's.** It is a transfer
+  buffer, and every call mints a fresh file name inside it — which is
+  `SessionAssets`' existing rule, and what makes one area safe for however many
+  documents are open.
+- **A document this engine cannot read fails the call that needed it**, with a
+  declared code, at the moment the engine is actually wanted. That is a better
+  moment than document-open: a document the viewer can display and PDFium
+  cannot parse stays open and refuses one command, rather than being poisoned.
+
+### The general form, which is worth more than the correction
+
+Decision 1 already had to learn that a channel is engine-agnostic when its
+**answer** means the same thing. This is the same lesson about the whole wire:
+the differences between the two hosts are not PDFium's and MuPDF's — they are
+**`byte-image`'s and `live-session`'s**, and `writerShapes` is the table that
+names them.
+
+So `coreEngineChannels` takes an engine's three command schemas and one **wire
+shape**, and the wire shape is a constant per writer shape rather than a set of
+fields each engine fills in. A third engine of either shape takes the matching
+constant and supplies its commands. That is what makes *one host body,
+parameterised by engine* a real claim rather than a set of parallel
+parameters — and it is `writerShapes` reaching the wire, which is where a
+declaration table that decides behaviour ought to reach.
