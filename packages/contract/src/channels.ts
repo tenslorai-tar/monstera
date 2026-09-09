@@ -845,7 +845,14 @@ export const channels = {
     // thing that names existing state (ADR-0041 Decision 2). A read answers with
     // whatever is there now and cannot be stale; the version it carries is what
     // lets a caller notice, not something it can get wrong.
-    ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target'],
+    // `engine-unavailable` IS ON THIS CHANNEL ALONE for the same reason, one
+    // step further: a command is routed to a writer of record and a read is not,
+    // so only a command can meet an engine this installation does not have. It
+    // is a property of the MACHINE rather than of the document — PDFium backs
+    // the editing commands and is provisioned separately — and a user whose
+    // machine cannot run one deserves that sentence rather than `internal` and
+    // an incident id for a build that is working exactly as it was assembled.
+    ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target', 'engine-unavailable'],
   ),
 
   /**

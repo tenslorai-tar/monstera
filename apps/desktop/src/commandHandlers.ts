@@ -1,5 +1,10 @@
 import type { ContractHandlers } from '@monstera/contract';
-import { DocumentBusyError, DocumentNotOpenError, StaleTargetError } from '@monstera/kernel';
+import {
+  DocumentBusyError,
+  DocumentNotOpenError,
+  StaleTargetError,
+  UnregisteredWriterError,
+} from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 
 import { type DocumentCommands, DocumentPoisonedError } from './documentCommands.js';
@@ -72,6 +77,22 @@ export function executeCommandHandler(
       // renderer needs is that nothing changed and the list it is holding is
       // old, and neither number helps it say that.
       if (thrown instanceof StaleTargetError) return err({ code: 'stale-target' });
+      // A PROPERTY OF THE MACHINE, and the third refusal here a user can do
+      // something about. `CommandBus` refuses by name when a command's writer of
+      // record has no adapter registered, and the composition root leaves
+      // `writers.pdfium` genuinely absent wherever no PDFium host could be built
+      // — no `pdfium.dll`, no Win32 surfaces, a packaged run.
+      //
+      // It reads as a DEFECT from inside the bus, correctly: a command reaching
+      // it is one some surface offered. What makes it an outcome here is that
+      // the surface offered it on a build assembled without that engine, which
+      // is a state the shipped product is deliberately in — and `internal` would
+      // hand somebody an incident id for a working application.
+      //
+      // The writer's NAME stays main-side with every other diagnostic. What the
+      // renderer needs is that this installation cannot do it and the document
+      // is untouched; which engine is missing is ours.
+      if (thrown instanceof UnregisteredWriterError) return err({ code: 'engine-unavailable' });
       throw thrown;
     }
   };

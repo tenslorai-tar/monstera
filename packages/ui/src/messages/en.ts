@@ -526,6 +526,7 @@ export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
 export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
 export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-target');
+export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
 export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
 
@@ -1312,6 +1313,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // document is untouched — not an explanation of versions, which is ours.
   [PROBLEM_STALE_TARGET]:
     'That list was out of date, so nothing was changed. The document moved on while it was open. The list has been refreshed — have another look and try again.',
+  // NAMES NO ENGINE AND ASKS FOR NOTHING. Which component is missing is main's
+  // business, and the person reading this cannot install it — a Store build
+  // ships what it ships. So the sentence says the document is safe, says the
+  // feature is not available in this copy, and stops; an instruction the reader
+  // cannot follow is worse than none.
+  [PROBLEM_ENGINE_UNAVAILABLE]:
+    'This copy of Monstera cannot edit text in place. Your document is unchanged, and everything else still works.',
   [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',
   // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
   // §9 is why it is the only thing about the diagnostic that crosses.

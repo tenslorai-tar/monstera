@@ -869,7 +869,7 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(1);
   });
 
-  it('refuses the command BY NAME when there is no PDFium platform', async () => {
+  it('answers engine-unavailable when there is no PDFium platform', async () => {
     // THE CONTROL, and it is the state most machines are in: no `pdfium.dll`,
     // so no host, so no registration. The refusal must come from the ROUTE —
     // `CommandBus` looking the writer up and not finding it — and not from a
@@ -887,24 +887,28 @@ describe('the composition root, with BOTH engine hosts', () => {
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
 
-    // A REJECTION, NOT AN OUTCOME, and that is the shape rather than an
-    // accident: `UnregisteredWriterError` is a DEFECT by `CommandBus`'
-    // definition — the boundary turns it into `internal` with the diagnostic
-    // kept main-side — because a command that reaches the bus is one the UI
-    // offered. So this case is also the statement of what the UI half owes: the
-    // control is gated on the capability, never mounted and then refused here.
-    await expect(
-      handlers['document.execute']({
-        docId: opened.value.docId,
-        command: {
-          kind: 'replaceTextObject',
-          page: 0,
-          index: 2,
-          text: 'hi',
-          version: opened.value.version,
-        },
-      }),
-    ).rejects.toThrow(/'pdfium' writer of record, which has no adapter registered/u);
+    // A DECLARED OUTCOME AND NOT A REJECTION, which is what the first draft of
+    // this case found and reported: `UnregisteredWriterError` reached the
+    // boundary and became `internal` plus an incident id — an unexplained defect
+    // for a build assembled exactly as intended, on the one refusal whose cause
+    // a user can actually be told.
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: {
+        kind: 'replaceTextObject',
+        page: 0,
+        index: 2,
+        text: 'hi',
+        version: opened.value.version,
+      },
+    });
+    expect(executed.ok).toBe(false);
+    // THE CODE, not merely `ok: false`. Every other refusal on this channel is
+    // also `ok: false`, so a mapping that answered `document-poisoned` — or one
+    // that never ran at all, leaving the throw to become `internal` — satisfies
+    // the line above and separates nothing.
+    if (executed.ok) throw new Error('unreachable');
+    expect(executed.error.code).toBe('engine-unavailable');
 
     // AND NOTHING WAS SERIALISED. A refusal that happened AFTER the bus took
     // the document's bytes would have cost a whole-document round trip through

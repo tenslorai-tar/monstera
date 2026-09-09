@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 
 import {
   PROBLEM_BUSY,
+  PROBLEM_ENGINE_UNAVAILABLE,
   PROBLEM_INTERNAL,
   PROBLEM_NOT_OPEN,
   PROBLEM_POISONED,
@@ -17,6 +18,7 @@ export type CommandProblem =
   | { readonly code: 'document-busy' }
   | { readonly code: 'document-poisoned' }
   | { readonly code: 'stale-target' }
+  | { readonly code: 'engine-unavailable' }
   | { readonly code: 'internal'; readonly incident: string };
 
 /**
@@ -32,6 +34,7 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,
   'stale-target': PROBLEM_STALE_TARGET,
+  'engine-unavailable': PROBLEM_ENGINE_UNAVAILABLE,
   internal: PROBLEM_INTERNAL,
 };
 
