@@ -93,6 +93,12 @@ export function controlName(key) {
  * @param {string} name the accessible name of the Open control
  * @param {string} fixture absolute path to the document to render
  * @param {string} zoomName the accessible name of the zoom-in control
+ * @param {string} [pixelPath] where to write the canvas's own pixels, as RGBA.
+ * Omitted by every caller but the engine comparison: a page at device scale is
+ * several megabytes, and the counts below answer every other question this
+ * harness is asked. `docs/FEATURES.md`'s HD render row is what asked for it —
+ * *carrying pixels, not counts* — because two rasterisers painting the same
+ * NUMBER of pixels can paint entirely different ones.
  * @returns {{
  *   dispatched: boolean,
  *   settledBy: 'drawn' | 'failed' | 'bound',
@@ -101,6 +107,7 @@ export function controlName(key) {
  *   painted: number,
  *   blank: number,
  *   pixels: number,
+ *   pixelsWritten: { path: string, width: number, height: number } | null,
  *   renderFailed: boolean,
  *   elapsedMs: number,
  *   zoomed: {
@@ -113,7 +120,7 @@ export function controlName(key) {
  *   },
  * }}
  */
-export function readback(binary, name, fixture, zoomName) {
+export function readback(binary, name, fixture, zoomName, pixelPath) {
   const needsDisplay = process.platform === 'linux' && process.env['DISPLAY'] === undefined;
   const XVFB = ['/usr/bin/xvfb-run', '/bin/xvfb-run', '/usr/local/bin/xvfb-run'];
   let wrapper;
@@ -129,7 +136,10 @@ export function readback(binary, name, fixture, zoomName) {
     }
   }
 
-  const args = [HARNESS, fixture, name, zoomName];
+  // THE FOURTH ARGUMENT IS OMITTED WHEN NO PATH WAS GIVEN, rather than passed
+  // as an empty string: the harness reads `process.argv` positionally, and an
+  // empty fourth entry is a path it would then try to write to.
+  const args = [HARNESS, fixture, name, zoomName, ...(pixelPath === undefined ? [] : [pixelPath])];
   const [command, spawnArgs] =
     wrapper === undefined ? [binary, args] : [wrapper, ['-a', binary, ...args]];
 

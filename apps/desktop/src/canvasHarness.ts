@@ -1,6 +1,7 @@
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { app, ipcMain, session } from 'electron';
+import { app, ipcMain, nativeImage, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
@@ -96,6 +97,38 @@ export interface CanvasReadback {
   readonly blank: number;
   /** Total pixels, so the two counts above can be read as fractions. */
   readonly pixels: number;
+  /**
+   * Where the canvas's own pixels were written, or `null` when none were asked
+   * for.
+   *
+   * ## A FILE, and a COUNT was not enough
+   *
+   * Everything above this line is a count, and `docs/FEATURES.md`'s HD render
+   * row says why that is a limit rather than a style: *it owes a
+   * PDFium-against-PDF.js reading before it ships, `canvasReadback.mjs` carrying
+   * pixels, not counts*. Two rasterisers that paint the same NUMBER of pixels
+   * can paint entirely different ones, so a comparison between engines cannot
+   * be made from anything on this interface as it stood.
+   *
+   * The pixels go to a file rather than onto the marker line because the marker
+   * is one line a caller greps: a page at device scale is several megabytes, and
+   * a reader's filter is per line.
+   *
+   * ## RGBA, straightened from what Electron hands back
+   *
+   * The canvas is captured as a PNG data URL and decoded by `nativeImage`,
+   * which is a decoder this application already ships — the alternative was a
+   * PNG decoder in a research script, which is a second implementation of
+   * something Chromium is already carrying. `toBitmap()` answers **BGRA**, and
+   * this writes **RGBA**, because a consumer comparing against another
+   * rasteriser's buffer should not have to know which of the two orders it is
+   * looking at. The swap happens once, here, at the point the fact is known.
+   */
+  readonly pixelsWritten: {
+    readonly path: string;
+    readonly width: number;
+    readonly height: number;
+  } | null;
   /** `true` when the renderer set `data-failed`, i.e. the parse threw. */
   readonly renderFailed: boolean;
   /** How long the wait took, so a bound that is being approached is visible. */
@@ -182,6 +215,71 @@ const COUNT_PAINTED = `(canvas) => {
   }
   return painted;
 }`;
+
+/**
+ * Writes the page canvas's own pixels to `path`, as RGBA.
+ *
+ * ## Through a PNG, and that is a decoder rather than a format choice
+ *
+ * The renderer has the pixels and cannot write a file — correctly; it holds no
+ * path and `contextIsolation` is what keeps it that way. Carrying them out as
+ * numbers is not available either: a page at device scale is several million
+ * pixels, and `executeJavaScript` resolves through a JSON channel, so an array
+ * of four million entries is a payload measured in tens of megabytes.
+ *
+ * A PNG data URL is the compact form the platform already produces, and
+ * `nativeImage` is the decoder it already ships. Both sides of that round trip
+ * are Chromium's, so nothing here re-implements an image format.
+ *
+ * ## The round trip is LOSSLESS, and that is what makes the comparison valid
+ *
+ * PNG is lossless and the canvas is `image/png`, so the bytes that come back are
+ * the bytes the renderer drew. A JPEG here would put an encoder's own error into
+ * a measurement of two rasterisers' disagreement, and the two would be
+ * indistinguishable in the answer.
+ *
+ * @returns the file's dimensions, so a caller knows the buffer's shape without
+ * re-deriving it from the file's length
+ */
+async function writePixels(
+  contents: Electron.WebContents,
+  path: string,
+): Promise<{ path: string; width: number; height: number }> {
+  const url = await evaluate(
+    contents,
+    `(() => {
+       const canvas = document.querySelector('canvas.m-page');
+       // AN EMPTY STRING FOR AN ABSENT CANVAS, never a throw: the canvas is
+       // missing on exactly the path this harness exists to catch, and a
+       // dereference there would report "the harness broke" for the defect.
+       if (canvas === null) return '';
+       return canvas.toDataURL('image/png');
+     })()`,
+    (value): value is string => typeof value === 'string',
+    'canvas image',
+  );
+  if (url === '') {
+    throw new Error(
+      'The renderer has no page canvas, so there are no pixels to write. A reading taken here ' +
+        'would be about a document that never opened.',
+    );
+  }
+
+  const image = nativeImage.createFromDataURL(url);
+  const size = image.getSize();
+  const bgra = image.toBitmap();
+  // BGRA -> RGBA, IN PLACE. `toBitmap` documents the order, and a consumer
+  // comparing this against another rasteriser's RGBA buffer would otherwise
+  // find every red and blue channel swapped — which reads as a large,
+  // plausible, entirely artificial disagreement between two engines.
+  for (let at = 0; at + 3 < bgra.length; at += 4) {
+    const blue = bgra[at] ?? 0;
+    bgra[at] = bgra[at + 2] ?? 0;
+    bgra[at + 2] = blue;
+  }
+  await writeFile(path, bgra);
+  return { path, width: size.width, height: size.height };
+}
 
 /**
  * Evaluates `expression` in the renderer and refuses a shape it does not fit.
@@ -438,6 +536,7 @@ export async function reportCanvasPixels(
   fixture: string,
   openControlName: string,
   zoomControlName: string,
+  pixelPath?: string,
 ): Promise<void> {
   await app.whenReady();
 
@@ -516,6 +615,7 @@ export async function reportCanvasPixels(
   );
 
   const zoomed = await readZoomed(contents, zoomControlName, settled.width);
+  const pixelsTo = pixelPath === undefined ? null : await writePixels(contents, pixelPath);
 
   const readback: CanvasReadback = {
     dispatched,
@@ -526,6 +626,7 @@ export async function reportCanvasPixels(
     painted,
     blank,
     pixels: settled.width * settled.height,
+    pixelsWritten: pixelsTo,
     renderFailed: settled.failed,
     elapsedMs: settled.elapsedMs,
   };

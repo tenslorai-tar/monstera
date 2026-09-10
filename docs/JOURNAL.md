@@ -888,6 +888,75 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — PDFium against PDF.js, in pixels: the HD render row's owed reading
+
+The *HD render toggle* row has carried one sentence of debt since 2026-09-08:
+**it owes a PDFium-against-PDF.js reading before it ships, `canvasReadback.mjs`
+carrying pixels, not counts.** `scripts/research/pdfiumRender.mjs` wrote the same
+thing from the other side — *"Neither pair is measured against PDF.js here…
+Extending that to carry pixels is proof infrastructure, and it is owed before the
+toggle ships."* It is taken.
+
+**The infrastructure first, because the debt was in the instrument.** Everything
+`CanvasReadback` reported was a COUNT, and two rasterisers that paint the same
+number of pixels can paint entirely different ones — so no figure on that
+interface could compare two engines. The harness now takes an optional fourth
+argument and writes the page canvas's own pixels to a file.
+
+Three decisions inside that, each with the alternative it rejects:
+
+- **A file, not the marker line.** The marker is one line a caller greps; a page
+  at device scale is several megabytes.
+- **Through a PNG data URL, decoded by `nativeImage`.** The renderer has the
+  pixels and cannot write a file — correctly — and carrying four million RGBA
+  entries out through `executeJavaScript`'s JSON channel is tens of megabytes.
+  PNG is the compact form the platform already produces and `nativeImage` is the
+  decoder it already ships, so nothing here re-implements an image format. It is
+  lossless, which is what keeps an encoder's own error out of a measurement of
+  two rasterisers' disagreement.
+- **BGRA straightened to RGBA once, where the fact is known.** `toBitmap()`
+  answers BGRA. A consumer comparing it against another rasteriser's RGBA buffer
+  would otherwise find every red and blue channel swapped, which reads as a
+  large, plausible, entirely artificial disagreement.
+
+**THE READING.** A page of Helvetica at seven sizes plus one filled rectangle,
+PDF.js driven through the shipped Open control at 1191×1684 device pixels:
+
+| | |
+|---|---|
+| pixels compared | 2,005,644 |
+| PDF.js ink | 97,670 pixels |
+| PDFium ink | 99,561 pixels |
+| mean difference | **0.645 levels** over the whole canvas |
+| mean over inked pixels | **12.716 levels** |
+| worst pixel | 255.0 levels |
+| differing pixels | 36,928 — **1.84%** |
+
+**What it says: the toggle is not a no-op.** Twelve and a half levels of mean
+difference where the ink is, and nearly two percent of the canvas differing, is
+a visibly different render rather than the same one twice. That was the open
+question the row could not answer from counts.
+
+**What it does not say is which is better**, and the 2026-09-08 finding stands
+unchanged: *higher fidelity* is not a property either engine has. The metric that
+ranks them reads hinting, not accuracy. So the row may now be built, and
+`docs/ARCHITECTURE.md` §3's phrase *"optional higher-fidelity rasteriser"* is
+still a claim no measurement supports — which is a separate debt and is named
+here rather than quietly carried.
+
+**Its own controls, because a difference metric's reassuring answer is a small
+number.** A resolution test runs before anything real is compared: two buffers
+differing by one level in one of sixteen pixels must read as mean 0.0625, worst
+1, differing 1 — audit item 4a, and a blind metric produces small numbers for
+everything. And either engine's ink being zero is a refusal, because two blank
+canvases agree perfectly and that is the reading total failure produces.
+
+The two existing readback callers — `proof:canvaspixels` and
+`proof:rendergeometry` — pass the fourth argument not at all, so they write no
+pixels and are unaffected. Both were run.
+
+---
+
 ## 2026-09-09 — B4: a host's reader set is its own engine's, and what a host holds between commands is a granted area
 
 [ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),

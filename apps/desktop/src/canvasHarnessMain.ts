@@ -63,15 +63,20 @@ process.on('unhandledRejection', (reason) => {
  * A missing argument is refused rather than defaulted: a default here would make
  * a mis-invoked harness report about some other document.
  */
-const [fixture, openControlName, zoomControlName] = process.argv.slice(2);
+const [fixture, openControlName, zoomControlName, pixelPath] = process.argv.slice(2);
 if (fixture === undefined || openControlName === undefined || zoomControlName === undefined) {
   reportHarnessFailure(
     new Error(
       'usage: electron canvasHarnessMain.js <fixture-path> <open-control-name> ' +
-        '<zoom-in-control-name>. All three are required; defaulting any would let this ' +
-        'harness report about a document or a control the caller did not name.',
+        '<zoom-in-control-name> [pixel-output-path]. The first three are required; defaulting ' +
+        'any would let this harness report about a document or a control the caller did not ' +
+        'name. The fourth is OPTIONAL and its absence is a decision rather than a default: ' +
+        'writing a page of pixels is several megabytes, and every caller but the ' +
+        'engine comparison wants the counts alone.',
     ),
   );
 }
 
-reportCanvasPixels(fixture, openControlName, zoomControlName).catch(reportHarnessFailure);
+reportCanvasPixels(fixture, openControlName, zoomControlName, pixelPath).catch(
+  reportHarnessFailure,
+);
