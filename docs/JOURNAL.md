@@ -888,6 +888,67 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — A control keyed on a name appearing at all, and the guard that printed the reason first
+
+`main` went red at `49adbda`, on Guards, both legs, at the step that proves the
+local check sweep can report a failure.
+
+### The defect
+
+`checkLocal.proof.mjs` carried *CONTROL: it picks up the ROSTER, not every proof
+the manifest declares*, asserting `!/proof:unrelated/` over the **whole** sweep
+output. That separated *the roster ran* from *everything ran* only while the sweep
+never mentioned a script it did not run. The commit before made it name them — so
+the fixture's non-roster proof appeared in the output for the **opposite** reason,
+and the case failed.
+
+A proxy assertion expiring. The lucky half is that it expired **loudly**: the
+same change could as easily have made a case pass for a reason it does not claim,
+and nothing would have said so.
+
+The repair asserts both halves, which is what the case always meant: the proof
+has no **result row**, and the run **says** it was not attempted. Splitting the
+output at the disclosure is what makes those decidable, because a name can only
+be on one side of it.
+
+### The masked steps were run by hand
+
+`checkLocal.proof.mjs` is step 37 of that job, so **everything after it never
+executed** on this range — a failing step masks what follows, and a fix makes
+later steps *run for the first time* rather than go green. All nineteen were run
+locally before the fix was pushed, plus `guardFiles --tree`. All pass.
+
+### AND THE LINE I ADDED NAMED THE GAP THAT CAUSED IT
+
+The run before the push was `npm run local -- --only "check:"`, which does not
+include `proof:checklocal`. The disclosure that same commit added reads:
+
+```
+141 script(s) the workflows run were NOT attempted here — 103 of them proofs
+```
+
+Third red in two blocks from one habit, and the first where the tool printed the
+reason in advance of the consequence. What that says about the mechanism is
+better than what it says about the seat: the compensation is now specific and
+present, which is what it was not when it lived in a handoff note.
+
+### The escape guard's own roster, paid
+
+`proofAnchors.mjs`' `UNANCHORED` list named
+`blockEscapeResolvingWrites.proof.mjs` as its load-bearing entry and said exactly
+why: it printed `${passed.length} escape-guard cases passed` — a total **derived
+from what ran** — while its cases are generated from the rule table, so a rule
+leaving that table took its cases and the total with it. Audit item 4c in the
+direction the rule warns about, on the guard `CLAUDE.md` calls *the* mechanism
+for a rule broken eight times.
+
+It takes `createRoster` with a literal **304** now, measured by running it, and is
+off the list. Verified in the biting direction rather than by inspection:
+declaring 305 exits 1 with *1 case(s) STOPPED RUNNING*. Adding a rule is a
+two-line diff; removing one is a red check.
+
+---
+
 ## 2026-09-11 — The text layer's font, measured before the row is built
 
 D6 row 3 embeds the recognised text as an invisible layer. The drawing half is a
