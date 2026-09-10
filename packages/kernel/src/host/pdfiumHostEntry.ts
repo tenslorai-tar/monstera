@@ -9,6 +9,7 @@ import {
   openPdfium,
   pdfiumWriter,
   pageObjects,
+  renderPageBitmap,
   textRuns,
 } from '../pdfium.js';
 import { cryptoBytes } from '../token.js';
@@ -172,6 +173,18 @@ const handlers = createPdfiumHandlers({
         runs: runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
         truncated: runs.length > ENGINE_TEXT_OBJECTS_MAX,
       };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  },
+  renderPage: async (image, page, width, height) => {
+    const session = await pdfiumWriter.open(image);
+    try {
+      // THE BITMAP'S OWN BYTES, unconverted. `renderPageBitmap` answers BGRA
+      // because that is what PDFium produces and what main's encoder takes; a
+      // conversion here would be one of two, done for a consumer that wants
+      // neither.
+      return (await renderPageBitmap(session, page, width, height)).bgra;
     } finally {
       await pdfiumWriter.close(session);
     }

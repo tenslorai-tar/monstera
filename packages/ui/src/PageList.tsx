@@ -13,7 +13,7 @@ import { ANNOTATION_SURFACE_LABEL } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
-import { renderPage } from './renderPage.js';
+import { type SecondRasteriser, renderPage } from './renderPage.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
@@ -212,6 +212,16 @@ export interface PageListProps {
    * something a reader has to notice.
    */
   readonly search: SearchHighlight | undefined;
+  /**
+   * §6.1's second engine, or `undefined` where the setting is off.
+   *
+   * Handed straight to each slot, `search`'s reason: this scroller decides
+   * nothing about how a page is drawn, it hands each page the same description
+   * of who draws it. Required and `| undefined` rather than optional for the
+   * same reason too — a prop silently dropped between here and the canvas would
+   * leave every test green and the setting dead.
+   */
+  readonly secondRasteriser: SecondRasteriser | undefined;
 }
 
 /**
@@ -288,6 +298,7 @@ export function PageList({
   startAt,
   drawing,
   search,
+  secondRasteriser,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
@@ -709,6 +720,7 @@ export function PageList({
           // rather than as a missing measurement.
           text={sizes.has(page) ? pageText.get(page) : undefined}
           search={search}
+          secondRasteriser={secondRasteriser}
         />
       ))}
     </div>
@@ -753,6 +765,7 @@ function PageSlot({
   drawing,
   text,
   search,
+  secondRasteriser,
 }: {
   readonly page: number;
   readonly ref: (element: HTMLElement | null) => void;
@@ -766,6 +779,14 @@ function PageSlot({
   readonly drawing: PageListProps['drawing'];
   readonly text: readonly TextLayerLine[] | undefined;
   readonly search: SearchHighlight | undefined;
+  /**
+   * §6.1's second engine, or `undefined` where the setting is off.
+   *
+   * **Must be stable across renders**, like `onMeasured` beside it: the draw
+   * effect depends on it, and an inline arrow would redraw every page on every
+   * render of the list.
+   */
+  readonly secondRasteriser: SecondRasteriser | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -810,6 +831,7 @@ function PageSlot({
         // the page's own `/Rotate`. A flat zero would silently flatten every
         // document that arrives already turned.
         rotation,
+        secondRasteriser,
       );
       if (cancelled) return;
       onMeasured(page, {
@@ -839,7 +861,7 @@ function PageSlot({
     return (): void => {
       cancelled = true;
     };
-  }, [draw, onMeasured, page, renderZoom, rotation, view]);
+  }, [draw, onMeasured, page, renderZoom, rotation, secondRasteriser, view]);
 
   return (
     <div

@@ -291,6 +291,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -322,6 +323,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -372,6 +374,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -406,6 +409,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -439,6 +443,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -479,6 +484,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -510,6 +516,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -554,6 +561,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();
@@ -607,6 +615,7 @@ describe('PageList', () => {
       showGrid: false,
       unit: 'in' as const,
       search: undefined,
+      secondRasteriser: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
     await settle();
@@ -664,6 +673,7 @@ describe('PageList', () => {
           showGrid={false}
           unit="in"
           search={undefined}
+        secondRasteriser={undefined}
         />,
       );
       await settle();
@@ -691,6 +701,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
+        secondRasteriser={undefined}
           />,
         );
         await Promise.resolve();
@@ -729,6 +740,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
+        secondRasteriser={undefined}
           />,
         );
         await act(async () => {
@@ -754,6 +766,7 @@ describe('PageList', () => {
             showGrid={false}
             unit="in"
             search={undefined}
+        secondRasteriser={undefined}
           />,
         );
 
@@ -797,6 +810,7 @@ describe('PageList', () => {
         showGrid={false}
         unit="in"
         search={undefined}
+        secondRasteriser={undefined}
       />,
     );
     await settle();

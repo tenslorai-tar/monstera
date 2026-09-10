@@ -918,6 +918,41 @@ export interface DocumentPageObjects {
   readonly truncated: boolean;
 }
 
+/**
+ * One page rasterised by the EDITING engine, as PNG bytes.
+ *
+ * §6.1's setting, amended 2026-09-10: a second opinion about how a page looks
+ * rather than a better one. The size is the caller's — the renderer knows its
+ * canvas's device size and nothing else does — which is ADR-0031's sanctioned
+ * crossing rather than a snapshot.
+ */
+export type DocumentPageRasteriser = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  width: number,
+  height: number,
+) => Promise<{
+  readonly width: number;
+  readonly height: number;
+  /**
+   * `Uint8Array<ArrayBuffer>` rather than the default `ArrayBufferLike`, and it
+   * is `RangeOutcome`'s type for `RangeOutcome`'s reason: a
+   * `SharedArrayBuffer`-backed view is exactly the thing that would hand the
+   * renderer a window onto memory main still owns. The encoder answers a fresh
+   * buffer, so the narrower type is true rather than asserted.
+   */
+  readonly png: Uint8Array<ArrayBuffer>;
+}>;
+
+/** The raster, stamped with the version the lane rendered it at. */
+export interface DocumentPageRaster {
+  readonly version: DocVersion;
+  readonly width: number;
+  readonly height: number;
+  readonly png: Uint8Array<ArrayBuffer>;
+}
+
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
   docId: DocId,
@@ -1114,6 +1149,8 @@ export interface DocumentCommandsParts {
   readonly textLines: DocumentTextLinesReader;
   /** The editing engine's reading of a page's objects, or a thrower. */
   readonly pageObjects: DocumentPageObjectsReader;
+  /** The editing engine's raster of a page, or a thrower. */
+  readonly renderPage: DocumentPageRasteriser;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -1140,6 +1177,7 @@ export class DocumentCommands {
   readonly #flatFields: DocumentFlatFieldsReader;
   readonly #textLines: DocumentTextLinesReader;
   readonly #pageObjects: DocumentPageObjectsReader;
+  readonly #renderPage: DocumentPageRasteriser;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -1164,6 +1202,7 @@ export class DocumentCommands {
     this.#flatFields = parts.flatFields;
     this.#textLines = parts.textLines;
     this.#pageObjects = parts.pageObjects;
+    this.#renderPage = parts.renderPage;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -1574,6 +1613,40 @@ export class DocumentCommands {
     });
 
     return { version, objects: value.objects, truncated: value.truncated };
+  }
+
+  /**
+   * One page rasterised by the editing engine, inside the document's lane.
+   *
+   * {@link pageObjects}' guards in its order and for its reasons. The lane
+   * matters here for one it does not share: this read serialises the document to
+   * hand PDFium its bytes, and a render interleaved with an `apply` would draw a
+   * page that is neither the one before the command nor the one after it — a
+   * picture of a document that never existed, which is worse than a stale one
+   * because nothing about it looks wrong.
+   *
+   * The version comes back so a caller can drop a raster the document has moved
+   * past. It is not a staleness CHECK — a read answers with whatever is there
+   * now and cannot be stale (`document.execute`'s note) — it is what lets the
+   * renderer notice.
+   */
+  async renderPage(
+    docId: DocId,
+    page: number,
+    width: number,
+    height: number,
+  ): Promise<DocumentPageRaster> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#renderPage(docId, sessions, page, width, height);
+    });
+
+    return { version, width: value.width, height: value.height, png: value.png };
   }
 
   /**

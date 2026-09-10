@@ -150,6 +150,7 @@ import {
   LOUPE_SETTING,
   RULERS_SETTING,
   RULER_UNIT_SETTING,
+  SECOND_RENDERER_SETTING,
   SPLIT_VIEW_SETTING,
   applyDarkPage,
 } from './settings/viewing.js';
@@ -167,7 +168,7 @@ import { StylePanel } from './StylePanel.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
-import { FIRST_PAGE } from './pageNumbering.js';
+import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { Ribbon } from './surfaces/Ribbon.js';
@@ -1132,6 +1133,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   const unit = useSetting(settings, RULER_UNIT_SETTING);
   const loupe = useSetting(settings, LOUPE_SETTING);
   const split = useSetting(settings, SPLIT_VIEW_SETTING);
+  const secondRenderer = useSetting(settings, SECOND_RENDERER_SETTING);
 
   /**
    * The updater the zoom commands are given.
@@ -1451,6 +1453,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           others={tabs}
           onCompare={setCompareId}
           search={search ?? undefined}
+          secondRenderer={secondRenderer}
         />
         </ErrorBoundary>
         </>
@@ -1720,6 +1723,7 @@ function PageCanvas({
   onCompare,
   drawing,
   search,
+  secondRenderer,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -1757,6 +1761,8 @@ function PageCanvas({
   readonly drawing: PageListProps['drawing'];
   /** What the find bar last answered, painted over both panes' text layers. */
   readonly search: SearchHighlight | undefined;
+  /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
+  readonly secondRenderer: boolean;
 }): ReactElement {
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
@@ -1778,6 +1784,51 @@ function PageCanvas({
   // Every hazard it carries — the call-not-variable cancellation flag, the
   // close on the late path, the clear before the close — is stated there.
   const { ready, failed } = useDocumentView(client, open, moved);
+
+  /**
+   * §6.1's second engine, or `undefined` where the setting is off.
+   *
+   * ## EVERY refusal answers `null`, which is what keeps a page drawn
+   *
+   * The setting can be on while the engine is not reachable — a build with no
+   * `pdfium.dll`, a page too large at this zoom, a document main will not open.
+   * All of them mean *PDF.js draws this one*, and none of them means a blank
+   * page. So the failures are read and dropped here rather than reported: a
+   * dialog for each page of a scroll would be a hundred dialogs, and what a
+   * person sees instead is the page, drawn by the other engine.
+   *
+   * That is a deliberate silence and the only one in this file. It is
+   * defensible because the outcome is the ordinary render rather than nothing —
+   * a control that silently did nothing would be the wired-tools defect, and
+   * this silently does what it did before the setting existed.
+   *
+   * ## `useCallback`, because `PageList`'s draw effect depends on it
+   *
+   * An inline arrow would be a new dependency every render, and every page
+   * would redraw — through a contained host — on every state change in this
+   * component.
+   */
+  const secondRasteriser = useCallback(
+    async (pageNumber: number, width: number, height: number): Promise<ImageBitmap | null> => {
+      const answer = await client['document.renderPage']({
+        docId: open.docId,
+        // ZERO-BASED ON THE WIRE. `pageNumber` is PDF.js's 1-based number
+        // because that is what the canvas holds, and `pageNumbering.ts` is the
+        // one place that converts — `SHOWN_PAGE`'s whole reason.
+        page: kernelPageOf(pageNumber),
+        width,
+        height,
+      });
+      if (!answer.ok) return null;
+      // `createImageBitmap` IS CHROMIUM'S OWN DECODER, and it is asynchronous
+      // and can fail on its own — a truncated PNG throws here rather than
+      // drawing something wrong.
+      return createImageBitmap(new Blob([answer.value.png], { type: 'image/png' })).catch(
+        () => null,
+      );
+    },
+    [client, open.docId],
+  );
 
   // THE COUNT GOES UP, because the navigation commands are registered in `App`
   // and need an end to clamp against. It cannot be read there: the number is
@@ -1855,6 +1906,11 @@ function PageCanvas({
         unit={unit}
         drawing={drawing}
         search={search}
+        // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
+        // the only thing that decides. `PageList` falls back to PDF.js for an
+        // absent rasteriser and for one that answers `null`, so the two states
+        // reach the same code and neither can leave a page blank.
+        secondRasteriser={secondRenderer ? secondRasteriser : undefined}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
           One document, two scrollers: a pane that opened its own view would
@@ -1934,6 +1990,11 @@ function PageCanvas({
               // one document, and a split where the search highlighted one half
               // would read as the second pane showing a different document.
               search={search}
+              // AND BOTH DRAW WITH THE SAME ENGINE, which is the same argument
+              // again: one document in two viewports, and a split where the
+              // halves were rasterised differently would show a difference the
+              // document does not have.
+              secondRasteriser={secondRenderer ? secondRasteriser : undefined}
             />
           ) : null}
         </div>

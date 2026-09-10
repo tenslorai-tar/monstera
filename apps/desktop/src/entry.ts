@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { MAX_FORM_DATA_BYTES, MAX_IMAGE_BYTES } from '@monstera/contract';
-import { app, shell } from 'electron';
+import { app, nativeImage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import {
@@ -164,6 +164,24 @@ startShell(() => {
     // deliberate — no PDFium host is created, and a command routed to `pdfium`
     // is refused by name at the registry rather than reaching a native call.
     pdfiumPlatform: enginePlatform === null ? null : createPdfiumHostPlatform(enginePlatform),
+    // THE ENCODER, and it is here because `nativeImage` is Electron's.
+    //
+    // `composition.ts` imports no Electron — which is what lets
+    // `compositionHost.test.ts` exercise the whole wiring in vitest in
+    // milliseconds — so the one line that turns a PDFium raster into PNG bytes
+    // arrives as a surface, exactly as every picker above it does.
+    //
+    // `createFromBitmap` takes BGRA, which is what PDFium produces, so nothing
+    // on the path from the rasteriser to here converts. `scaleFactor: 1` because
+    // the caller already stated the size in DEVICE pixels: telling Electron the
+    // image is 2× would make it report half the dimensions to anything that
+    // asked, and the renderer compares what it got against what it requested.
+    encodePng: (bitmap, width, height) =>
+      new Uint8Array(
+        nativeImage
+          .createFromBitmap(Buffer.from(bitmap), { width, height, scaleFactor: 1 })
+          .toPNG(),
+      ),
     // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
     // packaged run: a Store application has no terminal attached, so until this
     // existed every failure this repository takes care to describe went to a

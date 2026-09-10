@@ -1199,6 +1199,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok({ version: asDocVersion(current), lines, truncated: false }));
     },
 
+    'document.renderPage': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      // ALWAYS UNAVAILABLE, and unlike its two neighbours there is no option to
+      // make it otherwise. Those answer a list a case can supply; this answers
+      // an IMAGE, and a shim that invented one would be handing a surface a
+      // picture of a document that does not exist — the browser shim's kernel is
+      // stubbed and there is nothing here to draw. A surface that assumed the
+      // render succeeds therefore fails in the shim first, which is where it is
+      // cheap.
+      return Promise.resolve(err({ code: 'engine-unavailable' }));
+    },
+
     'document.pageObjects': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

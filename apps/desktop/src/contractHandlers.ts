@@ -1,4 +1,10 @@
-import type { ChannelResult, ContractHandlers, SpellingLanguage } from '@monstera/contract';
+import {
+  MAX_RASTER_BYTES,
+  MAX_RASTER_PIXELS,
+  type ChannelResult,
+  type ContractHandlers,
+  type SpellingLanguage,
+} from '@monstera/contract';
 import {
   type CapabilityRegistry,
   DocumentBusyError,
@@ -175,6 +181,7 @@ export function createContractHandlers(deps: {
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
     'document.textLines': textLinesHandler(deps.commands),
     'document.pageObjects': pageObjectsHandler(deps.commands),
+    'document.renderPage': renderPageHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -931,6 +938,51 @@ function pageObjectsHandler(commands: DocumentCommands): ContractHandlers['docum
     try {
       const { version, objects, truncated } = await commands.pageObjects(docId, page);
       return ok({ version, objects, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * One page drawn by the editing engine, with BOTH bounds enforced here.
+ *
+ * ## The pixel cap is checked BEFORE the engine is asked
+ *
+ * A raster this boundary would refuse costs nothing to refuse early and costs a
+ * rasterisation to refuse late. That ordering is also what makes the two bounds
+ * mean different things: `MAX_RASTER_PIXELS` bounds the WORK and is a property
+ * of the request, `MAX_RASTER_BYTES` bounds the ANSWER and is a property of what
+ * the page turned out to be.
+ *
+ * ## And the byte cap is checked here rather than left to the schema
+ *
+ * The result schema refuses an over-long buffer, and a refusal there is a
+ * boundary VIOLATION — `internal` plus an incident id, the shape reserved for a
+ * defect. A page that compresses badly at a legal size is not a defect; it is an
+ * outcome a person can act on by zooming out. So it is refused by name, and the
+ * schema's own bound stays as the thing that catches a handler which forgot.
+ */
+function renderPageHandler(commands: DocumentCommands): ContractHandlers['document.renderPage'] {
+  return async ({
+    docId,
+    page,
+    width,
+    height,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.renderPage']>>> => {
+    if (width * height > MAX_RASTER_PIXELS) return err({ code: 'raster-too-large' });
+    try {
+      const raster = await commands.renderPage(docId, page, width, height);
+      if (raster.png.length > MAX_RASTER_BYTES) return err({ code: 'raster-too-large' });
+      return ok({
+        version: raster.version,
+        width: raster.width,
+        height: raster.height,
+        png: raster.png,
+      });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

@@ -57,6 +57,7 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     z.object({ code: z.literal('document-poisoned') }).strict(),
     z.object({ code: z.literal('stale-target') }).strict(),
     z.object({ code: z.literal('engine-unavailable') }).strict(),
+    z.object({ code: z.literal('raster-too-large') }).strict(),
     z.object({ code: z.literal('internal'), incident: z.string().min(1) }).strict(),
   ]),
   component: lazy(() => import('./CommandProblemBody.js')),

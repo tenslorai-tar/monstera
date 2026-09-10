@@ -318,6 +318,55 @@ export function remotePdfiumTextRuns(
 }
 
 /**
+ * One page rasterised, over the boundary.
+ *
+ * ## It uses `wrote`'s shape, not `withImage`'s, and the difference is a FILE
+ *
+ * The two readers beside it answer on the pipe. This one's answer is a page of
+ * pixels, so the host writes it into the granted output directory and this takes
+ * it back out — the same round trip a byte-image command's result makes, which
+ * is why the input write, the output read and the cleanup are the ones already
+ * written rather than a second arrangement of them.
+ *
+ * ## The byte count is CHECKED against the size that was asked for
+ *
+ * A raster of `width * height * 4` bytes is the only correct answer, and a file
+ * shorter than that is a partial write that would decode as an image with a
+ * torn bottom edge rather than as a failure. `EngineSerialiseMismatch` is what
+ * the byte-image path raises for the same disagreement.
+ */
+export function remotePdfiumRenderPage(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (
+  image: ByteImage,
+  page: number,
+  width: number,
+  height: number,
+) => Promise<{ readonly width: number; readonly height: number; readonly bgra: Uint8Array }> {
+  return async (image, page, width, height) => {
+    const { session, area } = held();
+    const from = transfer.mintName();
+    const into = transfer.mintName();
+    await transfer.writeSnapshot(area, from, image);
+    try {
+      const answer = answered(
+        'engine/render-page',
+        await client['engine/render-page']({ session, from, into, page, width, height }),
+      );
+      const bgra = await transfer.takeOutput(area, into);
+      if (bgra.length !== answer.bytes || bgra.length !== width * height * 4) {
+        throw new EngineSerialiseMismatch(width * height * 4, bgra.length);
+      }
+      return { width, height, bgra };
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}
+
+/**
  * One page's objects, over the boundary.
  *
  * {@link remotePdfiumTextRuns}' sibling on the other read, and a **query**

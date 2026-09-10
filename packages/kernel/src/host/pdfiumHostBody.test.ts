@@ -169,6 +169,18 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         truncated: false,
       });
     },
+    renderPage: (image, page, width, height) => {
+      calls.push(`render:${String(page)}:${String(width)}x${String(height)}:${[...image].join(',')}`);
+      // THE SAME REFUSAL SHAPE the other stubs use: a one-byte document is one
+      // this engine cannot read, so `engine-refused` exercises the handler's
+      // catch rather than a branch written for the test.
+      if (image.length === 1 && image[0] === 0) throw new Error('PDFium refused the document');
+      // A BUFFER OF THE RIGHT LENGTH, filled with a value nothing else here
+      // produces: main checks `width * height * 4` and refuses a short one, so a
+      // stub answering an arbitrary length would fail for the right reason and
+      // teach the case nothing about the handler.
+      return Promise.resolve(new Uint8Array(width * height * 4).fill(7));
+    },
     pageObjects: (image, page) => {
       calls.push(`page-objects:${String(page)}:${[...image].join(',')}`);
       return Promise.resolve({
@@ -443,6 +455,65 @@ describe('the PDFium host body', () => {
     // THE PAGE REACHED THE READER. Without this the case passes on a handler
     // that hard-codes a page, and the answer would be right for page 0 for ever.
     expect(calls).toStrictEqual(['text-runs:3:7']);
+  });
+
+  it('rasterises a page into the granted OUTPUT directory, not onto the pipe', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([9]));
+
+    stream.feed(
+      request('r1', 'engine/render-page', {
+        session,
+        from: IN,
+        into: OUT,
+        page: 2,
+        width: 4,
+        height: 3,
+      }),
+    );
+    await stream.whenSent(2);
+
+    // THE ANSWER IS A COUNT, and the pixels are in a file. A page at device
+    // scale is eight megabytes and this protocol frames a message per call, so
+    // an answer carrying the bitmap would be the thing the granted area exists
+    // to avoid.
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { bytes: 48 } } });
+    const written = files.written.get(`${AREA.outputDirectory}|${OUT}`);
+    expect(written?.length).toBe(48);
+    // THE SIZE AND THE PAGE REACHED THE RASTERISER. Without this the case passes
+    // against a handler that hard-codes either, and the answer would be right
+    // for page 0 at one size for ever.
+    expect(calls).toStrictEqual(['render:2:4x3:9']);
+  });
+
+  it('writes NOTHING when the rasteriser refuses', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    // A SINGLE BYTE IS A DOCUMENT THE STUB REFUSES, which is how every other
+    // engine-refused case here is built — and the assertion is that main's
+    // output name is left UNWRITTEN, because a partial file would decode as an
+    // image with a torn edge rather than as a failure.
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
+
+    stream.feed(
+      request('r1', 'engine/render-page', {
+        session,
+        from: IN,
+        into: OUT,
+        page: 0,
+        width: 2,
+        height: 2,
+      }),
+    );
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: false, error: { code: 'engine-refused' } },
+    });
+    expect(files.written.size).toBe(0);
   });
 
   it('has NO engine/serialise, because a host holding nothing has nothing to hand back', async () => {

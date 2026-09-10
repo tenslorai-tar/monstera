@@ -49,6 +49,7 @@ import {
   parsePageText,
   pdfiumChannels,
   remotePdfiumPageObjects,
+  remotePdfiumRenderPage,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
   remoteMupdfGeometry,
@@ -275,6 +276,36 @@ export interface EngineHostPlatform {
  * `app.getPath('userData')` is Electron's answer, and this file may not ask
  * Electron anything.
  */
+/**
+ * Turns a BGRA bitmap into PNG bytes.
+ *
+ * ## A SURFACE, because this file imports no Electron and that is load-bearing
+ *
+ * `nativeImage.createFromBitmap(…).toPNG()` is one line and it is Electron's, so
+ * writing it here would make the composition root unimportable outside a running
+ * Electron process — and `compositionHost.test.ts` imports exactly this file in
+ * vitest, which is how the whole wiring is exercised in milliseconds. The same
+ * argument every picker on this object already makes.
+ *
+ * ## Why an encode happens at all
+ *
+ * The PDFium host answers a page's raster as BGRA, which is what the library
+ * produces. Eight megabytes of structured clone per page per scroll position is
+ * what that costs un-encoded; the same page as PNG is tens of kilobytes.
+ * ADR-0031 permits a raster to cross under a caller-stated maximum and says
+ * nothing about it being raw.
+ */
+export type EncodePng = (
+  bitmap: Uint8Array,
+  width: number,
+  height: number,
+  // `Uint8Array<ArrayBuffer>`, `RangeOutcome`'s type and its reason: a
+  // `SharedArrayBuffer`-backed view would hand the renderer a window onto memory
+  // main still owns. An encoder answers a fresh buffer, so this is true rather
+  // than asserted — and stating it here is what makes the whole path to the
+  // channel carry the guarantee instead of casting at the end of it.
+) => Uint8Array<ArrayBuffer>;
+
 export interface ShellComposition {
   readonly appInfo: AppInfo;
   /** Which document to open. Electron's open dialog, in the shipped build. */
@@ -353,6 +384,16 @@ export interface ShellComposition {
    */
   readonly pdfiumPlatform?: EngineHostPlatform | null;
   /**
+   * How a rasterised page becomes PNG bytes. See {@link EncodePng}.
+   *
+   * Optional, and its absence is a decided state rather than a default: a
+   * composition with no encoder refuses `document.renderPage` with
+   * `engine-unavailable`, which is the same answer a machine with no PDFium
+   * gives and is true for the same reason — the second rasteriser is not
+   * reachable here.
+   */
+  readonly encodePng?: EncodePng | undefined;
+  /**
    * Where diagnostics go. Optional, and this is the one surface where that is
    * right: the absent case is `stderr`, a real destination that every test and
    * every harness already reads. Required, it would make `createShellLog` run
@@ -378,6 +419,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recent,
     enginePlatform = null,
     pdfiumPlatform = null,
+    encodePng,
     log = null,
   } = composition;
   const capabilities = new CapabilityRegistry();
@@ -635,6 +677,40 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pageObjects: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s objects');
       return pdfiumHost.pageObjects(await currentBytes(docId, sessions), page);
+    },
+    // THE SECOND RASTERISER, and the ENCODE is this layer's job.
+    //
+    // The host answers BGRA, which is what PDFium produces. What crosses to the
+    // renderer is a PNG, and the conversion happens here for two reasons that
+    // both point at this process: `nativeImage` is Electron's, so the kernel
+    // cannot reach it; and the renderer is this shell's own surface, so choosing
+    // the form its pixels arrive in is a presentation decision rather than a
+    // document one.
+    //
+    // **The encode is what makes the crossing affordable.** A page at device
+    // scale is 1191x1684x4 — eight megabytes of structured clone per page per
+    // scroll position — against tens of kilobytes for the same page as PNG.
+    // ADR-0031 permits a raster under a caller-stated maximum; it does not
+    // require that raster to be raw.
+    renderPage: async (docId, sessions, page, width, height) => {
+      // TWO WAYS TO BE UNAVAILABLE AND ONE ANSWER, which is right because the
+      // axis a code separates is *can this installation do it at all*: no PDFium
+      // and no encoder are the same answer to that question, and a second code
+      // would be two names for one refusal.
+      if (pdfiumHost === null || encodePng === undefined) {
+        throw new EngineUnavailableError('rendering a page with the second engine');
+      }
+      const raster = await pdfiumHost.renderPage(
+        await currentBytes(docId, sessions),
+        page,
+        width,
+        height,
+      );
+      return {
+        width: raster.width,
+        height: raster.height,
+        png: encodePng(raster.bgra, raster.width, raster.height),
+      };
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
@@ -1418,6 +1494,9 @@ type PdfiumTextRuns = ReturnType<typeof remotePdfiumTextRuns>;
 /** One page's objects, over the same wire. */
 type PdfiumPageObjects = ReturnType<typeof remotePdfiumPageObjects>;
 
+/** One page rasterised, over the same wire. */
+type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
+
 /**
  * The PDFium host's lifetime, its one granted area, and the writer the bus
  * routes `replaceTextObject` to.
@@ -1466,6 +1545,7 @@ function pdfiumHostBinding(
   readonly writer: RegisteredWriter<'pdfium'>;
   readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
+  readonly renderPage: PdfiumRenderPage;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -1474,6 +1554,7 @@ function pdfiumHostBinding(
     readonly writer: RegisteredWriter<'pdfium'>;
     readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
+  readonly renderPage: PdfiumRenderPage;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
     readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
     readonly session: string;
@@ -1592,6 +1673,7 @@ function pdfiumHostBinding(
       writer: remotePdfiumWriter(client, held, transfer),
       textRuns: remotePdfiumTextRuns(client, held, transfer),
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
+      renderPage: remotePdfiumRenderPage(client, held, transfer),
       paths,
       session: opened.value.session,
     };
@@ -1624,6 +1706,8 @@ function pdfiumHostBinding(
     },
     textRuns: async (image, page) => (await ensure()).textRuns(image, page),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
+    renderPage: async (image, page, width, height) =>
+      (await ensure()).renderPage(image, page, width, height),
     close: async () => {
       const live = host;
       host = null;

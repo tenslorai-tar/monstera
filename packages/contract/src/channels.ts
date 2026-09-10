@@ -442,6 +442,34 @@ export const MAX_FLAT_FIELD_CANDIDATES = 256;
  * compares.
  */
 export const MAX_TEXT_OBJECTS = MAX_TEXT_REPLACEMENTS;
+
+/**
+ * How many pixels one `document.renderPage` may be asked for.
+ *
+ * **A caller-stated maximum's ceiling**, which is what ADR-0031 permits a raster
+ * to cross under. Sixteen million is 4096×4096 — larger than any single page on
+ * any display this application runs on, and small enough that a caller cannot
+ * ask the second engine to rasterise a wall.
+ *
+ * It bounds the WORK. `MAX_RASTER_BYTES` bounds the answer, and the two are not
+ * redundant: a pixel cap alone leaves the payload unbounded, because a PNG's
+ * size depends on what is on the page.
+ */
+export const MAX_RASTER_PIXELS = 16_777_216;
+
+/**
+ * How many bytes one rasterised page may carry back.
+ *
+ * **Bounds the ANSWER**, where the constant above bounds the work. Thirty-two
+ * megabytes is well past a text page — measured at tens of kilobytes — and past
+ * a photographic one at any size this permits; what it refuses is the case where
+ * PNG cannot compress a full-size raster, which is a payload nobody should
+ * receive whatever asked for it.
+ *
+ * A refusal rather than a crop, because half a page is a picture of a document
+ * that does not exist.
+ */
+export const MAX_RASTER_BYTES = 32 * 1024 * 1024;
 export const MAX_FLAT_FIELD_LABEL = 128;
 
 /**
@@ -2234,6 +2262,75 @@ export const channels = {
       truncated: z.boolean(),
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
+   * One page drawn by the EDITING engine, as PNG bytes.
+   *
+   * ## §6.1's setting, and it is a second opinion rather than a better one
+   *
+   * Amended 2026-09-10 on two measurements. `pdfiumRender.mjs` found that the
+   * only reference-free metric ranks hinting rather than accuracy, so *which is
+   * better* has no answer available here; `pdfiumAgainstPdfjs.mjs` then compared
+   * this engine against PDF.js pixel for pixel — **12.716 levels of mean
+   * difference over inked pixels, 1.84% of the canvas differing**. They differ
+   * materially, and difference is not quality. What the setting is for is a
+   * reader whose document one rasteriser draws badly trying the other.
+   *
+   * ## THE SECOND SANCTIONED BYTE CROSSING, and its bound is the CALLER'S
+   *
+   * [ADR-0031](../../../docs/DECISIONS/0031-the-renderer-reads-the-document-by-demand-paged-ranges.md)
+   * bans a *snapshot* of the document and permits a raster under a caller-stated
+   * maximum; L11 is *per operation*. So the renderer states the device size it
+   * needs — it is the only side that knows its canvas — and both ends are
+   * bounded: `MAX_RASTER_PIXELS` caps the work, `MAX_RASTER_BYTES` caps the
+   * answer. Neither is a function of the document's size, which is what L11
+   * asks.
+   *
+   * The two bounds are not redundant. A pixel cap alone leaves the answer
+   * unbounded, because a PNG's size depends on what is on the page: a
+   * photograph compresses to nearly its raw size where a page of text does not.
+   * A byte cap alone would let a caller ask for a raster that costs minutes to
+   * produce and is then refused.
+   *
+   * ## PNG rather than raw, which is a size decision and not a format preference
+   *
+   * The engine produces BGRA and the shell encodes. A page at device scale is
+   * 1191×1684×4 — eight megabytes of structured clone per page per scroll
+   * position — against tens of kilobytes for the same page as PNG, and the
+   * renderer decodes it with `createImageBitmap`, which is Chromium's own.
+   * ADR-0031 permits a raster to cross; it does not require it to be raw.
+   */
+  'document.renderPage': channel(
+    'One page drawn by the editing engine, at the size the caller states, as PNG bytes.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      /**
+       * The size in DEVICE pixels, which is the renderer's own frame.
+       *
+       * Not a scale: `devicePixelRatio × zoom` is a number only the renderer
+       * holds, and a size derived in main from a scale would agree with the
+       * canvas on one display and differ on every other — `SHOWN_PAGE`'s defect
+       * with pixels in place of page indices.
+       */
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+    }),
+    z.object({
+      version: docVersionSchema,
+      /** The size actually drawn, which a caller compares against what it asked. */
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+      /** The page as PNG. Bounded, and the bound is a refusal rather than a crop. */
+      png: z.instanceof(Uint8Array).refine((bytes) => bytes.length <= MAX_RASTER_BYTES, {
+        message: `a raster larger than ${String(MAX_RASTER_BYTES)} bytes`,
+      }),
+    }),
+    // `raster-too-large` IS ITS OWN CODE rather than `internal`, because it is
+    // an OUTCOME a caller can act on: ask for fewer pixels. An incident id for a
+    // person who zoomed in would be a defect's answer to a working build.
+    ['document-not-open', 'document-poisoned', 'engine-unavailable', 'raster-too-large'],
   ),
 
   'document.duplicatePages': channel(

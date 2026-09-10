@@ -83,6 +83,12 @@ interface Bound {
   readonly setFillColour: Native;
   readonly removeObject: Native;
   readonly destroyObject: Native;
+  readonly createBitmap: Native;
+  readonly fillRect: Native;
+  readonly renderPage: Native;
+  readonly bitmapBuffer: Native;
+  readonly bitmapStride: Native;
+  readonly destroyBitmap: Native;
 }
 
 /**
@@ -278,6 +284,28 @@ export function openPdfium(libraryPath: string): void {
     // frees memory the page will use.
     removeObject: native(library.func('int FPDFPage_RemoveObject(void *page, void *object)')),
     destroyObject: native(library.func('void FPDFPageObj_Destroy(void *object)')),
+    // THE RASTERISER, and it is the only part of this adapter a READER uses.
+    // §6.1's setting, amended 2026-09-10: a second opinion about how a page
+    // looks rather than a better one, the two engines having been measured at
+    // 12.716 levels of mean difference over inked pixels.
+    createBitmap: native(library.func('void *FPDFBitmap_Create(int width, int height, int alpha)')),
+    fillRect: native(
+      library.func(
+        'void FPDFBitmap_FillRect(void *bitmap, int left, int top, int width, int height, unsigned long colour)',
+      ),
+    ),
+    renderPage: native(
+      library.func(
+        'void FPDF_RenderPageBitmap(void *bitmap, void *page, int start_x, int start_y, int size_x, int size_y, int rotate, int flags)',
+      ),
+    ),
+    bitmapBuffer: native(library.func('void *FPDFBitmap_GetBuffer(void *bitmap)')),
+    // THE STRIDE IS BOUND because it is not the width. PDFium may pad a row for
+    // alignment, and copying `width * 4` per row out of a `stride`-pitched
+    // buffer shears the image progressively down the page — a rendering defect
+    // in appearance and a copying one in fact.
+    bitmapStride: native(library.func('int FPDFBitmap_GetStride(void *bitmap)')),
+    destroyBitmap: native(library.func('void FPDFBitmap_Destroy(void *bitmap)')),
   };
   api.initialise();
   bound = api;
@@ -1173,6 +1201,109 @@ export function removeObjects(
       generate(bindings, handle);
     });
   });
+}
+
+/**
+ * One page rasterised to a bitmap, and the bitmap's shape.
+ *
+ * `bgra` rather than `rgba`, named for what it is: `FPDFBitmap_Create` with an
+ * alpha channel produces BGRA and this hands it back unchanged. The name is the
+ * whole documentation a consumer needs, and it happens to be the order
+ * Electron's `nativeImage.createFromBitmap` takes — so the shell can encode it
+ * with no swap, where a function that answered RGBA would make one side of that
+ * pair convert twice.
+ */
+export interface PageBitmap {
+  readonly width: number;
+  readonly height: number;
+  readonly bgra: Uint8Array;
+}
+
+/**
+ * Rasterises one page at exactly the pixel size the caller asked for.
+ *
+ * ## THE SIZE IS THE CALLER'S, and that is ADR-0031's sanctioned crossing
+ *
+ * A raster may cross to the renderer *under a caller-stated maximum* — what that
+ * ADR bans is a snapshot of the document. So the size is a parameter rather than
+ * a scale applied to the page's own box: the renderer knows its canvas's device
+ * size and nothing else does, and a size derived here from a scale would agree
+ * with it on one display.
+ *
+ * ## White first, because PDFium composites onto what it finds
+ *
+ * `FPDFBitmap_FillRect` with opaque white before the render. A page with no
+ * background drawn onto an unfilled bitmap composites over uninitialised memory,
+ * which reads as noise in exactly the places anti-aliasing lives — measured
+ * while writing `scripts/research/pdfiumRender.mjs`, which is where the same two
+ * lines appear for the same reason.
+ *
+ * ## The STRIDE is copied row by row, and on THIS format it never differs
+ *
+ * `FPDFBitmap_GetStride` may exceed `width * 4` for alignment, and a single
+ * `decode` of `width * height * 4` would then read the right number of bytes
+ * from the wrong places — an image sheared progressively down the page, which
+ * looks like a rendering defect and is a copying one.
+ *
+ * **Measured 2026-09-10 across thirteen widths including primes — 1, 2, 3, 5, 7,
+ * 13, 40, 41, 43, 97, 101, 399, 1191 — and the stride is exactly `width * 4`
+ * every time.** A four-byte pixel is already four-byte aligned, so BGRA has
+ * nothing to pad. The row loop below is therefore correct and **unexercised**,
+ * and saying so is the honest version: a case claiming to cover it would be
+ * asserting a length a flat copy also produces.
+ *
+ * It is kept rather than simplified, `replaceTextObjects`' partial-write guard's
+ * reason: the rule it encodes is true of the API rather than of this call, and
+ * `FPDFBitmap_Create` has formats where it bites — a one-byte `FPDFBitmap_Gray`
+ * or a three-byte `BGR` pads to four. A flat copy would be correct today and
+ * wrong in the commit that asks for greyscale.
+ *
+ * @throws when the size is not positive, rather than handing PDFium a zero or
+ * negative dimension. `FPDFBitmap_Create` answers null for those and a null
+ * bitmap's buffer is a null pointer, which `koffi.decode` would read through.
+ */
+export function renderPageBitmap(
+  session: PdfiumSession,
+  page: number,
+  width: number,
+  height: number,
+): Promise<PageBitmap> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+        throw new Error(
+          `A raster of ${String(width)}x${String(height)} is not a size PDFium can allocate. ` +
+            'The caller states the size and a non-positive one means the caller has a bug.',
+        );
+      }
+      const bitmap: unknown = bindings.createBitmap(width, height, 1);
+      if (bitmap === null) {
+        throw new Error(
+          `FPDFBitmap_Create refused ${String(width)}x${String(height)} ` +
+            `(FPDF_GetLastError ${String(bindings.lastError())}).`,
+        );
+      }
+      try {
+        bindings.fillRect(bitmap, 0, 0, width, height, 0xffffffff);
+        // FLAGS 0. `FPDF_LCD_TEXT` would produce sub-pixel-positioned text whose
+        // correctness depends on the physical pixel layout of the display it
+        // lands on, and this bitmap is encoded and sent somewhere else.
+        bindings.renderPage(bitmap, handle, 0, 0, width, height, 0, 0);
+        const stride = numberFrom(bindings.bitmapStride(bitmap), 'FPDFBitmap_GetStride');
+        const pointer: unknown = bindings.bitmapBuffer(bitmap);
+        if (pointer === null) throw new Error('FPDFBitmap_GetBuffer answered nothing.');
+        const source = koffi.decode(pointer, 'uint8_t', stride * height) as Uint8Array;
+        const bgra = new Uint8Array(width * height * 4);
+        for (let row = 0; row < height; row += 1) {
+          bgra.set(source.subarray(row * stride, row * stride + width * 4), row * width * 4);
+        }
+        return { width, height, bgra };
+      } finally {
+        bindings.destroyBitmap(bitmap);
+      }
+    }),
+  );
 }
 
 /**

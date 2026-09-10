@@ -114,6 +114,7 @@ const {
   setObjectMatrix,
   setObjectFills,
   removeObjects,
+  renderPageBitmap,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
@@ -147,13 +148,13 @@ async function threeRunsAndARectangle() {
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed **agrees with any collection**,
  * including one that has quietly shrunk — audit item 4c, and `check:proofanchors`
- * is the scan that refuses a proof without one. Forty-two is an independent
+ * is the scan that refuses a proof without one. Forty-seven is an independent
  * claim about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 42 });
+const roster = createRoster(failures, { cases: 47 });
 
 /**
  * @param {string} name
@@ -697,6 +698,79 @@ async function objectCases() {
     badIndex !== null && badIndex.includes('names none'),
     badIndex ?? 'it was accepted',
   );
+
+  await rasterCases();
+}
+
+/**
+ * The rasteriser — §6.1's setting, which is a READER and not a writer.
+ *
+ * Every case here is about the buffer's shape and its contents, because the
+ * shape is where this can go wrong invisibly: `FPDFBitmap_GetStride` may exceed
+ * `width * 4`, and copying as if it did not shears the image progressively down
+ * the page. That looks like a rendering defect and is a copying one.
+ */
+async function rasterCases() {
+  const session = await pdfiumWriter.open(await threeRunsAndARectangle());
+  try {
+    const small = await renderPageBitmap(session, 0, 40, 30);
+    record(
+      'renderPageBitmap answers exactly width x height x 4 bytes',
+      small.bgra.length === 40 * 30 * 4 && small.width === 40 && small.height === 30,
+      `${String(small.bgra.length)} bytes for ${String(small.width)}x${String(small.height)}`,
+    );
+
+    // NO STRIDE CASE, AND THAT IS A MEASUREMENT RATHER THAN AN OMISSION. This
+    // file carried one — an odd width, 41 pixels, asserting a tightly packed
+    // buffer — written on the belief that PDFium pads a row for alignment and
+    // that a stride-blind copy would fail it. Both halves were wrong: the
+    // assertion was on the LENGTH, which a flat copy also produces, and
+    // `FPDFBitmap_GetStride` answers exactly `width * 4` for every width
+    // measured (1, 2, 3, 5, 7, 13, 40, 41, 43, 97, 101, 399, 1191) because a
+    // four-byte pixel is already four-byte aligned.
+    //
+    // So the case could not separate anything, on a build where the thing it
+    // guarded cannot happen. The row-by-row copy stays — `FPDFBitmap_Gray` and
+    // `BGR` do pad — and the case is gone, a check that cannot fail being worse
+    // than no check.
+
+    // THE PAGE WAS DRAWN, which every shape assertion above is silent about: a
+    // buffer of the right length full of white is what a render that never
+    // happened leaves behind, the fill being opaque white on purpose.
+    const bigger = await renderPageBitmap(session, 0, 400, 300);
+    let inked = 0;
+    for (let at = 0; at + 3 < bigger.bgra.length; at += 4) {
+      if ((bigger.bgra[at] ?? 255) < 250) inked += 1;
+    }
+    record(
+      'and the page is actually DRAWN, not merely allocated and filled white',
+      inked > 0,
+      `${String(inked)} of ${String(400 * 300)} pixels carry ink`,
+    );
+    record(
+      'CONTROL: the same buffer is mostly WHITE, so the count above is ink and not noise',
+      inked < 400 * 300 * 0.5,
+      'a buffer composited over uninitialised memory would read as ink nearly everywhere',
+    );
+
+    // A SIZE PDFIUM CANNOT ALLOCATE IS REFUSED BY NAME. A zero dimension makes
+    // `FPDFBitmap_Create` answer null, and a null bitmap's buffer is a null
+    // pointer that `koffi.decode` would read through.
+    const zero = await refusal(() => renderPageBitmap(session, 0, 0, 30));
+    record(
+      'a non-positive size is refused before PDFium is asked',
+      zero !== null && zero.includes('not a size PDFium can allocate'),
+      zero ?? 'it was accepted',
+    );
+    const missing = await refusal(() => renderPageBitmap(session, 99, 10, 10));
+    record(
+      'a page the document does not have is refused by name',
+      missing !== null && missing.includes('could not load page'),
+      missing ?? 'it was accepted',
+    );
+  } finally {
+    await pdfiumWriter.close(session);
+  }
 }
 
 await main();

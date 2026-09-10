@@ -7,6 +7,7 @@ import {
   SPLIT_VIEW_TITLE,
   RULERS_TITLE,
   RULER_UNIT_TITLE,
+  SECOND_RENDERER_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -161,5 +162,41 @@ export const RULER_UNIT_SETTING: SettingDefinition<
   title: RULER_UNIT_TITLE,
   schema: z.enum(['in', 'cm', 'pt']),
   fallback: 'in',
+  category: 'viewing',
+};
+
+/**
+ * Whether the page is drawn by the second engine.
+ *
+ * ## It is a SECOND OPINION and not a better one, which the label has to carry
+ *
+ * §6.1, amended 2026-09-10 on two measurements: the reference-free metric that
+ * ranks two rasterisers reads hinting rather than accuracy, and a pixel-for-pixel
+ * comparison of this pair put them **12.716 levels apart over inked pixels with
+ * 1.84% of the canvas differing**. They differ materially; difference is not
+ * quality. So the setting exists for a reader whose document one rasteriser
+ * draws badly, and calling it *high definition* — which is what the row was
+ * named — would be a claim no measurement supports.
+ *
+ * ## In `viewing` beside the dark page, and for its reason
+ *
+ * Both change how the **document** is drawn rather than how the shell is
+ * painted, which is the distinction that keeps `appearance` from becoming the
+ * drawer everything lands in. A reader looking for this does not look under the
+ * theme.
+ *
+ * ## OFF by default, and that is not timidity
+ *
+ * PDF.js draws every page today; turning this on routes every page through a
+ * contained host, an image encode and an IPC crossing. A default that made the
+ * common path the expensive one would be a performance decision taken by a
+ * setting nobody chose — and an installation without `pdfium.dll` cannot honour
+ * it at all, which is the state a Store build may ship in.
+ */
+export const SECOND_RENDERER_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.second-renderer',
+  title: SECOND_RENDERER_TITLE,
+  schema: z.boolean(),
+  fallback: false,
   category: 'viewing',
 };

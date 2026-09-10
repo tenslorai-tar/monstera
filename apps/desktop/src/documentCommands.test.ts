@@ -58,6 +58,7 @@ import {
   type DocumentFlatFieldsReader,
   type DocumentTextLinesReader,
   type DocumentPageObjectsReader,
+  type DocumentPageRasteriser,
   EngineUnavailableError,
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
@@ -373,6 +374,10 @@ const noTextLines: DocumentTextLinesReader = () =>
 const noPageObjects: DocumentPageObjectsReader = () =>
   Promise.reject(new EngineUnavailableError('reading a page’s objects'));
 
+/** The same on the raster, which needs both a PDFium host and an encoder. */
+const noRenderPage: DocumentPageRasteriser = () =>
+  Promise.reject(new EngineUnavailableError('rendering a page with the second engine'));
+
 /** The candidate proposal's composition, per page. */
 const localFlatFields: DocumentFlatFieldsReader = (id, sessions, page) => {
   const held = sessions.mupdf;
@@ -473,6 +478,7 @@ const INERT = {
   flatFields: noFlatFields,
   textLines: noTextLines,
   pageObjects: noPageObjects,
+  renderPage: noRenderPage,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -499,6 +505,7 @@ const LOCAL_READS = {
   // plausible lines would be this file inventing an engine.
   textLines: noTextLines,
   pageObjects: noPageObjects,
+  renderPage: noRenderPage,
   duplicates: localDuplicates,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 

@@ -191,6 +191,18 @@ function CompareView({
       // be highlighting a search nobody ran against this file — the compare
       // pane is a second document, not a second view of the first.
       search={undefined}
+      // PDF.JS, ALWAYS, AND THAT IS THIS PANE'S WHOLE POINT.
+      //
+      // A compare pane exists so two documents can be looked at side by side,
+      // and a difference a reader sees has to be a difference between the
+      // DOCUMENTS. §6.1's second engine draws measurably differently — 12.716
+      // levels over inked pixels, 1.84% of a canvas — so a pane whose engine
+      // could differ from the other's would show a disagreement neither
+      // document has, and a reader comparing two revisions would chase it.
+      //
+      // `undefined` rather than passing the setting through: the setting is
+      // about how the reader's document is drawn, and this pane is not that.
+      secondRasteriser={undefined}
     />
   );
 }

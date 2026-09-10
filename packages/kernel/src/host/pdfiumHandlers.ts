@@ -87,6 +87,21 @@ export type HostTextRunsReader = (
  * {@link HostTextRunsReader}'s shape on the other read, injected for its reason:
  * a handler proof must be able to drive this channel without `pdfium.dll`.
  */
+/**
+ * A page rasterised to BGRA at the size the caller stated.
+ *
+ * Injected for {@link HostTextRunsReader}'s reason: a handler proof drives this
+ * channel without `pdfium.dll`. It answers the bytes rather than writing them —
+ * the handler owns where a file goes, because the granted directory is the
+ * handler's knowledge and not the rasteriser's.
+ */
+export type HostPageRasteriser = (
+  image: ByteImage,
+  page: number,
+  width: number,
+  height: number,
+) => Promise<Uint8Array>;
+
 export type HostPageObjectsReader = (
   image: ByteImage,
   page: number,
@@ -122,6 +137,8 @@ export interface PdfiumHandlerParts {
   readonly textRuns: HostTextRunsReader;
   /** How this process reads a page's objects. `engine/page-objects`. */
   readonly pageObjects: HostPageObjectsReader;
+  /** How this process rasterises a page. `engine/render-page`. */
+  readonly renderPage: HostPageRasteriser;
 }
 
 export function createPdfiumHandlers({
@@ -130,6 +147,7 @@ export function createPdfiumHandlers({
   files,
   pageObjects,
   probe,
+  renderPage,
   textRuns,
 }: PdfiumHandlerParts): Handlers<PdfiumChannels> {
   // THE MISS IS RETURNED, NEVER THROWN — `engineHandlers.ts`'s rule, and it is
@@ -358,6 +376,31 @@ export function createPdfiumHandlers({
       } catch (error) {
         return failed('engine-refused', error);
       }
+    },
+
+    'engine/render-page': async ({ session, from, into, page, width, height }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: Uint8Array;
+      try {
+        image = await imageFor(held, from);
+      } catch (error) {
+        return failed('asset-missing', error);
+      }
+      let raster;
+      try {
+        raster = await renderPage(image, page, width, height);
+      } catch (error) {
+        // THE DOCUMENT'S FAULT OR THE REQUEST'S, not the host's: a page this
+        // document does not have, or a size PDFium cannot allocate. Neither is
+        // evidence of a sick host, which is the axis a code separates.
+        return failed('engine-refused', error);
+      }
+      // THE WRITE STAYS OUTSIDE THE `try`, `engine/apply`'s rule: a raster that
+      // could not be produced must leave main's output name unwritten, so main
+      // reads nothing rather than a partial image.
+      const written = await files.writeOutput(held.outputDirectory, into, raster);
+      return { ok: true, value: { bytes: written } };
     },
   };
 }

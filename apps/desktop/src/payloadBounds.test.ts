@@ -283,6 +283,15 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // Nothing here is a function of the document's size, and unlike its neighbour
   // it carries no text at all.
   'document.pageObjects': 'needs an engine session',
+  // THE SECOND SANCTIONED BYTE CROSSING, and the only exclusion here that
+  // carries an IMAGE. It needs an engine session like its two neighbours, and
+  // the L11 answer is different enough to write out: the payload is a raster of
+  // exactly the size the CALLER stated, which is ADR-0031's sanctioned crossing
+  // — bounded at both ends, `MAX_RASTER_PIXELS` on the request and
+  // `MAX_RASTER_BYTES` on the answer, and neither is a function of the
+  // document's size. A thousand-page report and a one-page note answer the same
+  // number of bytes for the same canvas.
+  'document.renderPage': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

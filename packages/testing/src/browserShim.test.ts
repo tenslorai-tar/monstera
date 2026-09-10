@@ -209,6 +209,7 @@ describe('browser shim', () => {
       'document.placeImage',
       'document.readRange',
       'document.recent',
+      'document.renderPage',
       'document.save',
       'document.saveCopy',
       'document.searchPage',

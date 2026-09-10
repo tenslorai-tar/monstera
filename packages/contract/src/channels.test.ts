@@ -75,6 +75,10 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
+  'document.renderPage': ({ width, height }) =>
+    Promise.resolve(
+      ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
+    ),
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

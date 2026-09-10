@@ -68,9 +68,16 @@ function documentWithViewport(
  * purpose: nothing here draws, and a context that pretended to would be
  * modelling a renderer this file does not test.
  */
-function canvasWithContext(): HTMLCanvasElement {
+/**
+ * A canvas whose 2d context is a stub.
+ *
+ * `context` lets a case supply the one method it observes — `drawImage` for the
+ * second-engine path. An empty object is right for every PDF.js case, where the
+ * context is handed to a fake `render` that never touches it.
+ */
+function canvasWithContext(context: Partial<CanvasRenderingContext2D> = {}): HTMLCanvasElement {
   const canvas = window.document.createElement('canvas');
-  vi.spyOn(canvas, 'getContext').mockReturnValue({} as unknown as CanvasRenderingContext2D);
+  vi.spyOn(canvas, 'getContext').mockReturnValue(context as CanvasRenderingContext2D);
   return canvas;
 }
 
@@ -188,6 +195,63 @@ describe('renderPage', () => {
     await renderPage(document, 1, canvasWithContext(), 1);
 
     expect(asked).toStrictEqual([{ scale: 1 }]);
+  });
+
+  it('lets the SECOND ENGINE draw, and does not also run PDF.js', async () => {
+    // §6.1's setting, and the assertion is the CALL THAT WAS NOT MADE. A build
+    // that drew the raster and then let PDF.js paint over it produces the same
+    // end state in happy-dom — nothing draws there — and the same one in
+    // Chromium for a page the two engines agree on. `sizeAtRender` is empty only
+    // if PDF.js was never asked.
+    const { document, sizeAtRender } = documentWithViewport(300, 400);
+    const drawn: { image: unknown; x: number; y: number }[] = [];
+    const closed: number[] = [];
+    const canvas = canvasWithContext({
+      drawImage: (image: unknown, x: number, y: number) => {
+        drawn.push({ image, x, y });
+      },
+    });
+    const bitmap = { close: () => closed.push(1) } as unknown as ImageBitmap;
+    const asked: { page: number; width: number; height: number }[] = [];
+
+    const result = await renderPage(document, 1, canvas, 1, 0, (page, width, height) => {
+      asked.push({ page, width, height });
+      return Promise.resolve(bitmap);
+    });
+
+    expect(sizeAtRender).toStrictEqual([]);
+    // THE RASTER WAS ASKED FOR AT THE CANVAS'S OWN SIZE, which is the whole of
+    // the alignment: a raster at any other size would be resampled, and E1's
+    // *pixel-exact at every zoom* would fail through the path meant to sharpen.
+    expect(asked).toStrictEqual([{ page: 1, width: 300, height: 400 }]);
+    expect(drawn).toStrictEqual([{ image: bitmap, x: 0, y: 0 }]);
+    // AND IT WAS RELEASED. An `ImageBitmap` holds its pixels until `close`, and
+    // one per page per scroll position is a leak §9.17's renderer budget would
+    // meet before anybody noticed.
+    expect(closed).toStrictEqual([1]);
+    // THE CROP AND ROTATION STILL COME FROM PDF.JS, which is what keeps every
+    // overlay correct whichever engine drew: they are the page's own frame, and
+    // the second engine answers pixels rather than geometry.
+    expect(result.crop).toStrictEqual(VIEW);
+    expect(result.rotation).toBe(0);
+  });
+
+  it('FALLS BACK to PDF.js when the second engine answers nothing', async () => {
+    // THE LOAD-BEARING HALF. The setting can be on while the engine is not
+    // reachable — no `pdfium.dll`, a page too large at this zoom, a refusal —
+    // and every one of those must leave a drawn page rather than a blank one.
+    const { document, sizeAtRender } = documentWithViewport(300, 400);
+    let asked = 0;
+
+    await renderPage(document, 1, canvasWithContext(), 1, 0, () => {
+      asked += 1;
+      return Promise.resolve(null);
+    });
+
+    expect(asked).toBe(1);
+    // PDF.JS DREW, at the size the canvas had been given. Without this the case
+    // passes for a build that fell back by drawing nothing at all.
+    expect(sizeAtRender).toStrictEqual([{ width: 300, height: 400 }]);
   });
 
   it('refuses a canvas with no 2d context rather than drawing nowhere', async () => {

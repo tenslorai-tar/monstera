@@ -31,6 +31,8 @@ export {
   // under the line limit is the renderer, and the per-line cap is what the
   // main-side reader passes to `textLayerOf` — a second spelling of either
   // would be the number this channel refuses on, written twice.
+  MAX_RASTER_BYTES,
+  MAX_RASTER_PIXELS,
   MAX_TEXT_LAYER_LINE,
   MAX_TEXT_LAYER_LINES,
   // NAMED BECAUSE THE KERNEL SEAM NOW READS IT TOO. ADR-0040's extension hands

@@ -236,6 +236,7 @@ export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
   'setting.editing.personal-dictionary.title',
 );
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
+export const SECOND_RENDERER_TITLE = messageKey('setting.viewing.second-renderer.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
 export const ACCENT_TITLE = messageKey('setting.appearance.accent.title');
@@ -564,6 +565,7 @@ export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
 export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
 export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-target');
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
+export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
 export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
 
@@ -680,6 +682,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     '{count, plural, one {Save one word to your dictionary} other {Save # words to your dictionary}}',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [RULER_UNIT_TITLE]: 'Ruler unit',
+  // SAYS WHAT IT IS, NOT THAT IT IS BETTER. The row was called *HD render* and
+  // §6.1 called the engine behind it *higher fidelity*; both were amended on
+  // 2026-09-10, because the two rasterisers were measured 12.716 levels apart
+  // over inked pixels with no way to say which is right. A label promising
+  // quality would be the claim the measurements refuse — and the honest one is
+  // also the useful one, because *the other renderer* is exactly what a person
+  // wants when a page looks wrong.
+  [SECOND_RENDERER_TITLE]: 'Draw pages with the other renderer',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',
   [ACCENT_TITLE]: 'Accent colour',
@@ -1428,6 +1438,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // cannot follow is worse than none.
   [PROBLEM_ENGINE_UNAVAILABLE]:
     'This copy of Monstera cannot edit text in place. Your document is unchanged, and everything else still works.',
+  // AN ACTION THE READER CAN TAKE, which is exactly what separates this from the
+  // one above it. That sentence stops because there is nothing a person can do
+  // about a missing component; this one names zooming out, because the size the
+  // renderer asked for is a consequence of the zoom and the reader controls it.
+  [PROBLEM_RASTER_TOO_LARGE]:
+    'This page is too large to draw with the other renderer at this zoom. Zoom out, or turn the setting off.',
   [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',
   // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
   // §9 is why it is the only thing about the diagnostic that crosses.

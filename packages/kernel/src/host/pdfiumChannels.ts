@@ -496,6 +496,60 @@ export const pdfiumChannels = {
       .strict(),
     ['no-such-session', 'asset-missing', 'engine-refused'],
   ),
+
+  /**
+   * One page rasterised at exactly the size the caller asked for.
+   *
+   * ## THE PIXELS GO TO A FILE, and that is what the granted area is for
+   *
+   * Every other read on this wire answers on the pipe because its answer is a
+   * few hundred bytes. A page at device scale is **eight megabytes**, and the
+   * host protocol frames a message per call — so this answers a byte COUNT and
+   * writes the bitmap into the output directory main granted it, which is the
+   * same route `engine/apply` already uses for a whole document image. Nothing
+   * new is trusted: the host may write where it was handed, and main reads what
+   * it named.
+   *
+   * ## BGRA, unconverted, and the name says so
+   *
+   * `FPDFBitmap_Create` with alpha produces BGRA. Main encodes it with
+   * Electron's `nativeImage.createFromBitmap`, which takes BGRA — so a wire that
+   * straightened it to RGBA would make both sides convert, once each, for a
+   * consumer that wanted neither.
+   *
+   * ## The SIZE is the caller's, which is ADR-0031's sanctioned crossing
+   *
+   * *A raster may cross under a caller-stated maximum*; what is banned is a
+   * snapshot of the document. The renderer knows its canvas's device size and
+   * nothing else does, so it states it and main bounds it.
+   */
+  'engine/render-page': channel(
+    'Rasterises one page at the size the caller states, into the granted output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        from: outputNameSchema,
+        into: outputNameSchema,
+        page: z.number().int().nonnegative(),
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+      })
+      .strict(),
+    z
+      .object({
+        /**
+         * How many bytes were written.
+         *
+         * Answered rather than derived from the size, so main can refuse a file
+         * whose length disagrees with the dimensions it asked for — the same
+         * check `engine/apply` makes against its own answer, and the reason a
+         * partial write is a refusal rather than a truncated image.
+         */
+        bytes: z.number().int().nonnegative(),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
 } as const;
 
 /** The PDFium host's channel map. */
