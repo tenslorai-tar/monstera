@@ -666,6 +666,25 @@ const REPLACE_ALL_SPEC = `  replaceAllText: {
   },`;
 
 /**
+ * Terminal for a FOURTH reason, and it is the first one reached from the far
+ * end: PDFium can take a Form XObject apart and offers nothing that builds one,
+ * so every piece survives on the page and the container is what has no inverse.
+ */
+const PROMOTE_SPEC = `  promoteFormObjects: {
+    kind: 'promoteFormObjects',
+    writer: 'pdfium',
+    apply: applyPromoteFormObjects,
+    capture: capturePromoteFormObjects,
+    invert: invertPromoteFormObjects,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
  * The first spec whose command declares `purpose: 'removal'`.
  *
  * That axis is not spelt in these fixtures for the reason none of the others is
@@ -865,6 +884,9 @@ import {
   applyReplaceAllText,
   captureReplaceAllText,
   invertReplaceAllText,
+  applyPromoteFormObjects,
+  capturePromoteFormObjects,
+  invertPromoteFormObjects,
 } from '@monstera/kernel/pdfium';`;
 
 /**
@@ -1358,6 +1380,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${PROMOTE_SPEC}
 };
 `,
   },
@@ -1375,7 +1398,8 @@ ${REPLACE_ALL_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `replaceAllText` on 2026-09-10, and
+    // table has to grow. `promoteFormObjects` and `replaceAllText` on
+    // 2026-09-10, and
     // `deletePageObjects` with `placePageObject` and `recolorPageObjects` the
     // same day; `replaceTextObject` on 2026-09-09;
     // `importFormData` and `createFormField` on 2026-09-08;
@@ -1396,7 +1420,7 @@ ${REPLACE_ALL_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'replaceAllText' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'promoteFormObjects' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1449,6 +1473,7 @@ ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
+${REPLACE_ALL_SPEC}
 };
 `,
   },
@@ -1568,6 +1593,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${PROMOTE_SPEC}
 };
 `,
   },
@@ -1625,6 +1651,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${PROMOTE_SPEC}
 };
 `,
   },
@@ -1691,6 +1718,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${PROMOTE_SPEC}
 };
 `,
   },
@@ -1753,6 +1781,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${PROMOTE_SPEC}
 };
 `,
   },
@@ -2629,7 +2658,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 29 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 30 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

@@ -553,6 +553,16 @@ export interface CommandPrior {
    * it held — which is exactly what an invertible entry may not retain.
    */
   readonly replaceAllText: never;
+  /**
+   * `never`, and it is the FIRST reason on this type reached from the far end.
+   *
+   * `deletePageObjects` has no prior because PDFium can describe an object and
+   * not rebuild one. A promotion's prior would be a **Form XObject and its
+   * placement**, and PDFium can take a form apart and offers nothing that
+   * constructs one — so every piece survives on the page and the container is
+   * what cannot be put back.
+   */
+  readonly promoteFormObjects: never;
 }
 
 /**

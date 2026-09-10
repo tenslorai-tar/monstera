@@ -2883,6 +2883,55 @@ export const deletePageObjectsSchema = z.object({
 });
 
 /**
+ * Normalize-then-edit: promote a page's Form XObject content into the page.
+ *
+ * ## The payload is a PAGE, and there is nothing else it could be
+ *
+ * `BUILD-PROMPT.md`:278 asks for the promotion *"on first edit of such a page"*.
+ * What is promoted is every form on that page, because a form is not something
+ * a person selected — they selected some words, and the form is the container
+ * those words turned out to be in. A payload naming forms would be asking a
+ * renderer to name a structure it has no channel for and no reason to know
+ * about.
+ *
+ * ## It is TERMINAL, and this is the fourth distinct reason in this build
+ *
+ * `deletePageObjects` has no prior because PDFium cannot rebuild an object;
+ * `flattenFormFields`' prior is unserialisable; `replaceAllText`'s is
+ * document-scaled. This one's prior would be **a Form XObject and its
+ * placement**, and PDFium's public API can take a form apart and cannot build
+ * one — so the inverse is unrepresentable in the same way the first is, arrived
+ * at from the other direction. Undo takes a checkpoint.
+ *
+ * ## And it RENUMBERS, which is why it is its own command
+ *
+ * The obvious design is to promote silently inside the first edit of such a
+ * page. It cannot be: promotion inserts objects and removes the form, so every
+ * index on that page moves — and `replaceTextObject`'s prior is a list of
+ * indices. An edit that quietly renumbered its own page would record a prior
+ * naming objects that no longer exist, which is an undo that puts text in the
+ * wrong place rather than one that fails.
+ *
+ * So a person is told, and asks for it. That is also the honest shape: the
+ * promotion changes how the page is built, and a reader who saves afterwards
+ * has a different document from the one they opened, whether or not they went
+ * on to edit anything.
+ *
+ * ## It carries NO version, and that is the axis rather than an omission
+ *
+ * A version is compared for commands that point **into a walk** — an
+ * annotation, a field, an object index — because a stale index names a
+ * different thing. This names a page and every form on it, so there is no index
+ * to go stale: the promotion is the same operation whatever else moved. Its
+ * `targets` is `'none'`, and `commandDeclarations.test.ts` ties the two halves
+ * together so a version here would have to be a decision rather than a habit.
+ */
+export const promoteFormObjectsSchema = z.object({
+  kind: z.literal('promoteFormObjects'),
+  page: z.number().int().nonnegative(),
+});
+
+/**
  * The longest find or replacement string this boundary will carry.
  *
  * Not an L11 bound — both are the *renderer's* strings and neither scales with
@@ -3007,6 +3056,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   placePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
+  promoteFormObjectsSchema,
   replaceAllTextSchema,
 ]);
 
@@ -3131,6 +3181,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   placePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
+  // RENDERABLE, and its payload is ONE INTEGER — the smallest on this list. The
+  // renderer says *make this page's text editable*; what it cannot express is
+  // which forms, how deeply they nest, or what matrix each child needs composed
+  // in, none of which it has ever been told.
+  promoteFormObjectsSchema,
   // RENDERABLE, and it is the clearest case on this list: two strings and three
   // flags, the same payload for a one-page note and a thousand-page report.
   //

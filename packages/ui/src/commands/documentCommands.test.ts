@@ -922,7 +922,8 @@ describe('delete pages — the mutation-dialog gate', () => {
       // runs and the person's text, so the payload is built there; this asserts
       // the command COPIES it, which a command that rebuilt the list from the
       // read would not.
-      ask: () => Promise.resolve({ replacements: [{ index: 9, text: 'brown dog' }] }),
+      ask: () =>
+        Promise.resolve({ action: 'replace', replacements: [{ index: 9, text: 'brown dog' }] }),
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([
@@ -993,6 +994,89 @@ describe('delete pages — the mutation-dialog gate', () => {
       // from part of the page believing they had seen it.
       truncated: true,
     });
+  });
+
+  it('PROMOTE dispatches the promotion and READS THE PAGE AGAIN, so the edit can follow', async () => {
+    // THE UI HALF OF NORMALIZE-THEN-EDIT's pair. Its kernel half is
+    // `proof:pdfiumcommand`'s six promotion cases, which drive the real library
+    // and cannot see which command a control sends.
+    //
+    // The loop is the property under test, not the dispatch: a person presses
+    // *unpack* in order to edit the text that appears, and a `run` that
+    // promoted and returned would leave them to open the dialog again. So the
+    // second read is asserted, and the second dialog is answered with a
+    // replacement whose object index only EXISTS after the promotion.
+    let asked = 0;
+    /** @type {unknown[]} */
+    const sent: unknown[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.textLines') {
+        // THE PAGE CHANGES BETWEEN THE READS, which is what a promotion does.
+        // Before it, one line and text nothing can name; after it, two lines
+        // and nothing unaddressable.
+        return Promise.resolve(
+          asked++ === 0
+            ? ok({
+                version: asDocVersion(7),
+                lines: [{ runs: [{ index: 0, text: 'ON THE PAGE' }] }],
+                truncated: false,
+                unaddressable: 36,
+              })
+            : ok({
+                version: asDocVersion(8),
+                lines: [
+                  { runs: [{ index: 0, text: 'ON THE PAGE' }] },
+                  { runs: [{ index: 1, text: 'WAS IN A BLOCK' }] },
+                ],
+                truncated: false,
+                unaddressable: 0,
+              }),
+        );
+      }
+      return Promise.resolve(ok({ version: asDocVersion(9), byteLength: 10, historyDropped: 0 }));
+    });
+
+    let answered = 0;
+    await replaceTextObjectCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () =>
+        Promise.resolve(
+          answered++ === 0
+            ? { action: 'promote' }
+            : { action: 'replace', replacements: [{ index: 1, text: 'NOW EDITABLE' }] },
+        ),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      { id: 'document.textLines', params: { docId: DOC, page: 3 } },
+      {
+        id: 'document.execute',
+        // NO VERSION ON THE PROMOTION, which is the command's declaration and
+        // not an omission: it names a page and every form on it, so there is no
+        // index a stale version could point at. A payload carrying one would be
+        // refused by the schema.
+        params: { docId: DOC, command: { kind: 'promoteFormObjects', page: 3 } },
+      },
+      { id: 'document.textLines', params: { docId: DOC, page: 3 } },
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'replaceTextObject',
+            page: 3,
+            replacements: [{ index: 1, text: 'NOW EDITABLE' }],
+            // THE SECOND READ'S VERSION. A command carrying 7 here would name
+            // objects from the list the promotion has already moved past —
+            // which is exactly why the promotion is its own command rather than
+            // a step inside this one.
+            version: 8,
+          },
+        },
+      },
+    ]);
   });
 
   it('EDIT OBJECT DISPATCHES ONE OF THREE COMMANDS, by what the dialog answered', async () => {

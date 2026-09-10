@@ -11,6 +11,7 @@ import {
   REPLACE_TEXT_OBJECT_NONE,
   REPLACE_TEXT_OBJECT_TOO_LONG,
   REPLACE_TEXT_OBJECT_TRUNCATED,
+  REPLACE_TEXT_OBJECT_PROMOTE,
   REPLACE_TEXT_OBJECT_UNADDRESSABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
@@ -111,9 +112,22 @@ export default function ReplaceTextObjectBody({
           covered in words. So this sits above the empty message rather than
           inside the populated branch. */}
       {unaddressable ? (
-        <p className="m-replace-text-object__unaddressable" role="status">
-          {_(REPLACE_TEXT_OBJECT_UNADDRESSABLE)}
-        </p>
+        <>
+          <p className="m-replace-text-object__unaddressable" role="status">
+            {_(REPLACE_TEXT_OBJECT_UNADDRESSABLE)}
+          </p>
+          {/* THE OFFER SITS WITH THE EXPLANATION, which is where the person is
+              already looking. It is `default` rather than `primary`: the
+              promotion rewrites how the page is built and cannot be undone
+              except by a checkpoint, so it must not be the button a reader
+              presses on their way past. */}
+          <Button
+            label={REPLACE_TEXT_OBJECT_PROMOTE}
+            onClick={() => {
+              resolve({ action: 'promote' });
+            }}
+          />
+        </>
       ) : null}
       {lines.length === 0 ? (
         <p className="m-replace-text-object__none">{_(REPLACE_TEXT_OBJECT_NONE)}</p>
@@ -168,7 +182,7 @@ export default function ReplaceTextObjectBody({
               // COPIED, because the result schema infers a mutable array and
               // `replacementsForLine` answers a readonly one. A cast would have
               // compiled and handed the caller this render's array.
-              resolve({ replacements: [...replacements] });
+              resolve({ action: 'replace', replacements: [...replacements] });
             }}
             variant="primary"
           />

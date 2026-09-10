@@ -320,6 +320,7 @@ export const REPLACE_TEXT_OBJECT_TRUNCATED = messageKey('dialog.replace-text-obj
 export const REPLACE_TEXT_OBJECT_UNADDRESSABLE = messageKey(
   'dialog.replace-text-object.unaddressable',
 );
+export const REPLACE_TEXT_OBJECT_PROMOTE = messageKey('dialog.replace-text-object.promote');
 export const REPLACE_TEXT_OBJECT_TOO_LONG = messageKey('dialog.replace-text-object.too-long');
 export const REPLACE_TEXT_OBJECT_APPLY = messageKey('dialog.replace-text-object.apply');
 export const REPLACE_TEXT_OBJECT_COMMAND_TITLE = messageKey('command.document.replace-text-object');
@@ -857,6 +858,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // reports a raster and no text, which is also what a full-page diagram is,
   // and a message may not claim more than the reading behind it.
   [PAGE_IMAGE_ONLY]: 'This page is a picture, so there is no text to select or search.',
+  // SAYS WHAT IT DOES TO THE PAGE, not what it does to the list. "Unpack" is
+  // the honest verb: the block becomes ordinary page content, and that is a
+  // change to the document a person is agreeing to rather than a way of showing
+  // more rows.
+  [REPLACE_TEXT_OBJECT_PROMOTE]: 'Unpack the blocks on this page so their text can be edited',
   [REPLACE_TEXT_OBJECT_TOO_LONG]: 'That is longer than one piece of text can hold.',
   [REPLACE_TEXT_OBJECT_APPLY]: 'Replace',
   [EDIT_PAGE_OBJECT_TITLE]: 'Edit an object on this page',

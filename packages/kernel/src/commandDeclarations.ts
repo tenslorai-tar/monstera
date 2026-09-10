@@ -1373,6 +1373,37 @@ const declarations = {
     // the page's content stream is regenerated whole; no object is unlinked.
     purpose: 'ordinary',
   },
+  promoteFormObjects: {
+    kind: 'promoteFormObjects',
+    writer: 'pdfium',
+    // NOT INVERTIBLE, AND IT IS THE FOURTH DISTINCT REASON — the first one's,
+    // reached from the other end. `deletePageObjects` cannot be undone because
+    // PDFium can describe an object and not rebuild one; this cannot because
+    // PDFium can take a Form XObject apart (`FPDFFormObj_RemoveObject`) and
+    // offers nothing that builds one. Every piece is still on the page; the
+    // container has no constructor.
+    invertible: false,
+    undo: 'checkpoint',
+    // THE SAME PAGE PROMOTES THE SAME WAY. The matrices come off the objects
+    // and the composition is arithmetic — nothing mints an identifier or asks
+    // the clock. A second run finds no form and does nothing, which is the same
+    // bytes rather than a different edit.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // NAMES NO INDEX, `replaceAllText`'s shape. It names a page and every form
+    // on it, so there is no walk for a version to be stale against — which is
+    // also why its payload carries none. That tie is asserted in
+    // `commandDeclarations.test.ts` rather than left to two files agreeing.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    // IT UNLINKS THE EMPTIED FORM, and `'removal'` is still wrong for
+    // `deletePageObjects`' reason: that axis selects MuPDF's collecting save,
+    // and this command's writer is PDFium, whose `FPDF_SaveAsCopy` has no
+    // equivalent. Declaring it would name a mechanism that cannot run.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

@@ -1948,46 +1948,63 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      const { docId, page } = context;
+      if (docId === undefined || page === undefined) return;
 
-      const found = await deps.client['document.textLines']({
-        docId: context.docId,
-        page: context.page,
-      });
-      if (!found.ok) {
-        reportProblem(deps, found.error);
+      // A LOOP, because ONE of the two answers changes what the next read says.
+      //
+      // Promoting a page makes its blocked-in text addressable, and the person
+      // asked for it in order to edit that text — so closing the dialog and
+      // making them press Edit again would be the application knowing what they
+      // wanted and not doing it. The loop is bounded by the read rather than by
+      // a counter: after a promotion the page carries no form, `unaddressable`
+      // is zero, and the dialog no longer offers the button that gets here.
+      for (;;) {
+        const found = await deps.client['document.textLines']({ docId, page });
+        if (!found.ok) {
+          reportProblem(deps, found.error);
+          return;
+        }
+
+        const chosen = (await deps.ask(REPLACE_TEXT_OBJECT_DIALOG_ID, {
+          lines: found.value.lines.map((line) => ({ runs: [...line.runs] })),
+          truncated: found.value.truncated,
+          // WHETHER, NOT HOW MANY. The channel answers a character count because
+          // that is what it can honestly measure; a person needs to know that
+          // some of what they can see is not on the list, and a number of
+          // CHARACTERS answers a question nobody asked.
+          unaddressable: found.value.unaddressable > 0,
+        })) as ReplaceTextObjectAnswer | undefined;
+        // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
+        // absence of a value is the guard rather than a flag beside it.
+        if (chosen === undefined) return;
+
+        if (chosen.action === 'promote') {
+          // NO VERSION, and that is the command's own declaration rather than an
+          // omission here: a promotion names a page and every form on it, so
+          // there is no index for a stale version to point at.
+          await applyDocumentCommand(deps, docId, { kind: 'promoteFormObjects', page });
+          continue;
+        }
+
+        await applyDocumentCommand(deps, docId, {
+          kind: 'replaceTextObject',
+          page,
+          // COPIED FROM THE DIALOG'S ANSWER, unchanged. The dialog holds both
+          // the line's runs and what the person typed, so it is the only place
+          // that can say which objects an edit touched; `lineEdit.ts` is the
+          // whole of what sits between the read and this payload, and it reads
+          // no coordinate and computes no index.
+          replacements: chosen.replacements,
+          // THE READ'S VERSION, not the shell's, and the difference is the whole
+          // point of the check. `context.version` is what the tab holds now;
+          // this is the document the INDICES describe. A command carrying the
+          // newer of the two would name an object from a list the document has
+          // already moved past, and nothing would refuse it.
+          version: found.value.version,
+        });
         return;
       }
-
-      const chosen = (await deps.ask(REPLACE_TEXT_OBJECT_DIALOG_ID, {
-        lines: found.value.lines.map((line) => ({ runs: [...line.runs] })),
-        truncated: found.value.truncated,
-        // WHETHER, NOT HOW MANY. The channel answers a character count because
-        // that is what it can honestly measure; a person needs to know that
-        // some of what they can see is not on the list, and a number of
-        // CHARACTERS answers a question nobody asked.
-        unaddressable: found.value.unaddressable > 0,
-      })) as ReplaceTextObjectAnswer | undefined;
-      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
-      // absence of a value is the guard rather than a flag beside it.
-      if (chosen === undefined) return;
-
-      await applyDocumentCommand(deps, context.docId, {
-        kind: 'replaceTextObject',
-        page: context.page,
-        // COPIED FROM THE DIALOG'S ANSWER, unchanged. The dialog holds both the
-        // line's runs and what the person typed, so it is the only place that
-        // can say which objects an edit touched; `lineEdit.ts` is the whole of
-        // what sits between the read and this payload, and it reads no
-        // coordinate and computes no index.
-        replacements: chosen.replacements,
-        // THE READ'S VERSION, not the shell's, and the difference is the whole
-        // point of the check. `context.version` is what the tab holds now; this
-        // is the document the INDICES describe. A command carrying the newer of
-        // the two would name an object from a list the document has already
-        // moved past, and nothing would refuse it.
-        version: found.value.version,
-      });
     },
   };
 }

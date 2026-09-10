@@ -4,6 +4,7 @@ import {
   channel,
   deletePageObjectsSchema,
   placePageObjectSchema,
+  promoteFormObjectsSchema,
   recolorPageObjectsSchema,
   replaceAllTextSchema,
   replaceTextObjectSchema,
@@ -77,6 +78,7 @@ const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   placePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
+  promoteFormObjectsSchema,
   replaceAllTextSchema,
 ]);
 
@@ -243,6 +245,11 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
   // object, so a prior tagged with its kind is a message this wire refuses to
   // parse — main could not be handed one to hand to an invert that does not
   // exist.
+  //
+  // AND NO `promoteFormObjects` MEMBER, for the same mechanism and the mirror
+  // reason: PDFium can take a Form XObject apart and cannot build one, so its
+  // prior is unrepresentable from the container's side rather than the object's.
+  // `replaceAllText` is absent too, its prior being document-scaled.
 ]);
 
 /** What a capture answers, in `captureResultSchema`'s shape. */

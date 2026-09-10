@@ -141,6 +141,7 @@ export {
   placePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
+  promoteFormObjectsSchema,
   type FieldFill,
   type FormFieldKind,
   type CreatedField,

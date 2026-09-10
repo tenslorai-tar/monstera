@@ -36,6 +36,17 @@ import type { ByteImage, EngineWriter, PdfiumSession } from './engineSeam.js';
 const TEXT_OBJECT = 1;
 
 /**
+ * `FPDFPageObj_GetType`'s answer for a Form XObject.
+ *
+ * Named beside {@link TEXT_OBJECT} rather than derived from `OBJECT_KINDS`
+ * below: that array is a display order for a renderer, and a promotion keyed on
+ * a name's position in a list somebody may reorder is a defect nothing would
+ * catch — the walk would simply find no forms, which is what a page with none
+ * also answers.
+ */
+const OBJECT_FORM = 5;
+
+/**
  * A bound C function, as this file is willing to describe one.
  *
  * koffi types its own `func()` as returning a callable whose result is `any`,
@@ -83,6 +94,10 @@ interface Bound {
   readonly setFillColour: Native;
   readonly removeObject: Native;
   readonly destroyObject: Native;
+  readonly countFormObjects: Native;
+  readonly formObject: Native;
+  readonly removeFormObject: Native;
+  readonly insertObject: Native;
   readonly createBitmap: Native;
   readonly fillRect: Native;
   readonly renderPage: Native;
@@ -284,6 +299,23 @@ export function openPdfium(libraryPath: string): void {
     // frees memory the page will use.
     removeObject: native(library.func('int FPDFPage_RemoveObject(void *page, void *object)')),
     destroyObject: native(library.func('void FPDFPageObj_Destroy(void *object)')),
+    // THE FORM XOBJECT'S CONTENTS, and the three calls normalize-then-edit is
+    // made of. `FPDFPage_GetObject` does not descend into a form — measured,
+    // 36 of 60 characters on a fixture belonged to objects only these reach —
+    // so a page whose text was pasted in as a block has nothing an editing
+    // command can name.
+    //
+    // OWNERSHIP IS THE PART THE HEADER IS EXPLICIT ABOUT, and it is why the
+    // promotion is expressible at all: `FPDFFormObj_RemoveObject` transfers the
+    // child to the caller, and `FPDFPage_InsertObject` takes it. Neither copies,
+    // so a child that is removed and not inserted is a leak and a child
+    // inserted twice is a double free.
+    countFormObjects: native(library.func('int FPDFFormObj_CountObjects(void *object)')),
+    formObject: native(
+      library.func('void *FPDFFormObj_GetObject(void *object, unsigned long index)'),
+    ),
+    removeFormObject: native(library.func('int FPDFFormObj_RemoveObject(void *form, void *object)')),
+    insertObject: native(library.func('int FPDFPage_InsertObject(void *page, void *object)')),
     // THE RASTERISER, and it is the only part of this adapter a READER uses.
     // §6.1's setting, amended 2026-09-10: a second opinion about how a page
     // looks rather than a better one, the two engines having been measured at
@@ -1108,6 +1140,136 @@ export function setObjectMatrix(
       generate(bindings, handle);
     });
   });
+}
+
+/**
+ * Composes `child` with `form`, which is the order a form's content is drawn in.
+ *
+ * A form is painted under its own matrix and each object inside it under its
+ * own, so a child's effective placement is `child × form`. Getting the order
+ * backwards puts the text somewhere else on a page that still renders, which is
+ * the failure that looks like a working feature.
+ */
+function composed(child: ObjectMatrix, form: ObjectMatrix): ObjectMatrix {
+  return {
+    a: child.a * form.a + child.b * form.c,
+    b: child.a * form.b + child.b * form.d,
+    c: child.c * form.a + child.d * form.c,
+    d: child.c * form.b + child.d * form.d,
+    e: child.e * form.a + child.f * form.c + form.e,
+    f: child.e * form.b + child.f * form.d + form.f,
+  };
+}
+
+/**
+ * Promotes every Form XObject's content onto the page, matrices composed in.
+ *
+ * ## What this is for
+ *
+ * `BUILD-PROMPT.md`:278's *normalize-then-edit*. `FPDFPage_GetObject` does not
+ * descend into a form, so text pasted in as a block — which is how Office,
+ * InDesign and PowerPoint emit it — is findable through `FPDFText` and nameable
+ * by no editing command. Measured over the supplied corpus: two of eleven
+ * documents carry such text, one of them with **no** page-level text at all.
+ *
+ * ## Measured before it was built (`scripts/research/pdfiumPromote.mjs`)
+ *
+ * - **The move is PDFium's own**: `FPDFFormObj_RemoveObject` transfers the child
+ *   to the caller and `FPDFPage_InsertObject` takes it, both returning 1.
+ * - **The composition lands the text where it was.** On a form placed at (40,80)
+ *   and scaled 1.2, the promoted objects' bounds add up to exactly the box the
+ *   form reported: 52.76–228.1 × 115.82–164.25.
+ * - **Order is content.** Inserting the children in reverse put the second line
+ *   ahead of the first in the extracted text — every pixel unmoved and the
+ *   page's own reading of itself changed. Handles are taken in order, and
+ *   inserted in order.
+ * - **And the edit then survives the save**, which is the whole point: the same
+ *   `FPDFText_SetText` that returns 1 and vanishes on a nested object persists
+ *   once the object is on the page.
+ *
+ * ## It regenerates once, and only when something moved
+ *
+ * A page with no form pays no generation, which is `applyReplaceAllText`'s rule
+ * and ADR-0047 Decision 2's reason.
+ *
+ * @returns how many objects were promoted, which is what tells a caller whether
+ *   this page changed at all
+ */
+export function promoteFormObjects(session: PdfiumSession, page: number): Promise<number> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+
+      // THE FORMS ARE COLLECTED BEFORE ANYTHING IS REMOVED. `FPDFPage_GetObject`
+      // is indexed, and removing while walking renumbers what is left — the
+      // same hazard `removeObjects` answers by taking the object rather than
+      // the index.
+      const forms: unknown[] = [];
+      for (let index = 0; index < total; index += 1) {
+        const object = objectAt(bindings, handle, page, index);
+        if (numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === OBJECT_FORM) {
+          forms.push(object);
+        }
+      }
+      if (forms.length === 0) return 0;
+
+      let moved = 0;
+      for (const form of forms) {
+        const formMatrix: ObjectMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+        if (numberFrom(bindings.getMatrix(form, formMatrix), 'FPDFPageObj_GetMatrix') !== 1) {
+          throw new Error(
+            `FPDFPageObj_GetMatrix refused a form object on page ${String(page)}, so its ` +
+              'content cannot be placed and nothing was promoted.',
+          );
+        }
+
+        const children = numberFrom(
+          bindings.countFormObjects(form),
+          'FPDFFormObj_CountObjects',
+        );
+        const kids: unknown[] = [];
+        for (let index = 0; index < children; index += 1) {
+          kids.push(bindings.formObject(form, index));
+        }
+
+        for (const child of kids) {
+          const own: ObjectMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+          if (numberFrom(bindings.getMatrix(child, own), 'FPDFPageObj_GetMatrix') !== 1) continue;
+          const target = composed(own, formMatrix);
+          if (numberFrom(bindings.setMatrix(child, target), 'FPDFPageObj_SetMatrix') !== 1) {
+            throw new Error(
+              `FPDFPageObj_SetMatrix refused a promoted object on page ${String(page)}. Nothing ` +
+                'is inserted after a refusal: an object placed with its form matrix left out ' +
+                'would render somewhere else on a page that still looks plausible.',
+            );
+          }
+          if (numberFrom(bindings.removeFormObject(form, child), 'FPDFFormObj_RemoveObject') !== 1) {
+            continue;
+          }
+          // OWNERSHIP IS WITH US BETWEEN THESE TWO LINES, and `InsertObject`
+          // frees the object itself on failure — so a failed insert is not a
+          // leak and must not be followed by a destroy.
+          if (numberFrom(bindings.insertObject(handle, child), 'FPDFPage_InsertObject') !== 1) {
+            throw new Error(
+              `FPDFPage_InsertObject refused a promoted object on page ${String(page)}, which ` +
+                'PDFium frees on failure — so that object is gone from the document.',
+            );
+          }
+          moved += 1;
+        }
+
+        // THE EMPTIED FORM GOES, or the page keeps a shape that draws nothing
+        // and every index after it counts something invisible.
+        if (numberFrom(bindings.removeObject(handle, form), 'FPDFPage_RemoveObject') === 1) {
+          bindings.destroyObject(form);
+        }
+      }
+
+      if (moved > 0) generate(bindings, handle);
+      return moved;
+    }),
+  );
 }
 
 /** One object's new fill colour. */

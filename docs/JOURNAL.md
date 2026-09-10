@@ -888,6 +888,80 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — Normalize-then-edit: PDFium can take a form apart, and that is the whole feature
+
+The Stage 5 row the corpus reading made owed, built the same day, ahead of the
+rest of Stage 6 — a row already owed outranks a new stage's.
+
+### The question was whether PDFium could do it at all
+
+`BUILD-PROMPT.md`:278 asks to *"promote the XObject content into the page
+content stream with its matrix composed in, then edit in flat space"*, which
+reads as a content-stream rewrite — the structural writer's work, and a B4 if it
+were. It is not. `scripts/research/pdfiumPromote.mjs` measured the whole thing
+through PDFium's own public API:
+
+| | |
+|---|---|
+| `FPDFFormObj_RemoveObject` | **1** — *"ownership is transferred to the caller"* |
+| `FPDFPage_InsertObject` | **1** — *"takes ownership"* |
+| the promoted bounds | **52.76–228.1 × 115.82–164.25**, which is exactly the box the form reported |
+| the text, before and after | identical, and in the same order |
+| `FPDFText_SetText` on a promoted object | **survives the save** |
+
+That last row is the feature. The same call on a *nested* object returns 1, its
+`GenerateContent` returns 1, and the edit is absent from the reopened bytes —
+measured on 2026-09-10 and recorded in the row. The promotion is the difference
+between those two outcomes.
+
+### ORDER IS CONTENT, and the first run got it wrong
+
+Removing the children by walking the form's indices backwards and inserting them
+in that order left every pixel where it was and changed the page's own reading of
+itself: `SECOND LINE INSIDE` came back ahead of `INSIDE THE XOBJECT`. Nothing
+about the page looked different. The handles are now taken in order and inserted
+in order, and the proof asserts the extracted text **whole** rather than with an
+`includes` per string — an `includes` pair passes for the reversed document.
+
+### It is its own command, and the founding record reads otherwise
+
+*"On first edit of such a page"* reads as automatic, and automatic is
+unavailable for a mechanical reason: promoting **renumbers the page**, and
+`replaceTextObject`'s prior is a list of indices. An edit that promoted on its
+way through would record a prior naming objects that no longer exist — an undo
+that puts text somewhere else rather than one that fails.
+
+So a person is told and asks. The offer sits in the sentence that explains the
+absence, which is where they are already looking, and the command's `run` is a
+**loop**: read, ask, promote, read again, ask again. Bounded by the read rather
+than by a counter — after a promotion the page carries no form, `unaddressable`
+is zero, and the dialog stops offering the button that gets there.
+
+### Terminal for a fourth distinct reason
+
+`deletePageObjects` has no prior because PDFium can describe an object and not
+rebuild one. `flattenFormFields`' prior is unserialisable. `replaceAllText`'s is
+document-scaled. This one is the **first reason reached from the other end**:
+every piece survives on the page, and the container — the Form XObject — is what
+PDFium offers no constructor for. Undo takes a checkpoint.
+
+### What the pair asserts
+
+Kernel, `proof:pdfiumcommand` (29 → 35 cases): the page's text is findable and
+only one of its three runs is addressable *before*; three after; the text reads
+exactly as it did, in the same order; a promoted object can then be edited and
+the edit survives; **a page carrying no form is left alone** — without which a
+promotion that rewrote every page it was pointed at would satisfy every other
+case, since *the text is the same* is also what an untouched page produces.
+
+UI, `documentCommands.test.ts`: the promotion dispatches with no version — its
+declaration says `targets: 'none'`, so there is no index a stale version could
+point at — and then the page is **read again**, and the replacement that follows
+carries the *second* read's version. A `run` that promoted and returned would
+pass a case asserting only the first dispatch.
+
+---
+
 ## 2026-09-10 — A page this build cannot read, told apart from a page with nothing on it
 
 D6's first row, and it leads the stage because it needs no OCR engine.

@@ -45,6 +45,11 @@ export {
   type PriorPlacement,
 } from './pdfiumObjectEdit.js';
 export {
+  applyPromoteFormObjects,
+  capturePromoteFormObjects,
+  invertPromoteFormObjects,
+} from './pdfiumPromote.js';
+export {
   applyReplaceAllText,
   captureReplaceAllText,
   invertReplaceAllText,

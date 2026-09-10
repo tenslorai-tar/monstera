@@ -16,6 +16,11 @@ import {
   invertRecolorPageObjects,
 } from './pdfiumObjectEdit.js';
 import {
+  applyPromoteFormObjects,
+  capturePromoteFormObjects,
+  invertPromoteFormObjects,
+} from './pdfiumPromote.js';
+import {
   applyReplaceAllText,
   captureReplaceAllText,
   invertReplaceAllText,
@@ -113,6 +118,17 @@ export const pdfiumSpecs = {
     // unserialisable, and this one's exists and scales with the document.
     capture: captureReplaceAllText,
     invert: invertReplaceAllText,
+  },
+  promoteFormObjects: {
+    ...declaredCommands.promoteFormObjects,
+    apply: applyPromoteFormObjects,
+    // TERMINAL FOR A FOURTH REASON, and it is the first one's shape reached
+    // from the other end: `deletePageObjects` cannot be undone because PDFium
+    // can describe an object and not rebuild one, and this cannot because
+    // PDFium can take a Form XObject apart and not construct one. The pieces
+    // are all still on the page; the container is what has no constructor.
+    capture: capturePromoteFormObjects,
+    invert: invertPromoteFormObjects,
   },
 };
 

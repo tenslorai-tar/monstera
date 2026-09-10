@@ -38,21 +38,47 @@ import { z } from 'zod';
  * nothing regenerates a page for no change, so `.min(1)` here refuses what the
  * command would refuse, one layer earlier and as a disabled button.
  */
-export const REPLACE_TEXT_OBJECT_RESULT = z
-  .object({
-    replacements: z
-      .array(
-        z
-          .object({
-            index: z.number().int().nonnegative(),
-            text: z.string().max(MAX_REPLACED_TEXT),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(MAX_TEXT_REPLACEMENTS),
-  })
-  .strict();
+export const REPLACE_TEXT_OBJECT_RESULT = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('replace'),
+      replacements: z
+        .array(
+          z
+            .object({
+              index: z.number().int().nonnegative(),
+              text: z.string().max(MAX_REPLACED_TEXT),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_TEXT_REPLACEMENTS),
+    })
+    .strict(),
+  /**
+   * *Make this page's text editable first*, which is a different command.
+   *
+   * ## Why it is an ANSWER rather than a second control
+   *
+   * A page whose words live inside a Form XObject offers the reader a chooser
+   * that is missing rows they can see, and until 2026-09-10 the only thing this
+   * dialog could do was say so. The promotion is what makes those rows appear —
+   * so the place to offer it is the sentence that explains their absence, where
+   * the person is already looking.
+   *
+   * A ribbon entry beside *Edit text* would be a control that does nothing on
+   * almost every page, and one whose `when` could not hide it: whether a page
+   * needs promoting is a fact only a channel read can answer, and the registry's
+   * predicate sees the context rather than the page.
+   *
+   * ## It carries NOTHING, which is what makes it safe as a union member
+   *
+   * The command it dispatches takes a page, and the page is the one the dialog
+   * was opened for. A member carrying an index would be this dialog naming a
+   * structure it was never told about.
+   */
+  z.object({ action: z.literal('promote') }).strict(),
+]);
 
-/** Which objects, and what each becomes. */
+/** Which objects become what — or *promote this page first*. */
 export type ReplaceTextObjectAnswer = z.infer<typeof REPLACE_TEXT_OBJECT_RESULT>;

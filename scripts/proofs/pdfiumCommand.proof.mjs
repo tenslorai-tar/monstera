@@ -97,6 +97,10 @@ const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
 const THIRD = 'THIRD RUN stays exactly where it is';
 const REPLACEMENT = 'SECOND RUN has been replaced';
+const ON_THE_PAGE = 'OUTSIDE, ON THE PAGE';
+const INSIDE_FIRST = 'INSIDE THE XOBJECT';
+const INSIDE_SECOND = 'SECOND LINE INSIDE';
+const PROMOTED_EDIT = 'PROMOTED AND EDITED';
 
 /** `proof:pdfiumadapter`'s fixture, for its reason: the rectangle is the non-text input. */
 async function threeRunsAndARectangle() {
@@ -121,7 +125,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 29 });
+const roster = createRoster(failures, { cases: 35 });
 
 /**
  * @param {string} name
@@ -380,6 +384,7 @@ async function main() {
   );
 
   await replaceAllCases();
+  await promotionCases();
 
   process.stdout.write(
     failures.length > 0
@@ -566,6 +571,114 @@ async function replaceAllCases() {
   record(
     'a replace-all REFUSES to capture, because its prior scales with the document',
     prior.captured === false && prior.reason.includes('document-scaled'),
+    prior.captured === false ? prior.reason : 'it claimed to capture something',
+  );
+}
+
+/**
+ * A page whose text is inside a placed, scaled Form XObject — plus one run that
+ * is not.
+ *
+ * `pdfiumXObjects.mjs`' fixture, and the control is the same: the ordinary run
+ * separates *this page's form text became addressable* from *this page has text*.
+ * The matrix is non-identity on purpose, because with an identity every
+ * composition rule agrees and the fixture would be one the bug also handles.
+ */
+async function textInsideAForm() {
+  const inner = await PDFDocument.create();
+  const innerPage = inner.addPage([300, 120]);
+  const innerFont = await inner.embedFont(StandardFonts.Helvetica);
+  innerPage.drawText(INSIDE_FIRST, { x: 10, y: 60, size: 14, font: innerFont });
+  innerPage.drawText(INSIDE_SECOND, { x: 10, y: 30, size: 14, font: innerFont });
+
+  const outer = await PDFDocument.create();
+  const embedded = await outer.embedPdf(await inner.save());
+  const page = outer.addPage([400, 300]);
+  const font = await outer.embedFont(StandardFonts.Helvetica);
+  page.drawText(ON_THE_PAGE, { x: 30, y: 260, size: 14, font });
+  const form = embedded[0];
+  if (form === undefined) throw new Error('embedPdf produced no page');
+  page.drawPage(form, { x: 40, y: 80, xScale: 1.2, yScale: 1.2 });
+  return outer.save();
+}
+
+/** Normalize-then-edit, as a command. */
+async function promotionCases() {
+  const original = await textInsideAForm();
+  /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'promoteFormObjects'>} */
+  const command = /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 });
+
+  // BEFORE: the words are there and the editing commands cannot name them.
+  const before = await textOf(original);
+  const indicesBefore = await textIndicesOf(original);
+  record(
+    'BEFORE: the page’s text is findable and only ONE run is addressable',
+    before.includes(INSIDE_FIRST) && indicesBefore.length === 1,
+    `text ${JSON.stringify(before.slice(0, 30))}; ${String(indicesBefore.length)} addressable ` +
+      'object(s) against three runs on the page — which is the gap this command closes',
+  );
+
+  const promoted = await localPdfiumExecution.apply(original, command);
+  const after = await textOf(promoted);
+  const indicesAfter = await textIndicesOf(promoted);
+
+  record(
+    'the promotion makes every run addressable',
+    indicesAfter.length === 3,
+    `${String(indicesAfter.length)} addressable object(s) after, against ` +
+      `${String(indicesBefore.length)} before`,
+  );
+  // THE TEXT IS ASSERTED WHOLE AND IN ORDER, not by `includes`. Inserting the
+  // children in reverse leaves every pixel where it was and changes the page's
+  // own reading of itself — measured while writing `pdfiumPromote.mjs`, and an
+  // `includes` for each string passes for that document.
+  record(
+    'and the page reads exactly as it did, in the same order',
+    after === before,
+    `before ${JSON.stringify(before)}; after ${JSON.stringify(after)}`,
+  );
+
+  // AND THE EDIT NOW SURVIVES, which is the whole point of the promotion.
+  // Measured on 2026-09-10, `FPDFText_SetText` on a NESTED object returns 1,
+  // `GenerateContent` returns 1, and the edit is absent from the reopened
+  // bytes. So this case is the difference between the two states, asserted
+  // through the ordinary editing command rather than through the adapter.
+  const target = indicesAfter.find((index) => !indicesBefore.includes(index)) ?? indicesAfter[1];
+  const edited = await localPdfiumExecution.apply(
+    promoted,
+    /** @type {never} */ ({
+      kind: 'replaceTextObject',
+      page: 0,
+      replacements: [{ index: target, text: PROMOTED_EDIT }],
+      version: 1,
+    }),
+  );
+  record(
+    'a promoted object can then be EDITED, and the edit survives the save',
+    (await textOf(edited)).includes(PROMOTED_EDIT),
+    `the page reads ${JSON.stringify((await textOf(edited)).slice(0, 60))}`,
+  );
+
+  // A PAGE WITH NO FORM IS UNCHANGED. Without this the command could be
+  // rewriting every page it is pointed at, and every case above would still
+  // pass — the reassuring answer for a promotion is that the text is the same,
+  // which is also what an untouched page produces.
+  const plain = await threeRunsAndARectangle();
+  const untouched = await localPdfiumExecution.apply(
+    plain,
+    /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
+  );
+  record(
+    'CONTROL: a page carrying no form is left with the same text and the same objects',
+    (await textOf(untouched)) === (await textOf(plain)) &&
+      (await textIndicesOf(untouched)).length === (await textIndicesOf(plain)).length,
+    'a promotion that rewrote every page would satisfy every case above',
+  );
+
+  const prior = await localPdfiumExecution.capture(original, command);
+  record(
+    'a promotion REFUSES to capture, because PDFium cannot rebuild a Form XObject',
+    prior.captured === false && prior.reason.includes('Form XObject'),
     prior.captured === false ? prior.reason : 'it claimed to capture something',
   );
 }
