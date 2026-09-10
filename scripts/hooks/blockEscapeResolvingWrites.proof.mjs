@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { POWERSHELL_RULES, SHELL_RULES } from './blockEscapeResolvingWrites.mjs';
 
 const ROOT = repoRoot();
@@ -137,13 +138,31 @@ export function decisionFrom(rawStdout, status, stderr, command) {
 
 /** @type {string[]} */
 const failures = [];
-/** @type {string[]} */
-const passed = [];
+
+/**
+ * THE ANCHOR, PAID 2026-09-11. This file was the load-bearing entry on
+ * `proofAnchors.mjs`' `UNANCHORED` list, and that list said so: it printed
+ * `${passed.length} escape-guard cases passed` — a total **derived from what
+ * ran** — while its cases are generated from the rule table, so a rule leaving
+ * that table took its cases and the total with it. Audit item 4c in the
+ * direction the rule warns about: *derive from a set only when the failure you
+ * fear makes that set BIGGER*, and here the fear is a rule going quiet.
+ *
+ * **304, a literal, measured 2026-09-11 by running this file.** Adding a rule is
+ * now a two-line diff — the rule, and this number — and removing one is a red
+ * check rather than a smaller total nobody compares. That cost is the mechanism,
+ * not a nuisance: this is the guard `CLAUDE.md` calls *the* mechanism for a rule
+ * broken eight times.
+ */
+const DECLARED_CASES = 304;
+
+const roster = createRoster(failures, { cases: DECLARED_CASES });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
-  if (condition) passed.push(label);
-  else failures.push(`${label}\n      ${detail}`);
+  const mark = roster.mark();
+  if (!condition) failures.push(`${label}\n      ${detail}`);
+  roster.record(mark, label);
 }
 
 /** @param {string} label @param {string} command @param {string} [toolName] */
@@ -788,8 +807,11 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-for (const label of passed) process.stdout.write(`  ok  ${label}\n`);
-process.stdout.write(`\n${passed.length} escape-guard cases passed.\n`);
+// `format` is what compares the declared count against what ran, and it THROWS
+// rather than pushing a failure — the roster's own reason: every caller reads
+// `failures` before formatting, so a push here would report success and then
+// print a complaint nobody's exit code reflects.
+process.stdout.write(roster.format('escape-guard case'));
 
 // ---------------------------------------------------------------------------
 // What this proof CANNOT reach, said out loud.

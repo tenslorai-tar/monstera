@@ -75,15 +75,20 @@ const ANCHORS = [
  * instruments not on this list already use it — by habit, in the one place the
  * check could not look.
  *
- * The load-bearing one is `blockEscapeResolvingWrites.proof.mjs`. It prints
+ * The load-bearing one was `blockEscapeResolvingWrites.proof.mjs`. It printed
  * `${passed.length} escape-guard cases passed` — a total derived from what ran
  * — and its cases are **generated from the rule table**, so a rule leaving that
- * table takes its cases and the total with it. That is YYYYY-1's exact shape on
- * the guard `CLAUDE.md` calls the mechanism, and it is the first entry to pay.
+ * table took its cases and the total with it. That is YYYYY-1's exact shape on
+ * the guard `CLAUDE.md` calls the mechanism, and it was named here as the first
+ * entry to pay.
+ *
+ * **PAID 2026-09-11.** It takes `createRoster` with a literal **304**, measured
+ * by running it, and is off this list. Adding a rule is now a two-line diff and
+ * removing one is a red check. The entries that remain are the ones nothing has
+ * claimed yet; the list is shorter by the only one it called load-bearing.
  */
 export const UNANCHORED = [
   'scripts/bootstrapHooks.proof.mjs',
-  'scripts/hooks/blockEscapeResolvingWrites.proof.mjs',
   'scripts/hooks/guardFiles.proof.mjs',
   'scripts/hooks/preCommit.proof.mjs',
   'scripts/lib/hookIntegrity.proof.mjs',
