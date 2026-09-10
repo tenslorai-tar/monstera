@@ -1715,13 +1715,28 @@ try {
         `and these are exactly the proofs no changed-file analysis can name for it — which is ` +
         `why the printed list reddened main three times.\n${roster.output.slice(0, 700)}`,
     );
+    // THE CONTROL WAS KEYED ON THE NAME APPEARING AT ALL, and that stopped
+    // separating anything on 2026-09-11, when the sweep began NAMING the scripts
+    // it did not attempt. `proof:unrelated` then appeared in the output for the
+    // opposite reason — it was disclosed as skipped — and this case reddened
+    // `main`. A proxy assertion, expiring; the lucky part is that it expired
+    // loudly rather than quietly.
+    //
+    // It now asserts both halves, which is what it always meant: the proof has
+    // no RESULT row, and the run SAYS it was not attempted. Splitting the output
+    // at the disclosure is what makes the two decidable, because a name can only
+    // be on one side of it.
+    const disclosure = roster.output.indexOf('NOT attempted here');
+    const before = disclosure === -1 ? roster.output : roster.output.slice(0, disclosure);
+    const after = disclosure === -1 ? '' : roster.output.slice(disclosure);
     check(
       'CONTROL: it picks up the ROSTER, not every proof the manifest declares',
-      !/proof:unrelated/u.test(roster.output),
-      `a non-roster proof was swept in. Then the rule is "run everything", the check sweep ` +
-        `costs what a full sweep costs, and the roster's whole point — that these nine are the ` +
-        `ones an import walk structurally cannot see — has been thrown away.\n` +
-        `${roster.output.slice(0, 700)}`,
+      !/proof:unrelated/u.test(before) && /proof:unrelated/u.test(after),
+      `a non-roster proof was swept in, or the run did not say it was skipped. If it ran, the ` +
+        `rule is "run everything", the check sweep costs what a full sweep costs, and the ` +
+        `roster's whole point — that these nine are the ones an import walk structurally cannot ` +
+        `see — has been thrown away. If it neither ran nor was disclosed, the sweep is quiet ` +
+        `about exactly the class this roster exists for.\n${roster.output.slice(0, 900)}`,
     );
   }
   {
