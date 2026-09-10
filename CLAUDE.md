@@ -388,9 +388,19 @@ is wrong** — fix the boundary, not the test.
   routing table per writer, so a command routed elsewhere is a compile error
   rather than a native library handed a pointer where bytes were expected.
 
-  **THAT IS OWED, NOT BUILT.** `hostBody.ts` takes `CommandExecution<'mupdf'>`
-  today, and §2 states the generic form in the present tense. Read it as the
-  specification it is.
+  **IT IS BUILT, 2026-09-09.** This read *"that is owed, not built —
+  `hostBody.ts` takes `CommandExecution<'mupdf'>` today"*, and it stopped being
+  true in the range that built `pdfiumHost`: `startEngineHost` is generic over a
+  channel map, MuPDF's binding moved to `engineHandlers.ts`, and
+  `pdfiumHandlers.ts` composes the second engine through the same body.
+
+  **The line survived a full range after it stopped being true**, found by the
+  audit of `63f10be..HEAD` on 2026-09-10 rather than by anything automatic. No
+  commit that generalised the body opened this file or `docs/ARCHITECTURE.md`,
+  which is item 7's own hole — a document falsified by a commit that never
+  touches it. The compensation is one grep and is written here because it is not
+  obvious in the moment: **when a paragraph's subject is a symbol, sweep for the
+  symbol.**
 
   **And it is SMALLER than when it was written, 2026-09-09**
   ([ADR-0047](docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)).

@@ -888,6 +888,271 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — Stage audit of `63f10be..258a9ce`: a document that said the thing it described was not built, and three bounds coupled by a coincidence
+
+Thirty-two commits, ninety-nine files — Stage 5's five editing rows, the second
+engine host, and the amendment that corrected what its rasteriser is for. The
+gate fired on the file count while the next commit was being written, which is
+the gate working: `check:docs` measures the range against HEAD, so the commit
+that crosses is invisible to it and the board would have gone red one push
+later.
+
+### 1. Root cause, or workaround?
+
+**Four fixes, and three were root causes by the test CLAUDE.md gives** — could
+the same action recreate the problem?
+
+- **The grant that reddened `main` for four commits.** `eb8dacf` added
+  `.tools/pdfium/<version>/bin` to a flat required-everything `grantSet`, and
+  CI's `shim` job provisions no PDFium. The workaround was available and
+  obvious — provision PDFium in that job — and it is wrong, because that job
+  never starts a PDFium host. An entry now carries `required`, and PDFium's is
+  `false`: its absence means *no PDFium host here*, which is the state
+  `createPdfiumHostPlatform` already answers `null` for.
+- **`proof:contract` was invisible to the reach analysis.** It holds handler-map
+  source as STRINGS and imports nothing from the package it tests, so
+  `affectedProofs` could not name it and a contract change reached it through
+  nothing. Fixed at the root: it reads a **built artefact**, so it takes
+  `refuseStaleBuild` and an `ARTEFACT_EDGES` entry — not a new roster, which
+  would have been a third answer to *what does a proof read*.
+- **The descending sort in `removeObjects`.** See item 4.
+- **The one that was NOT a root-cause fix and is recorded as such:** the
+  `ReplaceTextObjectBody` colour input's `#000000` was moved behind a computed
+  `NO_COLOUR` because `monstera/no-raw-hex` refused the literal. That is
+  compliance, not a mechanism — the rule was right and the code was wrong, which
+  is the third banned reflex read the correct way round.
+
+### 2. Verified against the easy shape only?
+
+**The hard shape was found twice, and once by measurement rather than by
+thinking of it.**
+
+- `replaceAllText`'s split-occurrence case. The easy fixture is a word inside one
+  text object; the hard one is `WID` + `GET` drawn as two adjacent objects, which
+  PDFium extracts as `WIDGET` and which no `FPDFText_SetText` can reach. It is
+  now a case, so the limitation cannot change in silence.
+- The bare-environment axis was not exercised anywhere new in this range, and
+  saying so is the honest half: every new proof here spawns nothing.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, three times, and all three are DERIVATIONS replacing literals** —
+`MAX_TEXT_OBJECTS` from `MAX_TEXT_REPLACEMENTS`, `MAX_EDITED_OBJECTS` from the
+same, and `MAX_QUERY_LENGTH` from `MAX_FIND_TEXT`. Each was written citing
+CLAUDE.md's *copy only where the reader cannot reach the source*.
+
+**FINDING W-1, and it is against my own work.** `commands.ts` states the opposite
+rule about this exact class, eleven lines from where I derived one:
+*"{@link MAX_FIELD_VALUE}'s number and, deliberately, not its argument — two
+bounds that happen to agree are not one bound"*. And `MAX_FLAT_FIELD_CANDIDATES`
+— the closest precedent, a read bound that must not exceed a command's — keeps
+the two separate with a literal `256` and prose.
+
+The distinction the repository draws is between a **copy of one value** and **two
+bounds that agree**, and `MAX_TEXT_OBJECTS` is the second: the command's bound is
+about a payload, the read's is about a chooser a person works through — *"a
+chooser of 8192 rows is not a chooser"*. The argument for equality only supports
+**≤**, and the derivation encodes **=**. So a future commit raising the command's
+bound for a payload reason silently raises the chooser's, and the usability half
+has no mechanism left. `MAX_QUERY_LENGTH ← MAX_FIND_TEXT` is not this: both
+answer *how long a string may a person type*, which is genuinely one question.
+
+**Open**, with the fix named: restore `MAX_TEXT_OBJECTS` and `MAX_EDITED_OBJECTS`
+as literals carrying `MAX_FLAT_FIELD_CANDIDATES`' prose. Recorded rather than
+fixed here because this commit's job is the record.
+
+### 3. Would CI have caught it?
+
+**Answered from a run.** `affectedProofs` over the range's ninety-nine changed
+files names **44 proofs**, every one of them a step in `ci.yml` or `guards.yml`,
+and every commit in the range has a board reading. CI *did* catch the grant
+defect — it was red at `eb8dacf`, `c3eac94`, `1903a3b` and `11ac35ef`.
+
+**And the failure was mine rather than the mechanism's: I pushed four times
+without reading the board.** The rule is one read per push and a push is the only
+event that changes the answer. What makes it more than an apology is the second
+half: **the local sweep could not have caught this class at all.** The shim job
+provisions no PDFium, so the defect exists only where the optional path is
+absent, and this machine always has it. That is a branch keyed on the presence of
+something, and the side that never executes here is the side CI runs — so for
+this whole class the board read is not diligence on top of the sweep, it is the
+only detector there is.
+
+### 4. Are the proofs non-vacuous?
+
+**Every new guard in this range was mutated, and two mutations changed what the
+code says rather than confirming it.**
+
+- **`removeObjects` sorted descending** on the reasoning that removing an index
+  renumbers its neighbours. Mutating to ascending left every case green.
+  `FPDFPage_RemoveObject` takes the OBJECT, and every index is resolved against
+  the untouched page before anything is unlinked, so a handle does not renumber.
+  The sort was a second mechanism for something the resolution already prevented.
+  It is gone; a case asserting the two orderings produce the same page replaces
+  it. **A guard whose stated reason is not the one doing the work is worse than
+  none**, because the next reader takes the stated reason as the rule.
+- **The duplicate guard beside it.** *The same index twice is a double free* was
+  the obvious reading. Deleting the `Set` throws
+  `FPDFPage_RemoveObject refused object 0` — PDFium declines to unlink an object
+  that has already left the page, so the second `Destroy` is never reached. What
+  the `Set` prevents is a **half-applied command**, which is a smaller claim and
+  the true one.
+
+**PROOFS REMOVED — the column the scope report cannot fill.** It tracks FILES and
+both removals here were CASES inside files it does name, which is the stated
+limitation working exactly as written: read the diff.
+
+1. **`pdfiumAdapter.proof.mjs`: the un-generated `FPDFText_SetText` case**
+   (carried into this audit by the reviewing seat). It asserted that a set
+   without a generate does not survive `FPDF_ClosePage`. The mutation that should
+   have reddened it — validating inside the set loop, so a valid first entry
+   lands and an invalid second throws — left every case green, because
+   `onPage`'s per-call page lifetime already prevents the half-write. The check
+   in the code was kept and the case removed: a check that cannot fail is worse
+   than no check.
+2. **`pdfiumAdapter.proof.mjs`: the odd-width stride case**, removed 2026-09-10.
+   It asserted a tightly packed buffer at width 41, on the belief that PDFium
+   pads a row for alignment. Both halves were wrong: the assertion was on the
+   LENGTH, which a stride-blind copy also produces, and `FPDFBitmap_GetStride`
+   answers exactly `width * 4` for every width measured — 1, 2, 3, 5, 7, 13, 40,
+   41, 43, 97, 101, 399, 1191 — because a four-byte pixel is already four-byte
+   aligned. The row-by-row copy stays, `FPDFBitmap_Gray` and `BGR` being formats
+   that do pad.
+
+**PROOFS MODIFIED — the load-bearing column, read.** Sixteen files. The
+`contract.proof.mjs` deletions are its counted-repetition regexes advancing with
+each new command, which is that case doing its stated job; `hostBody.test.ts`'s
+−64 is the composition moving to `createEngineHandlers` with every dependency
+unchanged; the two `documentCommands.test.ts` deletions are `document.textObjects`
+becoming `document.textLines`, same strength. **One is a genuine correction and
+belongs here by name** (also carried in by the reviewing seat): the inverse case
+in `pdfiumCommand.proof.mjs` read `includes(SECOND) && !includes(REPLACEMENT)`,
+and the mutation written to redden it — an inverse that APPENDS to the recorded
+string — left it green, a superstring still containing the original. It is
+equality now, with a control proving the apply changed that same text. **A
+loosened check and a corrected one read identically in a diff**, which is why
+both belong in this column with the mutation beside them.
+
+### 4a. Has every instrument passed a resolution test, BEFORE it measured anything real?
+
+**Two instruments arrived and one of them carries the test in its own run.**
+`pdfiumAgainstPdfjs.mjs` compares two buffers differing by one level in one of
+sixteen pixels before it opens a document, and requires mean 0.0625, worst 1,
+differing 1 — a difference metric's reassuring answer is a small number, and a
+blind one produces small numbers for everything.
+
+`pdfiumObjects.mjs` did not, and it did not need one: it is a **reporter** rather
+than a metric — it prints kinds, boxes, matrices and fills — so there is no
+figure whose resolution could be wrong. What stands in for the test there is
+that every number it prints is read back from a REOPENED document, so a value
+that never reached the bytes prints as the old one.
+
+### 4b. Is the instrument a SEARCH? Then it needs a positive control.
+
+**One is, and it has one.** `pdfiumTextExports.mjs` searches PDFium's export
+table for three families, and its positive control is the print itself: the
+count of all 467 exports is on the page beside the 37, 7 and 40 it names, so a
+scan that could see nothing would say so rather than reporting an absence.
+
+**Two are not searches and the distinction is worth stating** rather than
+answering *n/a*: `pdfiumObjects.mjs` and `pdfiumAgainstPdfjs.mjs` both fail loudly
+on an empty result — a zero-ink render is a thrown refusal in the second, because
+two blank canvases agree perfectly and that is the reading total failure
+produces.
+
+**And one prose sweep in this audit used `npm run sweep:prose`** rather than a
+line-scoped grep, which is what found W-2's second copy: the phrase
+*"hostBody.ts takes CommandExecution"* is wrapped across a line break in
+`CLAUDE.md`, and a plain `grep` for it returns nothing.
+
+### 4c. Does the check DERIVE its extent from the set it governs?
+
+**Three derived rosters fired in this range and all three fired correctly** —
+`payloadBounds.test.ts`' channel set twice, the browser shim's client keys twice,
+and `commandDeclarations.test.ts`' invertible-byte-image and targets anchors.
+Each made a new channel or a new kind arrive owing an answer rather than
+inheriting silence, which is the direction 4c permits: the failure feared makes
+the set BIGGER.
+
+**The shrink direction is held by the anchors beside them**, and one earned its
+place: the invertible-byte-image list prints an instruction — *check its prior is
+BOUNDED by the contract* — and that check was carried out and written into the
+file for the two kinds that joined.
+
+**W-1 above is this item's finding**, and it is the constant version rather than
+the roster one: a bound derived from another bound is a count that agrees with
+any change to its source, which is the same failure one level down from a
+derived case count.
+
+### 5. Executed, or asserted?
+
+**Executed**: every PDFium fact this range rests on. The stride sweep above; one
+rect per RUN at 170pt and at 3pt; `FPDFText_GetTextObject` resolving 40 of 45
+characters; `FPDFPageObj_Transform` composing; a scale about the PAGE origin
+landing a rectangle at 400..640; `SetFillColor` answering 1 on a text object; a
+delete surviving only with `GenerateContent`; a removal costing 3.1% less than an
+untouched save; 12.716 levels between the two rasterisers.
+
+**Asserted, and named as such:** that `FPDFBitmap_Gray` and `BGR` pad their
+stride. It is the reason the row-by-row copy is kept and nothing here has run it.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, three times, and one of them is the range's best moment.** ADR-0049
+preceded line-level editing. ADR-0048's correction preceded the second host.
+And §6.1's *higher-fidelity* clause was amended **in its own commit ahead of the
+toggle**, because the measurements had made the row's justification false — the
+feature was buildable, the premise was not, and building first would have shipped
+a setting whose stated purpose no measurement supports.
+
+### 7. Do the documents still match the code?
+
+**FINDING W-2, and it is the range's headline.** `CLAUDE.md` and
+`docs/ARCHITECTURE.md` §2 both said *"`hostBody.ts` takes
+`CommandExecution<'mupdf'>` today and is not generic over anything"* — a sentence
+written on 2026-09-09 precisely to stop a specification reading as a description.
+It was built the same day: `startEngineHost` is `<TMap extends ChannelMap>`,
+MuPDF's binding moved to `engineHandlers.ts`, and `pdfiumHandlers.ts` is the
+second composition through the same body.
+
+**No commit that generalised the body opened either document**, so the sentence
+saying it was not done survived the doing of it for a full range. That is item
+7's own stated hole — *a document can be falsified by a commit that never touches
+it* — and it is the sharper version of it: the false claim was the CORRECTION,
+written by an author being careful about exactly this, and its own carefulness is
+what made it read as current.
+
+Both are edited to be currently true in this commit. The compensation is one
+grep and is now written into both: **when a paragraph's subject is a symbol,
+sweep for the symbol.** `hostBody.ts` appears in both documents and in nothing
+else that matters.
+
+**FINDING W-3, small and closed.** The HD render row cited **§3** for a sentence
+that is **§6.1's**. §3 is where *PDF.js is never a source of truth* lives — a real
+clause about a different thing — so the citation resolved and was about something
+else, which no link check can see (UU-1's shape). Corrected with the amendment.
+
+**Swept and clean:** the `MAX_TEXT_REPLACEMENTS` bound, `writerShapes.pdfium`,
+`purpose: 'removal'`'s mechanism, and ADR-0047's *no session table* claim, which
+survives — a reader's session was explicitly outside that rule and the HD render
+path opens and closes per call rather than holding one.
+
+### Carried forward, unfixed
+
+- **W-1** — the coupled bounds, fix named above.
+- `proof:guards` at 164.5–1093 s against a 540 s bound. **Do not raise the
+  constant**; the root cause is unfound.
+- `proof:perfbudget`'s three `mupdf-host-real` lines, unmeasured locally.
+- ADR-0023 Decision 16's measurement, and the MuPDF adapter migration's 117 API
+  members.
+- `proof:escapeguard`'s own derived roster, named and unpaid.
+- §6.1 now describes the second rasteriser correctly; **`docs/ARCHITECTURE.md`
+  §9.17's budgets have not been re-read against a renderer that may hold a PNG
+  per page**, and that is owed the first time the second renderer is measured
+  rather than reasoned about.
+
+---
+
 ## 2026-09-10 — PDFium against PDF.js, in pixels: the HD render row's owed reading
 
 The *HD render toggle* row has carried one sentence of debt since 2026-09-08:

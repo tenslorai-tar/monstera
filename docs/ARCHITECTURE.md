@@ -202,15 +202,23 @@ contained hosts since Stage 0 and the body serving them is one implementation:
 exactly one engine, and a host that does not is unrepresentable rather than
 discouraged.
 
-**THAT SENTENCE IS A SPECIFICATION AND NOT A DESCRIPTION, said plainly
-2026-09-09.** `hostBody.ts` takes `CommandExecution<'mupdf'>` today and is not
-generic over anything; the amendment was written ahead of `pdfiumHost`, which is
-what B4 asks for, and *"is generic"* still reads as a fact about code. This
-document has been ahead of its code once before — the bare y-flip ban was law
-for a range before a rule existed — and the cost then was that the only thing
-standing between the tree and a defect was somebody recalling a line. Nothing is
-withdrawn here: what the paragraph requires is still what will be built, and the
-tense is what is corrected.
+**IT IS A DESCRIPTION AGAIN, as of 2026-09-09, and the specification note that
+stood here is spent.** This paragraph read *"that sentence is a specification and
+not a description"* because `hostBody.ts` took `CommandExecution<'mupdf'>` and
+was generic over nothing — the amendment having been written ahead of
+`pdfiumHost`, which is what B4 asks for. It was built: `startEngineHost` is
+`<TMap extends ChannelMap>` and takes a channel set with its handlers, the MuPDF
+binding moved to `engineHandlers.ts`, and `pdfiumHandlers.ts` is the second
+composition through the same body.
+
+**The correction was overdue by a full range, and that is the finding rather than
+the fix** (audit of `63f10be..HEAD`, 2026-09-10). No commit in the range that
+generalised the body opened this file, so the sentence saying it was *not* done
+survived the doing of it — item 7's own stated hole, *a document can be falsified
+by a commit that never touches it*. `CLAUDE.md` carried the same claim and is
+corrected in the same commit. What makes it findable next time is cheap and is
+the compensation now written down: **a paragraph whose subject is a symbol is
+swept by grepping for the symbol**, and `hostBody.ts` appears in both documents.
 
 **And its SIZE is now smaller than when it was written**
 ([ADR-0047](DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)).
