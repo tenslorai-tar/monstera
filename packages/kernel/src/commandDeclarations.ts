@@ -1342,6 +1342,37 @@ const declarations = {
     // symptom recorded as a cause.
     purpose: 'ordinary',
   },
+  replaceAllText: {
+    kind: 'replaceAllText',
+    writer: 'pdfium',
+    // NOT INVERTIBLE, AND THE PRIOR IS WHY — which is a different reason from
+    // `deletePageObjects`' beside it. A prior exists here: every object this
+    // changed, with the string it held. It is **document-scaled**, and
+    // `CommandLog.trimTo`'s rule is that an invertible entry retains no
+    // document-scaled bytes — a replace-all over a thousand pages would keep a
+    // thousand pages' worth of strings in the log for ever.
+    //
+    // So undo takes a checkpoint, which is one whole document image. That is
+    // the cheaper of the two and it is bounded by the document rather than by
+    // how much of it the command touched.
+    invertible: false,
+    undo: 'checkpoint',
+    // The same two strings against the same bytes produce the same edit. Nothing
+    // mints an identifier, stamps a date or asks a model.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // NAMES NOTHING, `flattenFormFields`' shape: there is no answer this could
+    // be stale against, which is also why its payload carries no version. A
+    // replace-all is *change these words wherever they are*, and a document that
+    // moved since the box was typed into has not made that a different request.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    // IT REMOVES NOTHING. Every write replaces an object's string in place and
+    // the page's content stream is regenerated whole; no object is unlinked.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

@@ -115,13 +115,13 @@ async function threeRunsAndARectangle() {
  *
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed agrees with any collection, including
- * one that has quietly shrunk — audit item 4c. Eighteen is an independent claim
- * about this file, not a count of it.
+ * one that has quietly shrunk — audit item 4c. Twenty-nine is an independent
+ * claim about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 18 });
+const roster = createRoster(failures, { cases: 29 });
 
 /**
  * @param {string} name
@@ -379,12 +379,195 @@ async function main() {
     refusal ?? 'it was accepted',
   );
 
+  await replaceAllCases();
+
   process.stdout.write(
     failures.length > 0
       ? `\n${String(failures.length)} PDFium command case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
       : roster.format('PDFium command case'),
   );
   process.exitCode = failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * A three-page document whose text is spread the way the limitation needs.
+ *
+ * Page 0 and page 2 carry the word twice each; page 1 carries it not at all, so
+ * *every page was walked* and *every page was rewritten* can be told apart.
+ *
+ * The last run on page 0 is the SPLIT one: `WIDGET` drawn as two adjacent text
+ * objects, `WID` and `GET`. It reads as the word on the page and is in neither
+ * object's string, which is the boundary this command cannot cross and the
+ * thing a case has to pin so it cannot change in silence.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+async function threePagesOfWidgets() {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const first = document.addPage([400, 300]);
+  first.drawText('The WIDGET is on this page', { x: 30, y: 230, size: 11, font });
+  first.drawText('and the WIDGET again below', { x: 30, y: 200, size: 11, font });
+  // SPLIT ACROSS TWO OBJECTS, deliberately adjacent so it reads as one word.
+  first.drawText('WID', { x: 30, y: 170, size: 11, font });
+  first.drawText('GET', { x: 49, y: 170, size: 11, font });
+  const second = document.addPage([400, 300]);
+  second.drawText('This page mentions nothing at all', { x: 30, y: 230, size: 11, font });
+  const third = document.addPage([400, 300]);
+  third.drawText('A WIDGET here too', { x: 30, y: 230, size: 11, font });
+  third.drawText('and a widget in lower case', { x: 30, y: 200, size: 11, font });
+  return document.save();
+}
+
+/** What one page of `bytes` says. @param {Uint8Array} bytes @param {number} page */
+async function pageOf(bytes, page) {
+  const session = await pdfiumWriter.open(bytes);
+  try {
+    return await pageText(session, page);
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/**
+ * Document-wide replace-all, through the same routing every case above uses.
+ *
+ * Its own function for `pdfiumObject.proof.mjs`' reason one file along: these
+ * share a fixture and a helper, and the roster's count is an independent claim
+ * a reader checks by counting `record` calls rather than by scrolling one body.
+ */
+async function replaceAllCases() {
+  const original = await threePagesOfWidgets();
+  /**
+   * @param {Record<string, unknown>} rest
+   * @returns {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceAllText'>}
+   */
+  const replaceAll = (rest) =>
+    /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceAllText'>} */ ({
+      kind: 'replaceAllText',
+      ...rest,
+    });
+
+  const command = replaceAll({ find: 'WIDGET', replace: 'GADGET' });
+  const applied = await localPdfiumExecution.apply(original, command);
+  const firstPage = await pageOf(applied, 0);
+  const secondPage = await pageOf(applied, 1);
+  const thirdPage = await pageOf(applied, 2);
+
+  record(
+    'a replacement reaches EVERY page, not only the first',
+    firstPage.includes('GADGET') && thirdPage.includes('GADGET'),
+    // A command that stopped after the first page it changed would pass a case
+    // that read only page 0 — which is why the fixture puts a match on the LAST
+    // page and a gap in between.
+    `page 0 ${JSON.stringify(firstPage.slice(0, 40))}; page 2 ${JSON.stringify(thirdPage.slice(0, 40))}`,
+  );
+  record(
+    'both occurrences on one page are replaced, not just the first',
+    (firstPage.match(/GADGET/gu) ?? []).length === 2,
+    `${String((firstPage.match(/GADGET/gu) ?? []).length)} on page 0`,
+  );
+  record(
+    'a page with no match is left exactly as it was',
+    secondPage === (await pageOf(original, 1)),
+    `page 1 reads ${JSON.stringify(secondPage)}`,
+  );
+
+  // THE LIMITATION, PINNED. `FPDFText_SetText` replaces an object's whole
+  // string, and `WID` + `GET` are two objects — so the word is on the page and
+  // in neither object. A future change that made this pass would mean something
+  // had started editing across an object boundary without a person confirming
+  // the grouping, which is what ADR-0049 refuses.
+  record(
+    'an occurrence SPLIT ACROSS TWO OBJECTS is not replaced, and that is the shape',
+    // ASSERTED ON `WIDGET` ITSELF, and the first spelling of this case was
+    // `includes('WID') && includes('GET')` — which the string `WIDGET` satisfies
+    // by being itself, and which a partial replacement would also satisfy.
+    //
+    // The page reads `WIDGET` here because PDFium joins two adjacent objects
+    // when it extracts, which is the finding: the word is ON the page and in
+    // NEITHER object's string. Every object-internal occurrence became `GADGET`
+    // above, so a surviving `WIDGET` on this page can only be the split pair.
+    firstPage.includes('WIDGET'),
+    `page 0 reads ${JSON.stringify(firstPage)}`,
+  );
+  record(
+    'CONTROL: exactly ONE survives, so the case above is not passing on a missed replacement',
+    (firstPage.match(/WIDGET/gu) ?? []).length === 1 &&
+      (await pageOf(original, 0)).match(/WIDGET/gu)?.length === 3,
+    `${String((firstPage.match(/WIDGET/gu) ?? []).length)} left of ` +
+      `${String((await pageOf(original, 0)).match(/WIDGET/gu)?.length)}`,
+  );
+
+  // CASE, THROUGH THE SHARED MATCHER. `textMatch.ts` defaults to
+  // case-insensitive, so the lower-case `widget` on page 2 is replaced here and
+  // must survive the case-sensitive run below — which is what separates *the
+  // flag reached the matcher* from *the flag was accepted and ignored*.
+  record(
+    'matching is case-insensitive by default, which is the find bar’s own default',
+    thirdPage.includes('GADGET') && !thirdPage.includes('widget'),
+    `page 2 reads ${JSON.stringify(thirdPage)}`,
+  );
+  const sensitive = await localPdfiumExecution.apply(
+    original,
+    replaceAll({ find: 'WIDGET', replace: 'GADGET', caseSensitive: true }),
+  );
+  record(
+    'and caseSensitive REACHES the matcher, so the lower-case one survives',
+    (await pageOf(sensitive, 2)).includes('widget'),
+    `page 2 reads ${JSON.stringify(await pageOf(sensitive, 2))}`,
+  );
+
+  // A PATTERN, for the same reason: the flag has to reach `compileQuery` rather
+  // than being accepted and dropped. `W.DGET` matches the whole word and not
+  // the split pair, so this also cannot pass by matching everything.
+  const patterned = await localPdfiumExecution.apply(
+    original,
+    replaceAll({ find: 'W.DGET', replace: 'GADGET', regex: true }),
+  );
+  record(
+    'a regex pattern reaches the matcher too',
+    (await pageOf(patterned, 0)).includes('GADGET'),
+    'a build that ignored the flag would have looked for the literal "W.DGET"',
+  );
+
+  // AN UNPARSEABLE PATTERN IS A REFUSAL WITH A REASON, not a silent no-op and
+  // not an `internal`. The boundary deliberately does not compile the pattern,
+  // so this is the layer that answers for it.
+  let refused = null;
+  try {
+    await localPdfiumExecution.apply(original, replaceAll({ find: '(', replace: 'x', regex: true }));
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+  record(
+    'an unparseable pattern is refused by NAME and changes nothing',
+    refused !== null && refused.includes('invalid-pattern'),
+    refused ?? 'it was accepted',
+  );
+
+  // A REPLACEMENT THAT PRODUCES THE ORIGINAL CHANGES NOTHING. Replacing a word
+  // with itself matches everywhere, and regenerating every page for it would be
+  // the whole cost of an edit paid for no change.
+  const identity = await localPdfiumExecution.apply(
+    original,
+    replaceAll({ find: 'WIDGET', replace: 'WIDGET' }),
+  );
+  record(
+    'replacing a word with itself leaves every page’s text as it was',
+    (await pageOf(identity, 0)) === (await pageOf(original, 0)),
+    'the page reads as it did, so no object was rewritten with what it already held',
+  );
+
+  // THE CAPTURE REFUSES, which is what makes the bus take a checkpoint — and
+  // the reason names the axis rather than the symptom: the prior EXISTS here
+  // and is document-scaled, which is a different refusal from a removal's.
+  const prior = await localPdfiumExecution.capture(original, command);
+  record(
+    'a replace-all REFUSES to capture, because its prior scales with the document',
+    prior.captured === false && prior.reason.includes('document-scaled'),
+    prior.captured === false ? prior.reason : 'it claimed to capture something',
+  );
 }
 
 await main();

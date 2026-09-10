@@ -319,6 +319,9 @@ export const REPLACE_TEXT_OBJECT_TRUNCATED = messageKey('dialog.replace-text-obj
 export const REPLACE_TEXT_OBJECT_TOO_LONG = messageKey('dialog.replace-text-object.too-long');
 export const REPLACE_TEXT_OBJECT_APPLY = messageKey('dialog.replace-text-object.apply');
 export const REPLACE_TEXT_OBJECT_COMMAND_TITLE = messageKey('command.document.replace-text-object');
+export const FIND_REPLACE_WITH = messageKey('surface.find.replace-with');
+export const FIND_REPLACE_ALL = messageKey('surface.find.replace-all');
+export const FIND_REPLACED = messageKey('surface.find.replaced');
 export const EDIT_PAGE_OBJECT_TITLE = messageKey('dialog.edit-page-object.title');
 export const EDIT_PAGE_OBJECT_EXPLAINS = messageKey('dialog.edit-page-object.explains');
 export const EDIT_PAGE_OBJECT_WHICH = messageKey('dialog.edit-page-object.which');
@@ -1097,6 +1100,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // The document was NOT searched, which is a different thing from finding
   // nothing and must never render as it.
   [FIND_REFUSED]: 'This page could not be searched just now.',
+  [FIND_REPLACE_WITH]: 'Replace with',
+  // SAYS THE SCOPE IN THE LABEL. A button reading "Replace" beside a per-page
+  // match list would read as *replace this match*, and this command changes
+  // every occurrence in the document — on pages the person is not looking at.
+  // The scope is the one thing they cannot see, so it is the one thing the label
+  // has to carry.
+  [FIND_REPLACE_ALL]: 'Replace everywhere',
+  // WHAT IT DID, AND WHAT IT COULD NOT. The limitation is real and measured —
+  // `FPDFText_SetText` replaces an object's whole string, so a word a PDF drew
+  // in two pieces is in neither piece — and a person who finds one survivor
+  // afterwards needs to know it is a known shape rather than a failed run. The
+  // count is deliberately absent: the command answers a version, not a tally,
+  // and inventing one here would be a number nothing produced.
+  [FIND_REPLACED]:
+    'Replaced throughout the document. A word a PDF drew in separate pieces is left as it was — edit those a line at a time.',
   [UNDO_TITLE]: 'Undo',
   [SAVE_TITLE]: 'Save',
   // "Save a copy" and NOT "Save as". They are different operations and the

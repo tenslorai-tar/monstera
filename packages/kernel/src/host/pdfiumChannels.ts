@@ -5,6 +5,7 @@ import {
   deletePageObjectsSchema,
   placePageObjectSchema,
   recolorPageObjectsSchema,
+  replaceAllTextSchema,
   replaceTextObjectSchema,
 } from '@monstera/contract';
 
@@ -76,6 +77,7 @@ const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   placePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
+  replaceAllTextSchema,
 ]);
 
 /** What travels as a command to this host. */

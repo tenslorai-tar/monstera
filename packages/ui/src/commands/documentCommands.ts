@@ -161,8 +161,15 @@ export interface Applied {
   readonly byteLength: number;
 }
 
-/** Everything the three share. */
-interface DocumentCommandDeps {
+/**
+ * Everything the three share.
+ *
+ * **Exported since 2026-09-10**, for `applyDocumentCommand`'s own reason: that
+ * helper exists because a SURFACE dispatches commands too, and a surface taking
+ * it needs to be able to name its parameter. The find bar's replace-all is the
+ * second such caller after the thumbnail strip's drag-reorder.
+ */
+export interface DocumentCommandDeps {
   readonly client: ContractClient;
   /**
    * Called when the document moved, with what replaced it.

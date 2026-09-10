@@ -24,11 +24,15 @@ import {
   FIND_PROGRESS,
   FIND_REFUSED,
   FIND_REGEX,
+  FIND_REPLACED,
+  FIND_REPLACE_ALL,
+  FIND_REPLACE_WITH,
   FIND_SUBMIT,
   FIND_TRUNCATED,
   FIND_WHOLE_WORD,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
+import { type DocumentCommandDeps, applyDocumentCommand } from './commands/documentCommands.js';
 
 /**
  * The find bar: E2's text substrate, reached by a person.
@@ -124,6 +128,22 @@ export interface FindBarProps {
    * dependency; a `useState` setter is, and an inline arrow is not.
    */
   readonly onHighlight: (highlight: SearchHighlight | null) => void;
+  /**
+   * How a dispatched command's outcome is handled — the REPLACE half's only need.
+   *
+   * `DocumentCommandDeps` whole rather than an `onApplied` of its own, because
+   * `applyDocumentCommand` is what this surface dispatches through and that is
+   * deliberate: it is the dispatcher outside the command registry, already used
+   * by the thumbnail strip's drag-reorder, and it does four things a copy here
+   * would have to do identically — report a declared failure, tell the caller
+   * the version moved only when it did, raise invariant 18's dialog when history
+   * was shed, and answer whether the document moved (B3a).
+   *
+   * Optional, and the default is the honest one for a surface with no deps: the
+   * replace controls are not rendered at all. Making it required would force
+   * every existing test of the find half to supply a dispatcher it does not use.
+   */
+  readonly commands?: DocumentCommandDeps | undefined;
 }
 
 /**
@@ -200,6 +220,7 @@ export function FindBar({
   pageCount,
   onJump,
   onHighlight,
+  commands,
 }: FindBarProps): ReactElement | null {
   const { _ } = useLingui();
   const [query, setQuery] = useState('');
@@ -209,6 +230,19 @@ export function FindBar({
     regex: false,
   });
   const [state, setState] = useState<FindState>({ kind: 'idle' });
+  const [replacement, setReplacement] = useState('');
+  /**
+   * Whether a replace-all is in flight, and whether one has landed.
+   *
+   * TWO BOOLEANS RATHER THAN A VARIANT, unlike {@link FindState} beside them,
+   * and the difference is what an illegal combination would mean. A search's
+   * list and its active index must move together or one indexes the other
+   * wrongly; these two are *a button is busy* and *a sentence is shown*, and a
+   * state holding both is not a contradiction — a second replace while the
+   * first's message is up is exactly what happens when somebody replaces twice.
+   */
+  const [replacing, setReplacing] = useState(false);
+  const [replaced, setReplaced] = useState(false);
   const inputId = useId();
   // A REF, not state: aborting must not re-render, and the walk holds this
   // controller for its whole life. Kept so the cancel button can reach the walk
@@ -252,6 +286,50 @@ export function FindBar({
       asked: { query, options },
     });
   }, [client, docId, options, page, query]);
+
+  /**
+   * Replaces every occurrence of the query across the document.
+   *
+   * ## It sends the SAME query and flags the search ran with
+   *
+   * Which is the whole reason this control is in the find bar: a person who set
+   * *whole word* to find something meant it for the replacement too, and a
+   * second place to set it would be two opinions about one question. `normalise`
+   * is the one option the command does not take — `compileQuery` answers offsets
+   * into normalised text and a replacement splices into the original, so the two
+   * would be in different frames. Nothing here sets it, and the find bar does
+   * not offer it either.
+   *
+   * ## The RESULTS ARE CLEARED, because the document moved
+   *
+   * A match list names lines in the document as it was. After a replacement the
+   * lines say something else, and painting the old highlights over the new text
+   * would put a box around a word that is no longer there. Clearing is the
+   * honest answer; re-searching automatically would be this surface deciding
+   * that a person who replaced wants to search again.
+   */
+  const replaceAll = useCallback(async (): Promise<void> => {
+    if (commands === undefined || docId === undefined || query === '') return;
+    setReplacing(true);
+    setReplaced(false);
+    try {
+      const moved = await applyDocumentCommand(commands, docId, {
+        kind: 'replaceAllText',
+        find: query,
+        replace: replacement,
+        ...options,
+      });
+      if (!moved) return;
+      setReplaced(true);
+      setState({ kind: 'idle' });
+      onHighlight(null);
+    } finally {
+      // IN A `finally`, so a refusal does not leave the button disabled for
+      // ever. `applyDocumentCommand` reports the refusal itself; what this owes
+      // is returning the control to the person.
+      setReplacing(false);
+    }
+  }, [commands, docId, onHighlight, options, query, replacement]);
 
   const searchAll = useCallback(async (): Promise<void> => {
     if (docId === undefined || pageCount === undefined || query === '') return;
@@ -433,6 +511,45 @@ export function FindBar({
           </label>
         ))}
       </fieldset>
+      {/* THE REPLACE HALF, and it is HERE rather than in the ribbon. It needs a
+          find string and three flags, which this surface already holds and a
+          ribbon control would have to ask for again — so a second place to type
+          them would be two opinions about what is being searched for, and a
+          person who set *whole word* in one would not have set it in the other.
+
+          Rendered only with a dispatcher, which is what makes the find half's
+          existing tests unaffected: a bar with no `commands` is the bar that
+          shipped at D1. */}
+      {commands === undefined ? null : (
+        <div className="m-find-replace">
+          <label htmlFor={`${inputId}-replacement`}>{_(FIND_REPLACE_WITH)}</label>
+          <input
+            id={`${inputId}-replacement`}
+            data-find-replacement="true"
+            value={replacement}
+            onChange={(event) => {
+              setReplacement(event.target.value);
+            }}
+          />
+          <button
+            type="button"
+            data-find-replace-all="true"
+            // DISABLED ON AN EMPTY QUERY, which is the same refusal the schema
+            // and the kernel make. A person with an empty box has not asked for
+            // anything, and every position matches an empty string.
+            disabled={query === '' || replacing}
+            onClick={() => {
+              void replaceAll();
+            }}
+          >
+            {_(FIND_REPLACE_ALL)}
+          </button>
+          {/* WHAT IT COST, said after it happened. A replace-all changes pages a
+              person is not looking at, so a control that reported nothing would
+              leave them checking the document to find out whether it ran. */}
+          {replaced ? <p className="m-find-replaced">{_(FIND_REPLACED)}</p> : null}
+        </div>
+      )}
       {state.kind === 'refused' ? <p className="m-find-problem">{_(FIND_REFUSED)}</p> : null}
       {state.kind === 'bad-pattern' ? (
         <p className="m-find-problem">{_(FIND_BAD_PATTERN)}</p>

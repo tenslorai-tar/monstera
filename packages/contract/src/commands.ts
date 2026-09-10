@@ -2871,6 +2871,97 @@ export const deletePageObjectsSchema = z.object({
   version: docVersionSchema,
 });
 
+/**
+ * The longest find or replacement string this boundary will carry.
+ *
+ * Not an L11 bound — both are the *renderer's* strings and neither scales with
+ * the document — but a schema that accepted an unbounded one would let a
+ * renderer hand main an arbitrarily large allocation, and every other payload
+ * here is bounded.
+ *
+ * `MAX_QUERY_LENGTH` is **derived from this**, in `channels.ts`, because it is
+ * the same question with the same answer: *how long a string may a person type
+ * into a box*. The derivation runs that way round because the module graph only
+ * allows one direction — `channels.ts` imports this file — and one number with
+ * one reason beats two that agree until one moves.
+ */
+export const MAX_FIND_TEXT = 512;
+
+/**
+ * Replaces every occurrence of a string across the whole document.
+ *
+ * ## THE PAYLOAD IS THE INTENT, and a list of occurrences is not available to it
+ *
+ * *Mutations are commands*: any design whose payload scales with the document is
+ * wrong. A replace-all carrying every occurrence it should change is exactly
+ * that — a thousand-page document with a common word in it would put a
+ * thousand-entry list on a wire that exists so `deletePages([3, 5])` can be
+ * eleven bytes. So this carries the two strings and the engine finds the
+ * occurrences in its own text.
+ *
+ * ## And that is why it is NOT `replaceTextObject` with a longer list
+ *
+ * `MAX_TEXT_REPLACEMENTS` bounds a page's worth, which is the right bound for a
+ * command a person aims at one page. Raising it would not make the other shape
+ * legal; the scaling is the objection and no number fixes it.
+ *
+ * ## The occurrences are found in PDFIUM's text, never in a search's answer
+ *
+ * `document.searchPage` matches against MuPDF's structured text — the READING
+ * engine — and `proof:lineagreement` scored **52.9%** agreement between the two
+ * engines' readings of one page. Feeding a search's matches to this command
+ * would be a cross-engine join naming the wrong run about half the time, which
+ * is the shape `CommandTargets`' note refuses. So the kernel re-finds them in
+ * the editing engine's own runs, through the **same matching rule**
+ * (`@monstera/shared`'s `textMatch.ts`) rather than a second one (B3a).
+ *
+ * ## NO `normalise`, and the omission is load-bearing
+ *
+ * `compileQuery` matches against NORMALISED text and answers offsets into it.
+ * A replacement has to splice into the string PDFium holds, and normalisation
+ * changes length — NFKC turns one ligature into two letters — so an offset from
+ * a normalised match does not index the text being edited. The alternatives are
+ * both worse than refusing the option: splice at the wrong place, or write the
+ * whole object back in normalised form, which silently rewrites characters
+ * nobody asked to change.
+ *
+ * The consequence is stated rather than hidden: a search normalising its query
+ * may report matches this command will not replace. Closing that needs an
+ * offset mapping from normalised text back to original, which is its own index
+ * space and its own decision.
+ *
+ * ## It names nothing, so it carries no version
+ *
+ * `flattenFormFields`' shape: there is no answer this could be stale against,
+ * which is why `targets` is `'none'` and no `version` rides along. A replace-all
+ * is *change these words wherever they are*, and the document having moved since
+ * the box was typed into does not make that a different request.
+ */
+export const replaceAllTextSchema = z.object({
+  kind: z.literal('replaceAllText'),
+  /** What to look for. Refused when empty, `document.searchPage`'s reason. */
+  find: z.string().min(1).max(MAX_FIND_TEXT),
+  /**
+   * What to put in its place. Empty is legal — deleting every occurrence of a
+   * word is a thing people do.
+   *
+   * Bounded by a person's typing rather than by what an object may hold: the
+   * object's resulting string is not a payload, so `MAX_REPLACED_TEXT` is not
+   * the right bound for it and nothing here pretends to cap it.
+   */
+  replace: z.string().max(MAX_FIND_TEXT),
+  /**
+   * How the string is compared — three of the four the find bar offers.
+   *
+   * Optional with defaults on the far side, `document.searchPage`'s reason
+   * exactly: the matching rule lives in one module and restating its defaults
+   * here would be a second opinion about what an omitted flag means.
+   */
+  caseSensitive: z.boolean().optional(),
+  wholeWord: z.boolean().optional(),
+  regex: z.boolean().optional(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -2905,6 +2996,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   placePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
+  replaceAllTextSchema,
 ]);
 
 /**
@@ -3028,6 +3120,15 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   placePageObjectSchema,
   recolorPageObjectsSchema,
   deletePageObjectsSchema,
+  // RENDERABLE, and it is the clearest case on this list: two strings and three
+  // flags, the same payload for a one-page note and a thousand-page report.
+  //
+  // What the renderer cannot express is WHERE the occurrences are. It could ask
+  // `document.searchPage` and send a list, and that list would be MuPDF's
+  // reading of the page handed to PDFium as if it were PDFium's — a join the
+  // 52.9% line-agreement score refuses. The kernel finds them in the editing
+  // engine's own runs.
+  replaceAllTextSchema,
 ]);
 
 /** A command a renderer may send. */

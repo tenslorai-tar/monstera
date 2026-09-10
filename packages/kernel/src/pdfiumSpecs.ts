@@ -16,6 +16,11 @@ import {
   invertRecolorPageObjects,
 } from './pdfiumObjectEdit.js';
 import {
+  applyReplaceAllText,
+  captureReplaceAllText,
+  invertReplaceAllText,
+} from './pdfiumReplaceAll.js';
+import {
   applyReplaceTextObject,
   captureReplaceTextObject,
   invertReplaceTextObject,
@@ -99,6 +104,15 @@ export const pdfiumSpecs = {
     // prior does not exist.
     capture: captureDeletePageObjects,
     invert: invertDeletePageObjects,
+  },
+  replaceAllText: {
+    ...declaredCommands.replaceAllText,
+    apply: applyReplaceAllText,
+    // TERMINAL FOR A THIRD REASON, and the capture's message is where it is
+    // stated: `deletePageObjects` has no prior, `flattenFormFields`' prior is
+    // unserialisable, and this one's exists and scales with the document.
+    capture: captureReplaceAllText,
+    invert: invertReplaceAllText,
   },
 };
 

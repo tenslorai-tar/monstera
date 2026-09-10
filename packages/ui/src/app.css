@@ -688,6 +688,33 @@ body {
 }
 
 /*
+ * The find bar's replace row.
+ *
+ * Its own row rather than sitting in the bar's main line: the find controls are
+ * a question and these are an action on the answer, and a person scanning for
+ * *Replace everywhere* should not have to read past the search box to find it.
+ */
+.m-find-replace {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+/*
+ * What a replacement did, and what it could not.
+ *
+ * Two sentences, so it wraps — `max-width` in characters rather than pixels
+ * because the constraint is READING and a measure is what a reader's eye can
+ * track back from.
+ */
+.m-find-replaced {
+  flex: 1 0 100%;
+  max-width: 60ch;
+  color: var(--muted);
+}
+
+/*
  * The object chooser in the edit-object dialog.
  *
  * A column for the line chooser's reason — each row is a phrase and a pair of

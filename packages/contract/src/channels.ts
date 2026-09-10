@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import {
   MAX_ANNOTATION_BORDER,
+  MAX_FIND_TEXT,
   MAX_IMAGE_PAGES,
   MAX_REPLACED_TEXT,
   MAX_TEXT_REPLACEMENTS,
@@ -503,8 +504,15 @@ const linkBoundsSchema = z.object({
  * renderer hand main an arbitrarily large allocation, and every other payload
  * here is bounded. 512 is far above any search a person types and far below
  * anything worth worrying about.
+ *
+ * **DERIVED from `MAX_FIND_TEXT` since 2026-09-10**, when `replaceAllText`
+ * arrived needing the same bound for the same reason: *how long a string may a
+ * person type into a box*. The derivation runs this way because the module graph
+ * allows only one direction — this file imports `commands.ts` — and CLAUDE.md's
+ * rule applies, a copy a reader can reach the source of being a copy not to
+ * keep. The number is unchanged.
  */
-export const MAX_QUERY_LENGTH = 512;
+export const MAX_QUERY_LENGTH = MAX_FIND_TEXT;
 
 /**
  * What opening a document answers, for the two channels that open one.

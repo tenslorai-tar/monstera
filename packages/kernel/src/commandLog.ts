@@ -544,6 +544,15 @@ export interface CommandPrior {
    * a checkpoint, which is a whole document image per entry.
    */
   readonly deletePageObjects: never;
+  /**
+   * `never`, and for the THIRD distinct reason on this type.
+   *
+   * `deletePageObjects` has no prior at all. The four above have priors that are
+   * unserialisable. This one's prior exists, serialises cleanly, and is
+   * **document-scaled** — every object the replacement changed, with the string
+   * it held — which is exactly what an invertible entry may not retain.
+   */
+  readonly replaceAllText: never;
 }
 
 /**

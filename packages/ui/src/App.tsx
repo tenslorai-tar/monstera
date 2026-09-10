@@ -1548,6 +1548,13 @@ export function App({ client, settings }: AppProps): ReactElement {
         // here would be a new dependency every render and the effect would run
         // in a loop.
         onHighlight={setSearch}
+        // THE SAME THREE THE REGISTERED COMMANDS TAKE, so the find bar's
+        // replace-all reports a refusal, tells the shell the version moved and
+        // raises invariant 18's dialog the way every other dispatch does. The
+        // thumbnail strip's drag-reorder already dispatches through the same
+        // helper; this is the second surface outside the registry and it takes
+        // the same route rather than a second opinion about how a command ends.
+        commands={{ client, onApplied: applied, ask }}
       />
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because

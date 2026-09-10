@@ -275,3 +275,166 @@ describe('FindBar match navigation', () => {
     expect(jumped).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The replace half — the UI side of the wired pair for `replaceAllText`.
+ *
+ * Its kernel half is `proof:pdfiumcommand`, which drives the real library over
+ * three pages and cannot see what a control sent; this sees the command and
+ * cannot see a document.
+ *
+ * What only this side can assert is that the query and the three flags the
+ * person set for the SEARCH are the ones the replacement runs with. That is the
+ * whole argument for putting the control here rather than in the ribbon, and a
+ * bar that sent its own defaults would look correct in every screenshot.
+ */
+describe('FindBar replace-all', () => {
+  /** Renders a bar with a dispatcher, and records what it sends. */
+  function withCommands(): {
+    readonly container: HTMLElement;
+    readonly sent: { id: string; params: unknown }[];
+    readonly applied: ReturnType<typeof vi.fn>;
+    readonly painted: PaintSpy;
+  } {
+    const sent: { id: string; params: unknown }[] = [];
+    const applied = vi.fn();
+    const painted: PaintSpy = vi.fn();
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.searchPage') {
+        return Promise.resolve(
+          ok({
+            version: asDocVersion(1),
+            matches: [{ line: 0, offset: 0, endLine: 0, endOffset: 3, text: 'hit on 0' }],
+            truncated: false,
+          }),
+        );
+      }
+      return Promise.resolve(
+        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0 }),
+      );
+    });
+    const { container } = render(
+      <Wrapped>
+        <FindBar
+          client={client}
+          docId={DOC}
+          page={0}
+          pageCount={PAGES}
+          onJump={vi.fn()}
+          onHighlight={painted}
+          commands={{ client, onApplied: applied, ask: vi.fn() }}
+        />
+      </Wrapped>,
+    );
+    return { container, sent, applied, painted };
+  }
+
+  it('SENDS THE SEARCH’S OWN QUERY AND FLAGS, not its own defaults', async () => {
+    const { container, sent, applied } = withCommands();
+
+    await act(async () => {
+      fireEvent.change(only(container, '[data-find-input]', HTMLInputElement), {
+        target: { value: 'WIDGET' },
+      });
+      fireEvent.change(only(container, '[data-find-replacement]', HTMLInputElement), {
+        target: { value: 'GADGET' },
+      });
+      // THE FLAGS, SET BEFORE REPLACING. Every one of them differs from its
+      // default, so a bar that sent `{}` or its own literals fails here — where
+      // a fixture leaving them off would pass against both.
+      for (const key of ['caseSensitive', 'wholeWord', 'regex']) {
+        fireEvent.click(only(container, `[data-find-option="${key}"]`, HTMLInputElement));
+      }
+      await Promise.resolve();
+    });
+    await act(async () => {
+      only(container, '[data-find-replace-all]', HTMLButtonElement).click();
+      await Promise.resolve();
+    });
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'replaceAllText',
+            find: 'WIDGET',
+            replace: 'GADGET',
+            caseSensitive: true,
+            wholeWord: true,
+            regex: true,
+          },
+        },
+      },
+    ]);
+    // AND THE SHELL WAS TOLD THE VERSION MOVED, which is what makes the rest of
+    // the application redraw. A dispatch nothing reported would leave the reader
+    // looking at the document as it was.
+    expect(applied).toHaveBeenCalledWith({
+      version: 2,
+      byteLength: 10,
+      historyDropped: 0,
+    });
+  });
+
+  it('CLEARS THE MATCHES afterwards, because the document moved under them', async () => {
+    const { container, painted } = withCommands();
+
+    await act(async () => {
+      fireEvent.change(only(container, '[data-find-input]', HTMLInputElement), {
+        target: { value: 'hit' },
+      });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      only(container, 'form', HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // THE SEARCH FOUND SOMETHING FIRST — without this the case passes on a bar
+    // that never rendered a result, and *cleared* would mean nothing.
+    expect(container.textContent).toContain('1 matches on this page');
+
+    await act(async () => {
+      only(container, '[data-find-replace-all]', HTMLButtonElement).click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain('1 matches on this page');
+    // AND THE HIGHLIGHTS WENT WITH THEM. A list cleared while the page kept its
+    // boxes would put a rectangle around a word that is no longer there.
+    expect(painted).toHaveBeenLastCalledWith(null);
+  });
+
+  it('renders NO replace control without a dispatcher, which is the find half as it shipped', async () => {
+    // THE CONTROL FOR THE THREE ABOVE. `commands` is optional, and a bar that
+    // rendered the button regardless would offer a control that dispatches
+    // nothing — the display-only defect the wired-tools rule bans.
+    const { client } = clientAnswering();
+    const { container } = render(
+      <Wrapped>
+        <FindBar
+          client={client}
+          docId={DOC}
+          page={0}
+          pageCount={PAGES}
+          onJump={vi.fn()}
+          onHighlight={vi.fn()}
+        />
+      </Wrapped>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-find-replace-all]')).toBeNull();
+    expect(container.querySelector('[data-find-replacement]')).toBeNull();
+    // AND THE FIND HALF IS STILL THERE, so this is not passing on a bar that
+    // rendered nothing at all.
+    expect(container.querySelector('[data-find-input]')).not.toBeNull();
+  });
+});

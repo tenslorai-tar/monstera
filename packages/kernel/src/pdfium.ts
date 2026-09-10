@@ -42,6 +42,11 @@ export {
   type PriorFills,
   type PriorPlacement,
 } from './pdfiumObjectEdit.js';
+export {
+  applyReplaceAllText,
+  captureReplaceAllText,
+  invertReplaceAllText,
+} from './pdfiumReplaceAll.js';
 export { localPdfiumExecution, pdfiumSpecs } from './pdfiumSpecs.js';
 
 /**
