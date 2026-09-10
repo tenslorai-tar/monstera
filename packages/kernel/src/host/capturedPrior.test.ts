@@ -114,6 +114,11 @@ const COMMANDS: { readonly [K in InvertibleKind]: CommandOfKind<K> } = {
     margins: { top: 5, right: 6, bottom: 7, left: 8 },
   },
   resizePages: { kind: 'resizePages', pages: 'all', widthPoints: 400, heightPoints: 500 },
+  // A DESKEW OF A LEVEL PAGE CHANGES NOTHING, which is fine here and worth
+  // saying: this file drives `capture`, and a capture records a prior whatever
+  // the apply would go on to do. The fixture pages carry no crooked ink and
+  // there is no angle to give the command — it has none.
+  deskewPages: { kind: 'deskewPages', pages: 'all' },
   setPageTransition: {
     kind: 'setPageTransition',
     pages: [1],

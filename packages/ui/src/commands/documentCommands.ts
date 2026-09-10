@@ -89,6 +89,7 @@ import {
   PAGE_BACKGROUND_COMMAND_TITLE,
   REPLACE_PAGE_COMMAND_TITLE,
   RESIZE_PAGES_COMMAND_TITLE,
+  DESKEW_PAGES_COMMAND_TITLE,
   PAGE_TRANSITION_COMMAND_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_COPY_TITLE,
@@ -979,6 +980,39 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
         widthPoints: answer.widthPoints,
         heightPoints: answer.heightPoints,
       });
+    },
+  };
+}
+
+/**
+ * Straightens crooked pages.
+ *
+ * ## IT OPENS NO DIALOG AND SENDS NO ANGLE
+ *
+ * The kernel measures each page's own tilt from its ink and turns it back; the
+ * renderer's whole part is *which document*. There is nothing to ask: an angle
+ * is not something anybody reads off a screen in tenths of a degree, and the
+ * conversion between the raster the measurement is taken in and the content
+ * stream it is written to must not cross a boundary (`pageSkew.ts`).
+ *
+ * ## `'all'`, and the no-op is what makes that safe
+ *
+ * A scan is crooked page by page, so the action people want is *straighten this
+ * document*. What lets it be the whole document without a scope dialog is a
+ * property of the command rather than an assumption about the user: a page whose
+ * ink has no line structure to align — a photograph, a blank sheet, a page
+ * already level — measures 0.0° and is not written to at all. So `'all'` costs
+ * an unskewed page nothing, and the one action is undone by one undo.
+ */
+export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.deskew-pages',
+    title: DESKEW_PAGES_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      await applyDocumentCommand(deps, context.docId, { kind: 'deskewPages', pages: 'all' });
     },
   };
 }

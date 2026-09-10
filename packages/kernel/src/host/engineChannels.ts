@@ -26,6 +26,7 @@ import {
   styleAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
+  deskewPagesSchema,
   resizePagesSchema,
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -508,6 +509,14 @@ const priorPageResizeSchema = z
   })
   .strict();
 
+/** A deskewed page's prior state: the wrap's shape, and no box. */
+const priorPageDeskewSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    contents: priorContentsSchema,
+  })
+  .strict();
+
 /**
  * One entry of a page's `/Trans` dictionary, typed by what it holds.
  *
@@ -657,6 +666,13 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
       kind: z.literal('resizePages'),
       /** Each page's two boxes and the SHAPE of its `/Contents`. */
       prior: z.array(priorPageResizeSchema).readonly(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('deskewPages'),
+      /** The SHAPE of each page's `/Contents`, and nothing else — no box moved. */
+      prior: z.array(priorPageDeskewSchema).readonly(),
     })
     .strict(),
   z
@@ -825,6 +841,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   cropPagesSchema,
   setPageTransitionSchema,
   resizePagesSchema,
+  deskewPagesSchema,
   mergeDocumentSchema,
   replacePageSchema,
   addAnnotationSchema,

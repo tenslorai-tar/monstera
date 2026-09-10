@@ -563,6 +563,51 @@ export const resizePagesSchema = z.object({
 });
 
 /**
+ * Straighten crooked pages — turn a scan that went through the feeder at an
+ * angle back to level.
+ *
+ * ## IT CARRIES NO ANGLE, and that is the whole shape of this row
+ *
+ * The intent is *straighten these pages*, not *turn them by 1.7°*. The kernel
+ * measures each page's own tilt at apply time, from the page's ink, and rotates
+ * by what it found — which is why the payload is a page list and nothing else.
+ *
+ * Two reasons it is not a number on the wire, and the second is the one that
+ * decided it:
+ *
+ * 1. a command taking an angle is **rotate by an arbitrary amount**, a
+ *    different feature wearing this one's name. Nobody reads a skew off a
+ *    screen in tenths of a degree.
+ * 2. the measurement is taken in a **raster**, which is y-down, and a content
+ *    stream is PDF user space, which is y-up. An angle crossing this boundary
+ *    would put the conversion between the two frames at a call site — and the
+ *    two sign flips cancel, so a wrong one produces a plausible number rather
+ *    than an obvious one. Keeping the measurement and the transform in one
+ *    module makes it a named function with a round trip over it.
+ *
+ * ## A page that reads level is not written to
+ *
+ * There is no threshold: the detector's sweep has its maximum at 0.0° for a page
+ * with no line structure to align — a photograph, a blank sheet, a page already
+ * straight — so such a page takes no transform without anybody choosing an angle
+ * at which a page counts as crooked.
+ *
+ * ## It does not change the page's SIZE
+ *
+ * Unlike `resizePages`, which this shares its content-wrap with, no box is
+ * written. Turning the content about the centre of the region the page displays
+ * pushes its corners past the sheet and leaves four triangles of paper showing,
+ * which is what deskewing looks like in every application that offers it.
+ * Growing the sheet to contain the rotated content would change the page's size
+ * to correct its angle — two operations, where the user asked for one.
+ */
+export const deskewPagesSchema = z.object({
+  kind: z.literal('deskewPages'),
+  /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+});
+
+/**
  * The largest image this build will make a page from.
  *
  * Sixty-four megabytes, which is far past any scan or photograph and far short
@@ -3037,6 +3082,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   setPageTransitionSchema,
   setPageBackgroundSchema,
   resizePagesSchema,
+  deskewPagesSchema,
   insertImagePageSchema,
   generateTocSchema,
   mergeDocumentSchema,
@@ -3098,6 +3144,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   setPageTransitionSchema,
   setPageBackgroundSchema,
   resizePagesSchema,
+  // RENDERABLE, and it is the union's own test in its purest form: the intent
+  // is a page list and nothing else. The number this command turns a page by is
+  // measured main-side from the page's own ink at apply time, so there is no
+  // payload for it to scale with.
+  deskewPagesSchema,
   // RENDERABLE, and worth stating because the neighbour above is not. This
   // carries one integer; what makes it unusual is where its DATA comes from,
   // and that is resolved main-side at apply time rather than sent. The test for

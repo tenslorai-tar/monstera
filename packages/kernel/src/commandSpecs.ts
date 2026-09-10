@@ -85,6 +85,7 @@ import {
   invertMergeDocument,
   invertReplacePage,
 } from './pageMerge.js';
+import { applyDeskewPages, captureDeskewPages, invertDeskewPages } from './pageDeskew.js';
 import { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 import {
   applySetPageTransition,
@@ -290,6 +291,12 @@ const declared = {
     apply: applyResizePages,
     capture: captureResizePages,
     invert: invertResizePages,
+  },
+  deskewPages: {
+    ...declaredCommands.deskewPages,
+    apply: applyDeskewPages,
+    capture: captureDeskewPages,
+    invert: invertDeskewPages,
   },
   // THE FIRST `sources: 'one'` ENTRY. The spread carries that axis in, and
   // `WriterBinding`'s cross product is what makes `apply` here obliged to be

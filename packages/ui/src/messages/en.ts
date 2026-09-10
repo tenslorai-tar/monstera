@@ -141,6 +141,7 @@ export const RESIZE_PAGES_ALL = messageKey('dialog.resize-pages.all-pages');
 export const RESIZE_PAGES_APPLY = messageKey('dialog.resize-pages.apply');
 export const RESIZE_PAGES_NOT_A_SIZE = messageKey('dialog.resize-pages.not-a-size');
 export const RESIZE_PAGES_COMMAND_TITLE = messageKey('command.resize-pages.title');
+export const DESKEW_PAGES_COMMAND_TITLE = messageKey('command.deskew-pages.title');
 export const MERGE_DOCUMENT_COMMAND_TITLE = messageKey('command.merge-document.title');
 export const MERGE_DOCUMENT_TITLE = messageKey('dialog.merge-document.title');
 export const MERGE_DOCUMENT_LABEL = messageKey('dialog.merge-document.label');
@@ -1217,6 +1218,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESIZE_PAGES_APPLY]: 'Resize',
   [RESIZE_PAGES_NOT_A_SIZE]: 'Width and height are numbers of points, above 0 and up to 14400.',
   [RESIZE_PAGES_COMMAND_TITLE]: 'Resize pages…',
+  // NO ELLIPSIS, because nothing is asked. The ellipsis in this file means *a
+  // dialog opens next*, and this command runs on the pages themselves — it has
+  // no angle to collect and no scope to choose.
+  [DESKEW_PAGES_COMMAND_TITLE]: 'Straighten crooked pages',
   [MERGE_DOCUMENT_COMMAND_TITLE]: 'Merge a document…',
   [MERGE_DOCUMENT_TITLE]: 'Merge a document',
   [MERGE_DOCUMENT_LABEL]: 'Document to merge in',

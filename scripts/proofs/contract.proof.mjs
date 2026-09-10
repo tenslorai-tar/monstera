@@ -234,6 +234,26 @@ const RESIZE_SPEC = `  resizePages: {
 /**
  * Filler, kept separate for {@link MOVE_SPEC}'s reason.
  *
+ * The second spec here that is invertible and writes a content stream, and it
+ * shares {@link RESIZE_SPEC}'s shape because the two share the wrap.
+ */
+const DESKEW_SPEC = `  deskewPages: {
+    kind: 'deskewPages',
+    writer: 'mupdf',
+    apply: applyDeskewPages,
+    capture: captureDeskewPages,
+    invert: invertDeskewPages,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason.
+ *
  * **The only spec here whose command the renderer cannot send.** Its schema is
  * in `commandSchema` because `CommandKind` derives from that union, and it is
  * absent from `renderableCommandSchema` because it carries an image main reads
@@ -797,6 +817,9 @@ const SPEC_IMPORTS = `import {
   applyResizePages,
   captureResizePages,
   invertResizePages,
+  applyDeskewPages,
+  captureDeskewPages,
+  invertDeskewPages,
   applyMergeDocument,
   captureMergeDocument,
   invertMergeDocument,
@@ -1366,6 +1389,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${DESKEW_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1460,6 +1484,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${DESKEW_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1519,6 +1544,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${DESKEW_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -1579,6 +1605,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${DESKEW_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1637,6 +1664,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${DESKEW_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1704,6 +1732,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${DESKEW_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1767,6 +1796,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${DESKEW_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -2646,7 +2676,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // three since `movePage` (2026-09-03), eight since `deletePages`,
     // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`, nine
     // since `watermarkPages` (all 2026-09-04), 23 since `createFormField`
-    // (2026-09-08) and 29 since `replaceTextObject` (2026-09-09).
+    // (2026-09-08), 29 since `replaceTextObject` (2026-09-09) and 30 since
+    // `deskewPages` (2026-09-10).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2664,7 +2695,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 30 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 31 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

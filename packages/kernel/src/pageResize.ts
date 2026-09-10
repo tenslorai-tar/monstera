@@ -7,6 +7,13 @@ import { COORDINATE_DECIMALS, SCALE_DECIMALS, contentNumber } from './contentNum
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { boxOf, displayedBox } from './pageBoxes.js';
+import {
+  type PriorContents,
+  contentsAreWrappable,
+  contentsPrior,
+  restoreWrappedContents,
+  wrapContents,
+} from './pageContentWrap.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -73,24 +80,6 @@ import { pagesOf } from './pageScope.js';
 export type PriorBox =
   | { readonly present: false }
   | { readonly present: true; readonly raw: readonly number[] };
-
-/**
- * A page's `/Contents` **shape** before the command ran.
- *
- * Not its value. The entries themselves are left in place and still referenced
- * by the array this command writes, so what the inverse needs is where they
- * are: how many, and whether they were wrapped in an array to begin with.
- *
- * **`wasArray` is not cosmetic**, and it is the member most likely to be read
- * as such. A bare stream reference and a one-element array render identically,
- * which is precisely `setPageTransition`'s argument for restoring absence: two
- * documents that show a reader the same thing are still two documents, and the
- * next command to read `/Contents` sees the difference even though no viewer
- * does.
- */
-export type PriorContents =
-  | { readonly present: false }
-  | { readonly present: true; readonly wasArray: boolean; readonly length: number };
 
 /** One page's prior own-state, in the order the command named its pages. */
 export interface PriorPageResize {
@@ -255,11 +244,6 @@ function openingOperators(resize: Resize): string {
   return `q\n${scale} ${zero} ${zero} ${scale} ${x} ${y} cm\n`;
 }
 
-/** Bytes for a content stream. */
-function streamBytes(operators: string): Uint8Array {
-  return new TextEncoder().encode(operators);
-}
-
 /**
  * Reads each named page's own boxes and its `/Contents` shape, before anything
  * is written.
@@ -302,9 +286,7 @@ export function captureResizePages(
     // A `/Contents` that is neither a stream nor an array of them is a page
     // whose shape this command cannot describe positionally, which is exactly
     // the case the inverse would silently mis-rebuild.
-    const malformedContents = entries.find(
-      ({ contents }) => !contents.isNull() && !contents.isArray() && !contents.isStream(),
-    );
+    const malformedContents = entries.find(({ contents }) => !contentsAreWrappable(contents));
     if (malformedContents !== undefined) {
       return {
         captured: false,
@@ -324,54 +306,10 @@ export function captureResizePages(
         cropBox: crop.isNull()
           ? ({ present: false } as const)
           : ({ present: true, raw: boxOf(crop) ?? [] } as const),
-        contents: contents.isNull()
-          ? ({ present: false } as const)
-          : ({
-              present: true,
-              wasArray: contents.isArray(),
-              length: contents.isArray() ? contents.length : 1,
-            } as const),
+        contents: contentsPrior(contents),
       })),
     };
   });
-}
-
-/**
- * Rebuilds one page's `/Contents` from the array this command wrote.
- *
- * The array is `[transform, ...original, restore]`, so the originals are the
- * entries between the first and the last. **A shape that does not match is
- * refused rather than guessed at**: rebuilding from an array of the wrong
- * length would produce a page holding some other command's streams, and a
- * refused undo is `applyCropPages`' stated preference over a half-restore.
- */
-function restoreContents(
-  document: PDFDocument,
-  object: PDFObject,
-  page: number,
-  prior: PriorContents,
-): void {
-  if (!prior.present) return;
-  const current = object.get('Contents');
-  const expected = prior.length + 2;
-  if (!current.isArray() || current.length !== expected) {
-    throw new Error(
-      `page ${String(page)} does not carry the /Contents this command wrote — expected an array ` +
-        `of ${String(expected)} entries and found ` +
-        `${current.isArray() ? `${String(current.length)} entries` : 'no array'}. Its content ` +
-        `has been changed since, so restoring the recorded shape would rebuild the page from ` +
-        `the wrong streams.`,
-    );
-  }
-  if (prior.wasArray) {
-    const rebuilt = document.newArray();
-    for (let at = 1; at <= prior.length; at += 1) rebuilt.push(current.get(at));
-    object.put('Contents', rebuilt);
-    return;
-  }
-  // A BARE REFERENCE COMES BACK BARE. It renders identically to a one-element
-  // array, and it is a different document — `setPageTransition`'s rule.
-  object.put('Contents', current.get(1));
 }
 
 /**
@@ -394,7 +332,7 @@ export const invertResizePages: Invert<'mupdf', 'resizePages'> = (
       entry,
     }));
     for (const { object, entry } of restorations) {
-      restoreContents(document, object, entry.page, entry.contents);
+      restoreWrappedContents(document, object, entry.page, entry.contents);
       restoreBox(document, object, 'MediaBox', entry.mediaBox);
       restoreBox(document, object, 'CropBox', entry.cropBox);
     }
@@ -422,41 +360,16 @@ export const applyResizePages: Apply<'mupdf', 'resizePages'> = (
     );
 
     for (const resize of writes) {
-      const existing = resize.object.get('Contents');
-      // AN EMPTY PAGE GETS NO TRANSFORM. There is nothing to scale, so adding
-      // two streams to bracket nothing would leave a page whose `/Contents`
-      // shape the inverse then has to restore for no effect.
-      if (!existing.isNull()) {
-        const opened = document.addStream(
-          streamBytes(openingOperators(resize)),
-          document.newDictionary(),
-        );
-        const closed = document.addStream(streamBytes(CLOSING_OPERATORS), document.newDictionary());
-        const contents = document.newArray();
-        contents.push(opened);
-        if (existing.isArray()) {
-          for (let at = 0; at < existing.length; at += 1) contents.push(existing.get(at));
-        } else {
-          contents.push(existing);
-        }
-        contents.push(closed);
-        resize.object.put('Contents', contents);
-      }
+      // AN EMPTY PAGE GETS NO TRANSFORM, and that rule is the wrap's own — it
+      // answers `false` rather than this deciding, because the same argument
+      // holds for every command that brackets content.
+      wrapContents(document, resize.object, openingOperators(resize));
 
       const box = [0, 0, resize.boxWidth, resize.boxHeight];
       resize.object.put('MediaBox', boxArray(document, box));
       resize.object.put('CropBox', boxArray(document, box));
     }
   });
-
-/**
- * The closing stream.
- *
- * A leading newline because content streams in an array are concatenated with
- * no separator inserted, so a page whose last stream ends mid-token would
- * otherwise have `Q` welded onto it.
- */
-const CLOSING_OPERATORS = '\nQ\n';
 
 // NO MARKER IS EXPORTED FOR THE PROOF, and the reason is worth keeping: the
 // obvious one is `cm`, and pdf-lib's `drawRectangle` emits four of them before

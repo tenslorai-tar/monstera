@@ -45,138 +45,44 @@
 import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 
+import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
+import { applyDeskewPages } from '../../packages/kernel/dist/pageDeskew.js';
+import {
+  SKEW_DPI,
+  SKEW_SWEEP_DEGREES,
+  SKEW_SWEEP_STEP,
+  greyRasterOfPage,
+  skewOfRaster,
+} from '../../packages/kernel/dist/pageSkew.js';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
-/** Where the sweep looks, and how finely. The resolution of the answer. */
-const SWEEP_DEGREES = 8;
-const SWEEP_STEP = 0.1;
-
-/** What the pages are rasterised at. Enough ink to bin, small enough to sweep. */
-const DPI = 150;
+// THE DETECTOR IS THE KERNEL'S, and this file stopped carrying its own copy on
+// 2026-09-10, when `deskewPages` was built. The instrument that produced this
+// row's evidence and the command that acts on it must not hold two opinions
+// about what a page's skew is (B3a) — a shipped correction argued from a
+// research figure a different implementation produced is the shape where both
+// halves are individually right.
+refuseStaleBuild(
+  repoRoot(),
+  [
+    ['packages/kernel/src/pageSkew.ts', 'packages/kernel/dist/pageSkew.js', 'tsc'],
+    ['packages/kernel/src/pageDeskew.ts', 'packages/kernel/dist/pageDeskew.js', 'tsc'],
+  ],
+  2,
+);
 
 /**
- * One page as grey bytes, through MuPDF — the rasteriser §3's matrix assigns.
+ * The skew of one rasterised page, as the kernel measures it.
  *
  * @param {mupdf.PDFPage} page
- * @returns {{ grey: Uint8Array, width: number, height: number }}
+ * @returns {{ degrees: number, ratio: number }}
  */
-function greyRaster(page) {
-  const scale = DPI / 72;
-  const pixmap = page.toPixmap(
-    mupdf.Matrix.scale(scale, scale),
-    mupdf.ColorSpace.DeviceGray,
-    false,
-    true,
-  );
-  const width = pixmap.getWidth();
-  const height = pixmap.getHeight();
-  // `getPixels` answers one byte per component; DeviceGray with no alpha is one
-  // byte per pixel, which the length assertion below is the check for rather
-  // than the comment being the check.
-  const pixels = pixmap.getPixels();
-  if (pixels.length !== width * height) {
-    throw new Error(
-      `expected ${String(width * height)} grey bytes and got ${String(pixels.length)} — the ` +
-        'pixmap is not one byte per pixel, so every reading below would be sampling the wrong ' +
-        'component',
-    );
-  }
-  return { grey: new Uint8Array(pixels), width, height };
-}
-
-/**
- * Otsu's threshold: the grey level that best separates the histogram in two.
- *
- * Computed from the page rather than chosen, which is what keeps this
- * instrument free of the constant the row's own note warns about.
- *
- * @param {Uint8Array} grey
- * @returns {number}
- */
-function otsu(grey) {
-  const histogram = new Array(256).fill(0);
-  for (const value of grey) histogram[value] += 1;
-  const total = grey.length;
-  let sum = 0;
-  for (let level = 0; level < 256; level += 1) sum += level * histogram[level];
-
-  let weightBelow = 0;
-  let sumBelow = 0;
-  let best = 0;
-  let bestVariance = -1;
-  for (let level = 0; level < 256; level += 1) {
-    weightBelow += histogram[level];
-    if (weightBelow === 0) continue;
-    const weightAbove = total - weightBelow;
-    if (weightAbove === 0) break;
-    sumBelow += level * histogram[level];
-    const meanBelow = sumBelow / weightBelow;
-    const meanAbove = (sum - sumBelow) / weightAbove;
-    const between = weightBelow * weightAbove * (meanBelow - meanAbove) ** 2;
-    if (between > bestVariance) {
-      bestVariance = between;
-      best = level;
-    }
-  }
-  return best;
-}
-
-/**
- * The skew angle, as the argmax of a horizontal-projection sweep.
- *
- * ## Sheared rather than rotated, which is exact
- *
- * Rotating the image would resample it, and a resampled image is a second thing
- * to be wrong about. Each ink pixel is instead accumulated into the bin
- * `y - x·tan(θ)`, which is what a rotation does to a horizontal line's row
- * without touching a single pixel value.
- *
- * The score is the sum of squared bin counts: it is largest when ink lines fall
- * together into few bins, which is what "the text is level" means.
- *
- * @param {{ grey: Uint8Array, width: number, height: number }} raster
- * @returns {{ degrees: number, score: number, atZero: number }}
- */
-function skewOf(raster) {
-  const { grey, width, height } = raster;
-  const threshold = otsu(grey);
-
-  /** @type {{x: number, y: number}[]} */
-  const ink = [];
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      // DARKER THAN THE THRESHOLD IS INK. A scan's background is the light
-      // side of Otsu's split whichever way round the page was written.
-      if ((grey[y * width + x] ?? 255) < threshold) ink.push({ x, y });
-    }
-  }
-
-  /** @param {number} angle @returns {number} */
-  const scoreAt = (angle) => {
-    const slope = Math.tan((angle * Math.PI) / 180);
-    const bins = new Float64Array(height + width + 1);
-    const offset = Math.ceil(width * Math.abs(slope));
-    for (const point of ink) {
-      const bin = Math.round(point.y - point.x * slope) + offset;
-      if (bin >= 0 && bin < bins.length) bins[bin] = (bins[bin] ?? 0) + 1;
-    }
-    let score = 0;
-    for (const count of bins) score += count * count;
-    return score;
-  };
-
-  let bestAngle = 0;
-  let bestScore = -1;
-  for (let angle = -SWEEP_DEGREES; angle <= SWEEP_DEGREES + 1e-9; angle += SWEEP_STEP) {
-    const rounded = Math.round(angle * 10) / 10;
-    const score = scoreAt(rounded);
-    if (score > bestScore) {
-      bestScore = score;
-      bestAngle = rounded;
-    }
-  }
-  return { degrees: bestAngle, score: bestScore, atZero: scoreAt(0) };
+function skewOf(page) {
+  const measured = skewOfRaster(greyRasterOfPage(page));
+  return { degrees: measured.rasterDegrees, ratio: measured.ratio };
 }
 
 /**
@@ -230,17 +136,18 @@ function firstPageOf(bytes) {
 try {
   process.stdout.write('# How crooked is a crooked scan?\n\n');
   process.stdout.write(
-    `  swept ±${String(SWEEP_DEGREES)}° in ${String(SWEEP_STEP)}° steps, ` +
-      `rasterised at ${String(DPI)} dpi through MuPDF, ink split by Otsu\n\n`,
+    `  swept ±${String(SKEW_SWEEP_DEGREES)}° in ${String(SKEW_SWEEP_STEP)}° steps, ` +
+      `rasterised at ${String(SKEW_DPI)} dpi through MuPDF, ink split by Otsu\n` +
+      '  the detector is packages/kernel/src/pageSkew.ts, the one `deskewPages` corrects with\n\n',
   );
 
   process.stdout.write('## Controls\n\n');
-  const upright = skewOf(greyRaster(firstPageOf(await constructedPage(0))));
+  const upright = skewOf(firstPageOf(await constructedPage(0)));
   process.stdout.write(
     `  text drawn upright reads ${upright.degrees.toFixed(1)}°\n`,
   );
   const drawnAt = -3;
-  const tilted = skewOf(greyRaster(firstPageOf(await constructedPage(drawnAt))));
+  const tilted = skewOf(firstPageOf(await constructedPage(drawnAt)));
   process.stdout.write(
     `  text drawn at ${drawnAt.toFixed(1)}° in PDF space reads ` +
       `${tilted.degrees.toFixed(1)}° in the raster\n`,
@@ -273,12 +180,38 @@ try {
       '  because PDF user space is y-up and this raster is y-down\n\n',
   );
 
+  // THE CORRECTION, MEASURED ON THE WAY OUT. `applyDeskewPages` is run against
+  // the crooked constructed page and the result re-measured: a flipped sign
+  // lands at twice the original tilt rather than at zero, which is the one
+  // failure a symmetric fixture and an expectation copied from a run cannot
+  // separate.
+  const corrected = await (async () => {
+    const session = await mupdfWriter.open(await constructedPage(drawnAt));
+    try {
+      await applyDeskewPages(session, { kind: 'deskewPages', pages: 'all' });
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  })();
+  const afterCorrection = skewOf(firstPageOf(corrected));
+  process.stdout.write(
+    `  deskewPages leaves it at ${afterCorrection.degrees.toFixed(1)}°, ` +
+      `where a flipped sign leaves ${(-2 * drawnAt).toFixed(1)}°\n\n`,
+  );
+  if (Math.abs(afterCorrection.degrees) > 0.5) {
+    throw new Error(
+      `CONTROL FAILED: the deskewed page reads ${afterCorrection.degrees.toFixed(1)}°. The ` +
+        'correction is not levelling the page it measured.',
+    );
+  }
+
   process.stdout.write('## The supplied corpus\n\n');
   const corpus = openCorpus();
   if (!corpus.available) {
     process.stdout.write(`${corpus.outcome.text}\n`);
   } else {
-    process.stdout.write('  id                pages   skew    score at best / at 0°\n');
+    process.stdout.write('  id                pages   skew    ratio    after deskewPages\n');
     for (const item of corpus.documents) {
       const document = /** @type {mupdf.PDFDocument} */ (
         mupdf.PDFDocument.openDocument(item.bytes, 'application/pdf')
@@ -295,11 +228,23 @@ try {
         process.stdout.write(`  ${item.id}${String(pages).padStart(7)}   — carries text\n`);
         continue;
       }
-      const skew = skewOf(greyRaster(page));
+      const skew = skewOf(page);
+      // AND THE COMMAND IS RUN ON IT. A number for how crooked a real scan is
+      // says nothing about whether this build can straighten it, and those are
+      // two different claims a row can make.
+      const session = await mupdfWriter.open(item.bytes);
+      let after;
+      try {
+        await applyDeskewPages(session, { kind: 'deskewPages', pages: [0] });
+        after = skewOf(firstPageOf(await mupdfWriter.serialise(session)));
+      } finally {
+        await mupdfWriter.close(session);
+      }
       process.stdout.write(
         `  ${item.id}${String(pages).padStart(7)}` +
           `${skew.degrees.toFixed(1).padStart(8)}°` +
-          `   ${(skew.score / Math.max(1, skew.atZero)).toFixed(3)}× better than level\n`,
+          `   ${skew.ratio.toFixed(3)}×` +
+          `   ${after.degrees.toFixed(1).padStart(6)}° at ${after.ratio.toFixed(3)}×\n`,
       );
     }
     process.stdout.write(`\n${corpusCaveat(corpus.documents.length)}\n`);

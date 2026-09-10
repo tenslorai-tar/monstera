@@ -22,6 +22,7 @@ import {
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
+  deskewPagesCommand,
   extractPagesCommand,
   insertFromPdfCommand,
   imagePagesFor,
@@ -1444,6 +1445,34 @@ describe('delete pages — the mutation-dialog gate', () => {
             heightPoints: 842,
           },
         },
+      },
+    ]);
+  });
+
+  it('A DESKEW DISPATCHES A PAGE LIST AND NOTHING ELSE, and asks nothing', async () => {
+    // THE UI HALF of the wired pair. What it watches is that no angle appears
+    // on the wire: the kernel measures each page's tilt from its ink, and a
+    // renderer that sent a number would be answering a question it cannot see
+    // the raster for — and the conversion between the raster's y-down frame and
+    // the content stream's y-up one would then live here.
+    //
+    // `ask` throwing is deliberate rather than a stub: this command opens no
+    // dialog, and a version that grew one would fail here instead of quietly
+    // collecting an answer nobody watches.
+    const { client, sent } = recording();
+
+    await deskewPagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => {
+        throw new Error('a deskew asks nothing');
+      },
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: { docId: DOC, command: { kind: 'deskewPages', pages: 'all' } },
       },
     ]);
   });

@@ -710,6 +710,44 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  deskewPages: {
+    kind: 'deskewPages',
+    // The same write `resizePages` makes, for the same reason: it wraps the
+    // page's existing content in a transform and puts no marks of its own on
+    // the page. `docs/ARCHITECTURE.md:382`'s page-tree-ops row is MuPDF's, and
+    // the row below it — content composition — is *drawing onto pages*, which
+    // this does not do. It also RASTERISES to decide the angle, and that is
+    // MuPDF's by the matrix's print-and-export rasterisation row, so both
+    // halves of this command name the same engine.
+    writer: 'mupdf',
+    // `resizePages`' argument, unchanged: it appends to no existing stream, so
+    // the prior state is the shape of the `/Contents` array rather than the
+    // streams themselves — two numbers and a boolean per page, whatever the
+    // document weighs. `pageContentWrap.ts` is the one implementation of it.
+    invertible: true,
+    undo: 'inverse',
+    // MEASURED FROM THE PAGE, which is what makes this `reapply-intent` and not
+    // `stored-effect`: nothing is read from a clock and nothing is minted, and
+    // re-running against the same document rasterises the same ink and finds
+    // the same angle. `generateToc`'s shape — the intent is re-executed and
+    // reads the document again.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
+    // NEEDS NOTHING READ THROUGH ANOTHER ENGINE, which is the axis this command
+    // is most likely to be misfiled on. It reads the document — a raster of it
+    // — but through the engine that is about to write, inside the same session.
+    // `reads` counts a pre-read from a DIFFERENT writer, and there is none.
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   insertImagePage: {
     kind: 'insertImagePage',
     // §3's matrix at ARCHITECTURE.md:381 names *image-to-PDF* on the

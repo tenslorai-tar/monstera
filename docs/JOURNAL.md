@@ -888,6 +888,73 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — Deskew: the two sign flips that cancel
+
+D2's deskew row, deferred into Stage 6 with its trigger named, is done. The
+measurement landed at `922c321` — one corpus scan at **−1.7°**, scoring
+**1.428×** its own score at level, four other image-only documents flat at
+1.000×. This is the correction.
+
+### The command carries no angle
+
+The obvious shape is `deskewPages({ pages, degrees })`, with a detector
+somewhere else handing the number in. Two reasons it is not, and the second is
+the one that decided it.
+
+*Straighten this page* is one action to a person; a command taking an angle is
+**rotate by an arbitrary amount**, which is a different feature wearing this
+row's name. And an angle on the wire would put the conversion between two
+coordinate frames at a call site: the sweep is taken in a **raster**, which is
+y-down, a content stream is PDF user space, which is **y-up**, and the
+correction is the opposite of the tilt.
+
+**Those two flips cancel.** The number to apply comes out equal to the number
+measured — so a wrong sign produces a plausible figure rather than an obvious
+one, and every symmetric fixture passes under either convention. That is why
+`pageSkew.ts` holds the measurement and the conversion as two named functions
+(`pdfSkewOf`, then `deskewRotation`) rather than one minus sign at a call site,
+and why the module's header says a symmetric fixture proves nothing here.
+
+### What separates the sign is a round trip, and nothing else does
+
+`pageDeskew.test.ts` draws a page at +3° in PDF space, deskews it, and measures
+again: the right sign lands within half a degree of 0°, the wrong one at 6°.
+Reverting the minus reddens exactly three of the fifteen cases — the round trip,
+the rotation centre, and the two-page case. An expectation copied out of a run
+would have caught none of them.
+
+The instrument now runs the command too, so the claim is end-to-end on a real
+document rather than on a constructed one: the corpus scan goes from
+**−1.7° at 1.428×** to **0.0° at 1.000×**.
+
+### The instrument stopped holding a second opinion (B3a)
+
+`scripts/research/deskewAngle.mjs` carried its own Otsu and its own shear sweep.
+Both were right, which is what made it dangerous: the row's evidence figure and
+the shipped correction would have been two implementations of *what is this
+page's skew*, with nothing comparing them. It now imports
+`packages/kernel/dist/pageSkew.js`, takes `refuseStaleBuild` for it, and
+reproduces the recorded readings exactly.
+
+`pageContentWrap.ts` is the same move on the write side. `resizePages` wrote the
+`/Contents` wrap first, and a deskew needs it byte for byte — the array shape,
+the refusal, the `q`/`Q` pair and the argument for why a wrap is invertible where
+drawing is not.
+
+### No threshold, and that is what makes `'all'` safe
+
+The detector compares nothing against anything. A page with no line structure to
+align — a photograph, a blank sheet, a page already level — has a flat sweep
+whose argmax is 0.0°, and a page measuring 0.0° is **not written to at all**. So
+the UI command can straighten the whole document without a scope dialog: an
+unskewed page costs nothing, and one action is one undo. What is left showing at
+the corners of a page that *was* turned is paper, which is what deskewing looks
+like in every application that offers it; growing the sheet to contain the
+rotated content would change a page's size to correct its angle, and
+`resizePages` is the command for the other one.
+
+---
+
 ## 2026-09-10 — Stage audit of `258a9ce..38ea527`: a box rule answered twice, and the fixture that hid it
 
 Eighteen commits, ninety-five files — Stage 5's close, Stage 6's opening, the
@@ -942,6 +1009,20 @@ that is a **scaled** 20 rather than 20, and a control that an ordinary crop box
 still governs the scale — without which the repair would have been a third
 answer (*ignore the crop box*) rather than the owner's.
 
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**One, and it moves coverage the strengthening way.** `proof:corpus`' identity
+cases used to name three fixtures by a positional id and assert the list; they
+now derive an id from a digest of each document's bytes and assert that
+inserting a document at the FRONT re-points none of the others. That is an
+asserted claim becoming a derived one, and the derivation has no provisioning
+condition — the fixtures are constructed in a temporary directory on every
+runner — so nothing here becomes UNVERIFIABLE anywhere. Two cases were removed
+with it and both are recorded with the mutation that showed them vacuous.
+
+Nothing else in the range changed how a claim is proven rather than what is
+claimed.
+
 ### 3. Would CI have caught it?
 
 Answered from the runs, not from the workflow file. Both reds above were caught
@@ -964,9 +1045,24 @@ Mutation-tested rather than read. `pageKindOf`'s `images > 0` relaxed to
 not image-only*, and leaves the other eight green. That is the right shape: the
 mutation is the defect, and the case that catches it is the case written for it.
 
-Both new proofs declare a **literal** case count (6 and 9), which is 4c in the
-direction the rule asks for — the failure feared is a case leaving, and a count
-derived from the set it polices would agree with any shrink.
+### 4a. Has every instrument passed a resolution test before measuring anything?
+
+**Ten source files arrived and five of them are instruments.**
+`deskewAngle.mjs` has both — upright text must read 0°, and text at a known
+angle must read that angle — and the second **fired on its first run**, which is
+how the y-up/y-down frame difference was found rather than absorbed into a
+number. `ocrSurface.mjs` failed its own positive control on its first run,
+because it looked for JavaScript class names inside a WASM binary; the anchors
+are per-artefact now and it refuses to report when blind. `pdfiumXObjects.mjs`
+was resolution-tested by accounting: 597 characters belonging to *neither* is
+what a one-level walk says about objects it did not reach, and descending fully
+resolved all of them. `pageComposition.mjs` separates option-off from option-on
+on constructed pages of each kind. `tessdata.mjs` is provisioning and is covered
+by `proof:ocrmodels`' tie to the built language enum.
+
+`shippedEngine.mjs` is not an instrument but a **resolver**, extracted so that
+*which artefact does the application run* has one answer rather than two files
+joining a directory to a filename.
 
 ### 4b. THE INSTRUMENT THAT CARRIED ITS OWN DETECTOR
 
@@ -981,6 +1077,45 @@ different implementation produced has nothing comparing them.
 Found by this audit, fixed in the next commit, and the consolidation was checked
 the only way that means anything: the kernel's detector reproduces the recorded
 readings **exactly** — one scan at −1.7°/1.428×, four at 0.0°/1.000×.
+
+### 4c. Does any check derive its extent from the set it governs?
+
+Both proofs the range added declare a **literal** case count — 6 and 9 — which
+is the direction this rule asks for: the failure feared is a case leaving, and a
+count computed from the set it polices agrees with any shrink.
+
+The one derived extent in the range is `ARTEFACT_EDGES`, and it is derived the
+other way round on purpose: the map is hand-kept, and the anchor that catches an
+omission from it comes from the set of proofs that **import** `refuseStaleBuild`
+— which is exactly what named `proof:scannedpages` when its entry was missing.
+The danger there runs towards the map getting smaller, and the anchor is
+somewhere the shrink cannot reach.
+
+### 5. Executed, or asserted?
+
+Executed: the eleven-document corpus readings (E2 at 99.92% characters and 68.2%
+lines, the table-hunt on-against-off, the XObject depth-3 walk, the page
+composition split, the skew sweep), `ocrSurface.mjs`'s three counts on the WASM
+engine and its four surface files, the fourteen pinned OCR models and their
+18,013,460 bytes, the PDFium normalize-then-edit round trip, and every proof and
+test named above.
+
+Asserted, and named as such: that a document-wide deskew costs one rasterise and
+one sweep **per page** — the per-page figure is measured, the document-wide
+total is arithmetic on it and no long scan has been run end to end. Also
+asserted: that `tesseract.js`' `node-fetch` chain is unused by this build,
+which follows from the models being provisioned by digest and has not been
+observed at run time, because the dependency was removed before anything ran.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, once, and it is the range's only amendment.** `1b1f688` added §3's
+OCR-recognition row — the writer of record, in its own commit, with the rejected
+alternatives — and every D6 row that needs it comes after. Nothing else in the
+range bent a seam: scanned-page detection registered into the existing
+`document.pageTextLayer` answer, secret storage into the existing channel
+discipline, and the deskew that follows this audit into the command registry and
+the MuPDF writer that already owns page-tree operations.
 
 ### 7. Do the documents still match the code?
 

@@ -178,6 +178,7 @@ export {
   targetVersionOf,
   replacePageSchema,
   sourceIdsOf,
+  deskewPagesSchema,
   resizePagesSchema,
   rotatePagesSchema,
   setLayerVisibilitySchema,
