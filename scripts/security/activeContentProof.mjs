@@ -62,6 +62,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
+import { shippedEngine } from '../lib/shippedEngine.mjs';
 import {
   DOC_LEVEL_MARKER,
   EMBEDDED_FILE_BODY,
@@ -151,27 +152,11 @@ function runPoc(fixture, mode) {
   return { ok: result.status === 0, events, output };
 }
 
-/**
- * Where the engine the APPLICATION loads actually lives.
- *
- * ## Why this is resolved and not written down
- *
- * Every MuPDF consumer in `packages/kernel` imports the bare specifier
- * `'mupdf'`, and Node resolves that to `node_modules/mupdf/dist/mupdf.js`,
- * which instantiates `mupdf-wasm.wasm` beside it. A scan that spelt that path
- * as a literal would keep passing after the application's import moved, and
- * would then be reporting a clean absence about a file nothing loads — which is
- * the defect this function exists because of, one layer along.
- *
- * `import.meta.resolve` is the same resolution the kernel's own import
- * performs, so the target cannot drift away from the subject without this
- * throwing.
- *
- * @returns {string} the WASM engine's path
- */
-function shippedEngine() {
-  return join(dirname(fileURLToPath(import.meta.resolve('mupdf'))), 'mupdf-wasm.wasm');
-}
+// WHERE THE ENGINE THE APPLICATION LOADS LIVES — `scripts/lib/shippedEngine.mjs`,
+// imported rather than derived here. This file derived it for itself on
+// 2026-09-08; a second question needed the same answer on 2026-09-10, and two
+// files joining a directory to a filename is a second opinion about which
+// artefact the application runs (B3a). The reasoning is in that module.
 
 /**
  * Case group 0: the engine the product actually runs carries no interpreter.

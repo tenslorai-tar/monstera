@@ -123,3 +123,53 @@ had looked.
   than a maintained divergence from upstream's build.
 - If Stage 6 is cut from the product, this ADR is superseded rather than quietly
   ignored, and the compile-time disable above is the decision to take.
+
+## Correction, 2026-09-10 — Stage 6 does not inherit this integration, and one of the three grounds does not survive
+
+Stage 6 opened and the first thing it needed was a writer of record for OCR
+**recognition**. This decision says one already exists: *"reached only through
+MuPDF's own OCR API"*, and ground two says *"Stage 6 needs them … the
+integration it needs is exactly the one already present."*
+
+**That is true of `monstera_mupdf.dll` and false of the engine this application
+loads.** Measured 2026-09-10, `node scripts/research/ocrSurface.mjs`, against the
+artefact the kernel's own bare `mupdf` import resolves to:
+
+| artefact | `tesseract` | `leptonica` | `ocr_` | anchor present |
+|---|---|---|---|---|
+| `node_modules/mupdf/dist/mupdf-wasm.wasm` | **0** | **0** | **0** | libmupdf's error text, ×1 each |
+| its four wrapper and declaration files | **0** | **0** | **0** | `PDFDocument`, `StructuredText` in the two that declare the API |
+| `native/mupdf-shim/out/monstera_mupdf.dll` | 2 | 4 | 9 | libmupdf's error text, ×1 each |
+
+The shim is not the shipped path — `CLAUDE.md` and §3 already carry that
+correction — so the integration this ADR relies on is in a binary nothing under
+`packages/` opens.
+
+**Which of the three grounds survive.** Ground one (*already integrated by the
+engine, and removing means diverging from upstream's build*) is unchanged and is
+about the shim's build. Ground three (*removal buys little, reachability is zero
+and checked*) is unchanged. **Ground two does not survive**: Stage 6 inherits
+nothing it can call, and the route to calling it is the native reach decided on
+2026-09-08, which is unbuilt and is 117 API members wide.
+
+**What this does NOT change.** The decision itself stands: Tesseract and
+Leptonica stay in the shim, for grounds one and three. Nothing here is an
+argument to remove them, and the advisory register's `reachability.ocr` verdict
+is untouched — it is a claim about shipped code naming an OCR door, and no OCR
+door is named by anything shipped either before or after this correction.
+
+**What it decides for Stage 6.** Recognition is `tesseract.js`, executing inside
+the engine host, added to §3's matrix as its own row on 2026-09-10 — the writer
+this concern had never had. `BUILD-PROMPT.md`:473 names that library and :806
+keeps it out of the download-on-demand class.
+
+**And it makes this ADR's own rejected alternative cheaper than it was.** *"Keep
+them but disable OCR at compile time … it becomes the right answer if Stage 6
+slips past Stage 8"* was rejected because removal means re-adding later. With
+recognition shipping elsewhere, **that re-add cost is zero**: nothing in the
+product will ever call MuPDF's OCR API. `OCR_DISABLED` is therefore live again as
+an option, on strictly better terms than when it was weighed — it closes the
+`.ocr` dispatch in `fz_new_document_writer` outright, and invariant 23 currently
+closes that family from the other side. Not taken here, because it is a build
+change and this is a correction; recorded so it is not re-derived from the old
+cost.
