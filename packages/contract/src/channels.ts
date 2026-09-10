@@ -4,10 +4,8 @@ import { z } from 'zod';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import {
   MAX_ANNOTATION_BORDER,
-  MAX_FIND_TEXT,
   MAX_IMAGE_PAGES,
   MAX_REPLACED_TEXT,
-  MAX_TEXT_REPLACEMENTS,
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
@@ -431,17 +429,26 @@ export const MAX_FLAT_FIELD_CANDIDATES = 256;
  * grouping runs into lines can only make the list shorter, so a separate line
  * bound would be a second constant that could never be the binding one.
  *
- * ## DERIVED from the command's bound, and not the same digit written twice
+ * ## `MAX_TEXT_REPLACEMENTS`' NUMBER AND NOT ITS ARGUMENT, which is finding W-1
  *
  * A surface offers what this read answered and sends what the person accepted
- * as one `replaceTextObject`, so a read bound above `MAX_TEXT_REPLACEMENTS`
- * would offer an accept the command cannot carry. `MAX_FLAT_FIELD_CANDIDATES`
- * states that same relationship in prose beside a literal `256`, which is a
- * copy this file can avoid: it imports `commands.ts` already, so the reader can
- * reach the source and CLAUDE.md's rule says not to keep a copy that nothing
- * compares.
+ * as one `replaceTextObject`, so a read bound above the command's would offer an
+ * accept the command cannot carry. That relationship is real and it is **≤**.
+ *
+ * This was written `= MAX_TEXT_REPLACEMENTS` on 2026-09-09, citing CLAUDE.md's
+ * *copy only where the reader cannot reach the source* — and the audit of
+ * `63f10be..258a9ce` found the rule that governs instead, eleven lines from
+ * where the derivation was made: `MAX_REPLACED_TEXT` refuses to derive from
+ * `MAX_FIELD_VALUE` because **two bounds that happen to agree are not one
+ * bound**. The two reasons differ. The command's bound is about a payload; this
+ * one is about a list a person works through, and a derivation encoding `=`
+ * would let a payload argument raise the chooser's ceiling past *a chooser of
+ * 8192 rows is not a chooser* with no mechanism left on that side.
+ *
+ * So it is a literal with the relationship in prose — `MAX_FLAT_FIELD_CANDIDATES`
+ * beside `MAX_CREATED_FIELDS`, which is the precedent this file already had.
  */
-export const MAX_TEXT_OBJECTS = MAX_TEXT_REPLACEMENTS;
+export const MAX_TEXT_OBJECTS = 512;
 
 /**
  * How many pixels one `document.renderPage` may be asked for.
@@ -533,14 +540,19 @@ const linkBoundsSchema = z.object({
  * here is bounded. 512 is far above any search a person types and far below
  * anything worth worrying about.
  *
- * **DERIVED from `MAX_FIND_TEXT` since 2026-09-10**, when `replaceAllText`
- * arrived needing the same bound for the same reason: *how long a string may a
- * person type into a box*. The derivation runs this way because the module graph
- * allows only one direction — this file imports `commands.ts` — and CLAUDE.md's
- * rule applies, a copy a reader can reach the source of being a copy not to
- * keep. The number is unchanged.
+ * **A LITERAL AGAIN, and the round trip is finding W-1's.** It was derived from
+ * `MAX_FIND_TEXT` on 2026-09-10 on the reading that both answer *how long a
+ * string may a person type into a box* — which is true, and is not enough. A
+ * query is a READ's parameter and a find string is a COMMAND's, and the two can
+ * correctly differ: a search that a person cancels costs a page walk, where a
+ * replacement rewrites a document. Nothing says they must move together, and a
+ * derivation asserts that they must.
+ *
+ * The test the audit left behind is the one to apply here: **could the two
+ * numbers ever correctly differ?** They could, so they are two numbers, and the
+ * relationship — they are the same today, for the same reason — is prose.
  */
-export const MAX_QUERY_LENGTH = MAX_FIND_TEXT;
+export const MAX_QUERY_LENGTH = 512;
 
 /**
  * What opening a document answers, for the two channels that open one.

@@ -2730,10 +2730,21 @@ export const replaceTextObjectSchema = z
 /**
  * How many of one page's objects a recolour or a removal may name.
  *
- * {@link MAX_TEXT_REPLACEMENTS} derived rather than repeated, because it is the
- * same quantity under a second name: *how many of a page's objects one command
- * may name*. A separate literal would be two numbers nothing compares, and the
- * day one moved the other would read as the rule.
+ * **DERIVED, and this one survived finding W-1 where its two neighbours did
+ * not.** The audit of `63f10be..258a9ce` unpicked `MAX_TEXT_OBJECTS` and
+ * `MAX_QUERY_LENGTH` from their sources, on the rule `MAX_REPLACED_TEXT` states
+ * a few lines up: two bounds that happen to agree are not one bound.
+ *
+ * This is the case that rule does not reach, and the difference is the
+ * QUESTION rather than the number. `MAX_TEXT_REPLACEMENTS` answers *how many of
+ * a page's objects may one command name*, and so does this — the two commands
+ * differ in what they do to the objects, not in how many of a page they may
+ * name. A literal here would be a second answer to one question, which is the
+ * copy CLAUDE.md's rule is actually about.
+ *
+ * The test that separates them: could the two numbers ever correctly differ? For
+ * a payload bound and a chooser's usability bound, yes. For two payload bounds
+ * over the same page, no.
  */
 export const MAX_EDITED_OBJECTS = MAX_TEXT_REPLACEMENTS;
 
