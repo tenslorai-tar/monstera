@@ -888,6 +888,70 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — The 0.08% has a name, and it is on the other engine's side
+
+E2's re-scored accuracy row reported **characters 99.92%** over eleven documents,
+down from 100.00% over five, and lines **up** from 52.9% to 68.2%. A percentage
+that reads as essentially perfect is exactly where a class-shaped defect sits
+unnoticed: 0.08% across eleven documents is large enough to be one document's
+whole ligature set, or every soft hyphen on a page. The mean says how much. It
+cannot say of what.
+
+`lineAgreement.mjs` now reports the per-character deltas the score is built
+from — the same censuses, read rather than summed — and the answer is one class
+and a sign:
+
+| | |
+|---|---|
+| `+9 U+002D HYPHEN-MINUS` | read here, not by PDFium |
+| `-9 U+FFFE NONCHARACTER` | read by PDFium, not here |
+| `+2` each of four letters | read here, not by PDFium, in one document |
+
+**The sign is what decides what a delta means**, and it is the half an aggregate
+destroys. Reading MORE of a character than the independent reader is a character
+*it* dropped or spelt differently; reading FEWER is one **we** dropped, and only
+the second is a gap in the substrate this application ships.
+
+`U+FFFE` is a Unicode **noncharacter** — permanently reserved, and no conforming
+text contains one — so PDFium is emitting its own marker where MuPDF emits a
+hyphen. One for one, in each of the three documents where it happens: 5 and 5,
+1 and 1, 3 and 3. That equality is the measurement rather than the story.
+
+So the instrument now answers the question the table invites and a top-six list
+cannot: **is there any character this build reads fewer of that is not a
+noncharacter?** There is not. The shortfall in the character score is
+attributable, it is on the other side of the comparison, and the row's **done**
+stands — which is a different sentence from *the number is small*.
+
+Characters are printed as codepoints and never as text. A codepoint two readings
+disagreed about is a fact about the engines; the text it sat in is the
+document's, and rule 1 covers it.
+
+### And the JSDoc theft happened again
+
+The constant this added was first placed between `census`' doc comment and
+`census`, which silently stole the comment and left that function's parameter
+implicitly `any`. `CLAUDE.md` records that shape as having bitten twice before,
+both times visible only to the scripts half of `npm run typecheck` — which is
+what caught it here too. Third occurrence, caught by the command rather than by
+care, and the constant now says so where it sits.
+
+### What the sweep does not cover, printed by the sweep
+
+A tail item rather than a row: that `proof:canvaspixels` is a `ci.yml` step and
+does **not** run under `npm run local -- --only "check:"` had been carried in a
+handoff note for days, while `SEALED: ok` was read as covering it. A note nobody
+reads is not a mechanism.
+
+`checkLocal.mjs` now ends a filtered run by naming the scripts it did **not**
+attempt, with a count, and saying that the board is the only mechanism for them.
+It passes this project's own test for a printed compensation — *could it have
+been printed before you made your change?* — because the set is computed from
+the run's own selection, and an unfiltered run prints nothing there because it
+excluded nothing.
+
+---
+
 ## 2026-09-10 — Recognition: a raster becomes characters, and the frame it answers in
 
 D6 row 2's **read**. `ocrRecognise.ts` drives Tesseract's core directly inside

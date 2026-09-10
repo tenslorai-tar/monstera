@@ -1310,6 +1310,33 @@ if (changedForProofs !== null) {
  * class is *anything a killed script leaves behind*, and this line is what
  * covers the rest of it.
  */
+/*
+ * WHAT THIS RUN DID NOT ATTEMPT, named rather than left to be recalled.
+ *
+ * A filtered sweep sealing `ok` says nothing about the scripts the filter
+ * excluded, and the cost of leaving that implicit was measured: the fact that
+ * `proof:canvaspixels` is a `ci.yml` step and does **not** run under
+ * `--only "check:"` sat in a handoff note for days, read by nobody, while
+ * `SEALED: ok` was taken as covering it. Its only verdict is the board's, and
+ * the same is true of every other excluded name.
+ *
+ * It passes CLAUDE.md's test for a printed compensation — *could it have been
+ * printed before you made your change?* — because the set is computed from THIS
+ * run's selection. An unfiltered run prints nothing here, which is correct: it
+ * excluded nothing.
+ */
+const unattempted = derived.filter((name) => !selected.includes(name)).sort();
+if (unattempted.length > 0) {
+  const NAMED = 8;
+  process.stdout.write(
+    `\n  ${String(unattempted.length)} script(s) the workflows run were NOT attempted here, so ` +
+      `this run's verdict covers none of them:\n` +
+      `    ${unattempted.slice(0, NAMED).join(', ')}` +
+      `${unattempted.length > NAMED ? `, and ${String(unattempted.length - NAMED)} more` : ''}\n` +
+      `  The board is the only mechanism for those.\n`,
+  );
+}
+
 process.stdout.write('The board is the mechanism; this is the minute before the push.\n');
 
 const clean =

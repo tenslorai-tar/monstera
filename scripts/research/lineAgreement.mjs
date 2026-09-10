@@ -180,6 +180,18 @@ function pdfiumLines(api, bytes, index) {
 const TABLE_HUNT_STRING = [STEXT_OPTIONS.segment, STEXT_OPTIONS.tableHunt].join(',');
 
 /**
+ * How many disagreeing characters a row prints before it says "and N more".
+ *
+ * **Declared here and not above the function that uses it**, which is not
+ * fussiness: the first version sat between `census`' JSDoc and `census`, and
+ * inserting a declaration above another silently steals its doc comment —
+ * leaving that function's parameter implicitly `any`, seen only by the scripts
+ * half of `npm run typecheck`. `CLAUDE.md` records that shape as having bitten
+ * twice before; this is the third, caught by the command rather than by care.
+ */
+const CHARACTER_DELTAS_SHOWN = 6;
+
+/**
  * This application's own lines for one page, through the shipped substrate.
  *
  * @param {mupdf.PDFDocument} document
@@ -300,7 +312,88 @@ function agreement(ours, theirs) {
     reverse: overlap(theirs, ours),
     ourChars: a.length,
     theirChars: b.length,
+    // WHICH CHARACTERS DISAGREE, and not just how many. 99.92% reads as
+    // essentially perfect, and 0.08% over eleven documents is large enough to be
+    // one document's entire ligature set or every soft hyphen on a page — which
+    // is a class-shaped extraction gap hiding inside a number that looks like
+    // rounding. An aggregate cannot say which class; this can.
+    deltas: deltasBetween(mine, yours),
   };
+}
+
+/**
+ * The per-character surplus and deficit between two censuses.
+ *
+ * Positive means **we read more of it than PDFium did**, negative means fewer.
+ * The sign matters: reading more is a character PDFium dropped or spelt
+ * differently, and reading fewer is one we dropped — and only the second is a
+ * gap in the substrate this application ships.
+ *
+ * @param {Map<string, number>} mine
+ * @param {Map<string, number>} yours
+ * @returns {{ character: string, delta: number }[]} largest absolute first
+ */
+function deltasBetween(mine, yours) {
+  /** @type {{ character: string, delta: number }[]} */
+  const deltas = [];
+  for (const character of new Set([...mine.keys(), ...yours.keys()])) {
+    const delta = (mine.get(character) ?? 0) - (yours.get(character) ?? 0);
+    if (delta !== 0) deltas.push({ character, delta });
+  }
+  return deltas.sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta));
+}
+
+/**
+ * A character named by its CODEPOINT, never printed.
+ *
+ * Rule 1 in `scripts/lib/corpus.mjs` covers the text as well as the filename, so
+ * this prints `U+00AD` and a name from a small table rather than the character
+ * itself. A codepoint that a reading disagreed about is a fact about the two
+ * engines; the text it sits in is the document's.
+ *
+ * @param {string} character
+ * @returns {string}
+ */
+function named(character) {
+  const point = character.codePointAt(0) ?? 0;
+  const hex = `U+${point.toString(16).toUpperCase().padStart(4, '0')}`;
+  /** @type {Record<string, string>} */
+  const KNOWN = {
+    'U+0020': 'SPACE',
+    'U+002D': 'HYPHEN-MINUS',
+    'U+00A0': 'NO-BREAK SPACE',
+    'U+00AD': 'SOFT HYPHEN',
+    'U+2010': 'HYPHEN',
+    'U+2013': 'EN DASH',
+    'U+2014': 'EM DASH',
+    'U+2018': 'LEFT SINGLE QUOTE',
+    'U+2019': 'RIGHT SINGLE QUOTE',
+    'U+201C': 'LEFT DOUBLE QUOTE',
+    'U+201D': 'RIGHT DOUBLE QUOTE',
+    'U+2022': 'BULLET',
+    'U+2026': 'ELLIPSIS',
+    'U+FB00': 'LIGATURE FF',
+    'U+FB01': 'LIGATURE FI',
+    'U+FB02': 'LIGATURE FL',
+    'U+FB03': 'LIGATURE FFI',
+    'U+FB04': 'LIGATURE FFL',
+    'U+FFFD': 'REPLACEMENT CHARACTER',
+    // A NONCHARACTER. Unicode permanently reserves U+FFFE and U+FFFF and no
+    // conforming text contains either, so a reading that holds one is the
+    // READER's artefact rather than the document's content — which is the whole
+    // reason the sign on a delta decides what the delta means.
+    'U+FFFE': 'NONCHARACTER',
+    'U+FFFF': 'NONCHARACTER',
+  };
+  const name = KNOWN[hex];
+  if (name !== undefined) return `${hex} ${name}`;
+  // THE CLASS, where the codepoint is not one of the usual suspects. A letter or
+  // a digit disagreeing is a different finding from a punctuation mark, and
+  // saying which it is costs nothing.
+  if (/\p{L}/u.test(character)) return `${hex} (a letter)`;
+  if (/\p{N}/u.test(character)) return `${hex} (a digit)`;
+  if (/\s/u.test(character)) return `${hex} (whitespace)`;
+  return `${hex} (punctuation or symbol)`;
 }
 
 /**
@@ -427,6 +520,13 @@ async function main() {
    * @type {{ id: string, plain: ReturnType<typeof agreement>, hunted: ReturnType<typeof agreement>, plainLines: number, huntedLines: number }[]}
    */
   const huntRows = [];
+  /**
+   * The per-document character deltas, kept so the breakdown below is the same
+   * reading rather than a second run of both engines.
+   *
+   * @type {{ id: string, deltas: { character: string, delta: number }[] }[]}
+   */
+  const charRows = [];
   for (const document of corpus.documents) {
     const opened = /** @type {mupdf.PDFDocument} */ (
       mupdf.PDFDocument.openDocument(document.bytes, 'application/pdf')
@@ -459,6 +559,7 @@ async function main() {
       plainLines: ours.length,
       huntedLines: hunted.length,
     });
+    charRows.push({ id: document.id, deltas: score.deltas });
     out.write(
       `  ${document.id.padEnd(10)} ${String(pages).padStart(5)}   ${String(ours.length).padStart(9)}   ` +
         `${String(theirs.length).padStart(11)}   ${(score.characters * 100).toFixed(2).padStart(9)}%   ` +
@@ -476,6 +577,82 @@ async function main() {
     );
   }
   out.write(`${corpusCaveat(corpus.documents.length)}\n`);
+
+  // ── WHICH CHARACTERS THE SCORE LOST ───────────────────────────────────────
+  //
+  // An aggregate of 99.92% reads as essentially perfect, and that is where a
+  // class-shaped gap sits unnoticed: 0.08% over eleven documents is large enough
+  // to be one document's whole ligature set or every soft hyphen on a page. The
+  // mean says how much; only this says WHAT, and of what — the sign is the half
+  // that matters, because reading MORE than PDFium is a character it dropped and
+  // reading FEWER is one we did.
+  out.write('\n## Which characters the two engines disagreed about\n\n');
+  out.write(
+    '  "+" means we read more of it than PDFium, "-" means fewer. Only the second is a gap\n' +
+      '  in the substrate this application ships. Characters are named by codepoint, never\n' +
+      '  printed: a codepoint two readings disagreed about is a fact about the engines, and\n' +
+      '  the text it sat in is the document\'s.\n\n',
+  );
+  /** @type {Map<string, number>} */
+  const aggregate = new Map();
+  let anyDelta = false;
+  for (const row of charRows) {
+    if (row.deltas.length === 0) {
+      out.write(`  ${row.id.padEnd(10)}  the two readings hold the same characters exactly\n`);
+      continue;
+    }
+    anyDelta = true;
+    const shown = row.deltas
+      .slice(0, CHARACTER_DELTAS_SHOWN)
+      .map(({ character, delta }) => `${delta > 0 ? '+' : ''}${String(delta)} ${named(character)}`);
+    const rest = row.deltas.length - shown.length;
+    out.write(
+      `  ${row.id.padEnd(10)}  ${shown.join(', ')}${rest > 0 ? `, and ${String(rest)} more` : ''}\n`,
+    );
+    for (const { character, delta } of row.deltas) {
+      aggregate.set(character, (aggregate.get(character) ?? 0) + delta);
+    }
+  }
+  if (!anyDelta) {
+    // THE REASSURING ANSWER, AND IT IS REFUSED. Every document agreeing to the
+    // character is also exactly what a broken census produces, and the mean
+    // above was measured at 99.92% rather than 100% — so the two readings
+    // disagree and this breakdown must be able to say where.
+    throw new Error(
+      'no document shows a single character delta, while the mean character score above is ' +
+        'below 100%. Those two cannot both be true, so this breakdown is not reading what the ' +
+        'score reads.',
+    );
+  }
+  const worst = [...aggregate]
+    .filter(([, delta]) => delta !== 0)
+    .sort(([, left], [, right]) => Math.abs(right) - Math.abs(left))
+    .slice(0, CHARACTER_DELTAS_SHOWN);
+  out.write(
+    `\n  Across the corpus, the largest net disagreements are:\n` +
+      worst
+        .map(([character, delta]) => `    ${delta > 0 ? '+' : ''}${String(delta)} ${named(character)}\n`)
+        .join(''),
+  );
+
+  // THE QUESTION THE TABLE ABOVE INVITES AND CANNOT ANSWER, because it shows the
+  // largest six: is there ANY character this build reads fewer of, other than a
+  // noncharacter nothing should emit? That is the whole of *is the shortfall a
+  // gap in our extraction* — and it is a different question from *what is the
+  // biggest delta*, which a top-six list answers.
+  const NONCHARACTERS = new Set(['￾', '￿']);
+  const weRead = [...aggregate].filter(
+    ([character, delta]) => delta < 0 && !NONCHARACTERS.has(character),
+  );
+  out.write(
+    weRead.length === 0
+      ? '\n  AND NOTHING ELSE IS NEGATIVE. Every character this reading holds fewer of than\n' +
+          '  PDFium is a Unicode noncharacter, which no conforming text contains — so the\n' +
+          '  shortfall in the character score is not a gap in what this build extracts.\n'
+      : `\n  ${String(weRead.length)} character(s) are read FEWER times here than by PDFium and are\n` +
+          '  not noncharacters, which is a gap in this build\'s extraction rather than in the\n' +
+          `  comparison: ${weRead.map(([character, delta]) => `${String(delta)} ${named(character)}`).join(', ')}\n`,
+  );
 
   // ── FZ_STEXT_TABLE_HUNT, measurable for the first time ────────────────────
   //
