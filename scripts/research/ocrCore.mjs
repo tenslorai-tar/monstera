@@ -68,9 +68,14 @@ const DPI = 200;
  * and the only one the `4.0.0_fast` models carry.
  */
 const CORE_BUILDS = [
-  'tesseract-core-relaxedsimd-lstm',
-  'tesseract-core-simd-lstm',
-  'tesseract-core-lstm',
+  // EACH SPECIFIER IS A LITERAL, and the loop is over thunks rather than over
+  // names. A computed `require(`tesseract.js-core/${build}`)` is a site
+  // `proof:electronimports` cannot read, and it reported this file on its first
+  // run — correctly, since a specifier a scan cannot resolve is a place where
+  // the rule has no answer. A literal is also what a bundler can follow.
+  { name: 'tesseract-core-relaxedsimd-lstm', load: () => require('tesseract.js-core/tesseract-core-relaxedsimd-lstm') },
+  { name: 'tesseract-core-simd-lstm', load: () => require('tesseract.js-core/tesseract-core-simd-lstm') },
+  { name: 'tesseract-core-lstm', load: () => require('tesseract.js-core/tesseract-core-lstm') },
 ];
 
 /** Tesseract's `OEM_LSTM_ONLY`. */
@@ -124,20 +129,21 @@ try {
   for (const build of CORE_BUILDS) {
     const started = Date.now();
     try {
-      const factory = require(`tesseract.js-core/${build}`);
+      const factory = build.load();
       const instance = await factory();
-      process.stdout.write(`  ${build}: instantiated in ${String(Date.now() - started)} ms\n`);
+      process.stdout.write(`  ${build.name}: instantiated in ${String(Date.now() - started)} ms\n`);
       core = instance;
       break;
     } catch (error) {
       process.stdout.write(
-        `  ${build}: REFUSED — ${error instanceof Error ? error.message.slice(0, 100) : String(error)}\n`,
+        `  ${build.name}: REFUSED — ${error instanceof Error ? error.message.slice(0, 100) : String(error)}\n`,
       );
     }
   }
   if (core === null) {
     throw new Error(
-      `no core build instantiated on this runtime — tried ${CORE_BUILDS.join(', ')}. That is a ` +
+      `no core build instantiated on this runtime — tried ` +
+        `${CORE_BUILDS.map((build) => build.name).join(', ')}. That is a ` +
         'finding about the runtime rather than about the package, and it is a throw because a ' +
         'zero here would otherwise read as a measurement',
     );
