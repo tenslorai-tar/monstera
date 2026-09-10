@@ -888,6 +888,98 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — What OCR costs, probed before it is a dependency
+
+D6 row 2's substrate. `nspell`'s route exactly: a scratch tree outside the
+repository, the real thing installed, the real question asked, and the answer
+deciding where the feature lives before anything is added to this build.
+
+### The readings
+
+`tesseract.js` **7.0.0**, `tesseract.js-core` **6.1.2**, against the first
+textless page of the supplied corpus rasterised at 200 DPI through **MuPDF** —
+the rasteriser §3's matrix assigns, so the measurement is of the pipeline this
+application would actually have.
+
+| | |
+|---|---|
+| construct | **579–1041 ms**, RSS **+48 MB** |
+| recognise one A4 page | **4.8–5.2 s**, RSS **+73 MB** |
+| the raster | 1653×2339, 1.63 MB as PNG |
+| what it read | 2,016 characters, **41 lines, 402 words**, mean confidence **94** |
+| word geometry | every word carries `{x0, y0, x1, y1}` |
+| network | **none** — a local `langPath` with `gzip: true` |
+
+**The word boxes needed asking for.** The first run reported `words: 0` and
+`boxes: 0`, because v7's default output is the text alone; `{ blocks: true }`
+returns the tree. That is the difference between a text layer that can be placed
+and one that cannot, and it was one line away from being recorded as *this
+library does not give geometry*.
+
+**And the walk needed correcting.** My first reader stopped at the first node
+carrying `bbox` and `text` — which a BLOCK carries — and answered *1 word*. The
+shape is blocks → paragraphs → lines → words, named rather than searched for.
+
+### The size arithmetic, which is what chose the model variant
+
+`tessdata` publishes two builds. Read from the CDN's `Content-Length`:
+
+| variant | English | all fourteen |
+|---|---|---|
+| `4.0.0` | 10,923,060 bytes | ~135 MB |
+| `4.0.0_fast` | 1,984,273 bytes | **18,013,460 bytes** |
+
+The installer target is **under 150 MB** and is resized only by an ADR. The
+standard set would take nine-tenths of it for one feature's data. The fast set
+takes 17.2 MB and reads a real scan at confidence 94, so nothing was traded away
+to fit and the accuracy cost is stated rather than assumed.
+
+### Fourteen languages, and why it is a decision rather than a list
+
+`BUILD-PROMPT.md`:473 asks for *13+* and names none. Seven Latin-script, plus
+Cyrillic, Arabic, Hebrew, Devanagari, Japanese, Korean and Simplified Chinese —
+because a Latin-only set fails the documents it fails **silently**, and two of
+those seven are right-to-left, which the corpus contains an example of.
+
+The names are `tessdata`'s own (`chi_sim`, not a BCP 47 tag): a tag would need a
+mapping table, and a mapping table is a second opinion about which model a
+language means.
+
+**Choosing one is not what ADR-0014's constraint 1 forbids.** That constraint
+exists because both of Tesseract 5.5.2's live advisories are reached through a
+**crafted model file**, so the language and datadir must not be document-influenced
+or user-supplied *without a new decision*. A closed enum of fourteen names
+supplies no file and no path; the models arrive by digest and the datadir is
+ours. This is that decision, and its shape — an enum, not a string — is what
+keeps the constraint true.
+
+### Two lists that cannot be derived from each other
+
+Provisioning runs on a **cold machine**, before anything is built, so it cannot
+import the contract's output: the language enum and the model table are
+necessarily two hand-kept lists. `proof:ocrmodels` compares them **both ways**,
+because the two failures are not the same failure — a language offered and never
+fetched fails at recognition time, on a document, after the wait; one fetched and
+never offered is megabytes of installer nothing can reach. A count would agree
+with any two lists of the same length.
+
+Its digest cases are **PARTLY MEASURED** where nothing is provisioned, through
+`partialOutcome` — and the first version of this file spelt that verdict by
+hand. `check:unverifiablespelling` caught it on the first sweep: a wording of
+one's own reads correctly to a person and matches nothing the harness looks for,
+so the run files as a **pass**. B3a, in the place that exists to catch it.
+
+### What is NOT built, stated so the row is not read as done
+
+Recognition. No command, no channel, no control — the models are on disk and the
+language set is tied to them. The next unit is the read (`recognise this page`,
+in the host, with progress and cancellation) and the command that embeds what it
+returns, which is `@cantoo/pdf-lib`'s by §3's matrix row and therefore main's:
+**recognition is a query and the text layer is a command**, so the raster never
+crosses and the payload is the page's words rather than its pixels.
+
+---
+
 ## 2026-09-10 — Normalize-then-edit: PDFium can take a form apart, and that is the whole feature
 
 The Stage 5 row the corpus reading made owed, built the same day, ahead of the

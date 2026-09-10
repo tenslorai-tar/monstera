@@ -46,6 +46,12 @@ export {
   // than a checklist.
   MAX_AFFIX_BYTES,
   MAX_DICTIONARY_BYTES,
+  // The OCR language set, exported for the same reason the spelling one is:
+  // both sides key a record on it — the provisioning table and the renderer's
+  // display titles — so adding a language is two compile errors and a digest.
+  OCR_LANGUAGES,
+  type OcrLanguage,
+  ocrLanguageSchema,
   SPELLING_LANGUAGES,
   type SpellingLanguage,
   spellingLanguageSchema,

@@ -320,6 +320,15 @@ jobs:
       - name: Prove a page this build cannot read is told apart from an empty one
         run: node scripts/ci/annotate.mjs scripts/proofs/scannedPages.proof.mjs
 
+      # The OCR language set against the models that get fetched. No model is
+      # provisioned here — 18 MB per run for a check whose valuable half needs
+      # none — so the digest cases report NOT APPLICABLE and the run exits 0.
+      # What does run is the pair that matters: a language offered and never
+      # fetched fails on a document after the wait, and one fetched and never
+      # offered is megabytes of installer nothing can reach.
+      - name: Prove the OCR languages and the provisioned models are one set
+        run: node scripts/ci/annotate.mjs scripts/proofs/ocrModels.proof.mjs
+
       # E2's accuracy score. The corpus is not here, so what runs on the Windows
       # leg is the pair of controls — a constructed page both engines must agree
       # on completely, and two resolution cases proving the scorer can report a

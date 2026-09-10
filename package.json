@@ -113,6 +113,8 @@
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
     "proof:lineagreement": "node scripts/research/lineAgreement.mjs",
     "proof:scannedpages": "node scripts/proofs/scannedPages.proof.mjs",
+    "proof:ocrmodels": "node scripts/proofs/ocrModels.proof.mjs",
+    "provision:tessdata": "node scripts/provision/tessdata.mjs",
     "proof:editcost": "node scripts/research/editCost.mjs",
     "proof:definedtokens": "node scripts/proofs/definedTokens.proof.mjs",
     "check:definedtokens": "node scripts/lib/definedTokens.mjs",

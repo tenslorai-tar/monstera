@@ -268,6 +268,9 @@ export const ARTEFACT_EDGES = {
   // alone would otherwise leave the guard quiet about the file the proof is
   // most about.
   'proof:scannedpages': [...TEXT_STRUCTURE, ...PAGE_KIND],
+  // The language set it ties the provisioning table to is the BUILT enum, so a
+  // stale build would compare against yesterday's languages.
+  'proof:ocrmodels': CONTRACT_TYPES,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
   // and are compiled by a spawned `tsc`. That import resolves to the package's
   // built declarations, so this proof reads the same artefact every other entry
