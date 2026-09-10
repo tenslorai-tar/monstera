@@ -888,6 +888,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — The PNG per page the renderer does not hold
+
+A carried item, closed by reading the path rather than by arguing from the
+feature's name. §6.1's second renderer makes the renderer decode a **PNG per
+draw**, and the question was whether §9.17's two provisional terms still bound a
+renderer that does.
+
+**Neither moves.** The chain is `document.renderPage` → `createImageBitmap` →
+`drawImage` → **`drawn.close()` on the next line**, and neither the bytes nor
+the bitmap is stored: the answer is referenced only inside the callback that
+awaits it. So the cap term's stated blocker — *there is no bitmap cache to cap*
+— is unchanged, and the proportional term still waits on the same missing
+instrument.
+
+What is new is a **transient peak**, and a peak is what a budget measures, so it
+is written down rather than waved past: the PNG and its decoded bitmap are alive
+at the same moment. Bounded by the channel rather than by convention —
+`MAX_RASTER_BYTES` 32 MB plus `MAX_RASTER_PIXELS` × 4 = 67 MB, so **99 MB at the
+bound**, one page at a time. On a real A4 page at 200 dpi it is 1.63 MB of PNG
+and 15.5 MB decoded, about 17 MB.
+
+**The useful part is what it leaves owed.** When something finally composes a
+renderer for `perf:gate`, it must draw with the second rasteriser **on** — an
+instrument that measured the fallback would report a number about the engine
+that decodes nothing, and would read exactly like a measurement of the feature.
+
+---
+
 ## 2026-09-10 — What OCR costs, probed before it is a dependency
 
 D6 row 2's substrate. `nspell`'s route exactly: a scratch tree outside the

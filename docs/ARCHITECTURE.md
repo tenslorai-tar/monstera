@@ -1373,6 +1373,28 @@ say**.
     precondition that has expired for half a claim is how a claim goes on
     reading as blocked.
 
+    **THE SECOND RENDERER WAS READ AGAINST BOTH TERMS, 2026-09-10, and moves
+    neither.** §6.1's setting makes the renderer decode a **PNG per draw**, which
+    is the shape that would break the cap term's blocker if anything retained
+    one. Nothing does: `document.renderPage` answers bytes, `App.tsx` hands them
+    straight to `createImageBitmap`, `renderPage.ts` draws the result at 0,0 and
+    calls `drawn.close()` on the next line, and neither the bytes nor the bitmap
+    is stored anywhere. So *there is no bitmap cache to cap* is still true, and
+    the proportional term still waits on the same instrument.
+    
+    What the second renderer does add is a **transient peak per draw** — the PNG
+    and its decoded bitmap alive at the same moment — and a peak is what a
+    budget measures, so it is stated rather than dismissed. It is bounded by the
+    channel rather than by a convention: `MAX_RASTER_BYTES` 32 MB plus
+    `MAX_RASTER_PIXELS` 16,777,216 × 4 bytes, so **99 MB at the bound**, for one
+    page at a time. Measured on a real A4 page at 200 dpi it is 1.63 MB of PNG
+    and 15.5 MB decoded, ≈ 17 MB.
+    
+    **And it leaves the owed instrument a requirement**: whatever eventually
+    composes a renderer for `perf:gate` must draw with the second rasteriser
+    **on**, or it will measure the path that does not decode anything and report
+    a number about the other engine.
+
     **The multiple is of the document's cost, not of the process's footprint.**
     It is measured as peak RSS *above that process's own fixed baseline* — the
     runtime, the loaded engine, the process itself — because those do not scale
