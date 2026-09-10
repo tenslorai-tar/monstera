@@ -5,7 +5,7 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
-import type { PdfiumChannels } from './pdfiumChannels.js';
+import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
 
 /**
  * Main's side of the PDFium host: the writer `CommandBus` routes
@@ -206,14 +206,15 @@ export function remotePdfiumExecution(
             `answered prior state tagged "${answer.value.kind}" for a "${kind}" command`,
           );
         }
-        // NO ASSERTION, AND THAT IS TEMPORARY. `remoteMupdfExecution` needs one
-        // here — the tag and `K` are correlated through a comparison the checker
-        // cannot follow — and with one kind routed to PDFium the union collapses
-        // to a single member and the value is already `CommandPrior[K]`. Lint
-        // reports a cast as unnecessary, correctly. The second PDFium command
-        // will require it back, which is the compiler asking at the right
-        // moment rather than a cast sitting here claiming to do work.
-        return { captured: true, prior: answer.value.prior };
+        // AND THE ASSERTION IS BACK, exactly as the note above predicted. It
+        // said *the second PDFium command will require it*, and three arrived
+        // on 2026-09-10: the tag and `K` are correlated through the comparison
+        // two lines up, which is a narrowing the checker cannot follow, so the
+        // union no longer collapses to a single member.
+        //
+        // What makes the cast honest is the check above it rather than this
+        // comment: a prior tagged for another kind has already thrown.
+        return { captured: true, prior: answer.value.prior as CommandPrior[K] };
       }),
 
     invert: async <K extends KindsRoutedTo<'pdfium'>>(
@@ -226,14 +227,18 @@ export function remotePdfiumExecution(
           'engine/invert',
           await client['engine/invert']({
             session,
-            // NO CAST, AND `remoteMupdfExecution` RECORDS WHY THAT ENDS. Its
-            // own line said *no cast* while `mupdf` routed one kind, and stopped
-            // being true with the second: `{ kind, prior }` widens its two
-            // fields independently, and TypeScript cannot see that they came
-            // from one `K`. The same sentence applies here in advance — this
-            // compiles because the union has one member, and the second PDFium
-            // command is what will need `taggedPrior`'s equivalent.
-            inverse: { kind, prior: inverse },
+            // THROUGH `pdfiumTaggedPrior` SINCE 2026-09-10, which is the day
+            // this comment's own prediction came true. It said *this compiles
+            // because the union has one member, and the second PDFium command
+            // is what will need `taggedPrior`'s equivalent*; three commands
+            // arrived and it did.
+            //
+            // A CALL AND NOT A CAST, for the reason that constructor's own note
+            // gives: `{ kind, prior }` widens its two fields independently and
+            // the correlation is invisible to the checker, so the claim is
+            // stated once where a future caller inherits it rather than copied
+            // as a cast whose reasoning lives in someone else's comment.
+            inverse: pdfiumTaggedPrior(kind, inverse),
             from,
             into,
           }),

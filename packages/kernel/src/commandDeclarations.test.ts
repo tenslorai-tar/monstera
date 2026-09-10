@@ -192,7 +192,19 @@ describe('the declaration table', () => {
         `invertible entry keeps its prior for ever and a terminal one keeps a whole document ` +
         `image. Before adding a kind here, check its prior is BOUNDED by the contract; if it ` +
         `is document-scaled, the declaration is wrong rather than this list.`,
-    ).toStrictEqual(['replaceTextObject']);
+      // THE CHECK THE MESSAGE ABOVE ASKS FOR, carried out on 2026-09-10 for the
+      // two that joined:
+      //
+      // - `placePageObject`'s prior is a page, an index and SIX FLOATS — an
+      //   object's own matrix. Bounded by the shape, not by a constant.
+      // - `recolorPageObjects`' is four small integers per object, and the list
+      //   is capped at `MAX_EDITED_OBJECTS`, which is a page's worth. Bounded
+      //   by the contract.
+      //
+      // Neither grows with the document, so both belong here. `deletePageObjects`
+      // is deliberately absent: PDFium cannot rebuild a removed object, so it is
+      // declared terminal and appears in the control below instead.
+    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'recolorPageObjects']);
   });
 
   it('CONTROL: some byte-image command is TERMINAL, so the case above is a property and not a description', () => {
@@ -218,7 +230,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('mergeDocument');
   });
 
-  it('CONTROL: exactly five kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly nine kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -233,6 +245,9 @@ describe('the declaration table', () => {
       'fillFormField',
       'deleteFormFields',
       'replaceTextObject',
+      'placePageObject',
+      'recolorPageObjects',
+      'deletePageObjects',
     ]);
     // AND ALL THREE MEMBERS ARE PRESENT, which the count above cannot say: a
     // table where every target read `'annotation'` would satisfy it, and the

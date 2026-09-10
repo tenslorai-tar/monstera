@@ -289,9 +289,18 @@ jobs:
       # are different facts, and only this step asserts the second. Both legs,
       # for the step above's reason — UNVERIFIABLE on Linux is a stated absence
       # rather than a step that silently did not exist.
-      - name: Prove region replacement as a command
+      - name: Prove in-place text editing as a command
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumCommand.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
+      # The same layer for the three OBJECT commands — move and resize, recolour,
+      # remove. A separate step rather than more cases in the one above because
+      # the two answer different FEATURES rows, and a failure that names one row
+      # is a failure somebody can act on. Both legs, for the reason above.
+      - name: Prove object-level editing as commands
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/pdfiumObject.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
       # BUILD-PROMPT.md:706's owed fidelity proof. The corpus is not here, so its

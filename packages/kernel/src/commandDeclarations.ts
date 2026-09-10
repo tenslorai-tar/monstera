@@ -1261,6 +1261,87 @@ const declarations = {
     // about the classification.
     purpose: 'ordinary',
   },
+  placePageObject: {
+    kind: 'placePageObject',
+    writer: 'pdfium',
+    // INVERTIBLE FROM THE OBJECT'S OWN MATRIX, and that is measured rather than
+    // reasoned: `FPDFPageObj_SetMatrix` of the matrix read before a transform
+    // returns the object's bounds to exactly what they were (2026-09-10). So
+    // the inverse RESTORES rather than applying the opposite transform — which
+    // matters beyond ADR-0009 §3's rule, because an opposite transform composed
+    // repeatedly drifts and a restored matrix does not.
+    invertible: true,
+    undo: 'inverse',
+    // Six floats set on an object. Nothing mints an identifier or reads a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    // A transform rewrites the page's content stream and unlinks nothing.
+    purpose: 'ordinary',
+  },
+  recolorPageObjects: {
+    kind: 'recolorPageObjects',
+    writer: 'pdfium',
+    // INVERTIBLE FROM THE PRIOR FILLS, one per named object — `fillFormField`'s
+    // shape on a third walk. The prior is four small integers per object and is
+    // bounded by the page, so the entry retains no document-scaled bytes.
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  deletePageObjects: {
+    kind: 'deletePageObjects',
+    writer: 'pdfium',
+    // NOT INVERTIBLE, AND IT IS THE LIBRARY THAT SAYS SO. PDFium offers no way
+    // to reconstruct a page object from a description, so there is no prior
+    // state a capture could hold — a removed object is gone. This is the same
+    // classification `flattenFormFields` has and it arrives for a different
+    // reason: there the prior is document-scaled, here there is no prior at all.
+    //
+    // So undo takes a checkpoint, which costs one whole document image per
+    // entry (`CommandLog.trimTo`). That is the price of the row rather than a
+    // choice inside it.
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    // NOT `'removal'`, and the distinction is the AXIS's mechanism rather than
+    // the word. `purpose: 'removal'` selects MuPDF's collecting save
+    // ([ADR-0045](../../../docs/DECISIONS/0045-a-removals-garbage-collection-belongs-to-the-command.md)):
+    // `withDocumentRemoving` marks the session and `serialise` collects from
+    // then on. This command's writer of record is PDFium, whose
+    // `FPDF_SaveAsCopy` has no garbage-collection option at all — so there is
+    // nothing here for the axis to select, and declaring `'removal'` would name
+    // a mechanism that cannot run.
+    //
+    // What that leaves open is whether an unlinked object survives in PDFium's
+    // saved bytes, and `proof:pdfiumobject` measures it rather than this
+    // comment asserting it. **Measured 2026-09-10, and the first reading was
+    // misleading**: removing two objects from a 1,170-byte fixture answered
+    // 1,613 bytes, +38%, which reads as orphans. It is not. A PDFium save with
+    // NO EDIT AT ALL answers 1,664 — +42% — because `FPDF_SaveAsCopy` is a full
+    // rewrite with its own object layout and pdf-lib's output is unusually
+    // compact. Against that control the removal is 3.1% SMALLER, so the growth
+    // belongs to the save and nothing here is accumulating.
+    //
+    // The control is what makes the figure mean anything, and it is kept in the
+    // proof rather than only here: size against the original would have been a
+    // symptom recorded as a cause.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

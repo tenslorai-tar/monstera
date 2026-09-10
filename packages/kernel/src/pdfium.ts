@@ -29,6 +29,19 @@ export {
   invertReplaceTextObject,
   type PriorTextObjects,
 } from './pdfiumTextEdit.js';
+export {
+  applyDeletePageObjects,
+  applyPlacePageObject,
+  applyRecolorPageObjects,
+  captureDeletePageObjects,
+  capturePlacePageObject,
+  captureRecolorPageObjects,
+  invertDeletePageObjects,
+  invertPlacePageObject,
+  invertRecolorPageObjects,
+  type PriorFills,
+  type PriorPlacement,
+} from './pdfiumObjectEdit.js';
 export { localPdfiumExecution, pdfiumSpecs } from './pdfiumSpecs.js';
 
 /**

@@ -109,6 +109,7 @@
     "proof:enginesurface": "node scripts/research/engineSurface.mjs",
     "proof:pdfiumadapter": "node scripts/proofs/pdfiumAdapter.proof.mjs",
     "proof:pdfiumcommand": "node scripts/proofs/pdfiumCommand.proof.mjs",
+    "proof:pdfiumobject": "node scripts/proofs/pdfiumObject.proof.mjs",
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
     "proof:lineagreement": "node scripts/research/lineAgreement.mjs",
     "proof:editcost": "node scripts/research/editCost.mjs",

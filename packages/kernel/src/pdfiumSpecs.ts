@@ -5,6 +5,17 @@ import { declaredCommands } from './commandDeclarations.js';
 import type { CommandExecution } from './commandRouting.js';
 import type { ByteImage, Capture, Invert } from './engineSeam.js';
 import {
+  applyDeletePageObjects,
+  applyPlacePageObject,
+  applyRecolorPageObjects,
+  captureDeletePageObjects,
+  capturePlacePageObject,
+  captureRecolorPageObjects,
+  invertDeletePageObjects,
+  invertPlacePageObject,
+  invertRecolorPageObjects,
+} from './pdfiumObjectEdit.js';
+import {
   applyReplaceTextObject,
   captureReplaceTextObject,
   invertReplaceTextObject,
@@ -60,6 +71,34 @@ export const pdfiumSpecs = {
     // `never` for each. This one is called: the entry is invertible, so undo
     // takes the inverse branch and never a checkpoint.
     invert: invertReplaceTextObject,
+  },
+  placePageObject: {
+    ...declaredCommands.placePageObject,
+    apply: applyPlacePageObject,
+    capture: capturePlacePageObject,
+    invert: invertPlacePageObject,
+  },
+  recolorPageObjects: {
+    ...declaredCommands.recolorPageObjects,
+    apply: applyRecolorPageObjects,
+    capture: captureRecolorPageObjects,
+    invert: invertRecolorPageObjects,
+  },
+  deletePageObjects: {
+    ...declaredCommands.deletePageObjects,
+    apply: applyDeletePageObjects,
+    // BOTH SLOTS ARE FILLED, and neither can run. `CommandSpec` requires them
+    // for every kind — leaving them out is a compile error, which is how the
+    // table stays exhaustive — and `CommandPrior.deletePageObjects` is `never`,
+    // so nothing can construct an argument for the invert. The capture says
+    // WHY, in a sentence the bus turns into a checkpoint.
+    //
+    // `flattenFormFields`' shape, and this is the first PDFium command to take
+    // it: the four pdf-lib entries carry the same pair for a different reason,
+    // theirs being that the prior is document-scaled and this one's that the
+    // prior does not exist.
+    capture: captureDeletePageObjects,
+    invert: invertDeletePageObjects,
   },
 };
 

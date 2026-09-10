@@ -590,6 +590,58 @@ const REPLACE_TEXT_SPEC = `  replaceTextObject: {
     reads: 'none',
   },`;
 
+const PLACE_OBJECT_SPEC = `  placePageObject: {
+    kind: 'placePageObject',
+    writer: 'pdfium',
+    apply: applyPlacePageObject,
+    capture: capturePlacePageObject,
+    invert: invertPlacePageObject,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+const RECOLOR_OBJECTS_SPEC = `  recolorPageObjects: {
+    kind: 'recolorPageObjects',
+    writer: 'pdfium',
+    apply: applyRecolorPageObjects,
+    capture: captureRecolorPageObjects,
+    invert: invertRecolorPageObjects,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * The first PDFium spec that is TERMINAL, and the shape is the point.
+ *
+ * `capture` and `invert` are both present and neither can run: `CommandSpec`
+ * requires the slots for every kind — leaving them out is a compile error, which
+ * is what keeps the table exhaustive — while `CommandPrior.deletePageObjects` is
+ * `never`, so nothing can build an argument for the invert. The four pdf-lib
+ * entries carry the same pair because their prior is document-scaled; this one
+ * because PDFium cannot rebuild a removed object at all.
+ */
+const DELETE_OBJECTS_SPEC = `  deletePageObjects: {
+    kind: 'deletePageObjects',
+    writer: 'pdfium',
+    apply: applyDeletePageObjects,
+    capture: captureDeletePageObjects,
+    invert: invertDeletePageObjects,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 /**
  * The first spec whose command declares `purpose: 'removal'`.
  *
@@ -778,6 +830,15 @@ import {
   applyReplaceTextObject,
   captureReplaceTextObject,
   invertReplaceTextObject,
+  applyPlacePageObject,
+  capturePlacePageObject,
+  invertPlacePageObject,
+  applyRecolorPageObjects,
+  captureRecolorPageObjects,
+  invertRecolorPageObjects,
+  applyDeletePageObjects,
+  captureDeletePageObjects,
+  invertDeletePageObjects,
 } from '@monstera/kernel/pdfium';`;
 
 /**
@@ -1249,6 +1310,9 @@ ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
+${PLACE_OBJECT_SPEC}
+${RECOLOR_OBJECTS_SPEC}
+${DELETE_OBJECTS_SPEC}
 };
 `,
   },
@@ -1266,8 +1330,9 @@ ${REPLACE_TEXT_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `replaceTextObject` on 2026-09-09;
-    // `importFormData` and `createFormField` on 2026-09-08;
+    // table has to grow. `deletePageObjects` — with `placePageObject` and
+    // `recolorPageObjects` beside it — on 2026-09-10; `replaceTextObject` on
+    // 2026-09-09; `importFormData` and `createFormField` on 2026-09-08;
     // `flattenFormFields`, `deleteFormFields`,
     // `fillFormField`, `placeImage` and
     // `styleAnnotation` on 2026-09-07; `addLink`,
@@ -1285,7 +1350,7 @@ ${REPLACE_TEXT_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'replaceTextObject' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'deletePageObjects' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1334,6 +1399,9 @@ ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
+${REPLACE_TEXT_SPEC}
+${PLACE_OBJECT_SPEC}
+${RECOLOR_OBJECTS_SPEC}
 };
 `,
   },
@@ -1449,6 +1517,9 @@ ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
+${PLACE_OBJECT_SPEC}
+${RECOLOR_OBJECTS_SPEC}
+${DELETE_OBJECTS_SPEC}
 };
 `,
   },
@@ -1502,6 +1573,9 @@ ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
+${PLACE_OBJECT_SPEC}
+${RECOLOR_OBJECTS_SPEC}
+${DELETE_OBJECTS_SPEC}
 };
 `,
   },
@@ -1564,6 +1638,9 @@ ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
+${PLACE_OBJECT_SPEC}
+${RECOLOR_OBJECTS_SPEC}
+${DELETE_OBJECTS_SPEC}
 };
 `,
   },
@@ -1622,6 +1699,9 @@ ${FLATTEN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
+${PLACE_OBJECT_SPEC}
+${RECOLOR_OBJECTS_SPEC}
+${DELETE_OBJECTS_SPEC}
 };
 `,
   },
@@ -2498,7 +2578,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 25 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 28 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

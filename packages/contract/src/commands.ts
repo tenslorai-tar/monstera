@@ -2727,6 +2727,150 @@ export const replaceTextObjectSchema = z
     { message: 'names one text object more than once', path: ['replacements'] },
   );
 
+/**
+ * How many of one page's objects a recolour or a removal may name.
+ *
+ * {@link MAX_TEXT_REPLACEMENTS} derived rather than repeated, because it is the
+ * same quantity under a second name: *how many of a page's objects one command
+ * may name*. A separate literal would be two numbers nothing compares, and the
+ * day one moved the other would read as the rule.
+ */
+export const MAX_EDITED_OBJECTS = MAX_TEXT_REPLACEMENTS;
+
+/**
+ * The largest and smallest a scale factor may be.
+ *
+ * A range rather than *any positive number*, and both ends earn their place.
+ * Zero and below are excluded because a factor of zero collapses an object to
+ * nothing — a delete wearing a placement's clothes, and this build has a delete
+ * — while a negative one mirrors it, which is a different operation nobody
+ * asked for and which no surface could express by dragging. The upper bound is
+ * `MAX_PAGE_COORDINATE`-shaped reasoning rather than a guess: a scale past this
+ * puts every object off any conforming page, so it is a payload that can only
+ * be a mistake or an attack.
+ */
+export const MIN_OBJECT_SCALE = 0.001;
+export const MAX_OBJECT_SCALE = 1000;
+
+/**
+ * Moves and resizes one of a page's objects — the first of the three
+ * object-level commands, and the only one that names a single object.
+ *
+ * ## AN INTENT, NOT A MATRIX, and that is a measurement
+ *
+ * `scripts/research/pdfiumObjects.mjs`, PDFium 155.0.8044.0, 2026-09-10: a
+ * rectangle at x=200..320 scaled by 2 through `FPDFPageObj_Transform` landed at
+ * **400..640** — off a 400pt page — because a matrix scales about the
+ * coordinate system's origin. A person asking for something twice as big never
+ * means that, so the payload says *how much bigger* and the kernel composes the
+ * anchor. A raw matrix on this wire would make every caller responsible for
+ * that composition, and the first one to get it wrong would move an object off
+ * the page with no rule broken.
+ *
+ * ## One object, where its two siblings take a list
+ *
+ * `recolorPageObjects` and `deletePageObjects` name lists, because *make these
+ * red* and *delete these* are one thing a person did. *Move these by the same
+ * amount* is coherent; *make these each twice as big* is not, since each would
+ * scale about its own box and the group would come apart. So this one names one
+ * object, and moving several is several commands rather than a command whose
+ * meaning changes with its length.
+ */
+export const placePageObjectSchema = z.object({
+  kind: z.literal('placePageObject'),
+  /** Zero-based index of the page the object sits on. */
+  page: z.number().int().nonnegative(),
+  /** Its position in the page-object walk that produced the answer this names. */
+  index: z.number().int().nonnegative(),
+  /**
+   * Points to add to the object's position. Zero is legal — a pure resize.
+   *
+   * Bounded by `MAX_PAGE_COORDINATE` symmetrically, `annotationRectSchema`'s
+   * reason: a page may have a negative `/MediaBox` origin, and an offset larger
+   * than the largest conforming page can only move an object off every one.
+   */
+  moveBy: z
+    .object({
+      x: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+      y: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    })
+    .strict(),
+  /** Factors to multiply width and height by. One is legal — a pure move. */
+  scaleBy: z
+    .object({
+      x: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
+      y: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE),
+    })
+    .strict(),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
+/**
+ * Recolours a page's objects — **text objects included**.
+ *
+ * The *included* is measured rather than hoped: `FPDFPageObj_SetFillColor`
+ * answers 1 for a text object as well as a path, and the colour survives a save
+ * and a reopen (2026-09-10). A command that quietly worked on shapes only would
+ * be the wired-tools defect on the kind a person is most likely to pick.
+ *
+ * ## One colour for the list, not one per entry
+ *
+ * *Make these red* is the intent; a per-entry colour would express *make this
+ * one red and that one blue*, which is two things a person did and belongs in
+ * two commands with two undo steps. `createFormField`'s shared page, one axis
+ * along.
+ *
+ * ## RGB and an alpha, because that is what the engine stores
+ *
+ * Not a design token: `onColor` and the token scale govern **this
+ * application's** surfaces, and these bytes are a value inside somebody's
+ * document. A token here would put Monstera's palette into a file the user owns.
+ */
+export const recolorPageObjectsSchema = z.object({
+  kind: z.literal('recolorPageObjects'),
+  page: z.number().int().nonnegative(),
+  /** The objects to recolour, in the engine's own numbering. */
+  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_EDITED_OBJECTS),
+  /** The colour they should all take. Channels are 0–255, as PDFium stores them. */
+  colour: z
+    .object({
+      red: z.number().int().min(0).max(255),
+      green: z.number().int().min(0).max(255),
+      blue: z.number().int().min(0).max(255),
+      /** Opacity. 255 is opaque, which is what every producer writes by default. */
+      alpha: z.number().int().min(0).max(255),
+    })
+    .strict(),
+  version: docVersionSchema,
+});
+
+/**
+ * Removes objects from a page.
+ *
+ * ## It cannot be undone from a prior, and that is a property of the LIBRARY
+ *
+ * PDFium offers no way to reconstruct a page object from a description, so
+ * there is no prior state a capture could hold — which is why this command's
+ * declaration is a **checkpoint** one while its two siblings are invertible.
+ * The fact is recorded here as well as there because a reader deciding what the
+ * payload should carry needs it: a field describing the removed object would be
+ * a prior nothing could put back.
+ *
+ * ## Duplicates are accepted, `deletePages`' reason exactly
+ *
+ * An object named twice is the same object, which is a set operation with an
+ * obvious answer, and refusing it would make a UI that gathered a selection
+ * responsible for de-duplicating it. The kernel takes the set.
+ */
+export const deletePageObjectsSchema = z.object({
+  kind: z.literal('deletePageObjects'),
+  page: z.number().int().nonnegative(),
+  /** The objects to remove, in the engine's own numbering. */
+  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_EDITED_OBJECTS),
+  version: docVersionSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -2758,6 +2902,9 @@ export const commandSchema = z.discriminatedUnion('kind', [
   createFormFieldSchema,
   importFormDataSchema,
   replaceTextObjectSchema,
+  placePageObjectSchema,
+  recolorPageObjectsSchema,
+  deletePageObjectsSchema,
 ]);
 
 /**
@@ -2868,6 +3015,19 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // what happens to the glyphs around it — that is PDFium's, and the renderer
   // cannot even name the object except through an answer PDFium produced.
   replaceTextObjectSchema,
+  // RENDERABLE, all three, and for `replaceTextObject`'s reason with a
+  // different noun: the intent is a page, indices from an answer PDFium
+  // produced, and a few bounded numbers — the payload is the same size whatever
+  // the document weighs.
+  //
+  // What the renderer cannot express is the ANCHOR a scale turns about.
+  // Measured 2026-09-10: `FPDFPageObj_Transform` scales about the page's
+  // origin, so an object at x=200 doubled lands at 400. Composing the object's
+  // own box into that needs the box, which only the engine has — so the payload
+  // says *how much bigger* and the kernel says *about what*.
+  placePageObjectSchema,
+  recolorPageObjectsSchema,
+  deletePageObjectsSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -3015,6 +3175,9 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'fillFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
+  if (command.kind === 'placePageObject') return command.version;
+  if (command.kind === 'recolorPageObjects') return command.version;
+  if (command.kind === 'deletePageObjects') return command.version;
   return undefined;
 }
 
@@ -3064,7 +3227,21 @@ void _theFieldNameIsACommandKind;
  * Anchored the same way, in `commandDeclarations.test.ts`, against the union of
  * all three: this package cannot import the kernel, so the half checkable here
  * is only that the name is a real kind.
+ *
+ * ## The NAME is narrower than the walk, and it is kept anyway
+ *
+ * It reads *text object*, and three of its four members name objects of any
+ * kind — a path, an image, a shading. The walk is the same one: PDFium's page
+ * objects, numbered by `FPDFPage_GetObject`, which is what makes them one index
+ * space and therefore one member of `CommandTargets`. Renaming it would touch
+ * the axis, the kernel's tie and every citation of it for a gain of one word,
+ * and the misreading it invites — *these commands are about text* — is smaller
+ * than the one a split would invite: *these are two different index spaces*.
  */
-export type NamesATextObject = 'replaceTextObject';
+export type NamesATextObject =
+  | 'replaceTextObject'
+  | 'placePageObject'
+  | 'recolorPageObjects'
+  | 'deletePageObjects';
 const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
 void _theObjectNameIsACommandKind;

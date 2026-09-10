@@ -1,7 +1,15 @@
 import { z } from 'zod';
 
-import { channel, replaceTextObjectSchema } from '@monstera/contract';
+import {
+  channel,
+  deletePageObjectsSchema,
+  placePageObjectSchema,
+  recolorPageObjectsSchema,
+  replaceTextObjectSchema,
+} from '@monstera/contract';
 
+import type { CommandPrior } from '../commandLog.js';
+import type { DeclaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
 import {
   byteImageWire,
@@ -49,7 +57,7 @@ import {
 /**
  * The commands this host may be asked to run — the PDFium-routed ones.
  *
- * ## A union of ONE, and it is written out for `mupdfCommandSchema`'s reason
+ * ## Written out, for `mupdfCommandSchema`'s reason
  *
  * A filter over `commandSchema.options` needs two assertions and its narrowing
  * has to be re-stated by a cast, which is a list with a cast in front of it.
@@ -57,13 +65,18 @@ import {
  * what a list gives up: an omission fails `Covers`, an extra fails `Excludes`,
  * both at this line rather than as a runtime refusal.
  *
- * `z.discriminatedUnion` with one option is deliberate rather than a `z.object`
- * that would be simpler today. The second PDFium command is a row in this same
- * stage — object-level edit, document-wide replace-all, the replace half of
- * find-and-replace — so the shape that has to be edited when one arrives is the
- * shape that already discriminates.
+ * This was a union of ONE, kept as a `discriminatedUnion` rather than a
+ * `z.object` on the reasoning that the second PDFium command was a row in this
+ * same stage. It arrived on 2026-09-10 — three of them — and the shape needed
+ * no edit beyond three names, which is the note being paid rather than merely
+ * having been right.
  */
-const pdfiumCommandSchema = z.discriminatedUnion('kind', [replaceTextObjectSchema]);
+const pdfiumCommandSchema = z.discriminatedUnion('kind', [
+  replaceTextObjectSchema,
+  placePageObjectSchema,
+  recolorPageObjectsSchema,
+  deletePageObjectsSchema,
+]);
 
 /** What travels as a command to this host. */
 export type PdfiumWireCommand = z.infer<typeof pdfiumCommandSchema>;
@@ -166,6 +179,68 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
         .strict(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('placePageObject'),
+      /**
+       * The object's own matrix, put back.
+       *
+       * Six floats and no bound beyond finiteness, which is `z.number()`'s own
+       * in zod 4 — a matrix is what PDFium answered about this document, not a
+       * value a renderer chose, and there is no smaller number that is correct
+       * for every page. What it CAN do wrong is arrive as `NaN`, which
+       * `FPDFPageObj_SetMatrix` would take and leave an object nothing can
+       * render; the schema is where that stops.
+       */
+      prior: z
+        .object({
+          page: z.number().int().nonnegative(),
+          index: z.number().int().nonnegative(),
+          matrix: z
+            .object({
+              a: z.number(),
+              b: z.number(),
+              c: z.number(),
+              d: z.number(),
+              e: z.number(),
+              f: z.number(),
+            })
+            .strict(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('recolorPageObjects'),
+      /** One fill per object the recolour named, bounded by the page. */
+      prior: z
+        .object({
+          page: z.number().int().nonnegative(),
+          objects: z
+            .array(
+              z
+                .object({
+                  index: z.number().int().nonnegative(),
+                  red: z.number().int().min(0).max(255),
+                  green: z.number().int().min(0).max(255),
+                  blue: z.number().int().min(0).max(255),
+                  alpha: z.number().int().min(0).max(255),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(ENGINE_TEXT_OBJECTS_MAX)
+            .readonly(),
+        })
+        .strict(),
+    })
+    .strict(),
+  // NO `deletePageObjects` MEMBER, and its absence is the mechanism. That
+  // command declares `invertible: false` because PDFium cannot reconstruct an
+  // object, so a prior tagged with its kind is a message this wire refuses to
+  // parse — main could not be handed one to hand to an invert that does not
+  // exist.
 ]);
 
 /** What a capture answers, in `captureResultSchema`'s shape. */
@@ -173,6 +248,67 @@ const pdfiumCaptureSchema = z.discriminatedUnion('captured', [
   z.object({ captured: z.literal(true), value: pdfiumPriorSchema }).strict(),
   z.object({ captured: z.literal(false), reason: z.string().min(1) }).strict(),
 ]);
+
+/** What the union above declares, as a type the ties below compare against. */
+type PdfiumCapturedPrior = z.infer<typeof pdfiumPriorSchema>;
+
+/**
+ * The PDFium-routed kinds that declare themselves invertible.
+ *
+ * `engineChannels.ts`' `InvertibleMupdfKind` on the second engine, and its
+ * warning applies unchanged: the union above is written by hand, and a hand-kept
+ * list is right only where something refuses to let it drift. Derived from the
+ * declaration table so that a command declared invertible and forgotten here
+ * fails at the alias below rather than as a runtime refusal on the day somebody
+ * undoes one.
+ */
+type InvertiblePdfiumKind = {
+  [K in KindsRoutedTo<'pdfium'>]: DeclaredCommands[K]['invertible'] extends true ? K : never;
+}[KindsRoutedTo<'pdfium'>];
+
+/**
+ * Each such kind paired with the prior the kernel actually captures for it.
+ *
+ * **The load-bearing half**, for the reason its MuPDF twin gives: tying the
+ * kinds alone would accept a member whose `prior` is the wrong shape, which is
+ * the version that reads as covered — the union would have an entry for the
+ * kind and refuse every value of it at run time.
+ */
+type PdfiumPriorPairs = {
+  [K in InvertiblePdfiumKind]: { readonly kind: K; readonly prior: CommandPrior[K] };
+}[InvertiblePdfiumKind];
+
+export type PdfiumCaptureCoversEveryInvertibleKind = Covers<PdfiumCapturedPrior, PdfiumPriorPairs>;
+export type PdfiumCaptureExcludesEveryOtherKind = Excludes<PdfiumPriorPairs, PdfiumCapturedPrior>;
+
+/**
+ * Pairs a PDFium command kind with the prior state captured for it.
+ *
+ * ## The correlated-union limit, arriving here exactly when the file said it would
+ *
+ * `{ kind, prior }` widens its two fields to unions **independently** —
+ * `{kind: A|B, prior: X|Y}` — which is not assignable to
+ * `{kind:A,prior:X} | {kind:B,prior:Y}`. The value is correct by construction
+ * and the checker cannot see the correlation.
+ *
+ * `remotePdfium.ts` compiled without this while one kind routed to PDFium,
+ * because a union of one is its own member, and its comment said in advance
+ * that the second command would need `taggedPrior`'s equivalent. Three arrived
+ * on 2026-09-10 and it did.
+ *
+ * **A second function rather than widening `taggedPrior`**, and that is B3a
+ * read the right way round: this one's return type is the PDFium wire's union,
+ * and a shared helper returning *either engine's* `CapturedPrior` would let a
+ * MuPDF prior be built for a PDFium channel — the hazard `pdfiumPriorSchema`'s
+ * own note exists to close, arriving through the constructor instead of the
+ * schema.
+ */
+export function pdfiumTaggedPrior<K extends KindsRoutedTo<'pdfium'>>(
+  kind: K,
+  prior: CommandPrior[K],
+): PdfiumCapturedPrior {
+  return { kind, prior } as PdfiumCapturedPrior;
+}
 
 export const pdfiumChannels = {
   ...coreEngineChannels({

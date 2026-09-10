@@ -19,6 +19,7 @@ import type { PriorFieldValue } from './formFields.js';
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
 // The import is erased, so the edge the header above warns about is not
 // created — the same care the `ByteImage` line records, on a second engine.
+import type { PriorFills, PriorPlacement } from './pdfiumObjectEdit.js';
 import type { PriorTextObjects } from './pdfiumTextEdit.js';
 import type { PriorLayerVisibility } from './layers.js';
 import type {
@@ -517,6 +518,32 @@ export interface CommandPrior {
    * it is the same bound whether the command names one run or a line's worth.
    */
   readonly replaceTextObject: PriorTextObjects;
+  /**
+   * The object's own matrix, put back.
+   *
+   * Six floats, so the entry retains nothing document-scaled. And a RESTORE
+   * rather than the opposite transform, which matters past ADR-0009 §3's rule:
+   * measured 2026-09-10, `FPDFPageObj_SetMatrix` of the matrix read before a
+   * transform returns the bounds exactly, where an opposite transform composed
+   * across repeated undo and redo accumulates floating-point drift.
+   */
+  readonly placePageObject: PriorPlacement;
+  /**
+   * One fill per object the recolour named.
+   *
+   * Four small integers each, bounded by the page through `MAX_EDITED_OBJECTS`.
+   * `replaceTextObject`'s reasoning with a smaller prior.
+   */
+  readonly recolorPageObjects: PriorFills;
+  /**
+   * `never`, and the LIBRARY is what decides it.
+   *
+   * PDFium offers no way to reconstruct a page object from a description, so
+   * there is no prior state that would put a removed object back — unlike the
+   * four `never`s above, whose priors exist and are document-scaled. Undo takes
+   * a checkpoint, which is a whole document image per entry.
+   */
+  readonly deletePageObjects: never;
 }
 
 /**

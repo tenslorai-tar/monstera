@@ -4,7 +4,11 @@ import type { CommandExecution } from '../commandRouting.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
-import { ENGINE_TEXT_OBJECTS_MAX, type PdfiumChannels } from './pdfiumChannels.js';
+import {
+  ENGINE_TEXT_OBJECTS_MAX,
+  type PdfiumChannels,
+  pdfiumTaggedPrior,
+} from './pdfiumChannels.js';
 
 /**
  * The PDFium host's handlers.
@@ -199,12 +203,13 @@ export function createPdfiumHandlers({
       return captured.captured
         ? // The kind is stamped from the COMMAND THIS CALL CARRIED, so the tag
           // and the prior cannot disagree at the source — `engineHandlers.ts`'
-          // `taggedPrior` rule, written out here because this host has one kind
-          // and a constructor for a union of one would be a helper with a cast
-          // in it.
+          // `taggedPrior` rule. This was written out inline while the host had
+          // one kind; three arrived on 2026-09-10, the two fields started
+          // widening independently, and it goes through the constructor for the
+          // reason that rule gives.
           {
             ok: true,
-            value: { captured: true, value: { kind: command.kind, prior: captured.prior } },
+            value: { captured: true, value: pdfiumTaggedPrior(command.kind, captured.prior) },
           }
         : { ok: true, value: { captured: false, reason: captured.reason } };
     },

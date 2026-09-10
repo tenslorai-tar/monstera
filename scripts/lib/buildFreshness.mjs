@@ -235,6 +235,10 @@ export const ARTEFACT_EDGES = {
   // are the adapter's plus the two modules that dispatch to it and the table
   // that says they should.
   'proof:pdfiumcommand': PDFIUM_COMMAND,
+  // The object commands read the same built modules through the same routing,
+  // so the same edges: the adapter, the two that dispatch to it, and the table
+  // that says they should.
+  'proof:pdfiumobject': PDFIUM_COMMAND,
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
