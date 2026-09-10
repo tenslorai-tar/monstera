@@ -888,6 +888,83 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — How crooked the crooked scan is, and the sign that flipped
+
+D2's deskew row, deferred to Stage 6 with its open question named: *the open
+question is the fixture, not the algorithm*. Its trigger — **the first Stage 6
+instrument that rasterises a page and measures it** — fired this morning, and
+the corpus now carries a real crooked scan, so the fixture is answerable.
+
+### The reading
+
+`scripts/research/deskewAngle.mjs`: ±8° in 0.1° steps, 150 dpi through MuPDF,
+ink split by **Otsu's** threshold computed per page, ink accumulated into
+`y − x·tanθ` bins — a **shear**, which is exact, rather than a rotation, which
+resamples and becomes a second thing to be wrong about.
+
+```
+  id                pages   skew    score at best / at 0°
+  corpus-4bdfb992      1     0.0°   1.000×
+  corpus-33d2416d      1     0.0°   1.000×
+  corpus-6906a007     10     0.0°   1.000×
+  corpus-97b80d4e      1    -1.7°   1.428×
+  corpus-ee1bc615      1     0.0°   1.000×
+```
+
+**One document is crooked, at −1.7°.** The others read 0.0° at exactly 1.000×,
+which is a **flat sweep** — the argmax of a flat function is noise wearing a
+number, and the ratio is what says so. That is the whole of how this instrument
+separates *an angle* from *a reading*, and there is no threshold in it anywhere:
+the ink split is computed from the page's own histogram and the angle is an
+argmax, not a value compared against a cutoff.
+
+### The control caught a frame difference on its first run
+
+Text drawn at **−3.0°** in PDF space reads **+3.0°** in the raster. That is not
+an error: pdf-lib rotates counter-clockwise in **y-up** user space and the
+raster is **y-down**, so the same tilt has the opposite sign.
+
+What matters is what nearly happened instead. The obvious repair is to change
+the expected value to `+3.0` and move on — and that buries a frame difference
+inside a number, which is this project's most expensive recurring shape. The
+assertion now states the relationship (`reads −drawnAt`) and says why, so
+**every figure this instrument prints is a RASTER angle** and a deskew command
+taking one has a conversion to make.
+
+That is also the answer to the row's own warning. The 2026-09-05 attempt failed
+its resolution test twice and the row concluded *this instrument has measured
+its own artefact twice* — the fixture was `drawRectangle` bars rotated about
+their own origins. This fixture's ground truth is arithmetic in the instrument's
+own file, and it is checked in both directions: a page that is level must read
+zero, and a page that is tilted must read the tilt.
+
+**The 2026-09-05 readings, moved here from the row so they are not lost**, and
+they are worth keeping because both failures are properties of a binning
+strategy rather than of that fixture:
+
+- **whole-row binning is blind below ~0.52°** — a 110 px line displaced by
+  55·sin(0.5°) = 0.48 px rounds back into its own row, so 0° and 0.25° scored
+  **identically at 2207.04**, the search returned its most negative candidate,
+  and a page drawn straight measured **−0.5°**;
+- **sub-pixel binning peaks at 0° for every input** — at α = 0 the mapping is
+  the identity, so all ink lands on bin boundaries: a fixture drawn at 3° scored
+  **338.9 at 0° against 132.1 at 3°**;
+- **interpolating the accumulation did not move that peak.**
+
+Today's sweep avoids both by rounding to integer bins over a real raster at 150
+dpi, where a 0.1° step over a 1,240 px page displaces ink by ~2 px at the edge —
+comfortably above the rounding that made the first attempt blind. That is a
+property of the resolution rather than a fix for the algorithm, and it is why the
+ratio column matters: it is the thing that would show the sweep going flat again.
+
+### What is still not built
+
+The correction. The transform half exists — `pageResize.ts`'s content wrap is
+the same operation with a rotation matrix — and the trigger is now the command
+that rewrites a page's content matrix rather than a measurement nobody had.
+
+---
+
 ## 2026-09-10 — The PNG per page the renderer does not hold
 
 A carried item, closed by reading the path rather than by arguing from the
