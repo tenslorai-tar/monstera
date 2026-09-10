@@ -888,6 +888,133 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — The licence question, answered from the record and not escalated
+
+`tesseract.js@7.0.0` cannot be a production dependency of this build, and the
+rule that refuses it is this project's own. Its tree reaches
+`node-fetch@2.7.0 → whatwg-url@5.0.0 → tr46@0.0.3`, and **`tr46@0.0.3` ships no
+licence file of any kind** while declaring MIT. `generateNotice.mjs` will not
+render a NOTICE that drops a package — *an SPDX identifier is not a licence
+notice; the terms have to travel with the software*.
+
+Three ways out were written down, and two of them are closed by documents already
+in the tree.
+
+### An ADR exception is not available
+
+`generateNotice.mjs`:44-45 is written in the imperative: *a package with no
+resolvable licence identifier, or no licence text on disk, fails the run. It
+does not get "UNKNOWN", or the SPDX id without the text.* An ADR granting an
+exception to that is an **override standing in for missing coverage**, which is
+the workaround shape `CLAUDE.md` names and which `MONSTERA_GITLEAKS` is this
+project's own recorded example of. And the substance is worse than the check: a
+package whose terms do not travel is the actual AGPL failure
+(`BUILD-PROMPT.md`:813), and the generator is only the thing that noticed.
+
+Its **family rule** does not reach this either, and widening it was the obvious
+move. `:391-431` lets a per-platform binary variant take its terms from a family
+meta-package on three assertions — name prefix, same version, same SPDX id.
+`tr46` is a standalone package, not a platform variant, so the rule refuses it
+**correctly**. It has already been widened once, for `koffi`'s real publishing
+shape; a second widening for a package that simply omits its terms is the rule
+dissolving.
+
+### The whole chain is otherwise compatible, and saying so matters
+
+Every declared licence in that tree is AGPL-compatible: `bmp-js`, `is-url`,
+`zlibjs`, `node-fetch`, `regenerator-runtime`, `whatwg-url` and `tr46` MIT;
+`idb-keyval`, `tesseract.js-core` and `wasm-feature-detect` Apache-2.0;
+`webidl-conversions` BSD-2-Clause. **This is a missing-text failure and not a
+compatibility one.** A reader meeting *a licence problem* assumes the harder
+kind, which is why the row says which kind it is.
+
+One other thing in that tree is worth recording beside it:
+`opencollective-postinstall@^2.0.3`, whose entire purpose is a postinstall
+script, in a repository that installs with `--ignore-scripts` deliberately.
+
+### What was priced first was removing the limit, not designing around it
+
+The fourth option was on none of the three: **drop the wrapper**.
+`tesseract.js-core@7.0.0` is the package the WASM is actually in. It declares
+**no dependencies at all**, ships an `Apache-2.0` LICENSE, and is the exact
+version `tesseract.js@7.0.0` itself depends on.
+
+So the question is not *is the core smaller*. It is **what does the wrapper buy
+that the core does not**, and the answer is measured
+([ADR-0050](DECISIONS/0050-the-ocr-binding-is-tesseracts-core-driven-directly.md),
+`scripts/research/ocrCore.mjs`), against the same corpus page, the same
+rasteriser and the same dpi the wrapper was probed with at `7beee3a`:
+
+| measure | wrapper | core direct |
+|---|---|---|
+| instantiate | 579–1041 ms | **51–83 ms** |
+| recognise one A4 page | 4.8–5.2 s | **3.8–4.4 s** |
+| non-whitespace characters | 2,016 | **2,016** |
+| lines / words | 41 / 402 | **41 / 402** |
+| words carrying a box | all | **402 of 402** |
+| mean confidence | 94 | **94** |
+
+**The character count needed resolving rather than accepting.**
+`GetUTF8Text().length` is 2,435 here against the 2,016 recorded for the wrapper,
+and printing both spellings showed the earlier figure was the non-whitespace
+count. Two readings of one page that disagree are either explained or they are a
+difference nobody has looked at.
+
+Its `src/` is 1,950 lines, and what of that is load-bearing here is none of the
+large parts. The **worker orchestration** is what this build does not want:
+recognition runs inside the engine host, which is already a separate contained
+process, and invariant 25 is the isolation — a worker inside it would be a
+second mechanism for the same job. The **model CDN** is what ADR-0014 constraint
+1 rules against, and `node-fetch` is in the tree for that and nothing else.
+**Image loading** from URLs and paths is unnecessary when the raster is MuPDF's
+PNG in the same process, and `bmp-js` with it. `wasm-feature-detect` is replaced
+by trying the builds in order and keeping the first that instantiates, which is
+a measurement rather than a detection. And `dump.js`, which walks the result into
+blocks and words, is replaced by **the core's own JSON renderer** —
+`api.GetJSONText()` answers the whole block/paragraph/line/word tree with a
+`bbox` on every node.
+
+What is left is about sixty lines of call sequence.
+
+### And two more rows came with it
+
+`TessPDFRenderer` is in the core. With `textonly` it wrote a 7,010-byte PDF from
+that page and **MuPDF read 109 text spans back out of it** — which is D6 row 3's
+invisible selectable text layer and row 5's searchable-PDF export, from the
+writer that already holds the characters. Neither row is built by this; what is
+recorded is that neither needs a third library.
+
+### The mandated audit found something else
+
+`BUILD-PROMPT.md`:819-822 requires three things in a dependency's commit: the
+AGPL licence check, **the audit result**, and one stated line of need. Running
+`npm audit` for this adoption reported a **high-severity** advisory in
+`sharp <0.35.4` — GHSA-rgj7-g3m4-5g8c, vulnerabilities in libheif — against the
+`sharp@0.35.3` the lockfile held. `sharp` is a devDependency (the brand-asset
+generator uses it) and it is also the codec the enhance-scans row has its eye
+on. Bumped to `^0.35.4`; `npm audit` now reports **0 vulnerabilities**, and
+`tesseract.js-core` itself adds none.
+
+*Both halves are law, not just the licence half* — :821-822's own sentence, and
+this is the vulnerability half arriving in the commit that was about the other
+one.
+
+### The caveat, stated rather than hidden
+
+`tesseract.js-core`'s `latest` dist-tag is **`6.1.2`**, not `7.0.0`. Read from
+the registry: `7.0.0` was published at 2025-12-15T02:37:00Z and `6.1.2` at
+02:47:16Z — **ten minutes later**. So `latest` follows a backport publish rather
+than saying the 7.x line is abandoned, and `tesseract.js@7.0.0` depends on
+`^7.0.0`. Pinned exactly, so a tag that moves changes nothing here.
+
+One more, found by reading the package rather than by running it: its `index.js`
+falls back to `require('./tesseract-core.asm')` where `WebAssembly` is absent,
+and that file is **not in the package's `files` list**, so the fallback cannot
+resolve. Nothing here takes it — the build is required by name — and it is
+recorded so the next reader does not meet it as a runtime failure.
+
+---
+
 ## 2026-09-10 — Deskew: the two sign flips that cancel
 
 D2's deskew row, deferred into Stage 6 with its trigger named, is done. The

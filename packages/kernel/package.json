@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "koffi": "3.1.5",
-    "mupdf": "^1.28.0"
+    "mupdf": "^1.28.0",
+    "tesseract.js-core": "7.0.0"
   }
 }
