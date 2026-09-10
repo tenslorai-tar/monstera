@@ -11,6 +11,7 @@ import {
   REPLACE_TEXT_OBJECT_NONE,
   REPLACE_TEXT_OBJECT_TOO_LONG,
   REPLACE_TEXT_OBJECT_TRUNCATED,
+  REPLACE_TEXT_OBJECT_UNADDRESSABLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
@@ -80,10 +81,12 @@ interface OfferedLine {
 export default function ReplaceTextObjectBody({
   lines,
   truncated,
+  unaddressable,
   resolve,
 }: {
   readonly lines: readonly OfferedLine[];
   readonly truncated: boolean;
+  readonly unaddressable: boolean;
 } & DialogAnswering<ReplaceTextObjectAnswer>): ReactElement {
   const { _ } = useLingui();
   const [chosen, setChosen] = useState<number | null>(null);
@@ -100,6 +103,16 @@ export default function ReplaceTextObjectBody({
       {truncated ? (
         <p className="m-replace-text-object__truncated" role="status">
           {_(REPLACE_TEXT_OBJECT_TRUNCATED)}
+        </p>
+      ) : null}
+      {/* SHOWN BESIDE AN EMPTY LIST TOO, and that is the case it matters most
+          for: a page whose text is ENTIRELY inside a Form XObject lists nothing,
+          and *this page has no text* would be a false sentence about a page
+          covered in words. So this sits above the empty message rather than
+          inside the populated branch. */}
+      {unaddressable ? (
+        <p className="m-replace-text-object__unaddressable" role="status">
+          {_(REPLACE_TEXT_OBJECT_UNADDRESSABLE)}
         </p>
       ) : null}
       {lines.length === 0 ? (

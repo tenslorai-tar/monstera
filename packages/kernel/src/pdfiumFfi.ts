@@ -585,6 +585,50 @@ export interface TextRun {
 }
 
 /**
+ * A page's editable text, and how much of its text is NOT editable.
+ *
+ * ## The second field exists because the first one used to lie by omission
+ *
+ * `textRuns` maps each character to its page object and skips the ones it
+ * cannot place. Until 2026-09-10 that skip was silent, and the case it silently
+ * dropped is not rare: **text inside a Form XObject**, which is how Office and
+ * InDesign emit it.
+ *
+ * Measured (`scripts/research/pdfiumXObjects.mjs`, PDFium 155.0.8044.0): a page
+ * with one ordinary run and one embedded page reports **two** objects to
+ * `FPDFPage_GetObject` — a text object and a `form` — while `FPDFText` extracts
+ * all sixty characters. Thirty-six of them belong to objects **inside** the
+ * form, reachable only through `FPDFFormObj_GetObject` and absent from the walk
+ * every editing command names. So the words are findable and unaddressable at
+ * once, and a chooser built on runs alone offers a page that looks half empty
+ * with nothing saying why.
+ *
+ * ## And the cheap way out does not work, which is also measured
+ *
+ * `FPDFText_SetText` on a nested object obtained through
+ * `FPDFFormObj_GetObject` returns **1**, `FPDFPage_GenerateContent` returns
+ * **1**, and the edit is **absent from the reopened bytes** — the page's stream
+ * is regenerated and the XObject's own stream is not. Two successful return
+ * values and no effect, which is why `BUILD-PROMPT.md`:278's *normalize-then-edit*
+ * is the route rather than a deeper walk.
+ *
+ * This count is what makes that state visible while the promotion is unbuilt.
+ * It is a CHARACTER count rather than a run count, because the runs it would
+ * have counted are exactly the ones that could not be formed.
+ */
+export interface PageText {
+  readonly runs: readonly TextRun[];
+  /**
+   * Characters PDFium extracted whose object this page's walk does not contain.
+   *
+   * Zero for every document whose text is drawn directly on the page. Non-zero
+   * means *there is text here no command can name*, and a surface owes the
+   * reader that sentence.
+   */
+  readonly unaddressable: number;
+}
+
+/**
  * Every text run on a page, with its text and its vertical extent.
  *
  * ## The extent comes from the CHARACTERS, not from the object's bounds
@@ -615,7 +659,7 @@ export interface TextRun {
  * `textObjectText` loads a text page per object, which is right for one object
  * and quadratic for a page of them. This walks the characters once.
  */
-export function textRuns(session: PdfiumSession, page: number): Promise<readonly TextRun[]> {
+export function textRuns(session: PdfiumSession, page: number): Promise<PageText> {
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
@@ -632,13 +676,21 @@ export function textRuns(session: PdfiumSession, page: number): Promise<readonly
         const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
         /** index -> the run being accumulated. Insertion order is reading order. */
         const runs = new Map<number, { text: string; bottom: number; top: number }>();
+        let unaddressable = 0;
 
         for (let at = 0; at < chars; at += 1) {
           if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) {
             continue;
           }
           const index = indexOf.get(String(koffi.address(bindings.charObject(textPage, at))));
-          if (index === undefined) continue;
+          // COUNTED, NOT DROPPED IN SILENCE. A character whose object is not in
+          // this page's walk is real text a person can see and no command can
+          // name — see {@link PageText.unaddressable}, and the measurement that
+          // put this line here.
+          if (index === undefined) {
+            unaddressable += 1;
+            continue;
+          }
 
           const buffer = new Uint16Array(2);
           numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
@@ -671,7 +723,10 @@ export function textRuns(session: PdfiumSession, page: number): Promise<readonly
           }
         }
 
-        return [...runs.entries()].map(([index, run]) => ({ index, ...run }));
+        return {
+          runs: [...runs.entries()].map(([index, run]) => ({ index, ...run })),
+          unaddressable,
+        };
       } finally {
         bindings.closeTextPage(textPage);
       }

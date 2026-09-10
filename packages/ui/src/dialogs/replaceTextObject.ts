@@ -73,6 +73,22 @@ export const REPLACE_TEXT_OBJECT_DIALOG = declareDialog({
           .strict(),
       ),
       truncated: z.boolean(),
+      /**
+       * Whether this page carries text no command can name.
+       *
+       * Text inside a Form XObject — how Office and InDesign emit it. The
+       * engine's object walk reports the XObject as one object and does not
+       * descend, so those words are extracted and unaddressable at once
+       * (measured 2026-09-10). Without this the chooser would be missing rows a
+       * reader can see on the page, with nothing saying why — which is the
+       * worst of the three possible states, because it reads as a defect in the
+       * list rather than as a limit of the feature.
+       *
+       * A BOOLEAN, where the channel answers a character count: what a person
+       * needs is *some of what you can see is not here*, and a number of
+       * characters answers a question nobody asked.
+       */
+      unaddressable: z.boolean(),
     })
     .strict(),
   result: REPLACE_TEXT_OBJECT_RESULT,

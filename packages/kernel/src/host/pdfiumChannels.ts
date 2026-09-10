@@ -420,6 +420,17 @@ export const pdfiumChannels = {
          * this wire carries this field rather than leaving a caller to infer it.
          */
         truncated: z.boolean(),
+        /**
+         * Characters this page carries that the object walk cannot name.
+         *
+         * Text inside a Form XObject, measured: a page with one embedded page
+         * reports two objects to `FPDFPage_GetObject` while `FPDFText` extracts
+         * every character, and the ones inside the form belong to objects the
+         * walk does not contain. Bounded by the page's own text rather than by
+         * `ENGINE_TEXT_OBJECTS_MAX`, which counts runs — so it takes the
+         * character bound this wire already uses for a page's words.
+         */
+        unaddressable: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
       })
       .strict(),
     // THE BYTE-IMAGE WIRE'S CODES, spelt out because this channel is not one of

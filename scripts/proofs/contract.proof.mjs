@@ -919,7 +919,7 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textLines': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, unaddressable: 0 })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -1010,7 +1010,7 @@ export const handlers: ContractHandlers = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textLines': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, unaddressable: 0 })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -1176,7 +1176,7 @@ export const shim: ContractClient = {
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textLines': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, unaddressable: 0 })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),
   'document.renderPage': ({ width, height }) =>

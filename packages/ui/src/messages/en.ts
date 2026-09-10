@@ -317,6 +317,9 @@ export const REPLACE_TEXT_OBJECT_CHOOSE = messageKey('dialog.replace-text-object
 export const REPLACE_TEXT_OBJECT_NEW_TEXT = messageKey('dialog.replace-text-object.new-text');
 export const REPLACE_TEXT_OBJECT_NONE = messageKey('dialog.replace-text-object.none');
 export const REPLACE_TEXT_OBJECT_TRUNCATED = messageKey('dialog.replace-text-object.truncated');
+export const REPLACE_TEXT_OBJECT_UNADDRESSABLE = messageKey(
+  'dialog.replace-text-object.unaddressable',
+);
 export const REPLACE_TEXT_OBJECT_TOO_LONG = messageKey('dialog.replace-text-object.too-long');
 export const REPLACE_TEXT_OBJECT_APPLY = messageKey('dialog.replace-text-object.apply');
 export const REPLACE_TEXT_OBJECT_COMMAND_TITLE = messageKey('command.document.replace-text-object');
@@ -838,6 +841,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REPLACE_TEXT_OBJECT_NONE]: 'This page has no text that can be edited.',
   [REPLACE_TEXT_OBJECT_TRUNCATED]:
     'There was more text than Monstera lists here, so this page may have other lines.',
+  // NAMES THE CAUSE IN A READER'S WORDS, and does not apologise. *A group* is
+  // what a Form XObject is to somebody who did not make the PDF, and *pasted in
+  // as a block* is how it got there — a person who recognises the document as
+  // one they made in Word or InDesign then knows which text this is about. It
+  // says NOT YET rather than *cannot*, because normalize-then-edit is the row
+  // that closes it and a permanent-sounding refusal would be a claim about the
+  // product rather than about this build.
+  [REPLACE_TEXT_OBJECT_UNADDRESSABLE]:
+    'Some text on this page was pasted in as a block, and Monstera cannot edit inside one yet. It is not listed here.',
   [REPLACE_TEXT_OBJECT_TOO_LONG]: 'That is longer than one piece of text can hold.',
   [REPLACE_TEXT_OBJECT_APPLY]: 'Replace',
   [EDIT_PAGE_OBJECT_TITLE]: 'Edit an object on this page',

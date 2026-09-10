@@ -174,7 +174,13 @@ export async function applyReplaceAllText(
       // SEQUENTIALLY, and per page. PDFium's page handles are not safe to work
       // through concurrently, and each page's generation is its own cost — so
       // this is a walk rather than a `Promise.all` over a document.
-      const runs = await textRuns(session, page);
+      // `.runs` ALONE, and the field beside it is deliberately ignored here.
+      // `unaddressable` counts text inside a Form XObject that no command can
+      // name; a replace-all cannot reach it, and reporting it per page would be
+      // a count nothing on this path could carry back — the command answers a
+      // version. `document.textLines` is where a person is told, because that is
+      // the read a surface makes before offering an edit.
+      const { runs } = await textRuns(session, page);
       const replacements = runs.flatMap((run) => {
         const next = replacedIn(run.text, compiled.value.matchesIn(run.text), command.replace);
         return next === null ? [] : [{ index: run.index, text: next }];

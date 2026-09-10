@@ -667,7 +667,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // wanting runs would have had to un-group them; below `textLines.ts` it
       // would have been the engine's opinion about lines, which PDFium
       // measurably does not have.
-      return { lines: groupIntoLines(found.runs), truncated: found.truncated };
+      return {
+        lines: groupIntoLines(found.runs),
+        truncated: found.truncated,
+        // FORWARDED, NOT GROUPED. `groupIntoLines` answers lines made of runs,
+        // and these characters formed no run at all — they are what the engine
+        // could not place, so there is nothing here to group and the count
+        // crosses as the count it is.
+        unaddressable: found.unaddressable,
+      };
     },
     // THE OTHER ENGINE'S SECOND READ, and it groups nothing — an object is what
     // the engine answered, and the row above it is where a grouping of ours

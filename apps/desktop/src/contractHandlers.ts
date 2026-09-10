@@ -918,8 +918,8 @@ function textLinesHandler(commands: DocumentCommands): ContractHandlers['documen
     page,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.textLines']>>> => {
     try {
-      const { version, lines, truncated } = await commands.textLines(docId, page);
-      return ok({ version, lines, truncated });
+      const { version, lines, truncated, unaddressable } = await commands.textLines(docId, page);
+      return ok({ version, lines, truncated, unaddressable });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

@@ -148,13 +148,13 @@ async function threeRunsAndARectangle() {
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed **agrees with any collection**,
  * including one that has quietly shrunk — audit item 4c, and `check:proofanchors`
- * is the scan that refuses a proof without one. Forty-seven is an independent
+ * is the scan that refuses a proof without one. Forty-eight is an independent
  * claim about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 47 });
+const roster = createRoster(failures, { cases: 48 });
 
 /**
  * @param {string} name
@@ -224,7 +224,17 @@ async function main() {
   );
 
   // ---- THE RUNS, which line-level editing is grouped from (ADR-0049) ----
-  const runs = await textRuns(session, 0);
+  const read = await textRuns(session, 0);
+  const runs = read.runs;
+  record(
+    'and NOTHING on this page is unaddressable, which the fixture guarantees',
+    read.unaddressable === 0,
+    // THE CONTROL FOR THE COUNT ITSELF. Every character here is drawn straight
+    // onto the page, so zero is the only correct answer — and a walk that
+    // counted addressable characters as unaddressable would show up here rather
+    // than as a sentence a user meets on a document nobody has.
+    `${String(read.unaddressable)} character(s) belong to no object in this page's walk`,
+  );
   record(
     'textRuns answers one entry per TEXT object and none for the rectangle',
     runs.length === 3 && runs.every((entry) => texts.includes(entry.index)),

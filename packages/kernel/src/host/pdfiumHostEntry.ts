@@ -165,13 +165,18 @@ const handlers = createPdfiumHandlers({
   textRuns: async (image, page) => {
     const session = await pdfiumWriter.open(image);
     try {
-      const runs = await textRuns(session, page);
+      const found = await textRuns(session, page);
       // THE WALK IS WHAT KNOWS THERE WAS MORE, so the flag is computed here
       // rather than by the handler from the array it is handed — which would
       // answer *you asked for that many* every time.
       return {
-        runs: runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
-        truncated: runs.length > ENGINE_TEXT_OBJECTS_MAX,
+        runs: found.runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
+        truncated: found.runs.length > ENGINE_TEXT_OBJECTS_MAX,
+        // FORWARDED UNCLIPPED. It counts characters the walk could not place,
+        // which the bound above has nothing to do with — clipping it to the
+        // run bound would report a page's worth of unreachable text as a page's
+        // worth of runs.
+        unaddressable: found.unaddressable,
       };
     } finally {
       await pdfiumWriter.close(session);

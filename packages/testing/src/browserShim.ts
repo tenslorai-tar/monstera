@@ -1196,7 +1196,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (lines === undefined || lines === null) {
         return Promise.resolve(err({ code: 'engine-unavailable' }));
       }
-      return Promise.resolve(ok({ version: asDocVersion(current), lines, truncated: false }));
+      return Promise.resolve(
+        // `unaddressable: 0`, and it is a claim rather than a placeholder: a
+        // shim's fixture is text a case wrote down, so all of it is
+        // addressable by construction. A shim that could report otherwise
+        // would be inventing a Form XObject nobody built.
+        ok({ version: asDocVersion(current), lines, truncated: false, unaddressable: 0 }),
+      );
     },
 
     'document.renderPage': ({ docId }) => {

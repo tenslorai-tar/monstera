@@ -301,6 +301,7 @@ export function remotePdfiumTextRuns(
     readonly top: number;
   }[];
   readonly truncated: boolean;
+  readonly unaddressable: number;
 }> {
   return async (image, page) => {
     const { session, area } = held();

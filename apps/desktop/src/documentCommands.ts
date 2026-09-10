@@ -874,6 +874,7 @@ export type DocumentTextLinesReader = (
 ) => Promise<{
   readonly lines: readonly { readonly runs: readonly { index: number; text: string }[] }[];
   readonly truncated: boolean;
+  readonly unaddressable: number;
 }>;
 
 /** The lines, stamped with the version the lane read them at. */
@@ -881,6 +882,14 @@ export interface DocumentTextLines {
   readonly version: DocVersion;
   readonly lines: readonly { readonly runs: readonly { index: number; text: string }[] }[];
   readonly truncated: boolean;
+  /**
+   * Characters on this page no command can name — text inside a Form XObject.
+   *
+   * See `PageText.unaddressable`. A surface owes the reader a sentence when
+   * this is non-zero, because the alternative is a chooser that looks half
+   * empty with nothing saying why.
+   */
+  readonly unaddressable: number;
 }
 
 /** One of a page's objects, as the editing engine describes it. */
@@ -1589,7 +1598,12 @@ export class DocumentCommands {
       return this.#textLines(docId, sessions, page);
     });
 
-    return { version, lines: value.lines, truncated: value.truncated };
+    return {
+      version,
+      lines: value.lines,
+      truncated: value.truncated,
+      unaddressable: value.unaddressable,
+    };
   }
 
   /**

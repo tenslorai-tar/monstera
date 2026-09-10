@@ -908,6 +908,7 @@ describe('delete pages — the mutation-dialog gate', () => {
               { runs: [{ index: 2, text: 'jumps over' }] },
             ],
             truncated: false,
+            unaddressable: 0,
           }),
         );
       }
@@ -962,6 +963,10 @@ describe('delete pages — the mutation-dialog gate', () => {
             version: asDocVersion(7),
             lines: [{ runs: [{ index: 4, text: 'ONE ' }, { index: 9, text: 'TWO' }] }],
             truncated: true,
+            // NON-ZERO, so the boolean the dialog is offered is `true` here and
+            // a command that hard-coded `false` fails. A zero would let the two
+            // be told apart by nothing.
+            unaddressable: 12,
           }),
         );
       }
@@ -980,6 +985,10 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(offered).toStrictEqual({
       lines: [{ runs: [{ index: 4, text: 'ONE ' }, { index: 9, text: 'TWO' }] }],
+      // THE CHARACTER COUNT BECAME A BOOLEAN, which is the conversion this
+      // command owns: a person needs *some of what you can see is not here*,
+      // and twelve characters answers a question nobody asked.
+      unaddressable: true,
       // FORWARDED, not dropped. A reader choosing from a clipped list would pick
       // from part of the page believing they had seen it.
       truncated: true,
@@ -1142,6 +1151,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           version: asDocVersion(1),
           lines: [{ runs: [{ index: 2, text: 'SOMETHING' }] }],
           truncated: false,
+          unaddressable: 0,
         }),
       );
     });

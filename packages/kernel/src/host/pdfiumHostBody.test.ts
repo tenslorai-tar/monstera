@@ -167,6 +167,11 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
           { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
         ],
         truncated: false,
+        // NON-ZERO IN THE FIXTURE, deliberately: the handler forwards this and a
+        // stub answering 0 would let a handler that dropped the field pass, 0
+        // being what an absent number reads as through a schema that defaults
+        // nothing.
+        unaddressable: 7,
       });
     },
     renderPage: (image, page, width, height) => {
@@ -449,6 +454,10 @@ describe('the PDFium host body', () => {
             { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
           ],
           truncated: false,
+          // THE COUNT CROSSES, and it is what tells a surface there is text on
+          // this page no command can name — text inside a Form XObject, which
+          // the object walk reports as one `form` and does not descend into.
+          unaddressable: 7,
         },
       },
     });

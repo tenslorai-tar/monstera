@@ -2202,6 +2202,21 @@ export const channels = {
         .readonly(),
       /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
       truncated: z.boolean(),
+      /**
+       * Characters on this page that no editing command can name.
+       *
+       * **Text inside a Form XObject**, which is how Office and InDesign emit
+       * it. Measured 2026-09-10: the page's object walk reports the XObject as
+       * one `form` object and does not descend, while `FPDFText` extracts every
+       * character — so 36 of a fixture's 60 belonged to objects no command can
+       * name. `BUILD-PROMPT.md`:278's *normalize-then-edit* is what closes it,
+       * and until then this is what stops the gap being silent.
+       *
+       * It is a COUNT and not a list, because the thing it counts is precisely
+       * what could not be turned into addressable runs. A surface owes the
+       * reader a sentence when it is non-zero; it cannot offer them a row.
+       */
+      unaddressable: z.number().int().nonnegative(),
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),

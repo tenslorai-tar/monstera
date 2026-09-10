@@ -79,6 +79,8 @@ export type HostTextRunsReader = (
     readonly top: number;
   }[];
   readonly truncated: boolean;
+  /** Characters whose object the page's walk does not contain. `PageText`. */
+  readonly unaddressable: number;
 }>;
 
 /**
@@ -335,6 +337,7 @@ export function createPdfiumHandlers({
           value: {
             runs: found.runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
             truncated: found.truncated,
+            unaddressable: found.unaddressable,
           },
         };
       } catch (error) {

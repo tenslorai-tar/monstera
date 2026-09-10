@@ -1962,6 +1962,11 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
       const chosen = (await deps.ask(REPLACE_TEXT_OBJECT_DIALOG_ID, {
         lines: found.value.lines.map((line) => ({ runs: [...line.runs] })),
         truncated: found.value.truncated,
+        // WHETHER, NOT HOW MANY. The channel answers a character count because
+        // that is what it can honestly measure; a person needs to know that
+        // some of what they can see is not on the list, and a number of
+        // CHARACTERS answers a question nobody asked.
+        unaddressable: found.value.unaddressable > 0,
       })) as ReplaceTextObjectAnswer | undefined;
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
       // absence of a value is the guard rather than a flag beside it.

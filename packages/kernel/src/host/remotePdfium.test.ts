@@ -277,7 +277,7 @@ describe('main’s PDFium writer', () => {
       answer: (channel, params) => {
         expect(channel).toBe('engine/text-runs');
         expect(params).toMatchObject({ page: 4 });
-        return { ok: true, value: { runs, truncated: false } };
+        return { ok: true, value: { runs, truncated: false, unaddressable: 9 } };
       },
     };
     const { textRuns } = harness(peer, transfer);
@@ -286,7 +286,7 @@ describe('main’s PDFium writer', () => {
     // what the host said: a `toMatchObject` on the indices would pass against
     // one that dropped the text and the extent, and both are what the grouping
     // and the chooser above it are made of.
-    expect(await textRuns(new Uint8Array([5]), 4)).toStrictEqual({ runs, truncated: false });
+    expect(await textRuns(new Uint8Array([5]), 4)).toStrictEqual({ runs, truncated: false, unaddressable: 9 });
     expect(transfer.log).toStrictEqual(['write:001', 'remove:001']);
   });
 });
