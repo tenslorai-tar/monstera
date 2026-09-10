@@ -888,6 +888,130 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — Stage audit of `258a9ce..38ea527`: a box rule answered twice, and the fixture that hid it
+
+Eighteen commits, ninety-five files — Stage 5's close, Stage 6's opening, the
+corpus growing to eleven documents and the four triggers that fired with it. The
+gate fired on the file count while the next commit was being written, which is
+where it fires by design: `check:docs` measures the range against HEAD, so the
+commit that crosses is invisible to it and the board would go red one push
+later.
+
+### 1. Root cause, or workaround?
+
+Two reds on `main` in this range, and they are one habit rather than two
+defects. `4960e3c` shipped `scannedPages.proof.mjs` calling `refuseStaleBuild`
+with no `ARTEFACT_EDGES` entry, so the sweep could not order it after the build;
+`buildFreshness.proof.mjs`' anchor named it, which is that anchor working — it
+derives from the proofs that **import** the guard, which an omission from the
+hand-kept map cannot reach. Root cause, and the entry is the fix rather than a
+new roster.
+
+The second is not. `9213bc0` went out on the strength of two green proofs
+**without re-running `npm run typecheck`**, and CI died on five jobs because a
+new edge list carried no `@type` annotation. `29904ed` added the annotation —
+which is an **instance fix with the class left open**, and the class is already
+written down in `CLAUDE.md`: *no mechanism closes this today*, because
+`tsconfig.scripts.json` cannot be a project reference while it is `noEmit`
+(measured, TS6304). A proof passing says nothing about whether the tree
+compiles, and the scripts half of typecheck is the half only the project's own
+command runs. Recorded here as a repeat rather than as news.
+
+### 2. Verified against the easy shape only? — THE RANGE'S ONE REAL FINDING
+
+**XXXX-1. `pageResize.ts` carried its own `boxOf`, `extentOf` and
+`displayedBox`, and `pageBoxes.ts` has owned that question since 2026-09-05.**
+B3a in the shape it warns about — *the finding is the second opinion, not the
+wrong one* — and the two agreed on every well-formed document, which is why
+nothing noticed for a range. What they disagree about is written in
+`pageBoxes.ts`' own header, measured against MuPDF 1.28.0: PDF 32000-1 §14.11.2
+says the crop box *"shall be... clipped to the media box"*, and the copy did not
+clip. For a resize the extent is what the content is scaled **from**, so an
+oversized crop box made every glyph too small and put the page off-centre —
+while the page still declared exactly the size that was asked for, which is that
+command's own indistinguishable pair one level down.
+
+**And the fixture for the origin term was itself malformed.** The case that
+proves the translation subtracts the source box's origin set
+`/CropBox [20 20 220 320]` on a `[0 0 200 300]` page — two edges outside the
+sheet — and passed *only* because this module did not clip. That is the audit's
+item 2 arriving from underneath: a fixture built to exercise one hard shape
+happened to be a different hard shape, and the second one was load-bearing for
+the wrong reason. Fixed at `38ea527` with a legal page, an expected origin term
+that is a **scaled** 20 rather than 20, and a control that an ordinary crop box
+still governs the scale — without which the repair would have been a third
+answer (*ignore the crop box*) rather than the owner's.
+
+### 3. Would CI have caught it?
+
+Answered from the runs, not from the workflow file. Both reds above were caught
+by CI — Guards on both legs, then five jobs at *Typecheck and build* — so the
+range's own evidence is that the board sees this class. The two proofs the range
+added, `proof:scannedpages` and `proof:ocrmodels`, are unconditional `ci.yml`
+steps (lines 321 and 330) and were green at `7e9641b`. `npm test` runs on both
+legs, so the kernel and UI halves of every wired pair here execute there too.
+
+**No, for XXXX-1**, and the honest form of that: nothing in CI compares a
+module's private box reader against `pageBoxes.ts`, and nothing can — the
+question is *is this the same rule*, which is not a shape a scan has. What
+closes it is that the reader is gone.
+
+### 4. Are the proofs non-vacuous?
+
+Mutation-tested rather than read. `pageKindOf`'s `images > 0` relaxed to
+`images >= 0` — the two-state rule the row exists to reject — reddens
+`proof:scannedpages` at exactly one case, *a page with NOTHING on it is empty,
+not image-only*, and leaves the other eight green. That is the right shape: the
+mutation is the defect, and the case that catches it is the case written for it.
+
+Both new proofs declare a **literal** case count (6 and 9), which is 4c in the
+direction the rule asks for — the failure feared is a case leaving, and a count
+derived from the set it polices would agree with any shrink.
+
+### 4b. THE INSTRUMENT THAT CARRIED ITS OWN DETECTOR
+
+`scripts/research/deskewAngle.mjs` held a private copy of Otsu's threshold and
+the shear sweep. It was written before the kernel had one, and the kernel got
+one in the commit that follows this audit — so for the length of this range the
+row's evidence figure (**−1.7° at 1.428×**) and the correction that would act on
+it were two implementations of one question. Both individually right is exactly
+what makes that dangerous; a shipped correction argued from a research figure a
+different implementation produced has nothing comparing them.
+
+Found by this audit, fixed in the next commit, and the consolidation was checked
+the only way that means anything: the kernel's detector reproduces the recorded
+readings **exactly** — one scan at −1.7°/1.428×, four at 0.0°/1.000×.
+
+### 7. Do the documents still match the code?
+
+**XXXX-2, and it is the half-true compound this file keeps finding.**
+`docs/FEATURES.md`' E5 row said, in the present tense, that *`safeStorage`
+appears nowhere under `packages/` or `apps/`* — three sentences before recording
+that `secretStore.ts` had been implemented on 2026-09-10 and encrypts through
+it. The sentence carried its own date, so it is a record rather than a live
+claim, and the status cell says **done**; that is why nothing reddened. It is
+still the shape where a reader checks the clause that is still true and takes
+the one beside it on trust. Corrected to the past tense in this commit — one
+word, and it is the tense that tells a reader whether to check.
+
+The rest holds. `check:docs`' eleven rules pass, including *no document states a
+claim an ADR correction withdrew* and *every `scripts/` path named in a tracked
+document resolves*. The NNN-4 sweep for this range's cross-document claims —
+*OCR recognition is `tesseract.js`, in the host*, and the secret-storage rule —
+found the ARCHITECTURE amendment log and the journal, and no third statement
+contradicting either.
+
+### What is not closed
+
+`proof:guards` at 164.5–1093 s against a 540 s bound, root cause unfound, and
+the constant is not raised. `proof:perfbudget`'s three `mupdf-host-real` lines
+have no local mechanism. ADR-0023 Decision 16 is unmeasured. `proof:canvaspixels`
+is a `ci.yml` step and does **not** run in the `check:`-filtered sweep, so a
+green sweep says nothing about it — the board is its only verdict, which is the
+same shape as the PDFium-presence class.
+
+---
+
 ## 2026-09-10 — A secret setting had a flag and nowhere to be stored
 
 D6's Azure Document Intelligence row owed a precondition neither stage had
