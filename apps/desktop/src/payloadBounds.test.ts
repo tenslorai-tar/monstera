@@ -14,6 +14,7 @@ import { type DocId, asDocVersion } from '@monstera/shared';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
+import { createEphemeralSecrets } from './secretStore.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
 /**
@@ -142,6 +143,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
     settings: createEphemeralSettings(),
+    secrets: createEphemeralSecrets(),
     revealLog: () => Promise.resolve(false),
     readDictionary: () => Promise.resolve(null),
   });
@@ -170,6 +172,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'app.info': 'answers about the application and never names a document',
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',
+  // THE SECRET PAIR, and their answer is the same one `settings.load`'s is:
+  // what crosses scales with the number of registered SECRET settings — this
+  // build's own set, and a very short one — and no document contributes to it.
+  // The keys and values are bounded in the schema, which is the other half of
+  // L11's requirement.
+  'settings.loadSecrets': "carries the user's stored keys, which no document contributes to",
+  'settings.saveSecret': 'answers a boolean',
   'log.reveal': 'answers a boolean',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its
   // size is the language's, fixed at build time, bounded by MAX_AFFIX_BYTES and

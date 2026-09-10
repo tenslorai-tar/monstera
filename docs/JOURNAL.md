@@ -888,6 +888,70 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — A secret setting had a flag and nowhere to be stored
+
+D6's Azure Document Intelligence row owed a precondition neither stage had
+built, and E5's own row had already said who would pay for it: *the first caller
+is not E5's*. This is that caller's opening work.
+
+### What was actually true
+
+`registries/settings.ts` carries `secret?: boolean` and derives **export**
+exclusion from it, which §7 asks for. `safeStorage` appeared **nowhere** under
+`packages/` or `apps/`. And `settings.save`'s own note said, in as many words,
+that secrets are included in the settings document *deliberately* — on the
+ground that export and storage are different operations and a person expects a
+key to survive a restart.
+
+The second half of that is right and the conclusion did not follow. A key
+surviving a restart does not require it to be in **that** document, and E5 says
+where it belongs.
+
+### The shape is the mechanism
+
+Two channels of their own, and secrets never travel on `settings.save`. That is
+B5 rather than a rule: a value that cannot reach the payload cannot reach the
+file, whatever anybody remembers about a flag. Two documents, one a person could
+paste into a support ticket and one they could not.
+
+Three decisions inside it, each with the alternative it refuses:
+
+- **Unavailable encryption is a declared refusal**, `secret-storage-unavailable`
+  on the writing side and `available: false` on the reading side. The banned
+  outcome is a silent plaintext fallback, which would write the key in the clear
+  on exactly the machines least able to protect it.
+- **An unreadable blob is dropped per VALUE**, not per file. A copied profile or
+  a reset keyring produces ciphertext this session cannot read; discarding the
+  whole document would turn one stale value into three lost settings.
+- **An empty value removes the secret**, so clearing the box does what it looks
+  like. A stored empty string reads back as *a key is set*, and the surface
+  would show a filled field with nothing in it.
+
+### The fake cipher is reversible ON PURPOSE
+
+`secretStore.test.ts` uses a byte-wise XOR rather than the real thing: what
+`safeStorage` does with a string is Electron's business, and what this module
+does — which document a value lands in, what an empty value means, what happens
+when the machine cannot encrypt — is where a defect would be and is testable in
+milliseconds.
+
+Two of the seven cases are the pair that makes the others mean something: the
+plaintext must be **absent** from the settings file *and* the ordinary setting
+must be **present** in it. The first alone passes for a store that wrote nothing
+anywhere; the second alone passes for one that wrote the key in the clear.
+
+### What `payloadBounds.test.ts` caught
+
+Two things, on the first run after the channels were declared. The secrets
+record's **keys** were unbounded — a record's `propertyNames` is a string a
+caller chooses unless the schema says otherwise — and both channels were neither
+measured nor excluded. Both are now answered rather than waved through: the ids
+are bounded at `MAX_SETTING_ID`, and the exclusions say what they say for
+`settings.load`, that the payload scales with this build's own registered set
+and no document contributes to it.
+
+---
+
 ## 2026-09-10 — How crooked the crooked scan is, and the sign that flipped
 
 D2's deskew row, deferred to Stage 6 with its open question named: *the open

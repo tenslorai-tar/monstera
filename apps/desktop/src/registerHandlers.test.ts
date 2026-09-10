@@ -113,6 +113,17 @@ function handlers() {
         throw new Error('registration cases must not reach the settings surface');
       },
     },
+    secrets: {
+      available: () => {
+        throw new Error('registration cases must not reach the secret store');
+      },
+      read: () => {
+        throw new Error('registration cases must not reach the secret store');
+      },
+      write: () => {
+        throw new Error('registration cases must not reach the secret store');
+      },
+    },
     revealLog: () => {
       throw new Error('registration cases must not reach the log');
     },

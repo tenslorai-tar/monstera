@@ -119,6 +119,7 @@ import {
   sessionDirectoryPaths,
 } from './sessionDirectories.js';
 import type { RecentFiles } from './recentFiles.js';
+import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
@@ -357,6 +358,17 @@ export interface ShellComposition {
   readonly readImage: ImageSource['read'];
   /** Where settings are stored. Required — see the note above. */
   readonly settings: SettingsSurface;
+  /**
+   * Where a `secret` setting is stored, which is a different document.
+   *
+   * **Optional, unlike `settings`, and the asymmetry is the point.** A graph
+   * with no secret store has an honest absent state — `available: false`, the
+   * same one a machine with no OS keyring reports — and every unit test in this
+   * repository is in exactly that position. A missing settings surface has no
+   * such state: it would mean *this build does not persist*, which is a defect
+   * wearing a default.
+   */
+  readonly secrets?: SecretStoreSurface;
   /** The recent-files list. Required for `settings`' reason. */
   readonly recent: RecentFiles;
   /**
@@ -416,6 +428,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickDirectory,
     readImage,
     settings,
+    secrets,
     recent,
     enginePlatform = null,
     pdfiumPlatform = null,
@@ -803,6 +816,18 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       pickDocument,
       recent,
       settings,
+      // NO STORE IS A STATE, not a stub: `available: false` is what a machine
+      // with no OS keyring answers, and a graph built without one is in the
+      // same position rather than in a broken one. `write` throws because
+      // writing is the operation that must never quietly fall back to the
+      // plain settings file — the whole reason these are two documents.
+      secrets: secrets ?? {
+        available: (): boolean => false,
+        read: (): Readonly<Record<string, string>> => ({}),
+        write: (): never => {
+          throw new Error('this graph was composed with no secret store, so nothing was written');
+        },
+      },
       // `false` WITHOUT A LOG, which is the channel's declared state for
       // *there is nothing to show* rather than a stub standing in for one. The
       // shipped app always has a log; a graph built without one — every unit

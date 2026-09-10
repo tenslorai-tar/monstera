@@ -236,6 +236,12 @@ const handlers: ContractHandlers = {
   // the schema quietly rewrite this" a real question rather than a rhetorical
   // one.
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
+  // NON-EMPTY AND `available: true`, so a case asserting a secret crossed has
+  // something to find: an empty record is what a machine with no keyring
+  // answers, and it is the reassuring shape for every question here.
+  'settings.loadSecrets': () =>
+    Promise.resolve(ok({ secrets: { 'ai.key': 'a stored key' }, available: true })),
+  'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'spelling.dictionary': () =>
     Promise.resolve(

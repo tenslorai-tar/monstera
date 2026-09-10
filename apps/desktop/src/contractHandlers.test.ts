@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
+import { createEphemeralSecrets } from './secretStore.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
@@ -51,6 +52,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   const sessioned: DocId[] = [];
   const revealed: boolean[] = [];
   const settings = createEphemeralSettings();
+  const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
   // rather than assert that a call was made.
   const recent = createRecentFiles(createEphemeralSettings());
@@ -67,6 +69,10 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // is a claim about a surface having accepted the values, and a test that
     // could not look at the surface would be asserting the call was made.
     settings,
+    // RETURNED TOO, for `settings`' reason and one of its own: the property
+    // these channels exist for is that a secret is in the OTHER document, and
+    // a case can only assert that if it can read both.
+    secrets,
     // COUNTED, so a case can assert the handler asked exactly once rather than
     // that it answered something.
     revealLog: () => {
@@ -83,7 +89,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
         words: new TextEncoder().encode('1\ndocument\n'),
       }),
   });
-  return { capabilities, handlers, opened, recent, revealed, sessioned, settings };
+  return { capabilities, handlers, opened, recent, revealed, secrets, sessioned, settings };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -291,6 +297,7 @@ describe('document.open', () => {
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
           settings: createEphemeralSettings(),
+          secrets: createEphemeralSecrets(),
           revealLog: () => Promise.resolve(false),
       readDictionary: () => Promise.resolve(null),
         }),
@@ -468,6 +475,7 @@ describe('the recent list', () => {
       pickDocument: () => Promise.resolve(null),
       recent,
       settings: createEphemeralSettings(),
+      secrets: createEphemeralSecrets(),
       revealLog: () => Promise.resolve(false),
       readDictionary: () => Promise.resolve(null),
     });
@@ -512,6 +520,7 @@ describe('log.reveal', () => {
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       settings: createEphemeralSettings(),
+      secrets: createEphemeralSecrets(),
       revealLog: () => Promise.resolve(false),
       readDictionary: () => Promise.resolve(null),
     });

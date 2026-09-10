@@ -248,6 +248,34 @@ export const OCR_LANGUAGES = [
 /** One of {@link OCR_LANGUAGES}. */
 export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
 
+/**
+ * How long a setting's id may be on the wire.
+ *
+ * A registered id is this build's own string — `ai.azure.key` — so the bound is
+ * not protecting against a document. It is here because every field on this
+ * boundary is bounded, and an unbounded id is an allocation a renderer chooses.
+ */
+export const MAX_SETTING_ID = 128;
+
+/**
+ * How long a secret setting's value may be.
+ *
+ * An API key, an endpoint, a token. Generous against every credential format
+ * this build is likely to meet and far short of a payload: `safeStorage`
+ * encrypts what it is given, and a megabyte of "key" is a caller doing
+ * something else.
+ */
+export const MAX_SECRET_SETTING = 8 * 1024;
+
+/**
+ * The two channels a secret setting travels on, named so prose can cite them.
+ *
+ * Written as a value rather than left implicit because `settings.save`'s own
+ * note points at it, and a citation that resolves to nothing is the shape
+ * `check:docs` cannot see (UU-1's neighbour).
+ */
+export const SETTINGS_SECRET_CHANNELS = ['settings.loadSecrets', 'settings.saveSecret'] as const;
+
 /** {@link OCR_LANGUAGES} as a schema, derived rather than respelt. */
 export const ocrLanguageSchema = z.enum(OCR_LANGUAGES);
 
@@ -2623,18 +2651,95 @@ export const channels = {
    * It is also within L11 by the same reasoning `document.execute` is: this
    * scales with the number of registered settings, never with a document.
    *
-   * ## `secret` settings ARE included, and that is deliberate
+   * ## `secret` SETTINGS ARE NOT INCLUDED, corrected 2026-09-10
    *
-   * §7 excludes secrets from **export**, which is a different operation. A user
-   * who set an API key expects it to survive a restart; conflating the two
-   * either leaks the key into a shared file or forgets it every launch, and
-   * which one you get would depend on which caller reached for the store first.
-   * `SettingsStore.exportable()` is the other projection and stays separate.
+   * This said they were, *deliberately*, on the ground that §7 excludes secrets
+   * from **export** and a user who set an API key expects it to survive a
+   * restart. The second half of that is right and the conclusion was wrong: a
+   * key surviving a restart does not require it to be in this document, and
+   * `BUILD-PROMPT.md` E5 says where it does belong — **`safeStorage`**, which
+   * appeared nowhere under `packages/` or `apps/` until Stage 6 needed it.
+   *
+   * So a secret goes through {@link SETTINGS_SECRET_CHANNELS} instead, and this
+   * payload carries none. **The shape is the mechanism** (B5): a value that
+   * never travels on this channel cannot land in `settings.json`, where a
+   * `secret: true` flag read at the wrong end would have been a rule somebody
+   * remembers. `SettingsStore.exportable()` is a third projection and stays
+   * separate — export, storage and *what the renderer holds* are three
+   * questions, and each has one answer.
    */
   'settings.save': channel(
-    'Replaces the stored settings with the values the renderer currently holds.',
+    'Replaces the stored NON-SECRET settings with the values the renderer holds.',
     z.object({ values: z.record(z.string(), z.unknown()) }),
     z.object({ stored: z.literal(true) }),
+  ),
+
+  /**
+   * Every secret the previous run stored, decrypted, plus whether it can store.
+   *
+   * ## `available` is a state, not an error
+   *
+   * `safeStorage` needs an OS keyring, and on a machine that has none —
+   * a Linux session with no keyring daemon, an account whose credential store
+   * is unavailable — encryption is simply not offered. A build that treated
+   * that as a failure would report an incident for a condition the person
+   * cannot act on and did not cause; one that treated it as *no secrets stored*
+   * would silently forget an API key every launch.
+   *
+   * So it crosses as a fact the surface can render: the field says *this
+   * machine cannot keep a key for you*, which is `spelling.dictionary`'s
+   * `available: false` on a different subject.
+   *
+   * ## Decrypted, and that is where the boundary is
+   *
+   * The renderer needs the value to put in a box a person edits. Handing over
+   * ciphertext would mean the renderer holding a key to decrypt it, which is
+   * the whole thing `safeStorage` exists to avoid. What crosses is the plain
+   * value, once, into the process that was going to render it anyway.
+   */
+  'settings.loadSecrets': channel(
+    'Every stored secret setting, decrypted, and whether this machine can store one.',
+    z.object({}),
+    z.object({
+      // THE KEYS ARE BOUNDED TOO, and `payloadBounds.test.ts` is what said so:
+      // a record's `propertyNames` is a string a caller cannot bound unless the
+      // schema does, and the ids here are this build's own registered names.
+      secrets: z.record(z.string().max(MAX_SETTING_ID), z.string().max(MAX_SECRET_SETTING)),
+      available: z.boolean(),
+    }),
+  ),
+
+  /**
+   * Stores one secret setting, encrypted, or says it could not.
+   *
+   * ## ONE AT A TIME, which is the opposite of `settings.save`'s rule
+   *
+   * That channel sends the whole object because the stored document must be a
+   * function of the store's state. This one cannot: a whole-object write would
+   * put every secret on the wire on every settings change, including the ones
+   * nobody touched, and each of those is a decryption and a re-encryption for
+   * no reason. A secret is also the one kind of setting a person changes
+   * deliberately and rarely.
+   *
+   * **An empty value REMOVES it**, which is what a person clearing the box
+   * means, and it keeps deletion from needing a third channel.
+   *
+   * ## The refusal is declared, because storage can genuinely be unavailable
+   *
+   * `secret-storage-unavailable` is the same condition {@link
+   * SETTINGS_SECRET_CHANNELS}' loader reports as `available: false`, met from
+   * the writing side. It is a refusal rather than a silent fallback to the
+   * plain file: writing an unencryptable key into `settings.json` is precisely
+   * the outcome this pair of channels exists to make unrepresentable.
+   */
+  'settings.saveSecret': channel(
+    'Stores one secret setting through the OS credential store, or refuses.',
+    z.object({
+      id: z.string().min(1).max(MAX_SETTING_ID),
+      value: z.string().max(MAX_SECRET_SETTING),
+    }),
+    z.object({ stored: z.literal(true) }),
+    ['secret-storage-unavailable'],
   ),
 
   /**

@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { MAX_FORM_DATA_BYTES, MAX_IMAGE_BYTES } from '@monstera/contract';
-import { app, nativeImage, shell } from 'electron';
+import { app, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import {
@@ -15,6 +15,7 @@ import { createDirectoryPicker } from './directoryPicker.js';
 import { createFormDataOpenPicker, createImagePicker } from './imagePicker.js';
 import { createEngineHostPlatform, createPdfiumHostPlatform } from './engineHostPlatform.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
+import { createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
 import { startShell } from './main.js';
@@ -146,6 +147,17 @@ startShell(() => {
     // application and the OS respectively are entitled to empty. Resolved here
     // because only this file may ask Electron where the user's data lives.
     settings: createSettingsFile(app.getPath('userData')),
+    // THE SECRETS, in their own document beside the settings and encrypted by
+    // the OS. `safeStorage` is Electron's and this is the only file that may
+    // ask it — the same trade `nativeImage` makes below. `isEncryptionAvailable`
+    // is asked per call rather than captured, because on Linux it becomes true
+    // once the keyring is ready and a value read at startup would be a
+    // permanent *no* on a machine that can.
+    secrets: createSecretStore(app.getPath('userData'), {
+      available: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (value) => safeStorage.encryptString(value),
+      decrypt: (cipher) => safeStorage.decryptString(cipher),
+    }),
     // The recent list, beside the settings and in its own document. Not IN the
     // settings file, and that is invariant L2 rather than tidiness:
     // `settings.load` hands the renderer everything that file holds, so a path

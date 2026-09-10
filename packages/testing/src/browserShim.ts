@@ -457,6 +457,14 @@ export interface BrowserShimOptions {
    */
   readonly settings?: Readonly<Record<string, unknown>>;
   /**
+   * What the OS credential store already holds, keyed by setting id.
+   *
+   * Separate from {@link settings} for the reason main keeps two documents: a
+   * case asserting that a key never reached the settings object needs the two
+   * to be distinguishable in the harness as well.
+   */
+  readonly secrets?: Readonly<Record<string, string>>;
+  /**
    * Documents whose next command throws.
    *
    * Exists so the `internal` path is reachable. A failure shape nothing can
@@ -564,6 +572,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // holding the object it seeded would otherwise see it change underneath as
   // the renderer saves.
   let stored: Record<string, unknown> = { ...(options.settings ?? {}) };
+  // NOT PART OF `stored`, and that separation is the shim mirroring the two
+  // documents main keeps: a test asserting that a key never reached the
+  // settings object has something to assert against.
+  const secrets: Record<string, string> = { ...(options.secrets ?? {}) };
   let revealedLog = 0;
 
   /**
@@ -1291,6 +1303,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'settings.load': () => Promise.resolve(ok({ stored: { ...stored } })),
     'settings.save': ({ values }) => {
       stored = { ...values };
+      return Promise.resolve(ok({ stored: true as const }));
+    },
+    // A SEPARATE MAP, because that is the property under test one layer up: a
+    // secret that reached `stored` would be a secret in the settings document,
+    // and a shim sharing one object could not tell the two apart. `available`
+    // is `true` here so a UI case can exercise the path that stores; the
+    // refusing machine is `secretStore.test.ts`' subject, against the real one.
+    'settings.loadSecrets': () =>
+      Promise.resolve(ok({ secrets: { ...secrets }, available: true })),
+    'settings.saveSecret': ({ id, value }) => {
+      if (value === '') Reflect.deleteProperty(secrets, id);
+      else secrets[id] = value;
       return Promise.resolve(ok({ stored: true as const }));
     },
     // RECORDED, NOT PERFORMED, and `revealed` is the shim's answer rather than a

@@ -24,6 +24,7 @@ import {
   InvalidSearchPatternError,
 } from './documentCommands.js';
 import type { RecentFiles } from './recentFiles.js';
+import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { DictionaryBytes } from './spellingDictionaries.js';
 
@@ -132,6 +133,14 @@ export function createContractHandlers(deps: {
   readonly recent: RecentFiles;
   readonly settings: SettingsSurface;
   /**
+   * Where a `secret` setting lives, which is not the settings file.
+   *
+   * Its own surface rather than a third method on `settings`, because the two
+   * documents have different rules: one is read leniently and rewritten whole,
+   * and one refuses to be written at all where the machine cannot encrypt.
+   */
+  readonly secrets: SecretStoreSurface;
+  /**
    * Shows the diagnostics log.
    *
    * Takes no argument and answers a boolean, so nothing about *where* the log
@@ -196,6 +205,24 @@ export function createContractHandlers(deps: {
       // renames a temporary file into place, so a caller that has this answer
       // has a complete document on disk — which is the whole difference between
       // proving persistence and asserting a write.
+      return Promise.resolve(ok({ stored: true } as const));
+    },
+    // THE SECRETS ARE A SEPARATE PAIR, and the separation is the mechanism: a
+    // value that never travels on `settings.save` cannot reach the plain
+    // settings document, whatever anybody remembers about a `secret` flag.
+    'settings.loadSecrets': () =>
+      Promise.resolve(
+        ok({ secrets: deps.secrets.read(), available: deps.secrets.available() }),
+      ),
+    'settings.saveSecret': ({ id, value }) => {
+      // ASKED BEFORE WRITING rather than caught after. The store throws for the
+      // same condition, and this turns it into the DECLARED refusal a renderer
+      // switches on — a thrown error would surface as `internal` plus an
+      // incident id for a machine that simply has no keyring.
+      if (!deps.secrets.available()) {
+        return Promise.resolve(err({ code: 'secret-storage-unavailable' } as const));
+      }
+      deps.secrets.write(id, value);
       return Promise.resolve(ok({ stored: true } as const));
     },
     'spelling.dictionary': async ({ language }) => {

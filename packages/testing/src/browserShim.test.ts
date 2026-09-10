@@ -220,7 +220,9 @@ describe('browser shim', () => {
       'document.viewModel',
       'log.reveal',
       'settings.load',
+      'settings.loadSecrets',
       'settings.save',
+      'settings.saveSecret',
       'spelling.dictionary',
     ]);
   });
