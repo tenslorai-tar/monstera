@@ -1327,11 +1327,20 @@ if (changedForProofs !== null) {
  */
 const unattempted = derived.filter((name) => !selected.includes(name)).sort();
 if (unattempted.length > 0) {
+  // PROOFS FIRST, and that ordering is the whole value of the list. A
+  // `check:`-filtered run obviously skipped `lint` and `build`; what is
+  // surprising — and what was carried in a handoff note instead of printed —
+  // is that it skipped PROOFS, `proof:canvaspixels` among them. An alphabetical
+  // sample of 121 names shows `brand:check` and hides exactly the class the
+  // reader needs.
   const NAMED = 8;
+  const proofs = unattempted.filter((name) => name.startsWith('proof:'));
+  const rest = unattempted.filter((name) => !name.startsWith('proof:'));
+  const shown = [...proofs, ...rest].slice(0, NAMED);
   process.stdout.write(
-    `\n  ${String(unattempted.length)} script(s) the workflows run were NOT attempted here, so ` +
-      `this run's verdict covers none of them:\n` +
-      `    ${unattempted.slice(0, NAMED).join(', ')}` +
+    `\n  ${String(unattempted.length)} script(s) the workflows run were NOT attempted here — ` +
+      `${String(proofs.length)} of them proofs — so this run's verdict covers none of them:\n` +
+      `    ${shown.join(', ')}` +
       `${unattempted.length > NAMED ? `, and ${String(unattempted.length - NAMED)} more` : ''}\n` +
       `  The board is the only mechanism for those.\n`,
   );
