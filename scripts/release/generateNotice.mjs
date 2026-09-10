@@ -408,13 +408,51 @@ export function normaliseEndings(text) {
  * The prefix is walked from the longest, one hyphen-separated segment at a time,
  * because a platform suffix is not one segment: `-win32-x64-msvc` is three.
  *
+ * ## AND THE PARENT MAY BE UNSCOPED, which this did not know until 2026-09-10
+ *
+ * `@napi-rs/canvas-win32-x64-msvc` sits under `@napi-rs/canvas`, so a
+ * same-scope prefix walk finds it. **koffi publishes the other way round**: the
+ * variants are `@koromix/koffi-win32-x64` and the terms are in plain `koffi`,
+ * at the same version, under the same identifier, with the LICENSE.txt.
+ *
+ * This was invisible until a dependency added to `packages/kernel` made npm
+ * recompute the lockfile and drop koffi's `dev: true` — at which point a native
+ * library the engine host **loads at run time** entered the shipped tree and
+ * NOTICE refused to render. The notice had been omitting it entirely, which is
+ * the defect this fix is really about: a dependency is a probe, and this one
+ * fired a licence the source offer never stated.
+ *
+ * So the walk tries the unscoped tail as well, with all three assertions
+ * unchanged — same version, same SPDX id, a real licence file. A scoped variant
+ * whose unscoped namesake is a different project fails them exactly as a
+ * mismatched same-scope prefix does.
+ *
  * @param {string} name
  * @param {string} licence SPDX id the variant declares.
  * @param {string} version
  * @returns {{ text: string, from: string } | null}
  */
 export function familyLicence(name, licence, version) {
-  const segments = name.split('-');
+  const unscoped = name.startsWith('@') ? name.slice(name.indexOf('/') + 1) : null;
+  const candidates = [name, ...(unscoped === null ? [] : [unscoped])];
+  for (const candidate of candidates) {
+    const found = familyLicenceUnder(candidate, name, licence, version);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/**
+ * One prefix walk, over the candidate spelling of a variant's name.
+ *
+ * @param {string} candidate the name whose prefixes are walked
+ * @param {string} name the variant itself, which is never its own parent
+ * @param {string} licence
+ * @param {string} version
+ * @returns {{ text: string, from: string } | null}
+ */
+function familyLicenceUnder(candidate, name, licence, version) {
+  const segments = candidate.split('-');
   for (let keep = segments.length - 1; keep >= 1; keep -= 1) {
     const parent = segments.slice(0, keep).join('-');
     if (parent === name) continue;

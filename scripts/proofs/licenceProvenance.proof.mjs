@@ -393,6 +393,25 @@ try {
   );
 
   check(
+    "a SCOPED variant's terms are found in its UNSCOPED namesake, which koffi publishes",
+    familyLicence('@koromix/koffi-win32-x64', 'MIT', '3.1.5')?.from === 'koffi',
+    `The other publishing shape, and it was invisible here until 2026-09-10: napi-rs puts the ` +
+      `meta-package inside the scope, koffi puts the variants in one and the terms in plain ` +
+      `\`koffi\`. A same-scope prefix walk finds nothing, so a native library the engine host ` +
+      `LOADS AT RUN TIME was absent from NOTICE entirely — the lockfile had marked it dev, and a ` +
+      `dependency added elsewhere made npm recompute and drop the flag.`,
+  );
+
+  check(
+    'CONTROL: the unscoped walk asserts the same three properties',
+    familyLicence('@koromix/koffi-win32-x64', 'MIT', '9.9.9') === null &&
+      familyLicence('@koromix/koffi-win32-x64', 'Apache-2.0', '3.1.5') === null,
+    `Without this the new spelling could accept any unscoped package whose name is a prefix — ` +
+      `which is a wider door than the one it was opened for, since an unscoped namespace is ` +
+      `shared by everybody.`,
+  );
+
+  check(
     'CONTROL: a name with no installed parent is refused rather than invented',
     familyLicence('@monstera/not-a-real-package-x64', 'MIT', '1.0.0') === null,
     `The third. A prefix walk that returned something for a name with no family would make the ` +
