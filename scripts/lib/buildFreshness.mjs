@@ -149,6 +149,8 @@ export const TEXT_STRUCTURE = [
  * of that list reads the parser and not this, and adding a source to a shared
  * list makes those callers refuse for a file they never import. The proof that
  * needs both takes both, and its `expected` count says so at the call site.
+ *
+ * @type {BuildEdge[]}
  */
 export const PAGE_KIND = [
   ['packages/kernel/src/pageKind.ts', 'packages/kernel/dist/pageKind.js', 'tsc'],
