@@ -335,8 +335,13 @@ jobs:
       # to run. Without this the most important case in D6 row 2 would be
       # local-only — a defect CI structurally cannot see — and with it the board
       # settles it. The other thirteen are 16 MB this leg has no use for.
+      #
+      # WRAPPED, like every other script step here. `check:annotatecoverage`
+      # reported it unwrapped on its first sweep: Actions serves logs only to
+      # authenticated callers, so a provisioning failure nobody can read is a
+      # red job with no reason attached.
       - name: Provision the English OCR model
-        run: node scripts/provision/tessdata.mjs --only=eng
+        run: node scripts/ci/annotate.mjs scripts/provision/tessdata.mjs --only=eng
 
       # D6 row 2's recognition, against the real engine. The corpus is not here,
       # so its two corpus cases report NOT APPLICABLE and the nine constructed
