@@ -955,6 +955,27 @@ anything for a consolidation.
 instrument needs it**, not speculatively: row 5's searchable-PDF export is what
 will call it from the application.
 
+### Correction, 2026-09-11, the same day: "two right-to-left documents" is one axis too many
+
+The table above was written as *both right-to-left documents*, and the evidence
+does not carry that for the second row. `corpus-33d2416d` reads **149 spans** at
+confidence 65 with `ara` against 32 with English, and 294 words — that is a page
+of Arabic. `corpus-ee1bc615` passes the same filter at 72 with `heb` on **9
+spans**, and nine spans is not enough text to establish a document's script: a
+sparse page scores high confidence on very little, and *the model matched* and
+*this page has almost nothing on it* produce the same number.
+
+That is AAAA-8's shape exactly — a claim naming ONE axis (which script) where the
+evidence varies on two (which script, and how much text there is) — and the
+question it failed to ask is the cheap one: *what else is different about the odd
+point?* Nine spans against a hundred and forty-nine.
+
+**The load-bearing finding is unaffected**, which is why this is a correction and
+not a withdrawal: the glyphless font carries right-to-left characters back
+through MuPDF, and one document establishes that. What is withdrawn is the count.
+The record's *four image-only scans including a right-to-left one* stands as
+written.
+
 ---
 
 ## 2026-09-10 — The 0.08% has a name, and it is on the other engine's side
