@@ -47,7 +47,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 import sharp from 'sharp';
 
-import { TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { PAGE_KIND, TEXT_STRUCTURE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -57,9 +57,11 @@ import { pageKindOf } from '../../packages/kernel/dist/pageKind.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REQUIRE_CORPUS = process.argv.includes('--require-corpus');
 
-// THE SUBJECT IS THE BUILT PARSER, so a stale build would score the previous
-// one and print the answer under this one's name.
-refuseStaleBuild(root, TEXT_STRUCTURE, 1);
+// THE SUBJECT IS THE BUILT PARSER AND THE BUILT RULE, so a stale build would
+// score the previous ones and print the answer under these ones' names. Two
+// pairs: a change to the classifier alone is the likeliest edit this file will
+// ever be run after, and `TEXT_STRUCTURE` on its own would be silent about it.
+refuseStaleBuild(root, [...TEXT_STRUCTURE, ...PAGE_KIND], 2);
 
 /** @type {string[]} */
 const failures = [];

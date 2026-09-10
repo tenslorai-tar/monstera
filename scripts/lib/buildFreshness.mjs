@@ -143,6 +143,18 @@ export const TEXT_STRUCTURE = [
 ];
 
 /**
+ * The rule that says what a page is made of, beside the parser that reads it.
+ *
+ * A separate pair rather than a widened `TEXT_STRUCTURE`: every other consumer
+ * of that list reads the parser and not this, and adding a source to a shared
+ * list makes those callers refuse for a file they never import. The proof that
+ * needs both takes both, and its `expected` count says so at the call site.
+ */
+export const PAGE_KIND = [
+  ['packages/kernel/src/pageKind.ts', 'packages/kernel/dist/pageKind.js', 'tsc'],
+];
+
+/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
@@ -247,6 +259,13 @@ export const ARTEFACT_EDGES = {
   // CCCCCC-4, which is what made the requirement derive from the scripts that
   // import a build rather than from the ones that already call the guard.
   'proof:textbounds': TEXT_STRUCTURE,
+  // THE SIXTH, and the anchor named it on its first run again — registered with
+  // its `refuseStaleBuild` call and without this entry, exactly as
+  // `proof:pdfiumadapter` was. It reads the built parser AND the built rule
+  // that classifies a parsed page — two sources, because a change to the rule
+  // alone would otherwise leave the guard quiet about the file the proof is
+  // most about.
+  'proof:scannedpages': [...TEXT_STRUCTURE, ...PAGE_KIND],
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
   // and are compiled by a spawned `tsc`. That import resolves to the package's
   // built declarations, so this proof reads the same artefact every other entry
