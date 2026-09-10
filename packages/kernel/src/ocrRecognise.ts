@@ -82,7 +82,7 @@ export const OCR_DPI = 200;
 const LSTM_ONLY = 1;
 
 /** Where a model is written inside the core's own in-memory filesystem. */
-const CORE_DATA_DIRECTORY = '/tessdata';
+export const CORE_DATA_DIRECTORY = '/tessdata';
 
 /** Where the page's PNG is written inside that filesystem. */
 const CORE_IMAGE_PATH = '/input';
@@ -102,7 +102,7 @@ interface TesseractFilesystem {
 }
 
 /** Tesseract's C++ API, as Emscripten exposes it. */
-interface TessBaseApi {
+export interface TessBaseApi {
   Init(dataPath: string | null, language: string, oem: number): number;
   SetImageFile(exif: number, angle: number): number;
   Recognize(monitor: null): number;
@@ -112,9 +112,25 @@ interface TessBaseApi {
   End(): void;
 }
 
-interface TesseractCore {
+/** Tesseract's own text-only PDF writer, for `(base, dataDir, textOnly)`. */
+export interface TessPdfRenderer {
+  BeginDocument(title: string): boolean;
+  AddImage(api: TessBaseApi): boolean;
+  EndDocument(): boolean;
+}
+
+export interface TesseractCore {
   readonly FS: TesseractFilesystem;
   readonly TessBaseAPI: new () => TessBaseApi;
+  /**
+   * Declared because a caller needs it, and that caller is not this module.
+   *
+   * `scripts/research/textLayerFont.mjs` measures whether the glyphless CID font
+   * this renderer embeds carries a right-to-left reading back out through MuPDF
+   * — which is D6 row 3's open question. Nothing here calls it yet; D6 row 5's
+   * searchable-PDF export is what will.
+   */
+  readonly TessPDFRenderer: new (base: string, dataDirectory: string, textOnly: boolean) => TessPdfRenderer;
 }
 
 type CoreFactory = () => Promise<TesseractCore>;
@@ -185,7 +201,16 @@ export class OcrModelUnreadableError extends Error {
   }
 }
 
-async function loadedCore(): Promise<TesseractCore> {
+/**
+ * The instantiated core.
+ *
+ * Exported so `scripts/research/textLayerFont.mjs` measures through the same
+ * loader the application uses (B3a): *which build of Tesseract does this project
+ * instantiate, and how* is one question, and a research instrument answering it
+ * separately would be a second opinion whose figures argue about a different
+ * engine.
+ */
+export async function loadedCore(): Promise<TesseractCore> {
   if (core !== null) return core;
   const refusals: string[] = [];
   for (const build of CORE_BUILDS) {
@@ -212,7 +237,11 @@ async function loadedCore(): Promise<TesseractCore> {
  * form. `gunzipSync` is Node's, so no second compression library arrives for
  * three lines (`tesseract.js` carries `zlibjs` for the browser's sake).
  */
-function ensureModel(loaded: TesseractCore, directory: string, language: OcrLanguage): void {
+export function ensureModel(
+  loaded: TesseractCore,
+  directory: string,
+  language: OcrLanguage,
+): void {
   const key = `${directory} :: ${language}`;
   if (written.has(key)) return;
   const path = join(directory, `${language}.traineddata.gz`);

@@ -888,6 +888,75 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — The text layer's font, measured before the row is built
+
+D6 row 3 embeds the recognised text as an invisible layer. The drawing half is a
+registration — `@cantoo/pdf-lib` takes `renderMode: TextRenderingMode.Invisible`
+directly — so the only open question is the **font**, and the instinct is that it
+is a detail. It is not: it decides whether the feature works on the documents the
+row exists for.
+
+### A standard font does not refuse. It writes question marks.
+
+`scripts/research/textLayerFont.mjs`, drawn invisibly through
+`StandardFonts.Helvetica` and read back through MuPDF — the reader this
+application ships, rather than asking pdf-lib what it wrote:
+
+| sample | read back |
+|---|---|
+| Latin, WinAnsi | identical |
+| Latin with accents | identical |
+| Latin ligature `U+FB01` | `U+003F` |
+| Cyrillic, Arabic, Hebrew, Han, Devanagari | `U+003F` throughout |
+
+**0 of 8 refused; 6 of 8 were mangled.** That is the worst of the three possible
+answers. A throw would have been a red build on the first non-Latin page; a
+refusal would have been a feature that declines. This is a text layer that
+*claims to carry the page's words* and carries `????????`, with search finding
+nothing, selection copying nothing, and no error anywhere.
+
+And the ligature is the sharp end of it: `U+FB01` is the same class the accuracy
+row's own finding is about, so the characters a text layer most needs to carry
+faithfully are in the set a standard font silently drops.
+
+### The remedy is already in the tree, and it was measured rather than assumed
+
+`tesseract.js-core` ships `TessPDFRenderer`, which solves exactly this with a
+**glyphless CID font**: every character mapped, no outlines, so the text is
+addressable and invisible by construction. Its text-only output round-trips.
+
+Measured on the right-to-left documents — and there are **two**, where the record
+said one. The instrument identifies them by trying both right-to-left models and
+keeping the better reading, rather than asserting which corpus document is which:
+
+| id | model | confidence | PDF bytes | spans | script survives |
+|---|---|---|---|---|---|
+| `corpus-33d2416d` | `ara` | 65 | 7,294 | 149 | yes |
+| `corpus-ee1bc615` | `heb` | 72 | 3,028 | 9 | yes |
+
+Both read at 32 and 38 with the **English** model, which is the spread that says
+the model is what changed rather than the page.
+
+So row 3's decision is narrow and stated: **graft the font resource Tesseract
+already embeds, or adopt a Unicode font file of our own.** Only the second costs
+megabytes in the installer and a licence entry in NOTICE. Neither is taken here,
+because taking it is the row.
+
+### The instrument loads the core through the kernel's own loader
+
+Its first version instantiated Tesseract itself, which is a second answer to
+*which build does this project run, and how* (B3a) — and a figure from a
+different engine argues about a different thing. `loadedCore` and `ensureModel`
+are exported for it, and it takes `refuseStaleBuild` for the module it reads. The
+readings are identical across the change, which is the only check that means
+anything for a consolidation.
+
+`TessPDFRenderer` is declared on the kernel's core interface **because this
+instrument needs it**, not speculatively: row 5's searchable-PDF export is what
+will call it from the application.
+
+---
+
 ## 2026-09-10 — The 0.08% has a name, and it is on the other engine's side
 
 E2's re-scored accuracy row reported **characters 99.92%** over eleven documents,
