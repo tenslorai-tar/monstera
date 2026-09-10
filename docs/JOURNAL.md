@@ -12,8 +12,8 @@ the fact is not a baseline, it is a rationalisation.
 | 2 — page management | **2 working days** (owner, 2026-09-03) | **3 days worked** (2026-09-03 → 2026-09-05), 50 commits | **1.50× — continue** |
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
-| 5 — text editing | **3 working days** (owner, 2026-09-08) | **in progress** — opens at the commit after Stage 4's close | — (the 3× gate arms at **9 days**) |
-| 6 — OCR | **2 working days** (owner, 2026-09-09) | **not started** — Stage 5 has not closed | — (the 3× gate arms at **6 days**) |
+| 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
+| 6 — OCR | **2 working days** (owner, 2026-09-09) | **not started** — opens at the commit after Stage 5's close | — (the 3× gate arms at **6 days**) |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -885,6 +885,153 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-10 — Stage 5 closes: 3 days against a 3-day baseline, 1.00×, continue — and the figure is coarser than it reads
+
+### The verdict, in writing
+
+**3 days worked against a 3-day baseline — 1.00×, trigger 9 days. The gate has
+not armed and the verdict is *continue*.**
+
+Counted the way every stage before it was, with the command named so nobody
+re-derives it:
+
+```
+git log --format=%ad --date=short fc023bb..HEAD | sort -u
+```
+
+returns **2026-09-08**, **2026-09-09** and **2026-09-10**. `fc023bb` is the
+commit that closed Stage 4, so it belongs to neither stage and the range starts
+after it; `fa5a2eb` — *"Provision PDFium, and the flavour is a security
+decision"* — is Stage 5's first commit, and it is a provisioning step, which is
+what a stage whose engine does not exist yet has to open with.
+
+**79 commits**, `git rev-list --count fc023bb..HEAD` at the commit before this
+one; 192 files, +34,120/−823.
+
+**Counted from the stage's LAST commit and not from when its last row first
+passed**, which is the unflattering direction. The last editing row landed at
+`cd6b06e` on 2026-09-10 and the stage's last commit is this one, the same day,
+so here the two agree — recorded anyway, because a rule applied only when it
+changes the answer is a rule nobody is applying.
+
+### Three ways 1.00× flatters, and none of them is the gate being wrong
+
+The gate has not armed and would not arm under any of these. They are recorded
+because **1.00× reads as an estimate met to the day**, and it is not that.
+
+1. **The instrument's resolution is one day.** The actual is a count of distinct
+   commit dates, so a stage that starts in an afternoon and ends in a morning
+   counts both days whole. Against a 3-day baseline that is a ±0.33× error bar
+   on the ratio before any judgement enters, and 1.00× is the value inside it,
+   not a reading of it.
+2. **2026-09-08 is counted twice.** It is in Stage 4's actual and in Stage 5's,
+   because a stage closes and the next opens on the same working day. The two
+   are recorded as 2 + 3 = **5 days** and span **four** distinct dates end to
+   end, 2026-09-07 → 2026-09-10. The header of this file already names that
+   double count as the honest cost of measuring per stage; this is the row whose
+   turn it was to pay it, so it says so rather than leaving the arithmetic to a
+   reader adding two rows together.
+3. **The stage did not close with every row done.** Stage 4 closed at 7 of 7 and
+   this closes at **10 of 13**, which is a different sentence wearing the same
+   verdict. What is not done is below.
+
+**The third consecutive 1.00× is itself worth a second look**, and it survives
+one: Stages 3, 4 and 5 were estimated at 3, 2 and 3 days by the owner before
+each began, and each finished inside a day of its estimate — but Stage 1 read
+0.20× and Stage 2 read 1.50× on the same instrument, so the recent run of equal
+values is not the instrument being unable to produce another one.
+
+### What Stage 5 delivered
+
+**The stage's real subject was the second engine, and only then the rows.**
+PDFium was declared at `engineSeam.ts`:97 in Stage 0 with nothing behind it;
+this stage provisioned the binary, put `pdfiumFfi.ts` behind that declaration,
+generalised the host body rather than copying it, and created a second contained
+host with its own principal — before the first editing row could name an object.
+
+| row | what it is |
+|---|---|
+| select and copy | a transparent text layer over the raster, on the kernel's substrate rather than PDF.js's, measured at 0 of 6 shared lines |
+| word count | one page inside the document's lane, where the decision is what a word is |
+| spell check | nspell behind a dynamic import, the cost measured in a scratch tree first |
+| in-place editing: region replacement | `replaceTextObject`, the first command routed to PDFium, and the first invertible byte-image command |
+| in-place editing: line-level | the editor's own grouping by vertical overlap, which a person confirms (ADR-0049) |
+| object-level edit | move, scale, recolor, delete — an intent, because a transform scales about the page origin |
+| document-wide replace-all | the intent crosses and the engine finds the words, one regeneration per command |
+| find and replace, replace half | in the find bar, sharing the replace-all command, and the frame gap dissolved rather than joined |
+| the other renderer | PDFium's raster with every refusal falling back to PDF.js, and the word *HD* withdrawn by measurement |
+| typewriter | **not built here** — the tenth *done* row, resolved as the duplicate of D3's `/FreeText` tool it always was, and kept rather than deleted so the decision is visible |
+
+**Nine B4 amendments**, each in its own commit ahead of the feature that needed
+it, and three ADRs —
+[0047](DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md) (an
+in-place text edit is a byte-image command),
+[0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md) (what
+a second host owes and holds) and
+[0049](DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)
+(the editor groups its own engine's runs). **Five new proofs against the real
+library** and **seventeen research instruments**: every row that changed shape
+did so because something was measured first, and the three that changed most —
+the raster's *fidelity*, the line grouping, and replace-all's frame — each had a
+premise refuted rather than refined.
+
+### What it did NOT deliver, stated rather than left
+
+- **Normalize-then-edit for XObjects.** `BUILD-PROMPT.md`:278 and :706 name it
+  and it had no FEATURES row until today. Measured: the page walk sees a `form`
+  and does not descend, **36 of 60 characters** on the fixture belong to objects
+  inside it, and `FPDFText_SetText` on a nested object returns 1 with
+  `GenerateContent` returning 1 while the edit is absent from the reopened
+  bytes. What landed is the **visibility** — the count crosses to the dialog —
+  and not the promotion. Trigger: a corpus document this leaves unreachable, or
+  the first request to edit one.
+- **Text-structure accuracy has no constant to tune.** 100.00% of characters and
+  52.9% of lines against an independent reader over three documents. Three
+  documents tune nothing; the wider corpus is the owner's to supply.
+- **Translate is blocked on E5**, whose provider registry is Stage 9's and
+  unbuilt. Standing one up here would be a second AI seam.
+- **The MuPDF adapter migration is not done.** ADR-0010's reach question was
+  answered *native, both engines, koffi* on 2026-09-08; nineteen kernel modules
+  still import the bare specifier, and the size of that move is **117 API
+  members**, not nineteen import lines. It gated no Stage 5 row — the editing
+  rows are PDFium's by `BUILD-PROMPT.md`:257 — and it still owes §9.17's budgets
+  and the four proofs that scan `monstera_mupdf.dll`.
+- **ADR-0023 Decision 16 is undecided and unmeasured.** A contained host is
+  granted nothing under a Store install root and dies before its first line;
+  there are now **two** hosts in that state rather than one, which is what this
+  stage changed about it and not the decision.
+- **§9.17's budgets have not been re-read against a renderer that may hold a PNG
+  per page**, which the other renderer introduced. Named in the audit's
+  carried-forward list.
+- **`proof:guards`' root cause** — 164.5 s to 1093 s against a 540 s bound —
+  and **`proof:perfbudget`'s three `mupdf-host-real` lines**, both carried, both
+  untouched. The constant is not to be raised.
+
+### Four commits in this stage pushed a red `main`, from one mechanism
+
+`eb8dacf`, `c3eac94`, `1903a3b` and `11ac35e` were red on the board while I did
+not read it. The mechanism is in the audit entry below: a flat
+required-everything `grantSet` gained PDFium's directory, and CI's `shim` job
+provisions no PDFium.
+
+What makes it more than an apology is the half that generalises. **The local
+sweep could not have caught this class at all** — the defect exists only where
+the optional path is *absent*, and this machine always has it. A branch keyed on
+the presence of something has a side that never executes wherever that thing is
+always present, and here that side is the only side CI runs. For this class the
+board read is not diligence on top of the sweep; it is the only detector there
+is. **One read per push, and a push is the only event that changes the answer.**
+
+### Stage 6 opens on 2
+
+Its baseline — **2 working days**, owner, 2026-09-09 — was recorded in the table
+at the top of this file **before** this commit, which is the ordering that makes
+a baseline a baseline rather than a rationalisation. The trigger is six days and
+is never revised to meet an actual. Its two preconditions were recorded at
+`5ca70bc`, likewise before the stage opens.
 
 ---
 
