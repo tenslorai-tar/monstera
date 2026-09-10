@@ -688,6 +688,62 @@ body {
 }
 
 /*
+ * The object chooser in the edit-object dialog.
+ *
+ * A column for the line chooser's reason — each row is a phrase and a pair of
+ * coordinates, not a digit — and the fieldset reset is the same one, because
+ * this is the second body in the application that groups radios.
+ */
+.m-edit-page-object__choice {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-edit-page-object__legend {
+  flex: 1 0 100%;
+  padding: 0;
+}
+
+.m-edit-page-object__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/*
+ * The box. TABULAR FIGURES, which is the one rule this row needs: four numbers
+ * per row down a column, and proportional digits make 11 narrower than 88 so
+ * nothing lines up and no two rows can be compared at a glance.
+ */
+.m-edit-page-object__box {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/*
+ * The four placement fields, in a row that wraps.
+ *
+ * Move and scale are two pairs, and a pair that wrapped between its own members
+ * would read as four unrelated fields. The minimum width is what keeps x beside
+ * y until the dialog is too narrow for either pair.
+ */
+.m-edit-page-object__numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.m-edit-page-object__colour {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/*
  * A line's text.
  *
  * It does NOT wrap: a document line that wrapped here would look like two lines

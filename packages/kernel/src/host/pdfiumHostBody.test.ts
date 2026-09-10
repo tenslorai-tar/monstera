@@ -169,6 +169,27 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         truncated: false,
       });
     },
+    pageObjects: (image, page) => {
+      calls.push(`page-objects:${String(page)}:${[...image].join(',')}`);
+      return Promise.resolve({
+        objects: [
+          {
+            index: 1,
+            kind: 'text' as const,
+            left: 30,
+            bottom: 229.9,
+            right: 87.8,
+            top: 238,
+            fill: { red: 0, green: 0, blue: 0, alpha: 255 },
+          },
+          // A FILL OF `null` IN THE FIXTURE, deliberately: PDFium declines to
+          // describe some objects, and a stub that always answered a colour
+          // would let a handler that dropped the nullability pass.
+          { index: 2, kind: 'image' as const, left: 0, bottom: 0, right: 40, top: 40, fill: null },
+        ],
+        truncated: false,
+      });
+    },
   });
 
   const body = startEngineHost(

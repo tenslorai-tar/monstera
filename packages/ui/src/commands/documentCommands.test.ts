@@ -14,6 +14,7 @@ import {
   exportFormDataXfdfCommand,
   detectFlatFieldsCommand,
   replaceTextObjectCommand,
+  editPageObjectCommand,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
@@ -983,6 +984,150 @@ describe('delete pages — the mutation-dialog gate', () => {
       // from part of the page believing they had seen it.
       truncated: true,
     });
+  });
+
+  it('EDIT OBJECT DISPATCHES ONE OF THREE COMMANDS, by what the dialog answered', async () => {
+    // THE UI HALF OF THE WIRED PAIR for the three object commands. Its kernel
+    // half is `proof:pdfiumobject`, which drives the real library and cannot see
+    // which command a control sends; this sees the command and cannot see a
+    // document.
+    //
+    // ALL THREE IN ONE CASE, and that is the point rather than economy: one
+    // registered control dispatches one of three kinds, and a `run` that
+    // ignored `action` and always sent the same one would pass any case that
+    // exercised a single branch. The dialog's answer is varied and the command
+    // is asserted whole.
+    const answers = [
+      { action: 'place' as const, index: 9, moveBy: { x: 3, y: -4 }, scaleBy: { x: 2, y: 1 } },
+      {
+        action: 'recolor' as const,
+        index: 9,
+        colour: { red: 255, green: 0, blue: 0, alpha: 200 },
+      },
+      { action: 'delete' as const, index: 9 },
+    ];
+    const expected = [
+      {
+        kind: 'placePageObject',
+        // ZERO-BASED AND UNCONVERTED, `replaceTextObject`'s reason: `context.page`
+        // is already the kernel's, and applying `kernelPageOf` here would edit
+        // the page above the one on screen.
+        page: 3,
+        index: 9,
+        moveBy: { x: 3, y: -4 },
+        scaleBy: { x: 2, y: 1 },
+        // THE READ'S VERSION, not the context's. They differ here (7 against
+        // the context's 1) because `#refuseIfStale` asks *is this the document
+        // the list described*.
+        version: 7,
+      },
+      {
+        kind: 'recolorPageObjects',
+        page: 3,
+        // A LIST OF ONE. The command carries several so a person recolouring a
+        // group is one regeneration and one undo; a chooser naming one sends a
+        // list of one rather than a different command.
+        indices: [9],
+        colour: { red: 255, green: 0, blue: 0, alpha: 200 },
+        version: 7,
+      },
+      { kind: 'deletePageObjects', page: 3, indices: [9], version: 7 },
+    ];
+
+    for (const [at, answer] of answers.entries()) {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.pageObjects') {
+          return Promise.resolve(
+            ok({
+              version: asDocVersion(7),
+              // NON-CONTIGUOUS INDICES NOT STARTING AT ZERO, and the chosen one
+              // is the SECOND: a command that sent a position in its own list
+              // would agree with the engine only for a page whose objects
+              // happen to be numbered that way.
+              objects: [
+                {
+                  index: 4,
+                  kind: 'image' as const,
+                  left: 0,
+                  bottom: 0,
+                  right: 10,
+                  top: 10,
+                  fill: null,
+                },
+                {
+                  index: 9,
+                  kind: 'path' as const,
+                  left: 20,
+                  bottom: 20,
+                  right: 140,
+                  top: 60,
+                  fill: { red: 0, green: 0, blue: 0, alpha: 255 },
+                },
+              ],
+              truncated: false,
+            }),
+          );
+        }
+        return Promise.resolve(
+          ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }),
+        );
+      });
+
+      // SEQUENTIALLY, so each iteration's `sent` is only its own. The three
+      // answers are three separate dispatches and interleaving them would make
+      // the assertion about whichever finished first.
+      await editPageObjectCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(answer),
+      }).run(CONTEXT);
+
+      expect(sent, `answer ${String(at)}`).toStrictEqual([
+        { id: 'document.pageObjects', params: { docId: DOC, page: 3 } },
+        { id: 'document.execute', params: { docId: DOC, command: expected[at] } },
+      ]);
+    }
+  });
+
+  it('EDIT OBJECT SENDS NOTHING when the chooser is dismissed, or the engine is absent', async () => {
+    // The mutation-dialog gate and the engine-absent branch together, because
+    // the two share an observable — nothing dispatched — and differ in whether
+    // a problem was reported. Asserting only the first would pass on a build
+    // that dispatched nothing because it crashed.
+    const dismissed: string[] = [];
+    await editPageObjectCommand({
+      client: createClient(channels, (id) => {
+        dismissed.push(id);
+        return Promise.resolve(
+          ok({ version: asDocVersion(1), objects: [], truncated: false }),
+        );
+      }),
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+    expect(dismissed).toStrictEqual(['document.pageObjects']);
+
+    let asked = 0;
+    const absent: string[] = [];
+    await editPageObjectCommand({
+      client: createClient(channels, (id) => {
+        absent.push(id);
+        return Promise.resolve(err({ code: 'engine-unavailable' as const }));
+      }),
+      onApplied: () => undefined,
+      ask: (id) => {
+        asked += 1;
+        // THE PROBLEM DIALOG AND NOT THE CHOOSER, asserted by id: `reportProblem`
+        // opening is the difference between a refusal a person meets and a
+        // control that did nothing.
+        expect(id).toBe('dialog.command-problem');
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+    expect(absent).toStrictEqual(['document.pageObjects']);
+    expect(asked).toBe(1);
   });
 
   it('REPLACE TEXT SENDS NOTHING when the chooser is dismissed', async () => {

@@ -81,6 +81,33 @@ export type HostTextRunsReader = (
   readonly truncated: boolean;
 }>;
 
+/**
+ * A page's objects, and whether the walk was cut short.
+ *
+ * {@link HostTextRunsReader}'s shape on the other read, injected for its reason:
+ * a handler proof must be able to drive this channel without `pdfium.dll`.
+ */
+export type HostPageObjectsReader = (
+  image: ByteImage,
+  page: number,
+) => Promise<{
+  readonly objects: readonly {
+    readonly index: number;
+    readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
+    readonly left: number;
+    readonly bottom: number;
+    readonly right: number;
+    readonly top: number;
+    readonly fill: {
+      readonly red: number;
+      readonly green: number;
+      readonly blue: number;
+      readonly alpha: number;
+    } | null;
+  }[];
+  readonly truncated: boolean;
+}>;
+
 /** What the PDFium host's handlers are built from. */
 export interface PdfiumHandlerParts {
   /** The granted areas this host holds. Byte-image, so areas and no parses. */
@@ -93,12 +120,15 @@ export interface PdfiumHandlerParts {
   readonly probe: (paths: ContainmentProbePaths) => Promise<ContainmentReport>;
   /** How this process reads a page's text runs. `engine/text-runs`. */
   readonly textRuns: HostTextRunsReader;
+  /** How this process reads a page's objects. `engine/page-objects`. */
+  readonly pageObjects: HostPageObjectsReader;
 }
 
 export function createPdfiumHandlers({
   areas,
   execution,
   files,
+  pageObjects,
   probe,
   textRuns,
 }: PdfiumHandlerParts): Handlers<PdfiumChannels> {
@@ -299,6 +329,33 @@ export function createPdfiumHandlers({
         // `engine-refused` and not a code of its own, for that same reason: the
         // axis a code separates is *is the host sick*, and a second name for
         // *no* would be two names for one decision.
+        return failed('engine-refused', error);
+      }
+    },
+
+    // THE SECOND READ, and it is `engine/text-runs` with a different walk —
+    // written out rather than shared, because the two differ in every line that
+    // matters (which reader, which bound, which field name) and what they share
+    // is a `try`/`catch` around an image lookup.
+    'engine/page-objects': async ({ session, from, page }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: Uint8Array;
+      try {
+        image = await imageFor(held, from);
+      } catch (error) {
+        return failed('asset-missing', error);
+      }
+      try {
+        const found = await pageObjects(image, page);
+        return {
+          ok: true,
+          value: {
+            objects: found.objects.slice(0, ENGINE_TEXT_OBJECTS_MAX),
+            truncated: found.truncated,
+          },
+        };
+      } catch (error) {
         return failed('engine-refused', error);
       }
     },

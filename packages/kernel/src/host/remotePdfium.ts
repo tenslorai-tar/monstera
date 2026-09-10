@@ -316,3 +316,51 @@ export function remotePdfiumTextRuns(
     }
   };
 }
+
+/**
+ * One page's objects, over the boundary.
+ *
+ * {@link remotePdfiumTextRuns}' sibling on the other read, and a **query**
+ * rather than a member of the writer for its reason: nothing in `CommandBus`
+ * reads it.
+ *
+ * Written out rather than sharing that function's body with a channel name
+ * parameter. The two differ in the shape of what comes back, and a helper
+ * generic over the channel would have to be generic over its answer too — which
+ * is a type parameter standing where a reader wants to see which call is made.
+ */
+export function remotePdfiumPageObjects(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (image: ByteImage, page: number) => Promise<{
+  readonly objects: readonly {
+    readonly index: number;
+    readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
+    readonly left: number;
+    readonly bottom: number;
+    readonly right: number;
+    readonly top: number;
+    readonly fill: {
+      readonly red: number;
+      readonly green: number;
+      readonly blue: number;
+      readonly alpha: number;
+    } | null;
+  }[];
+  readonly truncated: boolean;
+}> {
+  return async (image, page) => {
+    const { session, area } = held();
+    const from = transfer.mintName();
+    await transfer.writeSnapshot(area, from, image);
+    try {
+      return answered(
+        'engine/page-objects',
+        await client['engine/page-objects']({ session, from, page }),
+      );
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}

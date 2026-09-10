@@ -2158,6 +2158,76 @@ export const channels = {
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),
 
+  /**
+   * Every object on a page — text, paths, images — in the editing engine's own
+   * numbering.
+   *
+   * ## Not `document.textLines` with a filter, and the difference is the ROW
+   *
+   * That one answers a page's editable TEXT, grouped into lines a person
+   * confirms. This one answers the page's *things*: an image and a path have no
+   * text at all and are exactly what object-level editing exists to move,
+   * resize, recolour and remove. One channel would answer both badly.
+   *
+   * ## The index is PDFium's, and it is never joined to anything
+   *
+   * `document.textLines`' rule unchanged: the two engines number one page
+   * differently, and this is one of the only two sources of a PDFium index a
+   * renderer may use.
+   *
+   * ## A BOX and a KIND, because that is how a person picks a thing
+   *
+   * An object is named to a person by where it is and what it is — *the image
+   * at the top of the page* — which is what a box in the page's own coordinates
+   * and a word like `image` give a surface to render. The kind is a word rather
+   * than PDFium's 0–5, for `document.textLines`' reason: a number reaching a
+   * chooser is the defect the line row closed.
+   *
+   * **It carries no text**, and the consequence is stated rather than hidden: a
+   * text object is offered here by its position, not its words. Editing words
+   * is `document.textLines`' row, and putting the text on both channels would
+   * be two answers to *what does this object say*.
+   *
+   * ## The fill may be ABSENT, which is not black
+   *
+   * PDFium declines to describe some objects' fill, and *this engine will not
+   * say* is a different fact from *it is black*. A surface starting a colour
+   * picker at a guess would offer a recolour to something it has been told
+   * nothing about.
+   */
+  'document.pageObjects': channel(
+    'Every object on a page, with its kind, its box and its fill, in the editing engine’s numbering.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    z.object({
+      version: docVersionSchema,
+      objects: z
+        .array(
+          z.object({
+            index: z.number().int().nonnegative(),
+            kind: z.enum(['unknown', 'text', 'path', 'image', 'shading', 'form']),
+            /** The box in the page's own coordinates, after the object's matrix. */
+            left: z.number(),
+            bottom: z.number(),
+            right: z.number(),
+            top: z.number(),
+            fill: z
+              .object({
+                red: z.number().int().min(0).max(255),
+                green: z.number().int().min(0).max(255),
+                blue: z.number().int().min(0).max(255),
+                alpha: z.number().int().min(0).max(255),
+              })
+              .nullable(),
+          }),
+        )
+        .max(MAX_TEXT_OBJECTS)
+        .readonly(),
+      /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-poisoned', 'engine-unavailable'],
+  ),
+
   'document.duplicatePages': channel(
     'Groups of pages whose content and resources are identical.',
     z.object({ docId: docIdSchema }),

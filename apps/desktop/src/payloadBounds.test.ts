@@ -277,6 +277,12 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // function of one page: each run's text is bounded by `MAX_REPLACED_TEXT` and
   // the runs by `MAX_TEXT_OBJECTS`, neither of which the document's size moves.
   'document.textLines': 'needs an engine session',
+  // BOUNDED AT 512 OBJECTS, per PAGE, and answered by the SECOND engine — the
+  // exclusion above's reason exactly. Each entry is a word, four numbers and an
+  // optional colour; the count is `MAX_TEXT_OBJECTS`, which is a page's worth.
+  // Nothing here is a function of the document's size, and unlike its neighbour
+  // it carries no text at all.
+  'document.pageObjects': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

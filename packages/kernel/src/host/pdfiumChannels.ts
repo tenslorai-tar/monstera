@@ -428,6 +428,72 @@ export const pdfiumChannels = {
     // separates is *is the host sick* and neither of them is.
     ['no-such-session', 'asset-missing', 'engine-refused'],
   ),
+
+  /**
+   * PDFium's **second** read: every object on a page, with what kind it is,
+   * where it sits and what colour it is filled with.
+   *
+   * ## Why this is not `engine/text-runs` with a filter
+   *
+   * That one answers a page's TEXT, run by run, with a vertical extent because
+   * a grouping needs one. This answers a page's OBJECTS — an image and a path
+   * have no text and are exactly what the object-level row exists to move — and
+   * carries a full box because a surface has to say *which thing on the page*.
+   * A single channel would answer both questions badly: text runs without their
+   * extent, or every object carrying a `text` field that is empty for most of
+   * them.
+   *
+   * ## A WORD for the kind, never PDFium's integer
+   *
+   * `FPDFPageObj_GetType` answers 0–5. That number is the library's private
+   * numbering and this value reaches a person, so a chooser built on it would
+   * offer *type 3* — the object-index chooser's defect wearing a second number.
+   * The words are `pdfiumFfi.ts`'s `OBJECT_KINDS`, in PDFium's own order.
+   *
+   * ## The fill may be ABSENT, and that is not black
+   *
+   * `FPDFPageObj_GetFillColor` declines for some objects, and *this engine will
+   * not say* is a different fact from *it is black*. A surface offering to
+   * recolour something PDFium will not describe should say so rather than start
+   * a colour picker at a guess, so the field is nullable rather than defaulted.
+   */
+  'engine/page-objects': channel(
+    'Answers every object on a page: its kind, its box in page space, and its fill.',
+    z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
+    z
+      .object({
+        objects: z
+          .array(
+            z
+              .object({
+                index: z.number().int().nonnegative(),
+                kind: z.enum(['unknown', 'text', 'path', 'image', 'shading', 'form']),
+                // FINITE BY `z.number()`'s own rule in zod 4, which matters
+                // here for `engine/text-runs`' reason: a `NaN` box would make
+                // every comparison against it false, and a surface would draw
+                // a handle nowhere rather than refuse.
+                left: z.number(),
+                bottom: z.number(),
+                right: z.number(),
+                top: z.number(),
+                fill: z
+                  .object({
+                    red: z.number().int().min(0).max(255),
+                    green: z.number().int().min(0).max(255),
+                    blue: z.number().int().min(0).max(255),
+                    alpha: z.number().int().min(0).max(255),
+                  })
+                  .strict()
+                  .nullable(),
+              })
+              .strict(),
+          )
+          .max(ENGINE_TEXT_OBJECTS_MAX),
+        truncated: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
 } as const;
 
 /** The PDFium host's channel map. */

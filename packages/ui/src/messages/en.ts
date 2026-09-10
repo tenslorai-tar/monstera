@@ -319,6 +319,31 @@ export const REPLACE_TEXT_OBJECT_TRUNCATED = messageKey('dialog.replace-text-obj
 export const REPLACE_TEXT_OBJECT_TOO_LONG = messageKey('dialog.replace-text-object.too-long');
 export const REPLACE_TEXT_OBJECT_APPLY = messageKey('dialog.replace-text-object.apply');
 export const REPLACE_TEXT_OBJECT_COMMAND_TITLE = messageKey('command.document.replace-text-object');
+export const EDIT_PAGE_OBJECT_TITLE = messageKey('dialog.edit-page-object.title');
+export const EDIT_PAGE_OBJECT_EXPLAINS = messageKey('dialog.edit-page-object.explains');
+export const EDIT_PAGE_OBJECT_WHICH = messageKey('dialog.edit-page-object.which');
+export const EDIT_PAGE_OBJECT_MOVE_X = messageKey('dialog.edit-page-object.move-x');
+export const EDIT_PAGE_OBJECT_MOVE_Y = messageKey('dialog.edit-page-object.move-y');
+export const EDIT_PAGE_OBJECT_SCALE_X = messageKey('dialog.edit-page-object.scale-x');
+export const EDIT_PAGE_OBJECT_SCALE_Y = messageKey('dialog.edit-page-object.scale-y');
+export const EDIT_PAGE_OBJECT_PLACE = messageKey('dialog.edit-page-object.place');
+export const EDIT_PAGE_OBJECT_COLOUR = messageKey('dialog.edit-page-object.colour');
+export const EDIT_PAGE_OBJECT_RECOLOR = messageKey('dialog.edit-page-object.recolor');
+export const EDIT_PAGE_OBJECT_NO_FILL = messageKey('dialog.edit-page-object.no-fill');
+export const EDIT_PAGE_OBJECT_DELETE = messageKey('dialog.edit-page-object.delete');
+export const EDIT_PAGE_OBJECT_NONE = messageKey('dialog.edit-page-object.none');
+export const EDIT_PAGE_OBJECT_TRUNCATED = messageKey('dialog.edit-page-object.truncated');
+export const EDIT_PAGE_OBJECT_COMMAND_TITLE = messageKey('command.document.edit-page-object');
+// UNDER THE DIALOG'S OWN DOMAIN rather than an `object-kind.` one of their own:
+// a key's FIRST segment may not carry a hyphen (`KEY_SHAPE`), and the one
+// surface that shows these words is this dialog. A domain invented for six
+// strings with one reader would be a namespace nothing else joins.
+export const OBJECT_KIND_UNKNOWN = messageKey('dialog.edit-page-object.kind-unknown');
+export const OBJECT_KIND_TEXT = messageKey('dialog.edit-page-object.kind-text');
+export const OBJECT_KIND_PATH = messageKey('dialog.edit-page-object.kind-path');
+export const OBJECT_KIND_IMAGE = messageKey('dialog.edit-page-object.kind-image');
+export const OBJECT_KIND_SHADING = messageKey('dialog.edit-page-object.kind-shading');
+export const OBJECT_KIND_FORM = messageKey('dialog.edit-page-object.kind-form');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
@@ -631,6 +656,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and the ribbon has no other way to say so. "Replace text" alone reads as
   // find-and-replace, which is a different row and a different scope.
   [REPLACE_TEXT_OBJECT_COMMAND_TITLE]: 'Edit text on page',
+  [EDIT_PAGE_OBJECT_COMMAND_TITLE]: 'Edit an object on page',
   [SPELL_CHECK_TITLE]: 'Spell check',
   [SPELL_CHECK_LANGUAGE]: 'Checked against {language}',
   [SPELL_CHECK_LANGUAGE_EN]: 'English',
@@ -801,6 +827,41 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'There was more text than Monstera lists here, so this page may have other lines.',
   [REPLACE_TEXT_OBJECT_TOO_LONG]: 'That is longer than one piece of text can hold.',
   [REPLACE_TEXT_OBJECT_APPLY]: 'Replace',
+  [EDIT_PAGE_OBJECT_TITLE]: 'Edit an object on this page',
+  // SAYS WHAT A ROW IS BEFORE OFFERING ANY, `FlatFieldsBody`'s rule. Each row
+  // is a thing drawn on the page and the numbers are where it sits, measured
+  // from the bottom-left corner — which is the PDF's own origin and not the
+  // one a person would assume, so it is said rather than left to be inferred
+  // from rows that look upside down.
+  [EDIT_PAGE_OBJECT_EXPLAINS]:
+    'Everything drawn on a page is a separate object. The numbers are where each one sits, in points from the bottom-left corner. Pick one, then move it, resize it, change its colour or remove it — you can undo any of these.',
+  [EDIT_PAGE_OBJECT_WHICH]: 'Which object',
+  [EDIT_PAGE_OBJECT_MOVE_X]: 'Move right by (points)',
+  [EDIT_PAGE_OBJECT_MOVE_Y]: 'Move up by (points)',
+  [EDIT_PAGE_OBJECT_SCALE_X]: 'Width × ',
+  [EDIT_PAGE_OBJECT_SCALE_Y]: 'Height × ',
+  [EDIT_PAGE_OBJECT_PLACE]: 'Move and resize',
+  [EDIT_PAGE_OBJECT_COLOUR]: 'Colour',
+  [EDIT_PAGE_OBJECT_RECOLOR]: 'Change colour',
+  // SAYS WHOSE LIMITATION IT IS. *Cannot* would read as Monstera refusing; the
+  // honest version is that the engine will not describe this object's colour,
+  // which is also what tells a person that trying again will not help.
+  [EDIT_PAGE_OBJECT_NO_FILL]: 'Monstera cannot read a colour for this object, so it cannot change it.',
+  [EDIT_PAGE_OBJECT_DELETE]: 'Remove from page',
+  [EDIT_PAGE_OBJECT_NONE]: 'This page has nothing drawn on it.',
+  [EDIT_PAGE_OBJECT_TRUNCATED]:
+    'There was more on this page than Monstera lists here, so it may have other objects.',
+  // THE KINDS, as words a person recognises rather than PDF's vocabulary. A
+  // reader does not know what a *path* is and does know what a shape is; the
+  // one that stays technical is `form`, because it is a PDF form XObject rather
+  // than a fillable form and calling it either would be worse than saying
+  // *group*.
+  [OBJECT_KIND_UNKNOWN]: 'Something else',
+  [OBJECT_KIND_TEXT]: 'Text',
+  [OBJECT_KIND_PATH]: 'Shape',
+  [OBJECT_KIND_IMAGE]: 'Image',
+  [OBJECT_KIND_SHADING]: 'Gradient',
+  [OBJECT_KIND_FORM]: 'Group',
   // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument
   // one walk along. The rows beside it name similar fields, and a bare verb on
   // a list of similar rows is the label a person clicks on the wrong line. It

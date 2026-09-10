@@ -883,6 +883,41 @@ export interface DocumentTextLines {
   readonly truncated: boolean;
 }
 
+/** One of a page's objects, as the editing engine describes it. */
+export interface DocumentPageObject {
+  readonly index: number;
+  readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
+  readonly left: number;
+  readonly bottom: number;
+  readonly right: number;
+  readonly top: number;
+  readonly fill: {
+    readonly red: number;
+    readonly green: number;
+    readonly blue: number;
+    readonly alpha: number;
+  } | null;
+}
+
+/**
+ * Every object on a page, in the EDITING engine's numbering.
+ *
+ * {@link DocumentTextLinesReader}'s shape on the other read, and it groups
+ * nothing: an object is what the engine answered.
+ */
+export type DocumentPageObjectsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<{ readonly objects: readonly DocumentPageObject[]; readonly truncated: boolean }>;
+
+/** The objects, stamped with the version the lane read them at. */
+export interface DocumentPageObjects {
+  readonly version: DocVersion;
+  readonly objects: readonly DocumentPageObject[];
+  readonly truncated: boolean;
+}
+
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
   docId: DocId,
@@ -1077,6 +1112,8 @@ export interface DocumentCommandsParts {
    * edit text* a state a caller reaches by saying nothing.
    */
   readonly textLines: DocumentTextLinesReader;
+  /** The editing engine's reading of a page's objects, or a thrower. */
+  readonly pageObjects: DocumentPageObjectsReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -1102,6 +1139,7 @@ export class DocumentCommands {
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
   readonly #textLines: DocumentTextLinesReader;
+  readonly #pageObjects: DocumentPageObjectsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -1125,6 +1163,7 @@ export class DocumentCommands {
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#textLines = parts.textLines;
+    this.#pageObjects = parts.pageObjects;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -1512,6 +1551,29 @@ export class DocumentCommands {
     });
 
     return { version, lines: value.lines, truncated: value.truncated };
+  }
+
+  /**
+   * Every object on a page, inside the document's lane.
+   *
+   * {@link textLines}' guards in its order and for its reasons: the poison
+   * guard first, then a session guard naming `mupdf` because the bytes this
+   * read hands PDFium come from the live MuPDF session. The version comes back
+   * with the answer, and it is what the three object commands carry — a chooser
+   * built on a stale list would name an object the document has moved past.
+   */
+  async pageObjects(docId: DocId, page: number): Promise<DocumentPageObjects> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#pageObjects(docId, sessions, page);
+    });
+
+    return { version, objects: value.objects, truncated: value.truncated };
   }
 
   /**

@@ -174,6 +174,7 @@ export function createContractHandlers(deps: {
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
     'document.textLines': textLinesHandler(deps.commands),
+    'document.pageObjects': pageObjectsHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -912,6 +913,24 @@ function textLinesHandler(commands: DocumentCommands): ContractHandlers['documen
     try {
       const { version, lines, truncated } = await commands.textLines(docId, page);
       return ok({ version, lines, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/** {@link textLinesHandler}'s three refusals on the other PDFium read. */
+function pageObjectsHandler(commands: DocumentCommands): ContractHandlers['document.pageObjects'] {
+  return async ({
+    docId,
+    page,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.pageObjects']>>> => {
+    try {
+      const { version, objects, truncated } = await commands.pageObjects(docId, page);
+      return ok({ version, objects, truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

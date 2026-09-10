@@ -48,6 +48,7 @@ import {
   nodeFileSurface,
   parsePageText,
   pdfiumChannels,
+  remotePdfiumPageObjects,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
   remoteMupdfGeometry,
@@ -625,6 +626,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // would have been the engine's opinion about lines, which PDFium
       // measurably does not have.
       return { lines: groupIntoLines(found.runs), truncated: found.truncated };
+    },
+    // THE OTHER ENGINE'S SECOND READ, and it groups nothing — an object is what
+    // the engine answered, and the row above it is where a grouping of ours
+    // lives. Same two forced steps as `textLines`: a byte-image engine is asked
+    // about a document by being handed its bytes, and `currentBytes` is the one
+    // route to them.
+    pageObjects: async (docId, sessions, page) => {
+      if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s objects');
+      return pdfiumHost.pageObjects(await currentBytes(docId, sessions), page);
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
@@ -1405,6 +1415,9 @@ function engineSessionOpener(
 /** One page's text runs, over the second host's wire. */
 type PdfiumTextRuns = ReturnType<typeof remotePdfiumTextRuns>;
 
+/** One page's objects, over the same wire. */
+type PdfiumPageObjects = ReturnType<typeof remotePdfiumPageObjects>;
+
 /**
  * The PDFium host's lifetime, its one granted area, and the writer the bus
  * routes `replaceTextObject` to.
@@ -1452,6 +1465,7 @@ function pdfiumHostBinding(
 ): {
   readonly writer: RegisteredWriter<'pdfium'>;
   readonly textRuns: PdfiumTextRuns;
+  readonly pageObjects: PdfiumPageObjects;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -1459,6 +1473,7 @@ function pdfiumHostBinding(
     readonly connection: EngineHostConnection;
     readonly writer: RegisteredWriter<'pdfium'>;
     readonly textRuns: PdfiumTextRuns;
+  readonly pageObjects: PdfiumPageObjects;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
     readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
     readonly session: string;
@@ -1576,6 +1591,7 @@ function pdfiumHostBinding(
       connection: live.value,
       writer: remotePdfiumWriter(client, held, transfer),
       textRuns: remotePdfiumTextRuns(client, held, transfer),
+      pageObjects: remotePdfiumPageObjects(client, held, transfer),
       paths,
       session: opened.value.session,
     };
@@ -1607,6 +1623,7 @@ function pdfiumHostBinding(
       serialise: (session) => Promise.resolve(session),
     },
     textRuns: async (image, page) => (await ensure()).textRuns(image, page),
+    pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
     close: async () => {
       const live = host;
       host = null;

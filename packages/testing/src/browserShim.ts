@@ -404,6 +404,28 @@ export interface BrowserShimOptions {
   readonly textLines?:
     | readonly { readonly runs: readonly { readonly index: number; readonly text: string }[] }[]
     | null;
+  /**
+   * The objects `document.pageObjects` answers.
+   *
+   * `textLines`' three states, for its reason: `null` and `undefined` are the
+   * machine with no PDFium, and `[]` is a page with nothing on it.
+   */
+  readonly pageObjects?:
+    | readonly {
+        readonly index: number;
+        readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
+        readonly left: number;
+        readonly bottom: number;
+        readonly right: number;
+        readonly top: number;
+        readonly fill: {
+          readonly red: number;
+          readonly green: number;
+          readonly blue: number;
+          readonly alpha: number;
+        } | null;
+      }[]
+    | null;
 
   /**
    * What a previous run stored, as `settings.load` will answer it.
@@ -1175,6 +1197,17 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         return Promise.resolve(err({ code: 'engine-unavailable' }));
       }
       return Promise.resolve(ok({ version: asDocVersion(current), lines, truncated: false }));
+    },
+
+    'document.pageObjects': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      // THE ENGINE'S ABSENCE IS THE DEFAULT, `document.textLines`' reason.
+      const objects = options.pageObjects;
+      if (objects === undefined || objects === null) {
+        return Promise.resolve(err({ code: 'engine-unavailable' }));
+      }
+      return Promise.resolve(ok({ version: asDocVersion(current), objects, truncated: false }));
     },
 
     'document.duplicatePages': ({ docId }) => {

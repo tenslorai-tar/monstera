@@ -37,6 +37,7 @@ import {
   importFormDataXfdfCommand,
   detectFlatFieldsCommand,
   replaceTextObjectCommand,
+  editPageObjectCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
@@ -98,6 +99,7 @@ import { RESIZE_PAGES_DIALOG } from './dialogs/resizePages.js';
 import { GENERATE_TOC_PROBLEM_DIALOG } from './dialogs/generateTocProblem.js';
 import { FLAT_FIELDS_DIALOG } from './dialogs/flatFields.js';
 import { REPLACE_TEXT_OBJECT_DIALOG } from './dialogs/replaceTextObject.js';
+import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
@@ -335,6 +337,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         RESIZE_PAGES_DIALOG,
         FLAT_FIELDS_DIALOG,
         REPLACE_TEXT_OBJECT_DIALOG,
+        EDIT_PAGE_OBJECT_DIALOG,
         IMPORT_FORM_DATA_PROBLEM_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
         GENERATE_TOC_PROBLEM_DIALOG,
@@ -1221,6 +1224,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         importFormDataFdfCommand({ client, onApplied: applied, ask }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask }),
         replaceTextObjectCommand({ client, onApplied: applied, ask }),
+        editPageObjectCommand({ client, onApplied: applied, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.

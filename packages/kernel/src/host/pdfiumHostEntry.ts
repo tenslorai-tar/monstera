@@ -8,6 +8,7 @@ import {
   localPdfiumExecution,
   openPdfium,
   pdfiumWriter,
+  pageObjects,
   textRuns,
 } from '../pdfium.js';
 import { cryptoBytes } from '../token.js';
@@ -170,6 +171,18 @@ const handlers = createPdfiumHandlers({
       return {
         runs: runs.slice(0, ENGINE_TEXT_OBJECTS_MAX),
         truncated: runs.length > ENGINE_TEXT_OBJECTS_MAX,
+      };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  },
+  pageObjects: async (image, page) => {
+    const session = await pdfiumWriter.open(image);
+    try {
+      const objects = await pageObjects(session, page);
+      return {
+        objects: objects.slice(0, ENGINE_TEXT_OBJECTS_MAX),
+        truncated: objects.length > ENGINE_TEXT_OBJECTS_MAX,
       };
     } finally {
       await pdfiumWriter.close(session);

@@ -203,6 +203,7 @@ describe('browser shim', () => {
       'document.open',
       'document.openRecent',
       'document.pageLinks',
+      'document.pageObjects',
       'document.pageTextLayer',
       'document.pageWordCount',
       'document.placeImage',

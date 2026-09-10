@@ -25,6 +25,8 @@ import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
 import { REPLACE_TEXT_OBJECT_DIALOG_ID } from '../dialogs/replaceTextObject.js';
 import type { ReplaceTextObjectAnswer } from '../dialogs/replaceTextObjectResult.js';
+import { EDIT_PAGE_OBJECT_DIALOG_ID } from '../dialogs/editPageObject.js';
+import type { EditPageObjectAnswer } from '../dialogs/editPageObjectResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
@@ -61,6 +63,7 @@ import {
   GROUP_PAGES,
   GROUP_TEXT,
   REPLACE_TEXT_OBJECT_COMMAND_TITLE,
+  EDIT_PAGE_OBJECT_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -1973,6 +1976,100 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
         // moved past, and nothing would refuse it.
         version: found.value.version,
       });
+    },
+  };
+}
+
+/**
+ * Moves, resizes, recolours or removes one of the page's objects.
+ *
+ * ## ONE registered command dispatching one of THREE, which is not a second
+ * wiring place
+ *
+ * The three kernel commands have three undo shapes and could not be one; the
+ * question they share is *which object*, and asking it once is what stops a
+ * person picking the same thing three times. So there is one entry in the
+ * registry, one ribbon control, and a dialog whose answer is a discriminated
+ * union the `switch` below reads once.
+ *
+ * Three ribbon buttons would be the alternative, and the registry would accept
+ * them — this is a design call rather than a rule, and it is recorded because
+ * the opposite call is defensible the day a surface can select an object by
+ * clicking it, at which point *which object* is already answered and three
+ * verbs on a context menu is the better shape.
+ *
+ * ## THE INDEX IS NEVER DERIVED HERE
+ *
+ * `replaceTextObjectCommand`'s rule and its reason unchanged: the channel
+ * answers the index, the dialog offers it, the dialog returns it, and it is
+ * sent. `document.pageObjects` is one of the only two sources of a PDFium index
+ * a renderer may use, and the page's structured text is not one of them.
+ *
+ * ## The VERSION is the READ's
+ *
+ * All three declare `targets: 'text-object'`, so `#refuseIfStale` asks *is this
+ * the document the list described*. A command carrying the shell's current
+ * version would answer that question with itself.
+ */
+export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.edit-page-object',
+    title: EDIT_PAGE_OBJECT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+
+      const found = await deps.client['document.pageObjects']({
+        docId: context.docId,
+        page: context.page,
+      });
+      if (!found.ok) {
+        reportProblem(deps, found.error);
+        return;
+      }
+
+      const chosen = (await deps.ask(EDIT_PAGE_OBJECT_DIALOG_ID, {
+        objects: found.value.objects.map((object) => ({ ...object })),
+        truncated: found.value.truncated,
+      })) as EditPageObjectAnswer | undefined;
+      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
+      if (chosen === undefined) return;
+
+      // THE PAGE IS `context.page` AND IS ALREADY ZERO-BASED. `pageNumbering.ts`
+      // is the only place that converts, and there is nothing to convert here.
+      const page = context.page;
+      const version = found.value.version;
+      const command =
+        chosen.action === 'place'
+          ? {
+              kind: 'placePageObject' as const,
+              page,
+              index: chosen.index,
+              moveBy: chosen.moveBy,
+              scaleBy: chosen.scaleBy,
+              version,
+            }
+          : chosen.action === 'recolor'
+            ? {
+                kind: 'recolorPageObjects' as const,
+                page,
+                // ONE ENTRY, because this chooser names one object. The command
+                // carries a list so a person recolouring several things is one
+                // regeneration and one undo; a surface naming one sends a list
+                // of one rather than a different command.
+                indices: [chosen.index],
+                colour: chosen.colour,
+                version,
+              }
+            : {
+                kind: 'deletePageObjects' as const,
+                page,
+                indices: [chosen.index],
+                version,
+              };
+
+      await applyDocumentCommand(deps, context.docId, command);
     },
   };
 }

@@ -153,6 +153,7 @@ export {
 export {
   type PdfiumArea,
   type PdfiumTransfer,
+  remotePdfiumPageObjects,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './host/remotePdfium.js';

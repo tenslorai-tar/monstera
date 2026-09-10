@@ -57,6 +57,7 @@ import {
   type DocumentAnnotationsReader,
   type DocumentFlatFieldsReader,
   type DocumentTextLinesReader,
+  type DocumentPageObjectsReader,
   EngineUnavailableError,
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
@@ -368,6 +369,10 @@ const noFlatFields: DocumentFlatFieldsReader = () =>
 const noTextLines: DocumentTextLinesReader = () =>
   Promise.reject(new EngineUnavailableError('reading a page’s text'));
 
+/** {@link noTextLines}' sibling on the object read, and for its reason. */
+const noPageObjects: DocumentPageObjectsReader = () =>
+  Promise.reject(new EngineUnavailableError('reading a page’s objects'));
+
 /** The candidate proposal's composition, per page. */
 const localFlatFields: DocumentFlatFieldsReader = (id, sessions, page) => {
   const held = sessions.mupdf;
@@ -467,6 +472,7 @@ const INERT = {
   formFields: noFormFields,
   flatFields: noFlatFields,
   textLines: noTextLines,
+  pageObjects: noPageObjects,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -492,6 +498,7 @@ const LOCAL_READS = {
   // in this process for these cases; PDFium is not, and a fixture that answered
   // plausible lines would be this file inventing an engine.
   textLines: noTextLines,
+  pageObjects: noPageObjects,
   duplicates: localDuplicates,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
