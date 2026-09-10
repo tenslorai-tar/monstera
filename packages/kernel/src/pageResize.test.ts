@@ -229,17 +229,24 @@ describe('resizePages', () => {
     // leaves the content 10 units up and to the right at this scale — and every
     // page in a fixture built by pdf-lib starts at zero, where the two
     // implementations agree exactly.
+    //
+    // **The crop box is INSIDE the media box, corrected 2026-09-10.** It used
+    // to be the source box offset by 20 on both axes, which put two of its
+    // edges outside the sheet — so the fixture for the origin term was a
+    // malformed page, and it passed only because this module's own box reader
+    // did not clip. The clip is `pageBoxes.ts`' and the case now uses a legal
+    // page, where the property under test is the only thing in play.
     const source = await PDFDocument.load(await drawnDocument());
     const page = source.getPages()[0];
     if (page === undefined) throw new Error('the fixture lost a page');
-    page.node.set(
-      PDFName.of('CropBox'),
-      source.context.obj([20, 20, 20 + SOURCE_WIDTH, 20 + SOURCE_HEIGHT]),
-    );
+    page.node.set(PDFName.of('CropBox'), source.context.obj([20, 20, 180, SOURCE_HEIGHT]));
     const after = await afterApply(await source.save(), { ...HALF, pages: [0] });
 
+    // 160×280 fitted into 100×150 is 0.53571, and the origin term is that scale
+    // times 20 — which is NOT 20, so a version subtracting an unscaled origin
+    // fails this too.
     expect((await streamsOn(after, 0))[0]).toContain(
-      '0.50000 0.00000 0.00000 0.50000 -10.000 -10.000 cm',
+      '0.53571 0.00000 0.00000 0.53571 -3.571 -10.714 cm',
     );
   });
 
@@ -416,7 +423,70 @@ describe('resizePages', () => {
 
     const session = await mupdfWriter.open(await source.save());
     try {
-      await expect(applyResizePages(session, { ...HALF, pages: [0] })).rejects.toThrow(/no area/);
+      await expect(applyResizePages(session, { ...HALF, pages: [0] })).rejects.toThrow(
+        /displays no region/,
+      );
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  /**
+   * The box rule has one owner, and until 2026-09-10 this module held a second
+   * copy of it that did not clip.
+   *
+   * The two agree on every well-formed document, so the case that separates
+   * them is the malformed one PDF 32000-1 §14.11.2 legislates for: a
+   * `/CropBox` larger than the `/MediaBox` displays as the media box, and the
+   * unclipped reading scales the content from a region a third wider than what
+   * the reader sees.
+   *
+   * **The assertion is the scale factor and not the page's size**, because the
+   * declared box is `HALF`'s two numbers either way — the failure this catches
+   * renders as a correctly sized page with everything on it too small, which is
+   * the resize row's own indistinguishable pair one level down.
+   */
+  it('scales from the crop box CLIPPED to the media box, not from the crop box as written', async () => {
+    const source = await PDFDocument.load(await drawnDocument());
+    const page = source.getPages()[0];
+    if (page === undefined) throw new Error('the fixture lost a page');
+    // A third wider and a third taller than the sheet, on both axes, so an
+    // unclipped reading produces a visibly different scale on each.
+    page.node.set(
+      PDFName.of('CropBox'),
+      source.context.obj([0, 0, SOURCE_WIDTH * 2, SOURCE_HEIGHT * 2]),
+    );
+
+    const session = await mupdfWriter.open(await source.save());
+    try {
+      await applyResizePages(session, { ...HALF, pages: [0] });
+      const streams = await streamsOn(await mupdfWriter.serialise(session), 0);
+      // HALF is exactly half of the source sheet, so the clipped reading fits
+      // at 0.5 and the unclipped one at 0.25.
+      expect(streams[0]).toContain('0.50000 0.00000 0.00000 0.50000');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: an ordinary page, whose crop box needs no clipping, still scales the same way', async () => {
+    // Without this the case above passes for an implementation that ignores the
+    // crop box entirely, which is a third answer rather than the owner's.
+    const source = await PDFDocument.load(await drawnDocument());
+    const page = source.getPages()[0];
+    if (page === undefined) throw new Error('the fixture lost a page');
+    page.node.set(
+      PDFName.of('CropBox'),
+      source.context.obj([0, 0, SOURCE_WIDTH / 2, SOURCE_HEIGHT / 2]),
+    );
+
+    const session = await mupdfWriter.open(await source.save());
+    try {
+      await applyResizePages(session, { ...HALF, pages: [0] });
+      const streams = await streamsOn(await mupdfWriter.serialise(session), 0);
+      // The crop box sits inside the media box, so it is what the reader sees
+      // and what the content scales from: 100/100 and 150/150.
+      expect(streams[0]).toContain('1.00000 0.00000 0.00000 1.00000');
     } finally {
       await mupdfWriter.close(session);
     }

@@ -1,3 +1,4 @@
+import type { Box } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 import type { PDFDocument, PDFObject } from 'mupdf';
 
@@ -5,6 +6,7 @@ import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, SCALE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { boxOf, displayedBox } from './pageBoxes.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -110,59 +112,33 @@ function pageObject(document: PDFDocument, page: number, total: number): PDFObje
 }
 
 /**
- * The four numbers of a box object, or `null` if it is not one.
+ * THE BOX RULE IS `pageBoxes.ts`' AND WAS ANSWERED HERE A SECOND TIME UNTIL
+ * 2026-09-10.
  *
- * `pageCrop.ts`' reader, and the same reason for the same shape: a malformed
- * box is a **capture refusal** rather than a throw, because *this document
- * cannot have its prior state recorded* is an outcome the bus answers with a
- * checkpoint (ADR-0009, 2026-08-19).
- */
-function boxOf(object: PDFObject): readonly number[] | null {
-  if (!object.isArray() || object.length !== 4) return null;
-  const numbers: number[] = [];
-  for (let index = 0; index < 4; index += 1) {
-    const entry = object.get(index);
-    if (!entry.isNumber()) return null;
-    numbers.push(entry.asNumber());
-  }
-  return numbers;
-}
-
-/** A box's extent, taken as min and max because the corners are not ordered. */
-interface Extent {
-  readonly minX: number;
-  readonly minY: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-/**
- * A box as an extent.
+ * This module carried its own `boxOf`, `extentOf` and `displayedBox`, written
+ * before `pageBoxes.ts` existed and never taken off. They agreed with it on
+ * every well-formed document, which is why nothing noticed — and `pageBoxes.ts`'
+ * own header records what they disagree about: PDF 32000-1 §14.11.2 says the
+ * crop box *"shall be... clipped to the media box"*, and the copy here did not
+ * clip. Measured there against MuPDF 1.28.0: a `/CropBox [-20 -30 400 500]` on
+ * a `/MediaBox [0 0 200 300]` page displays as `[0 0 200 300]`, and the
+ * unclipped reading is 20 and 30 units out on two edges and 200 and 200 on the
+ * other two.
  *
- * `pageCrop.ts`' rule: PDF does not order a box's corners, so `[0 792 612 0]`
- * is a legal spelling of the same rectangle. Reading them positionally gives a
- * negative height here, which would produce a **mirrored** page that still
- * renders — the failure that does not announce itself.
- */
-function extentOf(box: readonly number[]): Extent | null {
-  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = box;
-  const width = Math.abs(x1 - x0);
-  const height = Math.abs(y1 - y0);
-  if (width <= 0 || height <= 0) return null;
-  return { minX: Math.min(x0, x1), minY: Math.min(y0, y1), width, height };
-}
-
-/**
- * The box a page displays: its own or an inherited `/CropBox`, falling back to
- * `/MediaBox`.
+ * For a resize that is not a cosmetic difference: the extent is what the
+ * content is scaled **from**, so an oversized crop box made every glyph on the
+ * page too small and put the result off-centre. B3a's own sentence, in the
+ * shape it warns about — *the finding is the second opinion, not the wrong
+ * one*.
  *
- * `getInheritable` for both, because what the content is scaled *from* has to
- * be what the reader is looking at, not what the leaf happens to declare.
+ * @param object the page object
+ * @returns the displayed region, ordered and clipped, or `null`
  */
-function displayedBox(object: PDFObject): readonly number[] | null {
-  const crop = object.getInheritable('CropBox');
-  if (!crop.isNull()) return boxOf(crop);
-  return boxOf(object.getInheritable('MediaBox'));
+function extentOf(object: PDFObject): Box | null {
+  const box = displayedBox(object);
+  if (box === null) return null;
+  if (box.x1 <= box.x0 || box.y1 <= box.y0) return null;
+  return box;
 }
 
 /**
@@ -216,8 +192,8 @@ interface Resize {
 }
 
 /** The transform that fits `extent` into the target, centred. */
-function fit(extent: Extent, boxWidth: number, boxHeight: number): Resize['scale'] {
-  return Math.min(boxWidth / extent.width, boxHeight / extent.height);
+function fit(extent: Box, boxWidth: number, boxHeight: number): Resize['scale'] {
+  return Math.min(boxWidth / (extent.x1 - extent.x0), boxHeight / (extent.y1 - extent.y0));
 }
 
 /**
@@ -234,18 +210,11 @@ function resizeOf(
   page: number,
   command: CommandOfKind<'resizePages'>,
 ): Resize {
-  const box = displayedBox(object);
-  if (box === null) {
-    throw new RangeError(
-      `page ${String(page)} has no readable box to resize from — neither a /CropBox nor a ` +
-        `/MediaBox of four numbers`,
-    );
-  }
-  const extent = extentOf(box);
+  const extent = extentOf(object);
   if (extent === null) {
     throw new RangeError(
-      `page ${String(page)} declares a box with no area (${box.join(', ')}), so there is ` +
-        `nothing to scale`,
+      `page ${String(page)} displays no region to resize from — it has no /MediaBox of four ` +
+        `numbers, or its /CropBox and /MediaBox do not overlap`,
     );
   }
 
@@ -257,8 +226,8 @@ function resizeOf(
   return {
     object,
     scale,
-    translateX: (boxWidth - scale * extent.width) / 2 - scale * extent.minX,
-    translateY: (boxHeight - scale * extent.height) / 2 - scale * extent.minY,
+    translateX: (boxWidth - scale * (extent.x1 - extent.x0)) / 2 - scale * extent.x0,
+    translateY: (boxHeight - scale * (extent.y1 - extent.y0)) / 2 - scale * extent.y0,
     boxWidth,
     boxHeight,
   };
