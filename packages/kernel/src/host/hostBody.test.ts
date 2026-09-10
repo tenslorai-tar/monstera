@@ -134,6 +134,9 @@ function start(stream: HostByteStream) {
     pageLinks: () => {
       throw new Error('no case here reads page links');
     },
+    ocr: () => {
+      throw new Error('no case here recognises anything');
+    },
     destinations: () => {
       throw new Error('no case here reads the outline');
     },

@@ -16,6 +16,7 @@ import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
 import { snapshotRegion } from '../pageSnapshot.js';
+import { recognisePage } from '../ocrRecognise.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { cryptoBytes } from '../token.js';
@@ -148,6 +149,13 @@ const engineHandlers = createEngineHandlers({
   // structure it computed.
   pageText: readPageTextJson,
   pageLinks: readPageLinks,
+  // RUNS HERE, and that is §3's matrix rather than a placement. Recognition
+  // consumes a bitmap **we produced**, so the document-parse boundary invariant
+  // 25 governs was already crossed by the rasteriser — and that rasteriser is
+  // MuPDF's, in this process. Running recognition beside it means no
+  // eight-megabyte bitmap crosses a pipe per page and no second rasteriser
+  // exists for OCR input (B3a).
+  ocr: recognisePage,
   destinations: readDestinations,
   layers: readLayers,
   annotations: readAnnotations,

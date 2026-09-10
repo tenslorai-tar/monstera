@@ -518,6 +518,9 @@ describe('the engine host answers a containment probe', () => {
     pageLinks: () => {
       throw new Error('a containment probe must not read page links');
     },
+    ocr: () => {
+      throw new Error('a containment probe must not recognise anything');
+    },
     destinations: () => {
       throw new Error('a containment probe must not read the outline');
     },

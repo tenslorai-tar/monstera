@@ -175,6 +175,14 @@ async function joined(): Promise<{
       // what the HOST's document says rather than what a stub was told to say.
       pageText: readPageTextJson,
       pageLinks: readPageLinks,
+      // NOT THE REAL READER, where its neighbours above are. `recognisePage`
+      // instantiates 2.8 MB of Tesseract WASM and takes about four seconds per
+      // page, and no case in this file drives the channel — so the production
+      // reader here would be a cost every case in the file pays to prove
+      // nothing. `ocrRecognise.proof.mjs` is where the real engine runs.
+      ocr: () => {
+        throw new Error('no case in this file recognises anything');
+      },
       destinations: readDestinations,
       layers: readLayers,
       // THE REAL READERS, so the parts assembled here are the production ones —
@@ -441,6 +449,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageLinks: () => {
           throw new Error('unused');
         },
+        ocr: () => {
+          throw new Error('unused');
+        },
         destinations: () => {
           throw new Error('unused');
         },
@@ -535,6 +546,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageLinks: () => {
           throw new Error('the rotation-refusal case must not read page links');
+        },
+        ocr: () => {
+          throw new Error('the rotation-refusal case must not recognise anything');
         },
         destinations: () => {
           throw new Error('the rotation-refusal case must not read the outline');

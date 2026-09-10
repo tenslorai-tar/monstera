@@ -329,6 +329,22 @@ jobs:
       - name: Prove the OCR languages and the provisioned models are one set
         run: node scripts/ci/annotate.mjs scripts/proofs/ocrModels.proof.mjs
 
+      # ONE MODEL, 1,984,273 BYTES, and it is fetched for a single case: the
+      # coordinate control in the proof below is what separates a correct
+      # raster-to-PDF frame conversion from a flipped one, and it needs a model
+      # to run. Without this the most important case in D6 row 2 would be
+      # local-only — a defect CI structurally cannot see — and with it the board
+      # settles it. The other thirteen are 16 MB this leg has no use for.
+      - name: Provision the English OCR model
+        run: node scripts/provision/tessdata.mjs --only=eng
+
+      # D6 row 2's recognition, against the real engine. The corpus is not here,
+      # so its two corpus cases report NOT APPLICABLE and the nine constructed
+      # ones run — including the coordinate pair and the model-grant refusal with
+      # its control.
+      - name: Prove recognition answers boxes in the page’s own coordinates
+        run: node scripts/ci/annotate.mjs scripts/proofs/ocrRecognise.proof.mjs
+
       # E2's accuracy score. The corpus is not here, so what runs on the Windows
       # leg is the pair of controls — a constructed page both engines must agree
       # on completely, and two resolution cases proving the scorer can report a

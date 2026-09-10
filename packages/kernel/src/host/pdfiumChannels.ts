@@ -41,8 +41,8 @@ import {
  *
  * ## Its own file rather than a second entry in `engineChannels.ts`
  *
- * The map in that file is MuPDF's, and its own header says the twelve reads are
- * MuPDF's document model. Adding a PDFium map beside them would put two engines'
+ * The map in that file is MuPDF's, and its own header says its document-model
+ * reads are MuPDF's. Adding a PDFium map beside them would put two engines'
  * wire surfaces in one module and make *which channels does this host serve* a
  * question about which half of a file you are reading. `EngineChannelsFor<W>`
  * is a type; this is where the value lives.

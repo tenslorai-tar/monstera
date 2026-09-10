@@ -121,16 +121,34 @@ const REPO_ROOT = resolve(HERE, '..', '..');
  *
  * `--check` verifies without fetching, which is what a job that expects a warm
  * cache runs; `--force` re-fetches regardless.
+ *
+ * **`--only=<language>` fetches one**, and it exists for a stated reason rather
+ * than as a convenience: `proof:ocrrecognise`'s coordinate control is the case
+ * that separates a correct frame conversion from a flipped one, and it needs a
+ * model to run. All fourteen is 18 MB a CI leg has no use for; `eng` alone is
+ * 1,984,273 bytes, which makes that case run on the board instead of only here.
+ * An unknown name is refused rather than silently fetching nothing — *found
+ * nothing* is the reassuring answer for a filter.
  */
 async function main() {
   const force = process.argv.includes('--force');
   const checkOnly = process.argv.includes('--check');
+  const only = process.argv.find((argument) => argument.startsWith('--only='))?.slice('--only='.length);
+  const wanted = only === undefined ? TESSDATA_MODELS : TESSDATA_MODELS.filter((model) => model.language === only);
+  if (wanted.length === 0) {
+    process.stderr.write(
+      `\n--only=${String(only)} names no model in this table. The languages are ` +
+        `${TESSDATA_MODELS.map((model) => model.language).join(', ')}.\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
   const directory = tessdataDirectory(REPO_ROOT);
   await mkdir(directory, { recursive: true });
 
   let fetched = 0;
   let verified = 0;
-  for (const model of TESSDATA_MODELS) {
+  for (const model of wanted) {
     const destination = tessdataPath(REPO_ROOT, model.language);
     const present = await fileExists(destination);
 
@@ -168,7 +186,8 @@ async function main() {
   process.stdout.write(
     `OCR models ready in ${directory}\n` +
       `  ${String(fetched)} fetched, ${String(verified)} already present and verified, ` +
-      `${String(TESSDATA_MODELS.length)} languages, ${String(TESSDATA_TOTAL_BYTES)} bytes\n`,
+      `${String(wanted.length)} of ${String(TESSDATA_MODELS.length)} languages` +
+      `${only === undefined ? `, ${String(TESSDATA_TOTAL_BYTES)} bytes` : ` (--only=${only})`}\n`,
   );
 }
 

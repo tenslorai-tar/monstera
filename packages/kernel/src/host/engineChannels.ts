@@ -22,6 +22,7 @@ import {
   insertBlankPageSchema,
   mergeDocumentSchema,
   movePageSchema,
+  ocrLanguageSchema,
   placeAnnotationSchema,
   styleAnnotationSchema,
   removeAnnotationSchema,
@@ -163,6 +164,49 @@ export const ENGINE_PAGE_LINKS_MAX = 4096;
  * rather than a number chosen here.
  */
 export const ENGINE_LINK_URI_MAX = 2048;
+
+/**
+ * How many recognised lines one page may answer with.
+ *
+ * Measured 2026-09-10 across the eleven-document corpus at 200 dpi: **5 to 54
+ * lines** per page, the densest being a two-column HTML-engine export. Two
+ * thousand is two orders of magnitude past that — a page whose image Tesseract
+ * reads two thousand lines out of is a page of noise, and the bound's job is to
+ * stop a hostile host claiming a hundred thousand rather than to characterise a
+ * document.
+ *
+ * **The trigger:** the first real page refused by this is the evidence it is
+ * wrong, and the fix is a measurement of what such a page contains.
+ */
+export const ENGINE_OCR_LINES_MAX = 2048;
+
+/** How many words one recognised line may carry. Measured: the densest is 34. */
+export const ENGINE_OCR_WORDS_PER_LINE_MAX = 512;
+
+/**
+ * How long one recognised line's text may be.
+ *
+ * A line is a line of a page, not a paragraph: the longest in the corpus is
+ * under 120 characters. The bound is generous against a page set sideways, where
+ * Tesseract's idea of a line is the long edge.
+ */
+export const ENGINE_OCR_LINE_TEXT_MAX = 4096;
+
+/** How long one recognised word may be. A real word is short; noise is not. */
+export const ENGINE_OCR_WORD_TEXT_MAX = 256;
+
+/**
+ * A recognised box, in PDF user space.
+ *
+ * `linkBoundsSchema`'s reason for existing, on a second noun: a hostile host can
+ * send `Infinity` or `NaN` through JSON as easily as a coordinate, and a box
+ * carrying either reaches the text layer's arithmetic. `z.number()` refuses both
+ * — zod 4.4.3 rejects non-finite numbers by default.
+ *
+ * A TUPLE, matching `RecognisedWord['box']` exactly, so the handler needs no
+ * cast to satisfy this schema and no reshaping to satisfy the type.
+ */
+const ocrBoxSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]).readonly();
 
 /**
  * A link's rectangle, in the page's own units.
@@ -1254,7 +1298,7 @@ export const byteImageWire = {
  * the schemas and the types could disagree, inside the boundary discipline
  * every other channel in the repository takes from `packages/contract`.
  *
- * **The twelve document-model reads are NOT here**, and that is Decision 1: they
+ * **The document-model reads are NOT here**, and that is Decision 1: they
  * are MuPDF's model, answered by MuPDF's host. A second engine owes none of
  * them, and a host that declared them and stubbed them would be a process
  * answering questions with nothing behind it.
@@ -1746,6 +1790,83 @@ export const engineChannels = {
    * answers (B3a). Invariant 24 rests on that split: a surface may jump to an
    * internal destination and must ask before following an external one.
    */
+  /**
+   * One page's characters and their boxes, recognised where the raster is.
+   *
+   * ## Why it is a channel, and what it keeps on this side of the pipe
+   *
+   * §3's matrix puts OCR recognition inside the engine host, beside the
+   * rasteriser that feeds it — so the raster is produced and consumed in one
+   * process and **no bitmap crosses**, which is §9.17's gate satisfied by
+   * construction rather than by a bound. Measured: one A4 page at 200 dpi is
+   * 1.7 MB of PNG, against about 20 KB of text and boxes.
+   *
+   * ## The BOXES ARE IN PDF USER SPACE, and that is decided by `ocrRecognise.ts`
+   *
+   * Tesseract answers in raster pixels, y-down. Converting at the boundary here
+   * would make this schema the second place that knows the dpi, which is the
+   * wired pair's coordinate blind spot arriving on a wire. The host converts,
+   * because it holds the matrix it rasterised with and the box it rasterised
+   * from, and nothing on this channel is a pixel.
+   *
+   * ## The model directory is a PATH THIS HOST WAS GRANTED
+   *
+   * `engine/open`'s rule: the path is used, not validated. Main composed the
+   * grant and wrote the DACL; this process reaches the directory because it was
+   * given it and would reach nothing by being told a name it was not. The
+   * language is a closed enum, which is what keeps ADR-0014 constraint 1 true —
+   * a name from fourteen supplies no file and no path.
+   */
+  'engine/ocr-page': channel(
+    'Recognises one page’s text and word boxes, inside the process that holds the raster.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+        language: ocrLanguageSchema,
+        /** The directory main granted this host READ on for the models. */
+        modelDirectory: pathSchema,
+      })
+      .strict(),
+    z
+      .object({
+        lines: z
+          .array(
+            z
+              .object({
+                text: z.string().max(ENGINE_OCR_LINE_TEXT_MAX),
+                box: ocrBoxSchema,
+                words: z
+                  .array(
+                    z
+                      .object({
+                        text: z.string().max(ENGINE_OCR_WORD_TEXT_MAX),
+                        box: ocrBoxSchema,
+                        // TESSERACT'S OWN SCALE, 0 to 100, refused outside it.
+                        // A hostile host sending 10,000 would reach a UI that
+                        // renders a confidence as a proportion.
+                        confidence: z.number().min(0).max(100),
+                      })
+                      .strict(),
+                  )
+                  .max(ENGINE_OCR_WORDS_PER_LINE_MAX)
+                  .readonly(),
+              })
+              .strict(),
+          )
+          .max(ENGINE_OCR_LINES_MAX)
+          .readonly(),
+        confidence: z.number().min(0).max(100),
+        language: ocrLanguageSchema,
+      })
+      .strict(),
+    // A MODEL THAT CANNOT BE READ IS ITS OWN STATE, and not `ocr-failed`: the
+    // two are answered by different people. A grant or a provisioning problem is
+    // main's to fix; a page Tesseract will not read is this row's.
+    ['no-such-session', 'ocr-failed', 'ocr-model-unreadable'],
+  ),
+
   'engine/page-links': channel(
     'Reads one page’s links from a session this host holds.',
     z

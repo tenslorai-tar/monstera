@@ -1,4 +1,4 @@
-import type { CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract';
+import type { CommandOfKind, FormDataFormat, Handlers, OcrLanguage } from '@monstera/contract';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
@@ -9,6 +9,14 @@ import type { Layer } from '../layers.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
+// A VALUE IMPORT, and the only one in this file's import list that is not a
+// type. `OcrModelUnreadableError` is how the handler below tells a missing model
+// from a page that would not recognise, and the alternative was keying on the
+// wording of an error message. The class is declared beside `recognisePage` and
+// not beside the WASM it loads — importing the name costs this module nothing,
+// because nothing in `ocrRecognise.ts` instantiates a core until
+// `recognisePage` is called.
+import { OcrModelUnreadableError, type RecognisedPage } from '../ocrRecognise.js';
 import type { PageLink } from '../pageLinks.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { RegionRequest } from '../pageSnapshot.js';
@@ -52,6 +60,24 @@ export type HostPageLinksReader = (
   session: MupdfSession,
   page: number,
 ) => Promise<readonly PageLink[]>;
+
+/**
+ * Recognises one page's text and word boxes.
+ *
+ * Injected for the readers above's reason, with a second one that is specific to
+ * it: `ocrRecognise.ts` instantiates a WASM engine, so a handler proof that
+ * imported it would load 2.8 MB of Tesseract to decide whether a session lookup
+ * refuses an unknown token. The composition root supplies the real one.
+ *
+ * **The boxes it answers are in PDF user space.** The conversion from Tesseract's
+ * raster pixels belongs to the module that rasterised, which is the one place
+ * holding both the matrix and the page's box; a handler that converted would be
+ * the second place that knows the dpi.
+ */
+export type HostOcrReader = (
+  session: MupdfSession,
+  request: { page: number; language: OcrLanguage; modelDirectory: string },
+) => Promise<RecognisedPage>;
 
 /**
  * Reads the document's outline.
@@ -301,6 +327,8 @@ export interface EngineHandlerParts {
   readonly geometry: PageGeometryReader;
   readonly pageText: HostPageTextReader;
   readonly pageLinks: HostPageLinksReader;
+  /** How this process turns a raster into characters. `engine/ocr-page`. */
+  readonly ocr: HostOcrReader;
   readonly destinations: HostDestinationsReader;
   readonly layers: HostLayersReader;
   readonly annotations: HostAnnotationsReader;
@@ -323,6 +351,7 @@ export function createEngineHandlers({
   geometry,
   pageText,
   pageLinks,
+  ocr,
   destinations,
   layers,
   annotations,
@@ -543,6 +572,25 @@ export function createEngineHandlers({
       // (§3.2), and the schema's size bound is what makes the string safe to
       // carry rather than trust.
       return { ok: true, value: { json: await pageText(held.session, page) } };
+    },
+
+    'engine/ocr-page': async ({ session, page, language, modelDirectory }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // TWO STATES, AND THEY ARE ANSWERED BY DIFFERENT PEOPLE. A model that
+      // cannot be read is a grant or a provisioning problem and main's to fix; a
+      // page Tesseract will not read is this feature's. Collapsing them into one
+      // `ocr-failed` would send the supervisor after a recognition bug when the
+      // file simply is not there — which is `unreadable`'s own argument in
+      // `engine/probe-containment`, one noun along.
+      try {
+        return { ok: true, value: await ocr(held.session, { page, language, modelDirectory }) };
+      } catch (error) {
+        return failed(
+          error instanceof OcrModelUnreadableError ? 'ocr-model-unreadable' : 'ocr-failed',
+          error,
+        );
+      }
     },
 
     'engine/page-links': async ({ session, page }) => {

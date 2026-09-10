@@ -17,6 +17,7 @@ import type {
   HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
+  HostOcrReader,
   HostPageLinksReader,
   HostPageTextReader,
 } from './engineHandlers.js';
@@ -276,6 +277,41 @@ export function remoteMupdfPageLinks(
       'engine/page-links',
       await client['engine/page-links']({ session: sessions.handleFor(session), page }),
     ).links;
+}
+
+/**
+ * One page's recognised text and word boxes, over the boundary.
+ *
+ * The sibling of {@link remoteMupdfPageText}, and it carries the **shape** for
+ * that one's link reason: Tesseract's JSON is not a format anything else in this
+ * application reads, so passing it through unparsed would put its only reader in
+ * main and leave the wire describing a tree this build does not own. The host
+ * parses it, converts the boxes into the page's own space, and what crosses is
+ * the answer.
+ *
+ * **No raster crosses**, which is the whole reason this is a channel: the bitmap
+ * is produced and consumed in the process that holds the parse. Measured, one A4
+ * page at 200 dpi is 1.7 MB of PNG against about 20 KB of text and boxes.
+ *
+ * @param client the engine host's channels, through the contract's own
+ *   validating client — so a malformed answer is rejected at the boundary
+ *   wrapper rather than by a second parse here (B3a).
+ * @param sessions main's token registry.
+ */
+export function remoteMupdfOcr(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostOcrReader {
+  return async (session, request) =>
+    answered(
+      'engine/ocr-page',
+      await client['engine/ocr-page']({
+        session: sessions.handleFor(session),
+        page: request.page,
+        language: request.language,
+        modelDirectory: request.modelDirectory,
+      }),
+    );
 }
 
 /**

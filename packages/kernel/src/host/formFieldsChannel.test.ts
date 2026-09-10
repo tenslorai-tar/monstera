@@ -149,6 +149,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       pageLinks: () => {
         throw new Error('a field read must not read the page links');
       },
+      ocr: () => {
+        throw new Error('a field read must not recognise anything');
+      },
       destinations: () => {
         throw new Error('a field read must not read the outline');
       },

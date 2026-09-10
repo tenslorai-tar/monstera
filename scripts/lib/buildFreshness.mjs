@@ -157,6 +157,22 @@ export const PAGE_KIND = [
 ];
 
 /**
+ * The recognition adapter, beside the box rule it converts through.
+ *
+ * Two sources rather than one, and the second is the load-bearing half: the
+ * conversion from Tesseract's raster pixels to the page's own space reads
+ * `pageBoxes.ts`' displayed box, so a stale build of that module would have the
+ * coordinate proof comparing against yesterday's idea of which region a page
+ * shows — and every box would be out by the difference with no case naming it.
+ *
+ * @type {BuildEdge[]}
+ */
+export const OCR_RECOGNISE = [
+  ['packages/kernel/src/ocrRecognise.ts', 'packages/kernel/dist/ocrRecognise.js', 'tsc'],
+  ['packages/kernel/src/pageBoxes.ts', 'packages/kernel/dist/pageBoxes.js', 'tsc'],
+];
+
+/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
@@ -271,6 +287,11 @@ export const ARTEFACT_EDGES = {
   // The language set it ties the provisioning table to is the BUILT enum, so a
   // stale build would compare against yesterday's languages.
   'proof:ocrmodels': CONTRACT_TYPES,
+  // The recognition adapter, which this proof drives against the real engine.
+  // Registered WITH its entry rather than after the anchor named it, which is
+  // the first time that has happened — the four before it were each found by
+  // `buildFreshness.proof.mjs` reading the set of proofs that import the guard.
+  'proof:ocrrecognise': OCR_RECOGNISE,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
   // and are compiled by a spawned `tsc`. That import resolves to the package's
   // built declarations, so this proof reads the same artefact every other entry

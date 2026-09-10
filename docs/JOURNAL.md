@@ -888,6 +888,100 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — Recognition: a raster becomes characters, and the frame it answers in
+
+D6 row 2's **read**. `ocrRecognise.ts` drives Tesseract's core directly inside
+the engine host, beside the rasteriser that feeds it, and `engine/ocr-page`
+carries the answer out. The command that consumes it is not built, and the row
+says so rather than reading as done.
+
+### No bitmap crosses, and that is the reason it is a channel
+
+§3's matrix puts recognition in the host. Measured: one A4 page at 200 dpi is
+**1.7 MB of PNG** against about **20 KB** of text and boxes — so the raster is
+produced and consumed in one process and §9.17's gate is satisfied by
+construction rather than by a bound.
+
+### THE BOXES COME BACK IN PDF USER SPACE
+
+Tesseract answers in raster pixels, y-down from the top-left; a content stream is
+points, y-up from the displayed box's origin. Those are two frames, and the wired
+pair's own stated blind spot is exactly here — *where the two halves speak
+different coordinate systems, it proves nothing until something names both
+numbers in one place*.
+
+So the conversion lives in the module that holds both the matrix it rasterised
+with and the box it rasterised from, and **nothing downstream sees a pixel**.
+Two things about it are worth keeping:
+
+- `toPixmap` rasterises the page's **displayed bounds**, so pixel `(0, 0)` is
+  that box's top-left rather than the sheet's. The flip is therefore a
+  subtraction from `frame.y1` and the offset is `frame.x0` — which is also why
+  the case for it uses a page with a `/CropBox` whose origin is not zero. A
+  fixture built by pdf-lib starts at zero on both axes, where a conversion that
+  forgot the origin is indistinguishable from one that did not.
+- the control is **two assertions, not one**. A word drawn off-centre must come
+  back with a box containing the point it was drawn at, **and not** containing
+  the y-mirrored point. The second is what makes the first mean anything: on a
+  page whose text sits at the middle, a flipped sign produces the same box.
+
+Mutation-tested: deleting the flip reddens exactly three of the nine constructed
+cases — the containment, its mirror control, and the crop-box origin.
+
+### Two failure states, because two different people answer them
+
+A model this process cannot read is `ocr-model-unreadable`; a page Tesseract
+will not read is `ocr-failed`. Collapsing them would send the supervisor after a
+recognition bug when a file is simply not there, which is `unreadable`'s own
+argument in `engine/probe-containment` one noun along.
+
+The handler separated them **by the wording of the error message** at first —
+a guard keyed on a name its own author controls, which survives a rewrite of the
+sentence by luck and fails by silent misclassification.
+`OcrModelUnreadableError` is a type now, and `ocrChannel.test.ts` carries the
+control: any other throw must be `ocr-failed`, without which a handler answering
+`ocr-model-unreadable` for everything passes the case above.
+
+### The proof found a defect in the module it tests, on its first run
+
+The model cache was keyed on the **language alone**, so a call naming a different
+directory silently got the first directory's model — and the grant-refusal case
+was answered out of the cache rather than by the filesystem. The directory is a
+constant in this application, which is NNN-1's tell exactly: *an input held
+constant across a whole file* is an input nothing is asking about. Keyed on the
+pair now.
+
+### One model is provisioned on the board
+
+`proof:ocrrecognise`'s coordinate control is the case that separates a correct
+frame conversion from a flipped one, and it needs a model to run. All fourteen
+is 18 MB a CI leg has no use for, so `tessdata.mjs` gained `--only=<language>`
+and `ci.yml` fetches **`eng` alone, 1,984,273 bytes**. Without that the most
+important case in this row would be local-only, which is the *defect CI
+structurally cannot see* shape.
+
+Where no model is provisioned at all, every case reports **not applicable** and
+the run exits 0. *Could not look* is not *looked and found nothing*.
+
+### What the corpus says
+
+Read with the English model, all eleven documents: **5 to 54 lines**, **6 to 402
+words**, and confidence from **32 to 95**. The spread is the finding rather than
+the best figure — a set where every page read at 94 would be a set where the
+confidence is not measuring the page, and the low end is the right-to-left
+image-only document, which the English model cannot read well and does not
+pretend to.
+
+### What is missing, named
+
+The caller. The text layer is a **command** by §3's matrix, written by
+`@cantoo/pdf-lib` in main, and its input is this read in the host — which
+ADR-0040's `reads` axis cannot express today: `PreReadAccess`' members take no
+arguments, so a pre-read cannot be parameterised by the command that needs it.
+That is a B4 and it is the next unit rather than a gap.
+
+---
+
 ## 2026-09-10 — The licence question, answered from the record and not escalated
 
 `tesseract.js@7.0.0` cannot be a production dependency of this build, and the

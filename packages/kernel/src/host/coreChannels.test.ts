@@ -57,6 +57,10 @@ const MUPDF_READS = [
   'engine/page-geometry',
   'engine/page-text',
   'engine/page-links',
+  // RECOGNITION IS ONE OF MuPDF'S READS, and that is §3's matrix rather than a
+  // filing choice: it consumes a bitmap this engine produced, in the process
+  // that produced it. A second engine owes none of it.
+  'engine/ocr-page',
   'engine/destinations',
   'engine/layers',
   'engine/annotations',
@@ -214,7 +218,7 @@ describe('the core channel set', () => {
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core six, the live-session one, and its own twelve reads', () => {
+  it('is the core six, the live-session one, and its own thirteen reads', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
       [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );
