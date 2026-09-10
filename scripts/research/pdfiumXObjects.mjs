@@ -44,7 +44,28 @@
  * the control: it separates *PDFium sees no text here* from *PDFium sees no text
  * on this page*, and those are opposite conclusions.
  *
+ * ## And section 5 asks it of the SUPPLIED CORPUS, which is what the row's
+ * trigger actually names
+ *
+ * The `docs/FEATURES.md` row defers the promotion until *"a corpus document
+ * whose text this leaves unreachable, or the first request to edit one"*. Until
+ * 2026-09-10 this instrument read the constructed fixture above and touched no
+ * corpus at all — no `openCorpus`, no `MONSTERA_CORPUS` — so **the observable the
+ * deferral rests on had no reader**, and *not yet* and *never* produce the same
+ * output. That is a trigger keyed on something nothing looks at.
+ *
+ * A byte scan cannot answer it and the reason is worth stating, because it is the
+ * shape of a blind window rather than an absence: these producers write their
+ * object dictionaries inside compressed streams, so `/XObject` can appear zero
+ * times in a file that draws several. PDFium parses them; a `grep` does not.
+ *
+ * Section 5 therefore opens each corpus document through `openCorpus` — which
+ * hands back an id and bytes and never a name — and reports, per document, how
+ * many characters belong to a page-level object and how many to a form's child.
+ * **A non-zero figure in that second column is the trigger firing.**
+ *
  * Usage: node scripts/research/pdfiumXObjects.mjs
+ *        MONSTERA_CORPUS=<directory> node scripts/research/pdfiumXObjects.mjs
  */
 
 import { existsSync } from 'node:fs';
@@ -54,6 +75,7 @@ import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import koffi from 'koffi';
 
+import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -74,6 +96,7 @@ const LoadMemDocument = lib.func('void *FPDF_LoadMemDocument(const void *buf, in
 const LoadPage = lib.func('void *FPDF_LoadPage(void *doc, int index)');
 const ClosePage = lib.func('void FPDF_ClosePage(void *page)');
 const CloseDocument = lib.func('void FPDF_CloseDocument(void *doc)');
+const CountPages = lib.func('int FPDF_GetPageCount(void *doc)');
 const CountObjects = lib.func('int FPDFPage_CountObjects(void *page)');
 const GetObject = lib.func('void *FPDFPage_GetObject(void *page, int index)');
 const GetObjectType = lib.func('int FPDFPageObj_GetType(void *object)');
@@ -164,6 +187,83 @@ async function textInsideAnXObject() {
   return outer.save();
 }
 
+/**
+ * Which page objects exist, and at what depth inside a form each one sits.
+ *
+ * ## It descends ALL the way, and that is a correction rather than thoroughness
+ *
+ * The first version descended exactly one level, because the constructed fixture
+ * has exactly one. Run against the corpus it reported **597 characters resolving
+ * to NEITHER** on one document — neither a page object nor a form's child — and
+ * *neither* is the answer a walk gives about the objects it did not reach. A
+ * form may hold a form; Office and InDesign nest.
+ *
+ * So the depth is measured rather than assumed, and `deepest` is what says the
+ * walk reached the bottom: if characters still resolve to nothing, the shape of
+ * the gap is not nesting.
+ *
+ * @param {unknown} page
+ * @returns {{ indexOf: Map<string, number>, insideForm: Map<string, number>, deepest: number }}
+ */
+function addressTable(page) {
+  /** @type {Map<string, number>} */
+  const indexOf = new Map();
+  /** @type {Map<string, number>} */
+  const insideForm = new Map();
+  let deepest = 0;
+
+  /** @param {unknown} object @param {number} top @param {number} depth */
+  const descend = (object, top, depth) => {
+    if (depth > deepest) deepest = depth;
+    const nested = CountFormObjects(object);
+    for (let inner = 0; inner < nested; inner += 1) {
+      const child = GetFormObject(object, inner);
+      insideForm.set(String(koffi.address(child)), top);
+      if ((KINDS[GetObjectType(child)] ?? '') === 'form') descend(child, top, depth + 1);
+    }
+  };
+
+  const total = CountObjects(page);
+  for (let at = 0; at < total; at += 1) {
+    const object = GetObject(page, at);
+    indexOf.set(String(koffi.address(object)), at);
+    if ((KINDS[GetObjectType(object)] ?? '') === 'form') descend(object, at, 1);
+  }
+  return { indexOf, insideForm, deepest };
+}
+
+/**
+ * Where each character on a page lives.
+ *
+ * ONE implementation, called by the constructed fixture and by the corpus, so
+ * *inside a form* means the same thing in both readings. Two walks written
+ * separately would be two opinions about the question this file exists to
+ * answer (B3a).
+ *
+ * @param {unknown} page
+ * @param {unknown} textPage
+ * @returns {{ chars: number, onPage: number, inForm: number, generated: number, unresolved: number, deepest: number }}
+ */
+function ownership(page, textPage) {
+  const { indexOf, insideForm, deepest } = addressTable(page);
+  const chars = CountChars(textPage);
+  let onPage = 0;
+  let inForm = 0;
+  let generated = 0;
+  let unresolved = 0;
+  for (let at = 0; at < chars; at += 1) {
+    if (IsGenerated(textPage, at) === 1) {
+      generated += 1;
+      continue;
+    }
+    const owner = String(koffi.address(GetTextObject(textPage, at)));
+    if (indexOf.has(owner)) onPage += 1;
+    else if (insideForm.has(owner)) inForm += 1;
+    else unresolved += 1;
+  }
+  return { chars, onPage, inForm, generated, unresolved, deepest };
+}
+
 /** @param {Uint16Array} buffer @param {number} units */
 function decode(buffer, units) {
   const view = new Uint16Array(buffer.buffer, buffer.byteOffset, units);
@@ -188,14 +288,9 @@ try {
   const total = CountObjects(page);
   process.stdout.write(`## 1. FPDFPage_GetObject — the walk every editing command names\n\n`);
   process.stdout.write(`  ${String(total)} object(s) on the page\n`);
-  /** @type {Map<string, number>} */
-  const indexOf = new Map();
-  /** @type {Map<string, number>} */
-  const insideForm = new Map();
   for (let at = 0; at < total; at += 1) {
     const object = GetObject(page, at);
     const kind = KINDS[GetObjectType(object)] ?? '?';
-    indexOf.set(String(koffi.address(object)), at);
     process.stdout.write(`    [${String(at)}] ${kind}\n`);
     if (kind === 'form') {
       // WHAT IS INSIDE IT, which is the half that says whether the text is
@@ -203,9 +298,7 @@ try {
       const nested = CountFormObjects(object);
       process.stdout.write(`         FPDFFormObj_CountObjects: ${String(nested)}\n`);
       for (let inner = 0; inner < nested; inner += 1) {
-        const child = GetFormObject(object, inner);
-        const childKind = KINDS[GetObjectType(child)] ?? '?';
-        insideForm.set(String(koffi.address(child)), at);
+        const childKind = KINDS[GetObjectType(GetFormObject(object, inner))] ?? '?';
         process.stdout.write(`         [${String(at)}.${String(inner)}] ${childKind}\n`);
       }
     }
@@ -221,26 +314,13 @@ try {
   );
 
   // ── 3. THE CRUX: which OBJECT does each character belong to? ───────────────
-  let onPage = 0;
-  let inForm = 0;
-  let generated = 0;
-  let unresolved = 0;
-  for (let at = 0; at < chars; at += 1) {
-    if (IsGenerated(textPage, at) === 1) {
-      generated += 1;
-      continue;
-    }
-    const owner = String(koffi.address(GetTextObject(textPage, at)));
-    if (indexOf.has(owner)) onPage += 1;
-    else if (insideForm.has(owner)) inForm += 1;
-    else unresolved += 1;
-  }
+  const owned = ownership(page, textPage);
   process.stdout.write(
     `\n## 3. FPDFText_GetTextObject — which object owns each character\n\n` +
-      `  in a PAGE-LEVEL object   ${String(onPage)}\n` +
-      `  in a FORM's child object ${String(inForm)}\n` +
-      `  generated (no object)    ${String(generated)}\n` +
-      `  resolved to NEITHER      ${String(unresolved)}\n\n`,
+      `  in a PAGE-LEVEL object   ${String(owned.onPage)}\n` +
+      `  in a FORM's child object ${String(owned.inForm)}\n` +
+      `  generated (no object)    ${String(owned.generated)}\n` +
+      `  resolved to NEITHER      ${String(owned.unresolved)}\n\n`,
   );
 
   TextClosePage(textPage);
@@ -296,6 +376,68 @@ try {
   TextClosePage(reopenedText);
   ClosePage(reopenedPage);
   CloseDocument(reopened);
+
+  // ── 5. THE CORPUS, which is what the row's trigger names ──────────────────
+  process.stdout.write(`\n## 5. The supplied corpus — is any real document's text inside a form?\n\n`);
+  const corpus = openCorpus();
+  if (!corpus.available) {
+    // NOT AN EMPTY TABLE. A corpus that could not be read answers every question
+    // asked of it with the reassuring answer, and *no document is affected* is
+    // precisely the answer this section exists to be sceptical of.
+    process.stdout.write(`${corpus.outcome.text}\n`);
+  } else {
+    process.stdout.write(
+      `  id                pages    chars   page-level   in a FORM   generated   neither   depth\n`,
+    );
+    let affected = 0;
+    for (const item of corpus.documents) {
+      const held = LoadMemDocument(item.bytes, item.bytes.length, null);
+      if (held === null) {
+        process.stdout.write(`  ${item.id}  ${String(item.size).padStart(9)} bytes — PDFium refused it\n`);
+        continue;
+      }
+      const pages = CountPages(held);
+      let chars = 0;
+      let onPageTotal = 0;
+      let inFormTotal = 0;
+      let generatedTotal = 0;
+      let unresolvedTotal = 0;
+      let deepest = 0;
+      for (let index = 0; index < pages; index += 1) {
+        const each = LoadPage(held, index);
+        const text = TextLoadPage(each);
+        const counted = ownership(each, text);
+        chars += counted.chars;
+        onPageTotal += counted.onPage;
+        inFormTotal += counted.inForm;
+        generatedTotal += counted.generated;
+        unresolvedTotal += counted.unresolved;
+        if (counted.deepest > deepest) deepest = counted.deepest;
+        TextClosePage(text);
+        ClosePage(each);
+      }
+      CloseDocument(held);
+      if (inFormTotal > 0) affected += 1;
+      process.stdout.write(
+        `  ${item.id}` +
+          `${String(pages).padStart(7)}` +
+          `${String(chars).padStart(9)}` +
+          `${String(onPageTotal).padStart(13)}` +
+          `${String(inFormTotal).padStart(12)}` +
+          `${String(generatedTotal).padStart(12)}` +
+          `${String(unresolvedTotal).padStart(10)}` +
+          `${String(deepest).padStart(8)}` +
+          `   (${String(item.size)} bytes)\n`,
+      );
+    }
+    process.stdout.write(
+      `\n  ${String(affected)} of ${String(corpus.documents.length)} document(s) carry text ` +
+        `inside a Form XObject.\n${corpusCaveat(corpus.documents.length)}\n` +
+        `  EVERY PAGE of every document was walked, not the first — a producer that emits one\n` +
+        `  page differently is exactly what this looks for, and a first-page reading would\n` +
+        `  report the reassuring answer for it.\n\n`,
+    );
+  }
 
   process.stdout.write(
     `## What this decides\n\n` +

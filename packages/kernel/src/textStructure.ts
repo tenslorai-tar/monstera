@@ -47,11 +47,21 @@ import { type ViewportPoint, viewportPoint } from '@monstera/shared';
  * turns row-major into column-major on a two-column page at both a 268pt and a
  * 60pt gutter, and leaves single-column prose byte-for-byte unchanged.
  *
- * `TABLE_HUNT` is off because it **damages prose**: on a single-column fixture
- * it split one line into two, inventing a table, and it undid `SEGMENT`'s
- * column ordering. It is a per-consumer opt-in, and the first feature whose
- * subject is a table owes the reading ADR-0034 did for prose before turning it
- * on.
+ * `TABLE_HUNT` is off. Measured 2026-09-02 on a single-column fixture it split
+ * one line into two, inventing a table, and undid `SEGMENT`'s column ordering.
+ * Measured again 2026-09-10 against real documents — `npm run proof:lineagreement`
+ * over the eleven-document corpus, `segment,table-hunt` against `segment`,
+ * scored on the same PDFium reading — **two of the six documents carrying text
+ * change at all, at −1.5 and −17.5 points of line agreement, and none
+ * improves**.
+ *
+ * The delta is not the whole argument and the comment says so rather than
+ * letting a number stand in for one: the option emits **cells**, a cell is not a
+ * line, so part of that fall is the option working. What settles it here is that
+ * every consumer of this substrate reads lines — the text layer, search, spell
+ * check, word count. It stays a per-consumer opt-in, and the first feature whose
+ * subject is a table owes a reading against table structure, which agreement
+ * with a line-oriented reader cannot supply.
  *
  * The names are MuPDF's own, from `source/fitz/stext-device.c`'s
  * `fz_parse_stext_options`.

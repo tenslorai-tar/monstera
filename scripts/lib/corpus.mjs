@@ -20,11 +20,40 @@
  * case needs the shape, you build a synthetic fixture and commit that.
  *
  * **So this module never hands a caller a name or a path.** A document arrives
- * as `{ id: 'corpus-1', bytes, size }`, where the id is its position in sorted
- * order and carries nothing about the file. An instrument cannot print what it
+ * as `{ id: 'corpus-3f9a1c2b', bytes, size }`, where the id is derived from the
+ * bytes and carries nothing about the file. An instrument cannot print what it
  * was never given, which is B5 over a rule someone has to remember: the illegal
  * state is *a corpus filename in committed output*, and the way to make it
  * unrepresentable is to keep the name on this side of the boundary.
+ *
+ * ## The id was POSITIONAL until 2026-09-10, and that was a compound claim
+ *
+ * It read *"the id is its position in sorted order"*, documented as *"assigned by
+ * position so the same document keeps the same id between runs"*. The first half
+ * is true — a run is deterministic — and it vouched for the second, which is a
+ * different sentence: **inserting a name earlier in sorted order re-points every
+ * id after it.** The corpus went from five documents to eleven and three of the
+ * five ids moved, so four tables of recorded figures in `docs/JOURNAL.md` now
+ * name documents they were not measured from.
+ *
+ * The failure is silent in both directions. A figure keyed on `corpus-3` is not
+ * wrong-looking once `corpus-3` is a different document; it is a plausible figure
+ * about the wrong subject, which is exactly the shape no reader flags.
+ *
+ * **The id is now the first eight hex of a SHA-256 of the document's bytes.** It
+ * is stable under insertion, deletion and reordering, and it says nothing about
+ * the name. It is not a quotation either: a digest of the whole document is not
+ * any part of its text and cannot be turned back into one, so rule 1 is intact.
+ *
+ * Two consequences worth knowing rather than rediscovering:
+ *
+ * - **Editing a document changes its id**, and that is the property rather than a
+ *   cost. A figure names the bytes it was read from, so bytes that moved should
+ *   not keep the label a reader will compare against.
+ * - **Two documents with identical bytes are refused**, because they would share
+ *   an id and a per-document table would silently show one row where a reader
+ *   counts two. That is a derivation whose failure makes the set BIGGER, which is
+ *   the direction a derived count can see (audit item 4c).
  *
  * The size is given because it is a shape rather than content, and an instrument
  * that reports a score across three documents needs to say whether they were
@@ -57,6 +86,7 @@
  * it: they are ordinary PDFs with ordinary names.
  */
 
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
@@ -67,10 +97,21 @@ import { unverifiableOutcome } from './unverifiable.mjs';
 export const CORPUS_VARIABLE = 'MONSTERA_CORPUS';
 
 /**
+ * How much of the digest an id carries.
+ *
+ * Eight hex is 32 bits, which over a corpus of this size makes an accidental
+ * collision negligible — and the collision that matters is not accidental
+ * anyway: it is the same document supplied twice, which `openCorpus` refuses by
+ * name. Short enough to read in a table, long enough that two ids do not look
+ * alike at a glance.
+ */
+const ID_HEX = 8;
+
+/**
  * A corpus document, with nothing in it that could be quoted.
  *
  * @typedef {object} CorpusDocument
- * @property {string} id an opaque, stable label — `corpus-1`, `corpus-2`, …
+ * @property {string} id an opaque label derived from the bytes — `corpus-3f9a1c2b`
  * @property {Buffer} bytes the document
  * @property {number} size its length, which is a shape rather than content
  */
@@ -78,8 +119,8 @@ export const CORPUS_VARIABLE = 'MONSTERA_CORPUS';
 /**
  * @typedef {object} CorpusReading
  * @property {true} available
- * @property {readonly CorpusDocument[]} documents in sorted order, ids assigned
- *   by position so the same document keeps the same id between runs
+ * @property {readonly CorpusDocument[]} documents in sorted order, each carrying
+ *   an id derived from its own bytes — so inserting a document re-points nothing
  */
 
 /**
@@ -177,12 +218,31 @@ export function openCorpus({ required = false } = {}) {
     );
   }
 
-  return {
-    available: true,
-    documents: files.map((name, index) => {
-      const bytes = readFileSync(resolve(directory, name));
-      // The name goes no further than this line. See rule 1.
-      return { id: `corpus-${String(index + 1)}`, bytes, size: bytes.length };
-    }),
-  };
+  /** @type {Map<string, number>} */
+  const seen = new Map();
+  const documents = files.map((name) => {
+    const bytes = readFileSync(resolve(directory, name));
+    // The name goes no further than this line. See rule 1.
+    const id = `corpus-${createHash('sha256').update(bytes).digest('hex').slice(0, ID_HEX)}`;
+    seen.set(id, (seen.get(id) ?? 0) + 1);
+    return { id, bytes, size: bytes.length };
+  });
+
+  // TWO DOCUMENTS WITH ONE ID ARE ONE DOCUMENT TWICE, and the reason to refuse
+  // rather than to disambiguate is what a duplicate does downstream: a
+  // per-document table keyed on the id shows one row, the count beside it says
+  // two, and nothing in either number says which reading is missing. The message
+  // names the sizes because that is a shape and the name is not ours to print.
+  const collided = [...seen].filter(([, count]) => count > 1);
+  if (collided.length > 0) {
+    throw new Error(
+      `${CORPUS_VARIABLE} points at ${directory}, where ${String(collided.length)} document(s) ` +
+        `appear more than once by content — identical bytes, so identical ids ` +
+        `(${collided.map(([id, count]) => `${id}×${String(count)}`).join(', ')}). ` +
+        `A corpus holding one document twice weights every score it appears in, and a table ` +
+        `keyed on the id cannot show the second row. Remove the copy.`,
+    );
+  }
+
+  return { available: true, documents };
 }

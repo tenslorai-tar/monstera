@@ -106,3 +106,42 @@ living in a binary list nobody can trace to a purpose.
 **If the layout-fidelity spike finds MuPDF insufficient**, Poppler returns
 through the external-converter seam and this ADR gets a dated correction. That
 is a cheaper outcome than shipping a binary for years against the possibility.
+
+## Correction, 2026-09-10 — the tables half is executed, and MuPDF is not found insufficient
+
+This ADR left *"whether it preserves layout well enough — columns, tables,
+reading order"* as an unexecuted hypothesis. The **columns** half was executed on
+2026-09-02 ([ADR-0034](0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md)).
+The **tables** half could not be, and the stated reason was that no fixture
+contained a table — which is an absence, and an absence that had no expiry
+anybody could see.
+
+The supplied corpus grew from five documents to eleven on 2026-09-10 and now
+carries table-bearing ones, so the reading was taken:
+`npm run proof:lineagreement`, MuPDF's npm build, PDFium 155.0.8044.0, asked for
+`segment,table-hunt` instead of `segment` and scored against the same
+independent reading.
+
+| | |
+|---|---|
+| documents carrying text | 6 of 11 |
+| changed at all by the option | **2** |
+| their change in line agreement | **−1.5 and −17.5 points** |
+| improved by the option | **none** |
+| control, a constructed 3×3 grid | the two readings **differ**, so a zero row is *no table found* rather than *the option never reached the engine* |
+
+**`FZ_STEXT_TABLE_HUNT` stays off, and the reason is upgraded rather than
+repeated.** It was *unexecuted*; it is now measured on real documents from four
+producers.
+
+**Two limits, because the figure is easy to over-read.** First, a fall in line
+agreement is not on its own evidence of worse extraction: the option exists to
+emit **cells**, and a cell is not a line, so some of that fall is the option
+working. What decides it today is that no shipped consumer of the substrate
+wants cells — the text layer, search, spell check and word count all read lines.
+Second, this scores agreement with a second reader and not against ground truth,
+so it says nothing about whether table **structure** is recovered correctly. A
+feature whose subject is a table still owes that reading before turning the
+option on, exactly as the per-consumer opt-in already says.
+
+Poppler does not return: nothing here found MuPDF insufficient.

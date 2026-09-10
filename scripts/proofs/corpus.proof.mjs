@@ -46,7 +46,7 @@ import { UNVERIFIABLE_MARKER } from '../lib/unverifiable.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 17 });
 
 /**
  * @param {string} label
@@ -207,9 +207,54 @@ try {
 
     const documents = reading.available ? reading.documents : [];
     check(
-      'ids are positional and opaque, so the same document keeps its id between runs',
-      documents.map((item) => item.id).join(',') === 'corpus-1,corpus-2,corpus-3',
+      'an id is opaque and fixed-width, carrying neither a name nor a position',
+      documents.length === FIXTURE_NAMES.length &&
+        documents.every((item) => /^corpus-[0-9a-f]{8}$/u.test(item.id)),
       `ids were ${JSON.stringify(documents.map((item) => item.id))}`,
+    );
+
+    // THE CASE THAT BITES, and the one this file did not have until 2026-09-10.
+    //
+    // It used to assert `corpus-1,corpus-2,corpus-3` over a fixture set that
+    // never changes — an input held constant across the whole file, which is
+    // NNN-1's tell — so it passed for ever while saying nothing about the
+    // property it named. Positional ids DO stay put between runs; what they do
+    // not survive is an INSERTION, and a corpus that grows from five documents
+    // to eleven is exactly that.
+    //
+    // So the case inserts a document that sorts FIRST and requires every other
+    // id to be unchanged. Under the old rule this reddens: everything shifts by
+    // one.
+    // Keyed on the CONTENT rather than on the size: these three fixtures differ
+    // only in a trailing digit, so every one of them is the same length, and a
+    // size key would have matched the wrong document while looking sound.
+    const before = new Map(documents.map((item) => [item.bytes.toString('latin1'), item.id]));
+    const inserted = join(populated, 'aaa-inserted.pdf');
+    writeFileSync(inserted, `${MINIMAL_PDF}% inserted at the front\n`);
+    const after = withCorpus(populated, () => openCorpus());
+    const afterDocuments = after.available ? after.documents : [];
+    rmSync(inserted, { force: true });
+
+    const moved = [...before]
+      .map(([content, id]) => ({
+        was: id,
+        now: afterDocuments.find((item) => item.bytes.toString('latin1') === content)?.id,
+      }))
+      .filter((entry) => entry.now !== entry.was);
+    check(
+      'inserting a document at the FRONT re-points no other id',
+      moved.length === 0,
+      `${JSON.stringify(moved)} — a figure recorded against one of these ids would now name a ` +
+        'different document, which is a plausible number about the wrong subject',
+    );
+    // THE CONTROL. "Nothing moved" is also what a reader that never saw the new
+    // file answers, and that reader would satisfy the case above perfectly.
+    check(
+      'CONTROL: and the second reading really did see the inserted document',
+      afterDocuments.length === documents.length + 1 &&
+        afterDocuments.some((item) => !before.has(item.bytes.toString('latin1'))),
+      `read ${String(afterDocuments.length)} documents against ${String(documents.length)} ` +
+        'before — without this, a reader that answered the stale list would pass',
     );
     check(
       'the bytes are the documents, so a caller measures the corpus rather than its names',
@@ -228,6 +273,34 @@ try {
       leaked.length === 0,
       `${JSON.stringify(leaked)} reached the caller — an instrument cannot print what it was ` +
         'never given, and that is the whole of how rule 1 is enforced',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // The same document twice — the one collision a content-derived id can have,
+  // and the one that is not an accident.
+  // -------------------------------------------------------------------------
+  {
+    const twice = join(workspace, 'twice');
+    mkdirSync(twice);
+    writeFileSync(join(twice, 'one.pdf'), MINIMAL_PDF);
+    writeFileSync(join(twice, 'two.pdf'), MINIMAL_PDF);
+    const message = withCorpus(twice, () => thrownBy(() => openCorpus()));
+    check(
+      'one document supplied twice is REFUSED rather than folded into a single row',
+      message !== null && message.includes('appear more than once by content'),
+      `answered ${String(message)} — the id is the same because the bytes are, so a table ` +
+        'keyed on it shows one row while the count beside it says two',
+    );
+    // THE CONTROL, and it is the direction that matters: the refusal must key on
+    // the duplicate rather than on anything else about this directory. A guard
+    // that refused every two-document corpus would pass the case above.
+    writeFileSync(join(twice, 'two.pdf'), `${MINIMAL_PDF}% different\n`);
+    const reading = withCorpus(twice, () => openCorpus());
+    check(
+      'CONTROL: two DIFFERENT documents in the same directory are accepted',
+      reading.available && reading.documents.length === 2,
+      'without this the refusal could be about the count, the directory or the names',
     );
   }
 

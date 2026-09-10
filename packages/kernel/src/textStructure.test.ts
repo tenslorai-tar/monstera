@@ -73,7 +73,10 @@ describe('the stext options', () => {
   it('asks for SEGMENT and leaves TABLE_HUNT out of what it asks for', () => {
     // THE POINT OF THE MODULE, asserted rather than assumed. ADR-0034 measured
     // TABLE_HUNT splitting a prose line in two and undoing SEGMENT's ordering,
-    // so it is declared — a consumer may opt in — and not asked for.
+    // and 2026-09-10 measured it against real documents — two of the six corpus
+    // documents carrying text move, at −1.5 and −17.5 points of line agreement,
+    // and none improves (ADR-0013's correction). So it is declared — a consumer
+    // may opt in — and not asked for.
     //
     // SPLIT ON THE SEPARATOR rather than matched as a substring: `table-hunt`
     // contains no option name, but a future option whose name is a prefix of

@@ -81,6 +81,7 @@ import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 import {
+  STEXT_OPTIONS,
   STEXT_OPTION_STRING,
   linesOf,
   parsePageText,
@@ -168,15 +169,28 @@ function pdfiumLines(api, bytes, index) {
 }
 
 /**
+ * The option string with `table-hunt` added, composed rather than spelt.
+ *
+ * ADR-0034's K.0 bans a second set of stext options anywhere, and a literal
+ * `'segment,table-hunt'` here would be exactly that — a second encoding that
+ * agrees with `STEXT_OPTIONS` until somebody edits one of them. This is the one
+ * place in the repository that asks MuPDF for a set the product does not ship,
+ * and it is built from the product's own names.
+ */
+const TABLE_HUNT_STRING = [STEXT_OPTIONS.segment, STEXT_OPTIONS.tableHunt].join(',');
+
+/**
  * This application's own lines for one page, through the shipped substrate.
  *
  * @param {mupdf.PDFDocument} document
  * @param {number} index
+ * @param {string} [options] what to ask the stext device for; the shipped set by
+ *   default, so every caller that does not name one is measuring the product.
  * @returns {string[]}
  */
-function mupdfLines(document, index) {
+function mupdfLines(document, index, options = STEXT_OPTION_STRING) {
   const page = document.loadPage(index);
-  const stext = page.toStructuredText(STEXT_OPTION_STRING);
+  const stext = page.toStructuredText(options);
   try {
     return linesOf(parsePageText(stext.asJSON()))
       .map((line) => line.text)
@@ -289,6 +303,37 @@ function agreement(ours, theirs) {
   };
 }
 
+/**
+ * A page laid out as a grid, for the one control the table-hunt reading needs.
+ *
+ * Every corpus delta could legitimately be `0.0`, and that is also exactly what
+ * an instrument printing is: an options string that never reached the engine
+ * produces *no document changed*, which reads as **the option is harmless**.
+ * That is the reassuring answer arriving in a comparison rather than a search.
+ *
+ * So the control is a page the option must visibly change: three rows of three
+ * short cells at fixed columns, which is what `FZ_STEXT_TABLE_HUNT` exists to
+ * detect. If the two readings of THIS page are identical, the reading below is
+ * about nothing and the instrument says so instead of printing zeroes.
+ */
+async function constructedTable() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 300]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const columns = [40, 160, 280];
+  const cells = [
+    ['Region', 'Units', 'Share'],
+    ['North', '128', '41%'],
+    ['South', '184', '59%'],
+  ];
+  cells.forEach((row, down) => {
+    row.forEach((cell, across) => {
+      page.drawText(cell, { x: columns[across] ?? 40, y: 230 - down * 40, size: 11, font });
+    });
+  });
+  return document.save();
+}
+
 /** A page whose three lines are known, for the controls. */
 async function constructedPage() {
   const document = await PDFDocument.create();
@@ -375,6 +420,13 @@ async function main() {
   let scored = 0;
   let lineTotal = 0;
   let charTotal = 0;
+  /**
+   * What the table-hunt comparison needs, kept per document so the second
+   * table below is the same reading rather than a second run of the engines.
+   *
+   * @type {{ id: string, plain: ReturnType<typeof agreement>, hunted: ReturnType<typeof agreement>, plainLines: number, huntedLines: number }[]}
+   */
+  const huntRows = [];
   for (const document of corpus.documents) {
     const opened = /** @type {mupdf.PDFDocument} */ (
       mupdf.PDFDocument.openDocument(document.bytes, 'application/pdf')
@@ -382,9 +434,11 @@ async function main() {
     const pages = opened.countPages();
     /** @type {string[]} */ const ours = [];
     /** @type {string[]} */ const theirs = [];
+    /** @type {string[]} */ const hunted = [];
     for (let page = 0; page < pages; page += 1) {
       ours.push(...mupdfLines(opened, page));
       theirs.push(...pdfiumLines(api, document.bytes, page));
+      hunted.push(...mupdfLines(opened, page, TABLE_HUNT_STRING));
     }
     const score = agreement(ours, theirs);
     // ATTRIBUTION, not a score. Two engines reading nothing agree perfectly.
@@ -398,6 +452,13 @@ async function main() {
     scored += 1;
     lineTotal += score.lines;
     charTotal += score.characters;
+    huntRows.push({
+      id: document.id,
+      plain: score,
+      hunted: agreement(hunted, theirs),
+      plainLines: ours.length,
+      huntedLines: hunted.length,
+    });
     out.write(
       `  ${document.id.padEnd(10)} ${String(pages).padStart(5)}   ${String(ours.length).padStart(9)}   ` +
         `${String(theirs.length).padStart(11)}   ${(score.characters * 100).toFixed(2).padStart(9)}%   ` +
@@ -415,6 +476,78 @@ async function main() {
     );
   }
   out.write(`${corpusCaveat(corpus.documents.length)}\n`);
+
+  // ── FZ_STEXT_TABLE_HUNT, measurable for the first time ────────────────────
+  //
+  // `textStructure.ts` leaves it off, and the reason recorded in ADR-0013 and in
+  // §3's extraction row was *unexecuted*: no fixture contained a table, so the
+  // option's damage to prose was the only half anyone had seen. The corpus now
+  // carries table-bearing documents, so the trade can be scored rather than
+  // asserted — ON against OFF, against the same independent reader, over BOTH
+  // classes. Scoring only the table documents would answer *does it find
+  // tables*, which is not the question: the option is global, so what a prose
+  // page loses is part of its price.
+  out.write(`\n## FZ_STEXT_TABLE_HUNT, on against off\n\n`);
+  out.write(
+    `  Asked for "${TABLE_HUNT_STRING}" instead of "${STEXT_OPTION_STRING}", scored against the\n` +
+      `  same PDFium reading. A row whose line count does not move is a document the option\n` +
+      `  found no table in, and its score cannot move either — those rows are the control.\n\n`,
+  );
+  out.write(
+    '  id                 our lines   with hunt   ours in theirs   with hunt        delta\n',
+  );
+  let moved = 0;
+  let deltaTotal = 0;
+  for (const row of huntRows) {
+    const delta = row.hunted.lines - row.plain.lines;
+    if (row.huntedLines !== row.plainLines || Math.abs(delta) > 0) moved += 1;
+    deltaTotal += delta;
+    out.write(
+      `  ${row.id.padEnd(18)}${String(row.plainLines).padStart(8)}` +
+        `${String(row.huntedLines).padStart(12)}` +
+        `${(row.plain.lines * 100).toFixed(1).padStart(16)}%` +
+        `${(row.hunted.lines * 100).toFixed(1).padStart(11)}%` +
+        `${(delta * 100).toFixed(1).padStart(13)}\n`,
+    );
+  }
+  out.write(
+    `\n  ${String(moved)} of ${String(huntRows.length)} document(s) carrying text changed at all; ` +
+      `mean change in line agreement ${((deltaTotal / Math.max(1, huntRows.length)) * 100).toFixed(2)} points.\n`,
+  );
+  // THE CONTROL THIS READING CANNOT DO WITHOUT. Every delta above could
+  // legitimately be zero, and zero is also what an option string that never
+  // reached the engine produces — *no document changed* reading as *the option
+  // is harmless*. So a page the option MUST change is scored first, and a
+  // reading where it does not is refused rather than printed.
+  const table = await constructedTable();
+  const tableDocument = /** @type {mupdf.PDFDocument} */ (
+    mupdf.PDFDocument.openDocument(table, 'application/pdf')
+  );
+  const tablePlain = mupdfLines(tableDocument, 0);
+  const tableHunted = mupdfLines(tableDocument, 0, TABLE_HUNT_STRING);
+  const separated =
+    tablePlain.length !== tableHunted.length || tablePlain.join('|') !== tableHunted.join('|');
+  out.write(
+    `\n  CONTROL, a constructed 3×3 grid: ${String(tablePlain.length)} line(s) without the ` +
+      `option, ${String(tableHunted.length)} with — the two readings ` +
+      `${separated ? 'DIFFER' : 'are identical'}.\n`,
+  );
+  if (!separated) {
+    throw new Error(
+      'CONTROL FAILED: table-hunt changes nothing on a page built as a grid, so the option is ' +
+        'not reaching the engine and every delta above is the instrument rather than the trade.',
+    );
+  }
+  // AND THE PROSE READING, which is the half ADR-0034 recorded as the reason.
+  const huntedProse = mupdfLines(
+    /** @type {mupdf.PDFDocument} */ (mupdf.PDFDocument.openDocument(constructed, 'application/pdf')),
+    0,
+    TABLE_HUNT_STRING,
+  );
+  out.write(
+    `  The constructed PROSE page: ${String(ourControl.length)} line(s) without, ` +
+      `${String(huntedProse.length)} with.\n`,
+  );
   out.write(
     '\n  AND THERE IS NO CONSTANT HERE TO TUNE. textStructure.ts implements no\n' +
       '  clustering: it parses what MuPDF\'s stext device produced. The only lever\n' +

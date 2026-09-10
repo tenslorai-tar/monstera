@@ -13,7 +13,7 @@ the fact is not a baseline, it is a rationalisation.
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
-| 6 — OCR | **2 working days** (owner, 2026-09-09) | **not started** — opens at the commit after Stage 5's close | — (the 3× gate arms at **6 days**) |
+| 6 — OCR | **2 working days** (owner, 2026-09-09) | **in progress** — opened 2026-09-10 at the commit after Stage 5's close | — (the 3× gate arms at **6 days**) |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -885,6 +885,172 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-10 — The corpus grew from five documents to eleven, and fired three triggers at once
+
+Stage 6 opens on it. Four readings, all with instruments that already existed —
+which is what a trigger is for, and three of these had been waiting on the same
+event without any of them saying so in the same place.
+
+### 1. The id was positional, and *keeps its id between runs* was a compound claim
+
+`corpus.mjs` documented its ids as *"assigned by position so the same document
+keeps the same id between runs"*. The first half is true: a run is
+deterministic. It vouched for the second, which is a different sentence —
+**inserting a name earlier in sorted order re-points every id after it.**
+
+Provable from this file's own recorded figures, and this is the check anyone can
+repeat. The 2026-09-09 fidelity table records `corpus-3` at 209,422 bytes,
+`corpus-4` at 72,769 and `corpus-5` at 25,127. Today's sorted position 3 is a
+**254,697**-byte document that did not exist then; 209,422 is now at position 4,
+72,769 at position 5 and 25,127 at position 10. **Three of the five ids moved.**
+
+The failure is silent in both directions, which is why it is worth the ten
+minutes: a figure recorded against `corpus-3` does not look wrong once
+`corpus-3` is a different document. It looks like a plausible figure about the
+wrong subject.
+
+**And the case that should have caught it could not.** `corpus.proof.mjs`
+asserted the ids were `corpus-1,corpus-2,corpus-3` over a three-fixture set that
+never changes — an input held constant across an entire file, which is NNN-1's
+tell. It passed for ever and separated nothing, because positional ids really do
+stay put when nothing is inserted.
+
+**The id is now the first eight hex of a SHA-256 of the document's bytes.**
+Stable under insertion, opaque, and not a quotation — a digest of the whole
+document is no part of its text and cannot be turned back into one, so rule 1 is
+intact. The proof's case now inserts a document that sorts **first** and requires
+every other id to be unchanged, with a control that the second reading really saw
+the new file, because *nothing moved* is also what a stale reader answers. Run
+against the old rule it reddens with all three ids shifted, which is the defect
+reproduced rather than described.
+
+Two properties fall out and are stated rather than discovered later: **editing a
+document changes its id**, which is right — a figure names the bytes it was read
+from; and **two documents with identical bytes are refused**, because they would
+share an id and a table keyed on it would show one row where a reader counts two.
+
+The four `corpus-N` tables in this journal have appended corrections saying they
+name the five-document ordering. They are not edited: what was measured is the
+record.
+
+### 2. E2's score, re-read over eleven documents
+
+`docs/FEATURES.md`'s row said *"both facts expire together the day the corpus
+grows, which is the trigger"*. It grew.
+
+| | five documents (2026-09-09) | eleven (2026-09-10) |
+|---|---|---|
+| carrying text | 3 | **6** |
+| attributed as scans | 2 | **5** |
+| characters | 100.00% | **99.92%** |
+| our lines among theirs | 52.9% | **68.2%** |
+
+**The characters figure is the one that changed meaning.** It was 100.00% on
+every document, and the row said in as many words that the two engines read
+exactly the same glyphs. Over eleven it is 99.95%, 99.99% and 99.59% on three of
+the six — small, and no longer the claim. That is a five-document fact that read
+as a property.
+
+The line figure went **up**, from 52.9% to 68.2%, with a per-document range of
+17.9% to 98.8%. A mean over six documents is still a shape and not an accuracy
+figure; what the spread says is that the disagreement is concentrated rather than
+uniform, and the row that drags it down is the same one as before.
+
+### 3. `FZ_STEXT_TABLE_HUNT`, executed at last — and the delta is not the argument
+
+ADR-0013 left *columns, tables, reading order* as an unexecuted hypothesis. The
+columns half was executed on 2026-09-02. The tables half could not be, and its
+stated reason was **an absence with no expiry anybody could see**: no fixture
+contained a table. The owner supplied table-bearing documents, so it was scored.
+
+Asked for `segment,table-hunt` instead of `segment`, over the same PDFium
+reading, over **both** classes — because the option is global and what a prose
+page loses is part of its price:
+
+```
+  id                 our lines   with hunt   ours in theirs   with hunt        delta
+  corpus-198cf285        114         115            76.3%       74.8%         -1.5
+  corpus-c13c9b12        383         383            57.7%       57.7%          0.0
+  corpus-6075b812         78          78            17.9%       17.9%          0.0
+  corpus-db4f2076        166         182            98.8%       81.3%        -17.5
+  corpus-2c1a1a89        147         147            93.9%       93.9%          0.0
+  corpus-c0a3feea         96          96            64.6%       64.6%          0.0
+```
+
+**Two of six change at all; none improves.** It stays off.
+
+**The control is the load-bearing part and it was added after the first run.**
+Every delta could legitimately be zero — and zero is also exactly what an options
+string that never reached the engine produces. *No document changed* would read
+as *the option is harmless*, which is the reassuring answer arriving in a
+comparison rather than in a search. So a constructed 3×3 grid is scored first,
+its two readings must differ, and the run refuses rather than printing zeroes if
+they do not. They differ.
+
+**And the negative delta is not by itself the reason, which is the part that
+transfers.** `TABLE_HUNT` exists to emit **cells**, and a cell is not a line, so
+a fall in agreement with a line-oriented reader is partly the option working —
+naming that fall *damage* would be a measure whose name and method disagree. What
+settles it today is that **no consumer of this substrate wants cells**: the text
+layer, search, spell check and word count all read lines. The per-consumer
+opt-in is unchanged and now rests on a reading. The reading a table feature still
+owes is against table **structure**, which this instrument cannot supply.
+
+The constructed prose page, incidentally, is **unchanged** by the option — 3
+lines either way. The 2026-09-02 *splits a prose line* reading was about a
+different fixture, and is left standing as what was measured then.
+
+### 4. The XObject trigger had no reader, and fires the moment it gets one
+
+The row deferred normalize-then-edit until *"a corpus document whose text this
+leaves unreachable, or the first request to edit one"*. `pdfiumXObjects.mjs` read
+a constructed `embedPage` fixture and touched no corpus — no `openCorpus`, no
+`MONSTERA_CORPUS`. **So the observable the deferral rested on had nothing looking
+at it**, and *not yet* and *never* produce the same output. That is the trigger
+shape this project has already paid for once, in a different document.
+
+Pointed at the corpus through `openCorpus`, every page of every document:
+
+```
+  id                pages    chars   page-level   in a FORM   generated   neither   depth
+  corpus-4bdfb992      1        0            0           0           0         0       0
+  corpus-198cf285      2     5670            0        4870         800         0       3
+  corpus-c13c9b12      5    11946        11270           0         676         0       0
+  corpus-6075b812      1     1063          647         307         109         0       1
+  corpus-33d2416d      1        0            0           0           0         0       0
+  corpus-db4f2076      5    12170        11765           0         405         0       0
+  corpus-6906a007     10        0            0           0           0         0       0
+  corpus-97b80d4e      1        0            0           0           0         0       0
+  corpus-2c1a1a89      3     5972         5649           0         323         0       0
+  corpus-c0a3feea      2     2994         2811           0         183         0       0
+  corpus-ee1bc615      1        0            0           0           0         0       0
+```
+
+**2 of 11, and the two are different shapes.** `corpus-198cf285` has **zero**
+page-level characters: every one of its 4,870 addressable characters is inside a
+form, so every editing row this build shipped can name nothing on it at all.
+`corpus-6075b812` is the worse one for a reader — 307 inside a form beside 647
+that are not, so the chooser lists some of the page's lines and drops the rest
+with one sentence about it.
+
+**The walk descends all the way, and that is a correction made mid-reading.** The
+first version descended one level, because the constructed fixture has one. It
+reported **597 characters resolving to NEITHER** on `corpus-198cf285` — and
+*neither* is precisely what a walk answers about the objects it did not reach.
+They are **three levels deep**. Descending fully resolves all 597 and leaves the
+column at zero everywhere, which is what says the shape of the gap is nesting and
+not something else.
+
+A byte scan could not have answered this and the reason is worth keeping: these
+producers write their object dictionaries **inside compressed streams**, so
+`/XObject` can appear zero times in a file that draws several. A grep's *no form
+found* there is a blind window, not an absence.
+
+**So normalize-then-edit is owed now**, and it is a Stage 5 row rather than one
+of Stage 6's — a row already owed outranks a new stage's.
 
 ---
 
@@ -1811,6 +1977,14 @@ resolution check on the mutation itself: it reached the corpus renders, and the
 answer under test did not move. So the untouched-save claim survives the
 widening, and this is a **gap with an expiry** rather than a live defect.
 
+**Correction, 2026-09-10 — the two ids in that sentence name the FIVE-document
+ordering.** When this was read the corpus held five documents and an id was a
+document's position in sorted order, so `corpus-2` and `corpus-5` here are the
+documents at those positions on 2026-09-09. The corpus is now eleven and three
+of the five positions moved, so a run today answers those labels with different
+documents. Ids are derived from the bytes from 2026-09-10 and no longer move
+under an insertion; this paragraph is left exactly as it was written.
+
 The expiry is a Stage 5 row. Object-level edit is *move, scale, recolor, delete*,
 and a text object recoloured from black to red changes **no blue sample at all**:
 0 before, 0 after. A fidelity case written for the recolor row against this
@@ -2430,6 +2604,14 @@ is the only evidence available about a question neither can answer alone.
 | corpus-4 | 1 | — | — | no text from either engine — a scan | | | |
 | corpus-5 | 2 | 96 | 79 | 100.00% | 47.2% | 64.6% | 78.5% |
 
+**Correction, 2026-09-10 — these ids name the FIVE-document ordering.** An id
+was a document's position in sorted order when this table was read, and
+inserting a name earlier re-points every id after it. The corpus is now eleven
+documents and three of the five positions moved, so `corpus-3` below is not the
+document a run today calls `corpus-3`. Ids are derived from the bytes from
+2026-09-10; the table is left exactly as it was read, because what was measured
+is the record.
+
 **Characters 100.00% on all three.** The two engines read exactly the same
 glyphs. Every disagreement in this table is about *where a line ends* and *in
 what order the page is laid out* — and the order column is `segment` doing what
@@ -2517,6 +2699,13 @@ Over the supplied corpus, first page of each, untouched save:
 | corpus-3 | 209,422 → 215,544 | 0 / 2,005,644 | 11.97% |
 | corpus-4 | 72,769 → 73,105 | 0 / 1,390,392 | 100.00% |
 | corpus-5 | 25,127 → 24,880 | 0 / 2,005,644 | 35.21% |
+
+**Correction, 2026-09-10 — these ids name the FIVE-document ordering**, which an
+insertion re-points: an id was a position in sorted order, the corpus is now
+eleven documents, and three of the five positions moved. This table is the one
+that proves it — sorted position 3 today is a 254,697-byte document, against the
+209,422 bytes recorded for `corpus-3` here. Ids are derived from the bytes from
+2026-09-10. The readings are left as they were taken.
 
 The ink column is what makes the zeros mean anything, and the byte column is
 worth reading beside them: three documents grew and two **shrank**, so the bytes

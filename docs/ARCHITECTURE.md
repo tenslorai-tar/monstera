@@ -674,7 +674,7 @@ model survives a round trip through a reader that cannot express it) and
 | In-place text editing (line/run rewriting), styled runs, HD render | **PDFium** | PDFium. **The GAP, recorded 2026-09-09 ([ADR-0049](DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)): PDFium does not group runs into visual lines.** `FPDFText_CountRects` answers one rect per run — measured at 4 for four runs whether the two sharing a baseline are 170pt or 3pt apart (`scripts/research/pdfiumLines.mjs`) — so there is no engine answer for the substrate to own options over, which is the route [ADR-0034](DECISIONS/0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md) takes for the reading side. What PDFium **does** answer is `FPDFText_GetTextObject`, which maps a character to its page object (40 of 45 in that run; the other five are its own *generated* spaces, flagged by `FPDFText_IsGenerated`) — so a range of text converts to editable objects inside one engine's frame. The editor therefore owns a grouping, by vertical **overlap** and with no tunable constant, and a person confirms it before anything is written |
 | Content composition: new document generation (markdown/CSV/TOC/image-to-PDF), drawing onto pages (watermark, headers/footers, Bates, OCR text layer) | **@cantoo/pdf-lib** — pdf-lib itself is unmaintained since 2021-11-06 | — |
 | Digital signatures (PKCS#7) | **@signpdf** | node-forge (verify) |
-| Text extraction, plain and layout-preserving | — (read-only) | **MuPDF** structured text. The founding record's "layout-preserving when Poppler available" is withdrawn: Poppler was named in no matrix row and no provisioning list, and MuPDF exposes block, line and span geometry. **The COLUMNS half is now executed** (2026-09-02, MuPDF 1.28.0): lines never merge across a gutter at 268pt or 60pt, and `FZ_STEXT_SEGMENT` yields column-major reading order — so no second engine and no clusterer of ours ([ADR-0034](DECISIONS/0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md)). **TABLES stay unexecuted**: `FZ_STEXT_TABLE_HUNT` was measured only against prose, which it damages, and no fixture here contains a table ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)) |
+| Text extraction, plain and layout-preserving | — (read-only) | **MuPDF** structured text. The founding record's "layout-preserving when Poppler available" is withdrawn: Poppler was named in no matrix row and no provisioning list, and MuPDF exposes block, line and span geometry. **The COLUMNS half is now executed** (2026-09-02, MuPDF 1.28.0): lines never merge across a gutter at 268pt or 60pt, and `FZ_STEXT_SEGMENT` yields column-major reading order — so no second engine and no clusterer of ours ([ADR-0034](DECISIONS/0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md)). **THE TABLES HALF IS EXECUTED, 2026-09-10** — it read *stay unexecuted* while no fixture contained a table, and the corpus now carries table-bearing documents. `FZ_STEXT_TABLE_HUNT` scored on against off over the eleven-document corpus: **two of the six documents carrying text change, at −1.5 and −17.5 points of line agreement against PDFium, and none improves**, with a constructed grid as the control that separates *found no table* from *the option never reached the engine*. It stays **off** and stays a per-consumer opt-in, now on a reading rather than on an absence — see §3.2, and note there why a fall in line agreement is not on its own the argument ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md), corrected 2026-09-10) |
 | PDF/A-2b export (Stage 8) | **Ghostscript** — MuPDF has no PDF/A output mode and veraPDF validates without converting. **Not provisioned and not shipped until Stage 8 builds the feature**: a binary in the 1.0 installer that nothing calls is the wired-tools rule one layer down. Row **unexecuted** ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)) | — |
 
 ### 3.1 The matrix is evidence, and stays that way
@@ -771,6 +771,23 @@ Adding a row still means executing it first.
   turned row-major reading order into column-major at both widths and left
   single-column prose unchanged; `TABLE_HUNT` split one prose line into two,
   inventing a table, and undid `SEGMENT`'s ordering.
+
+  **`TABLE_HUNT` is now measured against real documents too — 2026-09-10,
+  `npm run proof:lineagreement` over the eleven-document corpus.** Asked for
+  `segment,table-hunt` instead of `segment` and scored against the same
+  independent PDFium reading: **two of the six documents carrying text change at
+  all**, at −1.5 and −17.5 points of line agreement, and **none improves**. A
+  constructed 3×3 grid is the control — its two readings differ, so a row of
+  zeroes is the option finding no table rather than the option not reaching the
+  engine, which produce the same output.
+
+  **And the negative delta is not by itself the reason, which is the part worth
+  carrying.** `TABLE_HUNT` exists to emit cells, and a cell is not a line, so
+  lower agreement with a line-oriented reader is partly the option working. What
+  makes it a loss *today* is that **no shipped consumer of this substrate wants
+  cells** — the text layer, search, spell check and word count all read lines.
+  The per-consumer opt-in is therefore unchanged and now rests on a reading
+  rather than on nobody having taken one.
 
   **This supersedes `BUILD-PROMPT.md` Part E2's mechanism and keeps its
   purpose.** E2 asks that clustering exist once so no consumer re-derives it with

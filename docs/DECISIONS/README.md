@@ -70,7 +70,7 @@ Each contains:
 | [0010](0010-native-mupdf-through-an-ffi-shim.md) | Native MuPDF through an FFI shim; WASM withdrawn | Accepted; instruments corrected 2026-08-17 |
 | [0011](0011-engine-upgrade-cadence.md) | When the native engine is upgraded, and when it is not | Accepted |
 | [0012](0012-memory-budgets-are-machine-read-from-the-invariant.md) | The memory budgets are machine-read from invariant §9.17 | Accepted |
-| [0013](0013-pdfa-export-and-text-extraction-engines.md) | PDF/A-2b export gets a matrix row and no binary; the Poppler conditional is dropped | Accepted |
+| [0013](0013-pdfa-export-and-text-extraction-engines.md) | PDF/A-2b export gets a matrix row and no binary; the Poppler conditional is dropped | Accepted; **Correction appended 2026-09-10 — the TABLES half of the layout question is executed.** It was unexecuted because no fixture contained a table; the corpus grew to eleven documents and `FZ_STEXT_TABLE_HUNT` was scored on against off, changing 2 of the 6 carrying text at −1.5 and −17.5 points of line agreement with none improving. It stays off. MuPDF is not found insufficient and Poppler does not return |
 | [0014](0014-ocr-stays-inside-the-engine.md) | OCR stays inside the engine: Tesseract and Leptonica are kept | Accepted |
 | [0015](0015-a-filename-may-not-select-a-native-library.md) | A filename may not select a native library (invariant 23) | Accepted |
 | [0016](0016-the-document-handler-set-is-named.md) | The document handler set is named, not inherited | Accepted |
