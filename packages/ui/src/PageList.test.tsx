@@ -205,13 +205,14 @@ function viewDrawing(): DocumentView {
  */
 function clientAnswering(
   lines: readonly { text: string; box: { x0: number; y0: number; x1: number; y1: number } }[] = [],
+  kind: 'text' | 'image-only' | 'empty' = 'text',
 ): { client: ContractClient; asked: unknown[]; textAsked: unknown[] } {
   const asked: unknown[] = [];
   const textAsked: unknown[] = [];
   const client = createClient(channels, (id, params) => {
     if (id === 'document.pageTextLayer') {
       textAsked.push(params);
-      return Promise.resolve(ok({ version: VERSION, lines, truncated: false }));
+      return Promise.resolve(ok({ version: VERSION, lines, truncated: false, kind }));
     }
     if (id !== 'document.viewModel') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
@@ -420,6 +421,76 @@ describe('PageList', () => {
     // page would produce — and an empty selectable layer copies nothing while
     // looking exactly like a working one.
     expect(rendered).toStrictEqual(['the first line', 'the second line']);
+  });
+
+  /**
+   * D6 row 1's UI half. The kernel half is `textLayer.test.ts`' pair of cases.
+   *
+   * What this asserts is that the note is driven by the CHANNEL's attribution
+   * and not by the absence of lines, which is the thing a component could
+   * plausibly decide for itself — and would then get wrong on the blank page,
+   * offering an explanation for something that needs none.
+   */
+  it('says why a picture-only page has nothing to select', async () => {
+    const { client } = clientAnswering([], 'image-only');
+    const { container } = render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+        search={undefined}
+        secondRasteriser={undefined}
+      />,
+    );
+    await settle();
+
+    expect(container.querySelector('[data-page-note="0"]')?.textContent).toContain('picture');
+  });
+
+  it('CONTROL: a page with no text and no picture is left alone', async () => {
+    // THE CASE THAT SEPARATES THE RULE FROM "there are no lines". Both pages
+    // render an empty layer; only one of them is a page a reader is wondering
+    // about. A note here would be an explanation of a blank page, which is the
+    // wired-tools defect wearing a sentence.
+    const { client } = clientAnswering([], 'empty');
+    const { container } = render(
+      <PageList
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+        search={undefined}
+        secondRasteriser={undefined}
+      />,
+    );
+    await settle();
+
+    expect(container.querySelector('[data-page-note="0"]')).toBeNull();
   });
 
   it('places a line at the box the channel sent, converted through the page', async () => {

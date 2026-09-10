@@ -108,7 +108,12 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
     'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
     // The scroller asks every visible page for its selectable text; these cases
     // are about view lifetime, so the answer is empty rather than seeded.
-    'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false },
+    'document.pageTextLayer': {
+      version: asDocVersion(1),
+      lines: [],
+      truncated: false,
+      kind: 'empty' as const,
+    },
   };
   return createClient(channels, (id) => {
     const answer = answers[id];

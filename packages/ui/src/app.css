@@ -1248,6 +1248,31 @@ body {
 }
 
 /*
+ * The sentence a page of un-selectable words needs.
+ *
+ * OVER the raster and at its top edge, because the thing it explains is the
+ * page itself: a note below the page would be read as a caption for the one
+ * after it. Absolutely positioned so it takes no space in the slot's flow and
+ * cannot move the raster it sits on, which is the property the text layer
+ * beside it has for the same reason.
+ *
+ * `pointer-events: none`, because there is nothing here to press and a person
+ * dragging a selection across the page must not be interrupted by a label.
+ */
+.m-page-note {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+/*
  * §10.3's floating quick toolbar: a vertical pill on the canvas edge.
  *
  * `position: fixed` and not `absolute`, because the document surface scrolls

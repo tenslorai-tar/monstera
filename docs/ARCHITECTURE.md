@@ -764,7 +764,21 @@ Adding a row still means executing it first.
   exactly one kernel module names the `fz_stext_options` flags — so editing,
   Excel export, search and extraction cannot ask the engine different questions.
   `FZ_STEXT_SEGMENT` is **on**; `FZ_STEXT_TABLE_HUNT` is **off** and is a
-  per-consumer opt-in that owes its own reading.
+  per-consumer opt-in that owes its own reading; **`FZ_STEXT_PRESERVE_IMAGES` is
+  on from 2026-09-10**, because *this page has no text* and *this page is a
+  picture of text* are otherwise the same empty reading, and D6's first row is
+  the difference between them. It is part of the one option set rather than an
+  opt-in for a reason the alternative makes clear: a second read would answer
+  the attribution from a different walk than the lines it explains.
+
+  **It is not inert, and that is measured rather than assumed.** Over the
+  corpus, characters and every line boundary are unchanged, and **positional
+  reading order moved on two of the six documents carrying text** — 28.2% to
+  46.6% against PDFium on one, 14.9% to 13.2% on the other. The mechanism is
+  `SEGMENT`: an image is a region, so a page holding one segments differently
+  once the engine can see it. On a page with pictures, selection order and
+  search-result order may therefore differ from what this build produced before
+  that date.
 
   Measured 2026-09-02 on MuPDF 1.28.0, against fixtures whose correct grouping is
   a fact about the generator rather than an opinion of the thing under test: the

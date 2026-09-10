@@ -170,7 +170,7 @@ planner counting a table of rows as a table of untouched work.
 
 | Feature | Status |
 |---|---|
-| Scanned-page detection | — |
+| Scanned-page detection. **Landed 2026-09-10**, first in the stage because it needs no OCR engine. **THE ANSWER IS THE KERNEL'S, WITH A STATED SHAPE.** Until now the only thing attributing a page as a scan was `proof:lineagreement` printing *no text from either engine* — an instrument's disclaimer, not a product's answer. **THREE STATES, and the third is why it is not a boolean**: a page with no text is either a picture of text, which OCR can read, or blank, which it cannot, and both answer with no lines; offering recognition on a blank page is the wired-tools defect wearing a suggestion. **`'image-only'` and not `'scanned'`** — what is observable is a raster and no text, which is also a full-page diagram, so the name is the observation. **NO CONSTANT**: a coverage threshold would be a tunable in a substrate whose character is that it has none. **It rides on `document.pageTextLayer`**, because *what text is here* and *why is there none* are one walk of one reading. `FZ_STEXT_PRESERVE_IMAGES` is on for it, measured first — **and it is not inert**: reading ORDER moved on 2 of 6 corpus documents, characters and line boundaries on none (§3.2). **The wired pair:** `proof:scannedpages` (9 cases, mutation-verified — four constructed pages including the blank and mixed ones the corpus has none of, five over the corpus) and `PageList.test.tsx`, whose control renders a blank page and asserts **no** note. JOURNAL 2026-09-10. | **done** |
 | tesseract.js OCR, 13+ languages, page scope choice | — |
 | Invisible selectable text layer | — |
 | Search integration | — |

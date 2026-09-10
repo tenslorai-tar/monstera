@@ -55,7 +55,9 @@ function client(): ContractClient {
     // The scroller asks every visible page for its selectable text; these cases
     // are about the compare pane, so the answer is empty rather than seeded.
     if (id === 'document.pageTextLayer') {
-      return Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' as const }),
+      );
     }
     throw new Error(`this fixture has no answer for ${id}`);
   });

@@ -106,6 +106,33 @@ describe('textLayerOf', () => {
   });
 
   it('reads a genuinely empty page as an empty layer that is not truncated', () => {
-    expect(textLayerOf({ blocks: [] }, 10, 100)).toStrictEqual({ lines: [], truncated: false });
+    expect(textLayerOf({ blocks: [], images: 0 }, 10, 100)).toStrictEqual({
+      lines: [],
+      truncated: false,
+      kind: 'empty',
+    });
+  });
+
+  it('says WHY an empty layer is empty, which is the whole of D6 row 1', () => {
+    // THE PAIR, not one case. A page with no text and a picture on it and a
+    // page with nothing on it produce the same empty `lines`, and every
+    // assertion about that array passes for both — so the two are asserted
+    // together, and the attribution is the only thing separating them.
+    expect(textLayerOf({ blocks: [], images: 1 }, 10, 100).kind).toBe('image-only');
+    expect(textLayerOf({ blocks: [], images: 0 }, 10, 100).kind).toBe('empty');
+  });
+
+  it('calls a page with text a text page even when it also carries an image', () => {
+    // A detector keyed on "has an image" would offer recognition over text it
+    // can already read. The mixed page is the case that separates the two
+    // rules, and it is the common shape: a photograph in an article.
+    expect(textLayerOf({ ...pageOf(['a']), images: 3 }, 10, 100).kind).toBe('text');
+  });
+
+  it('takes the kind from the WHOLE page, not from the bounded slice', () => {
+    // A layer clipped at its limit still came from a page with text on it.
+    const clipped = textLayerOf(pageOf(['first', 'second']), 1, 100);
+    expect(clipped.truncated).toBe(true);
+    expect(clipped.kind).toBe('text');
   });
 });

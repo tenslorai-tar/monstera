@@ -1,3 +1,4 @@
+import { type PageKind, pageKindOf } from './pageKind.js';
 import type { PageText, TextLine } from './textStructure.js';
 import { linesOf } from './textStructure.js';
 
@@ -54,6 +55,17 @@ export interface TextLayer {
    * characters nobody can see.
    */
   readonly truncated: boolean;
+  /**
+   * What the page is made of, so an empty layer can say why it is empty.
+   *
+   * It rides on this answer rather than on a channel of its own because the two
+   * questions have one reading: *what text is on this page* and *why is there
+   * none* are the same walk of the same structured text, and a second channel
+   * would parse the page twice to disagree with itself on a version boundary.
+   *
+   * See {@link pageKindOf}, which is the rule and the only place it is written.
+   */
+  readonly kind: PageKind;
 }
 
 /**
@@ -111,5 +123,9 @@ export function textLayerOf(
     };
   });
 
-  return { lines, truncated: clipped || all.length > limit };
+  // THE KIND IS THE WHOLE PAGE'S, never the bounded slice's. A layer clipped at
+  // its line limit still came from a page with text on it, and deriving the
+  // attribution from `kept` would answer `'empty'` for a `limit` of one on a
+  // page whose first line is blank.
+  return { lines, truncated: clipped || all.length > limit, kind: pageKindOf(page) };
 }

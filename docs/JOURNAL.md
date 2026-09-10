@@ -888,6 +888,141 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-10 — A page this build cannot read, told apart from a page with nothing on it
+
+D6's first row, and it leads the stage because it needs no OCR engine.
+
+### What was already true, and why it was not an answer
+
+`proof:lineagreement` has printed *no text from either engine — a scan, not a
+disagreement* since 2026-09-09. That line is an **instrument's** attribution: it
+exists so a score is not computed over two empty readings. Nothing in the kernel
+knew it, nothing crossed a channel, and a person opening a scan saw a page of
+words they could not select, could not search and could not spell-check, with
+the application saying nothing at all.
+
+### The shape, and the two decisions inside it
+
+**Three states rather than a boolean.** *Is this scanned* invites a yes/no, and
+a yes/no gets the blank page wrong: a page with no text and no picture is a
+divider or a back cover, and offering to recognise text on it is a control that
+cannot work. `'text' | 'image-only' | 'empty'`.
+
+**`'image-only'` and not `'scanned'`.** Nothing here can know a page came from a
+scanner. What is observable is a raster and no text — which is what a scan looks
+like, and also what a full-page diagram looks like. Naming the observation keeps
+a claim out of a type, and the message a reader sees says *this page is a
+picture*, not *this page is a scan*.
+
+**No constant.** The obvious refinement is a coverage threshold, and it would be
+the first tunable in a substrate whose whole character is that it has none. It
+would also be wrong where it fired: a page with no text is a page with no text
+whatever fraction the picture covers.
+
+### Measured before it was designed
+
+`scripts/research/pageComposition.mjs`, four constructed pages, the option off
+and on:
+
+```
+  fixture       without preserve-images        with preserve-images
+  text only   chars= 32 {"text":1}                chars= 32 {"text":1}
+  image only  chars=  0 {}                        chars=  0 {"image":1}
+  empty       chars=  0 {}                        chars=  0 {}
+  both        chars= 21 {"text":1}                chars= 21 {"image":1,"text":1}
+```
+
+So MuPDF reports no image blocks at all without `FZ_STEXT_PRESERVE_IMAGES`, and
+*this page has no text* and *this page is a picture of text* are otherwise the
+same empty reading. The option is now part of the one option set rather than a
+per-consumer opt-in, because the alternative is a **second** structured-text read
+per page — and then the attribution would come from a different walk than the
+lines it explains, which is an identity join across a version boundary in
+miniature.
+
+### AND IT IS NOT INERT, WHICH THE COMMENT CLAIMED BEFORE THE CONTROL RAN
+
+The note added to `textStructure.ts` first said *"so search, word count and the
+text layer read exactly what they read before"*. That was written from the
+fixtures above and was false the moment it was written — this section is the
+audit's *ask it of the claim you are writing* arriving inside the same hour.
+
+Re-running `proof:lineagreement` over the corpus with the option on separates
+three things the fixtures could not:
+
+| | before | after |
+|---|---|---|
+| characters | 99.92% | **99.92%**, identical per document |
+| line agreement | 68.2% | **68.2%**, identical per document |
+| positional order | 28.2% / 14.9% on two documents | **46.6% / 13.2%** |
+
+The mechanism is `FZ_STEXT_SEGMENT`: an image is a region, so a page holding one
+segments differently once the engine can see it. **Not a defect** — that is
+MuPDF's model of such a page — and the direction is not evidence either way,
+because PDFium's order is content-stream order, which `SEGMENT` exists to depart
+from. What it costs is now stated in three places rather than discovered later:
+on a page with pictures, selection order and search-result order may differ from
+what this build produced before today. No *line* moved.
+
+### The corpus, and what it does not contain
+
+`proof:scannedpages`, every page of every document:
+
+```
+  id                pages   text   image-only   empty
+  corpus-4bdfb992      1      0            1       0
+  corpus-198cf285      2      2            0       0
+  corpus-c13c9b12      5      5            0       0
+  corpus-6075b812      1      1            0       0
+  corpus-33d2416d      1      0            1       0
+  corpus-db4f2076      5      5            0       0
+  corpus-6906a007     10      0           10       0
+  corpus-97b80d4e      1      0            1       0
+  corpus-2c1a1a89      3      3            0       0
+  corpus-c0a3feea      2      2            0       0
+  corpus-ee1bc615      1      0            1       0
+```
+
+**Five documents and fourteen pages carry no text; six documents and eighteen
+pages do.** Both classes are present, which is what makes the reading separate
+anything: a corpus of scans alone cannot tell a working detector from one
+answering `'image-only'` for everything, and a corpus of text alone cannot tell
+it from one answering `'text'`. The proof asserts both, and asserts it at
+document level too, because opening a scan is a document-level experience.
+
+**And the corpus contains neither of the two cases the rule turns on**: no blank
+page and no mixed page. Those are exactly `'empty'` — which stops a suggestion
+being made where nothing can be done — and text-beside-a-picture, which a rule
+keyed on *has an image* gets wrong. Constructed fixtures are the only way to
+reach them, and a proof that read only the corpus would report full agreement
+about a rule two-thirds unexercised.
+
+**Non-vacuous.** With the image count ignored in the built kernel, three cases go
+red and no others: the constructed picture page, the corpus's image-only pages
+and the both-sides claim.
+
+### The surface, and the control that makes it a pair
+
+The note is a sentence in the page's own flow — *This page is a picture, so
+there is no text to select or search* — mounted when the channel says
+`'image-only'`. It is not gated on the page having been measured, unlike the text
+layer beside it: the note carries no geometry, and gating it would hide it for
+exactly as long as the page has not been drawn, which is when a reader is most
+likely to be wondering.
+
+`PageList.test.tsx` renders a picture-only page and asserts the note; its
+**control** renders a blank page and asserts there is none. Without that second
+case the surface would pass for a component that showed the note whenever the
+lines were empty — which is a decision the renderer must not be making, and
+which gets the blank page wrong in the direction that offers a person something
+this build cannot do.
+
+The shim gained a `pageImages` seed for the same reason: a harness that could
+only produce `'text'` and `'empty'` would make this surface untestable against
+it, which is the display-only defect one layer down.
+
+---
+
 ## 2026-09-10 — The corpus grew from five documents to eleven, and fired three triggers at once
 
 Stage 6 opens on it. Four readings, all with instruments that already existed —

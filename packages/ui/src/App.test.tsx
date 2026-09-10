@@ -211,7 +211,14 @@ const OPEN_DOCUMENT_ANSWERS = {
   // rather than seeded: what these cases are about is the shell's dispatch, and
   // the text layer's own assertions live in `PageList.test.tsx` where the boxes
   // can be chosen.
-  'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false },
+  'document.pageTextLayer': {
+    version: asDocVersion(1),
+    lines: [],
+    truncated: false,
+    // `'empty'` and not `'image-only'`: these pages hold nothing, and seeding
+    // the other would put a note on every page of every case in this file.
+    kind: 'empty' as const,
+  },
 };
 
 /** Opens a document and settles the effects, leaving the toolbar rendered. */
@@ -972,6 +979,7 @@ describe('App', () => {
               { text: 'the needle sits here', box: { x0: 10, y0: 10, x1: 200, y1: 26 } },
             ],
             truncated: false,
+            kind: 'text' as const,
           },
           'document.searchPage': {
             version: asDocVersion(1),

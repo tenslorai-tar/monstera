@@ -312,6 +312,14 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/editFidelity.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # D6 row 1. The corpus is not here, so its five corpus cases report NOT
+      # APPLICABLE and the run exits 0 — and the four that do run are the ones a
+      # runner can settle: a constructed text page, a picture-only page, a BLANK
+      # page and a mixed one. The blank and the mixed are the cases the corpus
+      # turns out to have none of, so this leg covers what no corpus reading can.
+      - name: Prove a page this build cannot read is told apart from an empty one
+        run: node scripts/ci/annotate.mjs scripts/proofs/scannedPages.proof.mjs
+
       # E2's accuracy score. The corpus is not here, so what runs on the Windows
       # leg is the pair of controls — a constructed page both engines must agree
       # on completely, and two resolution cases proving the scorer can report a

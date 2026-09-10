@@ -8,8 +8,8 @@ import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { TextLayer, type TextLayerLine } from './TextLayer.js';
-import { usePageText } from './usePageText.js';
-import { ANNOTATION_SURFACE_LABEL } from './messages/en.js';
+import { type PageTextAnswer, usePageText } from './usePageText.js';
+import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
@@ -718,7 +718,13 @@ export function PageList({
           // reason: a text layer placed with a neighbour's box would put every
           // line in the wrong frame, which reads as a selection that drifts
           // rather than as a missing measurement.
-          text={sizes.has(page) ? pageText.get(page) : undefined}
+          text={sizes.has(page) ? pageText.get(page)?.lines : undefined}
+          // NOT GATED ON THE MEASUREMENT, unlike the layer beside it. The note
+          // carries no geometry — it is a sentence about the page, not a thing
+          // placed on it — and gating it on `sizes` would hide it for exactly
+          // as long as the page has not been drawn, which is when a reader is
+          // most likely to be wondering.
+          kind={pageText.get(page)?.kind}
           search={search}
           secondRasteriser={secondRasteriser}
         />
@@ -764,6 +770,7 @@ function PageSlot({
   onMeasured,
   drawing,
   text,
+  kind,
   search,
   secondRasteriser,
 }: {
@@ -778,6 +785,8 @@ function PageSlot({
   readonly onMeasured: (page: number, measured: Measured) => void;
   readonly drawing: PageListProps['drawing'];
   readonly text: readonly TextLayerLine[] | undefined;
+  /** What the page is made of, or `undefined` before its text has arrived. */
+  readonly kind: PageTextAnswer['kind'] | undefined;
   readonly search: SearchHighlight | undefined;
   /**
    * §6.1's second engine, or `undefined` where the setting is off.
@@ -886,6 +895,17 @@ function PageSlot({
           mounted only while a tool is active, so while somebody is drawing the
           drawing surface takes the pointer and while nobody is, this does —
           which keeps *where does a press go* a question with one answer. */}
+      {/* WHY THERE IS NOTHING TO SELECT. A page of words a reader cannot
+          select, cannot search and cannot spell-check looks like a broken
+          application, and until this row landed nothing in the product said
+          otherwise — the substrate simply returned no lines. It is a `<p>` in
+          the page's own flow rather than an overlay, so it is in the reading
+          order a screen reader takes and carries no geometry to get wrong. */}
+      {kind === 'image-only' ? (
+        <p className="m-page-note" data-page-note={String(page)}>
+          {i18n._(PAGE_IMAGE_ONLY)}
+        </p>
+      ) : null}
       {text === undefined || size === undefined ? null : (
         <TextLayer
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}

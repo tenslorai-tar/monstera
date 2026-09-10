@@ -323,6 +323,7 @@ export const REPLACE_TEXT_OBJECT_UNADDRESSABLE = messageKey(
 export const REPLACE_TEXT_OBJECT_TOO_LONG = messageKey('dialog.replace-text-object.too-long');
 export const REPLACE_TEXT_OBJECT_APPLY = messageKey('dialog.replace-text-object.apply');
 export const REPLACE_TEXT_OBJECT_COMMAND_TITLE = messageKey('command.document.replace-text-object');
+export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 export const FIND_REPLACE_WITH = messageKey('surface.find.replace-with');
 export const FIND_REPLACE_ALL = messageKey('surface.find.replace-all');
 export const FIND_REPLACED = messageKey('surface.find.replaced');
@@ -850,6 +851,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // product rather than about this build.
   [REPLACE_TEXT_OBJECT_UNADDRESSABLE]:
     'Some text on this page was pasted in as a block, and Monstera cannot edit inside one yet. It is not listed here.',
+  // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
+  // at words they cannot select has one question — why — and *this page is a
+  // picture* answers it. It deliberately does not say *scanned*: the kernel
+  // reports a raster and no text, which is also what a full-page diagram is,
+  // and a message may not claim more than the reading behind it.
+  [PAGE_IMAGE_ONLY]: 'This page is a picture, so there is no text to select or search.',
   [REPLACE_TEXT_OBJECT_TOO_LONG]: 'That is longer than one piece of text can hold.',
   [REPLACE_TEXT_OBJECT_APPLY]: 'Replace',
   [EDIT_PAGE_OBJECT_TITLE]: 'Edit an object on this page',

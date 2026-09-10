@@ -36,6 +36,7 @@ import {
   type SessionsByWriter,
   type RegionRequest,
   type SnapshotWrite,
+  type PageKind,
   type TextLayerLine,
   type TextMatch,
   countPageWords,
@@ -1068,6 +1069,8 @@ export interface PageTextLayerResult {
    * and covering both bounds, because a clipped line is invisible in a length.
    */
   readonly truncated: boolean;
+  /** What the page is made of, so an empty layer can say why. See `pageKindOf`. */
+  readonly kind: PageKind;
 }
 
 /**

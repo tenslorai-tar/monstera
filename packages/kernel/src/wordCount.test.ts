@@ -61,7 +61,7 @@ describe('countPageWords', () => {
   });
 
   it('reads a page with no text as zero rather than throwing', () => {
-    expect(countPageWords({ blocks: [] })).toStrictEqual({
+    expect(countPageWords({ blocks: [], images: 0 })).toStrictEqual({
       words: 0,
       characters: 0,
       charactersNoSpaces: 0,

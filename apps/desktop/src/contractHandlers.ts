@@ -729,7 +729,7 @@ function pageTextLayerHandler(
     limit,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageTextLayer']>>> => {
     try {
-      const { version, lines, truncated } = await commands.pageTextLayer(docId, page, limit);
+      const { version, lines, truncated, kind } = await commands.pageTextLayer(docId, page, limit);
       // REBUILT FIELD BY FIELD, as `searchPageHandler` rebuilds a match: the
       // kernel's shape and the channel's are two declarations that happen to
       // agree today, and spreading one into the other is how a field added
@@ -741,6 +741,7 @@ function pageTextLayerHandler(
           box: { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1 },
         })),
         truncated,
+        kind,
       });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

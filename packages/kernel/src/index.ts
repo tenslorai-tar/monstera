@@ -270,6 +270,7 @@ export {
 // so a consumer that holds a `PageText` needs no reason to reach for `/engine`
 // (ADR-0026). Reading one from a document does, and `readPageText` is there.
 export { type TextLayer, type TextLayerLine, textLayerOf } from './textLayer.js';
+export { type PageKind, pageKindOf } from './pageKind.js';
 export { countPageWords } from './wordCount.js';
 export {
   type DisplayedRect,

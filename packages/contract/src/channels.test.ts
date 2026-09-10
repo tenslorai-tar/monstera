@@ -120,6 +120,7 @@ const handlers: ContractHandlers = {
         version: asDocVersion(1),
         lines: [{ text: 'a line of the page', box: { x0: 10, y0: 20, x1: 110, y1: 32 } }],
         truncated: false,
+        kind: 'text' as const,
       }),
     ),
   // NON-ZERO AND ALL THREE DIFFERENT, so a case can assert which figure crossed.

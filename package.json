@@ -112,6 +112,7 @@
     "proof:pdfiumobject": "node scripts/proofs/pdfiumObject.proof.mjs",
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
     "proof:lineagreement": "node scripts/research/lineAgreement.mjs",
+    "proof:scannedpages": "node scripts/proofs/scannedPages.proof.mjs",
     "proof:editcost": "node scripts/research/editCost.mjs",
     "proof:definedtokens": "node scripts/proofs/definedTokens.proof.mjs",
     "check:definedtokens": "node scripts/lib/definedTokens.mjs",

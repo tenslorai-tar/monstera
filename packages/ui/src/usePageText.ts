@@ -5,6 +5,26 @@ import { useEffect, useState } from 'react';
 import type { TextLayerLine } from './TextLayer.js';
 
 /**
+ * One page's answer: its selectable lines, and what the page is made of.
+ *
+ * **The two arrive together and are kept together.** The attribution exists to
+ * explain an empty `lines`, so a shape that let a consumer hold one without the
+ * other would put the explanation one lookup away from the thing it explains —
+ * and the consumer that forgets the lookup renders a page with nothing on it
+ * and nothing said about it, which is the state this row closes.
+ */
+export interface PageTextAnswer {
+  readonly lines: readonly TextLayerLine[];
+  /**
+   * `'image-only'` is a page a reader can see words on and select none of.
+   *
+   * The renderer says so; it does not say *scanned*, because the kernel did not
+   * (see the channel's own note).
+   */
+  readonly kind: 'text' | 'image-only' | 'empty';
+}
+
+/**
  * The selectable text for the pages currently on screen.
  *
  * ## Why the scroller holds this and the application does not
@@ -47,7 +67,7 @@ export function usePageText(
   docId: DocId | undefined,
   version: DocVersion | undefined,
   visible: ReadonlySet<number>,
-): ReadonlyMap<number, readonly TextLayerLine[]> {
+): ReadonlyMap<number, PageTextAnswer> {
   // THE SET IS NOT A STABLE VALUE, so everything below keys on a string built
   // from it. A `ReadonlySet` is a new object on every scroll even when the pages
   // have not changed, and an effect depending on it would re-fetch every page on
@@ -69,7 +89,7 @@ export function usePageText(
    */
   const [answered, setAnswered] = useState<{
     readonly key: string;
-    readonly map: ReadonlyMap<number, readonly TextLayerLine[]>;
+    readonly map: ReadonlyMap<number, PageTextAnswer>;
   }>({ key: '', map: EMPTY });
 
   useEffect(() => {
@@ -85,7 +105,7 @@ export function usePageText(
     const pages = wanted === '' ? [] : wanted.split(',').map(Number);
 
     const fetchAll = async (): Promise<void> => {
-      const gathered = new Map<number, readonly TextLayerLine[]>();
+      const gathered = new Map<number, PageTextAnswer>();
       for (const page of pages) {
         // CHECKED BEFORE THE CALL and after it: a teardown between pages costs
         // no round trip, and the answer to the page in flight arrives after the
@@ -104,7 +124,7 @@ export function usePageText(
         // at, which can have moved since this effect started — showing it would
         // put a layer from one document over the raster of another.
         if (answer.value.version !== version) continue;
-        gathered.set(page, answer.value.lines);
+        gathered.set(page, { lines: answer.value.lines, kind: answer.value.kind });
       }
       if (!stopped()) setAnswered({ key, map: gathered });
     };
@@ -124,4 +144,4 @@ export function usePageText(
  * A fresh `new Map()` per render is a new identity, which would make every
  * consumer's memoization miss on every render while nothing had changed.
  */
-const EMPTY: ReadonlyMap<number, readonly TextLayerLine[]> = new Map();
+const EMPTY: ReadonlyMap<number, PageTextAnswer> = new Map();

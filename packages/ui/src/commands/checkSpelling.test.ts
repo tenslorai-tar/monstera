@@ -76,6 +76,7 @@ function clientWith(
           box: { x0: 0, y0: index * 10, x1: 100, y1: index * 10 + 8 },
         })),
         truncated: false,
+        kind: step.lines.length > 0 ? ('text' as const) : ('empty' as const),
       }),
     );
   });

@@ -158,7 +158,50 @@ describe('parsePageText', () => {
     // Without this the refusal above could be a ban on empty pages, and the
     // first blank page in a real document would be a crash rather than a page
     // with no text.
-    expect(parsePageText('{"blocks":[]}')).toStrictEqual({ blocks: [] });
+    expect(parsePageText('{"blocks":[]}')).toStrictEqual({ blocks: [], images: 0 });
+  });
+
+  it('counts image blocks, including ones nested inside a structure block', () => {
+    // THE NESTING IS THE POINT. `FZ_STEXT_SEGMENT` wraps a page's blocks in
+    // `structure` nodes, so a count taken at the top level would report zero
+    // for exactly the segmented pages this option was turned on for — and zero
+    // is *this page has no picture on it*, which is the answer that reads fine.
+    const page = parsePageText(
+      JSON.stringify({
+        blocks: [
+          { type: 'image', bbox: { x: 0, y: 0, w: 100, h: 100 } },
+          {
+            type: 'structure',
+            contents: [
+              { type: 'image', bbox: { x: 0, y: 0, w: 10, h: 10 } },
+              { type: 'text', bbox: { x: 0, y: 0, w: 10, h: 10 }, lines: [] },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(page.images).toBe(2);
+    // AND THE BLOCKS ARE STILL DROPPED, which is what makes the option safe for
+    // every existing consumer: an image is counted and never becomes a line.
+    expect(page.blocks).toStrictEqual([]);
+  });
+
+  it('CONTROL: a page of text alone counts no images', () => {
+    // Without this, `images` could be a count of blocks rather than of image
+    // blocks and both cases above would still pass.
+    const page = parsePageText(
+      JSON.stringify({
+        blocks: [
+          {
+            type: 'text',
+            bbox: { x: 0, y: 0, w: 10, h: 10 },
+            lines: [{ bbox: { x: 0, y: 0, w: 10, h: 10 }, font: { size: 12 }, text: 'a', x: 0, y: 0 }],
+          },
+        ],
+      }),
+    );
+    expect(page.images).toBe(0);
+    expect(page.blocks).toHaveLength(1);
   });
 
   it('drops image and vector blocks rather than emitting empty text blocks', () => {

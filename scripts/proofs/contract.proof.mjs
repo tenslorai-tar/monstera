@@ -937,7 +937,7 @@ export const handlers: ContractHandlers = {
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageTextLayer': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
@@ -1028,7 +1028,7 @@ export const handlers: ContractHandlers = {
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageTextLayer': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
@@ -1194,7 +1194,7 @@ export const shim: ContractClient = {
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageTextLayer': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),

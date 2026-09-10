@@ -319,6 +319,22 @@ export interface BrowserShimOptions {
   readonly pageLines?: readonly (readonly string[])[];
 
   /**
+   * Which pages carry a picture and no text, indexed by page.
+   *
+   * A shim that derived this from `pageLines` alone could only ever answer
+   * `'text'` or `'empty'`, and `'image-only'` is the state D6's first row
+   * exists for — so a UI test for it would be untestable against this harness,
+   * which is the display-only defect one layer down: the surface would be
+   * asserted against a shim that cannot produce the input it renders.
+   *
+   * A page listed here answers `'image-only'` **when it also has no lines**.
+   * The kernel decides by what MuPDF reported and text always wins; a shim that
+   * let a test seed both would let a case assert an answer the product cannot
+   * give.
+   */
+  readonly pageImages?: readonly number[];
+
+  /**
    * The links each page carries, indexed by page.
    *
    * Seeded by the test rather than canned here, for `pageLines`' reason: a shim
@@ -570,6 +586,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // a test holding the array it seeded would watch it empty underneath.
   const viewModels = [...(options.viewModels ?? [])];
   const pageLines = options.pageLines ?? [];
+  const pageImages = options.pageImages ?? [];
   const pageLinks = options.pageLinks ?? [];
   const destinations = options.destinations ?? [];
   // Copied and consumed, exactly like `viewModels`.
@@ -1059,6 +1076,17 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           // The same one-past-the-limit honesty the kernel has, so a shim answer
           // and a real one disagree about nothing a test could come to rely on.
           truncated: all.length > limit,
+          // THE SAME RULE THE KERNEL APPLIES, spelt here because this shim
+          // holds no `PageText` to hand `pageKindOf`: text wins, then a
+          // picture, then nothing. A shim that answered `'image-only'` for a
+          // seeded page WITH lines would let a case assert a state the product
+          // cannot produce.
+          kind:
+            all.length > 0
+              ? ('text' as const)
+              : (pageImages[page] ?? 0) > 0
+                ? ('image-only' as const)
+                : ('empty' as const),
         }),
       );
     },

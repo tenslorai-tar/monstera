@@ -88,6 +88,8 @@ export const STEXT_OPTIONS = {
   segment: 'segment',
   /** `FZ_STEXT_TABLE_HUNT` — off; see the note above. */
   tableHunt: 'table-hunt',
+  /** `FZ_STEXT_PRESERVE_IMAGES` — on; see {@link PageText.images}. */
+  preserveImages: 'preserve-images',
 } as const;
 
 /**
@@ -96,8 +98,57 @@ export const STEXT_OPTIONS = {
  * `tableHunt` is ABSENT rather than written `table-hunt=0`, so turning it on is
  * visibly a change to this line. Composed from the set above rather than spelt,
  * because a literal here would be the second opinion the set exists to prevent.
+ *
+ * ## `preserveImages` was added 2026-09-10, and it changes no existing answer
+ *
+ * Without it MuPDF reports no image blocks at all, so *this page has no text*
+ * and *this page is a picture of text* are the same empty reading — which is
+ * what D6's scanned-page row needs to separate, and it needs it from **the read
+ * that already happens** rather than from a second one.
+ *
+ * Measured before it was turned on (`scripts/research/pageComposition.mjs`) on
+ * four constructed pages, with the option off and on:
+ *
+ * | page | off | on |
+ * |---|---|---|
+ * | text only | 32 chars, `{text: 1}` | 32 chars, `{text: 1}` |
+ * | image only | 0 chars, `{}` | 0 chars, **`{image: 1}`** |
+ * | empty | 0 chars, `{}` | 0 chars, `{}` |
+ * | both | 21 chars, `{text: 1}` | 21 chars, **`{image: 1, text: 1}`** |
+ *
+ * The text is identical either way, and {@link parsePageText} drops any block
+ * with no `lines`, so no consumer sees a new kind of block. What arrives is one
+ * extra number.
+ *
+ * ## IT IS NOT INERT, AND THE CONTROL IS WHAT SAID SO
+ *
+ * The sentence above originally ended *"so search, word count and the text
+ * layer read exactly what they read before"*, which was written from the
+ * fixtures and was false the moment it was written. Re-running
+ * `proof:lineagreement` over the corpus with the option on is the control, and
+ * it separates three things that the fixtures could not:
+ *
+ * - **Characters: unchanged.** 99.92% mean, and identical per document.
+ * - **Line boundaries: unchanged.** Every line count and every agreement figure
+ *   is the same to a tenth of a point.
+ * - **Reading ORDER: changed on two of the six documents carrying text**, from
+ *   28.2% to 46.6% positional agreement with PDFium on one and from 14.9% to
+ *   13.2% on the other.
+ *
+ * The mechanism is `FZ_STEXT_SEGMENT`: an image is a region, so a page that has
+ * one is segmented differently once the engine can see it. That is MuPDF's own
+ * model of such a page rather than a defect, and the direction is not evidence
+ * either way — PDFium's order is content-stream order, which `SEGMENT` exists
+ * to depart from.
+ *
+ * What it costs is stated rather than discovered: on a page carrying pictures,
+ * selection order and search-result order may differ from what this build
+ * produced before 2026-09-10. Nothing about a *line* moved.
  */
-export const STEXT_OPTION_STRING: string = STEXT_OPTIONS.segment;
+export const STEXT_OPTION_STRING: string = [
+  STEXT_OPTIONS.segment,
+  STEXT_OPTIONS.preserveImages,
+].join(',');
 
 /**
  * A rectangle in the page's **display space**, as two corners rather than a size.
@@ -166,6 +217,22 @@ export interface TextBlock {
 /** One page's text, in reading order. */
 export interface PageText {
   readonly blocks: readonly TextBlock[];
+  /**
+   * How many image blocks MuPDF reported on this page.
+   *
+   * **A count and not the images.** What a consumer asks is whether there is
+   * anything here to recognise, and a page's rasters are the largest thing on
+   * it — ADR-0035's rule about extracted text applies to pixels with more force.
+   * Nothing in this build needs their boxes yet, and a field nothing reads is a
+   * payload waiting to be justified after the fact.
+   *
+   * Zero for a page asked for without `preserve-images`, which is why the option
+   * is part of {@link STEXT_OPTION_STRING} rather than a per-consumer opt-in: a
+   * zero that means *nobody asked* is indistinguishable from a page with no
+   * pictures on it, and the whole point of this number is to separate two
+   * readings that are otherwise both empty.
+   */
+  readonly images: number;
 }
 
 /**
@@ -248,17 +315,23 @@ function rectOf(value: unknown): DisplayedRect {
  *
  * @param nodes MuPDF's `blocks` or a structure block's `contents`
  * @param into the accumulator, appended in place to keep the walk order exact
+ * @param images counted through the same walk, for {@link PageText.images}
  */
-function collectBlocks(source: readonly unknown[], into: TextBlock[]): void {
+function collectBlocks(source: readonly unknown[], into: TextBlock[], images: { count: number }): void {
   for (const entry of source) {
     const block = node(entry);
     if (block === null) continue;
 
     const contents = nodes(field(block, 'contents'));
     if (contents !== null) {
-      collectBlocks(contents, into);
+      collectBlocks(contents, into, images);
       continue;
     }
+
+    // COUNTED IN THIS WALK, not in a second pass over the same tree. An image
+    // may sit inside a `structure` block like any other, so a top-level count
+    // would miss exactly the segmented pages this option was turned on for.
+    if (str(field(block, 'type')) === 'image') images.count += 1;
 
     const rawLines = nodes(field(block, 'lines'));
     if (rawLines === null) continue;
@@ -319,8 +392,9 @@ export function parsePageText(json: string): PageText {
   }
 
   const blocks: TextBlock[] = [];
-  collectBlocks(source, blocks);
-  return { blocks };
+  const images = { count: 0 };
+  collectBlocks(source, blocks, images);
+  return { blocks, images: images.count };
 }
 
 /** Every line of a page, in reading order, with its block boundaries dropped. */

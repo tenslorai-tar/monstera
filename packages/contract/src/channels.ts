@@ -1734,6 +1734,30 @@ export const channels = {
        * characters nobody can see is the export-escaping defect one layer over.
        */
       truncated: z.boolean(),
+      /**
+       * What the page is made of, so an empty layer can say why it is empty.
+       *
+       * ## Three values, and the third is why this is not a boolean
+       *
+       * A page with no text is either a picture of text — which OCR can read —
+       * or blank, which it cannot. Both answer with no lines, and a renderer
+       * that offered recognition on the second would be mounting a control for
+       * something that cannot happen.
+       *
+       * `'image-only'` rather than `'scanned'`: nothing in this build can know
+       * a page came from a scanner. What is observable is a raster and no text,
+       * which is what a scan looks like and also what a full-page diagram looks
+       * like. The name is the observation, so a message built from it cannot
+       * tell a reader something the kernel did not see.
+       *
+       * ## It rides here rather than on a channel of its own
+       *
+       * *What text is on this page* and *why is there none* are one walk of one
+       * structured-text reading. A second channel would parse the page again to
+       * answer the second half, and the two could then disagree across a
+       * version boundary — which is the identity join §3 bans, in miniature.
+       */
+      kind: z.enum(['text', 'image-only', 'empty']),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

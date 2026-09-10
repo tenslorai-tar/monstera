@@ -151,7 +151,7 @@ describe('readPageText, against a real MuPDF session', () => {
     const session = await mupdfWriter.open(columns);
     const { pages } = await readPageText(session, [0]);
 
-    const score = scoreAgainstTruth(pages[0] ?? { blocks: [] }, TRUTH);
+    const score = scoreAgainstTruth(pages[0] ?? { blocks: [], images: 0 }, TRUTH);
     expect(score.lines).toBe(1);
     expect(score.order).toBe(1);
     expect(score.missing).toStrictEqual([]);
@@ -168,7 +168,7 @@ describe('readPageText, against a real MuPDF session', () => {
       `left${String(row)}`,
       `right${String(row)}`,
     ]).flat();
-    const score = scoreAgainstTruth(pages[0] ?? { blocks: [] }, rowMajor);
+    const score = scoreAgainstTruth(pages[0] ?? { blocks: [], images: 0 }, rowMajor);
     expect(score.lines).toBe(1);
     expect(score.order).toBeLessThan(1);
   });
@@ -246,7 +246,7 @@ describe('the space the substrate reports boxes in', () => {
     it(`places the run correctly through toPdf at /Rotate ${String(rotation)}`, async () => {
       const session = await mupdfWriter.open(await turnedDocument(rotation));
       const { pages } = await readPageText(session, [0]);
-      const line = linesOf(pages[0] ?? { blocks: [] }).find((entry) =>
+      const line = linesOf(pages[0] ?? { blocks: [], images: 0 }).find((entry) =>
         entry.text.includes(TURNED.text),
       );
       if (line === undefined) throw new Error('the fixture draws one run');
@@ -274,7 +274,7 @@ describe('the space the substrate reports boxes in', () => {
   it('CONTROL: fromFitz — the OLD brand’s conversion — misses on a turned page', async () => {
     const session = await mupdfWriter.open(await turnedDocument(90));
     const { pages } = await readPageText(session, [0]);
-    const line = linesOf(pages[0] ?? { blocks: [] }).find((entry) =>
+    const line = linesOf(pages[0] ?? { blocks: [], images: 0 }).find((entry) =>
       entry.text.includes(TURNED.text),
     );
     if (line === undefined) throw new Error('the fixture draws one run');
@@ -291,7 +291,7 @@ describe('the space the substrate reports boxes in', () => {
   it('CONTROL: fromFitz agrees with toPdf upright, which is why this went unnoticed', async () => {
     const session = await mupdfWriter.open(await turnedDocument(0));
     const { pages } = await readPageText(session, [0]);
-    const line = linesOf(pages[0] ?? { blocks: [] }).find((entry) =>
+    const line = linesOf(pages[0] ?? { blocks: [], images: 0 }).find((entry) =>
       entry.text.includes(TURNED.text),
     );
     if (line === undefined) throw new Error('the fixture draws one run');
