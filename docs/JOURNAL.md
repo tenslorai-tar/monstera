@@ -888,6 +888,48 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — B4: a pre-read takes an argument, and a trigger fired as designed
+
+[ADR-0051](DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md).
+Amendment only; nothing is built on it in this commit.
+
+D6 row 3's command is a pdf-lib command in `main` whose input is a read in the
+engine host. That is ADR-0040's 2026-09-05 extension word for word — and its axis
+cannot express this instance, for two reasons that are independent and were both
+found by writing the caller rather than by reading the seam.
+
+**An outline is a property of the document; a recognition is a property of a
+page.** `PreReadAccess`' members take no arguments, so there was nowhere to say
+which page, and `Apply` named `'outline'` by hand inside a type parameterised over
+the axis — so a second member would have been resolved and then dropped on the way
+in. The amendment keeps the property that interface's comment was written for: the
+members are still the axis, and they are now derived from one declaration carrying
+a `needs` type beside each value type, so a member cannot be added without saying
+what it must be told. Each member keeps its **own** signature; the cheap widening —
+an optional argument on all of them — makes both wrong calls legal.
+
+**And `redo`'s compile-time trigger fired.** §3a names OCR as its example of
+something not reproducible, §4 reserves checkpoints for it, so `ocrPage` declares
+`replay: 'stored-effect'` — which is exactly the declaration
+`const replay: 'reapply-intent' = spec.replay` was planted in 2026-09-04 to stop
+compiling for.
+
+That is worth recording for itself: **the first trigger in this repository to fire
+as designed.** Every other expiring claim written up here was found *stale* —
+NNN-4's three documents, the host-body sentence that survived a whole range,
+`reachability.ocr`'s event half sitting green inside a symbol-keyed mechanism. This
+one was written ahead of the path becoming reachable, carrying its own instructions
+for the moment it did, and it arrived as a compile error in the commit that made
+the path reachable. A claim whose expiry is a **type** is the version that works.
+
+What it costs is stated in the ADR rather than found later: the declaration table
+gains its first function. It imports nothing and copies two fields, and it is the
+only spelling in which the command's kind and the pre-read's needs are correlated
+by the checker instead of by a cast, or by a refusal in `main` for a state the
+table makes unreachable.
+
+---
+
 ## 2026-09-11 — The text layer's writer: grafted, and the combining mark that split a line
 
 The font question of 2026-09-11 is **answered and built**. `ocrTextLayer.ts`
