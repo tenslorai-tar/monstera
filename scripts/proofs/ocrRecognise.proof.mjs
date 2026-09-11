@@ -80,6 +80,16 @@ const ROTATED_X = 220;
 const ROTATED_Y = 40;
 
 /**
+ * The second word's user x on a turned page — 90 points of clear space away.
+ *
+ * On `/Rotate 90` the reader's vertical axis is user **x**, so this is what
+ * *further down the page* means here, and it is the separation the region case
+ * needs: close enough to fit, far enough that a rectangle around one word cannot
+ * catch the other by rounding.
+ */
+const SECOND_ROTATED_X = 130;
+
+/**
  * The word drawn.
  *
  * All capitals, no descenders and no ambiguity between `l`, `1` and `I`: what
@@ -142,6 +152,7 @@ const CASES = /** @type {const} */ ([
   'the core is the Tesseract the advisory register was triaged against',
   'A ROTATED PAGE READS INTO THE PAGE’S OWN SPACE, not the raster’s',
   'CONTROL: and the box does NOT contain the point with its coordinates SWAPPED',
+  'A REGION ON A ROTATED PAGE excludes the other word, which is the same fix the other way',
 ]);
 
 /**
@@ -166,7 +177,7 @@ const CASES = /** @type {const} */ ([
  * **15, a literal, measured 2026-09-11 by running this file.** Adding a case is a
  * two-line diff — the label and this number — and removing one is red.
  */
-const DECLARED_CASES = 17;
+const DECLARED_CASES = 18;
 
 // AND THE LIST IS HELD TO THE SAME NUMBER, because the labels are indexed
 // POSITIONALLY by the calls below: a label added without a call, or removed from
@@ -233,6 +244,41 @@ async function rotatedPage() {
     font,
     rotate: degrees(90),
   });
+  return document.save();
+}
+
+/**
+ * Two upright words on a quarter-turned page, far apart — the region fixture.
+ *
+ * **THE FIX WENT BOTH WAYS AND THE CASES WENT ONE**, which is the asymmetry this
+ * closes: the rotation case above reads a box coming OUT of the raster, and a
+ * region goes the other way, through the same matrix inverted. A page whose boxes
+ * are right and whose regions are not is unrepresentable now — and *unrepresentable*
+ * is a claim about the code that nothing in the file asserted until this fixture.
+ *
+ * The two words are separated along user **x**, because on a `/Rotate 90` page that
+ * is the axis the reader sees as vertical: `SECOND_X` sits a clear 90 points below
+ * `ROTATED_X` in display terms, which a region drawn around one of them excludes.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+async function rotatedTwoWordPage() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  page.setRotation(degrees(90));
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const [text, x] of [
+    [WORD, ROTATED_X],
+    [SECOND_WORD, SECOND_ROTATED_X],
+  ]) {
+    page.drawText(String(text), {
+      x: Number(x),
+      y: ROTATED_Y,
+      size: DRAWN_SIZE,
+      font,
+      rotate: degrees(90),
+    });
+  }
   return document.save();
 }
 
@@ -523,6 +569,27 @@ try {
     `the box also contains (${String(turnedInside.y)}, ${String(turnedInside.x)}), the same point ` +
       'with its coordinates swapped. A box containing both is one the case above passes for on ' +
       'the transposed axis as well, so it would separate nothing.',
+  );
+
+  // AND THE REGION, THE OTHER WAY THROUGH THE SAME MATRIX. The case above reads a
+  // box coming out of the raster; this one puts a rectangle in. Both directions
+  // were fixed together and only one had a case, which is the asymmetry that lets
+  // a half-fix look whole.
+  const turnedPair = await rotatedTwoWordPage();
+  // A BAND ACROSS THE FIRST WORD ONLY, in user space: on this page the glyph
+  // bodies of a word drawn at `x` occupy `x - DRAWN_SIZE` to `x`, and the two
+  // words are 90 points apart, so a band around one cannot reach the other.
+  const turnedRegion = await recognise(turnedPair, {
+    region: [ROTATED_X - DRAWN_SIZE - 6, 0, ROTATED_X + 6, PAGE_HEIGHT],
+  });
+  const turnedRegionText = turnedRegion.lines.map((line) => line.text).join(' ');
+  check(
+    CASES[17],
+    turnedRegionText.includes(WORD) && !turnedRegionText.includes(SECOND_WORD),
+    `a region over one word of a /Rotate 90 page read ${JSON.stringify(turnedRegionText)}, and ` +
+      `it has to contain ${WORD} and not ${SECOND_WORD}. Reading both means the rectangle did ` +
+      'nothing; reading neither means it landed on the wrong part of the raster — which is what ' +
+      'the conversion this replaced did on every rotated page.',
   );
 
   process.stdout.write('## The supplied corpus\n\n');

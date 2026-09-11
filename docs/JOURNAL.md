@@ -888,6 +888,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — The fix went both ways and the cases went one
+
+FFFFFF-1 replaced two conversions with one matrix and its inverse, and the
+commit's own argument for that was that **a page whose boxes are right and whose
+regions are not becomes unrepresentable**. The cases that shipped with it assert
+one direction: a rotated page's *boxes* land where the word was drawn. Nothing
+asserted a rotated page's *region*.
+
+The asymmetry is invisible from inside the commit, because both halves are one
+edit and the reasoning covers both. What separates them is that only one had a
+fixture — and *unrepresentable* is a claim about the code that nothing in the file
+was making.
+
+Closed with a two-word fixture on a `/Rotate 90` page and a region around one of
+them, and the mutation is decisive: passing a scale-only matrix where the page's
+own transform belongs reddens **both** region cases — the rotated one and the
+unrotated one that has been green since row 6, which is the pair saying the region
+path and the box path now share a frame rather than agreeing by luck.
+
+The transferable shape is the one this project keeps meeting from a new angle: **a
+fix with two directions needs a case per direction, however single the edit was.**
+The reasoning that makes one edit cover both is exactly what makes the missing case
+hard to notice.
+
+---
+
 ## 2026-09-11 — "Nothing else was running" meant nothing I started, and now a reading says which
 
 `proof:guards` has been carried for four days as *164.5–1093 s against a 540 s
