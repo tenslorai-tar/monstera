@@ -888,6 +888,80 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — "Nothing else was running" meant nothing I started, and now a reading says which
+
+`proof:guards` has been carried for four days as *164.5–1093 s against a 540 s
+bound, root cause unfound*, with a standing instruction not to raise the constant.
+Two readings today, and an instrument so the eleventh is not another anecdote.
+
+### The readings
+
+| reading | seconds | outcome | what else was running |
+|---|---|---|---|
+| 3 | 164.5 | passed | "nothing" |
+| 4 | 165.36 | passed | "nothing" |
+| 7 | 1093 | passed | "nothing" |
+| **9 (today)** | **137** | passed | nothing I started |
+| **10 (today, witnessed)** | **145.82** | passed | **58.4% of 4 cores busy** |
+
+Reading 9 was taken the way the earlier ones were — run it alone, read the clock —
+and it lands with the fast cluster. Four clean readings now sit at 137, 145.8,
+164.5 and 165.36, and one at 1093.
+
+### The phrase was the defect
+
+Every clean reading carries the same annotation, and it is the same three words:
+*nothing else was running*. Reading 10 measures what that actually meant. On a
+four-core machine, during a single chained run of `node` scripts, the machine was
+**58.4% busy — about 2.3 cores.**
+
+Some of that is ours: the proof spawns git and node constantly, and children use
+cores. The point is that nobody could say, because **no reading carried anything
+about the machine at all.** *Nothing else was running* means *nothing I started*,
+and an antivirus scanning a few hundred spawned children, an indexer, an update
+service and a thermal cap are all outside that phrase. A 6.6× spread is the size
+those produce.
+
+This is the third time the note has decided something. *It reproduces at 602 s* was
+withdrawn when two fast readings arrived; *the figure is 165 s* was withdrawn when a
+slow one did; and on 2026-09-10 *`proof:guards` alone takes 1093 s* was given as the
+reason the full sweep cannot seal — a reason that **was not the true one**, since
+`checkLocal.mjs`' own header already says the sweep cannot complete because
+`proof:cff` rebuilds libmupdf from source. The habit that reddened `main` twice was
+defended by a reading nobody could account for, while the real constraint sat in the
+tool's header.
+
+### So the remedy is an instrument, not an eleventh reading
+
+`scripts/lib/machineWitness.mjs` samples `os.cpus()`, which is cumulative **for
+every process on the machine**, so the difference across an interval is all the work
+the machine did and not only ours. `checkLocal.mjs` takes it around every script and
+writes `busy` into the run's rows; a timeout prints it, which is the moment the
+reflex to raise a constant arrives and the moment *this is slow* and *this machine
+was busy* are least distinguishable.
+
+Resolution-tested before it measured anything (item 4a): a spinning core must read
+busier than an idle interval of the same length, and mutating the fraction to a
+constant reddens exactly that case. It cannot name the company — that needs a
+platform-specific enumeration — and it cannot see thermal throttling, which has the
+opposite signature: a long run at a **low** busy fraction. Both are written into the
+module rather than left for a reader to discover.
+
+**Its own proof caught the wrong claim first**, which is the part worth keeping. A
+case asserted that reversed samples give a negative fraction; they give `null`,
+because the guard that catches an empty interval catches a reversed one too. The
+roster reported five cases where six were declared, and the case was rewritten to
+what the code does — better behaviour than the case demanded. The catch block now
+prints the failures beside the roster's complaint, because *a case stopped running*
+is what a **failing** case looks like from the outside, and a harness that hides its
+own subject is worse than none.
+
+**The constant is not raised, and now it does not need to be**: four of five clean
+readings sit between 137 s and 165 s against a 540 s bound. What stays open is the
+1093, and the next one to appear will arrive carrying what the machine was doing.
+
+---
+
 ## 2026-09-11 — Row 8: the engine that cannot live where the other two do
 
 Azure Document Intelligence is not built. What this records is what working the row

@@ -97,6 +97,7 @@ import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
 import { failureLineOf } from './lib/failureLine.mjs';
+import { describeMachine, witnessMachine } from './lib/machineWitness.mjs';
 import { uncommittedPaths } from './lib/gitScope.mjs';
 import { binaryMap, resolveScript } from './lib/npmScriptSteps.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
@@ -842,6 +843,15 @@ for (const name of selected) {
     continue;
   }
   const started = process.hrtime.bigint();
+  // AND WHAT THE MACHINE WAS DOING WHILE IT RAN. A duration with no witness is
+  // where `proof:guards`' nine readings ended up: three of them called clean span
+  // 137 s to 1093 s, each annotated *nothing else was running*, which means
+  // **nothing I started** — a phrase that covers none of an antivirus, an indexer
+  // or an update service. Two conclusions were drawn from that spread and both
+  // were withdrawn. The witness is machine-wide by construction (`os.cpus()` is
+  // cumulative for every process), so the next outlier arrives carrying the one
+  // fact that separates *this script got slower* from *this machine was busy*.
+  const witness = witnessMachine();
   // Every step, in order, stopping at the first failure — which is what `&&`
   // means and is why a chain is resolved into steps rather than flattened into
   // one. `build` is `typecheck && build:preload`, and running the second after
@@ -859,6 +869,7 @@ for (const name of selected) {
     if (run.status !== 0 || run.signal !== null) break;
   }
   const seconds = Number(process.hrtime.bigint() - started) / 1e9;
+  const machine = witness();
   const took = `${seconds.toFixed(1)}s`;
   // Recorded for EVERY outcome, including a timeout: a script killed at the
   // bound cost at least that much, so the figure still sorts it late next time.
@@ -945,6 +956,7 @@ for (const name of selected) {
       exit: null,
       signal: run.signal ?? null,
       seconds: Number(seconds.toFixed(2)),
+      busy: machine.busy,
       bytes: `${run.stdout ?? ''}${run.stderr ?? ''}`.length,
       firstProblem: '(killed at the bound — its own children are still running)',
     });
@@ -952,7 +964,13 @@ for (const name of selected) {
       `  TIMED OUT  ${name} (${took})\n` +
         `      STOPPING. A timeout orphans that script's own child processes, and every\n` +
         `      result after one is measured against a machine carrying them. Re-run with\n` +
-        `      --timeout raised, or --only, rather than reading what would follow.\n`,
+        `      --timeout raised, or --only, rather than reading what would follow.\n` +
+        // THE ONE LINE THAT DECIDES WHETHER TO RAISE THE BOUND. A timeout is where
+        // *this is slow* and *this machine was busy* are least distinguishable and
+        // most consequential, because the reflex is to raise the constant — which
+        // `proof:guards` has been carrying a standing instruction against while no
+        // reading could say which it was.
+        `      ${describeMachine(machine)}\n`,
     );
     break;
   }
@@ -978,6 +996,7 @@ for (const name of selected) {
       exit: null,
       signal: null,
       seconds: Number(seconds.toFixed(2)),
+      busy: machine.busy,
       bytes: 0,
       firstProblem: `(never started — ${outcome.detail ?? 'no cause reported'})`,
     });
@@ -1008,6 +1027,7 @@ for (const name of selected) {
       exit: outcome.exit,
       signal: null,
       seconds: Number(seconds.toFixed(2)),
+      busy: machine.busy,
       bytes: output.length,
       firstProblem,
     });
@@ -1032,6 +1052,7 @@ for (const name of selected) {
       unverifiable: true,
       signal: null,
       seconds: Number(seconds.toFixed(2)),
+      busy: machine.busy,
       bytes: `${run.stdout ?? ''}${run.stderr ?? ''}`.length,
       firstProblem: '(could not look — nothing is asserted and nothing is denied)',
     });
@@ -1056,6 +1077,7 @@ for (const name of selected) {
       partlyMeasured: true,
       signal: null,
       seconds: Number(seconds.toFixed(2)),
+      busy: machine.busy,
       bytes: `${run.stdout ?? ''}${run.stderr ?? ''}`.length,
       firstProblem: '(partly measured — some cases ran, some could not)',
     });
@@ -1071,7 +1093,15 @@ for (const name of selected) {
   // question WWW-2 turns on is what a script that COMPLETED did immediately
   // before the next one failed in 0.0s, and a log holding only the failures
   // cannot answer it.
-  recordRow({ name, exit: 0, signal: null, seconds: Number(seconds.toFixed(2)), bytes: null, firstProblem: null });
+  recordRow({
+    name,
+    exit: 0,
+    signal: null,
+    seconds: Number(seconds.toFixed(2)),
+    busy: machine.busy,
+    bytes: null,
+    firstProblem: null,
+  });
   process.stdout.write(`  ok  ${name} (${took})\n`);
 }
 

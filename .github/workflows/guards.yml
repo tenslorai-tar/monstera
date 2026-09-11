@@ -215,6 +215,16 @@ jobs:
       - name: Prove a verdict's inputs detect a change
         run: node scripts/ci/annotate.mjs scripts/lib/verdict.proof.mjs
 
+      # A duration with no witness is how `proof:guards` ended up with three
+      # readings called clean spanning 137 s to 1093 s, each annotated "nothing
+      # else was running" — which means nothing the author started. This
+      # instrument reads the whole machine, so it is resolution-tested the way
+      # every instrument here is: a spinning core must read busier than an idle
+      # interval of the same length, or it would answer every question about a
+      # slow run with the same number.
+      - name: Prove the machine witness can tell a busy machine from an idle one
+        run: node scripts/ci/annotate.mjs scripts/lib/machineWitness.proof.mjs
+
       # A native measurement taken through a DLL built from older source still
       # runs and still prints plausible numbers. Runs here rather than in the
       # native job because it needs only the tracked shim source, not a build.
