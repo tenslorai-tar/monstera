@@ -374,3 +374,13 @@ export {
   resolveStampTokens,
 } from './pageStamp.js';
 export { type PageScope, pagesOf } from './pageScope.js';
+// ON THE BARREL, and it binds no engine: `node:crypto`, `node:fs`,
+// `node:stream` and `fetch`. Its caller is `main`, which imports this file, and
+// `proof:kernelload` measures what that import loads rather than trusting this
+// comment.
+export {
+  DownloadRefused,
+  type DownloadRefusal,
+  type VerifiedDownload,
+  downloadVerified,
+} from './verifiedDownload.js';

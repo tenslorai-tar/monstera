@@ -722,6 +722,17 @@ jobs:
       - name: Prove the composition root's ceiling is ADR-0007's
         run: node scripts/ci/annotate.mjs scripts/proofs/composition.proof.mjs
 
+      # HERE AND NOT ON GUARDS, which is where its sibling `fetchVerified.proof`
+      # sits: this one drives BOTH forms of invariant 9, and the application's
+      # form is a built package. Guards runs no `npm ci`, so `@monstera/kernel`
+      # would not resolve there at all — not a weaker run, an impossible one.
+      #
+      # A copy that exists must be proven equal, and equal means equal in what
+      # each REFUSES: two implementations in two languages agree as text only by
+      # accident (ADR-0053).
+      - name: Prove both forms of the download rule enforce all four guarantees
+        run: node scripts/ci/annotate.mjs scripts/proofs/verifiedDownload.proof.mjs
+
       # The SECOND registration of this proof, and the flag is the whole reason.
       # Guards runs it too and builds nothing, so the desktop copy of
       # isInvalidHandle is UNVERIFIABLE there — could-not-look, printed apart
