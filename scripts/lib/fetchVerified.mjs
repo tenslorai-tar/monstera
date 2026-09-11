@@ -1,10 +1,10 @@
 // @ts-check
 /**
- * The one download primitive for provisioned binaries (Part C8).
+ * The BOOTSTRAP LAYER's download primitive for provisioned binaries (Part C8).
  *
- * Every native binary this project uses — gitleaks now; mutool, pdfium,
- * Ghostscript and the on-demand OCR runtime later — arrives through here, so
- * the four guarantees below are written once instead of per-downloader:
+ * Every native binary provisioning installs — gitleaks now; mutool, pdfium and
+ * Ghostscript later — arrives through here, so the four guarantees below are
+ * written once instead of per-downloader:
  *
  *   1. HTTPS only.
  *   2. Host-locked, re-checked on every redirect hop rather than only on the
@@ -17,11 +17,26 @@
  *      download streams into a quarantine file that nothing interprets; only
  *      after the digest matches does it move to its destination.
  *
+ * **THE GUARANTEES ARE LAW AND THIS IS ONE OF TWO DERIVED FORMS.**
+ * `docs/ARCHITECTURE.md` invariant 9 states them; the shipped application's
+ * form is `packages/kernel/src/verifiedDownload.ts`, and `proof:verifieddownload`
+ * drives both through one table of cases, equal in what each REFUSES rather
+ * than compared as text.
+ *
+ * The header used to name *"the on-demand OCR runtime"* among this module's
+ * future callers, and that was false when it was written. An on-demand model
+ * download runs in the shipped application, at a user's request, long after
+ * every build — where this layer by §1.1 is *"the code that runs before
+ * dependencies exist"*, which is why it cannot import a built package and why
+ * that feature was never going to arrive here
+ * (ADR-0053).
+ *
  * Not in scope: the SSRF guard with private-range blocklist and DNS-rebinding
  * pin that Part C8 requires for *user-supplied* URLs. That guard defends a
  * different threat (an attacker choosing the host) and belongs in the kernel
  * beside the feature that accepts URLs. Here the host is a compile-time
- * constant, so host-locking is the guard.
+ * constant, so host-locking is the guard — and the same is true of the kernel's
+ * form, whose hosts are its own constants.
  */
 
 import { TransientFailure, isTransientStatus, retryTransient } from './retryTransient.mjs';
