@@ -860,22 +860,28 @@ const declarations = {
               command.region.y1,
             ] as const);
 
-      if (command.engine === 'handwriting') {
+      if (command.engine !== 'tesseract') {
         if (region === undefined) {
           // UNREACHABLE THROUGH THE BOUNDARY, which refuses this pair before a
           // command exists — and stated as a throw rather than as a comment,
           // because the declaration is also reachable from a caller in process.
           throw new Error(
-            'the handwriting engine is never offered on a page, so this command must carry a ' +
-              'region (ADR-0052 §4)',
+            `the ${command.engine} engine is never offered on a page, so this command must ` +
+              'carry a region (ADR-0052 §4 and its 2026-09-12 addition)',
           );
         }
-        return access.ocr({
-          engine: 'handwriting',
-          page: command.page,
-          region,
-          size: command.trocrSize,
-        });
+        return command.engine === 'azure'
+          ? // NO LANGUAGE AND NO MODEL SIZE. `prebuilt-read` detects the
+            // language, and passing the reader's OCR setting would be telling a
+            // service something it did not ask for and then believing its answer
+            // was about that language.
+            access.ocr({ engine: 'azure', page: command.page, region })
+          : access.ocr({
+              engine: 'handwriting',
+              page: command.page,
+              region,
+              size: command.trocrSize,
+            });
       }
 
       return access.ocr({

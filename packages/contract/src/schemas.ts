@@ -164,12 +164,20 @@ export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
  * - `handwriting` is TrOCR, **offered on a region only** — it reads one text
  *   line, which is the model rather than the wiring, and a page of thirty lines
  *   is thirty encoder runs. Its stack downloads on demand and is never bundled.
+ * - `azure` is Azure Document Intelligence, **on a region only** and for a
+ *   different reason: the region's raster leaves the machine, and sending a
+ *   whole page would send more of a reader's document than they asked about. It
+ *   is the one engine that executes in `main` rather than in the engine host,
+ *   because invariant 25 gives that process no network (ADR-0052's 2026-09-12
+ *   addition).
  *
  * Named for what a reader is choosing rather than for the library behind it: a
  * person picks *handwriting*, and `trocr` would put a model's name in a surface
- * and in every payload that carries the choice.
+ * and in every payload that carries the choice. `azure` is the exception and is
+ * deliberate — it names a **service the reader's document is sent to**, and that
+ * is the fact they are choosing rather than an implementation detail.
  */
-export const OCR_ENGINES = ['tesseract', 'handwriting'] as const;
+export const OCR_ENGINES = ['tesseract', 'handwriting', 'azure'] as const;
 
 /** One of {@link OCR_ENGINES}. */
 export type OcrEngine = (typeof OCR_ENGINES)[number];
@@ -195,3 +203,23 @@ export const TROCR_SIZES = ['small', 'base'] as const;
 
 /** One of {@link TROCR_SIZES}. */
 export type TrocrSize = (typeof TROCR_SIZES)[number];
+
+/**
+ * The two setting ids the cloud recogniser's credentials are stored under.
+ *
+ * ## Why these two ids are HERE and every other setting's is not
+ *
+ * A setting id is normally the registry's business alone: the renderer declares
+ * it, main stores whatever it is handed, and nothing in main knows what any of
+ * them mean. These two are the exception, because **main is the reader** — it
+ * makes the HTTPS call, so it has to look them up by name, and the registry
+ * lives in `packages/ui`, which `apps/desktop` may not import.
+ *
+ * Spelt once, in the leaf both sides already take, rather than as a string in
+ * the settings definition and a matching string in the composition root. A pair
+ * of literals that agree today is the shape B3a is about: the day one is
+ * renamed, the cloud engine stops finding a key and reports that the service
+ * refused it.
+ */
+export const AZURE_ENDPOINT_SETTING_ID = 'editing.azure-di-endpoint';
+export const AZURE_KEY_SETTING_ID = 'editing.azure-di-key';

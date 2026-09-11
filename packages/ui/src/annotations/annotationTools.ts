@@ -12,7 +12,7 @@ import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
 import type { OcrRegionDeps } from './ocrRegionTool.js';
-import { handwritingRegionTool, ocrRegionTool } from './ocrRegionTool.js';
+import { cloudRegionTool, handwritingRegionTool, ocrRegionTool } from './ocrRegionTool.js';
 import type { SnapshotDeps } from './snapshotTool.js';
 import { snapshotTool } from './snapshotTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
@@ -79,6 +79,11 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // what `annotationCommands.test.ts` joins the command ids against — a tool
     // that appeared by some other route would be a second place tools are named.
     handwritingRegionTool(deps),
+    // AND THE THIRD, which differs from the two above in where it executes
+    // rather than in what it dispatches: `azure` runs in main, because the host
+    // has no network. Nothing about that is visible here, which is the point of
+    // the engine being a field of the request.
+    cloudRegionTool(deps),
     placeImageTool(deps),
     // NOT ANNOTATION TOOLS EITHER, and composed here for the reason the two
     // above are: this list is what the registry mounts and what

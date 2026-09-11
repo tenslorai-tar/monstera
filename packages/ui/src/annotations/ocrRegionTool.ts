@@ -55,6 +55,21 @@ export const OCR_REGION_TOOL_ID = 'tools.ocr-region';
 export const HANDWRITING_REGION_TOOL_ID = 'tools.handwriting-region';
 
 /**
+ * The third registration, and the one whose choice a reader must make knowingly.
+ *
+ * `azure` sends the region's raster **to a service over the internet**. That is
+ * not an implementation detail a surface should hide behind a word like
+ * *better*: it is the fact a reader is choosing, which is why the engine is
+ * named in the title and why this is a separate control rather than a quality
+ * setting on the one above.
+ *
+ * On a region for two reasons, and the second is not TrOCR's. The first is the
+ * same — one gesture, one answer. The second is that a page-scoped control would
+ * upload a whole page where the reader asked about one line.
+ */
+export const CLOUD_REGION_TOOL_ID = 'tools.cloud-region';
+
+/**
  * How far a drag must run before it is a region.
  *
  * `snapshotTool`'s four pixels and its reason, with one more of its own:
@@ -163,6 +178,11 @@ export function ocrRegionTool(deps: OcrRegionDeps): UiTool {
 /** Drag a box over one handwritten LINE; TrOCR reads it (ADR-0052 §4). */
 export function handwritingRegionTool(deps: OcrRegionDeps): UiTool {
   return regionTool(HANDWRITING_REGION_TOOL_ID, 'handwriting', deps);
+}
+
+/** Drag a box; its raster is SENT to Azure Document Intelligence and read there. */
+export function cloudRegionTool(deps: OcrRegionDeps): UiTool {
+  return regionTool(CLOUD_REGION_TOOL_ID, 'azure', deps);
 }
 
 /** Exported so the cases assert against the tool's own number. */

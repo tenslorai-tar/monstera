@@ -193,6 +193,8 @@ export {
   // The OCR language set, exported for the same reason the spelling one is: both
   // sides key a record on it — the provisioning table and the renderer's display
   // titles — so adding a language is two compile errors and a digest.
+  AZURE_ENDPOINT_SETTING_ID,
+  AZURE_KEY_SETTING_ID,
   OCR_ENGINES,
   OCR_LANGUAGES,
   TROCR_SIZES,

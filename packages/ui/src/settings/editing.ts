@@ -6,6 +6,8 @@ import {
   measureUnitSchema,
   ocrLanguageSchema,
   trocrSizeSchema,
+  AZURE_ENDPOINT_SETTING_ID,
+  AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
 import { z } from 'zod';
 
@@ -17,6 +19,8 @@ import {
   EDITING_OPACITY_TITLE,
   EDITING_OCR_LANGUAGE_TITLE,
   EDITING_TROCR_SIZE_TITLE,
+  EDITING_AZURE_ENDPOINT_TITLE,
+  EDITING_AZURE_KEY_TITLE,
   EDITING_PERSONAL_DICTIONARY_TITLE,
   MEASURE_SCALE_TITLE,
   MEASURE_UNIT_TITLE,
@@ -296,6 +300,58 @@ export const TROCR_SIZE_SETTING: SettingDefinition<typeof trocrSizeSchema> = {
   schema: trocrSizeSchema,
   fallback: 'small',
   category: 'editing',
+};
+
+/**
+ * Where Azure Document Intelligence lives — `BUILD-PROMPT.md`:621's
+ * *Azure DI endpoint + key (secret)*, the half that is not the key.
+ *
+ * ## Why the endpoint is an ORDINARY setting and the key is not
+ *
+ * They are two different kinds of fact. The endpoint is a resource name a reader
+ * can read off the Azure portal and would want to see in an exported settings
+ * file; the key is a credential, and §9's rule is that one lives in the OS
+ * keychain through `safeStorage` or is refused. `secret: true` is what keeps the
+ * second out of `settings.json` by shape rather than by care.
+ *
+ * ## An empty string is the ABSENT state and the only one a first run has
+ *
+ * Not a default endpoint and not a placeholder: there is no address that would
+ * be right for anybody, and one that looked plausible would be a control that
+ * fails after a reader drags a box. The cloud tool is hidden while either half
+ * is empty, which is the same `when` the handwriting tool uses.
+ */
+export const AZURE_DI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
+  // FROM THE CONTRACT, not a literal here: main looks this one up by name to
+  // make the call, and two strings that agree today is exactly the shape B3a is
+  // about — a rename would leave the cloud engine reporting that the service
+  // refused a key it never found.
+  id: AZURE_ENDPOINT_SETTING_ID,
+  title: EDITING_AZURE_ENDPOINT_TITLE,
+  // NOT `z.string().url()`. A reader typing an address mid-keystroke would have
+  // a setting that refuses to store what they are in the middle of writing, and
+  // the scheme check that actually matters happens where the request is made —
+  // before anything is sent, with the call count as its own case.
+  schema: z.string(),
+  fallback: '',
+  category: 'editing',
+};
+
+/**
+ * The key for that endpoint. **Secret**, so it never travels on `settings.save`.
+ *
+ * The first consumer of E5's rule from D6, which is what that row predicted:
+ * *the range that implements storage will not be the range that owns the rule*.
+ * A machine whose `safeStorage` reports itself unavailable gets a declared
+ * refusal rather than a plaintext fallback.
+ */
+export const AZURE_DI_KEY_SETTING: SettingDefinition<z.ZodString> = {
+  id: AZURE_KEY_SETTING_ID,
+  title: EDITING_AZURE_KEY_TITLE,
+  schema: z.string(),
+  fallback: '',
+  category: 'editing',
+  secret: true,
 };
 
 /** What size a new text box, callout or typewriter is set in. */

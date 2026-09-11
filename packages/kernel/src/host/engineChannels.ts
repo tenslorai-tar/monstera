@@ -1645,7 +1645,27 @@ export const engineChannels = {
     // A COUNT, for `engine/serialise`'s reason, and the same one applies to a
     // raster: main knows where it asked for the bytes and cannot know how many
     // arrived without being told.
-    z.object({ bytes: z.number().int().nonnegative() }).strict(),
+    //
+    // AND THE FRAME, since ADR-0052's 2026-09-12 addition. D6 row 8's cloud
+    // recogniser is handed this PNG, gets word boxes back in the PNG's own
+    // pixels, and has to put them on the page — which needs the displayed crop,
+    // the effective rotation and where the raster's (0, 0) sits. All three are
+    // facts only the host can read, and main's use of them is to call
+    // `pageTransform` and `toPdf`, the one converter, as a reader.
+    //
+    // Nine numbers, and every one of them bounded: a hostile host sending
+    // `Infinity` for a crop edge would otherwise reach a transform.
+    z
+      .object({
+        bytes: z.number().int().nonnegative(),
+        crop: ocrBoxSchema,
+        // THE FOUR LEGAL VALUES, not any multiple of 90: `snapRotation` has
+        // already resolved inheritance and snapped, so anything else is a host
+        // answering about a page shape this build cannot produce.
+        rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+        origin: z.tuple([z.number(), z.number()]).readonly(),
+      })
+      .strict(),
     ['no-such-session', 'snapshot-failed'],
   ),
 

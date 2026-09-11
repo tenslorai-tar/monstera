@@ -888,6 +888,77 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Row 8: everything but the one thing that needs a key
+
+Azure Document Intelligence is built and the row is **not done**, which is the
+honest pair. What is left is one run against the live service, and the reason it
+is left is not scheduling.
+
+### The frame had to travel, and the cheapest moment to notice was before the engine existed
+
+`azure` runs in `main`, because invariant 25 gives the engine host no network.
+So the raster crosses — through the granted output directory `engine/snapshotRegion`
+already writes snapshots into — and the service answers word polygons **in that
+raster's own pixels**.
+
+Putting those on the page needs the displayed crop, the effective rotation and
+where the raster's (0, 0) sits. Every one of them is a fact only the host can
+read, and a main-side reconstruction would have agreed on an unrotated page and
+been wrong on every other. That is finding FFFFFF-1 exactly, in a third engine,
+and it would have shipped looking like a service that reads rotated pages badly.
+
+So the channel carries the frame and main calls `pageTransform` and `toPdf` — the
+one converter, as a *reader*. The distinction is the whole of B3a: carrying a
+fact across a boundary is not implementing a rule twice.
+
+The case for it is a **round trip**: a PNG pixel back to the point it renders,
+with a control on a different quadrant so a reader that ignored the origin cannot
+pass, and a scale-2 case because the origin alone cannot carry the scale.
+Mutation-tested by answering `[0, 0]` for the origin: all three go red.
+
+### What the cases here CANNOT say, and why it is in the row rather than a footnote
+
+Twelve green cases drive the whole protocol — the POST to `prebuilt-read` at the
+pinned api-version with the key in a header, the polled `Operation-Location`, the
+`succeeded`/`failed`/timeout split, the polygon conversion, the confidence unit.
+
+**Every fixture was written from the documentation.** So what passes is a reading
+of a schema, and a file of green cases about a cloud API is precisely the shape
+that reads as verified. One run with a real key is the difference, and it is the
+row's stated trigger rather than a note in a plan.
+
+Two of the twelve are there because the failure they guard is silent. A service
+that reports `failed`, and a run that times out, must not arrive as an empty
+`RecognisedPage` — because an empty page is a *real answer* meaning **there is no
+writing here**, and a reader told that about their own handwriting has no way to
+tell the difference.
+
+### The fixture that lied, and it wore this module's own error code
+
+The timeout case failed first time with `unreadable-answer`. Nothing was wrong
+with the module: a `Response` body reads once, and the harness handed the same
+object to two polls, so the second `json()` threw — which this module reports,
+correctly, as an answer it could not read.
+
+It cost a few minutes and it is worth writing down, because the wrong conclusion
+was available and cheap: the code was one the module really can produce, on a
+path the case really exercises. *Suspect the thing, then the instrument, then the
+fixture* — and the fixture was third on the list and first in the fault.
+
+### The endpoint is an ordinary setting and the key is not
+
+Two documents, by E5's rule, and D6 is the first caller as that row predicted.
+The pair is checked together before anything is sent: an endpoint with no key
+reaches the service and comes back *unauthorised*, which tells a reader their key
+is wrong when what happened is that they never entered one. The tool is hidden
+until both are set, which is the same `when` the handwriting tool uses.
+
+And the two setting **ids** live in the contract rather than in the registry,
+because main is the one that looks them up — two literals agreeing today is the
+shape where a rename leaves the engine reporting a refused key it never found.
+
+---
+
 ## 2026-09-11 — Row 7: a blank square read as a sentence
 
 D6 row 7 is built. TrOCR reads a region, the stack downloads on demand against

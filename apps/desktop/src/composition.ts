@@ -4,6 +4,8 @@ import { type Server, connect, createServer } from 'node:net';
 import { join } from 'node:path';
 
 import {
+  AZURE_ENDPOINT_SETTING_ID,
+  AZURE_KEY_SETTING_ID,
   ENGINE_HOST_MAX_IN_FLIGHT,
   type ClientApi,
   type IncidentSink,
@@ -19,8 +21,10 @@ import {
   DocumentService,
   EngineOpenFailed,
   type HostDestinationsReader,
+  type AzureCredentials,
   type HostHandwritingReader,
   type HostOcrReader,
+  recogniseThroughAzure,
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
@@ -653,9 +657,43 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // so this is the one place where getting it wrong is possible at all, and
     // the host's two arms carry their directories separately so a mistake here
     // cannot arrive at the loader as a shared field.
-    ocr: (docId, sessions, request) => {
+    ocr: async (docId, sessions, request) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      // THE CLOUD ENGINE RUNS HERE, and this is the whole of what that means:
+      // the host rasterises the region into the granted output directory as it
+      // already does for a snapshot, main reads the file, and main makes the
+      // HTTPS call — because invariant 25 gives the host no network (ADR-0052's
+      // 2026-09-12 addition). The frame travels with the raster so the boxes
+      // come back to the page through the one converter.
+      if (request.engine === 'azure') {
+        const credentials = azureCredentials(settings, secrets);
+        if (credentials === null) {
+          throw new Error(
+            'the Azure Document Intelligence endpoint and key are not both set, so there is ' +
+              'nowhere to send the region. Both are settings; the key is a secret one and lives ' +
+              'in the OS keychain.',
+          );
+        }
+        const raster = await engineHost.snapshot(session, {
+          page: request.page,
+          rect: {
+            x0: request.region[0],
+            y0: request.region[1],
+            x1: request.region[2],
+            y1: request.region[3],
+          },
+          scale: AZURE_RASTER_SCALE,
+        });
+        return recogniseThroughAzure(credentials, {
+          png: raster.png,
+          crop: raster.crop,
+          rotation: raster.rotation,
+          origin: raster.origin,
+          scale: AZURE_RASTER_SCALE,
+        });
+      }
 
       if (request.engine === 'handwriting') {
         if (handwritingCache === undefined) {
@@ -837,10 +875,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // into the granted directory because §9.17's gate says no raster crosses.
     snapshot: {
       pick: pickSnapshot,
-      region: (docId, sessions, request) => {
+      region: async (docId, sessions, request) => {
         const session = sessions.mupdf;
         if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-        return engineHost.snapshot(session, request);
+        // THE PNG ALONE. D3's snapshot tool writes bytes to a file a person
+        // picked, and the frame that now travels beside them is for the caller
+        // that has to put an answer back on the page — which is the OCR path
+        // above, not this one.
+        return (await engineHost.snapshot(session, request)).png;
       },
     },
     // THE FORM DATA EXPORT, composed the way the snapshot beside it is and for
@@ -1934,6 +1976,45 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
  * the one the document itself arrives through — so an asset grants the
  * contained process nothing it did not already have.
  */
+/**
+ * Device pixels per PDF point for the raster sent to Azure.
+ *
+ * **2, which is `OCR_DPI`'s 200 dpi within a rounding** (200/72 = 2.78) and is
+ * deliberately not the same number: that one is the input to a local engine and
+ * this one is bytes crossing the internet, so the trade is different. At 2 a
+ * one-line region of about 340×50 points is 680×100 pixels — a few tens of
+ * kilobytes, and comfortably above the resolution the service's own guidance
+ * asks for.
+ *
+ * A constant rather than a setting: a reader has no way to judge it, and the
+ * failure it would cause — a recognition that reads badly — looks like the
+ * service being poor rather than like a number somebody set.
+ */
+const AZURE_RASTER_SCALE = 2;
+
+/**
+ * The endpoint and key, or `null` where either half is missing.
+ *
+ * **Both or neither**, and the pair is checked here rather than at the call:
+ * an endpoint with no key reaches the service and comes back unauthorised, which
+ * tells a reader their key is wrong when what happened is that they never
+ * entered one.
+ *
+ * The endpoint comes from the settings document and the key from the secret
+ * store — two documents by design, so a key cannot reach `settings.json` by
+ * shape rather than by care (E5's rule).
+ */
+function azureCredentials(
+  settings: SettingsSurface,
+  secrets: SecretStoreSurface | undefined,
+): AzureCredentials | null {
+  const endpoint = settings.read()[AZURE_ENDPOINT_SETTING_ID];
+  const key = secrets?.read()[AZURE_KEY_SETTING_ID];
+  if (typeof endpoint !== 'string' || endpoint === '') return null;
+  if (typeof key !== 'string' || key === '') return null;
+  return { endpoint, key };
+}
+
 function sessionAssets(): SessionAssets {
   return {
     name: () => randomBytes(16).toString('hex'),

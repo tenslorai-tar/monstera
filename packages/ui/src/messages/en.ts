@@ -301,6 +301,8 @@ export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
 );
 export const EDITING_OCR_LANGUAGE_TITLE = messageKey('setting.editing.ocr-language.title');
 export const EDITING_TROCR_SIZE_TITLE = messageKey('setting.editing.trocr-size.title');
+export const EDITING_AZURE_ENDPOINT_TITLE = messageKey('setting.editing.azure-di-endpoint.title');
+export const EDITING_AZURE_KEY_TITLE = messageKey('setting.editing.azure-di-key.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const SECOND_RENDERER_TITLE = messageKey('setting.viewing.second-renderer.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
@@ -474,6 +476,7 @@ export const SNAPSHOT_TOOL_TITLE = messageKey('command.view.snapshot');
 export const PLACE_IMAGE_TOOL_TITLE = messageKey('command.annotate.image');
 export const OCR_REGION_TOOL_TITLE = messageKey('command.tools.ocr-region');
 export const HANDWRITING_REGION_TOOL_TITLE = messageKey('command.tools.handwriting-region');
+export const CLOUD_REGION_TOOL_TITLE = messageKey('command.tools.cloud-region');
 export const LINK_ADDRESS_TOOL_TITLE = messageKey('command.annotate.link-address');
 export const LINK_PAGE_TOOL_TITLE = messageKey('command.annotate.link-page');
 export const LINK_ADDRESS_TITLE = messageKey('dialog.link-address.title');
@@ -823,6 +826,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition language',
   [EDITING_TROCR_SIZE_TITLE]: 'Handwriting model size',
+  [EDITING_AZURE_ENDPOINT_TITLE]: 'Azure Document Intelligence endpoint',
+  [EDITING_AZURE_KEY_TITLE]: 'Azure Document Intelligence key',
   [RULER_UNIT_TITLE]: 'Ruler unit',
   // SAYS WHAT IT IS, NOT THAT IT IS BETTER. The row was called *HD render* and
   // §6.1 called the engine behind it *higher fidelity*; both were amended on
@@ -1199,6 +1204,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // TrOCR reads a single text line, so a reader who drags a box over a
   // paragraph gets one line's worth of answer (ADR-0052 §4).
   [HANDWRITING_REGION_TOOL_TITLE]: 'Recognise one line of handwriting',
+  // THE SERVICE IS NAMED AND SO IS THE SENDING. What a reader is choosing here
+  // is that this part of their document leaves the machine, and a title like
+  // "Recognise with better accuracy" would hide the only thing about this
+  // control they could not work out for themselves.
+  [CLOUD_REGION_TOOL_TITLE]: 'Send a box to Azure to recognise',
   [LINK_ADDRESS_TOOL_TITLE]: 'Link to a web address',
   [LINK_PAGE_TOOL_TITLE]: 'Link to a page',
   [LINK_ADDRESS_TITLE]: 'Link to a web address',

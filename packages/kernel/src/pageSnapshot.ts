@@ -1,4 +1,5 @@
 import type { AnnotationRect } from '@monstera/contract';
+import type { Rotation } from '@monstera/shared';
 import { ColorSpace, DrawDevice, Matrix, Pixmap } from 'mupdf';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
@@ -109,7 +110,47 @@ function deviceBox(
 }
 
 /**
- * A region of a page, as PNG bytes.
+ * What a region's raster is, and where its pixels are on the page.
+ *
+ * ## The FRAME travels with the PNG, and that is ADR-0052's 2026-09-12 addition
+ *
+ * D3's snapshot tool wants bytes to write to a file and reads nothing else
+ * here. D6 row 8's cloud recogniser is handed the same PNG, gets word boxes back
+ * **in that PNG's pixels**, and has to put them on the page — which needs the
+ * displayed crop, the effective rotation and where the raster's own (0, 0) sits.
+ *
+ * All three are facts only this process can read, and what main does with them
+ * is call `pageTransform` and `toPdf` — **the one converter**, as a reader. That
+ * is the difference between carrying a fact across a boundary and implementing a
+ * rule twice: a main-side reconstruction of the flip and the turn would agree on
+ * an unrotated page and be wrong on every other, which is finding FFFFFF-1
+ * arriving in a third engine.
+ */
+export interface RegionSnapshot {
+  readonly png: ByteImage;
+  /** The page's displayed box, normalised — `pageTransform`'s first argument. */
+  readonly crop: readonly [number, number, number, number];
+  /**
+   * The effective `/Rotate`, snapped and inherited.
+   *
+   * The four legal values as a union rather than `number`, so the channel's
+   * schema and this type say the same thing and the handler needs no cast —
+   * `frameOf` has already resolved inheritance and snapped, so a fifth value is
+   * not something this build can produce.
+   */
+  readonly rotation: Rotation;
+  /**
+   * Where the raster's top-left pixel is, in **device** pixels at `scale`.
+   *
+   * Carried because `deviceBox` rounds OUTWARD, so the origin is not
+   * `rect * scale` — it is up to a pixel away, and which way depends on where
+   * the drag landed. A caller computing it would be right most of the time.
+   */
+  readonly origin: readonly [number, number];
+}
+
+/**
+ * A region of a page, as PNG bytes and the frame they sit in.
  *
  * @throws `RangeError` for a page this document does not have, a page that
  *   displays no region, a scale outside the bounds, a region with no extent, or
@@ -118,7 +159,7 @@ function deviceBox(
 export function snapshotRegion(
   session: MupdfSession,
   request: RegionRequest,
-): Promise<ByteImage> {
+): Promise<RegionSnapshot> {
   return withDocument(session, (document) => {
     const total = document.countPages();
     if (!Number.isInteger(request.page) || request.page < 0 || request.page >= total) {
@@ -182,7 +223,17 @@ export function snapshotRegion(
         device.close();
         device.destroy();
       }
-      return pixmap.asPNG();
+      return {
+        png: pixmap.asPNG(),
+        // THE TRANSFORM'S OWN INPUTS, not a matrix of our own: `frame` came
+        // from `frameOf`, which is `pageTransform(displayedBox, rotation, 1)`,
+        // so handing back the two values it was built from lets a reader
+        // rebuild the identical transform at any scale through the one
+        // converter rather than through arithmetic that agrees with it today.
+        crop: [frame.crop.x0, frame.crop.y0, frame.crop.x1, frame.crop.y1],
+        rotation: frame.rotation,
+        origin: [x0, y0],
+      };
     } finally {
       // THE PIXMAP IS THE LARGE ALLOCATION HERE — up to MAX_SNAPSHOT_PIXELS
       // times four bytes in the wasm heap, which the garbage collector does not

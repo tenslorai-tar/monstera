@@ -1050,10 +1050,12 @@ export const ocrPageSchema = z.object({
    * runs, and the setting would then be a control that appears to do nothing.
    */
   trocrSize: z.enum(TROCR_SIZES),
-}).refine((command) => command.engine !== 'handwriting' || command.region !== undefined, {
+}).refine((command) => command.engine === 'tesseract' || command.region !== undefined, {
   message:
-    'The handwriting engine reads one text line and is never offered on a page (ADR-0052 §4), ' +
-    'so a handwriting recognition must carry the region the reader dragged.',
+    'Only Tesseract is offered on a whole page. The handwriting engine reads one text line ' +
+    '(ADR-0052 §4), and the cloud engine sends what it is given to a service — so a page-scoped ' +
+    'request would send more of the document than the reader asked about. Both must carry the ' +
+    'region the reader dragged.',
   path: ['region'],
 });
 

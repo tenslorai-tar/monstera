@@ -27,7 +27,11 @@ import {
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import { PLACE_IMAGE_TOOL_ID } from '../annotations/placeImageTool.js';
-import { HANDWRITING_REGION_TOOL_ID, OCR_REGION_TOOL_ID } from '../annotations/ocrRegionTool.js';
+import {
+  CLOUD_REGION_TOOL_ID,
+  HANDWRITING_REGION_TOOL_ID,
+  OCR_REGION_TOOL_ID,
+} from '../annotations/ocrRegionTool.js';
 import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
@@ -73,6 +77,7 @@ import {
   REDACT_TOOL_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
+  CLOUD_REGION_TOOL_TITLE,
   HANDWRITING_REGION_TOOL_TITLE,
   OCR_REGION_TOOL_TITLE,
   SNAPSHOT_TOOL_TITLE,
@@ -137,6 +142,15 @@ export interface ToolCommandDeps {
    * assert on a control nothing mounts. The shipped graph always supplies it.
    */
   readonly handwritingReady?: () => boolean;
+  /**
+   * Whether the cloud engine has both an endpoint and a key.
+   *
+   * Optional and defaulting to yes for `handwritingReady`'s reason. Read as a
+   * pair rather than two predicates: an endpoint with no key reaches the service
+   * and comes back unauthorised, which tells a reader their key is wrong when
+   * they never entered one.
+   */
+  readonly cloudReady?: () => boolean;
 }
 
 /** What a command acting on the selection needs. */
@@ -642,6 +656,25 @@ export function handwritingRegionToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The cloud engine's control, hidden until its endpoint AND key are both set.
+ *
+ * The same `when` mechanism the handwriting tool uses, for the same rule and a
+ * sharper consequence: without credentials the drag would spend a round trip to
+ * be told the service refused a key nobody entered — and the reader would read
+ * that as *the service is broken* rather than as *I have not set this up*.
+ */
+export function cloudRegionToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(
+    CLOUD_REGION_TOOL_ID,
+    CLOUD_REGION_TOOL_TITLE,
+    62,
+    deps,
+    { section: 'comment', group: GROUP_MARKUP },
+    () => deps.cloudReady?.() ?? true,
+  );
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -689,6 +722,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     placeImageToolCommand(deps),
     ocrRegionToolCommand(deps),
     handwritingRegionToolCommand(deps),
+    cloudRegionToolCommand(deps),
     ...formFieldToolCommands(deps),
   ];
 }

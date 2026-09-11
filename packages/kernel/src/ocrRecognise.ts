@@ -474,7 +474,18 @@ export interface OcrRequest {
  */
 export type RecognitionRequest =
   | ({ readonly engine: 'tesseract' } & OcrRequest)
-  | ({ readonly engine: 'handwriting' } & HandwritingScope);
+  | ({ readonly engine: 'handwriting' } & HandwritingScope)
+  | {
+      /**
+       * The cloud engine. Its arm carries no language and no model size — the
+       * service detects the language — and, like the handwriting arm, a
+       * REQUIRED region: what it is given is uploaded, so *the whole page* is
+       * not a request this type can express.
+       */
+      readonly engine: 'azure';
+      readonly page: number;
+      readonly region: readonly [number, number, number, number];
+    };
 
 /**
  * Recognises one page of a session this process holds.

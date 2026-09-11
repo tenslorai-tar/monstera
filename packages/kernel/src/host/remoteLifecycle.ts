@@ -1,7 +1,7 @@
 import type { ClientApi, FormDataFormat } from '@monstera/contract';
 
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
-import type { RegionRequest } from '../pageSnapshot.js';
+import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import type { EngineChannels } from './engineChannels.js';
 import type { RemoteSessions, SessionArea } from './remoteEngine.js';
 
@@ -204,7 +204,7 @@ export interface RemoteMupdfLifecycle {
   readonly snapshot: (
     session: MupdfSession,
     request: RegionRequest,
-  ) => Promise<ByteImage>;
+  ) => Promise<RegionSnapshot>;
   /**
    * The form's data, encoded.
    *
@@ -291,7 +291,12 @@ export function remoteMupdfLifecycle(
       if (bytes.length !== answer.value.bytes) {
         throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
       }
-      return bytes;
+      return {
+        png: bytes,
+        crop: answer.value.crop,
+        rotation: answer.value.rotation,
+        origin: answer.value.origin,
+      };
     },
 
     exportFormData: async (session, format) => {

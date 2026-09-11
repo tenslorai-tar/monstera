@@ -1,5 +1,7 @@
-import { PDFDocument, rgb } from '@cantoo/pdf-lib';
+import { PDFDocument, degrees, rgb } from '@cantoo/pdf-lib';
 import type { AnnotationRect } from '@monstera/contract';
+import type { PdfPoint } from '@monstera/shared';
+import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
 import { Image } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 
@@ -9,6 +11,7 @@ import {
   MAX_SNAPSHOT_PIXELS,
   MAX_SNAPSHOT_SCALE,
   MIN_SNAPSHOT_SCALE,
+  type RegionSnapshot,
   snapshotRegion,
 } from './pageSnapshot.js';
 
@@ -79,13 +82,23 @@ async function onSession<T>(
   }
 }
 
-/** Snapshots one region of a fixture. */
+/** Snapshots one region of a fixture, and answers the PNG alone. */
 async function snapshot(
   bytes: Uint8Array,
   rect: AnnotationRect,
   scale = 1,
   page = 0,
 ): Promise<ByteImage> {
+  return (await snapshotOf(bytes, rect, scale, page)).png;
+}
+
+/** The whole answer, for the cases about the frame that travels with it. */
+async function snapshotOf(
+  bytes: Uint8Array,
+  rect: AnnotationRect,
+  scale = 1,
+  page = 0,
+): Promise<RegionSnapshot> {
   return await onSession(bytes, (session) => snapshotRegion(session, { page, rect, scale }));
 }
 
@@ -260,5 +273,77 @@ describe('snapshotRegion refuses', () => {
     await expect(
       snapshot(huge, { x0: 0, y0: 0, x1: 14_000, y1: 14_000 }, MAX_SNAPSHOT_SCALE),
     ).rejects.toThrow(new RegExp(String(MAX_SNAPSHOT_PIXELS), 'u'));
+  });
+});
+
+/**
+ * The frame that travels with the PNG, and what it is FOR.
+ *
+ * D6 row 8's cloud recogniser is handed this raster, gets word boxes back in
+ * the PNG's own pixels, and has to put them on the page. These cases are that
+ * round trip — a pixel back to the point it renders — because the frame is
+ * three numbers nobody looks at until a box lands in the wrong place.
+ *
+ * **Through `pageTransform` and `toPdf`**, the one converter, exactly as the
+ * caller does. A case that did the arithmetic itself would be asserting against
+ * a second implementation of the rule.
+ */
+describe('the frame a snapshot carries', () => {
+  /** A PNG pixel back to PDF user space, the way a reader of this answer does. */
+  function toPage(raster: RegionSnapshot, scale: number, px: number, py: number): PdfPoint {
+    const transform = pageTransform(
+      { x0: raster.crop[0], y0: raster.crop[1], x1: raster.crop[2], y1: raster.crop[3] },
+      raster.rotation,
+      scale,
+    );
+    return toPdf(viewportPoint(px + raster.origin[0], py + raster.origin[1]), transform);
+  }
+
+  it('maps the raster’s own (0,0) back to the region’s corner', async () => {
+    const raster = await snapshotOf(await fixture(), QUADRANT.upperLeft);
+    const corner = toPage(raster, 1, 0, 0);
+    // THE UPPER-LEFT QUADRANT'S TOP-LEFT, which in PDF user space is
+    // `(x0, y1)` — y runs up. Within a pixel, because `deviceBox` rounds
+    // outward and that is the whole reason `origin` is carried rather than
+    // computed.
+    expect(corner.x).toBeCloseTo(QUADRANT.upperLeft.x0, 0);
+    expect(corner.y).toBeCloseTo(QUADRANT.upperLeft.y1, 0);
+  });
+
+  it('CONTROL: a DIFFERENT quadrant maps to a different corner, so the frame is read', async () => {
+    // Without this, a `toPage` that ignored `origin` entirely would satisfy the
+    // case above for the one quadrant whose origin happens to be near zero.
+    const raster = await snapshotOf(await fixture(), QUADRANT.lowerRight);
+    const corner = toPage(raster, 1, 0, 0);
+    expect(corner.x).toBeCloseTo(QUADRANT.lowerRight.x0, 0);
+    expect(corner.y).toBeCloseTo(QUADRANT.lowerRight.y1, 0);
+  });
+
+  it('maps the raster’s FAR corner back to the region’s far corner, at scale 2', async () => {
+    // The scale is the axis the origin alone cannot carry: at 2 the same region
+    // is twice the pixels, and a reader mapping back without it would put every
+    // box at half the distance from the corner.
+    const scale = 2;
+    const raster = await snapshotOf(await fixture(), QUADRANT.upperLeft, scale);
+    const [width, height] = pngSize(raster.png);
+    const far = toPage(raster, scale, width, height);
+    expect(far.x).toBeCloseTo(QUADRANT.upperLeft.x1, 0);
+    expect(far.y).toBeCloseTo(QUADRANT.upperLeft.y0, 0);
+  });
+
+  it('carries the page’s EFFECTIVE rotation, which a turned page is the only way to see', async () => {
+    // The reason this is a fact from the host rather than something main works
+    // out: `/Rotate` is inheritable, and the rotation the raster was drawn at is
+    // the resolved one. A reader handed 0 for a turned page would place every
+    // box as though the page were upright — FFFFFF-1's defect in a third engine.
+    const document = await PDFDocument.load(await fixture());
+    document.getPages()[0]?.setRotation(degrees(90));
+    const raster = await snapshotOf(await document.save(), QUADRANT.upperLeft);
+    expect(raster.rotation).toBe(90);
+  });
+
+  it('CONTROL: the same fixture unturned carries 0, so the value above is read from the page', async () => {
+    const raster = await snapshotOf(await fixture(), QUADRANT.upperLeft);
+    expect(raster.rotation).toBe(0);
   });
 });

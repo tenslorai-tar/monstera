@@ -172,6 +172,8 @@ import {
   IMAGE_PAGES_SETTING,
   MEASURE_SCALE_SETTING,
   MEASURE_UNIT_SETTING,
+  AZURE_DI_ENDPOINT_SETTING,
+  AZURE_DI_KEY_SETTING,
   OCR_LANGUAGE_SETTING,
   TROCR_SIZE_SETTING,
 } from './settings/editing.js';
@@ -1041,6 +1043,16 @@ export function App({ client, settings }: AppProps): ReactElement {
   const ocrLanguage = useSetting(settings, OCR_LANGUAGE_SETTING);
   /** The handwriting registration's model size. Read here for the same reason. */
   const trocrSize = useSetting(settings, TROCR_SIZE_SETTING);
+  /**
+   * The cloud engine's credentials, read here only to decide whether to OFFER it.
+   *
+   * **The values never leave this component**: main reads both documents itself
+   * when it makes the call, because the key is a secret and a renderer holding
+   * one to hand back would be the plaintext path E5's rule exists to close. What
+   * the registry needs is one boolean, and that is all this computes.
+   */
+  const azureEndpoint = useSetting(settings, AZURE_DI_ENDPOINT_SETTING);
+  const azureKey = useSetting(settings, AZURE_DI_KEY_SETTING);
 
   /**
    * Whether the handwriting engine's downloaded stack is on this machine.
@@ -1362,6 +1374,10 @@ export function App({ client, settings }: AppProps): ReactElement {
           // without this the tool would be a control that dispatches a command
           // the engine refuses for a file nobody fetched.
           handwritingReady: () => handwritingReady,
+          // THE PAIR, read here rather than as two predicates: an endpoint with
+          // no key reaches the service and comes back unauthorised, which a
+          // reader reads as a wrong key rather than as a missing one.
+          cloudReady: () => azureEndpoint !== '' && azureKey !== '',
         }),
         // THE DOWNLOAD AND ITS REMOVAL, which is what a reader meets while the
         // tool above is hidden. `onChanged` re-asks main, so the tool appears
@@ -1393,6 +1409,11 @@ export function App({ client, settings }: AppProps): ReactElement {
     [
       applied,
       ask,
+      // THE CREDENTIALS' OWN VALUES, for `handwritingReady`'s reason one line
+      // down: `cloudReady` closes over this render's pair, so without these the
+      // cloud tool would stay hidden however many keys were entered.
+      azureEndpoint,
+      azureKey,
       changeZoom,
       client,
       // THE PREDICATE'S OWN VALUE, and it has to be here for the same reason

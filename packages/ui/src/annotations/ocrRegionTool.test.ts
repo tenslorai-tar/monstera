@@ -8,6 +8,7 @@ import {
   HANDWRITING_REGION_TOOL_ID,
   MINIMUM_REGION,
   OCR_REGION_TOOL_ID,
+  cloudRegionTool,
   handwritingRegionTool,
   ocrRegionTool,
 } from './ocrRegionTool.js';
@@ -233,6 +234,26 @@ describe('the handwriting region tool', () => {
   it('claims its OWN id, which is what makes it a second registration', () => {
     expect(handwritingRegionTool(deps()).id).toBe(HANDWRITING_REGION_TOOL_ID);
     expect(handwritingRegionTool(deps()).id).not.toBe(ocrRegionTool(deps()).id);
+  });
+
+  it('CONTROL: the CLOUD registration sends engine: azure for the same drag', () => {
+    // The third arm of the same claim. Three registrations from one factory
+    // means a literal written in the wrong place makes two of them agree — and
+    // only a set of cases, one per id, can see which two.
+    const { controller } = cloudRegionTool(deps());
+    const started = controller.begin(viewportPoint(20, 20));
+    const moved = controller.update(started, viewportPoint(120, 80));
+    expect(controller.commit(moved, 3, overlayTransform(PAGE))).toMatchObject({
+      engine: 'azure',
+      // THE SAME REGION, which is what says the three share a conversion rather
+      // than each having acquired one.
+      region: { x0: 60, y0: 390, x1: 110, y1: 360 },
+    });
+  });
+
+  it('the three registrations claim three DIFFERENT ids', () => {
+    const ids = [ocrRegionTool(deps()).id, handwritingRegionTool(deps()).id, cloudRegionTool(deps()).id];
+    expect(new Set(ids).size).toBe(3);
   });
 
   it('refuses a flat drag exactly as the other registration does', () => {

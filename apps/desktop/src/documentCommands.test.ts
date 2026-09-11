@@ -301,10 +301,13 @@ const localExtract: DocumentExtractReader = (id, sessions, pages) => {
  */
 const localSnapshot: SnapshotSource = {
   pick: () => Promise.reject(new Error('this case does not write a snapshot')),
-  region: (id, sessions, request) => {
+  region: async (id, sessions, request) => {
     const held = sessions.mupdf;
     if (held === undefined) throw new MissingSessionError(id, 'mupdf');
-    return snapshotRegion(held, request);
+    // THE PNG ALONE, as the composition root's own does: the frame that travels
+    // with a snapshot is for the OCR path, and a source that handed it on here
+    // would be answering a different shape from the one this seam declares.
+    return (await snapshotRegion(held, request)).png;
   },
 };
 

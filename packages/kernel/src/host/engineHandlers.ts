@@ -27,7 +27,7 @@ import {
 import { HandwritingModelUnreadableError, type HandwritingRequest } from '../ocrHandwriting.js';
 import type { PageLink } from '../pageLinks.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
-import type { RegionRequest } from '../pageSnapshot.js';
+import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import {
   ENGINE_DUPLICATE_PAGES_MAX,
@@ -176,16 +176,20 @@ export type HostExtract = (
 ) => Promise<ByteImage>;
 
 /**
- * A region of one page, as PNG bytes.
+ * A region of one page, as PNG bytes **and the frame they sit in**.
  *
  * {@link HostExtract}'s sibling and injected for its reason: it produces bytes
  * that are not the session's document, it reaches MuPDF, and a handler proof
  * must be able to drive the channel without rasterising anything.
+ *
+ * The frame travels because a second reader needs it — D6 row 8's cloud engine
+ * gets word boxes back in the PNG's own pixels and has to put them on the page.
+ * See `RegionSnapshot`.
  */
 export type HostSnapshot = (
   session: MupdfSession,
   request: RegionRequest,
-) => Promise<ByteImage>;
+) => Promise<RegionSnapshot>;
 
 /**
  * The form's data, encoded — a THIRD producer of bytes that are not the
@@ -560,9 +564,21 @@ export function createEngineHandlers({
         // 20 keeps out of main, and a PNG is a payload that scales with the
         // region a person dragged — so it goes into the granted output
         // directory and main reads the file.
-        const bytes = await snapshot(held.session, { page, rect, scale });
-        const written = await files.writeOutput(held.outputDirectory, into, bytes);
-        return { ok: true, value: { bytes: written } };
+        const raster = await snapshot(held.session, { page, rect, scale });
+        const written = await files.writeOutput(held.outputDirectory, into, raster.png);
+        // THE FRAME CROSSES AND THE RASTER DOES NOT, which is the same split the
+        // byte count already makes: what scales with the drag goes into the
+        // granted directory, and what a reader needs to place the answer is nine
+        // numbers.
+        return {
+          ok: true,
+          value: {
+            bytes: written,
+            crop: raster.crop,
+            rotation: raster.rotation,
+            origin: raster.origin,
+          },
+        };
       } catch (error) {
         // THE REQUEST'S FAULT rather than the host's, exactly as an extract's
         // is: every refusal a snapshot has is about the page or the rectangle.

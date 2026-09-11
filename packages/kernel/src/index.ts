@@ -156,6 +156,18 @@ export type {
 // which only the composition root supplies — and the type it supplies it to is
 // `HostHandwritingReader`, already on this barrel.
 export type { HandwritingScope } from './ocrHandwriting.js';
+// ON THE BARREL AS A VALUE, unlike the other two recognisers, and that IS the
+// decision: this one executes in `main`, so main imports and calls it. It binds
+// no engine — `fetch`, and `pageTransform` from shared — so `proof:kernelload`'s
+// property is untouched (ADR-0052's 2026-09-12 addition).
+export {
+  AZURE_API_VERSION,
+  AzureRecognitionRefused,
+  type AzureCredentials,
+  type AzureRefusal,
+  type AzureRequest,
+  recogniseThroughAzure,
+} from './ocrAzure.js';
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
