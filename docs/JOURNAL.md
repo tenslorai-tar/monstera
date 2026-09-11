@@ -888,6 +888,58 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Row 8: the engine that cannot live where the other two do
+
+Azure Document Intelligence is not built. What this records is what working the row
+found in the first hour, because both of it is the kind of thing that is cheap now
+and expensive after a surface exists.
+
+### It is a MAIN-side engine, and nothing said so
+
+ADR-0052, written this morning, put recognition in the engine host and gave the
+reason twice: the input is a bitmap this build produced beside the rasteriser, and
+1.7 MB of it would otherwise cross a pipe for ~20 KB of answer.
+
+Azure DI **cannot go there.** Invariant 25 gives the host no network at all — the
+same sentence that made the TrOCR download main's job — so a recogniser whose whole
+operation is an HTTPS call has to run where the network is. The raster then crosses
+the pipe after all, which is the cost §3's row avoids for the local engines and an
+unavoidable one here: the bytes are going to a cloud service regardless, and the
+question is only which process hands them over.
+
+So ADR-0052's *both execute in the host* is **true and about two engines**, and the
+third needs it extended before anything is built. That is the amendment arriving
+before the feature rather than underneath it, which is the whole of B4 — and it was
+found by starting the row, not by reading the ADR again, which is the argument for
+starting rows early rather than designing them whole.
+
+### The API, read rather than recalled
+
+`POST {endpoint}/documentintelligence/documentModels/prebuilt-read:analyze?api-version=2024-11-30`,
+the key in `Ocp-Apim-Subscription-Key`, a **202 with an `Operation-Location`** to
+poll until `succeeded`, and `analyzeResult.pages[]` carrying `words[]` with
+`content`, `polygon` and `confidence`, plus the page's `width`, `height` and
+`unit` — `pixel` for an image, `inch` for a PDF.
+
+Two things fall out of that and both are useful before a line is written. The
+polling shape means this engine is **not** a request/response call the existing
+`RecognisedPage` path can hide; and sending a **rasterised page** rather than the
+document keeps the unit at `pixel`, which is the frame `ocrRecognise.ts` already
+converts — so a third engine adds no fourth coordinate frame.
+
+### The second blocker is evidence, and it is not mine to clear
+
+A cloud engine that nobody has ever run against the live service is the display-only
+defect with a unit test over it: the mapping would be proven against a fixture I
+wrote from the documentation, which asserts my reading of the schema and not the
+service's behaviour. One live run with a real key settles it, and a key is the
+owner's to supply — entering one is not something this seat does.
+
+So the row records both blockers in its own body rather than in a plan somewhere:
+the ADR extension, and the one run.
+
+---
+
 ## 2026-09-11 — B4 for row 7: the 200 MB that is real, and the empty string that was not
 
 D6 row 7 is *local handwriting OCR (TrOCR small/base, on-demand download, cached,
