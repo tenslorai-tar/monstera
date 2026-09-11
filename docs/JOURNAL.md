@@ -888,6 +888,94 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — The text layer's writer: grafted, and the combining mark that split a line
+
+The font question of 2026-09-11 is **answered and built**. `ocrTextLayer.ts`
+writes a recognition onto a page as invisible, selectable text, and the font is
+**grafted rather than adopted** — a `CIDFontType2` with no `/FontFile2`,
+`Identity-H` encoding and an identity `/ToUnicode`, which is the shape
+`TessPDFRenderer` already solves this with inside the package this build ships.
+**Nothing new ships**: no font file, no provisioning entry, no installer-budget
+line, no NOTICE entry — the four things `BUILD-PROMPT.md`:803-806 makes the cost
+of adopting one.
+
+### What the graft is worth, read back through the reader this build ships
+
+Eight samples written by this module and read through MuPDF 1.28.0, against the
+same eight through `StandardFonts.Helvetica`, which answers `U+003F` for five of
+them:
+
+| | grafted glyphless font | standard font |
+|---|---|---|
+| Latin, accented Latin | verbatim | verbatim |
+| Cyrillic, Han, Devanagari | **verbatim** | `?` per character |
+| Arabic, Hebrew | every codepoint, **visual order** | `?` per character |
+| `U+FB01` | `f` `i` — MuPDF normalising a ligature | `?` |
+
+**The geometry round-trips to the point.** A word placed at `[100, 500, 220, 522]`
+reads back at `{x: 100, y: 270, w: 120, h: 22}` — the same box in MuPDF's y-down
+frame on a 792-point page. That is what makes selection and search over a
+recognised page land on the words instead of near them, and it is asserted as
+exact numbers rather than a tolerance.
+
+**Per word, and the line comes back anyway.** Two words at separate boxes read
+back as one line with MuPDF's own synthesised space and a bbox spanning both. So
+word-level geometry costs nothing in line fidelity.
+
+### The `/ToUnicode` stream is what makes it readable, and the failure is not silence
+
+Removed, everything else held fixed: Latin comes back as `6a e7 e5 eb ed c9 ea
+7e` — a substituted font's glyph indices read as characters — and Cyrillic,
+Arabic and Han each come back as `U+FFFD`. **Wrong characters, not no
+characters**, which is why the case that covers it asserts a difference rather
+than an absence.
+
+### A COMBINING MARK ADVANCES NOTHING, AND THE DOCUMENT HAS TO SAY SO
+
+Devanagari found it. `मोन्स` came back **whole and as two lines**, split between
+its fourth and fifth codepoints — which in a line-level comparison reads as *the
+last character was lost*, and the first assertion written against it said exactly
+that.
+
+The mechanism: a glyphless font has no glyph program, so a reader substitutes one
+to measure with, and a substitute advances a combining mark by **zero**. With
+every code advancing the same amount in the content stream, MuPDF's idea of where
+the fourth code ended was 51 points short of where the fifth actually started —
+and its structured text splits a line on a gap that size. The affected class is
+most of the set this row exists for: Devanagari, Thai, vocalised Arabic, Hebrew
+with niqqud, decomposed Latin.
+
+The fix is not a tolerance and not a special case. The font **declares its own
+widths** — a `/W` array giving every Unicode mark a width of zero — and the layout
+advances only the codes that are not marks, so where a character ends is this
+document's answer instead of a substituted font's. Measured after: one line,
+`x: 72, w: 128` against a placed box of `[72, …, 200, …]`. The ranges are derived
+from `\p{M}` over the BMP (190 ranges, 570 numbers, ~2.4 KB before compression),
+because *is this a combining mark* is Unicode's question and the runtime already
+holds the answer — a typed table would be a second opinion that agreed for
+whichever scripts somebody tested.
+
+Above the BMP is a **stated limit rather than a silence**: an astral character is
+written as a surrogate pair, neither half is a mark, so an astral mark would
+advance twice. Tesseract's fourteen provisioned models answer BMP characters.
+
+### What this does not close
+
+**The caller.** The row is not done and is not claimed done: nothing dispatches
+this yet, because the command that would is a pdf-lib command in `main` whose
+input is a read in the engine host, and ADR-0040's `reads` axis cannot express a
+pre-read parameterised by a page. That B4 is next and is the row's remaining
+blocker.
+
+Twelve cases, read back through `parsePageText` and `textLayerOf` — the
+production path — rather than through pdf-lib, because asking the writer what it
+wrote is the one question that cannot fail. Two of them are controls: the standard
+font's question marks, and an ink count that can see ink, beside the case
+asserting this layer paints none. Mutation-verified in the direction that matters:
+emptying the `/W` array reddens exactly the Devanagari case.
+
+---
+
 ## 2026-09-11 — A control keyed on a name appearing at all, and the guard that printed the reason first
 
 `main` went red at `49adbda`, on Guards, both legs, at the step that proves the
