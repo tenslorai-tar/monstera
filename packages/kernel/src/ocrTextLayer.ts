@@ -14,6 +14,7 @@ import {
   setTextMatrix,
   setTextRenderingMode,
   showText,
+  toDegrees,
 } from '@cantoo/pdf-lib';
 
 import type { CommandOfKind } from '@monstera/contract';
@@ -320,6 +321,56 @@ function runsOf(lines: readonly RecognisedLine[]): readonly PlacedRun[] {
 }
 
 /**
+ * How a run sits on a page with a `/Rotate`, as one entry per legal value.
+ *
+ * ## Why a table and not a general matrix
+ *
+ * A recognition's boxes are in **PDF user space** and the words it read are
+ * upright in **display** space, which are the same thing only on an unrotated
+ * page. Writing a horizontal run on a page rotated 90° puts invisible text
+ * across the visible text: the reader's selection, and the search highlight
+ * `searchHighlight.ts` computes from the text layer, would both be a rectangle at
+ * right angles to the words.
+ *
+ * So the run is rotated by the page's own `/Rotate`, which PDF 32000-1 §7.7.3.3
+ * constrains to a multiple of 90 — four values, four entries, each derived once:
+ *
+ * | `/Rotate` | the run starts at | advances along | `a b c d` |
+ * |---|---|---|---|
+ * | 0 | `(x0, y0)` | user +x | `1 0 0 1` |
+ * | 90 | `(x1, y0)` | user +y | `0 1 -1 0` |
+ * | 180 | `(x1, y1)` | user −x | `-1 0 0 -1` |
+ * | 270 | `(x0, y1)` | user −y | `0 -1 1 0` |
+ *
+ * Each origin is the box corner that MuPDF's page transform takes to the
+ * **display** box's bottom-left, and each matrix is that rotation. A general
+ * matrix was the alternative and is worse here: the page transform lives in
+ * `ocrRecognise.ts` beside the engine that owns it, this module runs in main with
+ * pdf-lib and no MuPDF, and four rows that a round trip asserts one by one are
+ * checkable in a way a reconstructed matrix is not.
+ *
+ * **`/Rotate` is also why the size and the squeeze swap.** They are the run's
+ * display height and width, and on a quarter-turned page those are the user
+ * box's width and height.
+ */
+const ROTATED_RUN = {
+  0: { corner: [0, 1] as const, matrix: [1, 0, 0, 1] as const, turned: false },
+  90: { corner: [2, 1] as const, matrix: [0, 1, -1, 0] as const, turned: true },
+  180: { corner: [2, 3] as const, matrix: [-1, 0, 0, -1] as const, turned: false },
+  270: { corner: [0, 3] as const, matrix: [0, -1, 1, 0] as const, turned: true },
+};
+
+/** A page's `/Rotate` as one of the four the table above has an entry for. */
+function quarterTurn(page: PDFPage): keyof typeof ROTATED_RUN {
+  // NORMALISED RATHER THAN TRUSTED: `/Rotate` may be negative or beyond 360 —
+  // `-90` is a legal spelling of 270 — and a value that is not a multiple of 90
+  // is a malformed page every reader rounds. `Math.round` over quarter turns is
+  // that rounding, in the one place this module needs the answer.
+  const quarters = ((Math.round(toDegrees(page.getRotation()) / 90) % 4) + 4) % 4;
+  return ([0, 90, 180, 270] as const)[quarters] ?? 0;
+}
+
+/**
  * Draws a recognition onto one page as invisible, selectable text.
  *
  * ## Nothing is painted, by the text rendering mode rather than by a colour
@@ -366,9 +417,15 @@ export function writeRecognisedText(
     beginText(),
     setTextRenderingMode(TextRenderingMode.Invisible),
   ];
+  const turn = ROTATED_RUN[quarterTurn(page)];
+  const [a, b, c, d] = turn.matrix;
+  const [originX, originY] = turn.corner;
   for (const run of runs) {
-    const size = run.box[3] - run.box[1];
-    const squeeze = ((run.box[2] - run.box[0]) / (advancingCodes(run.text) * size)) * 100;
+    // THE RUN'S DISPLAY WIDTH AND HEIGHT, which are the box's the other way round
+    // on a quarter-turned page (see {@link ROTATED_RUN}).
+    const across = turn.turned ? run.box[3] - run.box[1] : run.box[2] - run.box[0];
+    const size = turn.turned ? run.box[2] - run.box[0] : run.box[3] - run.box[1];
+    const squeeze = (across / (advancingCodes(run.text) * size)) * 100;
     operators.push(
       setFontAndSize(name, size),
       setCharacterSqueeze(squeeze),
@@ -376,7 +433,7 @@ export function writeRecognisedText(
       // to the line matrix, so one wrong offset would shift every run after it —
       // and the boxes this is given are absolute, so translating them into
       // offsets is arithmetic with nothing to check it against.
-      setTextMatrix(1, 0, 0, 1, run.box[0], run.box[1]),
+      setTextMatrix(a, b, c, d, run.box[originX], run.box[originY]),
       showText(PDFHexString.of(codesOf(run.text))),
     );
   }

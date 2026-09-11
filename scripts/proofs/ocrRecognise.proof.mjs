@@ -29,7 +29,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, StandardFonts, degrees } from '@cantoo/pdf-lib';
 
 import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
 import { loadedCore, recognisePage } from '../../packages/kernel/dist/ocrRecognise.js';
@@ -67,6 +67,17 @@ const PAGE_HEIGHT = 300;
 const DRAWN_X = 40;
 const DRAWN_BASELINE = 230;
 const DRAWN_SIZE = 28;
+
+/**
+ * Where the word sits on the quarter-turned page, and why not the same place.
+ *
+ * On a `/Rotate 90` page the word advances along user **+y**, so it needs room
+ * above `ROTATED_Y` rather than to the right of an x — and it is placed where
+ * **swapping its coordinates lands off the word**, so the control below is about
+ * a box too big to separate an axis rather than about the defect's own reading.
+ */
+const ROTATED_X = 220;
+const ROTATED_Y = 40;
 
 /**
  * The word drawn.
@@ -129,6 +140,8 @@ const CASES = /** @type {const} */ ([
   // when it was appended after the corpus ones: every label above is indexed
   // positionally, and inserting one renumbers the call sites.
   'the core is the Tesseract the advisory register was triaged against',
+  'A ROTATED PAGE READS INTO THE PAGE’S OWN SPACE, not the raster’s',
+  'CONTROL: and the box does NOT contain the point with its coordinates SWAPPED',
 ]);
 
 /**
@@ -153,7 +166,7 @@ const CASES = /** @type {const} */ ([
  * **15, a literal, measured 2026-09-11 by running this file.** Adding a case is a
  * two-line diff — the label and this number — and removing one is red.
  */
-const DECLARED_CASES = 15;
+const DECLARED_CASES = 17;
 
 // AND THE LIST IS HELD TO THE SAME NUMBER, because the labels are indexed
 // POSITIONALLY by the calls below: a label added without a call, or removed from
@@ -190,6 +203,36 @@ async function constructedPage(options = {}) {
   if (options.cropBox !== undefined) {
     page.node.set(PDFName.of('CropBox'), document.context.obj([...options.cropBox]));
   }
+  return document.save();
+}
+
+/**
+ * The same word on a page turned a quarter, **upright on screen**.
+ *
+ * Two halves, and only together are they the fixture this needs. `/Rotate 90`
+ * turns the sheet, and the text is drawn rotated by the same quarter so that it
+ * comes out horizontal in the raster — because a sideways word is one Tesseract
+ * would simply fail to read, and a fixture that recognises nothing tests the
+ * engine's tolerance rather than this build's arithmetic.
+ *
+ * `rotate: degrees(90)` means text space +x is user +y, so the word advances
+ * UPWARD in user space from `(ROTATED_X, ROTATED_Y)` and its glyph bodies lie
+ * between `ROTATED_X − DRAWN_SIZE` and `ROTATED_X`.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+async function rotatedPage() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  page.setRotation(degrees(90));
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText(WORD, {
+    x: ROTATED_X,
+    y: ROTATED_Y,
+    size: DRAWN_SIZE,
+    font,
+    rotate: degrees(90),
+  });
   return document.save();
 }
 
@@ -441,6 +484,46 @@ try {
       'WASM package.',
   );
   process.stdout.write(`  core Tesseract: ${version}\n\n`);
+
+  // THE THIRD FRAME, added 2026-09-11 for finding FFFFFF-1. `toPixmap`
+  // rasterises the page AS DISPLAYED, so on a `/Rotate 90` page the raster's axes
+  // are transposed against the page's own space — and the conversion this replaced
+  // read the displayed box in user space, which is correct for `/Rotate 0` and
+  // wrong for every other value. Measured before the fix: 600x400 of raster
+  // against a 400x600 frame, and a word near one edge converting to a coordinate
+  // beyond the page's width.
+  const turned = await recognise(await rotatedPage());
+  const turnedWord = turned.lines
+    .flatMap((line) => line.words)
+    .find((word) => word.text.replace(/\W/gu, '') === WORD);
+  const turnedBox = turnedWord?.box ?? [0, 0, 0, 0];
+  // INSIDE THE GLYPHS on the turned page: a little along the advance, which is
+  // user +y here, and a little into the bodies, which lie below ROTATED_X.
+  const turnedInside = { x: ROTATED_X - 8, y: ROTATED_Y + 10 };
+  check(
+    CASES[15],
+    turnedWord !== undefined && contains(turnedBox, turnedInside.x, turnedInside.y),
+    `on a /Rotate 90 page the word's box is ` +
+      `[${turnedBox.map((value) => value.toFixed(1)).join(', ')}], which does not contain ` +
+      `(${String(turnedInside.x)}, ${String(turnedInside.y)}) where it was drawn. The page read ` +
+      `as [${turned.lines.flatMap((line) => line.words).map((word) => JSON.stringify(word.text)).join(', ')}].`,
+  );
+
+  // WHAT THIS CONTROL DOES AND DOES NOT DO, because the first wording claimed
+  // more than the measurement supports. Run against the conversion this replaced,
+  // the case above fails with the box at [42.1, 79.3, 198.4, 100.9] — which does
+  // not contain the swapped point either, so this control does not separate that
+  // defect and no comment here should say it does. What it separates is a box big
+  // enough to contain the point on EITHER axis, which would make the case above
+  // pass whichever frame the conversion used — the same service `CASES[2]` does
+  // for the flip on an unrotated page.
+  check(
+    CASES[16],
+    turnedWord !== undefined && !contains(turnedBox, turnedInside.y, turnedInside.x),
+    `the box also contains (${String(turnedInside.y)}, ${String(turnedInside.x)}), the same point ` +
+      'with its coordinates swapped. A box containing both is one the case above passes for on ' +
+      'the transposed axis as well, so it would separate nothing.',
+  );
 
   process.stdout.write('## The supplied corpus\n\n');
   const corpus = openCorpus();

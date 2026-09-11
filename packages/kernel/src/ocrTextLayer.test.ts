@@ -1,4 +1,11 @@
-import { PDFDict, PDFDocument, PDFName, StandardFonts, TextRenderingMode } from '@cantoo/pdf-lib';
+import {
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  StandardFonts,
+  TextRenderingMode,
+  degrees,
+} from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 
@@ -94,12 +101,38 @@ function inked(bytes: Uint8Array): number {
 }
 
 /** A document carrying one page of recognised text, saved. */
-async function written(lines: readonly RecognisedLine[]): Promise<Uint8Array> {
+async function written(lines: readonly RecognisedLine[], rotation = 0): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  if (rotation !== 0) page.setRotation(degrees(rotation));
   writeRecognisedText(page, glyphlessFont(document), lines);
   return document.save();
 }
+
+/**
+ * The same word, at the same place ON SCREEN, for each legal `/Rotate`.
+ *
+ * A recognition's boxes are in **user** space and what Tesseract read is upright
+ * in **display** space, so these four user-space rectangles are one display
+ * rectangle — `{x: 72, y: 76, w: 80, h: 16}` — run back through each page's own
+ * transform. The arithmetic is this file's rather than a run's: at 90 the page's
+ * matrix is `[0 1 1 0 0 0]`, so display x is user y and display y is user x; at
+ * 180 it is `[-1 0 0 1 612 0]`; at 270 `[0 -1 -1 0 792 612]`.
+ *
+ * That is what makes the rotation cases assert **one** number rather than four: a
+ * word sits where it was read whatever the page's rotation, and a table entry with
+ * the wrong corner or the wrong sign puts the run outside its box, which the box
+ * assertion sees.
+ */
+const SAME_PLACE: Readonly<Record<number, Box>> = {
+  0: [72, 700, 152, 716],
+  90: [76, 72, 92, 152],
+  180: [460, 76, 540, 92],
+  270: [520, 640, 536, 720],
+};
+
+/** Where all four of {@link SAME_PLACE} must read back. */
+const ON_SCREEN = { x0: 72, y0: 76, x1: 152, y1: 92 };
 
 /** The same string drawn through a standard font, which is the defect. */
 async function throughStandardFont(text: string): Promise<Uint8Array> {
@@ -143,7 +176,50 @@ describe('writeRecognisedText', () => {
     // arithmetic rather than a run's: 792 − 716 and 792 − 700. A layer written
     // with the flip the wrong way round lands at 700..716 and this case is the
     // one that separates them.
-    expect(layerOf(bytes).lines[0]?.box).toEqual({ x0: 72, y0: 76, x1: 152, y1: 92 });
+    expect(layerOf(bytes).lines[0]?.box).toEqual(ON_SCREEN);
+  });
+
+  it('PLACES IT THERE ON A ROTATED PAGE TOO, which it did not until 2026-09-11', async () => {
+    // Finding FFFFFF-1. The recognition's boxes are in user space and the words
+    // are upright in DISPLAY space, so a run written horizontally in user space on
+    // a quarter-turned page runs across the visible text. `ROTATED_RUN` is the
+    // four-entry table that turns it, and this is what holds each entry: the wrong
+    // corner or the wrong sign puts the run outside the box it was fitted to, and
+    // the box read back stops being the one every rotation shares.
+    for (const rotation of [90, 180, 270]) {
+      const box = SAME_PLACE[rotation] ?? [0, 0, 0, 0];
+      const bytes = await written([recognised(box, [{ text: 'Monstera', box }])], rotation);
+      expect(layerOf(bytes).lines[0]?.box, `/Rotate ${String(rotation)}`).toEqual(ON_SCREEN);
+    }
+  });
+
+  it('KEEPS THE SPACE BETWEEN TWO WORDS on a rotated page, which is what separates the turn', async () => {
+    // THE OBSERVABLE THAT SEPARATES A ROTATED RUN FROM AN UNROTATED ONE, and it
+    // took measuring to find: for a SINGLE word MuPDF reports the identical line,
+    // text and bounding box either way, because both fill the same box. Two words
+    // do not — the space between them is MuPDF's, synthesised from a gap along the
+    // baseline, and runs that do not share a baseline direction have no gap to
+    // synthesise from.
+    //
+    // So an unrotated run on a rotated page loses the space, and a phrase search
+    // across it stops matching. A case asserting only the box would be a fixture
+    // the defect also handles correctly.
+    const first: Box = [76, 72, 92, 152];
+    const second: Box = [76, 158, 92, 235];
+    const bytes = await written(
+      [
+        recognised([76, 72, 92, 235], [
+          { text: 'Monstera', box: first },
+          { text: 'deliciosa', box: second },
+        ]),
+      ],
+      90,
+    );
+
+    const text = layerOf(bytes)
+      .lines.map((line) => line.text)
+      .join('');
+    expect(text).toContain('Monstera deliciosa');
   });
 
   it('carries the scripts a standard font cannot encode', async () => {

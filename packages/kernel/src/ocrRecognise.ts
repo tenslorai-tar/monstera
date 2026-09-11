@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 import type { OcrLanguage } from '@monstera/contract';
-import { ColorSpace, Matrix } from 'mupdf';
+import type { Matrix as MupdfMatrix } from 'mupdf';
+import { ColorSpace, Matrix, Rect } from 'mupdf';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
@@ -305,55 +306,80 @@ interface RasterBox {
 }
 
 /**
- * The one conversion from Tesseract's frame to the page's.
+ * The one conversion from Tesseract's frame to the page's — **MuPDF's own page
+ * transform, not arithmetic written here** (B3a).
  *
- * Raster pixels, y-down from the top-left, become points, y-up from the
- * displayed box's origin. Both halves matter and a fixture at the origin can
- * only show one: the scale is `72 / dpi`, and the flip is a subtraction from the
- * box's **top edge** — because `toPixmap` rasterises the page's displayed
- * bounds, so pixel `(0, 0)` is that box's top-left corner, not the sheet's.
+ * ## This was hand-written until 2026-09-11, and a ROTATED PAGE broke it
  *
- * Subtracting from `frame.y1` rather than from a height is the legal spelling
- * `geometry.ts` uses, and it is also the true one: the top edge is what pixel
- * row zero is.
+ * It subtracted from the displayed box's top edge and added its x origin, which
+ * is correct for every page whose `/Rotate` is 0 and wrong for every page whose
+ * is not — finding FFFFFF-1, measured on four pages differing only in that key:
+ *
+ * | `/Rotate` | raster at 150 dpi ÷ 2 | the displayed box |
+ * |---|---|---|
+ * | 0 | 400×600 | 400×600 |
+ * | 90 | **600×400** | 400×600 |
+ * | 180 | 400×600 | 400×600 |
+ * | 270 | **600×400** | 400×600 |
+ *
+ * `toPixmap` rasterises the page **as displayed**, so at 90 and 270 the raster's
+ * axes are transposed against the box and a word near the left edge converted to
+ * an x beyond the page's width; at 180 the shape matched and every box was
+ * mirrored, which is worse, because nothing was out of range and every assertion
+ * about a box having area still passed.
+ *
+ * The fix is not a rotation case here. `PDFPage.getTransform()` is the matrix
+ * MuPDF itself applies when rasterising, and it carries the flip, the crop
+ * origin and the rotation in one object — so `scale ∘ ctm` predicts where ink
+ * lands to the pixel and its inverse returns the rectangle it was drawn at,
+ * measured exactly on all four rotations with and without a `/CropBox`. A
+ * per-rotation branch here would be a second opinion about a transform the
+ * engine owns, agreeing with it on three quarters of the cases.
+ *
+ * It also removes the flip: there is no y subtraction left to get wrong, which
+ * is why `monstera/no-bare-y-flip` has nothing to say about this module any more.
  */
 function toPdfSpace(
   box: RasterBox,
-  frame: { x0: number; y1: number },
-  scale: number,
+  toPdf: MupdfMatrix,
 ): readonly [number, number, number, number] {
-  const x0 = frame.x0 + box.x0 * scale;
-  const x1 = frame.x0 + box.x1 * scale;
-  const top = frame.y1 - box.y0 * scale;
-  const bottom = frame.y1 - box.y1 * scale;
-  return [Math.min(x0, x1), Math.min(top, bottom), Math.max(x0, x1), Math.max(top, bottom)];
+  // `Rect.transform` takes the min and max over the transformed corners, so the
+  // result is ordered however the matrix turned the rectangle — which is what a
+  // rotation does to one.
+  const [x0, y0, x1, y1] = Rect.transform([box.x0, box.y0, box.x1, box.y1], toPdf);
+  return [x0, y0, x1, y1];
 }
 
 /**
  * The same conversion the other way, for a region a caller names in the page's
  * space.
  *
- * **The inverse of {@link toPdfSpace}, in the same module and deliberately so**
- * (B3a): *where on the raster is this part of the page* has one answer, and a
- * second implementation of it — in the command, in the tool, in the host — would
- * agree about a region in the middle of the page and disagree about one at the top,
- * which is the half a fixture at the centre cannot see.
+ * **The inverse of {@link toPdfSpace} through the same matrix** (B3a): *where on
+ * the raster is this part of the page* has one answer, and a second
+ * implementation of it — in the command, in the tool, in the host — would agree
+ * about a region in the middle of the page and disagree about one at the top,
+ * which is the half a fixture at the centre cannot see. Since 2026-09-11 the two
+ * directions are one matrix and its inverse rather than two expressions, so a
+ * page whose rotation one of them handled and the other did not is
+ * unrepresentable rather than caught.
  *
- * Tesseract's rectangle is `(left, top, width, height)` in raster pixels, y-down,
- * so the top edge comes from the PDF rectangle's **larger** y. The result is
- * clamped to the raster, because a region dragged over the edge of the page is an
- * ordinary gesture and Tesseract refuses a rectangle outside the image.
+ * Tesseract's rectangle is `(left, top, width, height)` in raster pixels, y-down.
+ * The result is clamped to the raster, because a region dragged over the edge of
+ * the page is an ordinary gesture and Tesseract refuses a rectangle outside the
+ * image.
  */
 function toRasterRect(
   region: readonly [number, number, number, number],
-  frame: { readonly x0: number; readonly y1: number },
-  scale: number,
+  toRaster: MupdfMatrix,
   raster: { readonly width: number; readonly height: number },
 ): { left: number; top: number; width: number; height: number } {
-  const left = (Math.min(region[0], region[2]) - frame.x0) * scale;
-  const right = (Math.max(region[0], region[2]) - frame.x0) * scale;
-  const top = (frame.y1 - Math.max(region[1], region[3])) * scale;
-  const bottom = (frame.y1 - Math.min(region[1], region[3])) * scale;
+  const ordered: [number, number, number, number] = [
+    Math.min(region[0], region[2]),
+    Math.min(region[1], region[3]),
+    Math.max(region[0], region[2]),
+    Math.max(region[1], region[3]),
+  ];
+  const [left, top, right, bottom] = Rect.transform(ordered, toRaster);
   const clampedLeft = Math.max(0, Math.min(raster.width, Math.round(left)));
   const clampedTop = Math.max(0, Math.min(raster.height, Math.round(top)));
   return {
@@ -443,13 +469,24 @@ export async function recognisePage(
       );
     }
     const page = document.loadPage(request.page);
-    const frame = displayedBox(page.getObject());
-    if (frame === null) {
+    // STILL THE REFUSAL, THOUGH NO LONGER THE CONVERSION. `displayedBox` answers
+    // `null` for a page that displays nothing, where MuPDF's own fallback is US
+    // Letter — a rasteriser's right answer and a writer's wrong one, because the
+    // transform would then describe a frame the document does not have and the
+    // recognised text would be placed in it. The matrix below comes from MuPDF;
+    // whether there is a page to transform at all is this build's question
+    // (`pageBoxes.ts`).
+    if (displayedBox(page.getObject()) === null) {
       throw new RangeError(
         `page ${String(request.page)} displays no region, so there is nothing to recognise — it ` +
           'has no /MediaBox of four numbers, or its /CropBox and /MediaBox do not overlap',
       );
     }
+    // USER SPACE TO THE RASTER, IN ONE MATRIX. `getTransform()` is what MuPDF
+    // applies to the content itself — the flip, the crop origin and the page's
+    // `/Rotate` — so composing the scale onto it is the same transform the
+    // rasteriser uses rather than a reconstruction of it (FFFFFF-1).
+    const toRaster = Matrix.concat(page.getTransform(), Matrix.scale(scale, scale));
     const pixmap = page.toPixmap(
       Matrix.scale(scale, scale),
       // COLOUR, not grey. Tesseract binarises with its own Otsu, and a grey
@@ -462,7 +499,8 @@ export async function recognisePage(
     try {
       return {
         png: new Uint8Array(pixmap.asPNG()),
-        frame,
+        toRaster,
+        toPdf: Matrix.invert(toRaster),
         // THE RASTER'S OWN SIZE, carried out of here rather than computed from the
         // frame and the scale: a region is clamped to the image Tesseract was given,
         // and a second arithmetic for that size is one that can round differently.
@@ -491,7 +529,7 @@ export async function recognisePage(
     // Set after the image and before `Recognize`, which is the only order
     // Tesseract accepts: the rectangle is measured against the image it is holding.
     if (request.region !== undefined) {
-      const rect = toRasterRect(request.region, raster.frame, scale, raster);
+      const rect = toRasterRect(request.region, raster.toRaster, raster);
       if (rect.width === 0 || rect.height === 0) {
         throw new RangeError(
           `the region [${request.region.join(', ')}] has no area on page ` +
@@ -516,13 +554,13 @@ export async function recognisePage(
             if (word.bbox === undefined || word.text === undefined) continue;
             words.push({
               text: word.text,
-              box: toPdfSpace(word.bbox, raster.frame, 1 / scale),
+              box: toPdfSpace(word.bbox, raster.toPdf),
               confidence: word.confidence ?? 0,
             });
           }
           lines.push({
             text: line.text ?? '',
-            box: toPdfSpace(line.bbox, raster.frame, 1 / scale),
+            box: toPdfSpace(line.bbox, raster.toPdf),
             words,
           });
         }

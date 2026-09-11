@@ -888,6 +888,87 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — FFFFFF-1: the third coordinate frame, and the control that took measuring to find
+
+A page's `/Rotate` is in the recognition path now, in both directions, and in the
+writer. The defect the audit found an hour earlier is closed, and two things about
+how it closed are worth more than the fix.
+
+### The fix is a matrix the engine already owns, not a rotation case
+
+`toPdfSpace` subtracted from the displayed box's top edge and added its x origin —
+the right arithmetic for a page whose `/Rotate` is 0 and the wrong one for every
+other value, because `toPixmap` rasterises the page **as displayed**.
+
+The first instinct was a branch per rotation. The better answer was to ask what
+already knows: `PDFPage.getTransform()` is the matrix MuPDF applies when it
+rasterises, and it carries the flip, the crop origin and the rotation in one
+object. Measured on four pages differing only in `/Rotate`, with and without a
+`/CropBox`, ink drawn at user `[40 40 80 60]`:
+
+| `/Rotate` | ctm | raster | ink measured | scale ∘ ctm predicts | inverse → user |
+|---|---|---|---|---|---|
+| 0 | `[1 0 0 -1 0 300]` | 400×600 | `[80,480,160,520]` | `[80,480,160,520]` | `[40,40,80,60]` |
+| 90 | `[0 1 1 0 0 0]` | 600×400 | `[80,80,120,160]` | same | `[40,40,80,60]` |
+| 180 | `[-1 0 0 1 200 0]` | 400×600 | `[300,20,380,60]` | same | `[40,40,80,60]` |
+| 270 | `[0 -1 -1 0 300 200]` | 600×400 | `[540,300,580,380]` | same | `[40,40,80,60]` |
+
+To the pixel, in both directions, including the crop cases where the ctm carries
+a `-20`/`-30` translation of its own. So the two conversions became one matrix and
+its inverse: **a page whose rotation one direction handled and the other did not is
+now unrepresentable rather than caught**, and the y-subtraction is gone with it —
+there is no flip left in this module for `monstera/no-bare-y-flip` to have an
+opinion about.
+
+`displayedBox` stays, for the refusal only. A page that displays nothing gets US
+Letter from MuPDF — a rasteriser's right answer and a writer's wrong one, since the
+transform would then describe a frame the document does not have.
+
+### THE WRITER'S CASE: a single word cannot separate the turn, and two can
+
+The invisible run also has to turn with the page, because the recognition's boxes
+are in user space and the words are upright in display space. Writing the case for
+that is where the morning's most useful result came from, and it was a negative
+one.
+
+**For a single word, MuPDF reports the identical line, text and bounding box
+whether the run is turned or not.** Measured: `{x:72, y:76, w:80, h:16}` both ways.
+The reason is obvious once seen and was not obvious before — both runs are fitted
+to the same box, one along its long axis and one along its short one, and a box is
+a box. A case asserting the box would have been exactly what this project's rules
+call a fixture the defect also handles correctly, and it would have read as
+coverage for ever.
+
+Two words separate them:
+
+| | what `textLayerOf` reads |
+|---|---|
+| turned with the page | `"Monstera"` + `" deliciosa"` — the space is there |
+| not turned | `"Monstera"` + `"deliciosa"` — no space |
+
+The space is **MuPDF's**, synthesised from a gap along a shared baseline, and runs
+that do not share a baseline direction have no gap to synthesise from. So an
+unturned run on a rotated page loses the inter-word space, and a phrase search
+across it stops matching — which is row 4's own claim arriving as the thing that
+makes row 3's geometry checkable.
+
+Both halves are mutation-verified and each bites on what it claims: forcing the
+run never to turn reddens the space case alone, and a wrong corner in the
+four-entry rotation table reddens the box case alone.
+
+### And one control is weaker than its first wording said
+
+`CASES[16]` asserts a rotated page's box does not contain the drawn point with its
+coordinates swapped, and the comment beside it said that is where the old
+conversion put the word. **Measured against the old conversion, it is not**: the
+box comes back as `[42.1, 79.3, 198.4, 100.9]`, which contains neither point, so
+the control does not separate that defect and the comment now says so. What it
+does separate is a box large enough to contain the point on either axis. A
+correction is a claim too, and this one was made at the moment of least scrutiny —
+while writing up a fix that worked.
+
+---
+
 ## 2026-09-11 — Row 6: a region the platform already carried, and a fixture that could not borrow the default
 
 D6 row 6 — *OCR region, drag a rectangle* — is done, and it is a registration.
