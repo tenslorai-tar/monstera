@@ -888,6 +888,241 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Stage audit of `38ea527..622f794`: a page nobody rotated, and an anchor paid in one file and spent in the next
+
+Twenty-three commits, ninety-six files — D6 rows 1 to 5 and enhance scans, the
+pre-read amendment they needed, the typecheck gate on the push path and eight
+Tesseract advisories. The gate fired while row 6's commit was being written, at
+103 files against a batch of 100, which is where it fires by design: `check:docs`
+measures the range against HEAD, so the commit that crosses is invisible to it
+and the board would go red one push later.
+
+Findings **FFFFFF-1** to **FFFFFF-5**. One is a live product defect, one is a
+check that reports the shape it exists to catch, and three are documents a commit
+falsified without opening them.
+
+### 1. Root cause, or workaround?
+
+Four corrections in the range, and each states a mechanism.
+
+The Devanagari line split was read as lost text and is not: a substituted font
+measures `\p{M}` marks as zero-width, a uniform advance therefore put 51 points
+between `मो` and `न्स`, and MuPDF's structured text broke the line there. The fix
+derives `/W` from `\p{M}` and advances non-marks only — the class, not the
+sample, and the mutation reddens it.
+
+`ocrPageSchema` referencing `annotationRectSchema` declared later made
+`commands.test.ts` collect **zero tests** rather than fail: a temporal dead zone
+at module scope. Moved below the declaration with the reason recorded, which is
+the root cause — the alternative, a lazy `z.lazy`, would have hidden the ordering
+rather than fixed it.
+
+`otsu`'s parameter widened from `Uint8Array` to `Uint8Array | Uint8ClampedArray`,
+and **widening a type is a banned reflex**, so it is named here rather than left
+to look like one. `Pixmap.getPixels()` returns a `Uint8ClampedArray`; the
+narrower parameter could not express the only input this function has in
+production. The widening made a true call expressible; it did not make an error
+disappear.
+
+The one documented cast — `spec as CommandDeclaration<CommandKind>` in
+`CommandBus.#preReadFor` — is a loosening and is the range's only one. A
+correlated call `access[reads](needs)` over a generic `K` is inexpressible in
+TypeScript, the cast is confined to one expression with the reason beside it, and
+nothing else in the range reaches for `any`, an `eslint-disable` or a
+`@ts-expect-error`: measured, eight new `as` casts, of which three are
+`require()` of an untyped CJS core, one is `JSON.parse`, one is a test's context
+and one is a prose comment's phrasing.
+
+### 2. Verified against the easy shape only? — FFFFFF-1
+
+**FFFFFF-1. EVERY OCR FIXTURE IS AN UNROTATED PAGE, AND A PAGE WITH `/Rotate` IS
+RECOGNISED INTO THE WRONG PLACE.** A live defect in rows 2, 3 and 6, found by
+asking item 2's own question — *a flat object → one with rotation* — and then
+measured rather than argued.
+
+`ocrRecognise.ts` rasterises with `page.toPixmap(Matrix.scale(s, s), …)` and
+converts the boxes that come back against `displayedBox`, which is the CropBox
+clipped to the MediaBox **in PDF user space**. Neither mentions `/Rotate`.
+Measured 2026-09-11 on four 200×300 pages differing only in `/Rotate`, with ink
+drawn at user-space `(10, 10, 50, 30)`:
+
+| `/Rotate` | raster at scale 2 | frame × 2 | ink's raster box |
+|---|---|---|---|
+| 0 | 400×600 | 400×600 | `[20,540,99,579]` |
+| 90 | **600×400** | 400×600 | `[20,20,59,99]` |
+| 180 | 400×600 | 400×600 | `[300,20,379,59]` |
+| 270 | **600×400** | 400×600 | `[540,300,579,379]` |
+
+So MuPDF rasterises the page **as displayed** and the conversion reads it as
+though it were not. At 90 and 270 the raster's axes are transposed against the
+frame, and a word near the left edge converts to a user-space x of up to 300 on a
+page 200 wide — off the page. At 180 the shape matches and the position is
+mirrored, which is the worse of the two: nothing is out of range, so every
+assertion about a box *having area* still passes while the text sits in the
+opposite corner.
+
+It reaches the product in one click. `rotatePages` is a Stage 2 command, so a
+reader may rotate a sideways scan and then recognise it, which is the obvious
+order to do those two things in. The region tool inherits the same defect
+backwards through `toRasterRect`: a rectangle dragged over a rotated page selects
+the wrong part of the raster, and the UI half is **correct** — `overlayTransform`
+takes the rotation — so the two halves disagree precisely at the boundary the
+wired-tools rule says to watch.
+
+Three things this says that the instance does not. The row bodies claim
+`ocrRecognise.ts` is *the one module holding both frames*, and that claim was
+true and **incomplete**: there is a third frame, and naming two of three reads
+exactly like naming all of them. Deskew is **not** affected and the reason is
+worth writing down rather than assumed — a rotation correction commutes with the
+page's own rotation, so an angle measured in display space is the angle to apply
+in user space. And `pageEnhance` is not affected because it rewrites image
+streams in place and never names a coordinate.
+
+Open at the close of this entry, fixed in the commits after it, with the fix
+owing a case per rotation and a control at 0.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Four proofs changed their method and all four moved coverage **up**, which is
+worth stating because the inverse is invisible in a diff.
+`containerGrants.proof.mjs` replaced *every right is RX* with two claims — write
+is refused everywhere, execute is granted only to what executes — because the OCR
+models are the first entry that is **data** and the old spelling would have made
+the narrower grant the failure. `checkLocal.proof.mjs`' roster control stopped
+being keyed on a name appearing at all and now reads both halves, which is the
+red `main` this range already recorded. `blockEscapeResolvingWrites.proof.mjs`
+replaced a count derived from what ran with the literal **304**.
+`coreChannels.test.ts` widened a declared set and its set-equality assertion
+moved with it.
+
+`contract.proof.mjs`' five hidden deletions are the pinned union size moving 30 →
+31 → 32 → 33 as commands arrived. A mechanical update of an anchored diagnostic,
+not a loosening.
+
+### 3. Would CI have caught it?
+
+**FFFFFF-1: no, and the gap is structural rather than unlucky.** No fixture in
+`packages/` or `scripts/` sets `/Rotate` on a page that is then recognised, so
+there is nothing for `proof:ocrrecognise` to run — and that proof *is* a CI step
+on the Windows leg, which is the half that makes the answer informative. The
+closing case is cheap: the same constructed page at four rotations, with 0 as the
+control.
+
+For the range's one red `main`, CI is what caught it, and the range's own answer
+to *why not earlier* is the typecheck gate now on the push path —
+`decideTypecheck`, 31 s, and a control proving a documentation-only push is not
+charged for it.
+
+### 4. Are the proofs non-vacuous?
+
+Mutations run by hand in the range and reported where they were found: the `/W`
+mark widths (the Devanagari split returns), `pageEnhance`'s page-list control
+(levelling every page regardless of the list reddens the two cases naming it),
+the OCR region tool's minimum, and its language dep — replacing `deps.language()`
+with the setting's own fallback reddens two cases and nothing else. Each bit
+exactly the cases claiming it.
+
+The branch nothing reaches is FFFFFF-1's: a rotated page is not a branch in the
+code at all, which is why no mutation could have found it.
+
+### 4a. Resolution tests
+
+`scripts/research/deskewAngle.mjs` gave up its private copy of the skew detector
+and now calls the kernel's, with `refuseStaleBuild` over both modules (B3a). The
+resolution test that matters for a replacement is agreement with what it replaced,
+and the consolidated detector reproduces the recorded readings exactly.
+`lineAgreement.mjs` carries its own two — a one-line and a one-character
+disagreement, both reported as different — which is what makes its corpus figures
+quotable.
+
+### 4b. Positive controls on the searches
+
+One search-shaped risk examined and found covered. `ocrRecognise.ts` casts
+`JSON.parse(api.GetJSONText())` to an all-optional tree, so a renamed field would
+yield **zero lines** — the reassuring answer, indistinguishable from a blank page,
+and on the very path whose product answer is *this page has no text*. What
+separates them is that the constructed cases assert named words come back from a
+page they were drawn on, and those run in CI on the Windows leg. The cast cannot
+go quiet while they pass.
+
+### 4c. Does the check derive its extent from the set it governs? — FFFFFF-2
+
+**FFFFFF-2. `ocrRecognise.proof.mjs` DECLARES `cases: CASES.length`, WHICH IS THE
+DERIVED COUNT THIS RANGE PAID TO REMOVE FROM ANOTHER FILE.** The direction the
+rule warns about, committed in the range that fixed an instance of it.
+
+The roster compares a declared count against what recorded. Deleting a label
+alone is red, and deleting a call site alone is red — but deleting **both**, which
+is what removing a case actually looks like, shrinks the two sides together and
+the roster agrees. A literal cannot agree: that is the whole of the anchor, and
+`blockEscapeResolvingWrites.proof.mjs` was given one earlier in this same range,
+by the same author, for this exact reason.
+
+`check:proofanchors` reports it as anchored, because its rule is
+`/createRoster\s*\(/` — *does this file declare a count* — and a derived count is
+a count. The check is not wrong; its question is one step short of the property,
+and that is the transferable part rather than the file. **Knowing the rule is not
+a defence** is this project's most-paid sentence, and the anchor comment that
+spells the reasoning out was in this range's own diff while the weaker form was
+written one directory along.
+
+### 5. Executed, or asserted?
+
+FFFFFF-1 is executed: the table above is one probe's output, not a reading of the
+code. The deskew-commutes argument is **reasoned and not measured**, and is
+written as such — it is why that row is excluded from the defect, so it carries
+the weaker word on purpose.
+
+### 6. Did architecture change before the feature?
+
+Yes, and the trigger fired as designed. `ff7035a` amended the seam so a pre-read
+may take an argument and a stored effect replays it (ADR-0051), in its own commit,
+before `7ddbced` built the command that needed it. Nothing was bent in place.
+
+### 7. Do the documents still match the code? — FFFFFF-3, -4, -5
+
+Three claims falsified by commits that never opened the documents holding them —
+NNN-4's hole, three times in one range.
+
+**FFFFFF-3. `docs/ARCHITECTURE.md` §3 says *the nineteen channels* split seven
+engine-agnostic and **twelve** MuPDF document-model reads, and enumerates the
+twelve.** `engine/ocr-page` is the thirteenth and the twentieth, added in this
+range — and `coreChannels.test.ts`' comment for it says *that is §3's matrix
+rather than a filing choice* while §3 does not list it. A citation that resolves
+and disagrees, which is UU-1's shape: the law is edited to be currently true, the
+amendment-log row stays as the record it is, and ADR-0048's Decision 1 takes a
+dated correction.
+
+**FFFFFF-4. `CLAUDE.md` and `docs/ARCHITECTURE.md` both carry the MuPDF
+migration's size as *nineteen modules, four of them loading an engine, fifteen
+type-only, 117 members*, measured 2026-09-09.** This range added five kernel
+modules that import the engine. Measured again 2026-09-11 by
+`npm run proof:enginesurface`: **24 modules, 7 loading, 17 type-only, 125
+members** — `PDFAnnotation` 41, `PDFObject` 22, `PDFDocument` 20, `PDFWidget` 15.
+The direction matters more than the digits: the migration got **bigger** while a
+stage was built on the engine, and a figure that only ever moves down in the
+reader's mind is the one to re-run. Both documents are live specifications of what
+is owed, so both are edited.
+
+**FFFFFF-5. `ci.yml`'s step comment says *its two corpus cases report NOT
+APPLICABLE and the nine constructed ones run*, and there are thirteen.** The same
+range that added the four cases wrote the nine. Smallest of the three and the same
+shape: a number in a comment beside the thing that changed it.
+
+### What this range says about itself
+
+Two of the five findings are defects in work written to close the previous
+defect — FFFFFF-2 in the file beside the anchor it paid, FFFFFF-5 in the comment
+beside the cases it added — which is the reason the audit is scoped to a range
+rather than run at a stage's close. The third, FFFFFF-1, is the one a range-scoped
+sweep nearly missed too: nothing in the range is *about* rotation, and what
+surfaced it was reading item 2's list of hard shapes against a feature that
+converts coordinates.
+
+Watermark advances to `622f794`.
+
+---
+
 ## 2026-09-11 — Enhance scans: the codec it waited for was already in the engine
 
 The enhance-scans row was deferred to Stage 6 on a premise, corrected once, and was
