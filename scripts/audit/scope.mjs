@@ -254,9 +254,9 @@ process.stdout.write(
 );
 if (scope.overBudget.length > 0) {
   process.stdout.write(
-    `  Audit now. The threshold is the median of batches 4-7 rather than the maximum, because\n` +
-      `  the maximum was batch 7 — the one stretch everyone agrees was too large to audit as a\n` +
-      `  unit, and the reason this gate exists.\n`,
+    `  Audit now. The threshold is SET BY THE PROJECT OWNER and is not derived. The measurement\n` +
+      `  recorded beside it in scripts/lib/auditWatermark.mjs is history — it is what the figure\n` +
+      `  used to be, and reading it as the rule computes the old number back.\n`,
   );
 }
 

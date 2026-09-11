@@ -33,6 +33,20 @@ const WATERMARK_PATH = 'docs/audit-watermark.json';
  * The 2026-08-31 reasoning above is what still justifies a figure above the
  * measurement, and this raise extends it rather than replacing it.
  *
+ * **Raised again to `{ commits: 100, files: 200 }` by the owner on 2026-09-11.**
+ * Same standing once more: owner-set, not derived, not to be re-derived, and the
+ * 2026-08-31 reasoning is still the one that justifies a figure above the
+ * measurement. What prompted it is the file axis firing mid-row: the range
+ * `38ea527..622f794` crossed 101 files inside a feature, so the audit — and the
+ * cycle of findings, fixes and tooling the 2026-08-31 note describes — landed in
+ * the middle of building rather than at a boundary the work chose.
+ *
+ * That is the axis to watch rather than the digits. A commit count is roughly a
+ * count of units of work; a FILE count is not, because one refactor across a
+ * package moves dozens of files that were never separately reasoned about. The
+ * two were raised together to keep the pair's shape, and the file axis is the one
+ * that has actually fired.
+ *
  * ## What the number used to be, and why that is kept
  *
  * The owner's first figure was `{ commits: 30, files: 60 }`, on the reasoning
@@ -62,7 +76,7 @@ const WATERMARK_PATH = 'docs/audit-watermark.json';
  * single sweeping one are both past the point where the checklist can be applied
  * carefully, and neither number alone catches both.
  */
-export const BATCH = { commits: 50, files: 100 };
+export const BATCH = { commits: 100, files: 200 };
 
 /**
  * ## The watermark never equals HEAD, and that is structural
@@ -581,8 +595,9 @@ export function explainAuditBudget(scope) {
     `Blocked here rather than reported later on purpose. check:docs measures the range against ` +
     `HEAD, and at this moment HEAD is the parent — so the commit that crosses is invisible to ` +
     `it and the board goes red one push after the fact.\n\n` +
-    `The threshold is the MEDIAN of batches 4-7, not the maximum: the maximum was batch 7, the ` +
-    `one stretch that was plainly too large to audit as a unit.\n\n`
+    `The threshold is SET BY THE PROJECT OWNER and is not derived — do not re-derive it from the ` +
+    `measurement recorded beside it in scripts/lib/auditWatermark.mjs, which is history rather ` +
+    `than the rule.\n\n`
   );
 }
 

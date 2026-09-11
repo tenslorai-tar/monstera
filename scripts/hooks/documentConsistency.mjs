@@ -757,9 +757,10 @@ registerRule({
 // watermark advanced with no findings, and findings written without the
 // watermark advancing (OO-3b, and see `auditRecordDisagreement`).
 //
-// And HEAD must be within one batch of the watermark, where "one batch" is the
-// median of batches 4 to 7 measured from this repository's own history. Past
-// that, the checklist stops being applicable to a diff anybody reads.
+// And HEAD must be within one batch of the watermark, where "one batch" is a
+// figure the project owner sets — not one derived from this repository's
+// history, which is recorded beside it as what the figure used to be. Past one
+// batch, the checklist stops being applicable to a diff anybody reads.
 registerRule({
   name: "the watermark and the journal's newest audit are the same string, and the range is within one batch",
   // Two documents and git's own history. Nothing here is decided by one blob.
@@ -799,8 +800,9 @@ registerRule({
     failures.push(
       `The unaudited range ${scope.watermark}..HEAD has grown past one batch: ` +
         `${scope.overBudget.join('; ')}. Run \`npm run audit:scope\` and apply CLAUDE.md's stage ` +
-        `audit to that range. The threshold is the MEDIAN of batches 4-7, not the maximum — the ` +
-        `maximum was batch 7, the one stretch that was plainly too large to audit as a unit.`,
+        `audit to that range. The threshold is SET BY THE PROJECT OWNER and is not derived — do ` +
+        `not re-derive it from the measurement recorded beside it in scripts/lib/` +
+        `auditWatermark.mjs, which is history rather than the rule.`,
     );
   }
   },
