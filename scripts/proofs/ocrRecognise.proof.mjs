@@ -32,7 +32,7 @@ import { join } from 'node:path';
 import { PDFDocument, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 
 import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
-import { recognisePage } from '../../packages/kernel/dist/ocrRecognise.js';
+import { loadedCore, recognisePage } from '../../packages/kernel/dist/ocrRecognise.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -81,6 +81,22 @@ const WORD = 'MONSTERA';
 /** @type {string[]} */
 const failures = [];
 
+/**
+ * The Tesseract the shipped core actually is, read from it on 2026-09-11.
+ *
+ * **`tesseract.js-core@7.0.0` carries Tesseract 5.1.0-288-g2a9c1** — four minor
+ * versions BEHIND the 5.5.2 MuPDF vendors, measured by calling
+ * `TessBaseAPI.Version()` rather than inferred from the npm version.
+ *
+ * It is pinned here because `docs/security/engine-advisories.json` carries eight
+ * verdicts reached **about this version** (the 2026-09-10 `.traineddata` class),
+ * and the register's own version mechanism cannot see it: `bundledVersions`
+ * compares MuPDF's vendored libraries, and this engine is a WASM package. So a
+ * core bump would otherwise leave eight verdicts attached to code nobody ships —
+ * exactly what that comparison exists to prevent for the DLL.
+ */
+const CORE_VERSION = '5.1.0-288-g2a9c1';
+
 const CASES = /** @type {const} */ ([
   'a constructed page is recognised, and the word drawn on it comes back',
   'THE BOX IS IN PDF USER SPACE, containing the point the word was drawn at',
@@ -93,6 +109,10 @@ const CASES = /** @type {const} */ ([
   'CONTROL: the granted directory is accepted, so the refusal above is not a constant',
   'every corpus page yields words rather than nothing',
   'CONTROL: and the confidence VARIES across them, so it is measuring the page',
+  // APPENDED RATHER THAN PUT FIRST, which is where it reads best: every label
+  // above is indexed positionally by the case that asserts it, so inserting one
+  // at the top would renumber eleven call sites for the sake of an ordering.
+  'the core is the Tesseract the advisory register was triaged against',
 ]);
 
 const roster = createRoster(failures, { cases: CASES.length });
@@ -283,11 +303,38 @@ try {
       'every directory and the case proves nothing.',
   );
 
+  // THE ENGINE'S OWN VERSION, asked of the engine. `tesseract.js-core`'s npm
+  // version says nothing about which Tesseract is inside it — 7.0.0 carries
+  // 5.1.0 — and the advisory register's eight `.traineddata` verdicts were
+  // reached about the answer below.
+  const core = await loadedCore();
+  const api = new core.TessBaseAPI();
+  let version;
+  try {
+    version = api.Version();
+  } finally {
+    api.End();
+  }
+  check(
+    CASES[11],
+    version === CORE_VERSION,
+    `the shipped core reports Tesseract ${JSON.stringify(version)} and the register was triaged ` +
+      `against ${JSON.stringify(CORE_VERSION)}. Eight verdicts in ` +
+      'docs/security/engine-advisories.json are about a crafted .traineddata parsed by THAT ' +
+      'version; re-triage them and move this pin in the same commit. `bundledVersions` in the ' +
+      'register cannot see this — it compares the libraries MuPDF vendors, and this engine is a ' +
+      'WASM package.',
+  );
+  process.stdout.write(`  core Tesseract: ${version}\n\n`);
+
   process.stdout.write('## The supplied corpus\n\n');
   const corpus = openCorpus();
   if (!corpus.available) {
     // RULE 3: an absent corpus is UNVERIFIABLE, never a pass.
-    for (const label of CASES.slice(9)) roster.record(roster.mark(), label, false);
+    // NINE AND TEN, not *the rest*: the version case is appended after them and
+    // does not need a corpus, so a bare `slice(9)` would record it as not
+    // applicable on every machine without one — which is a case going quiet.
+    for (const label of CASES.slice(9, 11)) roster.record(roster.mark(), label, false);
     process.stdout.write(`${corpus.outcome.text}\n`);
   } else {
     process.stdout.write('  id                 lines   words   confidence\n');

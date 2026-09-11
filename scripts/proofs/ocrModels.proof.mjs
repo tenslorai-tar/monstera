@@ -137,8 +137,10 @@ check(
   'every provisioned model matches its pinned digest',
   wrongDigest.length === 0,
   `${JSON.stringify(wrongDigest.map((model) => model.language))} differ from the pinned bytes. ` +
-    'Both of Tesseract 5.5.2 live advisories are reached through a crafted model, so a model ' +
-    'nobody pinned is the input this pin exists for',
+    'TEN of Tesseract’s live advisories are reached through a crafted model — two of ' +
+    '2026-08 and eight of 2026-09-10 — so a model nobody pinned is the input this pin exists ' +
+    'for. The engine this build runs is 5.1.0-288-g2a9c1 inside tesseract.js-core, not the ' +
+    '5.5.2 MuPDF vendors, and it is inside every one of those advisories’ affected range',
 );
 const wrongSize = present.filter(
   (model) => statSync(tessdataPath(root, model.language)).size !== model.bytes,

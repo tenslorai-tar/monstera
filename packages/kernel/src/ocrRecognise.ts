@@ -103,6 +103,15 @@ interface TesseractFilesystem {
 
 /** Tesseract's C++ API, as Emscripten exposes it. */
 export interface TessBaseApi {
+  /**
+   * The engine's own version string — `5.1.0-288-g2a9c1` in `tesseract.js-core@7.0.0`.
+   *
+   * Declared because a caller needs it and that caller is not this module:
+   * `proof:ocrrecognise` pins the answer, because the npm version says nothing
+   * about which Tesseract is inside and the advisory register's `.traineddata`
+   * verdicts are about a specific one.
+   */
+  Version(): string;
   Init(dataPath: string | null, language: string, oem: number): number;
   SetImageFile(exif: number, angle: number): number;
   Recognize(monitor: null): number;

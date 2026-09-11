@@ -888,6 +888,62 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Eight new Tesseract advisories, and the version nothing was watching
+
+`check:advisories` went red with **eight untriaged Tesseract advisories**, all
+published 2026-09-10, all reached through a crafted `.traineddata` file. The
+register is doing exactly what it exists for: recognition brought a second
+Tesseract into this build, and the feed moved the day after.
+
+### The summaries were empty, so they were fetched rather than guessed at
+
+OSV's answer carried no `summary` and no aliases — which is what `check:advisories`
+printed — and the full records carry a `details` paragraph each. Eight fetches
+later the class is unambiguous: every one is a memory-safety defect in a model
+parser, five on the default LSTM path, three in legacy-classifier components, and
+one a deterministic crash rather than a controlled write. Present in **5.5.3 and
+earlier**.
+
+### AND THE ENGINE THIS BUILD RUNS IS NOT THE ONE THE REGISTER WAS ABOUT
+
+Measured, because the npm version says nothing about it:
+`TessBaseAPI.Version()` on the shipped `tesseract.js-core@7.0.0` answers
+**`5.1.0-288-g2a9c1`** — four minor versions *behind* the 5.5.2 MuPDF vendors, and
+inside every one of the eight affected ranges.
+
+That is the finding worth more than the triage. The register has a mechanism for
+exactly this — `bundledVersions` turns red when a MuPDF bump moves a vendored
+parser, *"so a MuPDF bump that changes a vendored library turns this red instead
+of leaving verdicts attached to a parser nobody ships any more"* — and it reads
+`nativeComponents.json`, which describes the **DLL**. The engine the application
+actually loads is a WASM package that mechanism cannot see. Ten verdicts were
+therefore about a version with nothing watching it.
+
+`proof:ocrrecognise` now pins the answer and says why in its failure message: a
+core bump reddens the proof and sends the reader to re-triage the eight. Verified
+in the biting direction — pinning `5.5.2` fails with the live reading quoted.
+
+### The verdicts: AFFECTED, NOT REACHABLE, and two of the reasons are independent
+
+- **The attacker input is the MODEL, not the document.** Models are provisioned
+  against pinned SHA-256s over a host-locked download, `proof:ocrmodels` re-checks
+  every provisioned file's digest on every run, the datadir comes from main and
+  the language from a closed enum (ADR-0014 constraint 1). A crafted model needs
+  write access to the user's disk, which is write access to this application's own
+  code.
+- **Three of the eight are LEGACY ONLY.** `Init(dataPath, language, 1)` is
+  `OEM_LSTM_ONLY` and the provisioned `4.0.0_fast` models carry no legacy
+  components, so `ReadNormProtos` and `ReadIntTemplates` are not called at all.
+- **And the parse happens inside the contained host** (invariant 25): no network,
+  no filesystem beyond what it was handed, job-limited. The one whose outcome is a
+  crash is a state the supervisor already treats as expected.
+
+Each verdict is written per id with its own code path rather than as one class
+verdict, because the register reserves that shape for *predates the version* and
+these do not.
+
+---
+
 ## 2026-09-11 — D6 rows 2 and 3 close together, and the grant the host did not have
 
 `ocrPage` recognises one page inside the engine host and writes its text into that
