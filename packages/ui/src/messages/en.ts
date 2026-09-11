@@ -235,6 +235,7 @@ export const SPELL_CHECK_ADD = messageKey('dialog.spell-check.add');
 export const SPELL_CHECK_ADDED = messageKey('dialog.spell-check.added');
 export const SPELL_CHECK_SAVE = messageKey('dialog.spell-check.save');
 export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
+export const OCR_EXPORT_COMMAND_TITLE = messageKey('command.ocr-export.title');
 export const OCR_TITLE = messageKey('dialog.ocr.title');
 export const OCR_UNAVAILABLE = messageKey('dialog.ocr.unavailable');
 export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
@@ -755,6 +756,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the ribbon group, where a reader who knows the word will look for it; the
   // command says what happens to their document.
   [OCR_COMMAND_TITLE]: 'Make scanned pages searchable',
+  // NAMES THE FILE, because that is the difference from the command above: both
+  // recognise, and this one also writes a copy.
+  [OCR_EXPORT_COMMAND_TITLE]: 'Export a searchable copy',
   [OCR_TITLE]: 'Recognise text',
   // SAYS WHAT IS MISSING AND WHAT IT IS FOR, which is §10.5's no-binary state: a
   // dialog reading "unavailable" tells a reader nothing they can act on.

@@ -226,7 +226,7 @@ export interface DocumentCommandDeps {
  * @param failure exactly what the client answered — narrowed by the boundary, so
  *   an `incident` exists precisely when the code is `internal`.
  */
-function reportProblem(
+export function reportProblem(
   deps: Pick<DocumentCommandDeps, 'ask'>,
   failure: z.infer<typeof COMMAND_PROBLEM_DIALOG.props>,
 ): void {

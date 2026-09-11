@@ -6,7 +6,7 @@ import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
 import type { CommandContext } from '../registries/commands.js';
 import { type TrackTask, UNTRACKED } from '../runningTask.js';
-import { recogniseTextCommand } from './recogniseText.js';
+import { exportSearchableCommand, recogniseTextCommand } from './recogniseText.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fe');
 
@@ -62,9 +62,10 @@ type ScriptedKind = 'text' | 'image-only' | 'empty';
 function clientOver(
   kinds: readonly (ScriptedKind | 'refused')[],
   options: { readonly languages?: readonly string[]; readonly refuseExecute?: boolean } = {},
-): { client: ContractClient; dispatched: Command[]; read: number[] } {
+): { client: ContractClient; dispatched: Command[]; read: number[]; copies: () => number } {
   const dispatched: Command[] = [];
   const read: number[] = [];
+  let copies = 0;
   const client = createClient(channels, (id, params) => {
     if (id === 'app.ocrLanguages') {
       return Promise.resolve(ok({ languages: options.languages ?? ['eng'] }));
@@ -90,9 +91,13 @@ function clientOver(
         ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0 }),
       );
     }
+    if (id === 'document.saveCopy') {
+      copies += 1;
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: 2048 }));
+    }
     throw new Error(`unexpected channel ${id}`);
   });
-  return { client, dispatched, read };
+  return { client, dispatched, read, copies: () => copies };
 }
 
 /** Records what the command opened, and answers the setup dialog from a script. */
@@ -296,6 +301,54 @@ describe('the recognise-text command', () => {
     // page a question that has just been answered, and report it each time.
     expect(dispatched).toHaveLength(1);
     expect(read).toStrictEqual([0]);
+  });
+
+  it('EXPORT: recognises every scanned page and then writes a copy', async () => {
+    const { client, dispatched, read, copies } = clientOver(['image-only', 'text', 'image-only']);
+    const { ask } = recordingAsk({ pages: [0], language: 'eng' });
+
+    await exportSearchableCommand({
+      client,
+      onApplied: () => undefined,
+      ask,
+      track: UNTRACKED,
+    }).run(contextWith(3));
+
+    // THE WHOLE DOCUMENT, whatever scope the dialog answered — an export is every
+    // page by definition, and the dialog is reused for its language rather than
+    // its scope. The answer above says page 0 only, and all three are read.
+    expect(read).toStrictEqual([0, 1, 2]);
+    expect(dispatched).toStrictEqual([
+      { kind: 'ocrPage', page: 0, language: 'eng' },
+      { kind: 'ocrPage', page: 2, language: 'eng' },
+    ]);
+    expect(copies()).toBe(1);
+  });
+
+  it('EXPORT: writes NO copy when the reader cancels', async () => {
+    const { client, copies } = clientOver(['image-only', 'image-only']);
+    const { ask, opened } = recordingAsk({ pages: 'all', language: 'eng' });
+    const controller = new AbortController();
+    const track: TrackTask = () => ({
+      signal: controller.signal,
+      step: () => {
+        controller.abort();
+      },
+      end: () => undefined,
+    });
+
+    await exportSearchableCommand({ client, onApplied: () => undefined, ask, track }).run(
+      contextWith(2),
+    );
+
+    // HALF A DOCUMENT'S PAGES RECOGNISED AND A FILE CALLED SEARCHABLE is the pair
+    // this must not produce. The outcome is still reported, because the pages
+    // already recognised are in the open document.
+    expect(copies()).toBe(0);
+    expect(opened[1]).toStrictEqual({
+      id: OCR_OUTCOME_DIALOG_ID,
+      props: { recognised: 1, skipped: 0, stopped: true },
+    });
   });
 
   it('stops when a page’s kind cannot be read', async () => {

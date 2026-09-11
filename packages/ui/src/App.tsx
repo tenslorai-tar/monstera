@@ -83,7 +83,7 @@ import { FindBar } from './FindBar.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { type RunningTask, trackerOver } from './runningTask.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
-import { recogniseTextCommand } from './commands/recogniseText.js';
+import { exportSearchableCommand, recogniseTextCommand } from './commands/recogniseText.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
@@ -1219,6 +1219,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         // once per page, so the status bar is where a reader watches it and where
         // the cancel lives.
         recogniseTextCommand({ client, onApplied: applied, ask, track }),
+        // THE SAME WALK AND ONE MORE CHANNEL. D6 row 5 is *export searchable PDF*,
+        // and once rows 2 and 3 landed there was nothing left but the sequence —
+        // which is why it registers beside the command it shares a walk with
+        // rather than growing a pipeline of its own.
+        exportSearchableCommand({ client, onApplied: applied, ask, track }),
         insertImageCommand({ client, onApplied: applied, ask }),
         mergeDocumentCommand({ client, onApplied: applied, ask }),
         insertFromPdfCommand({ client, onApplied: applied, ask }),

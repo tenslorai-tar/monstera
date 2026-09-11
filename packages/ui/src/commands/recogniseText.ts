@@ -1,12 +1,24 @@
-import { MAX_TEXT_LAYER_LINES } from '@monstera/contract';
+import { MAX_TEXT_LAYER_LINES, type OcrLanguage } from '@monstera/contract';
+import type { DocId } from '@monstera/shared';
 
 import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
 import { OCR_RESULT } from '../dialogs/ocrResult.js';
-import { GROUP_OCR, OCR_COMMAND_TITLE, OCR_PROGRESS } from '../messages/en.js';
+import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
+import {
+  GROUP_OCR,
+  OCR_COMMAND_TITLE,
+  OCR_EXPORT_COMMAND_TITLE,
+  OCR_PROGRESS,
+} from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
-import { type DocumentCommandDeps, applyDocumentCommand, hasDocument } from './documentCommands.js';
+import {
+  type DocumentCommandDeps,
+  applyDocumentCommand,
+  hasDocument,
+  reportProblem,
+} from './documentCommands.js';
 
 /**
  * Recognises the text on a document's scanned pages and writes it into them.
@@ -93,58 +105,176 @@ export function recogniseTextCommand(
           ? Array.from({ length: pageCount }, (_unused, index) => index)
           : parsed.data.pages;
 
-      const task = deps.track(OCR_PROGRESS, targets.length);
-      // A FUNCTION rather than a read of `signal.aborted` at each site, which is
-      // `showWordCount`'s shape: the two checks in the loop must ask the same
-      // question, and a second spelling of it is where they stop doing so.
-      const aborted = (): boolean => task.signal.aborted;
-      let recognised = 0;
-      let skipped = 0;
-      let done = 0;
-      try {
-        for (const target of targets) {
-          if (aborted()) break;
-          const layer = await deps.client['document.pageTextLayer']({
-            docId,
-            page: target,
-            limit: MAX_TEXT_LAYER_LINES,
-          });
-          if (aborted()) break;
-          if (!layer.ok) break;
-          if (layer.value.kind !== 'image-only') {
-            // A BLANK PAGE IS SKIPPED TOO, and it is not counted as one that
-            // already had text: `'empty'` is *no raster and no text*, so there is
-            // nothing on it to read. Counting it with the skipped pages would tell
-            // a reader a blank sheet already carried words.
-            if (layer.value.kind === 'text') skipped += 1;
-            done += 1;
-            task.step(done);
-            continue;
-          }
-
-          const applied = await applyDocumentCommand(deps, docId, {
-            kind: 'ocrPage',
-            page: target,
-            language: parsed.data.language,
-          });
-          // A REFUSED PAGE STOPS THE WALK. `applyDocumentCommand` has already
-          // reported it, and carrying on would stack one dialog per page behind a
-          // condition — a closed document, a poisoned one — that is not going to
-          // clear itself.
-          if (!applied) break;
-          recognised += 1;
-          done += 1;
-          task.step(done);
-        }
-      } finally {
-        task.end();
-      }
+      const walked = await recogniseScope(deps, docId, targets, parsed.data.language);
 
       // REPORTED EVEN WHEN IT DID NOTHING, because *nothing needed recognising* is
       // the one outcome a reader cannot see in their document — and reported after
       // a cancel too, which is this command's own rule rather than the spell
       // check's: the pages already done carry real text.
-      void deps.ask(OCR_OUTCOME_DIALOG_ID, { recognised, skipped, stopped: aborted() });
+      void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+    },
+  };
+}
+
+/** What a walk did, and the shape `dialog.ocr-outcome` renders. */
+export interface RecognisedWalk {
+  readonly recognised: number;
+  readonly skipped: number;
+  readonly stopped: boolean;
+}
+
+/**
+ * Recognises the image-only pages of a scope, one command each.
+ *
+ * **One walk, two commands.** `document.ocr` and
+ * `document.export-searchable` both need *recognise the pages that need it, with
+ * progress and a cancel*, and two copies of this loop would be two opinions about
+ * which pages need it — the second one agreeing with the first for every ordinary
+ * document and differing on a blank page (B3a). The export is the caller that
+ * made it a function rather than the reason it exists.
+ *
+ * @param targets the pages to consider, already resolved from the scope.
+ */
+export async function recogniseScope(
+  deps: DocumentCommandDeps & { readonly track: TrackTask },
+  docId: DocId,
+  targets: readonly number[],
+  language: OcrLanguage,
+): Promise<RecognisedWalk> {
+  const task = deps.track(OCR_PROGRESS, targets.length);
+  // A FUNCTION rather than a read of `signal.aborted` at each site, which is
+  // `showWordCount`'s shape: the two checks in the loop must ask the same
+  // question, and a second spelling of it is where they stop doing so.
+  const aborted = (): boolean => task.signal.aborted;
+  let recognised = 0;
+  let skipped = 0;
+  let done = 0;
+  try {
+    for (const target of targets) {
+      if (aborted()) break;
+      const layer = await deps.client['document.pageTextLayer']({
+        docId,
+        page: target,
+        limit: MAX_TEXT_LAYER_LINES,
+      });
+      if (aborted()) break;
+      if (!layer.ok) break;
+      if (layer.value.kind !== 'image-only') {
+        // A BLANK PAGE IS SKIPPED TOO, and it is not counted as one that
+        // already had text: `'empty'` is *no raster and no text*, so there is
+        // nothing on it to read. Counting it with the skipped pages would tell
+        // a reader a blank sheet already carried words.
+        if (layer.value.kind === 'text') skipped += 1;
+        done += 1;
+        task.step(done);
+        continue;
+      }
+
+      const applied = await applyDocumentCommand(deps, docId, {
+        kind: 'ocrPage',
+        page: target,
+        language,
+      });
+      // A REFUSED PAGE STOPS THE WALK. `applyDocumentCommand` has already
+      // reported it, and carrying on would stack one dialog per page behind a
+      // condition — a closed document, a poisoned one — that is not going to
+      // clear itself.
+      if (!applied) break;
+      recognised += 1;
+      done += 1;
+      task.step(done);
+    }
+  } finally {
+    task.end();
+  }
+  return { recognised, skipped, stopped: aborted() };
+}
+
+/**
+ * Recognises every scanned page and writes a copy of the document.
+ *
+ * ## IT IS A REGISTRATION OVER TWO THINGS THAT ALREADY EXIST
+ *
+ * D6 row 5 asks for *export searchable PDF*, and once rows 2 and 3 landed there was
+ * nothing left to build but the sequence: recognise the pages that need it, then
+ * `document.saveCopy` — the same channel `saveCopyCommand` uses, which puts the
+ * picker in main where every other write's picker is.
+ *
+ * **It does not go through `TessPDFRenderer`**, which is the alternative the core
+ * makes available and which would rebuild the document from rasters. That loses
+ * every page that already carries real text — replacing typed words with a
+ * recognition of a picture of them — and it loses annotations, form fields and the
+ * outline with them. A text layer written into the page keeps all of it, which is
+ * row 3's shape and is why both rows use it.
+ *
+ * ## WHAT IT DOES TO THE OPEN DOCUMENT, said rather than hidden
+ *
+ * The recognition is applied to the document, so an export **also leaves the text
+ * in the open document**, undoable page by page. The alternative — write the layer
+ * into the copy's bytes only — needs a write path that does not reach the session,
+ * which is the *which bytes win* question `savePipeline.ts` already carries as an
+ * open B4. Doing it quietly here would be answering that question underneath a
+ * feature, which is the failure this project exists to prevent.
+ *
+ * So the outcome dialog reports both halves, and a reader who wanted only the copy
+ * has undo.
+ */
+export function exportSearchableCommand(
+  deps: DocumentCommandDeps & { readonly track: TrackTask },
+): UiCommand {
+  return {
+    id: 'document.export-searchable',
+    title: OCR_EXPORT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 20 }],
+    when: hasDocument,
+    run: async (context: CommandContext): Promise<void> => {
+      const { docId, page, pageCount } = context;
+      if (docId === undefined || page === undefined || pageCount === undefined) return;
+
+      const models = await deps.client['app.ocrLanguages']({});
+      if (!models.ok) return;
+
+      // THE SAME DIALOG, and the scope it answers is ignored deliberately: an
+      // export is the whole document by definition, and a second dialog differing
+      // only in the absence of two buttons would be a second place the language
+      // list is rendered. The answer's `language` is what this command needs.
+      const answered = await deps.ask(OCR_DIALOG_ID, {
+        page,
+        languages: models.value.languages,
+      });
+      const parsed = OCR_RESULT.safeParse(answered);
+      if (!parsed.success) return;
+
+      const walked = await recogniseScope(
+        deps,
+        docId,
+        Array.from({ length: pageCount }, (_unused, index) => index),
+        parsed.data.language,
+      );
+      // A CANCELLED WALK WRITES NO COPY. Half a document's pages recognised and a
+      // file on disk called *searchable* is the pair this build must not produce —
+      // and the pages already done are still in the open document, which the
+      // outcome says.
+      if (walked.stopped) {
+        void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+        return;
+      }
+
+      const copied = await deps.client['document.saveCopy']({ docId });
+      if (!copied.ok) {
+        reportProblem(deps, copied.error);
+        return;
+      }
+      if (copied.value.kind === 'copied' || copied.value.kind === 'cancelled') {
+        // `saveCopyCommand`'s rule: the file is where the user put it, or they are
+        // the one who cancelled. What is NOT silent is what happened to the open
+        // document, which is why the outcome is still reported.
+        void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+        return;
+      }
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: copied.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
     },
   };
 }

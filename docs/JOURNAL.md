@@ -888,6 +888,46 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Row 5: the sequence, and the renderer NOT taken
+
+`document.export-searchable` recognises every image-only page and then calls
+`document.saveCopy` — the same channel `saveCopyCommand` uses, so the picker stays
+in main. D6 row 5 needed nothing else built, which is row 4's shape one row along:
+once the text goes into the page, *export searchable PDF* is a sequence rather than
+a pipeline.
+
+One walk serves both OCR commands (`recogniseScope`). Two copies of *which pages
+need recognising* would agree on every ordinary document and differ on a blank page,
+which is B3a's tell rather than a tidiness argument.
+
+### `TessPDFRenderer` was the alternative, and it is refused on FIDELITY
+
+The core ships it, it needs no third library, and this block began expecting to use
+it here — whole-document rendering being the shape this row seemed to want. It
+rebuilds the document from rasters: every page that already carries real text comes
+back as a recognition of a picture of it, and the annotations, fields and outline do
+not come back at all.
+
+A layer written into the page keeps all of it. So both rows use the same writer, and
+the reason is not that the renderer was wrong — it is that row 3's **graft** made it
+unnecessary. That is the second decision in this stage the font measurement paid
+for.
+
+### Two things said rather than hidden
+
+**An export also leaves the text in the open document**, undoable page by page.
+Writing the layer into the copy's bytes alone needs a write path that does not reach
+the session, which is the *which bytes win* question `savePipeline.ts` carries as an
+open B4 — and answering that underneath a feature is the failure this project exists
+to prevent. The outcome dialog reports what happened to the document, and a reader
+who wanted only the copy has undo.
+
+**A cancelled walk writes no copy.** Half a document recognised and a file called
+*searchable* is the pair that must not exist; the case asserting it is what
+separates this from a command that always writes.
+
+---
+
 ## 2026-09-11 — Row 4: search integration needed a case, not a feature
 
 D6 row 4 is done and nothing was built for it. That is the interesting part rather
