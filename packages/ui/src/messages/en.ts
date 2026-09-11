@@ -235,6 +235,8 @@ export const SPELL_CHECK_ADD = messageKey('dialog.spell-check.add');
 export const SPELL_CHECK_ADDED = messageKey('dialog.spell-check.added');
 export const SPELL_CHECK_SAVE = messageKey('dialog.spell-check.save');
 export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
+export const HANDWRITING_FETCH_TITLE = messageKey('command.handwriting.fetch.title');
+export const HANDWRITING_CLEAR_TITLE = messageKey('command.handwriting.clear.title');
 export const OCR_EXPORT_COMMAND_TITLE = messageKey('command.ocr-export.title');
 export const ENHANCE_COMMAND_TITLE = messageKey('command.enhance-scans.title');
 export const ENHANCE_OUTCOME_TITLE = messageKey('dialog.enhance-outcome.title');
@@ -298,6 +300,7 @@ export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
   'setting.editing.personal-dictionary.title',
 );
 export const EDITING_OCR_LANGUAGE_TITLE = messageKey('setting.editing.ocr-language.title');
+export const EDITING_TROCR_SIZE_TITLE = messageKey('setting.editing.trocr-size.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const SECOND_RENDERER_TITLE = messageKey('setting.viewing.second-renderer.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
@@ -470,6 +473,7 @@ export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
 export const SNAPSHOT_TOOL_TITLE = messageKey('command.view.snapshot');
 export const PLACE_IMAGE_TOOL_TITLE = messageKey('command.annotate.image');
 export const OCR_REGION_TOOL_TITLE = messageKey('command.tools.ocr-region');
+export const HANDWRITING_REGION_TOOL_TITLE = messageKey('command.tools.handwriting-region');
 export const LINK_ADDRESS_TOOL_TITLE = messageKey('command.annotate.link-address');
 export const LINK_PAGE_TOOL_TITLE = messageKey('command.annotate.link-page');
 export const LINK_ADDRESS_TITLE = messageKey('dialog.link-address.title');
@@ -764,6 +768,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the ribbon group, where a reader who knows the word will look for it; the
   // command says what happens to their document.
   [OCR_COMMAND_TITLE]: 'Make scanned pages searchable',
+  // THE SIZE IS IN THE TITLE and the number is not: the download is 67 MB for
+  // the small model and 339 MB for the large one, so a figure here would be
+  // right for one setting and wrong for the other.
+  [HANDWRITING_FETCH_TITLE]: 'Download the handwriting model',
+  [HANDWRITING_CLEAR_TITLE]: 'Remove the downloaded handwriting model',
   // NAMES THE FILE, because that is the difference from the command above: both
   // recognise, and this one also writes a copy.
   [OCR_EXPORT_COMMAND_TITLE]: 'Export a searchable copy',
@@ -813,6 +822,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_LANGUAGE_NAMES.chi_sim]: 'Chinese (Simplified)',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition language',
+  [EDITING_TROCR_SIZE_TITLE]: 'Handwriting model size',
   [RULER_UNIT_TITLE]: 'Ruler unit',
   // SAYS WHAT IT IS, NOT THAT IT IS BETTER. The row was called *HD render* and
   // §6.1 called the engine behind it *higher fidelity*; both were amended on
@@ -1185,6 +1195,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to a reader who has not met the acronym; the words it puts on the page are what
   // they are after.
   [OCR_REGION_TOOL_TITLE]: 'Recognise text in a box',
+  // ONE LINE, and the title says so rather than leaving it to be discovered:
+  // TrOCR reads a single text line, so a reader who drags a box over a
+  // paragraph gets one line's worth of answer (ADR-0052 §4).
+  [HANDWRITING_REGION_TOOL_TITLE]: 'Recognise one line of handwriting',
   [LINK_ADDRESS_TOOL_TITLE]: 'Link to a web address',
   [LINK_PAGE_TOOL_TITLE]: 'Link to a page',
   [LINK_ADDRESS_TITLE]: 'Link to a web address',

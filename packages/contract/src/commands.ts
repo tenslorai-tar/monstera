@@ -1,7 +1,13 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
-import { OCR_LANGUAGES, docIdSchema, docVersionSchema } from './schemas.js';
+import {
+  OCR_ENGINES,
+  OCR_LANGUAGES,
+  TROCR_SIZES,
+  docIdSchema,
+  docVersionSchema,
+} from './schemas.js';
 
 /**
  * Every mutation the renderer can ask for, declared **once** (ADR-0009 §6).
@@ -1020,7 +1026,51 @@ export const ocrPageSchema = z.object({
    * a geometry the kernel already holds.
    */
   region: annotationRectSchema.optional(),
+  /**
+   * Which recogniser answers — [ADR-0052](../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
+   * Decision 1.
+   *
+   * `tesseract` for a page or a region in one of fourteen languages;
+   * `handwriting` for **a region only**, where the language field is carried and
+   * not used, because both TrOCR repositories are English and the answer says
+   * `eng` whatever was asked.
+   */
+  engine: z.enum(OCR_ENGINES),
+  /**
+   * Which TrOCR the handwriting engine loads — `BUILD-PROMPT.md`:619's setting.
+   *
+   * **Always present and used by one engine**, exactly as `language` is always
+   * present and used by the other. The alternative was making each optional and
+   * required per engine, which needs a nested discriminator this payload cannot
+   * carry (see below) and leaves two fields that are sometimes absent for
+   * reasons a reader has to reconstruct.
+   *
+   * It comes from the settings the surface read when it dispatched, not from a
+   * default here: a default would be a second place that decides which model
+   * runs, and the setting would then be a control that appears to do nothing.
+   */
+  trocrSize: z.enum(TROCR_SIZES),
+}).refine((command) => command.engine !== 'handwriting' || command.region !== undefined, {
+  message:
+    'The handwriting engine reads one text line and is never offered on a page (ADR-0052 §4), ' +
+    'so a handwriting recognition must carry the region the reader dragged.',
+  path: ['region'],
 });
+
+/**
+ * ## Why this one boundary REFUSES where the host boundary cannot EXPRESS
+ *
+ * `engine/ocr-page`'s schema is a discriminated union, so a handwriting request
+ * without a region is a shape the wire cannot carry at all — B5, at the boundary
+ * invariant 25 calls hostile.
+ *
+ * Here the discriminator would have to be a second one nested inside
+ * `commandsSchema`'s own `kind`, which is the one field every command router in
+ * this build dispatches on. A refusal at this boundary is a real mechanism
+ * rather than a comment — main validates every payload the renderer sends and
+ * this one is rejected before a command exists — and the difference between the
+ * two is stated here so the weaker one is not read as the same guarantee.
+ */
 
 /**
  * A colour an annotation is drawn in, as the three components `/C` holds.

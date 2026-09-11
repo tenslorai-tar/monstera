@@ -147,3 +147,51 @@ export const OCR_LANGUAGES = [
 
 /** One of {@link OCR_LANGUAGES}. */
 export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
+
+/**
+ * Which recogniser answers — **the request names it, and nothing else chooses**.
+ *
+ * [ADR-0052](../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
+ * Decision 1. §3's matrix assigns *a raster becomes characters and their boxes*
+ * to one concern, and a second engine answering the same question is B3 unless
+ * the selection lives in one explicit place. The alternative — a second command,
+ * a second channel and a second surface — would put *which recogniser* in as
+ * many places as there are callers, and both engines answer the same shape
+ * precisely so they need not have one each.
+ *
+ * - `tesseract` reads a page or a region, in one of {@link OCR_LANGUAGES}, from
+ *   models this build provisions.
+ * - `handwriting` is TrOCR, **offered on a region only** — it reads one text
+ *   line, which is the model rather than the wiring, and a page of thirty lines
+ *   is thirty encoder runs. Its stack downloads on demand and is never bundled.
+ *
+ * Named for what a reader is choosing rather than for the library behind it: a
+ * person picks *handwriting*, and `trocr` would put a model's name in a surface
+ * and in every payload that carries the choice.
+ */
+export const OCR_ENGINES = ['tesseract', 'handwriting'] as const;
+
+/** One of {@link OCR_ENGINES}. */
+export type OcrEngine = (typeof OCR_ENGINES)[number];
+
+/**
+ * Which TrOCR the handwriting engine loads — `BUILD-PROMPT.md`:619's setting.
+ *
+ * Measured 2026-09-11 against the repositories themselves, quantised, the two
+ * files a run needs plus the tokenizer:
+ *
+ * | size | bytes | tokenizer |
+ * |---|---|---|
+ * | `small` | 67,737,573 | `Unigram` + `Metaspace` |
+ * | `base` | 339,045,465 | `BPE` + `ByteLevel` |
+ *
+ * **The tokenizer family differs between them**, which is not a detail: a
+ * detokeniser written for one and handed the other's ids produces an empty
+ * string, and an empty string is this feature's own reassuring answer — *the
+ * image has no text*. So the family travels in the manifest beside the digests
+ * rather than being inferred at the point of decoding.
+ */
+export const TROCR_SIZES = ['small', 'base'] as const;
+
+/** One of {@link TROCR_SIZES}. */
+export type TrocrSize = (typeof TROCR_SIZES)[number];

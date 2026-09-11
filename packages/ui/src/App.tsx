@@ -88,6 +88,7 @@ import {
   exportSearchableCommand,
   recogniseTextCommand,
 } from './commands/recogniseText.js';
+import { handwritingModelCommands } from './commands/handwritingModel.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
@@ -172,6 +173,7 @@ import {
   MEASURE_SCALE_SETTING,
   MEASURE_UNIT_SETTING,
   OCR_LANGUAGE_SETTING,
+  TROCR_SIZE_SETTING,
 } from './settings/editing.js';
 import { CommentStylesPanel } from './CommentStylesPanel.js';
 import { StylePanel } from './StylePanel.js';
@@ -376,6 +378,16 @@ export function App({ client, settings }: AppProps): ReactElement {
   // only callers of `set` are registered commands, which do not exist until
   // this component has built the registry above.
   useEffect(() => persistSettings(client, settings, ask), [client, settings, ask]);
+
+  /**
+   * Whether the handwriting engine's downloaded stack is on this machine.
+   *
+   * **FALSE UNTIL MAIN SAYS OTHERWISE**, which is the right way round for a
+   * feature that is never bundled: the first paint of a machine that has never
+   * fetched shows no handwriting tool, rather than showing one and withdrawing
+   * it. A tool that appears and vanishes reads as a defect; a tool that appears
+   * when the download lands reads as the download working.
+   */
 
   // WHAT A COMMAND LEFT BEHIND, applied to the open document.
   //
@@ -1027,6 +1039,54 @@ export function App({ client, settings }: AppProps): ReactElement {
   // and handed to the registries. The OCR dialog offers the provisioned list and
   // writes this value; the tool has no dialog and reads it.
   const ocrLanguage = useSetting(settings, OCR_LANGUAGE_SETTING);
+  /** The handwriting registration's model size. Read here for the same reason. */
+  const trocrSize = useSetting(settings, TROCR_SIZE_SETTING);
+
+  /**
+   * Whether the handwriting engine's downloaded stack is on this machine.
+   *
+   * **FALSE UNTIL MAIN SAYS OTHERWISE**, which is the right way round for a
+   * feature that is never bundled: the first paint of a machine that has never
+   * fetched shows no handwriting tool, rather than showing one and withdrawing
+   * it. A tool that appears and vanishes reads as a defect; a tool that appears
+   * when the download lands reads as the download working.
+   */
+  const [handwritingReady, setHandwritingReady] = useState(false);
+
+  /**
+   * Asks main, and answers in a CALLBACK rather than by awaiting.
+   *
+   * `react-hooks/set-state-in-effect` traces a named async function called from
+   * an effect body and rejects it — correctly, and the rule's own second clause
+   * says what the legal shape is: *subscribe for updates from some external
+   * system, calling setState in a callback*. Main is that external system and
+   * this is the subscription's one-shot form.
+   *
+   * The `live` flag is not ceremony: the size can change while an answer is in
+   * flight, and without it a slow answer about `small` would overwrite a fast
+   * one about `base` — the tool appearing for a model nobody downloaded.
+   */
+  const refreshHandwriting = useCallback((): (() => void) => {
+    let live = true;
+    void client['app.handwritingCache']({ size: trocrSize }).then(
+      (answer) => {
+        // A REFUSAL IS NOT A READY CACHE. This channel declares no failure code,
+        // so `ok === false` is an internal one — and treating it as ready would
+        // mount a tool whose first drag fails.
+        if (live) setHandwritingReady(answer.ok && answer.value.ready);
+      },
+      () => {
+        if (live) setHandwritingReady(false);
+      },
+    );
+    return (): void => {
+      live = false;
+    };
+  }, [client, trocrSize]);
+
+  // RE-ASKED WHEN THE SIZE CHANGES, because `ready` is per size: a reader who
+  // switches to `base` has not downloaded it, and the tool must go until they do.
+  useEffect(() => refreshHandwriting(), [refreshHandwriting]);
   const scale = useMemo<MeasureScale>(
     () => ({ perPoint: scalePerPoint, unit: scaleUnit }),
     [scalePerPoint, scaleUnit],
@@ -1149,10 +1209,22 @@ export function App({ client, settings }: AppProps): ReactElement {
           // a stale capture unrepresentable on its side; this list is what keeps
           // the value it reads current.
           language: () => ocrLanguage,
+          // THE SAME MECHANISM, and it is listed below for the same reason.
+          trocrSize: () => trocrSize,
           onPlaceImage,
         }),
       ),
-    [ask, listAnnotations, ocrLanguage, onPlaceImage, onSnapshot, readSelection, scale, style],
+    [
+      ask,
+      listAnnotations,
+      ocrLanguage,
+      onPlaceImage,
+      onSnapshot,
+      readSelection,
+      scale,
+      style,
+      trocrSize,
+    ],
   );
 
   const rulers = useSetting(settings, RULERS_SETTING);
@@ -1283,7 +1355,25 @@ export function App({ client, settings }: AppProps): ReactElement {
         // `registries/tools.ts`' business, and the shared id is the join.
         // SPREAD from one list rather than named individually, so the set of
         // tools has one place it is written down.
-        ...shapeToolCommands({ activeTool: readTool, onSelect: setToolId }),
+        ...shapeToolCommands({
+          activeTool: readTool,
+          onSelect: setToolId,
+          // THE HANDWRITING TOOL'S GATE. Its stack is downloaded on demand, so
+          // without this the tool would be a control that dispatches a command
+          // the engine refuses for a file nobody fetched.
+          handwritingReady: () => handwritingReady,
+        }),
+        // THE DOWNLOAD AND ITS REMOVAL, which is what a reader meets while the
+        // tool above is hidden. `onChanged` re-asks main, so the tool appears
+        // when the fetch lands and disappears when the cache is cleared.
+        ...handwritingModelCommands({
+          client,
+          size: () => trocrSize,
+          ask,
+          onChanged: () => {
+            refreshHandwriting();
+          },
+        }),
         deleteSelectionCommand(selectionDeps),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
@@ -1305,13 +1395,21 @@ export function App({ client, settings }: AppProps): ReactElement {
       ask,
       changeZoom,
       client,
+      // THE PREDICATE'S OWN VALUE, and it has to be here for the same reason
+      // `ocrLanguage` does one memo along: `when: () => handwritingReady` closes
+      // over this render's value, so without the dependency the handwriting tool
+      // would stay hidden for the session however many models were downloaded —
+      // a control that never appears, which reads as a download that failed.
+      handwritingReady,
       navigator,
       openCommand,
       openPalette,
       readTool,
+      refreshHandwriting,
       selectionDeps,
       settings,
       track,
+      trocrSize,
     ],
   );
 

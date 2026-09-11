@@ -75,6 +75,36 @@ export class DownloadRefused extends Error {
 const MAX_REDIRECTS = 5;
 
 /**
+ * Whether one host is on the list, where an entry may be `*.example.com`.
+ *
+ * ## Why a suffix entry exists, measured rather than anticipated
+ *
+ * HuggingFace answers an LFS `resolve` URL with a 302 to a **regional** host —
+ * `us.aws.cdn.hf.co` from here on 2026-09-11, and a different region for a
+ * different reader. An exact list cannot name it: it would work on the machine
+ * it was written on and refuse the model download everywhere else, which is a
+ * defect only some users have.
+ *
+ * **It is still a compile-time constant and still host-locking.** What an
+ * attacker must not be able to do is choose the host, and `*.hf.co` leaves that
+ * choice with whoever controls DNS for `hf.co`. What it gives up is stated: any
+ * subdomain of a wildcarded name is reachable, so a wildcard belongs only on a
+ * domain whose whole subdomain space is the vendor's.
+ *
+ * **The dot is load-bearing and is why this is a function rather than an
+ * `endsWith` at the call site.** `evil-hf.co` ends with `hf.co` and is a
+ * different registrable domain; the suffix compared is `.hf.co`, and the bare
+ * name is accepted separately rather than by dropping the dot.
+ */
+function hostAllowed(host: string, allowedHosts: readonly string[]): boolean {
+  return allowedHosts.some((entry) => {
+    if (!entry.startsWith('*.')) return entry === host;
+    const domain = entry.slice(1); // `*.hf.co` -> `.hf.co`
+    return host.endsWith(domain) || host === domain.slice(1);
+  });
+}
+
+/**
  * Guarantees 1 and 2 for one URL.
  *
  * Applied to **every** hop rather than to the first, which is what makes it
@@ -90,7 +120,7 @@ function assertAllowed(url: string, allowedHosts: readonly string[]): URL {
       `Refusing non-HTTPS download: ${parsed.protocol}//${parsed.host}`,
     );
   }
-  if (!allowedHosts.includes(parsed.host)) {
+  if (!hostAllowed(parsed.host, allowedHosts)) {
     throw new DownloadRefused(
       'unlisted-host',
       `Refusing download from unlisted host "${parsed.host}". Allowed: ${allowedHosts.join(', ')}`,

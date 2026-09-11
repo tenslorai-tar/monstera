@@ -49,7 +49,9 @@ export {
   // The OCR language set's SCHEMA. The set itself moved to `schemas.ts` on
   // 2026-09-11 — `ocrPage`'s payload needs it and a command schema cannot import
   // `channels.ts` back — and is exported below, from where it now lives.
+  ocrEngineSchema,
   ocrLanguageSchema,
+  trocrSizeSchema,
   SPELLING_LANGUAGES,
   type SpellingLanguage,
   spellingLanguageSchema,
@@ -191,8 +193,12 @@ export {
   // The OCR language set, exported for the same reason the spelling one is: both
   // sides key a record on it — the provisioning table and the renderer's display
   // titles — so adding a language is two compile errors and a digest.
+  OCR_ENGINES,
   OCR_LANGUAGES,
+  TROCR_SIZES,
+  type OcrEngine,
   type OcrLanguage,
+  type TrocrSize,
   docIdSchema,
   docVersionSchema,
   envelopeSchema,

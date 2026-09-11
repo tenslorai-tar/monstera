@@ -16,6 +16,7 @@ import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
 import { snapshotRegion } from '../pageSnapshot.js';
+import { recogniseHandwriting } from '../ocrHandwriting.js';
 import { recognisePage } from '../ocrRecognise.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
@@ -156,6 +157,13 @@ const engineHandlers = createEngineHandlers({
   // eight-megabyte bitmap crosses a pipe per page and no second rasteriser
   // exists for OCR input (B3a).
   ocr: recognisePage,
+  // THE SECOND RECOGNISER, HERE FOR THE SAME REASON AND ONE MORE. Its input is
+  // a raster this process produced, and the runtime it loads is WASM — which
+  // main may not load at all: ADR-0026's barrel discipline and `proof:kernelload`
+  // keep engines out of that process, and ADR-0052 Decision 2 says nothing
+  // about ONNX changes the containment argument, since it parses model files
+  // that are **ours** rather than document bytes.
+  handwriting: recogniseHandwriting,
   destinations: readDestinations,
   layers: readLayers,
   annotations: readAnnotations,

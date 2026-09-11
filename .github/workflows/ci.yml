@@ -733,6 +733,18 @@ jobs:
       - name: Prove both forms of the download rule enforce all four guarantees
         run: node scripts/ci/annotate.mjs scripts/proofs/verifiedDownload.proof.mjs
 
+      # PRINTS "NOT APPLICABLE" HERE AND EXITS 0, and that is the honest outcome
+      # rather than a gap: the handwriting stack is 67 MB downloaded on demand
+      # and never bundled, so no CI job has it. The step is registered anyway so
+      # the proof is one command away for anyone who does, and so its absence is
+      # a line somebody reads rather than a proof nobody knows exists.
+      #
+      # Read the NOT-APPLICABLE line, not the total: this build's handwriting
+      # pipeline is exercised on a developer machine with the cache, and nothing
+      # about a green board here says it ran.
+      - name: Prove the handwriting engine reads a region, end to end
+        run: node scripts/ci/annotate.mjs scripts/proofs/ocrHandwriting.proof.mjs
+
       # The SECOND registration of this proof, and the flag is the whole reason.
       # Guards runs it too and builds nothing, so the desktop copy of
       # isInvalidHandle is UNVERIFIABLE there — could-not-look, printed apart

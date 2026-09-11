@@ -86,6 +86,43 @@ const DOWNLOAD_ATTEMPTS = 3;
 const downloadBackoffMs = (/** @type {number} */ attempt) => (attempt - 1) * 750;
 
 /**
+ * Whether one host is on the list, where an entry may be `*.example.com`.
+ *
+ * ## Why a suffix entry exists, measured rather than anticipated
+ *
+ * HuggingFace answers an LFS `resolve` URL with a 302 to a **regional** host —
+ * `us.aws.cdn.hf.co` from here on 2026-09-11, and a different region for a
+ * different reader. An exact list cannot name it: it would work on the machine
+ * it was written on and refuse the download everywhere else.
+ *
+ * **It is still a compile-time constant and still host-locking.** What an
+ * attacker must not be able to do is choose the host, and `*.hf.co` leaves that
+ * choice with whoever controls DNS for `hf.co`. What it gives up: any subdomain
+ * of a wildcarded name is reachable, so a wildcard belongs only on a domain
+ * whose whole subdomain space is the vendor's.
+ *
+ * **The dot is load-bearing.** `evil-hf.co` ends with `hf.co` and is a different
+ * registrable domain; what is compared is `.hf.co`, with the bare name accepted
+ * separately rather than by dropping the dot.
+ *
+ * Nothing provisioning downloads needs a wildcard today. It is here because this
+ * function and `packages/kernel/src/verifiedDownload.ts` are two derived forms
+ * of one rule (invariant 9), and a rule that differs between them is the thing
+ * `proof:verifieddownload` exists to refuse.
+ *
+ * @param {string} host
+ * @param {readonly string[]} allowedHosts
+ * @returns {boolean}
+ */
+function hostAllowed(host, allowedHosts) {
+  return allowedHosts.some((entry) => {
+    if (!entry.startsWith('*.')) return entry === host;
+    const domain = entry.slice(1);
+    return host.endsWith(domain) || host === domain.slice(1);
+  });
+}
+
+/**
  * @param {string} url
  * @param {readonly string[]} allowedHosts
  * @returns {URL}
@@ -95,7 +132,7 @@ function assertAllowed(url, allowedHosts) {
   if (parsed.protocol !== 'https:') {
     throw new Error(`Refusing non-HTTPS download: ${parsed.protocol}//${parsed.host}`);
   }
-  if (!allowedHosts.includes(parsed.host)) {
+  if (!hostAllowed(parsed.host, allowedHosts)) {
     throw new Error(
       `Refusing download from unlisted host "${parsed.host}". ` +
         `Allowed: ${allowedHosts.join(', ')}`,

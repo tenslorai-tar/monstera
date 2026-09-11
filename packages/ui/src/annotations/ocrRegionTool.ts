@@ -1,4 +1,4 @@
-import type { OcrLanguage, RenderableCommand } from '@monstera/contract';
+import type { OcrEngine, OcrLanguage, RenderableCommand, TrocrSize } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -37,6 +37,24 @@ import { endOf, pointerPath, startOf } from '../registries/tools.js';
 export const OCR_REGION_TOOL_ID = 'tools.ocr-region';
 
 /**
+ * The same gesture, asking the handwriting engine — **a second REGISTRATION,
+ * not a second command and not a second channel**.
+ *
+ * [ADR-0052](../../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
+ * Decision 1 rejects putting *which recogniser* in as many places as there are
+ * callers. This does not: both ids build the same `ocrPage` command through the
+ * same factory, differing in one field of one request, and everything after the
+ * dispatch is unchanged — one command, one channel, one answer shape.
+ *
+ * What it buys is the only thing a reader actually needs: **a way to say which**.
+ * The choice is per rectangle — this box is handwriting, that one is print — so
+ * it cannot be a setting, and a dialog after every drag is the form the gesture
+ * exists to avoid. A tool in the registry is how this build offers a gesture,
+ * and the ribbon, the palette and the shortcut map are projections of it.
+ */
+export const HANDWRITING_REGION_TOOL_ID = 'tools.handwriting-region';
+
+/**
  * How far a drag must run before it is a region.
  *
  * `snapshotTool`'s four pixels and its reason, with one more of its own:
@@ -60,6 +78,19 @@ export interface OcrRegionDeps {
    * shape where a tested tool sits beside an untested call site.
    */
   readonly language: () => OcrLanguage;
+  /**
+   * Which TrOCR the handwriting registration loads — `BUILD-PROMPT.md`:619.
+   *
+   * A thunk for `language`'s reason and with the same division of
+   * responsibility: it makes a stale capture unrepresentable **on this side**,
+   * and the caller owes the dependency list that makes it re-read.
+   *
+   * A SETTING rather than a per-drag choice, unlike the engine: the size decides
+   * what this machine downloads and keeps, which is a property of the
+   * installation rather than of the rectangle. It is carried on both
+   * registrations' commands and read by one, exactly as the language is.
+   */
+  readonly trocrSize: () => TrocrSize;
 }
 
 /** The region a drag describes, in the overlay's own pixels. */
@@ -78,7 +109,16 @@ function regionOf(gesture: Gesture): ToolPreview | undefined {
   };
 }
 
-export function ocrRegionTool(deps: OcrRegionDeps): UiTool {
+/**
+ * One factory, two registrations, and the engine is a PARAMETER of the factory
+ * rather than a field of the deps.
+ *
+ * Making it an argument here is what keeps the two ids from being two tools: a
+ * dep would be a value the caller could get wrong per registration, where a
+ * parameter means each id is the same controller with one literal changed, and
+ * `ocrRegionTool` and `handwritingRegionTool` below are the only two callers.
+ */
+function regionTool(id: string, engine: OcrEngine, deps: OcrRegionDeps): UiTool {
   const controller: ToolController = {
     ...pointerPath,
     commit: (
@@ -96,6 +136,13 @@ export function ocrRegionTool(deps: OcrRegionDeps): UiTool {
         kind: 'ocrPage',
         page,
         language: deps.language(),
+        // THE REGISTRATION'S OWN ENGINE, a literal per id. The reader chose it
+        // by choosing the tool, so there is nothing here to read late.
+        engine,
+        // READ AT COMMIT, like the language and for the same reason: a reader who
+        // changes the setting between picking the tool and letting go of the
+        // pointer means the second value.
+        trocrSize: deps.trocrSize(),
         // UNORDERED, deliberately, because the kernel normalises: a drag runs
         // whichever way the pointer went, and ordering here would be a second place
         // that rule is stated.
@@ -105,7 +152,17 @@ export function ocrRegionTool(deps: OcrRegionDeps): UiTool {
     preview: regionOf,
   };
 
-  return { id: OCR_REGION_TOOL_ID, controller };
+  return { id, controller };
+}
+
+/** Drag a box; Tesseract reads it, in the language the setting names. */
+export function ocrRegionTool(deps: OcrRegionDeps): UiTool {
+  return regionTool(OCR_REGION_TOOL_ID, 'tesseract', deps);
+}
+
+/** Drag a box over one handwritten LINE; TrOCR reads it (ADR-0052 §4). */
+export function handwritingRegionTool(deps: OcrRegionDeps): UiTool {
+  return regionTool(HANDWRITING_REGION_TOOL_ID, 'handwriting', deps);
 }
 
 /** Exported so the cases assert against the tool's own number. */

@@ -137,6 +137,9 @@ function start(stream: HostByteStream) {
     ocr: () => {
       throw new Error('no case here recognises anything');
     },
+    handwriting: () => {
+      throw new Error('no case here recognises anything');
+    },
     destinations: () => {
       throw new Error('no case here reads the outline');
     },

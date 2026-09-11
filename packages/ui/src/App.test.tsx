@@ -153,7 +153,11 @@ function recordingClient(answer: unknown): {
  * reason on it rather than four `.filter`s that read as noise.
  */
 function commandCalls(calls: readonly string[]): readonly string[] {
-  return calls.filter((id) => id !== 'document.recent');
+  // `app.handwritingCache` joins it for the same reason and a sharper one: the
+  // handwriting tool is hidden until its models are downloaded, so the registry
+  // has to ask before it can decide whether to offer the control — a read that
+  // happens because a surface loaded, never because a reader did anything.
+  return calls.filter((id) => id !== 'document.recent' && id !== 'app.handwritingCache');
 }
 
 /** One recorded call, with what the renderer sent. */

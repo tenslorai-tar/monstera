@@ -22,7 +22,7 @@ import {
 import type { CommandWriter, DocumentContext } from './documentService.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
-import type { OcrRequest, RecognisedPage } from './ocrRecognise.js';
+import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation } from './pageAnnotations.js';
 import { localPdfLibWriter } from './pdfLibWriter.js';
@@ -1408,10 +1408,10 @@ describe('CommandBus and a parameterised pre-read', () => {
    * *assert what the harness passes*, one axis along.
    */
   function recordingOcr(image: ByteImage): CommandInputs & {
-    readonly requests: () => readonly OcrRequest[];
+    readonly requests: () => readonly RecognitionRequest[];
     readonly installed: () => readonly ByteImage[];
   } {
-    const requests: OcrRequest[] = [];
+    const requests: RecognitionRequest[] = [];
     const installed: ByteImage[] = [];
     return {
       current: () => Promise.resolve(image),
@@ -1428,7 +1428,14 @@ describe('CommandBus and a parameterised pre-read', () => {
       // was first written, and the refusal caught it.
       ocr: (request) => {
         requests.push(request);
-        return Promise.resolve({ ...recognised, language: request.language });
+        // THE HANDWRITING ARM ANSWERS `eng` WHATEVER WAS ASKED, which is what
+        // the real engine does — its repositories are English — so a stub that
+        // echoed a language it was never given would make `applyOcrPage`'s
+        // engine-scoped refusal look testable when it is not.
+        return Promise.resolve({
+          ...recognised,
+          language: request.engine === 'tesseract' ? request.language : 'eng',
+        });
       },
       sources: new Map(),
       requests: () => requests,
@@ -1441,18 +1448,58 @@ describe('CommandBus and a parameterised pre-read', () => {
     const context = contextStub(true);
     const inputs = recordingOcr(flat);
 
-    await bus.execute({}, context, { kind: 'ocrPage', page: 1, language: 'deu' }, inputs);
+    await bus.execute(
+      {},
+      context,
+      { kind: 'ocrPage', page: 1, language: 'deu', engine: 'tesseract', trocrSize: 'small' },
+      inputs,
+    );
 
     // THE REQUEST, not the count. A resolver called once with `page: 0` is the
     // defect this case exists for, and a count of one cannot see it.
-    expect(inputs.requests()).toStrictEqual([{ page: 1, language: 'deu' }]);
+    expect(inputs.requests()).toStrictEqual([
+      { engine: 'tesseract', page: 1, language: 'deu' },
+    ]);
+  });
+
+  it('hands the resolver the HANDWRITING arm — the region and the size, and no language', async () => {
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const inputs = recordingOcr(flat);
+
+    // `trocrSize: 'base'` and a German OCR language, neither of which a default
+    // would produce: the size is the setting the surface read, and the language
+    // is carried and must NOT reach an engine that cannot honour it.
+    await bus.execute(
+      {},
+      context,
+      {
+        kind: 'ocrPage',
+        page: 2,
+        language: 'deu',
+        engine: 'handwriting',
+        trocrSize: 'base',
+        region: { x0: 10, y0: 20, x1: 30, y1: 40 },
+      },
+      inputs,
+    );
+
+    expect(inputs.requests()).toStrictEqual([
+      { engine: 'handwriting', page: 2, region: [10, 20, 30, 40], size: 'base' },
+    ]);
   });
 
   it('replays the recognition it stored, without reading again', async () => {
     const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
     const context = contextStub(true);
     const inputs = recordingOcr(flat);
-    const command = { kind: 'ocrPage', page: 0, language: 'eng' } as const;
+    const command = {
+      kind: 'ocrPage',
+      page: 0,
+      language: 'eng',
+      engine: 'tesseract',
+      trocrSize: 'small',
+    } as const;
 
     await bus.execute({}, context, command, inputs);
     await bus.undo({}, context, () => Promise.resolve(), inputs);
@@ -1490,8 +1537,43 @@ describe('CommandBus and a parameterised pre-read', () => {
     };
 
     await expect(
-      bus.execute({}, context, { kind: 'ocrPage', page: 0, language: 'heb' }, inputs),
+      bus.execute(
+        {},
+        context,
+        { kind: 'ocrPage', page: 0, language: 'heb', engine: 'tesseract', trocrSize: 'small' },
+        inputs,
+      ),
     ).rejects.toThrow(/read with eng and the command asked for heb/u);
+  });
+
+  it('CONTROL: the same mismatch is ACCEPTED for handwriting, whose answer is always eng', async () => {
+    // The check above rests on the answer echoing the request, which is true of
+    // exactly one engine. Without this case, scoping it to Tesseract would look
+    // like an exemption; with it, the scope is the check's own premise — and a
+    // future edit that dropped the engine condition reddens here rather than in
+    // a user's German locale.
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const inputs: CommandInputs = {
+      ...recordingOcr(flat),
+      ocr: () => Promise.resolve(recognised),
+    };
+
+    await expect(
+      bus.execute(
+        {},
+        context,
+        {
+          kind: 'ocrPage',
+          page: 0,
+          language: 'heb',
+          engine: 'handwriting',
+          trocrSize: 'small',
+          region: { x0: 10, y0: 20, x1: 30, y1: 40 },
+        },
+        inputs,
+      ),
+    ).resolves.not.toThrow();
   });
 });
 

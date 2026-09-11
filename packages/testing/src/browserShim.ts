@@ -195,6 +195,13 @@ export interface BrowserShimOptions {
    */
   readonly ocrLanguages?: readonly OcrLanguage[];
   /**
+   * Whether the handwriting engine's downloaded stack is present.
+   *
+   * **Defaults to `false`**, which is what a first run looks like — see the
+   * handler. A case about the tool being offered passes `true`.
+   */
+  readonly handwritingReady?: boolean;
+  /**
    * Documents whose lane is saturated, by id.
    *
    * A declared outcome the renderer must handle by backing off. It is a set a
@@ -648,6 +655,33 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      */
     'app.ocrLanguages': () =>
       Promise.resolve(ok({ languages: [...(options.ocrLanguages ?? ['eng'])] })),
+
+    /**
+     * The handwriting cache, and it answers **not ready by default**.
+     *
+     * `ocrLanguages`' rule with the opposite default, chosen the same way: a
+     * state the shipped build can be in needs a way to be asked about, and the
+     * state a first run is in is *nothing downloaded*. A shim that said ready
+     * would make every case about the handwriting tool assert against a machine
+     * almost nobody has, and the one case that matters — the tool is hidden
+     * until the models are here — could not be written at all.
+     *
+     * `handwritingReady: true` in the options is what a case about the other
+     * state passes.
+     */
+    'app.handwritingCache': () =>
+      Promise.resolve(
+        ok({
+          available: true,
+          ready: options.handwritingReady ?? false,
+          bytesToFetch: options.handwritingReady === true ? 0 : 67_737_573,
+        }),
+      ),
+    // A SHIM DOES NOT DOWNLOAD, and reporting success would be the display-only
+    // answer: a case that pressed this and then found the tool mounted would be
+    // asserting about this file rather than about the application.
+    'app.fetchHandwritingModel': () => Promise.resolve(err({ code: 'no-handwriting-cache' })),
+    'app.clearHandwritingCache': () => Promise.resolve(ok({ bytesRemoved: 0 })),
 
     'document.open': () => {
       const answer = queuedOpens.shift() ?? { kind: 'cancelled' as const };

@@ -183,6 +183,9 @@ async function joined(): Promise<{
       ocr: () => {
         throw new Error('no case in this file recognises anything');
       },
+      handwriting: () => {
+        throw new Error('no case in this file recognises anything');
+      },
       destinations: readDestinations,
       layers: readLayers,
       // THE REAL READERS, so the parts assembled here are the production ones —
@@ -452,6 +455,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         ocr: () => {
           throw new Error('unused');
         },
+        handwriting: () => {
+          throw new Error('unused');
+        },
         destinations: () => {
           throw new Error('unused');
         },
@@ -548,6 +554,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           throw new Error('the rotation-refusal case must not read page links');
         },
         ocr: () => {
+          throw new Error('the rotation-refusal case must not recognise anything');
+        },
+        handwriting: () => {
           throw new Error('the rotation-refusal case must not recognise anything');
         },
         destinations: () => {

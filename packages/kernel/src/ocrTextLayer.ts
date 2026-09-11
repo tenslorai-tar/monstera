@@ -523,7 +523,17 @@ export const applyOcrPage: Apply<'pdf-lib', 'ocrPage', 'none', 'ocr'> = async (
   // answer echoes what the model was. A mismatch means the pre-read resolved a
   // request this command did not make, which is a wiring defect and not a
   // document's fault — so it throws rather than writing text from the wrong model.
-  if (read.language !== command.language) {
+  //
+  // **TESSERACT ONLY, and that is not an exemption — it is the check's own
+  // premise.** It rests on the answer ECHOING the request, which is true of the
+  // engine whose request names one of fourteen models. The handwriting engine's
+  // repositories are English, so it answers `eng` whatever was asked and a
+  // comparison here would refuse every handwriting recognition on a machine
+  // whose OCR language is anything else. What the check is for — a resolver
+  // answering a different request — is covered for that engine by the region:
+  // `commandDeclarations` builds the handwriting request from this command's own
+  // rectangle, and `ocrHandwriting` answers at that rectangle's box.
+  if (command.engine === 'tesseract' && read.language !== command.language) {
     throw new Error(
       `the recognition handed to ocrPage was read with ${read.language} and the command asked ` +
         `for ${command.language}. A pre-read that answers a different request than the command ` +

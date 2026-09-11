@@ -27,7 +27,7 @@ import {
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import { PLACE_IMAGE_TOOL_ID } from '../annotations/placeImageTool.js';
-import { OCR_REGION_TOOL_ID } from '../annotations/ocrRegionTool.js';
+import { HANDWRITING_REGION_TOOL_ID, OCR_REGION_TOOL_ID } from '../annotations/ocrRegionTool.js';
 import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
@@ -73,6 +73,7 @@ import {
   REDACT_TOOL_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
+  HANDWRITING_REGION_TOOL_TITLE,
   OCR_REGION_TOOL_TITLE,
   SNAPSHOT_TOOL_TITLE,
   STRIKEOUT_TOOL_TITLE,
@@ -127,6 +128,15 @@ export interface ToolCommandDeps {
   readonly activeTool: () => string | undefined;
   /** Makes one active, or `undefined` to leave drawing altogether. */
   readonly onSelect: (id: string | undefined) => void;
+  /**
+   * Whether the handwriting engine's downloaded stack is on this machine.
+   *
+   * **Optional, and absent means yes**, which is the right default for the only
+   * graphs that omit it: a browser-shim test has no main process to ask, and a
+   * predicate defaulting to *hidden* there would make every case about that tool
+   * assert on a control nothing mounts. The shipped graph always supplies it.
+   */
+  readonly handwritingReady?: () => boolean;
 }
 
 /** What a command acting on the selection needs. */
@@ -168,6 +178,17 @@ function toolCommand(
     section: 'comment',
     group: GROUP_MARKUP,
   },
+  /**
+   * A second condition on top of *there is a document*, or nothing.
+   *
+   * One tool needs it: the handwriting engine's stack is downloaded on demand
+   * and never bundled, so on a first run its tool would be a control that
+   * dispatches a command the engine refuses for a file nobody has fetched —
+   * the wired-tools rule's own defect. `when` is what the registry already has
+   * for *this does not exist yet*, and using it is what keeps a control that
+   * cannot work off the screen rather than failing after the drag.
+   */
+  also?: () => boolean,
 ): UiCommand {
   return {
     id,
@@ -179,7 +200,7 @@ function toolCommand(
     // screen at once, so a tool on both is the same button twice.
     placements: [{ surface: 'ribbon', section: where.section, group: where.group, order }],
     // A page to draw on is what this needs, which is what `hasDocument` says.
-    when: hasDocument,
+    when: also === undefined ? hasDocument : (context) => hasDocument(context) && also(),
     run: (): void => {
       // READ THROUGH THE FUNCTION, not from a captured value: the command is
       // built once, and a captured id would toggle against whatever was active
@@ -597,6 +618,30 @@ export function ocrRegionToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The handwriting engine's own control, beside the one above.
+ *
+ * **It is what makes the second registration reachable**, which is the whole of
+ * why it exists — `annotationCommands.test.ts` joins these ids against the tool
+ * registry's and fails on a tool nothing can select. A handwriting tool with no
+ * command would be the display-only defect with the gesture already built.
+ */
+export function handwritingRegionToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(
+    HANDWRITING_REGION_TOOL_ID,
+    HANDWRITING_REGION_TOOL_TITLE,
+    61,
+    deps,
+    { section: 'comment', group: GROUP_MARKUP },
+    // HIDDEN UNTIL THE MODELS ARE HERE. `handwritingReady` is answered by main
+    // over `app.handwritingCache`; the download itself is its own command, so
+    // the reader meets *get the models* rather than a tool that fails after a
+    // drag. Default `true` for every graph that supplies no predicate — a
+    // browser-shim test is not making a claim about a download.
+    () => deps.handwritingReady?.() ?? true,
+  );
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -643,6 +688,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     snapshotToolCommand(deps),
     placeImageToolCommand(deps),
     ocrRegionToolCommand(deps),
+    handwritingRegionToolCommand(deps),
     ...formFieldToolCommands(deps),
   ];
 }

@@ -8,8 +8,13 @@ import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter } from '../mupdfWriter.js';
 import { OcrModelUnreadableError, type RecognisedPage } from '../ocrRecognise.js';
 import { engineChannels } from './engineChannels.js';
-import { type HostOcrReader, type HostSession, createEngineHandlers } from './engineHandlers.js';
-import { createRemoteSessions, remoteMupdfOcr } from './remoteEngine.js';
+import {
+  type HostHandwritingReader,
+  type HostOcrReader,
+  type HostSession,
+  createEngineHandlers,
+} from './engineHandlers.js';
+import { createRemoteSessions, remoteMupdfHandwriting, remoteMupdfOcr } from './remoteEngine.js';
 
 /**
  * Recognition crossing the engine host's wire.
@@ -69,10 +74,33 @@ const ANSWER: RecognisedPage = {
   language: 'eng',
 };
 
-/** The two halves joined over a JSON round trip, with the reader injected. */
-async function joined(ocr: HostOcrReader): Promise<{
+/** What the handwriting engine answers: one line, no words (ADR-0052 §4). */
+const HANDWRITTEN: RecognisedPage = {
+  lines: [{ text: 'Monstera deliciosa', box: [30, 180, 370, 230], words: [] }],
+  confidence: 88,
+  language: 'eng',
+};
+
+/** The cache main downloads the runtime and models into — NOT the tessdata one. */
+const HANDWRITING_CACHE = 'C:/granted/trocr';
+
+/**
+ * The two halves joined over a JSON round trip, with both readers injected.
+ *
+ * `handwriting` defaults to a throwing stub rather than to a second happy
+ * answer, so a case that drives the Tesseract arm and silently reached the
+ * other engine fails loudly. The channel's discriminant is what routes them, and
+ * a stub that answered would make routing invisible.
+ */
+async function joined(
+  ocr: HostOcrReader,
+  handwriting: HostHandwritingReader = () => {
+    throw new Error('this case drives Tesseract; the handwriting engine must not be reached');
+  },
+): Promise<{
   readonly session: MupdfSession;
   readonly read: ReturnType<typeof remoteMupdfOcr>;
+  readonly readHandwriting: ReturnType<typeof remoteMupdfHandwriting>;
   readonly stranger: MupdfSession;
   readonly incidents: readonly Incident[];
   readonly close: () => Promise<void>;
@@ -132,6 +160,7 @@ async function joined(ocr: HostOcrReader): Promise<{
         throw new Error('a recognition must not read the page links');
       },
       ocr,
+      handwriting,
       destinations: () => {
         throw new Error('a recognition must not read the outline');
       },
@@ -179,6 +208,7 @@ async function joined(ocr: HostOcrReader): Promise<{
   return {
     session: token,
     read: remoteMupdfOcr(client, sessions),
+    readHandwriting: remoteMupdfHandwriting(client, sessions),
     stranger,
     incidents,
     close: async () => {
@@ -278,6 +308,107 @@ describe('engine/ocr-page', () => {
     try {
       await expect(
         read(session, { page: 0, language: 'eng', modelDirectory: MODELS }),
+      ).rejects.toThrow();
+    } finally {
+      await close();
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // THE SECOND ENGINE. One channel, two arms, and what these cases are about is
+  // that the DISCRIMINANT routes — not that either reader works, which is the
+  // recognisers' own proofs.
+  // -------------------------------------------------------------------------
+
+  it('routes a handwriting request to the handwriting reader, and not to Tesseract', async () => {
+    const { session, readHandwriting, close } = await joined(
+      () => {
+        throw new Error('a handwriting request must not reach Tesseract');
+      },
+      () => Promise.resolve(HANDWRITTEN),
+    );
+    try {
+      const answer = await readHandwriting(session, {
+        page: 0,
+        region: [30, 180, 370, 230],
+        size: 'small',
+        modelDirectory: HANDWRITING_CACHE,
+      });
+      // STRICT EQUALITY, including the EMPTY word list: a line with no words is
+      // what this engine answers and what `ocrTextLayer.ts` already handles, so
+      // an arm that helpfully filled one in would be inventing positions.
+      expect(answer).toStrictEqual(HANDWRITTEN);
+    } finally {
+      await close();
+    }
+  });
+
+  it('hands the handwriting REQUEST through unchanged — region, size and its own cache', async () => {
+    const asked: unknown[] = [];
+    const { session, readHandwriting, close } = await joined(
+      () => {
+        throw new Error('a handwriting request must not reach Tesseract');
+      },
+      (_session, request) => {
+        asked.push(request);
+        return Promise.resolve(HANDWRITTEN);
+      },
+    );
+    try {
+      // NOT `small` AND NOT THE TESSDATA DIRECTORY. Both defaults would be
+      // produced by a handler that dropped the field, which is the shape the
+      // rotate shipped with — and the directory matters most, because the two
+      // caches hold entirely different files.
+      await readHandwriting(session, {
+        page: 3,
+        region: [11, 22, 33, 44],
+        size: 'base',
+        modelDirectory: HANDWRITING_CACHE,
+      });
+      expect(asked).toStrictEqual([
+        { page: 3, region: [11, 22, 33, 44], size: 'base', modelDirectory: HANDWRITING_CACHE },
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
+  it('CONTROL: a Tesseract request does not reach the handwriting reader', async () => {
+    // The mirror of the case above, and it is what makes that one a routing
+    // claim rather than a claim that one arm happens to work: the default
+    // handwriting stub throws, so this passing means the discriminant carried
+    // the request to the other side.
+    const { session, read, close } = await joined(() => Promise.resolve(ANSWER));
+    try {
+      const answer = await read(session, { page: 0, language: 'eng', modelDirectory: MODELS });
+      expect(answer).toStrictEqual(ANSWER);
+    } finally {
+      await close();
+    }
+  });
+
+  it('refuses a handwriting request carrying NO REGION at the boundary', async () => {
+    // B5 made visible: the schema's handwriting arm requires a region, because
+    // TrOCR reads one text line and a page-scoped request would work and take
+    // minutes. This drives the wire directly, since the typed client cannot
+    // express the illegal shape.
+    const { session, readHandwriting, close } = await joined(
+      () => {
+        throw new Error('unused');
+      },
+      () => Promise.resolve(HANDWRITTEN),
+    );
+    try {
+      await expect(
+        readHandwriting(
+          session,
+          // The cast is the case: it constructs the value the type forbids, to
+          // show the SCHEMA refuses it too. Without it this would assert only
+          // that the compiler is working.
+          { page: 0, size: 'small', modelDirectory: HANDWRITING_CACHE } as Parameters<
+            ReturnType<typeof remoteMupdfHandwriting>
+          >[1],
+        ),
       ).rejects.toThrow();
     } finally {
       await close();

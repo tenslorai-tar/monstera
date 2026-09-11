@@ -175,6 +175,14 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // answer is which models this machine has provisioned, and the schema's `max`
   // is the enum's own size rather than a number somebody picked.
   'app.ocrLanguages': 'answers which of fourteen declared models are installed',
+  // THE HANDWRITING TRIO, and their answer is about the MACHINE rather than a
+  // document: what is downloaded, a byte count bounded by `HANDWRITING_MAX_BYTES`
+  // in the schema, and a byte count freed. No document contributes to any of
+  // them — the models are the same files whatever is open, and none is ever
+  // opened by this build.
+  'app.handwritingCache': 'answers what this machine has downloaded, in two booleans and a bounded count',
+  'app.fetchHandwritingModel': 'answers a boolean and a bounded count about this machine',
+  'app.clearHandwritingCache': 'answers how many bytes were freed on this machine',
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',
   // THE SECRET PAIR, and their answer is the same one `settings.load`'s is:

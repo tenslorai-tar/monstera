@@ -187,6 +187,9 @@ describe('browser shim', () => {
     // produce the same clean result. The literal is the one side a shrink has to
     // touch separately, so it grows by hand when a channel lands.
     expect(Object.keys(shim.client).sort()).toEqual([
+      'app.clearHandwritingCache',
+      'app.fetchHandwritingModel',
+      'app.handwritingCache',
       'app.info',
       'app.ocrLanguages',
       'document.annotations',

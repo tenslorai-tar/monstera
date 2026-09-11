@@ -5,6 +5,7 @@ import {
   measurePerPointSchema,
   measureUnitSchema,
   ocrLanguageSchema,
+  trocrSizeSchema,
 } from '@monstera/contract';
 import { z } from 'zod';
 
@@ -15,6 +16,7 @@ import {
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
   EDITING_OCR_LANGUAGE_TITLE,
+  EDITING_TROCR_SIZE_TITLE,
   EDITING_PERSONAL_DICTIONARY_TITLE,
   MEASURE_SCALE_TITLE,
   MEASURE_UNIT_TITLE,
@@ -262,6 +264,37 @@ export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguageSchema> =
   // is that the language reaching the engine comes from a closed set.
   schema: ocrLanguageSchema,
   fallback: 'eng',
+  category: 'editing',
+};
+
+/**
+ * Which TrOCR the handwriting engine loads — `BUILD-PROMPT.md`:619's
+ * *TrOCR model size (small/base)*.
+ *
+ * ## A setting, where the ENGINE is not
+ *
+ * The engine is a per-rectangle choice and is made by picking a tool: a reader
+ * knows whether this box is over handwriting. The size is not about the box at
+ * all — it decides what this machine **downloads and keeps**, measured
+ * 2026-09-11 at 67,737,573 bytes for `small` against 339,045,465 for `base`, and
+ * a choice with that consequence belongs where a reader can find it once rather
+ * than beside a gesture.
+ *
+ * **`small` by default**, which is ADR-0052's own ruling and not a guess: it is a
+ * fifth of the download and a quarter of the encoder, and the founding record
+ * names both sizes without saying which a first run gets.
+ *
+ * Changing it does not remove the other one. Both live in the same cache and the
+ * clear-caches control removes both, so a reader who tries `base` and goes back
+ * has not lost the first download.
+ */
+export const TROCR_SIZE_SETTING: SettingDefinition<typeof trocrSizeSchema> = {
+  id: 'editing.trocr-size',
+  title: EDITING_TROCR_SIZE_TITLE,
+  // THE CONTRACT'S OWN ENUM, for `OCR_LANGUAGE_SETTING`'s reason: a stored value
+  // the command would refuse is one that fails on apply.
+  schema: trocrSizeSchema,
+  fallback: 'small',
   category: 'editing',
 };
 

@@ -1,9 +1,16 @@
-import type { OcrLanguage, RenderableCommand } from '@monstera/contract';
+import type { OcrLanguage, RenderableCommand, TrocrSize } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { overlayTransform } from './annotationSpace.js';
-import { MINIMUM_REGION, OCR_REGION_TOOL_ID, ocrRegionTool } from './ocrRegionTool.js';
+import type { OcrRegionDeps } from './ocrRegionTool.js';
+import {
+  HANDWRITING_REGION_TOOL_ID,
+  MINIMUM_REGION,
+  OCR_REGION_TOOL_ID,
+  handwritingRegionTool,
+  ocrRegionTool,
+} from './ocrRegionTool.js';
 
 /**
  * The OCR region tool, driven without a DOM.
@@ -47,13 +54,27 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
  */
 const LANGUAGE: OcrLanguage = 'deu';
 
+/**
+ * The model size every case below drags with.
+ *
+ * **NOT `'small'`, for `LANGUAGE`'s reason**: `TROCR_SIZE_SETTING`'s fallback is
+ * `small`, so a tool that ignored the dep would satisfy a case written with it.
+ */
+const SIZE: TrocrSize = 'base';
+
+/** Both deps, so a case that cares about one need not restate the other. */
+const deps = (
+  language: () => OcrLanguage = () => LANGUAGE,
+  trocrSize: () => TrocrSize = () => SIZE,
+): OcrRegionDeps => ({ language, trocrSize });
+
 /** The command one drag answered, or `undefined` if it answered none. */
 function dragged(
   from: readonly [number, number],
   to: readonly [number, number],
   language: () => OcrLanguage = () => LANGUAGE,
 ): RenderableCommand | undefined {
-  const { controller } = ocrRegionTool({ language });
+  const { controller } = ocrRegionTool(deps(language));
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
   // The cast every file in this directory makes: `commit` may answer a promise
@@ -71,6 +92,8 @@ describe('the OCR region tool', () => {
       kind: 'ocrPage',
       page: 3,
       language: LANGUAGE,
+      engine: 'tesseract',
+      trocrSize: SIZE,
       region: { x0: 60, y0: 390, x1: 110, y1: 360 },
     });
   });
@@ -81,7 +104,7 @@ describe('the OCR region tool', () => {
     // document for the tool to agree. A tool that captured the value would pass
     // the case above and fail this one.
     let language: OcrLanguage = 'eng';
-    const tool = ocrRegionTool({ language: () => language });
+    const tool = ocrRegionTool(deps(() => language));
     const drag = (): RenderableCommand | undefined => {
       const started = tool.controller.begin(viewportPoint(20, 20));
       const moved = tool.controller.update(started, viewportPoint(120, 80));
@@ -123,7 +146,7 @@ describe('the OCR region tool', () => {
   });
 
   it('previews the region as a rectangle', () => {
-    const { controller } = ocrRegionTool({ language: () => LANGUAGE });
+    const { controller } = ocrRegionTool(deps());
     const started = controller.begin(viewportPoint(120, 80));
     const moved = controller.update(started, viewportPoint(20, 20));
     // DRAGGED UP AND LEFT, so the preview's own normalisation is what is being
@@ -143,13 +166,83 @@ describe('the OCR region tool', () => {
     // The preview and the commit share `regionOf`, which is what makes the
     // refusal visible before the pointer is released rather than a drag that
     // silently does nothing.
-    const { controller } = ocrRegionTool({ language: () => LANGUAGE });
+    const { controller } = ocrRegionTool(deps());
     const started = controller.begin(viewportPoint(20, 20));
     const moved = controller.update(started, viewportPoint(120, 20 + MINIMUM_REGION - 1));
     expect(controller.preview(moved)).toBeUndefined();
   });
 
   it('claims the id its command selects', () => {
-    expect(ocrRegionTool({ language: () => LANGUAGE }).id).toBe(OCR_REGION_TOOL_ID);
+    expect(ocrRegionTool(deps()).id).toBe(OCR_REGION_TOOL_ID);
+  });
+});
+
+describe('the handwriting region tool', () => {
+  /** The same drag, through the second registration. */
+  function draggedHandwriting(
+    trocrSize: () => TrocrSize = () => SIZE,
+  ): RenderableCommand | undefined {
+    const { controller } = handwritingRegionTool(deps(undefined, trocrSize));
+    const started = controller.begin(viewportPoint(20, 20));
+    const moved = controller.update(started, viewportPoint(120, 80));
+    return controller.commit(moved, 3, overlayTransform(PAGE)) as RenderableCommand | undefined;
+  }
+
+  it('dispatches the SAME command with engine: handwriting, and the same region', () => {
+    // THE WHOLE CLAIM OF THE SECOND REGISTRATION. One command, one channel, one
+    // answer shape — the engine is the only field that differs, and asserting
+    // the region here is what says so: a second tool that had drifted into its
+    // own conversion would pass a case that only read the engine.
+    expect(draggedHandwriting()).toStrictEqual({
+      kind: 'ocrPage',
+      page: 3,
+      language: LANGUAGE,
+      engine: 'handwriting',
+      trocrSize: SIZE,
+      region: { x0: 60, y0: 390, x1: 110, y1: 360 },
+    });
+  });
+
+  it('reads the model size at COMMIT, not when the tool was composed', () => {
+    // `language`'s case one field along, and it is the field this registration
+    // actually uses: a reader who changes the size in settings and drags again
+    // must get the model they just chose.
+    let size: TrocrSize = 'small';
+    const tool = handwritingRegionTool(deps(undefined, () => size));
+    const drag = (): RenderableCommand | undefined => {
+      const started = tool.controller.begin(viewportPoint(20, 20));
+      const moved = tool.controller.update(started, viewportPoint(120, 80));
+      return tool.controller.commit(moved, 3, overlayTransform(PAGE)) as
+        | RenderableCommand
+        | undefined;
+    };
+    expect(drag()).toMatchObject({ trocrSize: 'small' });
+    size = 'base';
+    expect(drag()).toMatchObject({ trocrSize: 'base' });
+  });
+
+  it('CONTROL: the printed-text registration sends engine: tesseract for the same drag', () => {
+    // The mirror that makes the case above a claim about the ENGINE rather than
+    // about this file's fixture. Both are built by one factory, so a literal
+    // written once in the wrong place would make both registrations agree — and
+    // only a pair of cases can see that.
+    expect(dragged([20, 20], [120, 80])).toMatchObject({ engine: 'tesseract' });
+    expect(draggedHandwriting()).toMatchObject({ engine: 'handwriting' });
+  });
+
+  it('claims its OWN id, which is what makes it a second registration', () => {
+    expect(handwritingRegionTool(deps()).id).toBe(HANDWRITING_REGION_TOOL_ID);
+    expect(handwritingRegionTool(deps()).id).not.toBe(ocrRegionTool(deps()).id);
+  });
+
+  it('refuses a flat drag exactly as the other registration does', () => {
+    // The minimum lives in the shared factory, so this is a case about the
+    // sharing rather than about the number: a second registration that had
+    // acquired its own gesture would pass every case above and fail here.
+    const { controller } = handwritingRegionTool(deps());
+    const started = controller.begin(viewportPoint(20, 20));
+    const moved = controller.update(started, viewportPoint(120, 20 + MINIMUM_REGION - 1));
+    expect(controller.commit(moved, 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(controller.preview(moved)).toBeUndefined();
   });
 });

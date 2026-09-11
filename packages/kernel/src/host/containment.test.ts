@@ -521,6 +521,9 @@ describe('the engine host answers a containment probe', () => {
     ocr: () => {
       throw new Error('a containment probe must not recognise anything');
     },
+    handwriting: () => {
+      throw new Error('a containment probe must not recognise anything');
+    },
     destinations: () => {
       throw new Error('a containment probe must not read the outline');
     },

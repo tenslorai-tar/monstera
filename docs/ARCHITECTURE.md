@@ -1347,7 +1347,13 @@ say**.
    1. **HTTPS only.**
    2. **Host-locked, re-checked on every redirect hop** rather than only on the
       first request. A release download redirects to a signed asset host, so a
-      first-hop-only check leaves the hop that delivers the bytes unchecked.
+      first-hop-only check leaves the hop that delivers the bytes unchecked. An
+      entry may be `*.example.com`, which admits that domain and any subdomain
+      of it and nothing else — needed because HuggingFace answers an LFS URL
+      with a redirect to a **regional** host, so an exact list works on the
+      machine it was written on and refuses everywhere else. It is still a
+      compile-time constant and the choice of host still belongs to the vendor's
+      DNS; what it gives up is that the whole subdomain space is reachable.
    3. **Size-bounded by counting received bytes, never by trusting
       `Content-Length`** — a header is a claim by the sender, not a limit.
    4. **SHA-256 verified in quarantine before any parser touches the bytes.**

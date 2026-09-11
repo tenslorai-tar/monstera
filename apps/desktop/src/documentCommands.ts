@@ -27,7 +27,7 @@ import {
   type Layer,
   type PageLink,
   type PageText,
-  type OcrRequest,
+  type RecognitionRequest,
   type RecognisedPage,
   type SaveDependencies,
   type CopyOutcome,
@@ -707,7 +707,7 @@ export type DocumentDestinationsReader = (
 export type DocumentOcrReader = (
   docId: DocId,
   sessions: DocumentSessions,
-  request: OcrRequest,
+  request: RecognitionRequest,
 ) => Promise<RecognisedPage>;
 
 /** The outline, stamped with the version the lane read it at. */

@@ -845,21 +845,46 @@ const declarations = {
     // through rather than the pre-read learning to look for it — which is the whole
     // shape of this axis: the declaration knows the payload, the access object knows
     // the document, and neither knows the other.
-    read: (access, command) =>
-      access.ocr({
+    // THE ENGINE TRAVELS WITH IT, and the two arms are built separately rather
+    // than by spreading an engine onto one object: the handwriting arm needs the
+    // region to be PRESENT, which a spread cannot express, and the size comes
+    // from the settings the surface read when it dispatched.
+    read: (access, command) => {
+      const region =
+        command.region === undefined
+          ? undefined
+          : ([
+              command.region.x0,
+              command.region.y0,
+              command.region.x1,
+              command.region.y1,
+            ] as const);
+
+      if (command.engine === 'handwriting') {
+        if (region === undefined) {
+          // UNREACHABLE THROUGH THE BOUNDARY, which refuses this pair before a
+          // command exists — and stated as a throw rather than as a comment,
+          // because the declaration is also reachable from a caller in process.
+          throw new Error(
+            'the handwriting engine is never offered on a page, so this command must carry a ' +
+              'region (ADR-0052 §4)',
+          );
+        }
+        return access.ocr({
+          engine: 'handwriting',
+          page: command.page,
+          region,
+          size: command.trocrSize,
+        });
+      }
+
+      return access.ocr({
+        engine: 'tesseract',
         page: command.page,
         language: command.language,
-        ...(command.region === undefined
-          ? {}
-          : {
-              region: [
-                command.region.x0,
-                command.region.y0,
-                command.region.x1,
-                command.region.y1,
-              ] as const,
-            }),
-      }),
+        ...(region === undefined ? {} : { region }),
+      });
+    },
     asset: 'none',
     purpose: 'ordinary',
   },

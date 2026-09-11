@@ -14,7 +14,9 @@ import {
   renderableCommandSchema,
 } from './commands.js';
 import {
+  OCR_ENGINES,
   OCR_LANGUAGES,
+  TROCR_SIZES,
   docIdSchema,
   docVersionSchema,
   fileHandleSchema,
@@ -237,6 +239,28 @@ export const SETTINGS_SECRET_CHANNELS = ['settings.loadSecrets', 'settings.saveS
 
 /** {@link OCR_LANGUAGES} as a schema, derived rather than respelt. */
 export const ocrLanguageSchema = z.enum(OCR_LANGUAGES);
+
+/** {@link OCR_ENGINES} as a schema, derived rather than respelt. */
+export const ocrEngineSchema = z.enum(OCR_ENGINES);
+
+/** {@link TROCR_SIZES} as a schema, derived rather than respelt. */
+export const trocrSizeSchema = z.enum(TROCR_SIZES);
+
+/**
+ * The largest download the handwriting engine can honestly ask for.
+ *
+ * **512 MiB, and it is a bound on a CLAIM rather than on a file.** The manifest
+ * in `packages/kernel` is where the real sizes live, and this file may not
+ * import it — the contract's schemas are what a hostile main's answer is checked
+ * against, and a bound derived from the very table that answer comes from would
+ * agree with any figure that table produced. What this refuses is a main
+ * process asking a reader to agree to a gigabyte.
+ *
+ * Measured 2026-09-11: the larger model plus the runtime is 353,021,158 bytes,
+ * so this sits above the real maximum with room for a model revision and well
+ * below anything a reader would recognise as absurd.
+ */
+export const HANDWRITING_MAX_BYTES = 512 * 1024 * 1024;
 
 /** {@link SPELLING_LANGUAGES} as a schema, derived rather than respelt. */
 export const spellingLanguageSchema = z.enum(SPELLING_LANGUAGES);
@@ -706,6 +730,96 @@ export const channels = {
       // rather than a number somebody picked.
       languages: z.array(ocrLanguageSchema).max(OCR_LANGUAGES.length),
     }),
+  ),
+
+  /**
+   * Whether the handwriting engine's stack is on this machine, and what the rest
+   * of it would cost to fetch.
+   *
+   * ## Why a query rather than a setting the renderer already has
+   *
+   * `app.ocrLanguages`' reason, one engine along: there is no path in the
+   * renderer by invariant L2 and no directory to list. But the sharper reason is
+   * the **wired-tools rule**. TrOCR is never bundled, so on a first run the
+   * handwriting tool would be a control that dispatches a command the engine
+   * then refuses for a file that was never downloaded. The registry's `when`
+   * predicate is what keeps a control that cannot work off the screen, and this
+   * is what it reads.
+   *
+   * ## `bytesToFetch` is what is MISSING, never the total
+   *
+   * A reader agreeing to a download is agreeing to a number, and the honest one
+   * is what will actually cross the network — a machine holding the runtime and
+   * one model is most of the way there. Zero means the engine runs offline,
+   * which is the state the row promises after a first fetch.
+   *
+   * ## No failure code
+   *
+   * A machine with nothing downloaded is a STATE and not a refusal —
+   * `app.ocrLanguages`' empty list exactly. A build with no cache surface at all
+   * answers `available: false`, which is the same shape `settings.loadSecrets`
+   * uses for a machine with no keyring.
+   */
+  'app.handwritingCache': channel(
+    'Whether the handwriting models are downloaded, and what is left to fetch.',
+    z.object({ size: trocrSizeSchema }),
+    z
+      .object({
+        /** False where this build has no cache surface at all. */
+        available: z.boolean(),
+        /** True when every file this size needs is present and the engine can run. */
+        ready: z.boolean(),
+        // BOUNDED BY THE MANIFEST'S OWN ARITHMETIC rather than by a round number:
+        // the largest honest answer is every artefact of the larger model, and a
+        // bound above that would let a hostile main ask a reader to agree to a
+        // download nothing in this build can produce.
+        bytesToFetch: z.number().int().nonnegative().max(HANDWRITING_MAX_BYTES),
+      })
+      .strict(),
+  ),
+
+  /**
+   * Downloads whatever the handwriting engine is missing, against pinned
+   * digests.
+   *
+   * **A command channel and not a query**, because it changes the machine: it
+   * writes up to 339 MB into the reader's profile, and every byte of it is
+   * verified against invariant 9's four guarantees before it lands.
+   *
+   * It answers the cache's state afterwards rather than `{ok: true}`, so a
+   * surface shows what happened rather than that something did — and a partial
+   * fetch interrupted by a refusal reports honestly what is still missing.
+   *
+   * **`download-refused` is its own code**, separate from the internal one: a
+   * pinned digest that does not match, a host that is not on the list, a
+   * response past its ceiling — those are answers about the network and the
+   * artefact, and a reader can act on them (try again later) where an internal
+   * failure means this build has a defect.
+   */
+  'app.fetchHandwritingModel': channel(
+    'Downloads the handwriting runtime and models this machine is missing.',
+    z.object({ size: trocrSizeSchema }),
+    z
+      .object({
+        ready: z.boolean(),
+        bytesToFetch: z.number().int().nonnegative().max(HANDWRITING_MAX_BYTES),
+      })
+      .strict(),
+    ['download-refused', 'no-handwriting-cache'],
+  ),
+
+  /**
+   * Removes the handwriting cache — `BUILD-PROMPT.md`:627's *clear caches*.
+   *
+   * Answers the bytes it freed, for the reason above: *done* is not something a
+   * reader can check, and a control that reports 0 bytes on a machine that held
+   * 300 MB is one that did not work.
+   */
+  'app.clearHandwritingCache': channel(
+    'Removes the downloaded handwriting runtime and models.',
+    z.object({}),
+    z.object({ bytesRemoved: z.number().int().nonnegative() }).strict(),
+    ['no-handwriting-cache'],
   ),
 
   /**

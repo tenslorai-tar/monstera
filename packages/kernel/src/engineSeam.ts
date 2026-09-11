@@ -5,7 +5,7 @@ import type { CaptureResult, CommandPrior } from './commandLog.js';
 // TYPE-ONLY, and it has to be: `ocrRecognise.ts` instantiates a WASM engine on
 // its first call, and a value import here would put 2.8 MB of Tesseract behind
 // every module that reads this seam's types. The import is erased.
-import type { OcrRequest, RecognisedPage } from './ocrRecognise.js';
+import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 
 /**
  * The seam between the kernel and the engines that write documents (ADR-0009
@@ -538,7 +538,12 @@ export interface PreReadKinds {
    */
   readonly outline: { readonly needs: never; readonly value: readonly OutlineEntry[] };
   /**
-   * One page's recognised text — `ocrRecognise.ts`, inside the engine host.
+   * One page's or one region's recognised text, inside the engine host.
+   *
+   * **The request names which engine answers** (ADR-0052 Decision 1), and the
+   * two arms of that union do not carry the same fields — so the member cannot
+   * be called with a handwriting request that names no region, and the branch
+   * that picks a model directory lives in the composition root alone.
    *
    * **Per page, never per document**, and that is ADR-0035 rather than a choice:
    * extracted text measured at 3.59× a document's bytes and is never resident in
@@ -548,7 +553,7 @@ export interface PreReadKinds {
    * rasterised and holds both frames — so nothing on this path converts a second
    * time.
    */
-  readonly ocr: { readonly needs: OcrRequest; readonly value: RecognisedPage };
+  readonly ocr: { readonly needs: RecognitionRequest; readonly value: RecognisedPage };
 }
 
 /**

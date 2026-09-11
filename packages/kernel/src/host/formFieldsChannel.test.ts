@@ -152,6 +152,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       ocr: () => {
         throw new Error('a field read must not recognise anything');
       },
+      handwriting: () => {
+        throw new Error('a field read must not recognise anything');
+      },
       destinations: () => {
         throw new Error('a field read must not read the outline');
       },

@@ -120,6 +120,7 @@ export {
   type HostFormDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
+  type HostHandwritingReader,
   type HostOcrReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -144,7 +145,17 @@ export type { FlatFieldCandidate } from './flatFields.js';
 // `ocrRecognise.ts` instantiates 2.8 MB of Tesseract on its first call, and the
 // recognition itself runs in the engine host. Main composes the reader and passes
 // the answers through, so it needs the shapes and nothing else.
-export type { OcrRequest, RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
+export type {
+  OcrRequest,
+  RecognisedLine,
+  RecognisedPage,
+  RecognisedWord,
+  RecognitionRequest,
+} from './ocrRecognise.js';
+// THE SCOPE, NOT THE REQUEST. `HandwritingRequest` carries the model directory,
+// which only the composition root supplies — and the type it supplies it to is
+// `HostHandwritingReader`, already on this barrel.
+export type { HandwritingScope } from './ocrHandwriting.js';
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
@@ -191,6 +202,7 @@ export {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
+  remoteMupdfHandwriting,
   remoteMupdfOcr,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -384,3 +396,17 @@ export {
   type VerifiedDownload,
   downloadVerified,
 } from './verifiedDownload.js';
+// ON THE BARREL AND THE ENGINE HALF IS NOT. This module is data and two pure
+// functions — the URLs, the digests and which tokenizer family each model needs
+// — and main is what reads it, because main downloads. `ocrHandwriting.ts`, which
+// loads an ONNX runtime, is reached only by the host entry (ADR-0026 clause 2).
+export {
+  HANDWRITING_HOSTS,
+  HANDWRITING_MODELS,
+  RUNTIME_ARTEFACTS,
+  type HandwritingArtefact,
+  type HandwritingModel,
+  type TokenizerFamily,
+  artefactsFor,
+  totalBytes,
+} from './handwritingArtefacts.js';

@@ -23,6 +23,7 @@ import {
   mergeDocumentSchema,
   movePageSchema,
   ocrLanguageSchema,
+  trocrSizeSchema,
   placeAnnotationSchema,
   styleAnnotationSchema,
   removeAnnotationSchema,
@@ -1819,27 +1820,66 @@ export const engineChannels = {
    * language is a closed enum, which is what keeps ADR-0014 constraint 1 true —
    * a name from fourteen supplies no file and no path.
    */
+  /**
+   * ## TWO ENGINES, ONE CHANNEL, AND THE ARMS ARE NOT INTERCHANGEABLE
+   *
+   * [ADR-0052](../../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
+   * Decision 1: the request names the engine and nothing else in the build
+   * chooses. A second channel would put *which recogniser* in as many places as
+   * there are callers.
+   *
+   * A **discriminated union** rather than one object with optional extras,
+   * because the two engines do not accept the same request and B5 says make the
+   * difference unrepresentable rather than checked:
+   *
+   * - `tesseract` takes a language and an OPTIONAL region — the page is the
+   *   absence of one.
+   * - `handwriting` takes a REQUIRED region and a model size, and no language:
+   *   TrOCR reads one text line at seconds per line, so a page-scoped request is
+   *   not a thing this channel can express (Decision 4), and its repositories
+   *   are English so a language field would be a value nothing could honour.
+   *
+   * Each arm carries **its own** `modelDirectory`, which is the half that
+   * matters at a hostile boundary: the two caches hold different things, and a
+   * shared field would let a confused main hand the handwriting loader the
+   * tessdata directory and get *model unreadable* instead of a compile error.
+   */
   'engine/ocr-page': channel(
-    'Recognises one page’s text and word boxes, inside the process that holds the raster.',
-    z
-      .object({
-        session: sessionSchema,
-        /** Zero-based index, as `commands.ts` declares them. */
-        page: z.number().int().nonnegative(),
-        language: ocrLanguageSchema,
-        /**
-         * A rectangle of the page to read instead of all of it, in PDF user space.
-         *
-         * D6 row 6. Bounded by `ocrBoxSchema`'s own shape — four numbers — and
-         * absent for a whole page, which is the same distinction `OcrRequest` makes
-         * one layer in: *the page* and *a rectangle that happens to cover it* are
-         * different requests.
-         */
-        region: ocrBoxSchema.optional(),
-        /** The directory main granted this host READ on for the models. */
-        modelDirectory: pathSchema,
-      })
-      .strict(),
+    'Recognises text and boxes for a page or a region, inside the process that holds the raster.',
+    z.discriminatedUnion('engine', [
+      z
+        .object({
+          engine: z.literal('tesseract'),
+          session: sessionSchema,
+          /** Zero-based index, as `commands.ts` declares them. */
+          page: z.number().int().nonnegative(),
+          language: ocrLanguageSchema,
+          /**
+           * A rectangle of the page to read instead of all of it, in PDF user space.
+           *
+           * D6 row 6. Bounded by `ocrBoxSchema`'s own shape — four numbers — and
+           * absent for a whole page, which is the same distinction `OcrRequest` makes
+           * one layer in: *the page* and *a rectangle that happens to cover it* are
+           * different requests.
+           */
+          region: ocrBoxSchema.optional(),
+          /** The directory main granted this host READ on for the models. */
+          modelDirectory: pathSchema,
+        })
+        .strict(),
+      z
+        .object({
+          engine: z.literal('handwriting'),
+          session: sessionSchema,
+          page: z.number().int().nonnegative(),
+          /** REQUIRED. This engine is never offered on a page. */
+          region: ocrBoxSchema,
+          size: trocrSizeSchema,
+          /** The cache main downloaded the runtime and models into, and granted. */
+          modelDirectory: pathSchema,
+        })
+        .strict(),
+    ]),
     z
       .object({
         lines: z

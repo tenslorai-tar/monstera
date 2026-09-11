@@ -42,6 +42,10 @@ const handlers: ContractHandlers = {
   // would produce; fourteen is what a fixture that stopped being a subset looks
   // like. One is the shape the channel exists to carry.
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: ['eng' as const] })),
+  'app.handwritingCache': () =>
+    Promise.resolve(ok({ available: true, ready: false, bytesToFetch: 0 })),
+  'app.fetchHandwritingModel': () => Promise.resolve(ok({ ready: true, bytesToFetch: 0 })),
+  'app.clearHandwritingCache': () => Promise.resolve(ok({ bytesRemoved: 0 })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
   // list and `lastExitClean: true` are what a boundary that dropped both fields

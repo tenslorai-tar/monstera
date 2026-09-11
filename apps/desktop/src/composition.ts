@@ -19,6 +19,7 @@ import {
   DocumentService,
   EngineOpenFailed,
   type HostDestinationsReader,
+  type HostHandwritingReader,
   type HostOcrReader,
   type HostExtract,
   type HostSnapshot,
@@ -60,6 +61,7 @@ import {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
+  remoteMupdfHandwriting,
   remoteMupdfOcr,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -125,6 +127,7 @@ import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
+import type { HandwritingCache } from './handwritingCache.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies } from './main.js';
@@ -375,6 +378,16 @@ export interface ShellComposition {
   /** The recent-files list. Required for `settings`' reason. */
   readonly recent: RecentFiles;
   /**
+   * The handwriting engine's downloaded stack, or absent.
+   *
+   * **Optional, and the absent state is a real one**: a graph with no cache
+   * surface offers no handwriting recognition, which is the same shape
+   * `provisionedOcrLanguages` answering an empty list already has one row over.
+   * A default path here would be this file asking Electron where `userData` is,
+   * which is the one thing it may not do.
+   */
+  readonly handwriting?: HandwritingCache;
+  /**
    * The Win32 surfaces the engine host is created through, or `null`.
    *
    * `null` wherever they do not exist — every unit test, every non-Windows run —
@@ -433,6 +446,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     settings,
     secrets,
     recent,
+    handwriting: handwritingCache,
     enginePlatform = null,
     pdfiumPlatform = null,
     encodePng,
@@ -632,9 +646,33 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // not exist — the host's state is *this model cannot be read*, and *no models
     // are installed* is main's to know. The surface is what keeps a reader from
     // meeting it: the command is offered only where a model is present.
+    //
+    // TWO ENGINES, AND THE BRANCH THAT TURNS ONE INTO A DIRECTORY IS HERE AND
+    // NOWHERE ELSE. Each has its own cache holding entirely different files —
+    // provisioned `.traineddata` against a downloaded ONNX runtime and models —
+    // so this is the one place where getting it wrong is possible at all, and
+    // the host's two arms carry their directories separately so a mistake here
+    // cannot arrive at the loader as a shared field.
     ocr: (docId, sessions, request) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      if (request.engine === 'handwriting') {
+        if (handwritingCache === undefined) {
+          throw new Error(
+            'this build has no handwriting cache surface, so there is nowhere for the TrOCR ' +
+              'runtime and models to have been downloaded to. The surface is supplied by ' +
+              'entry.ts from `userData`; a graph without one offers no handwriting recognition.',
+          );
+        }
+        return engineHost.handwriting(session, {
+          page: request.page,
+          region: request.region,
+          size: request.size,
+          modelDirectory: handwritingCache.directory,
+        });
+      }
+
       const modelDirectory = provisionedModelDirectory();
       if (modelDirectory === null) {
         throw new Error(
@@ -643,7 +681,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
             'directory to the shell; a packaged build has neither yet.',
         );
       }
-      return engineHost.ocr(session, { ...request, modelDirectory });
+      const { engine: _engine, ...scope } = request;
+      return engineHost.ocr(session, { ...scope, modelDirectory });
     },
     // THE LAYERS, a read like the two above. The TOGGLE is not here: it is a
     // command, and commands route through the bus in `execute`.
@@ -871,6 +910,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // way. An empty answer is the state a machine with no provisioned models is
       // in, and the OCR dialog is where that is said.
       ocrLanguages: provisionedOcrLanguages,
+      // SPREAD, because the surface is optional and `exactOptionalPropertyTypes`
+      // separates an absent key from a present `undefined` — and here the two
+      // mean different things to the handler.
+      ...(handwritingCache === undefined ? {} : { handwriting: handwritingCache }),
     }),
     incidents: log?.incidents ?? reportIncident,
     failures,
@@ -954,6 +997,8 @@ function engineSessionOpener(
   readonly destinations: HostDestinationsReader;
   /** One page's recognised text, from whichever host is live. */
   readonly ocr: HostOcrReader;
+  /** One region read as handwriting, from whichever host is live. */
+  readonly handwriting: HostHandwritingReader;
   /** The document's layers, from whichever host is live. */
   readonly layers: HostLayersReader;
   /** Every annotation in the document, from whichever host is live. */
@@ -1162,6 +1207,20 @@ function engineSessionOpener(
       );
     }
     return ocr(session, request);
+  };
+
+  /** The handwriting engine's half of the same registration. See {@link pageText}. */
+  let handwriting: HostHandwritingReader | null = null;
+
+  const readHandwritingThroughHost: HostHandwritingReader = (session, request) => {
+    if (handwriting === null) {
+      throw new Error(
+        'A handwriting recognition reached the engine with no host reader registered. A session ' +
+          'was resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return handwriting(session, request);
   };
 
   /** The layers' half of the same registration. See {@link pageText}. */
@@ -1390,6 +1449,7 @@ function engineSessionOpener(
     pageLinks = remoteMupdfPageLinks(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     ocr = remoteMupdfOcr(client, remote);
+    handwriting = remoteMupdfHandwriting(client, remote);
     layers = remoteMupdfLayers(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
@@ -1561,6 +1621,7 @@ function engineSessionOpener(
     pageLinks: readPageLinksThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,
+    handwriting: readHandwritingThroughHost,
     layers: readLayersThroughHost,
     annotations: readAnnotationsThroughHost,
     formFields: readFormFieldsThroughHost,

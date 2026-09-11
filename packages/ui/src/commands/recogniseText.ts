@@ -250,6 +250,16 @@ export async function recogniseScope(
         kind: 'ocrPage',
         page: target,
         language,
+        // TESSERACT, AND NOT A SETTING. This is the page and document scope, and
+        // the handwriting engine is offered on a region only — it reads one text
+        // line at seconds per line, so a page of thirty would take minutes
+        // (ADR-0052 §4). A choice here would be a control whose honest behaviour
+        // nobody would pick.
+        engine: 'tesseract',
+        // CARRIED AND UNUSED on this path, as `language` is on the other one.
+        // `small` rather than the setting because nothing reads it here, and
+        // reaching for the setting would imply it changes what this does.
+        trocrSize: 'small',
       });
       // A REFUSED PAGE STOPS THE WALK. `applyDocumentCommand` has already
       // reported it, and carrying on would stack one dialog per page behind a

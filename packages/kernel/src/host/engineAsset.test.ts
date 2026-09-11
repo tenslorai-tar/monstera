@@ -145,6 +145,9 @@ async function joined(): Promise<{
       ocr: () => {
         throw new Error('unused');
       },
+      handwriting: () => {
+        throw new Error('unused');
+      },
       destinations: () => {
         throw new Error('unused');
       },

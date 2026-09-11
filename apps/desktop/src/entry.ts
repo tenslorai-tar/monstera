@@ -14,6 +14,7 @@ import { createDocumentPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
 import { createFormDataOpenPicker, createImagePicker } from './imagePicker.js';
 import { createEngineHostPlatform, createPdfiumHostPlatform } from './engineHostPlatform.js';
+import { createHandwritingCache } from './handwritingCache.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -164,6 +165,11 @@ startShell(() => {
     // stored there would be a path in the renderer with nothing having decided
     // to send it.
     recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
+    // THE HANDWRITING CACHE, under `userData` for the settings' reason and one
+    // more of its own: the models outlive every session, and the install root is
+    // both unwritable on a Store install and unreachable by the contained host
+    // that reads them (ADR-0023's 2026-09-09 correction).
+    handwriting: createHandwritingCache(app.getPath('userData')),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved above and handed down. Under

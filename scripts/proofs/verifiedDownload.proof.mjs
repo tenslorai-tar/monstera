@@ -77,7 +77,7 @@ const failures = [];
  * table agrees with a case or a whole form dropping out of it. The assertion
  * below re-states the arithmetic so a deliberate change has to touch both.
  */
-const DECLARED_CASES = 16;
+const DECLARED_CASES = 24;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -149,9 +149,13 @@ let destinationSeq = 0;
  *
  * @param {Downloader} download
  * @param {(attempt: number, requested: string) => Response} answer
- * @param {{ url?: string, sha256?: string, maxBytes?: number }} [options]
+ * @param {{ url?: string, sha256?: string, maxBytes?: number, allowedHosts?: readonly string[] }} [options]
  */
-async function run(download, answer, { url = URL_UNDER_TEST, sha256 = DIGEST, maxBytes = 1_048_576 } = {}) {
+async function run(
+  download,
+  answer,
+  { url = URL_UNDER_TEST, sha256 = DIGEST, maxBytes = 1_048_576, allowedHosts = HOSTS } = {},
+) {
   destinationSeq += 1;
   const destination = join(scratch, `out-${String(destinationSeq)}.bin`);
   let calls = 0;
@@ -162,7 +166,7 @@ async function run(download, answer, { url = URL_UNDER_TEST, sha256 = DIGEST, ma
   try {
     await download({
       url,
-      allowedHosts: HOSTS,
+      allowedHosts,
       sha256,
       maxBytes,
       destination,
@@ -257,6 +261,67 @@ for (const form of FORMS) {
   }
 
   // -------------------------------------------------------------------------
+  // GUARANTEE 2, the WILDCARD ENTRY — a compile-time list that can name a
+  // vendor's whole subdomain space, because HuggingFace answers an LFS URL with
+  // a 302 to a REGIONAL host (`us.aws.cdn.hf.co` from here, another region's
+  // elsewhere). An exact list would work where it was written and refuse the
+  // download everywhere else.
+  //
+  // The four cases are one accept and three near misses, and the near misses
+  // are the point: every one of them ENDS WITH the wildcarded name and is a
+  // different registrable domain, which is what an `endsWith` written without
+  // the dot lets through.
+  // -------------------------------------------------------------------------
+  {
+    const result = await run(
+      download,
+      (n) => (n === 1 ? redirectedTo('https://us.aws.cdn.hf.co/blob') : served(PAYLOAD)),
+      { url: 'https://hf.co/model/resolve/abc/encoder.onnx', allowedHosts: ['*.hf.co'] },
+    );
+    check(
+      `${name}: a wildcard entry admits a subdomain AND the bare name it wildcards`,
+      result.ok && result.calls === 2 && readFileSync(result.destination).equals(PAYLOAD),
+      `ok=${String(result.ok)} calls=${String(result.calls)} error=${result.message.slice(0, 140)}`,
+    );
+  }
+
+  {
+    const result = await run(download, () => served(PAYLOAD), {
+      url: 'https://evil-hf.co/model/encoder.onnx',
+      allowedHosts: ['*.hf.co'],
+    });
+    check(
+      `${name}: "evil-hf.co" is refused by "*.hf.co", so the DOT is part of the comparison`,
+      !result.ok && result.calls === 0,
+      `calls=${String(result.calls)} error=${result.message.slice(0, 140)}`,
+    );
+  }
+
+  {
+    const result = await run(download, () => served(PAYLOAD), {
+      url: 'https://hf.co.evil.example/model/encoder.onnx',
+      allowedHosts: ['*.hf.co'],
+    });
+    check(
+      `${name}: "hf.co.evil.example" is refused, so the suffix is anchored at the END`,
+      !result.ok && result.calls === 0,
+      `calls=${String(result.calls)} error=${result.message.slice(0, 140)}`,
+    );
+  }
+
+  {
+    const result = await run(download, () => served(PAYLOAD), {
+      url: 'https://cdn.hf.co/model/encoder.onnx',
+      allowedHosts: [HOST],
+    });
+    check(
+      `${name}: CONTROL — a PLAIN entry admits no subdomain, so the wildcard is what widens`,
+      !result.ok && result.calls === 0,
+      `calls=${String(result.calls)} error=${result.message.slice(0, 140)}`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // GUARANTEE 3 — the ceiling counts RECEIVED bytes and never reads
   // Content-Length.
   //
@@ -321,14 +386,14 @@ for (const form of FORMS) {
 
 // ---------------------------------------------------------------------------
 // A control on this file's own reach, because every claim above is worth what
-// the table covered. Two forms, eight cases each: an implementation silently
+// the table covered. Two forms, twelve cases each: an implementation silently
 // dropping out of `FORMS` would take eight assertions with it and the roster
 // would simply be smaller — which is why DECLARED_CASES is a literal and why
 // this states the arithmetic rather than deriving it.
 // ---------------------------------------------------------------------------
-if (FORMS.length * 8 !== DECLARED_CASES) {
+if (FORMS.length * 12 !== DECLARED_CASES) {
   failures.push(
-    `The case table covers ${String(FORMS.length)} form(s) at 8 cases each, and this file ` +
+    `The case table covers ${String(FORMS.length)} form(s) at 12 cases each, and this file ` +
       `declares ${String(DECLARED_CASES)}. Invariant 9 has two derived forms and both are owed ` +
       `every guarantee; a form leaving this table is a form nothing holds to the law.`,
   );

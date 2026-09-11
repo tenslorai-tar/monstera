@@ -161,8 +161,11 @@ describe('the recognise-text command', () => {
     // page 1's words underneath the real ones.
     expect(read).toStrictEqual([0, 1, 2]);
     expect(dispatched).toStrictEqual([
-      { kind: 'ocrPage', page: 0, language: 'deu' },
-      { kind: 'ocrPage', page: 2, language: 'deu' },
+      // `engine: 'tesseract'` on every one of these, and it is not noise: the
+      // handwriting engine is offered on a region only, so a page walk that
+      // acquired a choice would be the minutes-long control ADR-0052 §4 refuses.
+      { kind: 'ocrPage', page: 0, language: 'deu', engine: 'tesseract', trocrSize: 'small' },
+      { kind: 'ocrPage', page: 2, language: 'deu', engine: 'tesseract', trocrSize: 'small' },
     ]);
   });
 
@@ -181,7 +184,9 @@ describe('the recognise-text command', () => {
     // here and a command reading the context instead would agree on every
     // single-page case while ignoring the choice.
     expect(read).toStrictEqual([1]);
-    expect(dispatched).toStrictEqual([{ kind: 'ocrPage', page: 1, language: 'eng' }]);
+    expect(dispatched).toStrictEqual([
+      { kind: 'ocrPage', page: 1, language: 'eng', engine: 'tesseract', trocrSize: 'small' },
+    ]);
   });
 
   it('dispatches nothing when the dialog is dismissed', async () => {
@@ -278,7 +283,9 @@ describe('the recognise-text command', () => {
       contextWith(3),
     );
 
-    expect(dispatched).toStrictEqual([{ kind: 'ocrPage', page: 0, language: 'eng' }]);
+    expect(dispatched).toStrictEqual([
+      { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract', trocrSize: 'small' },
+    ]);
     // A CANCELLED RUN IS REPORTED, which is this command's own rule rather than
     // the spell check's: the page already recognised carries real text, so saying
     // nothing would leave a reader unsure whether any of it happened.
@@ -324,8 +331,8 @@ describe('the recognise-text command', () => {
     // its scope. The answer above says page 0 only, and all three are read.
     expect(read).toStrictEqual([0, 1, 2]);
     expect(dispatched).toStrictEqual([
-      { kind: 'ocrPage', page: 0, language: 'eng' },
-      { kind: 'ocrPage', page: 2, language: 'eng' },
+      { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract', trocrSize: 'small' },
+      { kind: 'ocrPage', page: 2, language: 'eng', engine: 'tesseract', trocrSize: 'small' },
     ]);
     expect(copies()).toBe(1);
   });
@@ -408,6 +415,8 @@ describe('the recognise-text command', () => {
     }).run(contextWith(3));
 
     expect(read).toStrictEqual([0, 1]);
-    expect(dispatched).toStrictEqual([{ kind: 'ocrPage', page: 0, language: 'eng' }]);
+    expect(dispatched).toStrictEqual([
+      { kind: 'ocrPage', page: 0, language: 'eng', engine: 'tesseract', trocrSize: 'small' },
+    ]);
   });
 });

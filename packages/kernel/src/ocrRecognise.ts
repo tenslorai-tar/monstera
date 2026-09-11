@@ -8,6 +8,10 @@ import type { Matrix as MupdfMatrix } from 'mupdf';
 import { ColorSpace, Matrix, Rect } from 'mupdf';
 
 import type { MupdfSession } from './engineSeam.js';
+// TYPE-ONLY, and it must be: `ocrHandwriting.ts` loads an ONNX runtime, and this
+// module is imported by the host entry before either engine is used. The import
+// is erased, so naming the shape costs nothing at runtime.
+import type { HandwritingScope } from './ocrHandwriting.js';
 import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 
@@ -277,7 +281,7 @@ export interface RecognisedWord {
   readonly text: string;
   /** `[x0, y0, x1, y1]` in PDF user space, y-up, ordered. */
   readonly box: readonly [number, number, number, number];
-  /** Tesseract's own confidence for this word, 0 to 100. */
+  /** The engine's own confidence for this word, 0 to 100. */
   readonly confidence: number;
 }
 
@@ -288,12 +292,28 @@ export interface RecognisedLine {
   readonly words: readonly RecognisedWord[];
 }
 
-/** What one page's recognition answers. */
+/**
+ * What one recognition answers — **the shape BOTH engines return** (ADR-0052
+ * Decision 1), so nothing downstream chooses between two answer types.
+ *
+ * What each engine can fill differs, and the difference is stated where it is
+ * produced rather than implied here: `ocrHandwriting.ts` answers one line at the
+ * region's own box with **no words**, because TrOCR emits tokens rather than
+ * glyph positions, and its confidence measures how sure the model was of the
+ * text it emitted rather than whether the image held text at all.
+ */
 export interface RecognisedPage {
   readonly lines: readonly RecognisedLine[];
-  /** Tesseract's mean confidence across the page, 0 to 100. */
+  /** The engine's mean confidence across what it read, 0 to 100. */
   readonly confidence: number;
-  /** The language the model was asked for, echoed so a caller cannot lose it. */
+  /**
+   * The language that actually read it.
+   *
+   * Tesseract echoes the request, because the request names one of its fourteen
+   * models. The handwriting engine answers `eng` whatever was asked, because its
+   * repositories are English — an echo there would put a language in the answer
+   * that no model in this build can honour.
+   */
   readonly language: OcrLanguage;
 }
 
@@ -438,6 +458,23 @@ export interface OcrRequest {
    */
   readonly region?: readonly [number, number, number, number];
 }
+
+/**
+ * What a caller in main asks for, **for either engine** (ADR-0052 Decision 1).
+ *
+ * A union discriminated by the engine rather than one object with optional
+ * extras, for the reason `engine/ocr-page`'s schema gives: the two engines do
+ * not take the same request. Tesseract takes a language and an optional region;
+ * the handwriting engine takes a required region and a model size and no
+ * language, because its repositories are English and it reads one text line.
+ *
+ * So *a handwriting recognition of a whole page* is not a value this type can
+ * hold, which is B5 rather than a check — and the compiler refuses it at every
+ * call site between the tool that drags a rectangle and the host that reads it.
+ */
+export type RecognitionRequest =
+  | ({ readonly engine: 'tesseract' } & OcrRequest)
+  | ({ readonly engine: 'handwriting' } & HandwritingScope);
 
 /**
  * Recognises one page of a session this process holds.
