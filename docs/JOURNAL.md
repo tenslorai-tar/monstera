@@ -888,6 +888,50 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — FFFFFF-2 paid, and the nine call sites the fix does not reach
+
+`ocrRecognise.proof.mjs` declares `DECLARED_CASES = 15`, a literal, and asserts
+`CASES.length` against it. The mutation bites: removing one label throws *14 case
+labels against 15 declared* before a single case runs, where the derived form
+agreed.
+
+Two anchors rather than one, and the second is not redundancy. The roster counts
+**calls**; the length guard counts **labels**. A label added without a call, or
+removed from under one, renames every case after it — the labels are indexed
+positionally — and the roster cannot see that at all, because the number of calls
+has not changed.
+
+### The class has nine more sites, and that is measured rather than feared
+
+Rule 0 says fix the class. So, counted — every non-literal `cases:` in `scripts/`:
+
+| file | spelling |
+|---|---|
+| `buildFreshness.proof.mjs`, `pickerProbe.proof.mjs`, `sessionSweep.proof.mjs`, `viewportRotation.proof.mjs`, `research/hostRecovery.mjs` | `cases: CASES.length` |
+| `documentConsistency.mjs` | `cases: chosen.length` |
+| `shell.proof.mjs` | `cases: RUNTIME_PRESENT ? RUNTIME_CASES.length : 0` |
+| `canvasPixels.proof.mjs`, `rendererPolicy.proof.mjs`, `renderGeometry.proof.mjs` | `cases: STRING_CASES + RUNTIME_CASES.length` |
+
+Nine files, one shape, every one of them agreeing with a coordinated shrink the
+way this file did an hour ago. **Not fixed here, and the reason is the owner's
+deferral rather than cost alone.** CLAUDE.md's 4c section defers the real repair —
+`cases` taking expected **names** instead of a count, so the circular version has
+to be written `chosen.map((c) => c.name)` and is visibly circular — across 37 call
+sites, and records that the deferral now rests on cost. That ruling owns this
+class, and converting nine sites to literals underneath it would be a second
+answer to the same question (B3a) that also spends the mechanical-change risk
+without removing the shape.
+
+**What IS new information for that deferral: a narrow sub-rule is decidable.**
+`check:proofanchors` asks *does this file declare a count*; a `cases:` expression
+containing `.length` is textually detectable, it is the half that has now bitten
+twice in one range, and nine sites is a tenth of 37. That is a cheaper first step
+than the signature change and it did not exist as an option when the deferral was
+written — recorded here so the next reader weighs it rather than re-deriving the
+37-site price and deferring again.
+
+---
+
 ## 2026-09-11 — Stage audit of `38ea527..622f794`: a page nobody rotated, and an anchor paid in one file and spent in the next
 
 Twenty-three commits, ninety-six files — D6 rows 1 to 5 and enhance scans, the

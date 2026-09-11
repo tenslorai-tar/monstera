@@ -78,6 +78,16 @@ const DRAWN_SIZE = 28;
  */
 const WORD = 'MONSTERA';
 
+/**
+ * The second word, and its baseline, for the region cases.
+ *
+ * Near the bottom of the page and as unmistakable as the first: what the region
+ * cases assert is which of the two came back, so a pair a reader could confuse
+ * would make a correct region look like a failed one.
+ */
+const SECOND_WORD = 'DELICIOSA';
+const SECOND_BASELINE = 60;
+
 /** @type {string[]} */
 const failures = [];
 
@@ -109,13 +119,55 @@ const CASES = /** @type {const} */ ([
   'CONTROL: the granted directory is accepted, so the refusal above is not a constant',
   'every corpus page yields words rather than nothing',
   'CONTROL: and the confidence VARIES across them, so it is measuring the page',
+  'A REGION READS ONLY WHAT IS INSIDE IT, on a page carrying two words',
+  'CONTROL: and the whole page reads BOTH, so the region is what excluded one',
+  'a region that lands off the page is refused rather than read as the whole of it',
   // APPENDED RATHER THAN PUT FIRST, which is where it reads best: every label
   // above is indexed positionally by the case that asserts it, so inserting one
   // at the top would renumber eleven call sites for the sake of an ordering.
+  // APPENDED LAST, after the region cases, for the reason the comment below gave
+  // when it was appended after the corpus ones: every label above is indexed
+  // positionally, and inserting one renumbers the call sites.
   'the core is the Tesseract the advisory register was triaged against',
 ]);
 
-const roster = createRoster(failures, { cases: CASES.length });
+/**
+ * THE ANCHOR, PAID 2026-09-11 (finding FFFFFF-2).
+ *
+ * This read `cases: CASES.length`, which is audit item 4c in the direction the
+ * rule warns about: **derive from a set only when the failure you fear makes that
+ * set BIGGER.** The fear here is a case going quiet, which makes it smaller.
+ *
+ * Deleting a label alone is red, and deleting a call site alone is red. Deleting
+ * **both** — which is what removing a case actually looks like — shrinks the two
+ * sides together and the roster agrees, because both came from `CASES`. A literal
+ * cannot agree, and that is the whole of it.
+ *
+ * `check:proofanchors` reported the derived form as anchored, because its rule is
+ * *does this file declare a count*. It was not wrong; its question is one step
+ * short of the property, so the file passed while carrying the shape the anchor
+ * exists to remove. Written here one directory from
+ * `blockEscapeResolvingWrites.proof.mjs`, which paid the identical debt eleven
+ * commits earlier in the same range.
+ *
+ * **15, a literal, measured 2026-09-11 by running this file.** Adding a case is a
+ * two-line diff — the label and this number — and removing one is red.
+ */
+const DECLARED_CASES = 15;
+
+// AND THE LIST IS HELD TO THE SAME NUMBER, because the labels are indexed
+// POSITIONALLY by the calls below: a label added without a call, or removed from
+// under one, renames every case after it rather than reporting anything. The
+// roster cannot see that — it counts calls — so the length is asserted here.
+if (CASES.length !== DECLARED_CASES) {
+  throw new Error(
+    `${String(CASES.length)} case labels against ${String(DECLARED_CASES)} declared. The labels ` +
+      'are indexed positionally, so a mismatch means every case after the change is reporting ' +
+      'under the wrong name.',
+  );
+}
+
+const roster = createRoster(failures, { cases: DECLARED_CASES });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -145,7 +197,7 @@ async function constructedPage(options = {}) {
  * Recognises page 0 of `bytes` through a real session.
  *
  * @param {Uint8Array} bytes
- * @param {{ page?: number, models?: string }} options
+ * @param {{ page?: number, models?: string, region?: [number, number, number, number] }} options
  */
 async function recognise(bytes, options = {}) {
   const session = await mupdfWriter.open(bytes);
@@ -153,11 +205,30 @@ async function recognise(bytes, options = {}) {
     return await recognisePage(session, {
       page: options.page ?? 0,
       language: 'eng',
+      ...(options.region === undefined ? {} : { region: options.region }),
       modelDirectory: options.models ?? MODELS,
     });
   } finally {
     await mupdfWriter.close(session);
   }
+}
+
+/**
+ * A page with one word near the top and a different one near the bottom.
+ *
+ * Two words far apart is what a region case needs: a rectangle over one of them
+ * either excludes the other or the region does nothing, and those are the two
+ * readings a fixture with one word cannot tell apart.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+async function twoWordPage() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText(WORD, { x: DRAWN_X, y: DRAWN_BASELINE, size: DRAWN_SIZE, font });
+  page.drawText(SECOND_WORD, { x: DRAWN_X, y: SECOND_BASELINE, size: DRAWN_SIZE, font });
+  return document.save();
 }
 
 /**
@@ -303,6 +374,50 @@ try {
       'every directory and the case proves nothing.',
   );
 
+  // ── D6 ROW 6: A REGION ────────────────────────────────────────────────────
+  //
+  // The rectangle is in PDF user space and `ocrRecognise.ts` converts it into the
+  // raster's frame — the inverse of the conversion the box cases above assert, in
+  // the same module because *where on the raster is this part of the page* has one
+  // answer. A region over the upper word must exclude the lower one.
+  const twoWords = await twoWordPage();
+  const upper = { x0: 0, y0: DRAWN_BASELINE - 10, x1: PAGE_WIDTH, y1: DRAWN_BASELINE + 40 };
+  const inRegion = await recognise(twoWords, {
+    region: [upper.x0, upper.y0, upper.x1, upper.y1],
+  });
+  const regionText = inRegion.lines.map((line) => line.text).join(' ');
+  check(
+    CASES[11],
+    regionText.includes(WORD) && !regionText.includes(SECOND_WORD),
+    `a region over the upper word read ${JSON.stringify(regionText)}. It has to contain ` +
+      `${WORD} and NOT ${SECOND_WORD}: a region that read both did nothing, and one that read ` +
+      'neither was converted into the wrong part of the raster — the y-flip this module owns.',
+  );
+
+  const wholePage = await recognise(twoWords);
+  const wholeText = wholePage.lines.map((line) => line.text).join(' ');
+  check(
+    CASES[12],
+    wholeText.includes(WORD) && wholeText.includes(SECOND_WORD),
+    `the same page read without a region answered ${JSON.stringify(wholeText)}. Without this the ` +
+      'case above passes on a page whose lower word was never legible, which is a fixture ' +
+      'problem reading as a working region.',
+  );
+
+  let offPage = '';
+  try {
+    await recognise(twoWords, { region: [PAGE_WIDTH + 50, 0, PAGE_WIDTH + 100, 20] });
+  } catch (error) {
+    offPage = messageOf(error);
+  }
+  check(
+    CASES[13],
+    /has no area on page/u.test(offPage),
+    `a region entirely off the page answered ${JSON.stringify(offPage)}. Clamping it to the ` +
+      'raster leaves a rectangle of no area, and recognising the whole page instead would be the ' +
+      'widest possible answer to a request nothing on the page can satisfy.',
+  );
+
   // THE ENGINE'S OWN VERSION, asked of the engine. `tesseract.js-core`'s npm
   // version says nothing about which Tesseract is inside it — 7.0.0 carries
   // 5.1.0 — and the advisory register's eight `.traineddata` verdicts were
@@ -316,7 +431,7 @@ try {
     api.End();
   }
   check(
-    CASES[11],
+    CASES[14],
     version === CORE_VERSION,
     `the shipped core reports Tesseract ${JSON.stringify(version)} and the register was triaged ` +
       `against ${JSON.stringify(CORE_VERSION)}. Eight verdicts in ` +
