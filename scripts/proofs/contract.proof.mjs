@@ -975,6 +975,7 @@ import type { ContractHandlers } from '@monstera/contract';
 import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
@@ -1070,6 +1071,7 @@ import type { ContractHandlers } from '@monstera/contract';
 import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
@@ -1238,6 +1240,7 @@ import type { ContractClient } from '@monstera/contract';
 import { ok, asDocVersion } from '@monstera/shared';
 export const shim: ContractClient = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.ocrLanguages': () => Promise.resolve(ok({ languages: [] })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.recent': () =>
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),

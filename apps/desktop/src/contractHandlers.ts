@@ -3,6 +3,7 @@ import {
   MAX_RASTER_PIXELS,
   type ChannelResult,
   type ContractHandlers,
+  type OcrLanguage,
   type SpellingLanguage,
 } from '@monstera/contract';
 import {
@@ -157,11 +158,22 @@ export function createContractHandlers(deps: {
    * anything about the shape of the answer.
    */
   readonly readDictionary: (language: SpellingLanguage) => Promise<DictionaryBytes | null>;
+  /**
+   * Which OCR models this machine has. `provisionedOcrLanguages`.
+   *
+   * Injected for {@link readDictionary}'s reason: it reads a directory the
+   * launcher passed down, so a case about the handler's shape would otherwise
+   * need a provisioned `.tools/` tree to say anything.
+   */
+  readonly ocrLanguages: () => Promise<readonly OcrLanguage[]>;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
     // handler type is asynchronous because the real document channels are.
     'app.info': () => Promise.resolve(ok({ ...deps.appInfo })),
+    // AN ARRAY COPY, because the answer crosses a boundary that serialises it and
+    // the source is a `readonly` the composition root may hold on to.
+    'app.ocrLanguages': async () => ok({ languages: [...(await deps.ocrLanguages())] }),
     'document.open': openDocumentHandler(deps),
     'document.recent': recentHandler(deps),
     'document.openRecent': openRecentHandler(deps),

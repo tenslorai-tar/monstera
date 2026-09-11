@@ -671,6 +671,44 @@ export const channels = {
   ),
 
   /**
+   * Which OCR models this machine has provisioned.
+   *
+   * ## A PROPERTY OF THE INSTALLATION, which is why it sits beside `app.info`
+   *
+   * Not of a document and not of a session. `scripts/provision/tessdata.mjs`
+   * downloads fourteen models and CI provisions **`eng` alone**, so *this build
+   * declares fourteen languages* and *this machine can recognise in them* are
+   * different facts — and a surface that offered all fourteen from the first
+   * would let a reader choose a model the recognition then fails on, which is the
+   * wired-tools defect wearing a dropdown.
+   *
+   * ## An empty list is a STATE, not an error
+   *
+   * `settings.loadSecrets`' `available: false` one feature along: a machine with
+   * no models installed is the `no-binary` state §10.5 requires every surface to
+   * design, and the OCR dialog is where it is said. Declaring a failure code for
+   * it would make *nothing is installed* something the renderer handles as a
+   * refusal rather than as the answer.
+   *
+   * ## The renderer cannot derive it
+   *
+   * There is no path here by invariant L2 and no directory to list, which is the
+   * point rather than an inconvenience. Main answers the question it is the only
+   * one able to answer, and the order is `OCR_LANGUAGES`' own so a surface does
+   * not reorder itself because of the sequence a download finished in.
+   */
+  'app.ocrLanguages': channel(
+    'Which OCR models this machine has provisioned.',
+    z.object({}),
+    z.object({
+      // BOUNDED BY THE DECLARED SET, which is the one bound that cannot go stale:
+      // the answer is a subset of a closed enum, so `max` is the enum's own size
+      // rather than a number somebody picked.
+      languages: z.array(ocrLanguageSchema).max(OCR_LANGUAGES.length),
+    }),
+  ),
+
+  /**
    * Applies one command to an open document.
    *
    * **This is not a document-carrying channel**, and saying so is the L11 note

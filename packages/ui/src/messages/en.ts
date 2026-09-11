@@ -1,3 +1,4 @@
+import type { OcrLanguage } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { messageKey } from '@monstera/shared';
 
@@ -233,6 +234,61 @@ export const SPELL_CHECK_NO_SUGGESTIONS = messageKey('dialog.spell-check.no-sugg
 export const SPELL_CHECK_ADD = messageKey('dialog.spell-check.add');
 export const SPELL_CHECK_ADDED = messageKey('dialog.spell-check.added');
 export const SPELL_CHECK_SAVE = messageKey('dialog.spell-check.save');
+export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
+export const OCR_TITLE = messageKey('dialog.ocr.title');
+export const OCR_UNAVAILABLE = messageKey('dialog.ocr.unavailable');
+export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
+export const OCR_THIS_PAGE = messageKey('dialog.ocr.this-page');
+export const OCR_ALL_PAGES = messageKey('dialog.ocr.all-pages');
+export const OCR_START = messageKey('dialog.ocr.start');
+export const OCR_OUTCOME_TITLE = messageKey('dialog.ocr-outcome.title');
+export const OCR_OUTCOME_RECOGNISED = messageKey('dialog.ocr-outcome.recognised');
+export const OCR_OUTCOME_NONE = messageKey('dialog.ocr-outcome.none');
+export const OCR_OUTCOME_SKIPPED = messageKey('dialog.ocr-outcome.skipped');
+export const OCR_OUTCOME_STOPPED = messageKey('dialog.ocr-outcome.stopped');
+export const OCR_LANGUAGE_ENG = messageKey('dialog.ocr.language-eng');
+export const OCR_LANGUAGE_SPA = messageKey('dialog.ocr.language-spa');
+export const OCR_LANGUAGE_FRA = messageKey('dialog.ocr.language-fra');
+export const OCR_LANGUAGE_DEU = messageKey('dialog.ocr.language-deu');
+export const OCR_LANGUAGE_POR = messageKey('dialog.ocr.language-por');
+export const OCR_LANGUAGE_ITA = messageKey('dialog.ocr.language-ita');
+export const OCR_LANGUAGE_NLD = messageKey('dialog.ocr.language-nld');
+export const OCR_LANGUAGE_RUS = messageKey('dialog.ocr.language-rus');
+export const OCR_LANGUAGE_ARA = messageKey('dialog.ocr.language-ara');
+export const OCR_LANGUAGE_HEB = messageKey('dialog.ocr.language-heb');
+export const OCR_LANGUAGE_HIN = messageKey('dialog.ocr.language-hin');
+export const OCR_LANGUAGE_JPN = messageKey('dialog.ocr.language-jpn');
+export const OCR_LANGUAGE_KOR = messageKey('dialog.ocr.language-kor');
+export const OCR_LANGUAGE_CHI_SIM = messageKey('dialog.ocr.language-chi-sim');
+
+/**
+ * One title per model, keyed on the model's own name.
+ *
+ * **Fourteen flat exports and a record over them**, rather than the keys minted
+ * inside this object: `en.test.ts` walks this module's exported **strings** to
+ * find which catalogue entries are reachable, so a key that exists only inside a
+ * record reads to it as an entry no code can ask for. The record is what
+ * `OcrBody` indexes — a `switch` over fourteen names in a component would be the
+ * mapping table B3a is about — and `satisfies Record<OcrLanguage, …>` is what
+ * makes a fifteenth provisioned model a compile error here rather than a blank
+ * button.
+ */
+export const OCR_LANGUAGE_NAMES = {
+  eng: OCR_LANGUAGE_ENG,
+  spa: OCR_LANGUAGE_SPA,
+  fra: OCR_LANGUAGE_FRA,
+  deu: OCR_LANGUAGE_DEU,
+  por: OCR_LANGUAGE_POR,
+  ita: OCR_LANGUAGE_ITA,
+  nld: OCR_LANGUAGE_NLD,
+  rus: OCR_LANGUAGE_RUS,
+  ara: OCR_LANGUAGE_ARA,
+  heb: OCR_LANGUAGE_HEB,
+  hin: OCR_LANGUAGE_HIN,
+  jpn: OCR_LANGUAGE_JPN,
+  kor: OCR_LANGUAGE_KOR,
+  chi_sim: OCR_LANGUAGE_CHI_SIM,
+} as const satisfies Record<OcrLanguage, MessageKey>;
 export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
   'setting.editing.personal-dictionary.title',
 );
@@ -544,6 +600,8 @@ export const GROUP_FIELDS = messageKey('surface.ribbon.group.fields');
 export const GROUP_DISPLAY = messageKey('surface.ribbon.group.display');
 export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
 export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
+/** TOOLS › OCR, which `BUILD-PROMPT.md`:472 names as D6's ribbon placement. */
+export const GROUP_OCR = messageKey('surface.ribbon.group.ocr');
 
 /**
  * A long command's own name, as the status bar announces it while it runs.
@@ -555,6 +613,13 @@ export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
  */
 export const WORD_COUNT_PROGRESS = messageKey('task.word-count');
 export const SPELL_CHECK_PROGRESS = messageKey('task.spell-check');
+/**
+ * Recognition's own name while it runs.
+ *
+ * The longest task in this build by an order of magnitude — 3.8–4.4 s per page —
+ * which is why the bar it names is not optional (`BUILD-PROMPT.md` M5).
+ */
+export const OCR_PROGRESS = messageKey('task.ocr');
 export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
@@ -686,6 +751,46 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPELL_CHECK_ADDED]: 'Added to your dictionary',
   [SPELL_CHECK_SAVE]:
     '{count, plural, one {Save one word to your dictionary} other {Save # words to your dictionary}}',
+  // NAMES WHAT IT PRODUCES, not the technique. *OCR* is the name of the thing in
+  // the ribbon group, where a reader who knows the word will look for it; the
+  // command says what happens to their document.
+  [OCR_COMMAND_TITLE]: 'Make scanned pages searchable',
+  [OCR_TITLE]: 'Recognise text',
+  // SAYS WHAT IS MISSING AND WHAT IT IS FOR, which is §10.5's no-binary state: a
+  // dialog reading "unavailable" tells a reader nothing they can act on.
+  [OCR_UNAVAILABLE]:
+    'No recognition models are installed, so nothing can be read from a scan yet.',
+  [OCR_LANGUAGE]: 'Language of the text',
+  [OCR_THIS_PAGE]: 'This page',
+  [OCR_ALL_PAGES]: 'All pages',
+  [OCR_START]: 'Recognise',
+  [OCR_OUTCOME_TITLE]: 'Recognition',
+  [OCR_OUTCOME_RECOGNISED]:
+    '{count, plural, one {Read the text on one page} other {Read the text on # pages}}.',
+  // THE EMPTY ANSWER SAID OUT LOUD, and it names the reason rather than the
+  // count: a document whose pages all carry text has nothing to recognise, and a
+  // dialog that simply closed would read as a feature that did not work.
+  [OCR_OUTCOME_NONE]: 'Nothing needed recognising — every page here already carries text.',
+  [OCR_OUTCOME_SKIPPED]:
+    '{count, plural, one {One page already had text and was left alone} other {# pages already had text and were left alone}}.',
+  // A CANCELLED RUN KEEPS WHAT IT FINISHED, which is the opposite of the spell
+  // check's rule and for a stated reason: a recognised page is correct work on
+  // the document, where a partial list of misspellings is a wrong answer.
+  [OCR_OUTCOME_STOPPED]: 'Stopped early. The pages already recognised keep their text.',
+  [OCR_LANGUAGE_NAMES.eng]: 'English',
+  [OCR_LANGUAGE_NAMES.spa]: 'Spanish',
+  [OCR_LANGUAGE_NAMES.fra]: 'French',
+  [OCR_LANGUAGE_NAMES.deu]: 'German',
+  [OCR_LANGUAGE_NAMES.por]: 'Portuguese',
+  [OCR_LANGUAGE_NAMES.ita]: 'Italian',
+  [OCR_LANGUAGE_NAMES.nld]: 'Dutch',
+  [OCR_LANGUAGE_NAMES.rus]: 'Russian',
+  [OCR_LANGUAGE_NAMES.ara]: 'Arabic',
+  [OCR_LANGUAGE_NAMES.heb]: 'Hebrew',
+  [OCR_LANGUAGE_NAMES.hin]: 'Hindi',
+  [OCR_LANGUAGE_NAMES.jpn]: 'Japanese',
+  [OCR_LANGUAGE_NAMES.kor]: 'Korean',
+  [OCR_LANGUAGE_NAMES.chi_sim]: 'Chinese (Simplified)',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [RULER_UNIT_TITLE]: 'Ruler unit',
   // SAYS WHAT IT IS, NOT THAT IT IS BETTER. The row was called *HD render* and
@@ -1304,8 +1409,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_DISPLAY]: 'Display',
   [GROUP_NAVIGATE]: 'Navigate',
   [GROUP_APPLICATION]: 'Application',
+  [GROUP_OCR]: 'OCR',
   [WORD_COUNT_PROGRESS]: 'Counting words',
   [SPELL_CHECK_PROGRESS]: 'Checking spelling',
+  [OCR_PROGRESS]: 'Recognising text',
   // THE LABEL FIRST, so a screen reader announces what is running before the
   // numbers. "12 of 400" alone is the shape a progress region most often has
   // and the one that says least.

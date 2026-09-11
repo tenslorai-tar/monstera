@@ -83,6 +83,7 @@ import { FindBar } from './FindBar.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { type RunningTask, trackerOver } from './runningTask.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
+import { recogniseTextCommand } from './commands/recogniseText.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
@@ -90,6 +91,8 @@ import { showWordCountCommand } from './commands/showWordCount.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
 import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
+import { OCR_DIALOG } from './dialogs/ocr.js';
+import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
@@ -321,6 +324,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         ABOUT_DIALOG,
         WORD_COUNT_DIALOG,
         SPELL_CHECK_DIALOG,
+        OCR_DIALOG,
+        OCR_OUTCOME_DIALOG,
         SAVE_PROBLEM_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
@@ -1209,6 +1214,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         pageBackgroundCommand({ client, onApplied: applied, ask }),
         resizePagesCommand({ client, onApplied: applied, ask }),
         deskewPagesCommand({ client, onApplied: applied, ask }),
+        // TAKES `track` AS WELL AS THE THREE ABOVE, and it is the first mutating
+        // command to: recognition is 3.8–4.4 s per page and this one dispatches
+        // once per page, so the status bar is where a reader watches it and where
+        // the cancel lives.
+        recogniseTextCommand({ client, onApplied: applied, ask, track }),
         insertImageCommand({ client, onApplied: applied, ask }),
         mergeDocumentCommand({ client, onApplied: applied, ask }),
         insertFromPdfCommand({ client, onApplied: applied, ask }),

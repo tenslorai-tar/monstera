@@ -37,6 +37,11 @@ function ignore(_incident: Incident): void {
  */
 const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development' })),
+  // ONE LANGUAGE RATHER THAN NONE OR ALL. An empty list is what a machine with
+  // nothing provisioned answers and is also what a handler dropping the field
+  // would produce; fourteen is what a fixture that stopped being a subset looks
+  // like. One is the shape the channel exists to carry.
+  'app.ocrLanguages': () => Promise.resolve(ok({ languages: ['eng' as const] })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
   // list and `lastExitClean: true` are what a boundary that dropped both fields

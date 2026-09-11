@@ -146,6 +146,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     secrets: createEphemeralSecrets(),
     revealLog: () => Promise.resolve(false),
     readDictionary: () => Promise.resolve(null),
+    ocrLanguages: () => Promise.resolve([]),
   });
 }
 
@@ -170,6 +171,10 @@ function payloadBytes(value: unknown): number {
  */
 const EXCLUDED: Readonly<Record<string, string>> = {
   'app.info': 'answers about the application and never names a document',
+  // A SUBSET OF A CLOSED ENUM OF FOURTEEN, and no document contributes to it: the
+  // answer is which models this machine has provisioned, and the schema's `max`
+  // is the enum's own size rather than a number somebody picked.
+  'app.ocrLanguages': 'answers which of fourteen declared models are installed',
   'settings.load': "carries the user's settings, which no document contributes to",
   'settings.save': 'answers a boolean',
   // THE SECRET PAIR, and their answer is the same one `settings.load`'s is:

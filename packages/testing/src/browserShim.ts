@@ -4,6 +4,7 @@ import {
   type ContractHandlers,
   type FormFieldKind,
   type Incident,
+  type OcrLanguage,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   channels,
@@ -186,6 +187,13 @@ export interface ShimFormField {
 export interface BrowserShimOptions {
   readonly version?: string;
   readonly installChannel?: 'store' | 'web' | 'development';
+  /**
+   * Which OCR models this shim's machine has. Defaults to `['eng']`.
+   *
+   * `[]` is the state a machine with nothing provisioned is in, and a case about
+   * the unavailable dialog is the one that asks for it.
+   */
+  readonly ocrLanguages?: readonly OcrLanguage[];
   /**
    * Documents whose lane is saturated, by id.
    *
@@ -623,6 +631,23 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           installChannel: options.installChannel ?? 'development',
         }),
       ),
+
+    /**
+     * Which OCR models the shim's machine has — **`eng`, and configurable**.
+     *
+     * One rather than none, because the empty answer is the state a machine with
+     * nothing provisioned is in and a shim in it would make every OCR case
+     * exercise the unavailable dialog. One rather than fourteen, because a shim
+     * claiming every model would let a test pick a language this build's CI never
+     * provisions and assert on a recognition nothing can perform.
+     *
+     * `ocrLanguages` in the options is what a case testing the unavailable state
+     * passes `[]` to — the same shape `installChannel` above uses, and for the
+     * same reason: a state the shipped build can be in needs a way to be asked
+     * about.
+     */
+    'app.ocrLanguages': () =>
+      Promise.resolve(ok({ languages: [...(options.ocrLanguages ?? ['eng'])] })),
 
     'document.open': () => {
       const answer = queuedOpens.shift() ?? { kind: 'cancelled' as const };

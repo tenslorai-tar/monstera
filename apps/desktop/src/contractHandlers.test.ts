@@ -88,6 +88,10 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
         affix: new TextEncoder().encode(`SET UTF-8\n${language}\n`),
         words: new TextEncoder().encode('1\ndocument\n'),
       }),
+    // ONE MODEL, for `readDictionary`'s reason: the empty answer is the state a
+    // machine with nothing provisioned is in, and a fixture in it would make
+    // every case here exercise that one.
+    ocrLanguages: () => Promise.resolve(['eng' as const]),
   });
   return { capabilities, handlers, opened, recent, revealed, secrets, sessioned, settings };
 }
@@ -300,6 +304,7 @@ describe('document.open', () => {
           secrets: createEphemeralSecrets(),
           revealLog: () => Promise.resolve(false),
       readDictionary: () => Promise.resolve(null),
+      ocrLanguages: () => Promise.resolve([]),
         }),
       };
     }
@@ -478,6 +483,7 @@ describe('the recent list', () => {
       secrets: createEphemeralSecrets(),
       revealLog: () => Promise.resolve(false),
       readDictionary: () => Promise.resolve(null),
+      ocrLanguages: () => Promise.resolve([]),
     });
 
     await handlers['document.openRecent']({ handle });
@@ -523,6 +529,7 @@ describe('log.reveal', () => {
       secrets: createEphemeralSecrets(),
       revealLog: () => Promise.resolve(false),
       readDictionary: () => Promise.resolve(null),
+      ocrLanguages: () => Promise.resolve([]),
     });
 
     await expect(handlers['log.reveal']({})).resolves.toEqual({

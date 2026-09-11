@@ -125,6 +125,7 @@ import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
+import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies } from './main.js';
 
@@ -415,34 +416,6 @@ export interface ShellComposition {
    * on every `document.open` case.
    */
   readonly log?: ShellLog | null;
-}
-
-/**
- * Where the provisioned OCR models are, or `null` — and this process never
- * searches for them.
- *
- * `engineHostPlatform.ts`' `pdfiumLibraryPath` shape and every word of its
- * reasoning, one artefact along: `scripts/provision/tessdata.mjs` owns *where a
- * provisioned model lives*, `scripts/` is not shipped, and `scripts/launch.mjs`
- * is the one process that knows the repository root and starts the shell. It
- * reads the variable **here** rather than there because a model directory is a
- * per-command parameter, not something a host is created with — and
- * `engineHostPlatform.ts` imports this module's types, so the edge would run the
- * wrong way.
- *
- * **`null` is a real state and it is the packaged one.** No installer has been
- * built, so there is no `.tools/` tree to resolve and nothing to guess an
- * unobserved layout from. A reader is meant never to meet the refusal: the OCR
- * commands are offered only where a model is present, which is the registry's
- * `when` doing what the wired-tools rule asks of it.
- */
-function provisionedModelDirectory(): string | null {
-  const supplied = process.env['MONSTERA_TESSDATA_DIRECTORY'];
-  // EMPTY IS ABSENT, for `pdfiumLibraryPath`'s measured reason: a shell expanding
-  // an unset variable produces `''`, and passing that on would send a path of
-  // nothing to a reader whose only answer about it is `unreadable`.
-  if (supplied === undefined || supplied.length === 0) return null;
-  return supplied;
 }
 
 export function createShellDependencies(composition: ShellComposition): ShellDependencies {
@@ -893,6 +866,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // saying so is the honest answer rather than a silent success.
       revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
       readDictionary: readSpellingDictionary,
+      // WHICH MODELS THIS MACHINE HAS, composed for `readDictionary`'s reason: it
+      // is a filesystem read, and the renderer cannot ask the question any other
+      // way. An empty answer is the state a machine with no provisioned models is
+      // in, and the OCR dialog is where that is said.
+      ocrLanguages: provisionedOcrLanguages,
     }),
     incidents: log?.incidents ?? reportIncident,
     failures,

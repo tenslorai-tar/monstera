@@ -888,6 +888,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — D6 rows 2 and 3 close together, and the grant the host did not have
+
+`ocrPage` recognises one page inside the engine host and writes its text into that
+page as an invisible layer. Two rows, one command, because neither half is a
+feature on its own: a recognition nothing writes down is a number on a screen, and
+a text layer with nothing to write is empty.
+
+### The wired pair, and the third thing
+
+`CLAUDE.md`'s rule is that neither half counts alone, and its blind spot is named
+there too: *where the two halves speak different coordinate systems, the pair
+proves nothing until something names both numbers in one place.*
+
+- **The kernel half.** `ocrTextLayer.test.ts` (16 cases) proves the layer is
+  readable through `parsePageText`/`textLayerOf` — the production path — and
+  `commandBus.test.ts` proves the bus resolves the pre-read with **the page the
+  command named**, asserted as the request rather than as a call count.
+- **The control half.** `recogniseText.test.ts` (9 cases) proves the surface
+  dispatches `ocrPage` per page, for the scanned pages only, in the language
+  chosen, and that it stops when cancelled or refused.
+- **The third thing** is `ocrRecognise.ts`' `toPdfSpace`: the one module holding
+  both frames, which converts Tesseract's raster pixels into the page's points
+  once. There is no literal at a call site for the two halves to disagree about.
+
+### ONE COMMAND PER PAGE, and the law chose it
+
+ADR-0035 forbids a document's extracted text being resident in main, so a page
+**scope** would hold every named page's recognition at once. The scope therefore
+lives in the surface and the walk dispatches per page — which is also what gives
+the row its progress bar with real numbers (`BUILD-PROMPT.md` M5 names OCR
+specifically) and a cancel that leaves correct work behind.
+
+Two consequences stated rather than discovered: undo is per page, and a cancelled
+run is **reported**. That second one is the opposite of `checkSpelling`'s rule and
+the asymmetry is the noun — a partial list of misspellings reads as the document's
+whole answer, where a recognised page is correct work on that page and nothing
+else.
+
+### THE HOST COULD NOT HAVE READ A MODEL
+
+Found by writing the first real caller, which is the only way it could have been:
+`ocrRecognise.ts` runs **inside the AppContainer** and reads the model by a path
+main hands it, and the durable grant set named electron, `node_modules`, the shim,
+PDFium's library and the workspace packages — **not `.tools/tessdata`**. Without
+that ACE the first recognition through the host answers `ocr-model-unreadable`
+about a file every other process on the machine can read, and `proof:ocrrecognise`
+could not have seen it: it calls `recognisePage` in this process.
+
+Granted **`R` rather than `RX`**, which is the first entry in that set that is
+data rather than a program. Two of its proof's cases were claims that had been
+true only while every entry was a program — *every right is `RX`* and *the only
+optional entry is PDFium's library* — and both are rewritten to the properties
+they were standing in for: nothing is granted write, execute goes only to what is
+executed, and an entry is optional exactly when the MuPDF host can run without it.
+
+### What the surface says when there is nothing installed
+
+`app.ocrLanguages` answers which of the fourteen models this machine has, checked
+**per model** rather than inferred from the directory: CI provisions `eng` alone,
+so *the directory exists* and *this language is available* are different facts, and
+a dropdown offering all fourteen would let a reader pick a model the recognition
+then fails on. An empty answer is the `no-binary` state §10.5 requires to be
+designed — the dialog says what is missing and offers no control to start.
+
+### Two roster tests and a catalogue check, each right
+
+`payloadBounds.test.ts` demanded the new channel be measured or excluded with a
+reason; `browserShim.test.ts`' literal channel list had to grow by hand, which is
+its own 4c anchor working; and `en.test.ts` reported fourteen catalogue entries as
+unreachable, because it walks this module's exported **strings** and the language
+titles were minted inside a record. Fourteen flat exports with a record over them
+is the fix, and the record is what the body indexes — a `switch` over fourteen
+names in a component would be the mapping table B3a is about.
+
+---
+
 ## 2026-09-11 — B4: a pre-read takes an argument, and a trigger fired as designed
 
 [ADR-0051](DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md).

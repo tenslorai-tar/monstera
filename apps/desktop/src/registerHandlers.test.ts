@@ -130,6 +130,9 @@ function handlers() {
     readDictionary: () => {
       throw new Error('registration cases must not read a dictionary');
     },
+    ocrLanguages: () => {
+      throw new Error('registration cases must not read the model directory');
+    },
   });
 }
 
