@@ -888,6 +888,122 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Row 7: a blank square read as a sentence
+
+D6 row 7 is built. TrOCR reads a region, the stack downloads on demand against
+pinned digests, the tool is hidden until it can work, and a control removes what
+was downloaded. What is worth keeping from the day is not the feature.
+
+### The blocker dissolved when the QUESTION was checked instead of answered
+
+The row had one open thing and it was written up as the owner's to decide: the
+download primitive lives in `scripts/` and cannot be shared, so either move it,
+ship `scripts/` with the app, or keep two implementations. Three options, a fair
+summary of each, and a request for a ruling.
+
+All three share a premise nobody had checked — **that provisioning and the
+application must reach one module**. §1.1 refutes it in its own words: `scripts/`
+holds *"the code that runs before dependencies exist"*, and a model a reader
+downloads at their own request, long after every build, is not that code.
+Measured rather than argued from the principle: CI provisions Electron at a step
+*before* it builds, and the Guards job never installs at all — so a bootstrap
+module importing `dist` would import something that does not exist yet on one job
+and can never exist on the other.
+
+So the question was not *which module do both use*. It was **what is the rule and
+where is it written**, which invariant 27 already answers for the CSP: *copy only
+where the reader cannot reach the source, and a copy that exists must be proven
+equal.* Invariant 9 became the four guarantees, two derived forms sit either side
+of a boundary neither can cross, and one proof drives both.
+
+**This is the second time in two days that a blocked row was blocked on a
+question rather than on work** — the first was enhance-scans' codec. Both times
+the cost of checking was minutes and the thing checked was the premise, not the
+answer.
+
+### AND WRITING THE PROOF FOUND TWO GAPS IN WHAT WAS ALREADY PROVEN
+
+`fetchVerified.proof.mjs` has eighteen cases and covers the host allowlist
+thoroughly — six redirect cases, relative and protocol-relative Locations, the
+bound on the chain. It has **no case for the scheme at all**: the `https:` check
+could have been deleted with every proof green.
+
+And its ceiling case could not separate the two readings of its own guarantee. A
+body larger than `maxBytes` with a truthful `Content-Length` is refused by an
+implementation that counts bytes *and* by one that trusts the header — a fixture
+the defect also handles correctly. The pair that separates them lies in both
+directions: 4,096 bytes announcing 16, and 512 bytes announcing ten million. A
+header-trusting mutant gets **both** wrong, in opposite directions, which is what
+made the mutation test worth running.
+
+Neither gap is visible from inside that file. What made them visible was writing
+the guarantees down as a table and asking for a case per row.
+
+### A BLANK IMAGE DOES NOT PRODUCE AN EMPTY STRING
+
+The spike's own defect, and the most useful thing measured here. Composing the
+page's own ctm into the matrix handed to `page.run` applies it twice — `run`
+already applies the page transform, measured — which put the ink outside the
+pixmap and left a white 384×384 square.
+
+TrOCR read a fluent sentence about the United States off it, at high token
+probability.
+
+This project's usual quarry is the *reassuring* answer: the empty result that
+reads like a clean one. This is worse and it is a different animal. A confident
+line of text is **exactly what a working recognition produces**, so no assertion
+about the answer's shape could have told them apart, and the one honest signal —
+*the model was unsure* — is absent, because the model was not unsure.
+
+Two things follow. The raster is MuPDF's own scaler through `Pixmap` +
+`DrawDevice`, with the transform measured rather than reasoned about. And the
+case is on the **tensor**: ink normalises towards −1, so *did anything get drawn*
+is one `Math.min`, needs no 67 MB download, and reddens under the exact mutation.
+Its blank-region control reddens too, in the other direction — the double ctm
+smears the whole page into the square, so the empty region acquires ink.
+
+### The two model sizes disagree about how to read their own output
+
+`Xenova/trocr-small-handwritten` is `Unigram` with a `Metaspace` decoder;
+`Xenova/trocr-base-handwritten` is `BPE` with a `ByteLevel` one. Read from the
+repositories, not assumed — and the row ships a setting that switches between
+them, so a single detokeniser would have been correct for whichever size was
+tested and wrong for the other.
+
+The family therefore travels in the manifest beside the digests. The control for
+it took two attempts and the first version is the finding: **the two families
+agree on a single word.** `['▁Mon','ster','a']` decodes to `Monstera` either way,
+because the ByteLevel table covers all 256 bytes and `U+2581` is in none of them
+— the metaspace is dropped rather than misread. A fixture of one word is one the
+defect handles correctly, and it would have read as coverage. What separates them
+is a word boundary.
+
+### Two registrations, one gesture, and the choice a reader actually makes
+
+ADR-0052 rejects putting *which recogniser* in as many places as there are
+callers. It does not rule out a reader being able to say which — and they must,
+because whether this box is over handwriting is a fact about the box.
+
+So one factory produces two tool ids, differing in one literal. One command, one
+channel, one answer shape, and the choice made by picking a tool rather than by a
+setting (wrong grain) or a dialog after every drag (the form the gesture exists
+to avoid).
+
+The handwriting tool is **hidden until its models are here**, through the
+registry's own `when`. That is the wired-tools rule from both ends: no control
+that cannot work, and no 67 MB download nobody asked for. What a reader meets
+instead is the fetch command, with the clear-caches control beside it.
+
+### What is owed, and it is named in the row
+
+Progress for a download that takes minutes — main reports per file and no surface
+reads it. And **handwriting accuracy is unmeasured**: the spike read printed text
+(`Monstera deliciosa` came back `Monstera deliciousa`), this repository has no
+labelled handwriting sample, and the corpus is not one because its content may
+not be quoted. A number with nothing behind it would be worse than none.
+
+---
+
 ## 2026-09-11 — The fix went both ways and the cases went one
 
 FFFFFF-1 replaced two conversions with one matrix and its inverse, and the
