@@ -171,6 +171,7 @@ import {
   IMAGE_PAGES_SETTING,
   MEASURE_SCALE_SETTING,
   MEASURE_UNIT_SETTING,
+  OCR_LANGUAGE_SETTING,
 } from './settings/editing.js';
 import { CommentStylesPanel } from './CommentStylesPanel.js';
 import { StylePanel } from './StylePanel.js';
@@ -1022,6 +1023,10 @@ export function App({ client, settings }: AppProps): ReactElement {
   const scalePerPoint = useSetting(settings, MEASURE_SCALE_SETTING);
   const scaleUnit = useSetting(settings, MEASURE_UNIT_SETTING);
   const imagePages = useSetting(settings, IMAGE_PAGES_SETTING);
+  // THE REGION TOOL'S LANGUAGE, read here because this is where settings are read
+  // and handed to the registries. The OCR dialog offers the provisioned list and
+  // writes this value; the tool has no dialog and reads it.
+  const ocrLanguage = useSetting(settings, OCR_LANGUAGE_SETTING);
   const scale = useMemo<MeasureScale>(
     () => ({ perPoint: scalePerPoint, unit: scaleUnit }),
     [scalePerPoint, scaleUnit],
@@ -1134,10 +1139,20 @@ export function App({ client, settings }: AppProps): ReactElement {
           style,
           scale,
           onSnapshot,
+          // THE SETTING IS A DEPENDENCY, and the callback shape alone is not
+          // enough — which `react-hooks/exhaustive-deps` is what said so. A
+          // thunk closing over a render value reads that render's value for
+          // ever if the memo does not re-run, so `() => ocrLanguage` without
+          // the dependency below would have recognised in whatever language was
+          // stored when the document opened while the tool's own case proved it
+          // reads at commit. The tool keeps the thunk because that is what makes
+          // a stale capture unrepresentable on its side; this list is what keeps
+          // the value it reads current.
+          language: () => ocrLanguage,
           onPlaceImage,
         }),
       ),
-    [ask, listAnnotations, onPlaceImage, onSnapshot, readSelection, scale, style],
+    [ask, listAnnotations, ocrLanguage, onPlaceImage, onSnapshot, readSelection, scale, style],
   );
 
   const rulers = useSetting(settings, RULERS_SETTING);

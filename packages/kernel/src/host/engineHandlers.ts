@@ -1,4 +1,4 @@
-import type { CommandOfKind, FormDataFormat, Handlers, OcrLanguage } from '@monstera/contract';
+import type { CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
@@ -16,7 +16,11 @@ import type { ListedAnnotation } from '../pageAnnotations.js';
 // not beside the WASM it loads — importing the name costs this module nothing,
 // because nothing in `ocrRecognise.ts` instantiates a core until
 // `recognisePage` is called.
-import { OcrModelUnreadableError, type RecognisedPage } from '../ocrRecognise.js';
+import {
+  OcrModelUnreadableError,
+  type OcrRequest,
+  type RecognisedPage,
+} from '../ocrRecognise.js';
 import type { PageLink } from '../pageLinks.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { RegionRequest } from '../pageSnapshot.js';
@@ -76,7 +80,10 @@ export type HostPageLinksReader = (
  */
 export type HostOcrReader = (
   session: MupdfSession,
-  request: { page: number; language: OcrLanguage; modelDirectory: string },
+  // THE READER'S OWN REQUEST TYPE plus the directory, rather than a third spelling
+  // of the fields: `OcrRequest` is what a caller in main asks for and `recognisePage`
+  // is what answers it, so a region added there arrives here without an edit.
+  request: OcrRequest & { readonly modelDirectory: string },
 ) => Promise<RecognisedPage>;
 
 /**
@@ -574,7 +581,7 @@ export function createEngineHandlers({
       return { ok: true, value: { json: await pageText(held.session, page) } };
     },
 
-    'engine/ocr-page': async ({ session, page, language, modelDirectory }) => {
+    'engine/ocr-page': async ({ session, page, language, region, modelDirectory }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       // TWO STATES, AND THEY ARE ANSWERED BY DIFFERENT PEOPLE. A model that
@@ -584,7 +591,18 @@ export function createEngineHandlers({
       // file simply is not there — which is `unreadable`'s own argument in
       // `engine/probe-containment`, one noun along.
       try {
-        return { ok: true, value: await ocr(held.session, { page, language, modelDirectory }) };
+        return {
+          ok: true,
+          value: await ocr(held.session, {
+            page,
+            language,
+            // SPREAD, for the reason `remoteMupdfOcr` gives at the other end of the
+            // wire: an explicit `undefined` is a present key, and *the whole page* is
+            // the absence of this one rather than a value of it.
+            ...(region === undefined ? {} : { region }),
+            modelDirectory,
+          }),
+        };
       } catch (error) {
         return failed(
           error instanceof OcrModelUnreadableError ? 'ocr-model-unreadable' : 'ocr-failed',

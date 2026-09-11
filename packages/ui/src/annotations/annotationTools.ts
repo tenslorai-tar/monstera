@@ -11,6 +11,8 @@ import { placeImageTool } from './placeImageTool.js';
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
+import type { OcrRegionDeps } from './ocrRegionTool.js';
+import { ocrRegionTool } from './ocrRegionTool.js';
 import type { SnapshotDeps } from './snapshotTool.js';
 import { snapshotTool } from './snapshotTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
@@ -66,6 +68,11 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // — which is the exact drift this file exists to have stopped. The file's
     // name is the residual falsehood, stated rather than fixed quietly.
     snapshotTool(deps),
+    // THE SAME GESTURE AND A COMMAND, which is the one difference worth naming
+    // beside the snapshot above: a region's recognition changes the document, so
+    // `commit` answers a `RenderableCommand` and the registry dispatches it. D6
+    // row 6, registered into ADR-0042's platform with nothing widened.
+    ocrRegionTool(deps),
     placeImageTool(deps),
     // NOT ANNOTATION TOOLS EITHER, and composed here for the reason the two
     // above are: this list is what the registry mounts and what
@@ -98,4 +105,5 @@ export type AnnotationToolDeps = TextToolDeps &
   SelectDeps &
   MeasureDeps &
   SnapshotDeps &
+  OcrRegionDeps &
   PlaceImageDeps;

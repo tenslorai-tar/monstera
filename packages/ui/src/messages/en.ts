@@ -297,6 +297,7 @@ export const OCR_LANGUAGE_NAMES = {
 export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
   'setting.editing.personal-dictionary.title',
 );
+export const EDITING_OCR_LANGUAGE_TITLE = messageKey('setting.editing.ocr-language.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const SECOND_RENDERER_TITLE = messageKey('setting.viewing.second-renderer.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
@@ -468,6 +469,7 @@ export const ERASER_TOOL_TITLE = messageKey('command.annotate.eraser');
 export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
 export const SNAPSHOT_TOOL_TITLE = messageKey('command.view.snapshot');
 export const PLACE_IMAGE_TOOL_TITLE = messageKey('command.annotate.image');
+export const OCR_REGION_TOOL_TITLE = messageKey('command.tools.ocr-region');
 export const LINK_ADDRESS_TOOL_TITLE = messageKey('command.annotate.link-address');
 export const LINK_PAGE_TOOL_TITLE = messageKey('command.annotate.link-page');
 export const LINK_ADDRESS_TITLE = messageKey('dialog.link-address.title');
@@ -810,6 +812,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_LANGUAGE_NAMES.kor]: 'Korean',
   [OCR_LANGUAGE_NAMES.chi_sim]: 'Chinese (Simplified)',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
+  [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition language',
   [RULER_UNIT_TITLE]: 'Ruler unit',
   // SAYS WHAT IT IS, NOT THAT IT IS BETTER. The row was called *HD render* and
   // §6.1 called the engine behind it *higher fidelity*; both were amended on
@@ -1178,6 +1181,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SELECT_TOOL_TITLE]: 'Select annotations',
   [SNAPSHOT_TOOL_TITLE]: 'Snapshot a region',
   [PLACE_IMAGE_TOOL_TITLE]: 'Place an image',
+  // SAYS WHAT THE DRAG PRODUCES. "OCR region" is the row's name and means nothing
+  // to a reader who has not met the acronym; the words it puts on the page are what
+  // they are after.
+  [OCR_REGION_TOOL_TITLE]: 'Recognise text in a box',
   [LINK_ADDRESS_TOOL_TITLE]: 'Link to a web address',
   [LINK_PAGE_TOOL_TITLE]: 'Link to a page',
   [LINK_ADDRESS_TITLE]: 'Link to a web address',

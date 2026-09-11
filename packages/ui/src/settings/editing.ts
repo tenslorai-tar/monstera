@@ -4,6 +4,7 @@ import {
   MIN_ANNOTATION_FONT,
   measurePerPointSchema,
   measureUnitSchema,
+  ocrLanguageSchema,
 } from '@monstera/contract';
 import { z } from 'zod';
 
@@ -13,6 +14,7 @@ import {
   EDITING_IMAGE_PAGES_TITLE,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
+  EDITING_OCR_LANGUAGE_TITLE,
   EDITING_PERSONAL_DICTIONARY_TITLE,
   MEASURE_SCALE_TITLE,
   MEASURE_UNIT_TITLE,
@@ -227,6 +229,39 @@ export const PERSONAL_DICTIONARY_SETTING: SettingDefinition<
   // coped with by every reader (`SettingsStore.set`).
   schema: z.array(z.string().trim().min(1).max(128)).max(MAX_PERSONAL_WORDS),
   fallback: [],
+  category: 'editing',
+};
+
+/**
+ * Which language a recognition reads in.
+ *
+ * ## Why a setting, when the OCR dialog already asks
+ *
+ * Because the **region tool** cannot. D6 row 6 is a drag on the page, and a dialog
+ * after every drag is the shape `IMAGE_PAGES_SETTING` below already refused for
+ * stamping: the choice is made once and then repeated, and asking each time turns a
+ * gesture into a form. A tool has nowhere else to read it from — `commit` builds a
+ * command and has no channel of its own.
+ *
+ * So the dialog and the tool read one value, which is what keeps *what language is
+ * this document in* a single answer rather than one per surface (B3a). The dialog
+ * writes it back when a reader chooses something else, the way `checkSpelling`'s
+ * result writes the personal dictionary.
+ *
+ * **`eng` by default, and that is a fact about the models rather than a guess about
+ * the reader**: it is the one model CI provisions and the first entry in
+ * `OCR_LANGUAGES`. A machine with only `heb` installed shows Hebrew in the dialog —
+ * the list offered is always what is provisioned — and this value is what a tool
+ * uses when nobody has chosen.
+ */
+export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguageSchema> = {
+  id: 'editing.ocr-language',
+  title: EDITING_OCR_LANGUAGE_TITLE,
+  // THE CONTRACT'S OWN ENUM, for `MEASURE_SCALE_SETTING`'s reason: a stored value
+  // the command would refuse is one that fails on apply, and ADR-0014's constraint 1
+  // is that the language reaching the engine comes from a closed set.
+  schema: ocrLanguageSchema,
+  fallback: 'eng',
   category: 'editing',
 };
 

@@ -840,7 +840,26 @@ const declarations = {
     // The resolution, beside the axis. It needs a PAGE, which is the whole reason
     // the member takes an argument — and the language travels with it because the
     // model is chosen per recognition rather than per document.
-    read: (access, command) => access.ocr({ page: command.page, language: command.language }),
+    // THE REGION TRAVELS WITH IT, and `undefined` is the page. The rectangle is a
+    // field of the command, so the expression that builds the request carries it
+    // through rather than the pre-read learning to look for it — which is the whole
+    // shape of this axis: the declaration knows the payload, the access object knows
+    // the document, and neither knows the other.
+    read: (access, command) =>
+      access.ocr({
+        page: command.page,
+        language: command.language,
+        ...(command.region === undefined
+          ? {}
+          : {
+              region: [
+                command.region.x0,
+                command.region.y0,
+                command.region.x1,
+                command.region.y1,
+              ] as const,
+            }),
+      }),
     asset: 'none',
     purpose: 'ordinary',
   },

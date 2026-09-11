@@ -888,6 +888,91 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Row 6: a region the platform already carried, and a fixture that could not borrow the default
+
+D6 row 6 — *OCR region, drag a rectangle* — is done, and it is a registration.
+ADR-0042's gesture platform already carries a drag whose tool says when it is
+complete, and `ocrPage` already took an optional region because row 2 built it
+that way. `annotationTools.ts` composes the tool and `ocrRegionToolCommand`
+selects it — the ribbon entry is that command's projection, as every tool's is.
+Nothing was widened.
+
+### The one difference from the snapshot it sits beside
+
+`snapshotTool` drags the same rectangle with the same four-pixel minimum and
+answers `undefined`, because a snapshot writes a file and an entry in the undo
+log would be one undo cannot reverse. This one **is** a mutation, so `commit`
+returns the `ocrPage` command and the registry dispatches it through the same bus
+every other tool's command goes through.
+
+That inverts which half of the test needs care. The snapshot's file asserts the
+**call**, because `undefined` is both its correct answer and what a dead control
+returns. Here the command is the observable and the *refusals* are the ambiguous
+half: a four-pixel slip and a `commit` that was never implemented both answer
+`undefined`. So the control — a drag one pixel past the minimum in both axes —
+is load-bearing twice over, and the minimum's own mutation reddens exactly the
+case naming it.
+
+### The fixture language is `deu`, and that is the whole of it
+
+`OCR_LANGUAGE_SETTING`'s fallback is `'eng'`. A tool that ignored the dep and
+named the default would satisfy a case written with `'eng'` — the fixture would
+contain none of the thing the defect keys on. German is a value only a read of
+the setting can produce, and the mutation confirms it: replacing
+`deps.language()` with `'eng'` reddens two cases and nothing else.
+
+The second of those two is a separate claim. The dep is a **function** so that a
+reader who changes the language in the OCR dialog does not reopen the document
+for the tool to agree with them; a tool that captured the value at composition
+passes the first case and fails this one, which drags twice with the answer
+changed in between.
+
+### And the thunk was stale anyway, one layer up
+
+The case above went green over a call site where it did not hold.
+`App.tsx` built the tool registry in a `useMemo` whose dependency list did **not**
+name `ocrLanguage`, so `() => ocrLanguage` closed over the first render's value
+and would have kept answering it — the comment beside it said *read at commit
+time rather than captured*, which was true of the tool and false of the wiring.
+Recognition would have run in whatever language was stored when the document
+opened.
+
+This is the tested helper beside the untested caller, and what found it was
+`react-hooks/exhaustive-deps` — an **error** here rather than the warning the
+plugin ships, `proof:lintrules` reading the set from the plugin so a new rule
+widens the check on its own. No case is owed for it: the class is *a thunk in a
+memo closing over a render value*, the mechanism that decides it is already
+registered, and it fired on the first instance. Both comments now say which half
+each mechanism holds — the thunk makes a stale capture unrepresentable in the
+tool, and the dependency list is what keeps the value it reads current.
+
+### Two conversions, each in the module that owns its pair — and a THIRD frame
+
+`toPdf` here, which every tool in this directory uses, so a region recognised
+over a place and a rectangle drawn over it carry the same numbers. PDF user space
+into the raster Tesseract reads is `ocrRecognise.ts`' — `toRasterRect`, the
+documented inverse of the `toPdfSpace` that already converts the boxes coming
+back, clamped to the raster, with a zero-area result refused rather than read as
+the whole page.
+
+That module is the pair's third thing, which is what the wired-tools rule asks
+for: two halves speaking different coordinate systems with nothing naming both
+numbers in one place is the blind spot, and here the correspondence lives in a
+module rather than in a literal at a call site.
+
+**AND NAMING TWO FRAMES OF THREE READS EXACTLY LIKE NAMING ALL OF THEM.** The
+stage audit of `38ea527..622f794` found the third an hour before this row landed
+(FFFFFF-1): a page's `/Rotate` is in neither conversion, MuPDF rasterises the page
+**as displayed**, and so a rotated page's boxes and a rotated page's region both
+go to the wrong place. This row ships with that open and the fix is the commit
+after it — stated here rather than left for the fix's own entry, because a row
+whose body claims a completeness it does not have is the live specification lying.
+
+Eight UI cases against `proof:ocrrecognise`' thirteen, whose region block carries
+the whole-page control that proves the region is what excluded the rest.
+
+---
+
 ## 2026-09-11 — FFFFFF-2 paid, and the nine call sites the fix does not reach
 
 `ocrRecognise.proof.mjs` declares `DECLARED_CASES = 15`, a literal, and asserts

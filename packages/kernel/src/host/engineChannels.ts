@@ -1827,6 +1827,15 @@ export const engineChannels = {
         /** Zero-based index, as `commands.ts` declares them. */
         page: z.number().int().nonnegative(),
         language: ocrLanguageSchema,
+        /**
+         * A rectangle of the page to read instead of all of it, in PDF user space.
+         *
+         * D6 row 6. Bounded by `ocrBoxSchema`'s own shape — four numbers — and
+         * absent for a whole page, which is the same distinction `OcrRequest` makes
+         * one layer in: *the page* and *a rectangle that happens to cover it* are
+         * different requests.
+         */
+        region: ocrBoxSchema.optional(),
         /** The directory main granted this host READ on for the models. */
         modelDirectory: pathSchema,
       })

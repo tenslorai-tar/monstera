@@ -27,6 +27,7 @@ import {
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import { PLACE_IMAGE_TOOL_ID } from '../annotations/placeImageTool.js';
+import { OCR_REGION_TOOL_ID } from '../annotations/ocrRegionTool.js';
 import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
@@ -72,6 +73,7 @@ import {
   REDACT_TOOL_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
+  OCR_REGION_TOOL_TITLE,
   SNAPSHOT_TOOL_TITLE,
   STRIKEOUT_TOOL_TITLE,
   TOOL_CARET_TITLE,
@@ -578,6 +580,23 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The OCR region tool's command.
+ *
+ * **60, among the marks**, beside the place-image tool and for its reason: both put
+ * something into the document that survives the save, where the snapshot at 29 is
+ * something a reader does to look at one. A recognised region becomes an invisible
+ * text layer, which is as much a change to the document as a stamp is.
+ *
+ * It is the control that makes the tool reachable, which is the whole of why it
+ * exists: `annotationCommands.test.ts` joins this file's commands against the tool
+ * registry's ids and fails on a tool nothing can select — the wired-tools rule with
+ * a test behind it.
+ */
+export function ocrRegionToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(OCR_REGION_TOOL_ID, OCR_REGION_TOOL_TITLE, 60, deps);
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -623,6 +642,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     measurePerimeterToolCommand(deps),
     snapshotToolCommand(deps),
     placeImageToolCommand(deps),
+    ocrRegionToolCommand(deps),
     ...formFieldToolCommands(deps),
   ];
 }

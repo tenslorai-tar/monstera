@@ -114,6 +114,8 @@ export interface TessBaseApi {
   Version(): string;
   Init(dataPath: string | null, language: string, oem: number): number;
   SetImageFile(exif: number, angle: number): number;
+  /** Narrows the recognition to a rectangle of the image, in raster pixels. */
+  SetRectangle(left: number, top: number, width: number, height: number): void;
   Recognize(monitor: null): number;
   GetUTF8Text(): string;
   GetJSONText(): string;
@@ -327,6 +329,41 @@ function toPdfSpace(
   return [Math.min(x0, x1), Math.min(top, bottom), Math.max(x0, x1), Math.max(top, bottom)];
 }
 
+/**
+ * The same conversion the other way, for a region a caller names in the page's
+ * space.
+ *
+ * **The inverse of {@link toPdfSpace}, in the same module and deliberately so**
+ * (B3a): *where on the raster is this part of the page* has one answer, and a
+ * second implementation of it — in the command, in the tool, in the host — would
+ * agree about a region in the middle of the page and disagree about one at the top,
+ * which is the half a fixture at the centre cannot see.
+ *
+ * Tesseract's rectangle is `(left, top, width, height)` in raster pixels, y-down,
+ * so the top edge comes from the PDF rectangle's **larger** y. The result is
+ * clamped to the raster, because a region dragged over the edge of the page is an
+ * ordinary gesture and Tesseract refuses a rectangle outside the image.
+ */
+function toRasterRect(
+  region: readonly [number, number, number, number],
+  frame: { readonly x0: number; readonly y1: number },
+  scale: number,
+  raster: { readonly width: number; readonly height: number },
+): { left: number; top: number; width: number; height: number } {
+  const left = (Math.min(region[0], region[2]) - frame.x0) * scale;
+  const right = (Math.max(region[0], region[2]) - frame.x0) * scale;
+  const top = (frame.y1 - Math.max(region[1], region[3])) * scale;
+  const bottom = (frame.y1 - Math.min(region[1], region[3])) * scale;
+  const clampedLeft = Math.max(0, Math.min(raster.width, Math.round(left)));
+  const clampedTop = Math.max(0, Math.min(raster.height, Math.round(top)));
+  return {
+    left: clampedLeft,
+    top: clampedTop,
+    width: Math.max(0, Math.min(raster.width, Math.round(right)) - clampedLeft),
+    height: Math.max(0, Math.min(raster.height, Math.round(bottom)) - clampedTop),
+  };
+}
+
 /** A node of Tesseract's JSON tree. Only the members this build reads. */
 interface JsonWord {
   readonly text?: string;
@@ -361,6 +398,19 @@ export interface OcrRequest {
   /** Zero-based, like every page index that crosses a boundary here. */
   readonly page: number;
   readonly language: OcrLanguage;
+  /**
+   * A rectangle to read instead of the whole page, in **PDF user space**.
+   *
+   * D6 row 6's *OCR region*. The whole page is still rasterised — Tesseract's
+   * `SetRectangle` narrows the recognition rather than the image, and a pixmap of
+   * the region alone would lose the surrounding context its layout analysis uses.
+   *
+   * Absent means the page. It is stated as optional rather than as a rectangle
+   * covering the page, because *the whole page* and *a rectangle that happens to
+   * be the page's box* are different requests and only one of them needs the
+   * conversion below.
+   */
+  readonly region?: readonly [number, number, number, number];
 }
 
 /**
@@ -410,7 +460,15 @@ export async function recognisePage(
       true,
     );
     try {
-      return { png: new Uint8Array(pixmap.asPNG()), frame };
+      return {
+        png: new Uint8Array(pixmap.asPNG()),
+        frame,
+        // THE RASTER'S OWN SIZE, carried out of here rather than computed from the
+        // frame and the scale: a region is clamped to the image Tesseract was given,
+        // and a second arithmetic for that size is one that can round differently.
+        width: pixmap.getWidth(),
+        height: pixmap.getHeight(),
+      };
     } finally {
       pixmap.destroy();
     }
@@ -428,6 +486,20 @@ export async function recognisePage(
     const set = api.SetImageFile(1, 0);
     if (set !== 0) {
       throw new Error(`Tesseract would not read the rasterised page (status ${String(set)})`);
+    }
+    // THE REGION NARROWS THE RECOGNITION, not the image (see `OcrRequest.region`).
+    // Set after the image and before `Recognize`, which is the only order
+    // Tesseract accepts: the rectangle is measured against the image it is holding.
+    if (request.region !== undefined) {
+      const rect = toRasterRect(request.region, raster.frame, scale, raster);
+      if (rect.width === 0 || rect.height === 0) {
+        throw new RangeError(
+          `the region [${request.region.join(', ')}] has no area on page ` +
+            `${String(request.page)} once converted to the raster, so there is nothing to read. ` +
+            'A region is in PDF user space and is clamped to the page this build rasterised.',
+        );
+      }
+      api.SetRectangle(rect.left, rect.top, rect.width, rect.height);
     }
     api.Recognize(null);
 

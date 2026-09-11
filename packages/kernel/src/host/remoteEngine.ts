@@ -309,6 +309,10 @@ export function remoteMupdfOcr(
         session: sessions.handleFor(session),
         page: request.page,
         language: request.language,
+        // SPREAD RATHER THAN `region: request.region`, because the channel's schema
+        // is `.strict()` and an explicit `undefined` is a key present with no value —
+        // which `exactOptionalPropertyTypes` refuses here and zod refuses on the wire.
+        ...(request.region === undefined ? {} : { region: request.region }),
         modelDirectory: request.modelDirectory,
       }),
     );

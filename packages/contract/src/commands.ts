@@ -637,48 +637,6 @@ export const enhancePagesSchema = z.object({
 });
 
 /**
- * Recognise one page and write its text into that page, invisibly.
- *
- * D6 rows 2 and 3 are one command, because neither half is a feature on its own:
- * a recognition nothing writes down is a number on a screen, and a text layer
- * with nothing to write is empty. What this carries is **intent** and nothing
- * else — a page index and a language — while the text itself is read inside the
- * engine host at apply time and never crosses a boundary in either direction
- * ([ADR-0051](DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md)).
- *
- * ## ONE PAGE, and the scope choice lives in the surface
- *
- * Every other page-scoped command here takes `'all' | number[]`, and this one
- * deliberately does not. Two reasons, and the first is the law's:
- * [ADR-0035](DECISIONS/0035-extracted-text-is-never-resident-in-main.md) measured
- * extracted text at **3.59× a document's bytes** and forbids it being resident in
- * `main`, so a scope would hold every named page's recognition at once. The second
- * is the reader's: recognition is **3.8–4.4 s per page**, and `BUILD-PROMPT.md`
- * M5 requires *"progress bars with real numbers for long operations like OCR"* —
- * which the surface gets by dispatching one command per page and stepping the
- * status bar between them, the shape `document.pageWordCount`' caller already
- * uses.
- *
- * What that costs is stated rather than hidden: undo is **per page**, so
- * recognising ten pages leaves ten entries. That is also what makes a cancelled
- * run coherent — the pages already recognised keep their text, and each is
- * independently reversible.
- *
- * ## The language is a closed enum, which is ADR-0014's constraint 1
- *
- * A name from {@link OCR_LANGUAGES} supplies no path and no file: the models are
- * provisioned by digest and the datadir is main's. A string here would be a
- * document-influenced or user-supplied datadir, which is the route both of
- * Tesseract's live advisories are reached through.
- */
-export const ocrPageSchema = z.object({
-  kind: z.literal('ocrPage'),
-  /** Zero-based, like every page index that crosses this boundary. */
-  page: z.number().int().nonnegative(),
-  language: z.enum(OCR_LANGUAGES),
-});
-
-/**
  * The largest image this build will make a page from.
  *
  * Sixty-four megabytes, which is far past any scan or photograph and far short
@@ -997,6 +955,72 @@ export const annotationRectSchema = z
 
 /** A rectangle in PDF user space. See {@link annotationRectSchema}. */
 export type AnnotationRect = z.infer<typeof annotationRectSchema>;
+
+/**
+ * Recognise one page — or a rectangle of it — and write the text into that page,
+ * invisibly.
+ *
+ * D6 rows 2, 3 and 6 are one command, because no part of it is a feature on its own:
+ * a recognition nothing writes down is a number on a screen, a text layer with
+ * nothing to write is empty, and a region is the same operation with a rectangle.
+ * What this carries is **intent** and nothing else — a page, a language and
+ * optionally a rectangle — while the text is read inside the engine host at apply
+ * time and never crosses a boundary in either direction
+ * ([ADR-0051](DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md)).
+ *
+ * ## IT SITS HERE, AFTER THE RECTANGLE, AND THE POSITION IS LOAD-BEARING
+ *
+ * `region` names `annotationRectSchema`, and a `const` is not hoisted: this object
+ * literal is evaluated when the module is, so naming the rectangle before it exists
+ * is a **`ReferenceError` on import** rather than a type error — measured 2026-09-11
+ * by writing it above and watching `commands.test.ts` fail to collect a single case.
+ * That is the whole reason this declaration is not beside `enhancePages`.
+ *
+ * ## ONE PAGE, and the scope choice lives in the surface
+ *
+ * Every other page-scoped command here takes `'all' | number[]`, and this one
+ * deliberately does not. Two reasons, and the first is the law's:
+ * [ADR-0035](DECISIONS/0035-extracted-text-is-never-resident-in-main.md) measured
+ * extracted text at **3.59× a document's bytes** and forbids it being resident in
+ * `main`, so a scope would hold every named page's recognition at once. The second
+ * is the reader's: recognition is **3.8–4.4 s per page**, and `BUILD-PROMPT.md`
+ * M5 requires *"progress bars with real numbers for long operations like OCR"* —
+ * which the surface gets by dispatching one command per page and stepping the
+ * status bar between them, the shape `document.pageWordCount`' caller already
+ * uses.
+ *
+ * What that costs is stated rather than hidden: undo is **per page**, so
+ * recognising ten pages leaves ten entries. That is also what makes a cancelled
+ * run coherent — the pages already recognised keep their text, and each is
+ * independently reversible.
+ *
+ * ## The language is a closed enum, which is ADR-0014's constraint 1
+ *
+ * A name from {@link OCR_LANGUAGES} supplies no path and no file: the models are
+ * provisioned by digest and the datadir is main's. A string here would be a
+ * document-influenced or user-supplied datadir, which is the route both of
+ * Tesseract's live advisories are reached through.
+ */
+export const ocrPageSchema = z.object({
+  kind: z.literal('ocrPage'),
+  /** Zero-based, like every page index that crosses this boundary. */
+  page: z.number().int().nonnegative(),
+  language: z.enum(OCR_LANGUAGES),
+  /**
+   * A rectangle to read instead of the whole page — **D6 row 6's OCR region**.
+   *
+   * `annotationRectSchema` rather than four numbers of its own: *a rectangle on a
+   * page, in PDF user space* is one shape, and the tool that drags this one is the
+   * tool that drags a rectangle annotation (`snapshotTool`'s `toPdf`). A second
+   * spelling here would be a second statement of what a page rectangle is.
+   *
+   * **Optional, and absent means the page** — not a rectangle covering it. The two
+   * are different requests: one needs no conversion into the raster's frame and the
+   * other does, and a caller that had to name the page's own box would be computing
+   * a geometry the kernel already holds.
+   */
+  region: annotationRectSchema.optional(),
+});
 
 /**
  * A colour an annotation is drawn in, as the three components `/C` holds.
