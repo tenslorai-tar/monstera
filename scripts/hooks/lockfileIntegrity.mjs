@@ -146,9 +146,17 @@ export function globalPrefixOverride(candidate) {
  * that is, it re-opens the hole the refusal exists to close. Running the JS
  * entry needs no shell and behaves identically everywhere.
  *
+ * **Exported since 2026-09-11, for `prePush.mjs`' typecheck gate**, and the
+ * export is B3a rather than convenience: *npm's shim resolution* is one of the
+ * three second opinions CLAUDE.md's B3a table records this project paying for —
+ * *"we implemented 'npm beside node' and not 'then follow the global prefix'"*,
+ * which reported 11.6.2 while `npm --version` said 11.17.0. A second hook
+ * resolving npm for itself is that defect arriving again, so there is one
+ * resolver and two callers.
+ *
  * @returns {string}
  */
-function npmCliPath() {
+export function npmCliPath() {
   // Set when this process was itself launched by an npm script.
   const fromEnv = process.env['npm_execpath'];
   if (fromEnv !== undefined && fromEnv.endsWith('.js') && existsSync(fromEnv)) return fromEnv;

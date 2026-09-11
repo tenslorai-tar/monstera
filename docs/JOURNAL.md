@@ -888,6 +888,68 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — The push path now typechecks, and the route was never the one being looked for
+
+Three reds in two blocks came from one habit: `npm run typecheck` is two
+invocations and `npx tsc -b` is the first half alone. `CLAUDE.md` has recorded that
+since 2026-08-29 and ended the paragraph *no mechanism closes this today*.
+
+### The gap was not where the section kept looking
+
+Every route that paragraph considered was a way to make the **wrong spelling do
+the whole job** — make `tsconfig.scripts.json` a project reference (measured
+closed: `TS6304`, a reference must be composite and this project is `noEmit`), then
+give it declaration emit (a real trade, and the owner's). Both are about the
+compiler's configuration.
+
+The actual gap was in the push path. `.githooks/pre-push` existed and checked **one
+thing** — the advisory register, added for finding GG-1 — so between a tree that
+does not compile and a public red board there was exactly one mechanism: somebody
+typing the whole command.
+
+### What landed
+
+The hook now runs `npm run typecheck` when the pushed range changes a file the
+compiler reads, and refuses the push when it fails. Three properties, each of them
+a rule this project has already paid for:
+
+- **It runs the manifest's verb, never `tsc`.** Spelling the two invocations in the
+  hook would make it a second opinion about what typechecking means, and the day a
+  third joins the script it would check two thirds and report a pass (B3a). The
+  same reasoning makes `npmCliPath` an export rather than a copy — npm's shim
+  resolution is one of the three second opinions B3a's own table records.
+- **Scoped to what the compiler reads**, `.mjs` included because the scripts half
+  is the only thing that sees it. A documentation push pays nothing.
+- **Measured: 31 s and 32 s**, two consecutive warm runs. That is the figure the
+  decision was taken against, rather than an assumption about it.
+
+### PROVEN TO BITE, on the half that actually bites
+
+A deliberate JSDoc error in one `scripts/**.mjs`, everything else held fixed:
+
+```
+npx tsc --build              → exit 0
+node scripts/hooks/prePush.mjs → exit 1, naming the file and the line
+```
+
+That is the exact asymmetry `CLAUDE.md` describes, demonstrated in both directions
+rather than asserted — and it is the direction that matters, because the first half
+passing is what made the habit feel safe. A `.ts` error blocks it too.
+
+### The limit, stated where it is met
+
+`tsc --build` reads the **working tree** and a push publishes **commits**. With a
+clean tree they are the same; with a dirty one the answer is about the files on
+disk, which can be greener than the commits. The hook prints that the tree was
+dirty rather than refusing — a gate that blocked every push from a dirty checkout
+is one a developer routes around, and this one is meant to survive being
+inconvenient.
+
+Four proof cases, including the separating one: a documentation-only range is **not**
+typechecked, without which the gate is satisfied by a version that taxes every push.
+
+---
+
 ## 2026-09-11 — Eight new Tesseract advisories, and the version nothing was watching
 
 `check:advisories` went red with **eight untriaged Tesseract advisories**, all

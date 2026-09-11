@@ -1687,8 +1687,8 @@ Hooks are enabled automatically by the `prepare` lifecycle script
 is missing, **provision it — do not bypass the hook.** `--no-verify` on this
 repository is a Rule 0 violation with a permanent, public consequence.
 
-**Run the project's command, never the underlying tool — and this is an OPEN
-item, not a closed one.** `npm run typecheck` is two invocations:
+**Run the project's command, never the underlying tool.** `npm run typecheck` is
+two invocations:
 
 ```
 tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty
@@ -1706,7 +1706,39 @@ about the partial spelling being the one that comes to hand at the moment a
 command is typed, which is the same argument the escape guard's own section makes
 about a rule you must recall. The manifest is where a project records that its
 one-word verb is several commands, and reaching past it for the binary is how you
-run a subset while believing you ran the whole. No mechanism closes this today.
+run a subset while believing you ran the whole.
+
+**THERE IS A MECHANISM SINCE 2026-09-11, and it is not the one this section kept
+looking for.** The line above read *no mechanism closes this today* through three
+reds, and every route considered was a way to make the **wrong spelling do the
+whole job** — a project reference, then declaration emit. The gap was somewhere
+else: between a tree that does not compile and a public red board there was
+exactly one thing, somebody typing the whole command. `.githooks/pre-push` now
+runs `npm run typecheck` when the pushed range changes a file the compiler reads,
+and refuses the push when it fails.
+
+Three things make it a mechanism rather than a fourth telling:
+
+- **It runs the manifest's verb**, never `tsc` — spelling the two invocations in
+  the hook would make it a second opinion about what typechecking means, and the
+  day a third joins the script it would check two thirds and report a pass (B3a).
+- **It is proven to bite on the half that actually bites.** With a deliberate
+  JSDoc error in one `scripts/**.mjs`: `npx tsc --build` exits **0** and the hook
+  exits **1**, naming the file and the line (measured 2026-09-11). That is the
+  exact asymmetry this section is about, demonstrated rather than described.
+- **It costs 31 s**, measured on two consecutive warm runs, and only on a push
+  that changes a `.ts`, `.tsx`, `.mts`, `.cts`, `.mjs`, a `tsconfig` or a
+  `package.json`. A documentation push pays nothing — a gate that taxed those is
+  one somebody disables.
+
+What it does NOT do is read the commits: `tsc --build` reads the working tree, so
+a dirty checkout is typechecked as it sits on disk. The hook prints that it did
+when the tree is dirty rather than refusing, because a hook that blocked every
+push from a dirty checkout is the kind people route around.
+
+**The owner's trade below is untouched and is still theirs**, which is the point
+worth carrying: the gap was closed from the other side, so nobody has to take a
+decision about declaration emit to make the habit safe.
 
 **The obvious B5 route is closed, and it is now MEASURED rather than asserted.**
 Making `tsconfig.scripts.json` a reference of the root solution would make
@@ -1716,11 +1748,12 @@ be `composite`, and TypeScript 6.0.3 answers that with
 `tsconfig.scripts.json` is `noEmit` because it type-checks `.mjs` through JSDoc
 and compiles nothing.
 
-So the only remaining route is to give it declaration emit — `.d.mts` files for
-3,000 lines of bootstrap scripts, gitignored, rebuilt on every `tsc -b`, that
-nothing ever imports. That is a real trade and it is the owner's to take, not a
-detail to slip in. Stated here so the next reader does not re-derive the same
-dead end, and so *"no mechanism"* stops being a sentence nobody has tested.
+So the only remaining route *of that kind* is to give it declaration emit —
+`.d.mts` files for 3,000 lines of bootstrap scripts, gitignored, rebuilt on every
+`tsc -b`, that nothing ever imports. That is a real trade and it is the owner's to
+take, not a detail to slip in. Stated here so the next reader does not re-derive
+the same dead end — and it is no longer what stands between this repository and a
+red board, because the gate above does not need the wrong spelling to be right.
 
 **A NEIGHBOURING HABIT IS NOW CLOSED, and the shape of the fix is the part worth
 copying.** `npm run local` seals its own log `-ok` or `-failed`, so the file name

@@ -21,7 +21,14 @@ import { dirname, join } from 'node:path';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
-import { anyGlobResolves, decide, pushedRanges, watchedPathspecs } from './prePush.mjs';
+import {
+  TYPECHECKED_PATHSPECS,
+  anyGlobResolves,
+  decide,
+  decideTypecheck,
+  pushedRanges,
+  watchedPathspecs,
+} from './prePush.mjs';
 
 const ROOT = repoRoot();
 
@@ -68,7 +75,7 @@ const failures = [];
 // One fewer where the hooks path was never configured: that case is reported as
 // UNVERIFIABLE below rather than counted, because "nobody installed this
 // checkout" is not evidence that the repository is wrong.
-const roster = createRoster(failures, { cases: HOOKS_PATH === null ? 16 : 17 });
+const roster = createRoster(failures, { cases: HOOKS_PATH === null ? 20 : 21 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -206,6 +213,52 @@ try {
       `${JSON.stringify(unwatched)}. Without this the case above is satisfied by a hook that ` +
         `runs the check on every push — which is a 16 s tax on pushes that cannot break the ` +
         `register, and the way a hook becomes something people disable.`,
+    );
+
+    // -----------------------------------------------------------------------
+    // THE TYPECHECK GATE, on the same fixture: `touching` edits a `.ts` file and
+    // `untouching` edits only a README, so one range has code in it and the other
+    // does not.
+    // -----------------------------------------------------------------------
+    const compiles = decideTypecheck(
+      `refs/heads/main ${touching} refs/heads/main ${untouching}\n`,
+      root,
+    );
+    check(
+      'a push whose range changes a compiled file is typechecked',
+      compiles.check && compiles.why.includes('file(s) the compiler reads'),
+      `${JSON.stringify(compiles)}`,
+    );
+
+    const docsOnly = decideTypecheck(
+      `refs/heads/main ${untouching} refs/heads/main ${base}\n`,
+      root,
+    );
+    check(
+      'CONTROL: and a documentation-only push is NOT',
+      !docsOnly.check,
+      `${JSON.stringify(docsOnly)}. Without this the case above is satisfied by a gate that ` +
+        `typechecks every push — 31 s on a push that cannot break the compiler, which is how a ` +
+        `hook becomes something people disable.`,
+    );
+
+    check(
+      'a range it cannot determine is typechecked rather than assumed clean',
+      decideTypecheck('', root).check && decideTypecheck(`garbage\n`, root).check,
+      'A new branch and a hand-run hook both produce no range, and "no range" must not read as ' +
+        '"no code changed" — a new branch is the push most likely to carry the change.',
+    );
+
+    // NAMED, like the witness-scope case below: `.mjs` is in the set because the
+    // SECOND half of `typecheck` is the only thing that reads it, and that half is
+    // what caught the JSDoc theft three times. A set that lost it would still pass
+    // every case above, because they all turn on a `.ts`.
+    check(
+      'and `.mjs` is in the set, because the scripts half of typecheck is what sees it',
+      TYPECHECKED_PATHSPECS.includes('*.mjs') && TYPECHECKED_PATHSPECS.includes('*tsconfig*.json'),
+      `pathspecs = ${JSON.stringify(TYPECHECKED_PATHSPECS)}. \`tsc -p tsconfig.scripts.json\` ` +
+        `checks scripts/**/*.mjs through JSDoc and is the only half that sees a stolen doc ` +
+        `comment; a tsconfig change moves what compiles with no source file moving.`,
     );
   }
 

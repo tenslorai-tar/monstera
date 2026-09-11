@@ -155,6 +155,103 @@ export function pushedRanges(input) {
 }
 
 /**
+ * Every path the project's `typecheck` command reads.
+ *
+ * ## Why a pathspec set and not *always*
+ *
+ * A documentation push publishes no code, and 31 seconds on every one of those is
+ * the cost that gets a hook disabled. A push that touches any of these is the one
+ * where the answer can have changed.
+ *
+ * `*.mjs` is in the set because **the second half of `typecheck` is what sees
+ * it**: `tsconfig.scripts.json` checks `scripts/**` through JSDoc with `checkJs`,
+ * and that is the half that catches a stolen JSDoc comment and a `TS7016` on a
+ * literal `require`. `*tsconfig*.json` and `*package.json` are here because a
+ * project reference, a compiler option or a dependency changes what compiles
+ * without any source file moving.
+ *
+ * Git pathspecs, so `*` crosses directory separators and each entry matches at
+ * any depth — the same spelling the register's own globs use, asked of the same
+ * `git diff`.
+ */
+export const TYPECHECKED_PATHSPECS = [
+  '*.ts',
+  '*.tsx',
+  '*.mts',
+  '*.cts',
+  '*.mjs',
+  '*tsconfig*.json',
+  '*package.json',
+];
+
+/**
+ * Whether this push publishes anything `npm run typecheck` would read.
+ *
+ * ## THE GATE THIS HOOK DID NOT HAVE, and three reds came through the gap
+ *
+ * `CLAUDE.md` records the habit and calls it open: *"`npm run typecheck` is two
+ * invocations … `npx tsc -b` is the first half alone. That is what reddened
+ * `main` on 2026-08-29"*, and the same shape bit twice more the same day. The
+ * compensation there is a sentence telling you to run the project's command — and
+ * this project has written three times that a rule you must recall at the moment
+ * you type a command is not a mechanism.
+ *
+ * Between a tree that does not compile and a public red board there was exactly
+ * one thing: somebody typing the whole command. There is now a hook.
+ *
+ * ## It runs `npm run typecheck`, never `tsc`
+ *
+ * Spelling the two invocations here would make this hook a **second opinion about
+ * what typechecking means**, and the day a third joins the manifest's script the
+ * hook would check two thirds of it while reporting a pass. The manifest is where
+ * the project records that its one-word verb is several commands (B3a), so the
+ * hook runs the verb.
+ *
+ * ## Cost, measured rather than assumed
+ *
+ * **31 s and 32 s on two consecutive warm runs** (2026-09-11, this machine, after
+ * a build). A cold tree with no `.tsbuildinfo` pays more, and the pre-push pair's
+ * own `build` step leaves it warm — so 31 s is the figure a push actually pays,
+ * against three reds that cost a range each.
+ *
+ * @param {string} input The hook's stdin.
+ * @param {string} [root]
+ * @returns {{ check: boolean, why: string }}
+ */
+export function decideTypecheck(input, root = ROOT) {
+  // THE SAME POSITIVE CONTROL AS THE REGISTER'S, for the same reason: a pathspec
+  // set that matches nothing answers "not touched" for every push, and so does
+  // one git no longer understands.
+  if (!anyGlobResolves(TYPECHECKED_PATHSPECS, root)) {
+    throw new Error(
+      `None of the ${String(TYPECHECKED_PATHSPECS.length)} typechecked pathspecs matches a ` +
+        `tracked file. A glob that matches nothing answers "no code changed" for every push. ` +
+        `Refusing rather than reporting a clean push.`,
+    );
+  }
+
+  const { ranges, unknown } = pushedRanges(input);
+  if (unknown) {
+    return {
+      check: true,
+      why: 'the pushed range could not be determined, so the tree is typechecked rather than assumed unchanged',
+    };
+  }
+  for (const range of ranges) {
+    const touched = `${
+      git(['diff', '--name-only', range, '--', ...TYPECHECKED_PATHSPECS], { cwd: root }).stdout
+    }`.trim();
+    if (touched !== '') {
+      return {
+        check: true,
+        why: `${range} changes ${touched.split('\n').length} file(s) the compiler reads`,
+      };
+    }
+  }
+  return { check: false, why: 'this push changes nothing the compiler reads' };
+}
+
+/**
  * @param {string} input The hook's stdin.
  * @param {string} [root]
  * @returns {{ check: boolean, why: string, globs: string[] }}
@@ -191,6 +288,51 @@ export function decide(input, root = ROOT) {
 }
 
 /**
+ * Runs the project's typecheck and reports what it found.
+ *
+ * ## It says WHICH TREE it read, because that is not the one being published
+ *
+ * `tsc --build` reads the working tree; a push publishes commits. With a clean
+ * tree those are the same thing, and with a dirty one this answer is about the
+ * files on disk — which can be greener than the commits, if a broken commit was
+ * fixed without committing. Stated rather than refused: a hook that blocked every
+ * push from a dirty checkout is one a developer turns off, and the line below is
+ * what a reader needs to know the difference.
+ *
+ * @param {string} why What `decideTypecheck` found, for the line it prints.
+ * @returns {Promise<number>}
+ */
+async function runTypecheck(why) {
+  const { spawnSync } = await import('node:child_process');
+  const { npmCliPath } = await import('./lockfileIntegrity.mjs');
+  const dirty = `${git(['status', '--porcelain'], { cwd: ROOT }).stdout}`.trim() !== '';
+  process.stdout.write(
+    `  Typechecking — ${why}${dirty ? ' (working tree is DIRTY, so this reads the files on disk rather than the commits)' : ''}.\n`,
+  );
+  // THROUGH npm, never `tsc` (see `decideTypecheck`), and through node rather
+  // than a shell: `npm` is `npm.cmd` on Windows and `shell: true` re-opens the
+  // hole Node's refusal exists to close (`lockfileIntegrity.mjs`' own note).
+  const result = spawnSync(process.execPath, [npmCliPath(), 'run', 'typecheck'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  if (result.status === 0) return 0;
+
+  process.stderr.write(
+    `\n${result.stdout ?? ''}${result.stderr ?? ''}\n` +
+      `Push blocked — the tree does not typecheck.\n\n` +
+      `\`npm run typecheck\` is TWO invocations: \`tsc --build\` for the packages and\n` +
+      `\`tsc -p tsconfig.scripts.json\` for the \`.mjs\` under scripts/. The second half is the\n` +
+      `only one that sees a stolen JSDoc comment or a TS7016 on a literal require, and\n` +
+      `\`npx tsc -b\` is the first half alone — which is how main went red on 2026-08-29.\n\n` +
+      `Fix it and push again. This gate exists because three reds came through the gap\n` +
+      `where the only thing between a tree that does not compile and a public board was\n` +
+      `somebody remembering to type the whole command.\n\n`,
+  );
+  return 1;
+}
+
+/**
  * @returns {Promise<number>}
  */
 async function main() {
@@ -206,14 +348,28 @@ async function main() {
     }
   };
 
-  const decision = decide(readStdin());
+  const stdin = readStdin();
+  const decision = decide(stdin);
+  const typecheck = decideTypecheck(stdin);
   if (explain) {
     process.stdout.write(
       `watched pathspecs (${String(decision.globs.length)}): ${decision.globs.join(', ')}\n` +
-        `would check: ${String(decision.check)} — ${decision.why}\n`,
+        `would check: ${String(decision.check)} — ${decision.why}\n` +
+        `typechecked pathspecs (${String(TYPECHECKED_PATHSPECS.length)}): ` +
+        `${TYPECHECKED_PATHSPECS.join(', ')}\n` +
+        `would typecheck: ${String(typecheck.check)} — ${typecheck.why}\n`,
     );
     return 0;
   }
+
+  // THE TYPECHECK FIRST, because it is the one that fails most often and a
+  // developer reading a blocked push should meet the compiler before the
+  // register.
+  if (typecheck.check) {
+    const status = await runTypecheck(typecheck.why);
+    if (status !== 0) return status;
+  }
+
   if (!decision.check) return 0;
 
   process.stdout.write(`  Checking the advisory register — ${decision.why}.\n`);
