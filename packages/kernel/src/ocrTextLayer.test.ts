@@ -11,6 +11,7 @@ import {
   writeRecognisedText,
 } from './ocrTextLayer.js';
 import { type TextLayer, textLayerOf } from './textLayer.js';
+import { findInPages, lineOf } from './textSearch.js';
 import { STEXT_OPTION_STRING, parsePageText } from './textStructure.js';
 
 /**
@@ -341,6 +342,57 @@ describe('writeRecognisedText', () => {
     // `=== false` because the lint rule is right about the comparison and the
     // narrowing is what the assertion needs either way.
     expect(!captured.captured && captured.reason).toMatch(/checkpoint for OCR by name/u);
+  });
+
+  it('THE APPLICATION’S SEARCH FINDS IT, through the one search there is', async () => {
+    const bytes = await written([
+      recognised([72, 700, 235, 716], [
+        { text: 'Monstera', box: [72, 700, 152, 716] },
+        { text: 'deliciosa', box: [158, 700, 235, 716] },
+      ]),
+    ]);
+
+    // PARSED AND SEARCHED THE WAY `document.searchPage` DOES IT — `parsePageText`
+    // then `findInPages` — rather than by looking for the string in the layer this
+    // file just wrote. D6 row 4 is *search integration*, and what it asks is
+    // whether recognised text reaches the substrate search already reads: a second
+    // index over OCR'd words would be the second answer to *what does this page
+    // say* that row 3's reader exists to prevent.
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('the fixture did not parse');
+    const stext = document.loadPage(0).toStructuredText(STEXT_OPTION_STRING);
+    const page = parsePageText(stext.asJSON());
+    stext.destroy();
+
+    const found = findInPages([page], 'deliciosa');
+    expect(found.ok).toBe(true);
+    const matches = found.ok ? found.value : [];
+    expect(matches).toHaveLength(1);
+    const match = matches[0];
+    if (match === undefined) throw new Error('the length assertion above should have failed first');
+    // THE MATCH RESOLVES TO A LINE, which is what the find bar highlights with:
+    // `searchHighlight.ts` recomputes its ranges from the text layer's own lines,
+    // so a hit that resolves to no line is a search that found a page rather than a
+    // place on it.
+    expect(match.page).toBe(0);
+    expect(lineOf([page], match)?.text).toBe('Monstera deliciosa');
+  });
+
+  it('CONTROL: and it does not find a word the page does not carry', async () => {
+    const bytes = await written([
+      recognised([72, 700, 152, 716], [{ text: 'Monstera', box: [72, 700, 152, 716] }]),
+    ]);
+
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('the fixture did not parse');
+    const stext = document.loadPage(0).toStructuredText(STEXT_OPTION_STRING);
+    const page = parsePageText(stext.asJSON());
+    stext.destroy();
+
+    // Without this the case above is satisfied by a search that matches anything,
+    // which is the direction a layer full of question marks would also pass in.
+    const found = findInPages([page], 'deliciosa');
+    expect(found.ok && found.value).toStrictEqual([]);
   });
 
   it('appends to a page that already carries content, leaving its text readable', async () => {

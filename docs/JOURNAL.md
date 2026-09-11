@@ -888,6 +888,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Row 4: search integration needed a case, not a feature
+
+D6 row 4 is done and nothing was built for it. That is the interesting part rather
+than a boast about speed: search over a recognised page was already implied by
+where row 3 puts the text, and what the row owed was **evidence**.
+
+### The claim was obvious and is now measured
+
+Recognised text is written into the page as PDF text, so it reaches the substrate
+search already reads. Obvious — and *obvious* is how a substrate claim goes
+unchecked until somebody finds that a layer of question marks satisfies it.
+
+`ocrTextLayer.test.ts` writes a layer, parses it with `parsePageText` and searches
+it with `findInPages` — the path `document.searchPage` takes — finds the word, and
+resolves the match to the line `"Monstera deliciosa"`. The load-bearing half is the
+control beside it: the same search does **not** find a word the page lacks. Without
+that, the case is satisfied by a search that matches anything, which is exactly
+what a mangled layer would have passed.
+
+What the row records is the thing a later reader would otherwise undo: **no second
+index.** `searchHighlight.ts` is the one writer of `CSS.highlights` and recomputes
+its ranges from the text layer's own lines; `document.pageTextLayer` is the one
+answer to *what does this page say*. An OCR-specific index would be a second answer
+to that question, and it would have to be kept in step through undo, redo and a
+save.
+
+---
+
 ## 2026-09-11 — The push path now typechecks, and the route was never the one being looked for
 
 Three reds in two blocks came from one habit: `npm run typecheck` is two
