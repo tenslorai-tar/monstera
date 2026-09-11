@@ -13,7 +13,7 @@ the fact is not a baseline, it is a rationalisation.
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
-| 6 — OCR | **2 working days** (owner, 2026-09-09) | **in progress** — opened 2026-09-10 at the commit after Stage 5's close | — (the 3× gate arms at **6 days**) |
+| 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 40 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done; D6 row 8 ships complete and carries one trigger only its owner can clear** | **1.50× — continue** |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -885,6 +885,95 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-12 — Stage 6 closes: 3 days against 2, and one row that ships owing a run
+
+Stage 6 opened on 2026-09-10 at `70f52b7` and closes at `b431a3d` on 2026-09-12:
+**3 working days against a 2-day baseline, 1.50×, 38 commits. The verdict is
+CONTINUE**, and the 3× gate — 6 days — was never near.
+
+### Nine of ten, and the tenth is not a half-built row
+
+Scanned-page detection · deskew · recognition · the invisible text layer · search
+integration · export searchable PDF · enhance scans · OCR region · local
+handwriting OCR. D6 row 8, Azure Document Intelligence, is **built** — settings,
+call, polling, conversion, the tool, twelve cases — and it is **not done**,
+because nothing has run against the live service and every fixture was written
+from the documentation.
+
+That distinction is the stage's own rule applied to itself. A cloud engine with
+a green unit-test file is the display-only defect with better clothes, so the row
+keeps its trigger in its body where something reads it, and the stage's count
+says nine rather than ten. Closing at ten would have cost nothing today and
+bought a wrong number in the one place the project measures itself.
+
+### What the stage actually spent its time on
+
+Not the rows. Three of the ten took an afternoon between them once the substrate
+existed — search integration and export-searchable needed a case and a
+registration rather than a feature, and enhance-scans needed its **premise
+withdrawn**, the codec it had been waiting for having been in the shipped engine
+all along.
+
+What cost days was the substrate the rows sat on, and in every instance the
+substrate question was cheaper to answer than to work around:
+
+- **The engine binding.** `tesseract.js` cannot ship — its tree reaches a package
+  with no licence text — so the row took `tesseract.js-core` and measured the two
+  as equal (ADR-0050).
+- **The recognition concern itself**, which the writer-of-record matrix had no
+  row for. Six rows would each have picked an engine at a call site.
+- **A pre-read that takes an argument**, and a stored-effect replay, both found by
+  writing row 3's caller (ADR-0051).
+- **A third coordinate frame** — a page's `/Rotate` — which the audit found an
+  hour after the row it was in shipped (FFFFFF-1).
+- **The download rule**, where three options for a blocked row shared a false
+  premise (ADR-0053).
+
+### THE PATTERN OF THE STAGE, and it is worth more than the rows
+
+**Twice, a row recorded as blocked was blocked on a question rather than on
+work** — enhance-scans' codec, and row 7's download primitive. Both dissolved in
+minutes when the *premise* was checked instead of the options being weighed. The
+second one had already been written up as a decision for the owner, with three
+fair options and a request for a ruling; all three assumed something §1.1
+refutes in its own words.
+
+So the thing to carry out of Stage 6 is not about OCR. **Before presenting
+options, check whether they share an assumption** — and the cheapest moment to do
+that is while writing them down, because a well-argued set of three is exactly
+what stops anybody asking.
+
+### The stage's last red board, and it was the guard doing its job
+
+Guards went red on both platforms at `b431a3d`: `proof:ocrhandwriting` was
+registered with a `refuseStaleBuild` call and no `ARTEFACT_EDGES` entry, so
+nothing could order it after the build and it refused as stale.
+
+The entry is not the interesting part. That map is **hand-kept while the failure
+it must catch is an omission from it** — audit item 4c's direction exactly — so
+the requirement is derived from the set of proofs that *import* the guard, which
+an omission in the map cannot reach. It has now caught four registrations that
+way, and the fourth was mine.
+
+Reading that scan afterwards found a blind spot of its own, which is the part
+worth keeping: `IMPORTS_A_BUILD` matches a literal `/dist/` path, and
+`proof:verifieddownload` imports the bare specifier `@monstera/kernel`, which
+resolves to `dist` through the exports map. So the proof whose whole claim is
+that *the application's form of invariant 9 enforces what the bootstrap form
+does* could have read yesterday's build and reported that they agree. It takes
+the guard now. The scan's pattern is unchanged and its limit is written where the
+next reader meets it — **found by reading the instrument, not by the instrument**,
+which is the only way that class is ever found.
+
+### What the stage leaves owed, all of it stated in a row
+
+Row 8's live run. Row 7's download progress, for a fetch that takes minutes on a
+slow connection. Handwriting **accuracy**, unmeasured, because this repository has
+no labelled sample and the corpus's content may not be quoted. None is hidden in
+a plan; each sits in the body of the row that owns it.
 
 ---
 

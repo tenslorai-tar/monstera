@@ -173,6 +173,41 @@ export const OCR_RECOGNISE = [
 ];
 
 /**
+ * The application's form of invariant 9's download rule.
+ *
+ * One module, and it is the only one that matters: `proof:verifieddownload`
+ * drives the bootstrap form from source and the application form from `dist`, so
+ * a stale build there is the file reporting that the two agree about a version
+ * of one of them that nobody compiled.
+ *
+ * @type {BuildEdge[]}
+ */
+export const VERIFIED_DOWNLOAD = [
+  ['packages/kernel/src/verifiedDownload.ts', 'packages/kernel/dist/verifiedDownload.js', 'tsc'],
+];
+
+/**
+ * The handwriting recogniser and the manifest it reads its filenames from.
+ *
+ * **Two, and the manifest is the one that would go quiet.** The proof looks for
+ * the cache's files by the names `handwritingArtefacts.ts` gives them, so a stale
+ * build of that module makes it report *not applicable — these files are
+ * missing* about a cache that has exactly the files the source now names. That is
+ * the reassuring answer, on the instrument whose whole absent-state path is
+ * designed to be quiet.
+ *
+ * @type {BuildEdge[]}
+ */
+export const OCR_HANDWRITING = [
+  ['packages/kernel/src/ocrHandwriting.ts', 'packages/kernel/dist/ocrHandwriting.js', 'tsc'],
+  [
+    'packages/kernel/src/handwritingArtefacts.ts',
+    'packages/kernel/dist/handwritingArtefacts.js',
+    'tsc',
+  ],
+];
+
+/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
@@ -292,6 +327,19 @@ export const ARTEFACT_EDGES = {
   // the first time that has happened — the four before it were each found by
   // `buildFreshness.proof.mjs` reading the set of proofs that import the guard.
   'proof:ocrrecognise': OCR_RECOGNISE,
+  // THE SEVENTH, and the anchor named it on its first CI run — registered on
+  // 2026-09-11 with its `refuseStaleBuild` call and without this entry, which
+  // turned Guards red on both platforms. That is the mechanism working exactly
+  // as this map's own header describes: an omission here is unreachable from a
+  // derived extent, so the requirement comes from the set of proofs that IMPORT
+  // the guard, which is what caught it.
+  'proof:ocrhandwriting': OCR_HANDWRITING,
+  // THE EIGHTH, and the first found by READING the scan rather than by the scan:
+  // it imports the bare specifier `@monstera/kernel`, which resolves to `dist`
+  // through the exports map, where `IMPORTS_A_BUILD` looks for a `/dist/` path.
+  // So the importers case could not see it and the callers case had nothing to
+  // require. A blind spot in a scan, named where the next reader meets it.
+  'proof:verifieddownload': VERIFIED_DOWNLOAD,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
   // and are compiled by a spawned `tsc`. That import resolves to the package's
   // built declarations, so this proof reads the same artefact every other entry

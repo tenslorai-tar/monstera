@@ -62,9 +62,23 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { VERIFIED_DOWNLOAD, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { downloadVerified as bootstrapDownload } from '../lib/fetchVerified.mjs';
 import { downloadVerified as applicationDownload } from '@monstera/kernel';
+
+// A STALE BUILD HERE IS THE WORST POSSIBLE PASS. This file's whole claim is that
+// the application's form of invariant 9 enforces what the bootstrap form does —
+// so reading yesterday's `dist` would report that a guarantee holds about code
+// nobody has compiled, which is the one answer a reader takes on trust.
+//
+// It was NOT guarded until 2026-09-12, and the scan that requires this could not
+// see it: the pattern looks for a `/dist/` path, and this file imports the bare
+// specifier `@monstera/kernel`, which resolves to dist through the exports map.
+// Found by reading that scan after a sibling proof turned Guards red, not by the
+// scan itself.
+refuseStaleBuild(repoRoot(), VERIFIED_DOWNLOAD, 1);
 
 /** @type {string[]} */
 const failures = [];
