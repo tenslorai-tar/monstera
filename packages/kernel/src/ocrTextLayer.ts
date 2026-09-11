@@ -16,7 +16,12 @@ import {
   showText,
 } from '@cantoo/pdf-lib';
 
+import type { CommandOfKind } from '@monstera/contract';
+
+import type { CaptureResult } from './commandLog.js';
+import type { Apply, ByteImage, Invert } from './engineSeam.js';
 import type { RecognisedLine } from './ocrRecognise.js';
+import { openForWriting } from './pdfLibSession.js';
 
 /**
  * The invisible text layer a recognition writes — and the font that carries it.
@@ -379,3 +384,96 @@ export function writeRecognisedText(
   page.pushOperators(...operators);
   return runs.length;
 }
+
+/**
+ * Capture — **refuses, with the reason §4 reserved a checkpoint for**.
+ *
+ * `captureWatermarkPages`' shape and very nearly its words: restoring a page that
+ * has been drawn on means restoring its whole content stream, and a byte-image
+ * writer consumes an image and answers one, so there is no handle to the objects
+ * the apply added. §4's reserved list is redaction, flatten, encryption and
+ * **OCR**.
+ */
+export const captureOcrPage: (
+  image: ByteImage,
+  command: CommandOfKind<'ocrPage'>,
+) => Promise<CaptureResult<never>> = (_image, _command) =>
+  Promise.resolve({
+    captured: false,
+    reason:
+      'a page that has gained a text layer has no recordable prior state: restoring it means ' +
+      'restoring its content streams and its font resources, which is document-scaled — and §4 ' +
+      'reserves a checkpoint for OCR by name',
+  });
+
+/**
+ * Invert — **unreachable by the type**, and present because the table's shape
+ * requires it.
+ *
+ * `CommandPrior['ocrPage']` is `never`, so nothing can construct an argument for
+ * the `inverse` parameter. `invertWatermarkPages` is the same shape for the same
+ * reason; the throw is what a function with an uninhabited parameter has instead
+ * of a body.
+ */
+export const invertOcrPage: Invert<'pdf-lib', 'ocrPage'> = (_image, _inverse) => {
+  throw new Error(
+    'ocrPage has no inverse and this is unreachable: its prior state is `never`, so no caller ' +
+      'can build an argument for it. Undo restores the checkpoint the bus took.',
+  );
+};
+
+/**
+ * Writes one page's recognised text into that page, and answers the new document.
+ *
+ * ## The recognition arrives as a PRE-READ, which is the whole of ADR-0051
+ *
+ * A byte-image apply holds no engine session, and the recognition is MuPDF's
+ * raster read through Tesseract **inside the engine host**. So the bus resolves it
+ * from the declaration's own expression and hands it in — and the third parameter
+ * is not optional in this signature, which is what `Apply`'s generalised `reads`
+ * branch buys.
+ *
+ * ## It writes what it is given, and does not second-guess the page
+ *
+ * No check that the page is image-only. *What is this page made of* is
+ * `pageKindOf`'s answer and the **surface** is what reads it — the scope offered
+ * is the detector's set — so a check here would be a second opinion about a
+ * question row 1 already owns (B3a). It would also foreclose the region row,
+ * which recognises a rectangle on a page that may be full of text.
+ *
+ * A recognition with no lines writes nothing and the document comes back
+ * unchanged, which is the truthful outcome rather than a refusal: a page
+ * Tesseract read as empty **is** a page with no text to add, and the bus has
+ * already taken a checkpoint either way.
+ */
+export const applyOcrPage: Apply<'pdf-lib', 'ocrPage', 'none', 'ocr'> = async (
+  image,
+  command,
+  read,
+) => {
+  const document = await openForWriting(image);
+  const pages = document.getPages();
+  const page = pages[command.page];
+  if (page === undefined) {
+    throw new RangeError(
+      `Page ${String(command.page)} is outside this document, which has ` +
+        `${String(pages.length)} page(s). Page indices are zero-based.`,
+    );
+  }
+
+  // THE RECOGNITION'S OWN LANGUAGE IS ASSERTED AGAINST THE COMMAND'S, because the
+  // two arrive by different routes: the command carries what was asked for and the
+  // answer echoes what the model was. A mismatch means the pre-read resolved a
+  // request this command did not make, which is a wiring defect and not a
+  // document's fault — so it throws rather than writing text from the wrong model.
+  if (read.language !== command.language) {
+    throw new Error(
+      `the recognition handed to ocrPage was read with ${read.language} and the command asked ` +
+        `for ${command.language}. A pre-read that answers a different request than the command ` +
+        'made is a resolver defect; nothing about the document can cause it.',
+    );
+  }
+
+  writeRecognisedText(page, glyphlessFont(document), read.lines);
+  return document.save();
+};

@@ -2,6 +2,10 @@ import type { CommandKind, CommandOfKind, OutlineEntry } from '@monstera/contrac
 import type { Brand } from '@monstera/shared';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
+// TYPE-ONLY, and it has to be: `ocrRecognise.ts` instantiates a WASM engine on
+// its first call, and a value import here would put 2.8 MB of Tesseract behind
+// every module that reads this seam's types. The import is erased.
+import type { OcrRequest, RecognisedPage } from './ocrRecognise.js';
 
 /**
  * The seam between the kernel and the engines that write documents (ADR-0009
@@ -491,19 +495,33 @@ export type CommandAsset<K extends CommandKind> =
 export type CommandReads = 'none' | keyof PreRead;
 
 /**
- * What each member of {@link CommandReads} names, other than `'none'`.
+ * What each member of {@link CommandReads} names, other than `'none'` — **what it
+ * answers, and what it must be told to answer it**
+ * ([ADR-0051](../../../docs/DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md)).
  *
  * One member per readable value, and the member's **name is the axis's
- * member** — `reads: 'outline'` means *hand me `PreRead['outline']`*. That is
- * what lets the bus resolve a command's pre-read data by indexing rather than
- * by a `switch`, which would be the second routing place §6 spends the mapped
- * types on.
+ * member** — `reads: 'outline'` means *hand me `PreRead['outline']`*. Everything
+ * downstream is derived from here: {@link CommandReads}, {@link PreRead} and
+ * {@link PreReadAccess}. So a member added to this interface widens the axis,
+ * stops every implementer of the access object compiling until it supplies one,
+ * and **cannot be declared without saying both halves** — where a hand-kept
+ * union would accept a member nothing can supply and a second interface beside
+ * this one could drift from it.
+ *
+ * ## `needs` is `never` for a member that needs nothing, and that is the B5
+ *
+ * A pre-read took no argument until 2026-09-11, because an outline is a property
+ * of the **document**. A recognition is a property of a **page**. The shape that
+ * expresses both is a per-member argument type, so `access.outline(page)` and
+ * `access.ocr()` are each a compile error — against an optional argument on every
+ * member, which makes both of those legal and leaves the rule in a comment
+ * somebody has to read and reject (QQQ-3).
  *
  * `'none'` is deliberately not a member. A command reading nothing is handed
  * nothing, and a `none: undefined` entry here would be a value somebody could
  * ask for.
  */
-export interface PreRead {
+export interface PreReadKinds {
   /**
    * The document's outline, flattened — `destinations.ts`' `readDestinations`.
    *
@@ -512,9 +530,72 @@ export interface PreRead {
    * contract is where a crossing shape is declared. `Destination` is now an
    * alias of it, so the two names are one type and neither can drift from the
    * other.
+   *
+   * A property of the whole document, so it needs nothing — which is what
+   * `needs: never` says: {@link PreReadAccess} resolves an uninhabited `needs` to
+   * a member that takes **no parameter at all**, so calling it with one is a
+   * compile error rather than a value nobody reads.
    */
-  readonly outline: readonly OutlineEntry[];
+  readonly outline: { readonly needs: never; readonly value: readonly OutlineEntry[] };
+  /**
+   * One page's recognised text — `ocrRecognise.ts`, inside the engine host.
+   *
+   * **Per page, never per document**, and that is ADR-0035 rather than a choice:
+   * extracted text measured at 3.59× a document's bytes and is never resident in
+   * `main`. A scope here would hold every page's recognition at once.
+   *
+   * The boxes are already in PDF user space, converted once by the module that
+   * rasterised and holds both frames — so nothing on this path converts a second
+   * time.
+   */
+  readonly ocr: { readonly needs: OcrRequest; readonly value: RecognisedPage };
 }
+
+/**
+ * What each member of {@link PreReadKinds} answers, by member name.
+ *
+ * Derived, so `PreRead['outline']` still means what it meant before ADR-0051 and
+ * every consumer of the value type is unmoved.
+ */
+export type PreRead = { readonly [K in keyof PreReadKinds]: PreReadKinds[K]['value'] };
+
+/** What one member of {@link PreReadKinds} must be told. `never` is *nothing*. */
+export type PreReadNeeds<K extends keyof PreReadKinds> = PreReadKinds[K]['needs'];
+
+/**
+ * How the bus obtains a pre-read, supplied by the caller that can resolve one.
+ *
+ * **Here rather than in `commandBus.ts`**, where it lived until ADR-0051:
+ * `commandDeclarations.ts` now declares the expression that calls one of these
+ * members, and the seam cannot import the declarations back — which is ADR-0040's
+ * own correction, one type along.
+ *
+ * A mapped type over {@link PreReadKinds} rather than an interface, so the member
+ * set and each member's argument come from the one declaration. An interface here
+ * would be a second list to keep in step.
+ */
+export type PreReadAccess = {
+  // `[…] extends [never]` RATHER THAN `extends never`, because a naked `never` in
+  // a conditional distributes over nothing and answers `never` for the whole
+  // type — the tuple is what makes this a test of the member's `needs` instead of
+  // a silent collapse. A member needing nothing gets a signature with **no
+  // parameter**; one needing a page cannot be called without it.
+  readonly [K in keyof PreReadKinds]: [PreReadNeeds<K>] extends [never]
+    ? () => Promise<PreRead[K]>
+    : (needs: PreReadNeeds<K>) => Promise<PreRead[K]>;
+};
+
+/**
+ * The one expression that turns a command into the pre-read its apply needs.
+ *
+ * Declared per command beside `reads`, which is the only place the command's kind
+ * and the member's `needs` are both known — see `commandDeclarations.ts`'
+ * {@link ReadRouting} for why that file carries a function at all.
+ */
+export type ReadPreRead<K extends CommandKind, R extends keyof PreRead> = (
+  access: PreReadAccess,
+  command: CommandOfKind<K>,
+) => Promise<PreRead[R]>;
 
 /**
  * Any pre-read value, as a caller that does not know the command's kind sees
@@ -522,9 +603,10 @@ export interface PreRead {
  *
  * A union over {@link PreRead}'s members rather than a widening to `unknown`:
  * the bus resolves one of these without knowing which, and an `unknown` here
- * would let it hand an `apply` something no axis member names. Today there is
- * one member, so this is `readonly OutlineEntry[]` — and a second member
- * widens it here and nowhere else.
+ * would let it hand an `apply` something no axis member names. **The second
+ * member arrived 2026-09-11** and this line is where it widened: two members, so
+ * this is `readonly OutlineEntry[] | RecognisedPage`, and the bus still resolves
+ * one without knowing which.
  */
 export type PreReadValue = PreRead[keyof PreRead];
 
@@ -563,10 +645,19 @@ export type PreReadValue = PreRead[keyof PreRead];
  * produces no error anywhere. It was found by **building the second axis's
  * first caller** and reading what the first axis would hand it.
  *
- * The order is `(session, command, source, outline)`, so each parameter's
+ * The order is `(session, command, source, read)`, so each parameter's
  * position is fixed by its axis rather than by which combination is in play —
  * an ordering that varied would make a two-axis apply's signature depend on
  * something the author has to remember.
+ *
+ * ## The `reads` branch names the AXIS, and it named one member until 2026-09-11
+ *
+ * It read `R extends 'outline'` — correct while the axis had one member, and a
+ * silent dropper the moment it had two: a command declaring the second would have
+ * had its pre-read resolved by the bus and then fall into the branch that passes
+ * nothing. `R extends keyof PreRead` is the same test written over the axis, and
+ * the apply is handed `PreRead[R]`. Found the same way the composition above was,
+ * by building the next caller (ADR-0051).
  */
 export type Apply<
   W extends keyof WriterSession,
@@ -576,31 +667,31 @@ export type Apply<
 > = WriterShapeOf[W] extends 'byte-image'
   ? S extends 'one'
     ? never
-    : R extends 'outline'
+    : R extends keyof PreRead
       ? (
           image: WriterSession[W],
           command: CommandOfKind<K>,
-          outline: PreRead['outline'],
+          read: PreRead[R],
         ) => Promise<ByteImage>
       : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
   : S extends 'one'
-    ? R extends 'outline'
+    ? R extends keyof PreRead
       ? (
           session: WriterSession[W],
           command: CommandOfKind<K>,
           source: WriterSession[W],
-          outline: PreRead['outline'],
+          read: PreRead[R],
         ) => Promise<void>
       : (
           session: WriterSession[W],
           command: CommandOfKind<K>,
           source: WriterSession[W],
         ) => Promise<void>
-    : R extends 'outline'
+    : R extends keyof PreRead
       ? (
           session: WriterSession[W],
           command: CommandOfKind<K>,
-          outline: PreRead['outline'],
+          read: PreRead[R],
         ) => Promise<void>
       : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
 

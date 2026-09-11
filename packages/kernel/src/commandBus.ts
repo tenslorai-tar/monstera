@@ -26,6 +26,7 @@ import type {
 // whatever process loaded the bus, which for `main` is invariant 20's exact
 // prohibition (ADR-0026; measured at +40.1 MB).
 import {
+  type CommandDeclaration,
   type DeclaredCommands,
   type WriterOf,
   declaredCommands,
@@ -41,9 +42,8 @@ import type { CommandWriter, DocumentContext } from './documentService.js';
 // edge costs an importer the object literal and nothing else (ADR-0039).
 import {
   type ByteImage,
-  type CommandReads,
-  type PreRead,
   type CommandTargets,
+  type PreReadAccess,
   type PreReadValue,
   type SessionsByWriter,
   type WriterSession,
@@ -312,18 +312,25 @@ export interface ByteImageAccess {
  *
  * ## The members are the axis, so a new one cannot arrive unsupplied
  *
- * One member per non-`'none'` member of `CommandReads`, and `#preReadFor`
- * indexes this object with the declared value rather than switching on it. A
- * member added to `PreRead` therefore widens `CommandReads`, and this interface
- * stops being satisfied by every implementer until they supply it — which is
- * the direction that fails safe, against a `switch` whose new arm nothing asks
- * for.
+ * One member per non-`'none'` member of `CommandReads`. **The type and its
+ * members moved to `engineSeam.ts` on 2026-09-11** (ADR-0051): a pre-read may
+ * now take an argument, so the expression that builds that argument lives on the
+ * command's declaration — and `commandDeclarations.ts` needs this type to
+ * declare one, while the seam cannot import the declarations back.
+ *
+ * What the move does not change is the property this section was written for: a
+ * member added to `PreReadKinds` widens `CommandReads` and stops every
+ * implementer of the access object compiling until it supplies one, which is the
+ * direction that fails safe against a `switch` whose new arm nothing asks for.
+ *
+ * What it does change is who indexes. `#preReadFor` used to index this object
+ * with the declared value; the declaration's own `read` expression does it now,
+ * and the bus still decides only **whether** to call it. A member's signature is
+ * its own, so `access.outline(page)` and `access.ocr()` are both compile errors —
+ * which is why the indexing could not stay here: an indexed call over a union of
+ * members with different arguments is one TypeScript cannot correlate, and the
+ * spellings that make it compile are a cast or a widened parameter.
  */
-export interface PreReadAccess {
-  /** The document's outline, flattened. `readDestinations`, in the lane. */
-  readonly outline: () => Promise<PreRead['outline']>;
-}
-
 /**
  * The sessions of the other documents a command names, resolved by the caller
  * (ADR-0040 Decision 3).
@@ -632,14 +639,18 @@ export class CommandBus {
    * What a command's `apply` is handed beyond its session and itself
    * (ADR-0040's 2026-09-05 extension).
    *
-   * ## It INDEXES the access object with the declared value
+   * ## IT CALLS THE DECLARATION'S OWN EXPRESSION, and indexes nothing
    *
-   * `access[reads]()` rather than `if (reads === 'outline')`. The axis's
-   * members and {@link PreReadAccess}' members are the same names by
-   * construction — `CommandReads` is derived from `PreRead`'s keys — so a
-   * member added to the axis is a compile error at the access object and needs
-   * no arm here. A `switch` would be the second routing place `commandSpecs.ts`
-   * refuses for the same reason, one axis along.
+   * `access[reads]()` until 2026-09-11, which was right while every member took
+   * no argument. A pre-read may now be parameterised by the command (ADR-0051),
+   * and the expression that turns one into the other is declared beside `reads` —
+   * so this method decides **whether** a pre-read is resolved and never what it
+   * is, which is the same division the indexing enforced.
+   *
+   * The branch is on `read`, not on `reads === 'none'`, and they are the same
+   * question by construction: `ReadRouting`'s two arms are *`'none'` with no
+   * resolver* and *a member with one*, so neither can be written without the
+   * other.
    *
    * ## Resolved at APPLY time, inside the lane
    *
@@ -647,11 +658,33 @@ export class CommandBus {
    * a parameter the caller filled in: a table of contents is almost entirely
    * page numbers, so an outline read when a dialog opened is one taken before
    * whatever the user did next. Read here, it describes the document actually
-   * being written.
+   * being written. Sharper for a page-level pre-read than for a document-level
+   * one — a recognition read before the lane was entered would describe a page
+   * another command may since have rotated.
    */
-  async #preReadFor(reads: CommandReads, access: PreReadAccess): Promise<PreReadValue | undefined> {
-    if (reads === 'none') return undefined;
-    return access[reads]();
+  async #preReadFor<K extends CommandKind>(
+    spec: DeclaredCommands[K],
+    command: CommandOfKind<K>,
+    access: PreReadAccess,
+  ): Promise<PreReadValue | undefined> {
+    // THE CAST NAMES A CORRELATION THE CHECKER CANNOT CARRY, and it is
+    // `localPdfLibExecution`'s cast one type along — the same shape, for the same
+    // reason, at the one place the two views of the table meet.
+    //
+    // At a DECLARATION the resolver's parameter is `CommandOfKind<K>` for that
+    // command's own kind, which is the whole point: the author writes
+    // `command.page` and the checker holds them to it. A reader holding an
+    // unresolved `K` sees the table as a union over 36 kinds, and TypeScript
+    // cannot correlate the member it indexed with the command it was given — the
+    // limit ADR-0040's correction already recorded for `Apply`, one type along.
+    //
+    // It is sound because of the line that produced `spec`: the declaration was
+    // looked up with **this command's own kind**, in `execute` and in `redo`
+    // alike. A guard here would be a check that cannot fail; what would make it
+    // fail is a lookup by some other kind, and there is no such lookup.
+    const resolve = spec as CommandDeclaration<CommandKind>;
+    if (resolve.read === undefined) return undefined;
+    return resolve.read(access, command);
   }
 
   /**
@@ -798,14 +831,32 @@ export class CommandBus {
     // the capture happens moves — that is the line above, and it is §4's.
     const captured = await writer.capture(session, command);
 
+    // RESOLVED AFTER THE CAPTURE AND BEFORE THE APPLY. The ordering that matters
+    // is *before the apply*: a pre-read taken afterwards would describe the
+    // document the command produced rather than the one it is reading.
+    //
+    // It sits AHEAD of the entry below — it was after it until 2026-09-11 — so
+    // the entry can carry it (ADR-0051 Decision 2). Nothing about the checkpoint
+    // moves by that: a pre-read is a read, so the document it serialises is the
+    // same document either way.
+    const preRead = await this.#preReadFor(spec, command, inputs);
+
     // What this execution will be recorded as, decided — and the checkpoint
     // taken — STRICTLY BEFORE apply. Deciding first is what keeps the
     // checkpoint in one place: there is no branch after the mutation where a
     // second path could reach for one, and none where a handler could hand one
     // over. Recording happens after, because an entry for work that threw is
     // not a record of anything.
+    //
+    // `read` IS THE EFFECT A STORED-EFFECT REPLAY RE-APPLIES, and it is stored
+    // only for a command whose replay may not read again (ADR-0051 Decision 2).
+    // For a `reapply-intent` command it is `undefined`, which is the truthful
+    // value rather than a saving: `generateToc`'s outline is document-scaled, and
+    // a copy of every bookmark per entry for a value redo must re-read anyway is
+    // the retention rule read backwards.
+    const stored = spec.replay === 'stored-effect' ? preRead : undefined;
     const entry: LogEntryFor<K> = captured.captured
-      ? { kind: 'invertible', command, inverse: captured.prior }
+      ? { kind: 'invertible', command, inverse: captured.prior, read: stored }
       : {
           kind: 'terminal',
           command,
@@ -813,13 +864,9 @@ export class CommandBus {
           // prior state could not be recorded — never speculatively.
           checkpoint: asCheckpoint(await writer.serialise(session)),
           reason: captured.reason,
+          read: stored,
         };
 
-    // RESOLVED AFTER THE CAPTURE AND THE CHECKPOINT, and before the apply. The
-    // ordering is not arbitrary: the checkpoint above is the document as it
-    // stands, and an outline read after `apply` would describe the document the
-    // command produced rather than the one whose pages it is numbering.
-    const preRead = await this.#preReadFor(spec.reads, inputs);
     // RESOLVED BEFORE THE APPLY AND AFTER THE CHECKPOINT, for the same reason
     // the pre-read is: the checkpoint has to be the target as it stands. It is
     // a map lookup rather than a read, so nothing about the source can change
@@ -1014,37 +1061,37 @@ export class CommandBus {
 
     const spec = declaredCommands[entry.command.kind];
 
-    // §3a's declaration, enforced at COMPILE time rather than by a branch that
-    // cannot run. Every command declared today replays by re-running, so a
-    // runtime `if (spec.replay !== 'reapply-intent')` is a guard with no
-    // reachable caller — lint says so, and a check that cannot fail is the
-    // vacuous shape this project keeps deleting.
-    //
-    // This assignment is the trigger instead: the day any spec declares
-    // `replay: 'stored-effect'`, `spec.replay` widens and this line stops
-    // compiling. That is the prompt to build stored-effect replay, arriving at
-    // the moment the path becomes reachable and not before — the same shape as
-    // the advisory register's expiry triggers.
-    //
-    // It matters because the silent failure is severe: re-running a signature
-    // or an OCR pass produces different bytes, which is precisely what §3a was
-    // added ahead of any command to prevent.
-    const replay: 'reapply-intent' = spec.replay;
-    void replay;
-
     // PICKED HERE, for `undo`'s reason: the writer comes from the log entry, so
     // the caller could not have chosen a session for it.
     const writer = this.#writerFor(entry.command.kind, spec.writer);
     const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
 
-    // RE-RESOLVED, never taken from the log entry, and that is what
-    // `replay: 'reapply-intent'` above has just been checked to mean. The entry
-    // stores the command's INTENT; the outline is state the document holds, and
-    // storing the copy read at execute time would make a redo re-state page
-    // numbers the undo in between may have moved. A command whose pre-read data
-    // must be preserved verbatim is a `stored-effect` command, and this line
-    // stops compiling for it at the assignment above.
-    const preRead = await this.#preReadFor(spec.reads, inputs);
+    // §3a's DECLARATION DECIDING, and this is the branch that replaced the
+    // compile-time trigger that produced it (ADR-0051 Decision 2).
+    //
+    // Until 2026-09-11 this read `const replay: 'reapply-intent' = spec.replay`,
+    // a guard written in 2026-09-04 with its own instructions: *the day any spec
+    // declares `replay: 'stored-effect'`, this line stops compiling. That is the
+    // prompt to build stored-effect replay, arriving at the moment the path
+    // becomes reachable and not before.* `ocrPage` declared it and the line
+    // stopped compiling, which is the first expiring claim in this repository to
+    // fire as designed rather than be found stale.
+    //
+    // `reapply-intent` RE-RESOLVES, and that is the axis doing work: the entry
+    // stores the command's INTENT, an outline is state the document holds, and a
+    // stored copy would make a redo re-state page numbers the undo in between may
+    // have moved.
+    //
+    // `stored-effect` re-applies the value the entry kept, because re-reading it
+    // is exactly what a non-reproducible command may not do: recognition costs
+    // 3.8–4.4 s per page again, and after a model or engine upgrade between the
+    // undo and the redo it answers differently — a redone document that differs
+    // from the one that was undone, which §3a exists ahead of any command to
+    // prevent.
+    const preRead =
+      spec.replay === 'stored-effect'
+        ? entry.read
+        : await this.#preReadFor(spec, entry.command, inputs);
     // RE-RESOLVED like the pre-read, and for a sharper version of its reason:
     // the log entry holds the source's `DocId`, not its session, so a redo runs
     // against whatever session that document has NOW. A stored session handle

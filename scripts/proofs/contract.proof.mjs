@@ -254,6 +254,30 @@ const DESKEW_SPEC = `  deskewPages: {
 /**
  * Filler, kept separate for {@link MOVE_SPEC}'s reason.
  *
+ * **The only spec here declaring a pre-read that is not the document's** and the
+ * only `stored-effect` one (ADR-0051). It carries no `read`, and that is the
+ * probe's subject rather than an omission: the resolver lives on the
+ * **declaration**, `CommandSpec` has no such member, and this table is assembled
+ * by hand here where the real one spreads `declaredCommands` — so a `read` spelt
+ * here is an excess property and says so.
+ */
+const OCR_SPEC = `  ocrPage: {
+    kind: 'ocrPage',
+    writer: 'pdf-lib',
+    apply: applyOcrPage,
+    capture: captureOcrPage,
+    invert: invertOcrPage,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: false,
+    replay: 'stored-effect',
+    sources: 'none',
+    reads: 'ocr',
+  },`;
+
+/**
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason.
+ *
  * **The only spec here whose command the renderer cannot send.** Its schema is
  * in `commandSchema` because `CommandKind` derives from that union, and it is
  * absent from `renderableCommandSchema` because it carries an image main reads
@@ -820,6 +844,9 @@ const SPEC_IMPORTS = `import {
   applyDeskewPages,
   captureDeskewPages,
   invertDeskewPages,
+  applyOcrPage,
+  captureOcrPage,
+  invertOcrPage,
   applyMergeDocument,
   captureMergeDocument,
   invertMergeDocument,
@@ -1390,6 +1417,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1485,6 +1513,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1545,6 +1574,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${OCR_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -1606,6 +1636,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1665,6 +1696,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1733,6 +1765,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -1797,6 +1830,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
@@ -2594,12 +2628,18 @@ export const entry: LogEntryFor<'deletePages'> = {
     // satisfied by an entry union that simply made every field optional.
     because: /Property 'checkpoint' is missing in type '\{…\}' but required in type '\{…\}'/u,
     notBecause: null,
+    // `read: undefined` IS PART OF THE FIXTURE, not part of what is under test.
+    // A terminal entry has carried what the apply was handed since ADR-0051, so
+    // omitting it too makes the reason *checkpoint, read* — a true diagnostic
+    // about two things, where this case is about one. Isolating the property
+    // under test is what keeps the reason regex above meaningful.
     source: `
 import type { LogEntry } from '@monstera/kernel';
 export const entry: LogEntry = {
   kind: 'terminal',
   command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
   reason: 'no prior state',
+  read: undefined,
 };
 `,
   },
@@ -2676,8 +2716,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // three since `movePage` (2026-09-03), eight since `deletePages`,
     // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`, nine
     // since `watermarkPages` (all 2026-09-04), 23 since `createFormField`
-    // (2026-09-08), 29 since `replaceTextObject` (2026-09-09) and 30 since
-    // `deskewPages` (2026-09-10).
+    // (2026-09-08), 29 since `replaceTextObject` (2026-09-09), 30 since
+    // `deskewPages` (2026-09-10) and 31 since `ocrPage` (2026-09-11).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2695,7 +2735,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 31 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 32 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

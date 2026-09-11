@@ -25,6 +25,7 @@ import {
   captureCreateFormField,
   invertCreateFormField,
 } from './formFieldCreate.js';
+import { applyOcrPage, captureOcrPage, invertOcrPage } from './ocrTextLayer.js';
 import { applyGenerateToc, captureGenerateToc, invertGenerateToc } from './pageToc.js';
 import {
   applyBatesNumberPages,
@@ -152,6 +153,17 @@ export const pdfLibSpecs = {
     apply: applyCreateFormField,
     capture: captureCreateFormField,
     invert: invertCreateFormField,
+  },
+  ocrPage: {
+    ...declaredCommands.ocrPage,
+    // THE SECOND THREE-PARAMETER APPLY, and the first whose pre-read is not the
+    // document's. The spread carries `reads: 'ocr'` and `WriterBinding` resolves
+    // this entry's `apply` to the signature that takes a `RecognisedPage` — so an
+    // apply expecting an outline here does not compile, which is what the
+    // generalised `reads` branch is for.
+    apply: applyOcrPage,
+    capture: captureOcrPage,
+    invert: invertOcrPage,
   },
   generateToc: {
     ...declaredCommands.generateToc,

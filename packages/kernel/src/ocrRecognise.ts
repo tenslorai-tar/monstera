@@ -340,6 +340,21 @@ interface JsonTree {
 }
 
 /**
+ * Which page to recognise, and in which language.
+ *
+ * **The model directory is deliberately not here.** This is what a *caller in
+ * `main`* asks for — it is `PreReadKinds['ocr']`'s `needs`, crossing as a command's
+ * pre-read request — and where the models live is main's answer, not the asker's.
+ * A request carrying a directory would be a path chosen by whoever composed it,
+ * which is ADR-0014's constraint 1 in the one direction it cares about.
+ */
+export interface OcrRequest {
+  /** Zero-based, like every page index that crosses a boundary here. */
+  readonly page: number;
+  readonly language: OcrLanguage;
+}
+
+/**
  * Recognises one page of a session this process holds.
  *
  * **The raster never leaves this function.** §9.17's gate is that no bitmap
@@ -354,7 +369,7 @@ interface JsonTree {
  */
 export async function recognisePage(
   session: MupdfSession,
-  request: { page: number; language: OcrLanguage; modelDirectory: string },
+  request: OcrRequest & { readonly modelDirectory: string },
 ): Promise<RecognisedPage> {
   const loaded = await loadedCore();
   ensureModel(loaded, request.modelDirectory, request.language);

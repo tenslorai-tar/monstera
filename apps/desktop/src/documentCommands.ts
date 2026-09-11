@@ -27,6 +27,8 @@ import {
   type Layer,
   type PageLink,
   type PageText,
+  type OcrRequest,
+  type RecognisedPage,
   type SaveDependencies,
   type CopyOutcome,
   type CopyTargetVerdict,
@@ -690,6 +692,24 @@ export type DocumentDestinationsReader = (
   sessions: DocumentSessions,
 ) => Promise<readonly Destination[]>;
 
+/**
+ * Recognises one page's text, through the engine host.
+ *
+ * Injected for {@link DocumentPageText}'s reason, and it TAKES A PAGE — which is
+ * the difference ADR-0051 is about. An outline is a property of the document; a
+ * recognition is a property of a page, and the request is the pre-read's `needs`
+ * arriving from the command's own declaration.
+ *
+ * **Where the models live is not in the request.** That is main's answer and the
+ * composition root supplies it, which is ADR-0014's constraint 1 in the direction
+ * it cares about: nothing a renderer sends can name a datadir.
+ */
+export type DocumentOcrReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  request: OcrRequest,
+) => Promise<RecognisedPage>;
+
 /** The outline, stamped with the version the lane read it at. */
 export interface DocumentDestinations {
   readonly version: DocVersion;
@@ -1140,6 +1160,8 @@ export interface DocumentCommandsParts {
   readonly pageText: DocumentPageText;
   readonly pageLinks: DocumentPageLinksReader;
   readonly destinations: DocumentDestinationsReader;
+  /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
+  readonly ocr: DocumentOcrReader;
   readonly layers: DocumentLayersReader;
   readonly restore: DocumentRestore;
   /**
@@ -1182,6 +1204,7 @@ export class DocumentCommands {
   readonly #pageText: DocumentPageText;
   readonly #pageLinks: DocumentPageLinksReader;
   readonly #destinations: DocumentDestinationsReader;
+  readonly #ocr: DocumentOcrReader;
   readonly #layers: DocumentLayersReader;
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
@@ -1207,6 +1230,7 @@ export class DocumentCommands {
     this.#pageText = parts.pageText;
     this.#pageLinks = parts.pageLinks;
     this.#destinations = parts.destinations;
+    this.#ocr = parts.ocr;
     this.#layers = parts.layers;
     this.#restore = parts.restore;
     this.#annotations = parts.annotations;
@@ -1955,6 +1979,10 @@ export class DocumentCommands {
       current: () => this.#save.flush(docId, sessions),
       adopt: (write) => this.#restore(docId, write),
       outline: () => this.#destinations(docId, sessions),
+      // ADR-0051's member, and the one that takes an argument. The request is the
+      // command's own — the declaration builds it — and this closure adds the
+      // document, which is what the bus cannot name.
+      ocr: (request) => this.#ocr(docId, sessions, request),
       sources: this.#sourcesFor(named),
     };
   }

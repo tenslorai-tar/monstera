@@ -22,6 +22,7 @@ import {
 import type { CommandWriter, DocumentContext } from './documentService.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
+import type { OcrRequest, RecognisedPage } from './ocrRecognise.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation } from './pageAnnotations.js';
 import { localPdfLibWriter } from './pdfLibWriter.js';
@@ -229,14 +230,16 @@ const noByteImageExpected: CommandInputs = {
   adopt: () => {
     throw new Error('this case runs a live-session command and must not install a byte image');
   },
-  // ALL THREE THROW, and the third for the same argument one axis along: every
-  // command in this file declares `reads: 'none'`, so an outline read here
-  // would be the bus resolving pre-read data for a command that did not ask for
-  // one — which `CommandBus.#preReadFor`'s `'none'` branch is what prevents.
-  // Delete that branch and this file goes red, where a member returning `[]`
-  // would let it pass.
+  // EVERY PRE-READ THROWS, for the same argument one axis along: every command in
+  // this file declares `reads: 'none'`, so a pre-read resolved here would be the
+  // bus reading for a command that did not ask — which `#preReadFor`'s absent
+  // resolver is what prevents. Delete that branch and this file goes red, where a
+  // member returning `[]` would let it pass.
   outline: () => {
     throw new Error('this case runs a command declaring reads: none and must not read an outline');
+  },
+  ocr: () => {
+    throw new Error('this case runs a command declaring reads: none and must not recognise');
   },
   // EMPTY RATHER THAN THROWING, and it is the one member here that cannot use
   // the trick above. `sources` is data the bus indexes, not a function it
@@ -305,6 +308,10 @@ describe('CommandLog — a cursor, not a stack', () => {
       kind: 'invertible',
       command: { kind: 'rotatePages', pages: [page], quarterTurns: 1 },
       inverse: [{ page, prior: { present: false } }],
+      // NOTHING STORED, which is the truthful value for a `reapply-intent`
+      // command: redo re-reads. Required rather than optional so every entry
+      // built anywhere says which it is (ADR-0051 Decision 2).
+      read: undefined,
     };
   }
 
@@ -626,6 +633,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         kind: 'invertible',
         command: rotateFirst,
         inverse: [{ page: 0, prior: { present: false } }],
+        read: undefined,
       });
 
       expect(log.trimTo(0)).toEqual({ droppedEntries: 0, droppedBytes: 0 });
@@ -1290,6 +1298,13 @@ describe('CommandBus and the reads axis', () => {
           { title: 'Chapter two', page: 2, depth: 0 },
         ]);
       },
+      // THROWS, for `noByteImageExpected`'s reason: the commands in this block
+      // declare `reads: 'outline'` or `'none'`, so a recognition resolved here
+      // would be the bus reading the wrong member of the axis — which a member
+      // answering an empty page would hide.
+      ocr: () => {
+        throw new Error('no command in this block declares reads: ocr');
+      },
       // EMPTY, for `noByteImageExpected`'s reason: every command in this block
       // declares `sources: 'none'`, and a map with an entry in it would be a
       // caller resolving a document nothing asked about.
@@ -1357,6 +1372,126 @@ describe('CommandBus and the reads axis', () => {
     await bus.redo({}, context, inputs);
 
     expect(inputs.outlineCalls()).toBe(2);
+  });
+});
+
+/**
+ * The pre-read axis with an ARGUMENT, and a replay that does not re-read
+ * ([ADR-0051](../../../docs/DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md)).
+ *
+ * Two properties, and the block above is the control for both: `generateToc`
+ * takes no argument and re-resolves on redo, `ocrPage` takes a page and replays
+ * what it stored. An implementation that ignored the declaration would pass one
+ * block and fail the other, whichever way it was wrong.
+ */
+describe('CommandBus and a parameterised pre-read', () => {
+  /** What a recognition answers, with a box this fixture's page can hold. */
+  const recognised: RecognisedPage = {
+    lines: [
+      {
+        text: 'Monstera',
+        box: [72, 700, 152, 716],
+        words: [{ text: 'Monstera', box: [72, 700, 152, 716], confidence: 90 }],
+      },
+    ],
+    confidence: 90,
+    language: 'eng',
+  };
+
+  /**
+   * Inputs that RECORD THE REQUEST, not only the call.
+   *
+   * The count is what the outline block asserts, and it would be satisfied here
+   * by a bus that resolved the right member with the wrong argument — page 0 for
+   * a command naming page 1, which writes a text layer onto the wrong page and
+   * looks like a working feature. So the request itself is kept: audit item 2's
+   * *assert what the harness passes*, one axis along.
+   */
+  function recordingOcr(image: ByteImage): CommandInputs & {
+    readonly requests: () => readonly OcrRequest[];
+    readonly installed: () => readonly ByteImage[];
+  } {
+    const requests: OcrRequest[] = [];
+    const installed: ByteImage[] = [];
+    return {
+      current: () => Promise.resolve(image),
+      adopt: async (write) => {
+        await write('granted/ocr');
+      },
+      outline: () => {
+        throw new Error('no command in this block declares reads: outline');
+      },
+      // ECHOES THE LANGUAGE IT WAS ASKED FOR, which is what a real reader does:
+      // `RecognisedPage.language` is the model that read the page. A stub that
+      // answered a constant would trip `applyOcrPage`'s own mismatch refusal on
+      // every case asking for anything but English — which is how this fixture
+      // was first written, and the refusal caught it.
+      ocr: (request) => {
+        requests.push(request);
+        return Promise.resolve({ ...recognised, language: request.language });
+      },
+      sources: new Map(),
+      requests: () => requests,
+      installed: () => installed,
+    };
+  }
+
+  it('hands the resolver the command’s own page and language', async () => {
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const inputs = recordingOcr(flat);
+
+    await bus.execute({}, context, { kind: 'ocrPage', page: 1, language: 'deu' }, inputs);
+
+    // THE REQUEST, not the count. A resolver called once with `page: 0` is the
+    // defect this case exists for, and a count of one cannot see it.
+    expect(inputs.requests()).toStrictEqual([{ page: 1, language: 'deu' }]);
+  });
+
+  it('replays the recognition it stored, without reading again', async () => {
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const inputs = recordingOcr(flat);
+    const command = { kind: 'ocrPage', page: 0, language: 'eng' } as const;
+
+    await bus.execute({}, context, command, inputs);
+    await bus.undo({}, context, () => Promise.resolve(), inputs);
+    await bus.redo({}, context, inputs);
+
+    // ONE READ FOR TWO APPLIES. `replay: 'stored-effect'` is what says the second
+    // apply may not ask again: recognition is 3.8–4.4 s per page, and a model
+    // upgrade between the undo and the redo would answer differently — a redone
+    // document that differs from the one that was undone.
+    expect(inputs.requests()).toHaveLength(1);
+    // FOUR FOR TWO APPLIES, because installing a byte image is two calls this
+    // stub records — the checkpoint-directory write and the canonical
+    // replacement. The pairs are `(0, 1)` from the execute and `(2, 3)` from the
+    // redo.
+    const images = context.images();
+    expect(images).toHaveLength(4);
+    // AND THE STORED VALUE REACHED THE SECOND APPLY, which the count alone does
+    // not say. Byte equality is the assertion available here: the apply's input
+    // is the same image both times, so identical output means the same text was
+    // written — and an apply handed `undefined` instead throws on the language
+    // check rather than producing these bytes at all.
+    expect(images[2]).toStrictEqual(images[0]);
+  });
+
+  it('refuses a recognition read in a language the command did not ask for', async () => {
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const inputs: CommandInputs = {
+      ...recordingOcr(flat),
+      // A RESOLVER ANSWERING THE WRONG REQUEST, which is the only way this state
+      // is reachable: the command and the answer arrive by different routes, and
+      // a wiring defect between them would otherwise write a page's worth of text
+      // from the wrong model with nothing to notice.
+      ocr: () => Promise.resolve(recognised),
+    };
+
+    await expect(
+      bus.execute({}, context, { kind: 'ocrPage', page: 0, language: 'heb' }, inputs),
+    ).rejects.toThrow(/read with eng and the command asked for heb/u);
   });
 });
 

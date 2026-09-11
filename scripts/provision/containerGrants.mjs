@@ -83,6 +83,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from './electron.mjs';
 import { pdfiumLibrary } from './pdfium.mjs';
+import { tessdataDirectory } from './tessdata.mjs';
 
 /**
  * `ALL APPLICATION PACKAGES`, by SID rather than by name.
@@ -165,6 +166,26 @@ export function grantSet(root = repoRoot()) {
       path: dirname(pdfiumLibrary(root)),
       rights: 'RX',
       why: 'the PDFium engine library the second host binds',
+      required: false,
+    },
+    // THE OCR MODELS, which the host reads itself — and that is what makes this
+    // entry necessary rather than tidy. `ocrRecognise.ts` runs INSIDE the
+    // container and `readFileSync`s the model out of a directory main hands it by
+    // path, so without an ACE here the first real recognition answers
+    // `ocr-model-unreadable` on a file that is present and perfectly readable
+    // from every other process on the machine.
+    //
+    // NOT REQUIRED, for the entry above's reason: a checkout that has not run
+    // `npm run provision:tessdata` is a machine that offers no OCR, not one that
+    // cannot start a host — and CI provisions `eng` alone.
+    //
+    // `R` RATHER THAN `RX`: a model is data that a WASM engine parses. Nothing
+    // executes it, and the one grant in this list that does not need execute
+    // should not ask for it.
+    {
+      path: tessdataDirectory(root),
+      rights: 'R',
+      why: 'the OCR models the host reads inside the container',
       required: false,
     },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and

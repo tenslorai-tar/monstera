@@ -14,6 +14,11 @@ export type {
   Invert,
   MupdfSession,
   PdfiumSession,
+  // FROM HERE SINCE 2026-09-11, and it was `commandBus.ts`' until then: a
+  // pre-read's members may now take an argument, so the declarations table
+  // declares the expression that calls one, and the seam cannot import the
+  // declarations back (ADR-0051).
+  PreReadAccess,
   WriterSession,
   WriterShape,
   WriterShapeOf,
@@ -52,7 +57,6 @@ export {
 } from './commandLog.js';
 export {
   type ByteImageAccess,
-  type PreReadAccess,
   type CheckpointRestore,
   CommandBus,
   type CommandInputs,
@@ -116,6 +120,7 @@ export {
   type HostFormDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
+  type HostOcrReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostSession,
@@ -135,6 +140,11 @@ export {
 // A TYPE ONLY, which is what keeps it on this barrel: `flatFields.ts` binds the
 // native library, and main reads its answers without ever calling it.
 export type { FlatFieldCandidate } from './flatFields.js';
+// TYPES ONLY, and the rule is sharper here than for the line above:
+// `ocrRecognise.ts` instantiates 2.8 MB of Tesseract on its first call, and the
+// recognition itself runs in the engine host. Main composes the reader and passes
+// the answers through, so it needs the shapes and nothing else.
+export type { OcrRequest, RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
@@ -181,6 +191,7 @@ export {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
+  remoteMupdfOcr,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
 } from './host/remoteEngine.js';

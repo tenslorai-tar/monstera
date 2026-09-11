@@ -13,7 +13,7 @@ import type { Brand } from '@monstera/shared';
 // through a type-only import of a type.
 //
 // Same mechanism as the Electron download one file over, with a different bill.
-import type { ByteImage } from './engineSeam.js';
+import type { ByteImage, PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
 // TYPE-ONLY, and here that is load-bearing rather than habitual: this module is
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
@@ -289,6 +289,22 @@ export interface CommandPrior {
    * table is where each command says what its inverse is made of.
    */
   readonly generateToc: never;
+  /**
+   * **`never`**, and the reason is the one §4 reserved a checkpoint for.
+   *
+   * The prior state is *this page without the content stream and the font
+   * resource the command appended*, and a byte-image writer has no way to name
+   * that: the apply consumes an image and answers one, so there is no handle to
+   * the objects it added and nothing pdf-lib could hand back that would restore
+   * them by description. §4's list is redaction, flatten, encryption and **OCR**,
+   * and this is the fourth.
+   *
+   * **It is also the first `never` here whose command keeps something OTHER than
+   * a prior.** A stored-effect replay needs what the apply was handed, which is
+   * the entry's `read` — a different axis, and one that says nothing about
+   * invertibility (ADR-0051 Decision 2).
+   */
+  readonly ocrPage: never;
   /**
    * **`never`**, and this is the first entry whose reason involves a second
    * document — which changes nothing, and saying why is the point.
@@ -597,17 +613,39 @@ export type CaptureResult<T> =
   | { readonly captured: false; readonly reason: string };
 
 /**
- * One entry, in one of exactly two shapes.
+ * One entry, in one of exactly two shapes, both carrying what the apply was
+ * handed.
  *
  * Distributed over the kind union, so `command` and `inverse` are the same
  * command's — an entry pairing a `rotatePages` command with another command's
  * prior state does not compile.
+ *
+ * ## `read` is on BOTH shapes, and that is the point of it
+ *
+ * [ADR-0051](../../../docs/DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md)
+ * Decision 2. A command declaring `replay: 'stored-effect'` may not have its
+ * pre-read resolved again on redo, so the value it was applied with is recorded
+ * here — and putting it on one shape only would make
+ * `{ invertible: true, reproducible: false }` a combination the axes permit and
+ * the log cannot express, which is a gap nothing would report until somebody
+ * declared it. `retainedBytes` and `trimTo` still classify on two states, so
+ * there is no third one for them to miss either (DDD-1).
+ *
+ * **Required and nullable rather than optional.** `trimTo`'s own rule: *an
+ * obligation that arrives as an absent value is one a caller forgets to check* —
+ * so every construction site says what it is, and `undefined` means *this
+ * command's replay re-reads, so nothing was kept*. It is not stored for a
+ * `reapply-intent` command even where one has a pre-read, because `generateToc`'s
+ * outline is document-scaled and storing it per entry would put a copy of every
+ * bookmark in the log for a value redo must re-read anyway.
  */
 export type LogEntryFor<K extends CommandKind> =
   | {
       readonly kind: 'invertible';
       readonly command: CommandOfKind<K>;
       readonly inverse: CommandPrior[K];
+      /** What the apply was handed, where replay may not read it again. */
+      readonly read: PreReadValue | undefined;
     }
   | {
       readonly kind: 'terminal';
@@ -615,6 +653,8 @@ export type LogEntryFor<K extends CommandKind> =
       readonly checkpoint: Checkpoint;
       /** Why no inverse could be recorded. Carried so undo can explain itself. */
       readonly reason: string;
+      /** What the apply was handed, where replay may not read it again. */
+      readonly read: PreReadValue | undefined;
     };
 
 /**

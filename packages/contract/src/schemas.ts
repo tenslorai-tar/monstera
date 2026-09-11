@@ -94,3 +94,56 @@ export const failureSchema = z.union([
     })
     .strict(),
 ]);
+
+/**
+ * The languages this build can RECOGNISE — Stage 6's set, and a decision.
+ *
+ * `BUILD-PROMPT.md`:473 asks for *13+ languages* and names none. Fourteen ship:
+ * seven Latin-script, plus Cyrillic, Arabic, Hebrew, Devanagari, Japanese,
+ * Korean and Simplified Chinese — because a set that is Latin-only fails the
+ * documents it fails **silently**, and two of the seven are right-to-left.
+ *
+ * ## It is HERE rather than in `channels.ts`, where it was written
+ *
+ * Moved 2026-09-11, when `ocrPage`'s payload needed it: `channels.ts` imports
+ * `commands.ts`, so a command schema cannot import back without a cycle, and a
+ * second enum beside this one is a second opinion about which fourteen models
+ * this build has (B3a). This file is the leaf both of them already import.
+ *
+ * ## Tesseract's own names, not BCP 47
+ *
+ * `chi_sim` is not a language tag; it is the file `tessdata` publishes. A tag
+ * here would need a mapping table somewhere, and a mapping table is a second
+ * opinion about which model a language means (B3a) — so the names are the
+ * models' own and the display titles are keyed on them.
+ *
+ * ## Choosing one is NOT what ADR-0014's constraint 1 forbids
+ *
+ * That constraint says the language and datadir reaching the engine *must not be
+ * influenced by a document, and must not be user-supplied without a new
+ * decision* — because both of Tesseract's live advisories are reached through a
+ * **crafted model file**. A person picking one of fourteen names from this
+ * closed set supplies no file and no path: the models are provisioned by digest
+ * (`scripts/provision/tessdata.mjs`) and the datadir is ours. This sentence is
+ * that new decision, and the shape of it is what keeps the constraint true —
+ * an enum rather than a string.
+ */
+export const OCR_LANGUAGES = [
+  'eng',
+  'spa',
+  'fra',
+  'deu',
+  'por',
+  'ita',
+  'nld',
+  'rus',
+  'ara',
+  'heb',
+  'hin',
+  'jpn',
+  'kor',
+  'chi_sim',
+] as const;
+
+/** One of {@link OCR_LANGUAGES}. */
+export type OcrLanguage = (typeof OCR_LANGUAGES)[number];

@@ -19,6 +19,7 @@ import {
   DocumentService,
   EngineOpenFailed,
   type HostDestinationsReader,
+  type HostOcrReader,
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
@@ -59,6 +60,7 @@ import {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
+  remoteMupdfOcr,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWriter,
@@ -415,6 +417,34 @@ export interface ShellComposition {
   readonly log?: ShellLog | null;
 }
 
+/**
+ * Where the provisioned OCR models are, or `null` — and this process never
+ * searches for them.
+ *
+ * `engineHostPlatform.ts`' `pdfiumLibraryPath` shape and every word of its
+ * reasoning, one artefact along: `scripts/provision/tessdata.mjs` owns *where a
+ * provisioned model lives*, `scripts/` is not shipped, and `scripts/launch.mjs`
+ * is the one process that knows the repository root and starts the shell. It
+ * reads the variable **here** rather than there because a model directory is a
+ * per-command parameter, not something a host is created with — and
+ * `engineHostPlatform.ts` imports this module's types, so the edge would run the
+ * wrong way.
+ *
+ * **`null` is a real state and it is the packaged one.** No installer has been
+ * built, so there is no `.tools/` tree to resolve and nothing to guess an
+ * unobserved layout from. A reader is meant never to meet the refusal: the OCR
+ * commands are offered only where a model is present, which is the registry's
+ * `when` doing what the wired-tools rule asks of it.
+ */
+function provisionedModelDirectory(): string | null {
+  const supplied = process.env['MONSTERA_TESSDATA_DIRECTORY'];
+  // EMPTY IS ABSENT, for `pdfiumLibraryPath`'s measured reason: a shell expanding
+  // an unset variable produces `''`, and passing that on would send a path of
+  // nothing to a reader whose only answer about it is `unreadable`.
+  if (supplied === undefined || supplied.length === 0) return null;
+  return supplied;
+}
+
 export function createShellDependencies(composition: ShellComposition): ShellDependencies {
   const {
     appInfo,
@@ -613,6 +643,34 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.destinations(session);
+    },
+    // RECOGNITION, a read like the three above — and the only one that is a
+    // COMMAND's pre-read rather than a query's answer (ADR-0051). `ocrPage`'s
+    // declaration builds the request from the command; this adds the document's
+    // session and the one thing a request may not carry.
+    //
+    // THE MODEL DIRECTORY IS MAIN'S ANSWER, which is ADR-0014's constraint 1 in
+    // the direction it cares about: both of Tesseract's live advisories are
+    // reached through a crafted model file, so nothing a renderer sends may name
+    // a datadir. A request carrying one would be exactly that.
+    //
+    // A machine with no provisioned models refuses HERE, by name, rather than
+    // letting the host answer `ocr-model-unreadable` for a directory that does
+    // not exist — the host's state is *this model cannot be read*, and *no models
+    // are installed* is main's to know. The surface is what keeps a reader from
+    // meeting it: the command is offered only where a model is present.
+    ocr: (docId, sessions, request) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const modelDirectory = provisionedModelDirectory();
+      if (modelDirectory === null) {
+        throw new Error(
+          'no OCR models are provisioned on this machine, so there is nothing to recognise ' +
+            'with. `scripts/provision/tessdata.mjs` installs them, and the launcher passes the ' +
+            'directory to the shell; a packaged build has neither yet.',
+        );
+      }
+      return engineHost.ocr(session, { ...request, modelDirectory });
     },
     // THE LAYERS, a read like the two above. The TOGGLE is not here: it is a
     // command, and commands route through the bus in `execute`.
@@ -916,6 +974,8 @@ function engineSessionOpener(
   readonly pageLinks: HostPageLinksReader;
   /** The document's outline, from whichever host is live. */
   readonly destinations: HostDestinationsReader;
+  /** One page's recognised text, from whichever host is live. */
+  readonly ocr: HostOcrReader;
   /** The document's layers, from whichever host is live. */
   readonly layers: HostLayersReader;
   /** Every annotation in the document, from whichever host is live. */
@@ -1110,6 +1170,20 @@ function engineSessionOpener(
       );
     }
     return destinations(session);
+  };
+
+  /** Recognition's half of the same registration. See {@link pageText}. */
+  let ocr: HostOcrReader | null = null;
+
+  const recogniseThroughHost: HostOcrReader = (session, request) => {
+    if (ocr === null) {
+      throw new Error(
+        'A recognition reached the engine with no host OCR reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return ocr(session, request);
   };
 
   /** The layers' half of the same registration. See {@link pageText}. */
@@ -1337,6 +1411,7 @@ function engineSessionOpener(
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
+    ocr = remoteMupdfOcr(client, remote);
     layers = remoteMupdfLayers(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
@@ -1507,6 +1582,7 @@ function engineSessionOpener(
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
     destinations: readDestinationsThroughHost,
+    ocr: recogniseThroughHost,
     layers: readLayersThroughHost,
     annotations: readAnnotationsThroughHost,
     formFields: readFormFieldsThroughHost,

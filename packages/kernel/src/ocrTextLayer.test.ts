@@ -3,7 +3,13 @@ import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 
 import type { RecognisedLine } from './ocrRecognise.js';
-import { GLYPHLESS_FONT_NAME, glyphlessFont, writeRecognisedText } from './ocrTextLayer.js';
+import {
+  GLYPHLESS_FONT_NAME,
+  applyOcrPage,
+  captureOcrPage,
+  glyphlessFont,
+  writeRecognisedText,
+} from './ocrTextLayer.js';
 import { type TextLayer, textLayerOf } from './textLayer.js';
 import { STEXT_OPTION_STRING, parsePageText } from './textStructure.js';
 
@@ -264,6 +270,77 @@ describe('writeRecognisedText', () => {
     expect(fonts[0]?.[1] instanceof PDFDict && fonts[0][1].get(PDFName.of('BaseFont'))).toBe(
       PDFName.of(GLYPHLESS_FONT_NAME),
     );
+  });
+
+  it('writes to the page the command names, and to no other', async () => {
+    const blank = await PDFDocument.create();
+    for (const _page of [0, 1, 2]) blank.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+
+    const written = await applyOcrPage(
+      await blank.save(),
+      { kind: 'ocrPage', page: 1, language: 'eng' },
+      {
+        lines: [
+          recognised([72, 700, 152, 716], [{ text: 'Monstera', box: [72, 700, 152, 716] }]),
+        ],
+        confidence: 90,
+        language: 'eng',
+      },
+    );
+
+    // ONE PAGE, NAMED. A writer that ignored the index and took page 0 passes
+    // every single-page case above — which is why the fixture has three.
+    expect(layerOf(written, 0).kind).toBe('empty');
+    expect(layerOf(written, 1).lines[0]?.text).toBe('Monstera');
+    expect(layerOf(written, 2).kind).toBe('empty');
+  });
+
+  it('refuses a page the document does not have, with the count in the message', async () => {
+    const blank = await PDFDocument.create();
+    blank.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+
+    await expect(
+      applyOcrPage(
+        await blank.save(),
+        { kind: 'ocrPage', page: 4, language: 'eng' },
+        { lines: [], confidence: 0, language: 'eng' },
+      ),
+    ).rejects.toThrow(/Page 4 is outside this document, which has 1 page/u);
+  });
+
+  it('writes nothing for a recognition that found no lines, and does not refuse', async () => {
+    const blank = await PDFDocument.create();
+    blank.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+
+    // A PAGE TESSERACT READ AS EMPTY IS A PAGE WITH NO TEXT TO ADD, which is an
+    // outcome rather than a failure — and the bus has taken its checkpoint either
+    // way, so a refusal here would be an undo entry for nothing.
+    const written = await applyOcrPage(
+      await blank.save(),
+      { kind: 'ocrPage', page: 0, language: 'eng' },
+      { lines: [], confidence: 0, language: 'eng' },
+    );
+
+    expect(layerOf(written).kind).toBe('empty');
+  });
+
+  it('captures nothing, and says why undo will cost a checkpoint', async () => {
+    const blank = await PDFDocument.create();
+    blank.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+
+    const captured = await captureOcrPage(await blank.save(), {
+      kind: 'ocrPage',
+      page: 0,
+      language: 'eng',
+    });
+
+    expect(captured.captured).toBe(false);
+    // THE REASON TRAVELS INTO THE LOG ENTRY, where a surface can say why. Asserted
+    // because a capture answering `{captured: false, reason: ''}` satisfies the
+    // line above and explains nothing. `!captured.captured` rather than
+    // `=== false` because the lint rule is right about the comparison and the
+    // narrowing is what the assertion needs either way.
+    expect(!captured.captured && captured.reason).toMatch(/checkpoint for OCR by name/u);
   });
 
   it('appends to a page that already carries content, leaving its text readable', async () => {

@@ -50,7 +50,11 @@ const REQUIRE_MODELS = process.argv.includes('--require-models');
 // the provisioning table to yesterday's language set.
 refuseStaleBuild(root, CONTRACT_TYPES, 2);
 
-const { OCR_LANGUAGES } = await import('../../packages/contract/dist/channels.js');
+// FROM `schemas.js`, where the set moved on 2026-09-11: `ocrPage`'s payload needs
+// it and `channels.ts` imports `commands.ts`, so the command schema could not
+// import it back. The proof reads the declaration wherever it lives rather than
+// keeping a copy.
+const { OCR_LANGUAGES } = await import('../../packages/contract/dist/schemas.js');
 
 /** @type {string[]} */
 const failures = [];

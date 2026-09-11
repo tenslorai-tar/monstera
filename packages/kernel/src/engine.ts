@@ -63,6 +63,11 @@ export {
 } from './pageTransition.js';
 export { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 export { applyDeskewPages, captureDeskewPages, invertDeskewPages } from './pageDeskew.js';
+// ON THIS SUBPATH RATHER THAN THE BARREL, and the reason is the opposite of the
+// one the note below gives for its neighbours: `ocrTextLayer.ts` reaches only
+// `@cantoo/pdf-lib`, so nothing about the module binds a native library — but
+// nothing in `main` calls these either. The routing table does, and it is here.
+export { applyOcrPage, captureOcrPage, invertOcrPage } from './ocrTextLayer.js';
 // BEHIND THE SUBPATH, unlike `generateToc`'s three next door on the barrel, and
 // the split is ADR-0039's: this routes to MuPDF, so importing it binds the
 // native library and it must not be reachable from `main` (ADR-0026,

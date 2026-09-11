@@ -577,6 +577,7 @@ describe('DocumentService — the per-document lane', () => {
       kind: 'invertible',
       command: { kind: 'rotatePages', pages: [page], quarterTurns: 1 },
       inverse: [{ page, prior: { present: false } }],
+      read: undefined,
     });
 
     await service.run(first, (context) => {
@@ -609,6 +610,7 @@ describe('DocumentService — the per-document lane', () => {
         kind: 'invertible',
         command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
         inverse: [{ page: 0, prior: { present: false } }],
+        read: undefined,
       });
       return Promise.resolve();
     });
@@ -1121,6 +1123,7 @@ function terminalEntry(size: number): LogEntry {
     command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
     checkpoint: new Uint8Array(size) as unknown as Checkpoint,
     reason: 'a checkpoint whose only property under test is its size',
+    read: undefined,
   };
 }
 

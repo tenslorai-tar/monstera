@@ -2,9 +2,10 @@ import type { CommandKind } from '@monstera/contract';
 
 import type {
   CommandAsset,
-  CommandReads,
   CommandSources,
   CommandTargets,
+  PreRead,
+  ReadPreRead,
   SavePurpose,
   WriterSession,
 } from './engineSeam.js';
@@ -134,10 +135,35 @@ export interface TargetRouting {
  * **pre-read data**, and they combine independently. Declared on every command
  * for the same reason — an axis defaulted to `'none'` is a choice nobody makes
  * and nobody reads.
+ *
+ * ## IT CARRIES A FUNCTION, WHICH IS THE FIRST ONE IN THIS FILE
+ *
+ * ADR-0051, and the cost is taken deliberately rather than slipped in. This
+ * file's property is that it holds no implementation — ADR-0026 put the
+ * declarations here so that nothing could value-import an engine by asking what
+ * a command *is* — and `read` keeps that property: it imports nothing, names two
+ * members and copies two fields.
+ *
+ * What it buys is the only spelling in which a command's **kind** and a
+ * pre-read's **needs** are correlated by the checker. A pre-read that takes an
+ * argument has to get it from the command, and the places that could do the
+ * extraction are: here, per kind and type-checked; a `switch` in the composition
+ * root, which is the second routing place §6's mapped types exist to prevent; or
+ * an access member taking the whole command union and narrowing by kind, which is
+ * a runtime refusal for a state this table makes unreachable.
+ *
+ * **`reads` and `read` are one arm of a union**, so neither can be written
+ * without the other and a `reads: 'none'` command cannot carry a resolver — the
+ * `read?: never` arm is what says so, rather than a comment asking nobody to.
  */
-export interface ReadRouting {
-  readonly reads: CommandReads;
-}
+export type ReadRouting<K extends CommandKind> =
+  | { readonly reads: 'none'; readonly read?: never }
+  | {
+      readonly [R in keyof PreRead]: {
+        readonly reads: R;
+        readonly read: ReadPreRead<K, R>;
+      };
+    }[keyof PreRead];
 
 /**
  * Does this command carry bytes the writer's wire cannot express?
@@ -232,7 +258,7 @@ export type CommandDeclaration<K extends CommandKind> = {
 } & WriterRouting &
   SourceRouting &
   TargetRouting &
-  ReadRouting &
+  ReadRouting<K> &
   AssetRouting<K> &
   PurposeRouting &
   Invertibility &
@@ -748,6 +774,48 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  ocrPage: {
+    kind: 'ocrPage',
+    // §3's matrix puts content composition on `@cantoo/pdf-lib`, and a text layer
+    // is drawing onto a page. The RECOGNITION is MuPDF's — it rasterises, by the
+    // print-and-export row — which is exactly why this command needs a pre-read
+    // rather than a second writer: two engines, one of them writing.
+    writer: 'pdf-lib',
+    // `generateToc`'s argument: a byte-image writer's prior state is the document
+    // before the write, and there is no serialisable description of "this page
+    // without the content stream I am about to append" that pdf-lib can restore
+    // from. §4 reserves checkpoints for redaction, flatten, encryption and OCR,
+    // and this is the fourth of those four arriving.
+    invertible: false,
+    undo: 'checkpoint',
+    // §3a NAMES THIS CASE: *"OCR output moves with the engine version"*. A redo
+    // that re-recognised would pay 3.8–4.4 s per page again and, after a model or
+    // engine upgrade between the undo and the redo, would write text the undone
+    // document never carried. So the effect is recorded and replayed
+    // (ADR-0051 Decision 2) — and this declaration is what fired the trigger
+    // `CommandBus.redo` had carried since 2026-09-04.
+    reproducible: false,
+    replay: 'stored-effect',
+    // Names no second document: the page it reads and the page it writes are the
+    // same page of the same document.
+    sources: 'none',
+    // Self-contained. A page index is not state read from an earlier answer — it
+    // is the page the reader is looking at — so there is nothing to be stale
+    // against. The detector's attribution is the SURFACE's reason for offering
+    // the command, not a value this payload carries.
+    targets: 'none',
+    // THE SECOND COMMAND TO DECLARE A PRE-READ, and the one that made the axis
+    // take an argument (ADR-0051). The write is pdf-lib's and the recognition is
+    // MuPDF's raster read through Tesseract inside the engine host, so a pdf-lib
+    // apply could not reach it: a byte-image apply holds no session at all.
+    reads: 'ocr',
+    // The resolution, beside the axis. It needs a PAGE, which is the whole reason
+    // the member takes an argument — and the language travels with it because the
+    // model is chosen per recognition rather than per document.
+    read: (access, command) => access.ocr({ page: command.page, language: command.language }),
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   insertImagePage: {
     kind: 'insertImagePage',
     // §3's matrix at ARCHITECTURE.md:381 names *image-to-PDF* on the
@@ -815,6 +883,11 @@ const declarations = {
     // destination resolved through the name tree, an entry with no reachable
     // page.
     reads: 'outline',
+    // THE RESOLUTION, beside the axis it belongs to (ADR-0051). It takes no
+    // argument because an outline is a property of the document, and this is
+    // what says so where the checker can see it — the member's own signature
+    // refuses a page.
+    read: (access) => access.outline(),
     asset: 'none',
     purpose: 'ordinary',
   },

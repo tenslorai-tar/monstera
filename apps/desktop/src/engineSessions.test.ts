@@ -1093,6 +1093,7 @@ describe('recycling drops the handle and builds it again, keeping the record', (
         kind: 'invertible',
         command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
         inverse: [{ page: 0, prior: { present: false } }],
+        read: undefined,
       });
       return Promise.resolve(undefined);
     });

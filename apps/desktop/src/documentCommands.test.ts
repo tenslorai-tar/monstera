@@ -48,6 +48,7 @@ import {
   type DocumentCommandsParts,
   type DocumentGeometry,
   type DocumentDestinationsReader,
+  type DocumentOcrReader,
   type DocumentExtractReader,
   type PickDirectory,
   type DocumentLayersReader,
@@ -219,6 +220,9 @@ const noPageLinks: DocumentPageLinksReader = () =>
 
 const noDestinations: DocumentDestinationsReader = () =>
   Promise.reject(new Error('this case does not read the outline'));
+
+const noOcr: DocumentOcrReader = () =>
+  Promise.reject(new Error('this case does not recognise a page'));
 
 const noLayers: DocumentLayersReader = () =>
   Promise.reject(new Error('this case does not read the layers'));
@@ -471,6 +475,11 @@ const INERT = {
   pageText: noPageText,
   pageLinks: noPageLinks,
   destinations: noDestinations,
+  // REFUSES IN BOTH SETS, for the reason `textLines` gives below: recognition is
+  // the engine host's, and a fixture answering plausible words would be this file
+  // inventing one. `ocrTextLayer.test.ts` is where the write is proven and
+  // `commandBus.test.ts` is where the pre-read's resolution is.
+  ocr: noOcr,
   layers: noLayers,
   restore: noRestore,
   annotations: noAnnotations,

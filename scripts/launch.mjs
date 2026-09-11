@@ -51,6 +51,7 @@ import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
 import { pdfiumLibrary } from './provision/pdfium.mjs';
+import { tessdataDirectory, tessdataPath } from './provision/tessdata.mjs';
 import { formatError } from './lib/reportError.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -115,6 +116,30 @@ async function pdfiumEnvironment() {
   return { MONSTERA_PDFIUM_LIBRARY: library };
 }
 
+/**
+ * The OCR models' directory, passed the same way and for the same reasons.
+ *
+ * {@link pdfiumEnvironment}' shape one artefact along: `scripts/provision/
+ * tessdata.mjs` owns where a provisioned model lives, `apps/desktop` cannot call
+ * it, and absent is a decided state — OCR is offered only where a model is
+ * present, so a checkout without `npm run provision:tessdata` gets a shell that
+ * opens and does not offer recognition.
+ *
+ * **Keyed on `eng`'s presence rather than on the directory's.** The directory is
+ * created by the first download, so an interrupted provision can leave it empty —
+ * and an empty directory passed down is a datadir every recognition fails
+ * against, which is the state that reads like a broken feature rather than an
+ * unprovisioned one. `eng` is the model CI provisions and the one the surface
+ * defaults to.
+ *
+ * @returns {Promise<Record<string, string>>} the variables to add to the child's
+ *   environment — empty when no model is provisioned.
+ */
+async function tessdataEnvironment() {
+  if (!(await fileExists(tessdataPath(REPO_ROOT, 'eng')))) return {};
+  return { MONSTERA_TESSDATA_DIRECTORY: tessdataDirectory(REPO_ROOT) };
+}
+
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
@@ -124,7 +149,11 @@ async function main() {
     // default: `spawn` inherits the whole environment when `env` is omitted, and
     // an object holding only the addition would start the shell with no PATH,
     // no APPDATA and no TEMP.
-    env: { ...process.env, ...(await pdfiumEnvironment()) },
+    env: {
+      ...process.env,
+      ...(await pdfiumEnvironment()),
+      ...(await tessdataEnvironment()),
+    },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to
     // contain — a space, an ampersand — and that is a quoting bug waiting for

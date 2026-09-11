@@ -31,6 +31,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { electronRoot } from '../provision/electron.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
+import { tessdataDirectory } from '../provision/tessdata.mjs';
 import {
   ALL_APPLICATION_PACKAGES,
   apply,
@@ -42,7 +43,7 @@ import {
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 16 });
+const roster = createRoster(failures, { cases: 17 });
 
 /** The program a contained host runs, which the grant set must cover. */
 const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
@@ -133,11 +134,27 @@ try {
       `step to take. Provisioning owns durable artefacts; a session owns its own.`,
   );
 
+  // THE CLAIM IS *NOTHING IS GRANTED WRITE*, and it read *every right is RX*
+  // until 2026-09-11 — the same sentence while every entry happened to be a
+  // program. The OCR models are the first entry that is **data**: a WASM engine
+  // parses them and nothing executes them, so they are granted `R`, and a case
+  // keyed on the string `'RX'` would have made the narrower grant the failure.
+  //
+  // Split into the property and its shape, because only the first is the
+  // invariant: write is refused everywhere, and execute is granted only where
+  // something is executed.
   check(
-    'every right is read+execute — nothing durable is granted write',
-    set.every((entry) => entry.rights === 'RX'),
+    'nothing durable is granted write',
+    set.every((entry) => !/W/u.test(entry.rights)),
     `rights: ${JSON.stringify(set.map((entry) => entry.rights))}. A contained host that could ` +
       `write the runtime or the shim could rewrite what it next executes.`,
+  );
+
+  check(
+    'execute is granted only to what the host EXECUTES, and the models are data',
+    set.every((entry) => entry.rights === (entry.path === tessdataDirectory(root) ? 'R' : 'RX')),
+    `rights: ${JSON.stringify(set.map((entry) => `${entry.rights} ${entry.path}`))}. Every other ` +
+      `entry is a program the host runs or a library it binds; a model is bytes Tesseract reads.`,
   );
 
   // -------------------------------------------------------------------------
@@ -151,10 +168,18 @@ try {
   // expresses — `createPdfiumHostPlatform` answers `null` and the writer goes
   // unregistered.
   // -------------------------------------------------------------------------
+  // TWO SINCE 2026-09-11, and the rule is what generalised rather than the list:
+  // an entry is optional exactly when the MuPDF host does not need it to run —
+  // the second engine's library, and the OCR models a machine may simply not have
+  // provisioned. Both are features that are then not offered, where anything else
+  // here missing is a host that dies before its first line.
   check(
-    'the ONLY entry whose absence is not a failure is the second engine’s library',
-    set.filter((entry) => !entry.required).map((entry) => entry.path).join('|') ===
-      dirname(pdfiumLibrary(root)),
+    'the entries whose absence is not a failure are exactly the two a host can run without',
+    set
+      .filter((entry) => !entry.required)
+      .map((entry) => entry.path)
+      .sort()
+      .join('|') === [dirname(pdfiumLibrary(root)), tessdataDirectory(root)].sort().join('|'),
     `optional: ${JSON.stringify(set.filter((entry) => !entry.required).map((e) => e.path))}. ` +
       `Everything else here is the host's OWN program — the runtime, its dependency graph, the ` +
       `shim, this application's packages — and a machine missing any of them cannot start a ` +

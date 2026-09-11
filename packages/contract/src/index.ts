@@ -46,11 +46,9 @@ export {
   // than a checklist.
   MAX_AFFIX_BYTES,
   MAX_DICTIONARY_BYTES,
-  // The OCR language set, exported for the same reason the spelling one is:
-  // both sides key a record on it — the provisioning table and the renderer's
-  // display titles — so adding a language is two compile errors and a digest.
-  OCR_LANGUAGES,
-  type OcrLanguage,
+  // The OCR language set's SCHEMA. The set itself moved to `schemas.ts` on
+  // 2026-09-11 — `ocrPage`'s payload needs it and a command schema cannot import
+  // `channels.ts` back — and is exported below, from where it now lives.
   ocrLanguageSchema,
   SPELLING_LANGUAGES,
   type SpellingLanguage,
@@ -179,6 +177,7 @@ export {
   replacePageSchema,
   sourceIdsOf,
   deskewPagesSchema,
+  ocrPageSchema,
   resizePagesSchema,
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -188,6 +187,11 @@ export {
   watermarkPagesSchema,
 } from './commands.js';
 export {
+  // The OCR language set, exported for the same reason the spelling one is: both
+  // sides key a record on it — the provisioning table and the renderer's display
+  // titles — so adding a language is two compile errors and a digest.
+  OCR_LANGUAGES,
+  type OcrLanguage,
   docIdSchema,
   docVersionSchema,
   envelopeSchema,

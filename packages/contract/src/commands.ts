@@ -1,7 +1,7 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
-import { docIdSchema, docVersionSchema } from './schemas.js';
+import { OCR_LANGUAGES, docIdSchema, docVersionSchema } from './schemas.js';
 
 /**
  * Every mutation the renderer can ask for, declared **once** (ADR-0009 §6).
@@ -605,6 +605,48 @@ export const deskewPagesSchema = z.object({
   kind: z.literal('deskewPages'),
   /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
   pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+});
+
+/**
+ * Recognise one page and write its text into that page, invisibly.
+ *
+ * D6 rows 2 and 3 are one command, because neither half is a feature on its own:
+ * a recognition nothing writes down is a number on a screen, and a text layer
+ * with nothing to write is empty. What this carries is **intent** and nothing
+ * else — a page index and a language — while the text itself is read inside the
+ * engine host at apply time and never crosses a boundary in either direction
+ * ([ADR-0051](DECISIONS/0051-a-pre-read-may-be-parameterised-and-a-stored-effect-replays-it.md)).
+ *
+ * ## ONE PAGE, and the scope choice lives in the surface
+ *
+ * Every other page-scoped command here takes `'all' | number[]`, and this one
+ * deliberately does not. Two reasons, and the first is the law's:
+ * [ADR-0035](DECISIONS/0035-extracted-text-is-never-resident-in-main.md) measured
+ * extracted text at **3.59× a document's bytes** and forbids it being resident in
+ * `main`, so a scope would hold every named page's recognition at once. The second
+ * is the reader's: recognition is **3.8–4.4 s per page**, and `BUILD-PROMPT.md`
+ * M5 requires *"progress bars with real numbers for long operations like OCR"* —
+ * which the surface gets by dispatching one command per page and stepping the
+ * status bar between them, the shape `document.pageWordCount`' caller already
+ * uses.
+ *
+ * What that costs is stated rather than hidden: undo is **per page**, so
+ * recognising ten pages leaves ten entries. That is also what makes a cancelled
+ * run coherent — the pages already recognised keep their text, and each is
+ * independently reversible.
+ *
+ * ## The language is a closed enum, which is ADR-0014's constraint 1
+ *
+ * A name from {@link OCR_LANGUAGES} supplies no path and no file: the models are
+ * provisioned by digest and the datadir is main's. A string here would be a
+ * document-influenced or user-supplied datadir, which is the route both of
+ * Tesseract's live advisories are reached through.
+ */
+export const ocrPageSchema = z.object({
+  kind: z.literal('ocrPage'),
+  /** Zero-based, like every page index that crosses this boundary. */
+  page: z.number().int().nonnegative(),
+  language: z.enum(OCR_LANGUAGES),
 });
 
 /**
@@ -3083,6 +3125,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   setPageBackgroundSchema,
   resizePagesSchema,
   deskewPagesSchema,
+  ocrPageSchema,
   insertImagePageSchema,
   generateTocSchema,
   mergeDocumentSchema,
@@ -3149,6 +3192,12 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // measured main-side from the page's own ink at apply time, so there is no
   // payload for it to scale with.
   deskewPagesSchema,
+  // RENDERABLE, and it is the sharpest case in this union: the page's recognised
+  // text is what the command produces and none of it is in the payload. A page
+  // index and a language name the intent, the recognition is read inside the
+  // engine host at apply time, and what the renderer sends is the same size for
+  // a blank page and a dense one.
+  ocrPageSchema,
   // RENDERABLE, and worth stating because the neighbour above is not. This
   // carries one integer; what makes it unusual is where its DATA comes from,
   // and that is resolved main-side at apply time rather than sent. The test for
