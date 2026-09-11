@@ -177,3 +177,90 @@ is what a first run gets.
 The KV cache and threading are unmeasured headroom, not promised speedups.
 Handwriting accuracy is unmeasured. Neither is a reason to delay the row, and both
 are reasons not to write a number into a FEATURES body that nothing produced.
+
+---
+
+## Addition, 2026-09-12 — a recogniser runs where its INPUT can reach, and the third one's input is the network
+
+Decision 2 above says recognition runs inside the engine host, and gives the
+reason twice: the input is a bitmap this build produced beside the rasteriser,
+and 1.7 MB of it would otherwise cross a pipe for about 20 KB of answer. That is
+true, it is about the two **local** engines, and D6's last row is not one of them.
+
+**Azure Document Intelligence cannot execute in the engine host.** Invariant 25
+gives that process no network at all — the same sentence that made the TrOCR
+download main's job — so a recogniser whose whole operation is an HTTPS call has
+to run where the network is. Found by starting the row rather than by re-reading
+this ADR, which is the argument for starting rows early rather than designing
+them whole.
+
+### 6 — WHERE a recogniser executes is decided per engine, by what its input must reach
+
+Not by the concern. `tesseract` and `handwriting` stay in the host for Decision
+2's reasons, unchanged. `azure` runs in **`main`**, and the rule that places it is
+the one already used for the download: *only the process with the network may do
+the thing that needs the network*.
+
+What this gives up is exactly what Decision 2 was protecting — the raster crosses
+a boundary. It is unavoidable and it is also cheap in the terms that mattered
+there: the bytes are going to a cloud service over the internet regardless, so
+the question is which local process hands them over, and a pipe hop is nothing
+beside the upload. §3's matrix row is amended to say *recognition by an engine the
+request names, in the process that engine's input can reach*.
+
+### 7 — The raster is produced by the HOST and read by main, through the channel that already does that
+
+`engine/snapshotRegion` rasterises a region into the granted output directory and
+answers a byte count, which is the shape ADR-0044 chose so a payload that scales
+with what the reader dragged never crosses the pipe. Main reads the file.
+
+So there is no second rasteriser (B3a, against §3's print-and-export row) and no
+new channel. What the channel gains is **the matrix that maps that PNG's own
+pixels back to PDF user space**, six numbers, and the reason is the wired pair's
+coordinate blind spot: the host holds the page transform, the crop origin and the
+`/Rotate`, and a main-side conversion reconstructing them would be the second
+place that knows the frame — agreeing on unrotated pages and wrong on the rest,
+which is finding FFFFFF-1 exactly, in a third engine.
+
+Sending a **rasterised region** rather than the document also keeps the service's
+answer in `pixel` units. Azure reports `inch` for a PDF and `pixel` for an image,
+so this removes a unit conversion rather than adding a frame.
+
+### 8 — The endpoint is an ordinary setting and the key is a secret one
+
+`BUILD-PROMPT.md`:621 puts *"Azure DI endpoint + key (secret)"* in the AI settings
+group, which is a Part F **category** — where a control renders — and not a
+registry dependency: Azure DI is not an `AiProvider` and implements none of that
+interface. The key goes through `secretStore.ts`, whose rule E5 fixed and which
+refuses rather than falling back to plaintext.
+
+### 9 — The row is NOT done until one live run, and that is written into the row
+
+A cloud engine nobody has run against the real service is the display-only defect
+with a unit test over it. Every fixture here is written from the documentation, so
+what the mapping proves is a reading of a schema rather than the service's
+behaviour; one run with a real key settles it and the key is the owner's to
+supply. The trigger lives in the FEATURES row body where something reads it,
+never in a plan.
+
+### Rejected
+
+**A network-capable engine host.** It is invariant 25 by name, and the invariant's
+own argument is that a host that can reach a socket can send a document through
+one. The whole containment design exists because the host parses hostile bytes;
+the recogniser that needs the network parses none.
+
+**A third host, with network and without a document.** It answers the invariant
+literally — a process that never opens a document may have a socket — and it buys
+nothing: the thing needing containment is the parse, and there is no parse here.
+What it would cost is a second containment story to keep true.
+
+**Sending the document rather than a raster.** The service would receive the whole
+file where the reader asked about one region, which is a privacy answer nobody
+chose, and it puts a document-scaled payload on a channel (L11). It also changes
+the answer's unit from `pixel` to `inch`.
+
+**Recognition in the renderer, beside the fetch.** The renderer has no document
+bytes it may read (invariant 2) and its raster would be PDF.js's, which the
+2026-09-10 §6.1 amendment makes a *view* concern — a display raster as the input
+would make PDF.js a source of truth.
