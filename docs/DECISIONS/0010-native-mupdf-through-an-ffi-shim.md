@@ -519,3 +519,28 @@ binds and drives it in `scripts/research/pdfiumTextEdit.mjs`. So those rows sit
 behind `pdfiumFfi.ts` and a second engine host — the B4 amendment for which
 landed on 2026-09-08 — and not behind this migration. Sequencing them after it
 would have parked five rows behind an unrelated body of work.
+
+---
+
+## Correction, 2026-09-11 — the size grew, and that is the direction to expect
+
+Re-measured by `npm run proof:enginesurface` after Stage 6's OCR rows:
+**twenty-four** non-test kernel modules import the bare specifier, **seven** of
+them load an engine, **seventeen** are type-only, and they call **125** distinct
+MuPDF members (`PDFAnnotation` 41, `PDFObject` 22, `PDFDocument` 20, `PDFWidget`
+15). The figures above — 19, 4, 15, 117 — are the 2026-09-09 reading and stay as
+the record of it.
+
+Nothing in the correction above is withdrawn: the *shape* of the finding is what
+mattered and it is unchanged, since the body of work still scales with the object
+model and not with the import lines. What is worth adding is the **direction**. A
+migration's size is read as a debt being paid down, so a reader meeting these
+numbers assumes the next reading is smaller — and this one is larger, because
+recognition, deskew, enhance and their rasteriser all reach the engine. Every
+document carrying the figure said 19/117 for a whole stage (stage audit of
+`38ea527..622f794`, finding FFFFFF-4), and no commit that grew it opened one of
+them.
+
+So the figure has an expiry and it is an event, not a symbol: **any range that
+adds a kernel module reaching the engine owes a re-run.** One command, and it
+prints the whole table.

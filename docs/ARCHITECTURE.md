@@ -260,14 +260,24 @@ one engine:
 built without either** ([ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
 2026-09-09).
 
-**A host's reader set is its own engine's.** The nineteen channels split
+**A host's reader set is its own engine's.** The twenty channels split
 **six engine-agnostic** — `probe-containment`, `open`, `close`, `apply`,
 `capture`, `invert` — one that belongs to the **live-session shape**,
-`serialise`, and **twelve MuPDF document-model reads**:
+`serialise`, and **thirteen MuPDF document-model reads**:
 `page-geometry`, `page-text`, `page-links`, `destinations`, `layers`,
 `annotations`, `form-fields`, `exportFormData`, `flat-fields`,
-`duplicate-pages`, `extract`, `snapshotRegion`. **A second engine owes none of
-the twelve.** They are MuPDF's model, answered by MuPDF's host, which is not
+`duplicate-pages`, `extract`, `snapshotRegion`, `ocr-page`. **A second engine
+owes none of the thirteen.**
+
+**`ocr-page` is the thirteenth, added 2026-09-11 with D6 row 2, and it arrived
+while this paragraph said twelve** — the count and the list were both written
+before it and neither commit that added the channel opened this section, which is
+item 7's hole rather than an oversight (finding FFFFFF-3). It is one of MuPDF's
+reads on the same test this paragraph applies to everything else: recognition
+consumes a bitmap **this engine produced, in the process that produced it**, so a
+second engine owes it nothing. `coreChannels.test.ts` is where the split is
+asserted, and its own comment cites this paragraph — a citation that resolved to a
+section saying something else for the length of a range. They are MuPDF's model, answered by MuPDF's host, which is not
 going away; a second host that declared them and stubbed them would be a
 process answering questions with nothing behind it, and one that implemented
 them would be a second reading of a model this package already has one reader
@@ -575,7 +585,7 @@ reached natively, as a shared
 library built from source and bound with koffi behind a thin flat-C shim —
 never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
 bare specifier `mupdf`, which resolves to the npm package's
-`dist/mupdf-wasm.wasm`; **nineteen non-test modules do so, and a search for
+`dist/mupdf-wasm.wasm`; **twenty-four non-test modules do so, and a search for
 `monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
 built, is scanned by four security proofs, and is loaded by nothing the product
 runs.
@@ -602,17 +612,28 @@ Until that lands, the engine the product *reaches* is still the npm package —
 which is what the measurement above says and what a reader must not infer their
 way past.
 
-**AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09** (ADR-0010's
-correction of that date; `npm run proof:enginesurface`). The nineteen modules
-call **117 distinct MuPDF members**, of which `PDFAnnotation` declares 41,
-`PDFDocument` 20, `PDFObject` 20 and `PDFWidget` 15 — an object model. The shim
-exports **24** C functions and hands back an opaque handle by design, so most of
-the 117 have nothing to move onto and must be written behind an ABI that does
-not exist yet. Only **four** of the nineteen load an engine at all; the other
-fifteen spell `import type`, are erased by the compiler, and operate on handles
-those four opened. So changing the engine changes every one of the nineteen
-**bodies** and not one of their first lines — the count that reads like the work
-is a count of the thing that does not have to change.
+**AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09 and re-measured
+2026-09-11** (ADR-0010's correction of the first date; `npm run
+proof:enginesurface`). The twenty-four modules call **125 distinct MuPDF
+members**, of which `PDFAnnotation` declares 41, `PDFObject` 22, `PDFDocument` 20
+and `PDFWidget` 15 — an object model. The shim exports **24** C functions and
+hands back an opaque handle by design, so most of the 125 have nothing to move
+onto and must be written behind an ABI that does not exist yet. Only **seven** of
+the twenty-four load an engine at all; the other seventeen spell `import type`,
+are erased by the compiler, and operate on handles those seven opened. So
+changing the engine changes every one of the twenty-four **bodies** and not one of
+their first lines — the count that reads like the work is a count of the thing
+that does not have to change.
+
+**THE FIGURES MOVED UP AND THE DOCUMENTS DID NOT, 2026-09-11** (finding
+FFFFFF-3's sibling, FFFFFF-4). They read 19 modules, 4 loading, 15 type-only and
+117 members — the 2026-09-09 reading — while Stage 6 added five kernel modules
+that import the engine. Nothing was wrong when written and no commit in between
+opened this paragraph, which is item 7's hole; what makes it worth a sentence
+rather than a silent edit is the **direction**. A migration's size is read as a
+debt being paid down, so a figure that grew while a stage was built on the engine
+is the one a reader will not think to re-run. Re-run it: the command is one line
+and prints the whole table.
 
 **This does not gate Stage 5's editing rows**, and that is written here because
 the opposite was assumed. Those rows are PDFium's by `BUILD-PROMPT.md`:257;

@@ -382,3 +382,24 @@ message here. Found by the first end-to-end case rather than by reading, which i
 also how the payload's `version` requirement surfaced: `targets: 'text-object'`
 makes the command staleness-checked, and `CommandBus.#refuseIfStale` calls a
 targeting command that names no version a registration defect.
+
+---
+
+## Correction, 2026-09-11 — the count is twenty and the reads are thirteen
+
+Decision 1's heading, its prose and its table all say **twelve** MuPDF
+document-model reads out of **nineteen** channels. `engine/ocr-page` was added on
+2026-09-11 with D6 row 2, which makes it **thirteen out of twenty**, and the
+decision itself is unchanged: recognition consumes a bitmap MuPDF produced, in the
+process that produced it, so a second engine owes it exactly as little as it owes
+the other twelve. The list above is the set as it stood on 2026-09-09 and is left
+as the record of that moment.
+
+Found by the stage audit of `38ea527..622f794` (finding FFFFFF-3), not by any
+check, and the reason no check could is worth the line: three documents stated the
+same count, the commit that falsified all three opened none of them, and
+`coreChannels.test.ts` — which asserts the split and is the one place that *must*
+be right — cites `docs/ARCHITECTURE.md` §3 by name while §3 said twelve. A
+citation that resolves to a section saying something else passes every link check
+there is (UU-1). §3's body is edited to be currently true, because it is living
+law; this section is a decision record, so it takes a correction instead.

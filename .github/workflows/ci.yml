@@ -344,9 +344,12 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/provision/tessdata.mjs --only=eng
 
       # D6 row 2's recognition, against the real engine. The corpus is not here,
-      # so its two corpus cases report NOT APPLICABLE and the nine constructed
-      # ones run — including the coordinate pair and the model-grant refusal with
-      # its control.
+      # so its two corpus cases report NOT APPLICABLE and the thirteen
+      # constructed ones run — including the coordinate pair, the model-grant
+      # refusal with its control, and row 6's region with its whole-page control.
+      # The figure said NINE until 2026-09-11, written by the range that added
+      # four of the thirteen (finding FFFFFF-5): a count in a comment beside the
+      # thing that changed it.
       - name: Prove recognition answers boxes in the page’s own coordinates
         run: node scripts/ci/annotate.mjs scripts/proofs/ocrRecognise.proof.mjs
 

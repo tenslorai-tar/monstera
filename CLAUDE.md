@@ -313,9 +313,9 @@ is wrong** — fix the boundary, not the test.
   **AND UNTIL 2026-09-08 IT SCANNED THE WRONG ARTEFACT.** This line said *"scans
   the shipped binary"*, and that binary was `monstera_mupdf.dll` — which nothing
   in the application loads. Every MuPDF consumer in `packages/kernel` imports the
-  bare specifier `mupdf`, resolving to the npm package's WASM build: nineteen
-  non-test modules, against zero references to `monstera_mupdf` anywhere under
-  `packages/` or `apps/`. So the mechanism this paragraph offers as the
+  bare specifier `mupdf`, resolving to the npm package's WASM build:
+  twenty-four non-test modules, against zero references to `monstera_mupdf`
+  anywhere under `packages/` or `apps/`. So the mechanism this paragraph offers as the
   invariant's evidence was reading a file the shipped pipeline never opens.
 
   Nothing about it looked wrong, and that is the transferable part: **a positive
@@ -341,21 +341,28 @@ is wrong** — fix the boundary, not the test.
   `mupdfRaw.ts` **and** `pdfiumFfi.ts` as the two native-boundary adapters,
   :203 draws `pdfiumHost` as *"PDFium via koffi FFI"*, :399 provisions
   `pdfium.dll`, and :257 assigns in-place text editing to PDFium in both
-  columns. **The migration is not done**: nineteen non-test kernel modules still
-  import the bare specifier, and §9.17's budgets and the four proofs that scan
-  `monstera_mupdf.dll` move with them.
+  columns. **The migration is not done**: twenty-four non-test kernel modules
+  still import the bare specifier, and §9.17's budgets and the four proofs that
+  scan `monstera_mupdf.dll` move with them.
 
-  **AND NINETEEN IS NOT ITS SIZE — that sentence was written as what is NOT yet
-  settled, and was then read as the estimate.** Measured 2026-09-09
-  (`npm run proof:enginesurface`): those modules call **117 distinct MuPDF
-  members**, of which `PDFAnnotation` declares 41, `PDFDocument` 20, `PDFObject`
-  20 and `PDFWidget` 15 — an object model the shim's **24** exports do not
-  represent, because it hands back an opaque handle on purpose. Only **four** of
-  the nineteen load an engine; the other fifteen spell `import type`, are erased
-  by the compiler, and work on handles those four opened. **A count of import
-  statements measured the thing that does not have to change**, and the shape it
-  produced — one line each, nineteen times — is the wrong shape by an order of
-  magnitude. Ask what a count is a count *of* before it becomes a size.
+  **AND THAT COUNT IS NOT ITS SIZE — that sentence was written as what is NOT yet
+  settled, and was then read as the estimate.** Measured 2026-09-09 and re-measured
+  2026-09-11 (`npm run proof:enginesurface`): those modules call **125 distinct
+  MuPDF members**, of which `PDFAnnotation` declares 41, `PDFObject` 22,
+  `PDFDocument` 20 and `PDFWidget` 15 — an object model the shim's **24** exports
+  do not represent, because it hands back an opaque handle on purpose. Only
+  **seven** of the twenty-four load an engine; the other seventeen spell
+  `import type`, are erased by the compiler, and work on handles those seven
+  opened. **A count of import statements measured the thing that does not have to
+  change**, and the shape it produced — one line each — is the wrong shape by an
+  order of magnitude. Ask what a count is a count *of* before it becomes a size.
+
+  **THE FIGURES WENT UP, AND EVERY ONE OF THEM SAID 19/4/15/117 UNTIL 2026-09-11**
+  (finding FFFFFF-4). Stage 6 added five kernel modules that import the engine and
+  no commit among them opened this file or `docs/ARCHITECTURE.md`. The transferable
+  part is the direction: a migration's size reads as a debt coming down, so a
+  figure that **grew** while a whole stage was built on the engine is the one
+  nobody re-runs. It is one command and it prints the table.
 
   **It does not gate Stage 5's editing rows either.** Those are PDFium's by
   :257; PDFium's API is flat C, needs no shim, is provisioned, and koffi binds
