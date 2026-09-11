@@ -888,6 +888,104 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — B4 for row 7: the 200 MB that is real, and the empty string that was not
+
+D6 row 7 is *local handwriting OCR (TrOCR small/base, on-demand download, cached,
+offline)*. Nothing is built yet. What is done is the measurement, and then
+[ADR-0052](DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
+and §3's recognition row, in this commit, ahead of the feature.
+
+### The figure was wrong and the conclusion was right
+
+`BUILD-PROMPT.md`:806 keeps the TrOCR stack out of the installer because it is *a
+200+ MB runtime serving one niche feature*. That number is exact for
+`onnxruntime-node` — **220,344,078 bytes**, read from the registry — and the
+runtime a run actually needs is `ort-wasm-simd-threaded.wasm` at **13,961,845**,
+6.3% of it.
+
+Two constraints dissolved under exactly this check this month: the OCR wrapper's
+licence tree and enhance-scans' missing codec. So the expectation going in was a
+third, and that expectation is the thing worth recording, because **this one
+survives**. The models are 63,242,844 bytes at the smallest, so the downloader, the
+pinned digests, the cache and the clear-caches control all have to exist whatever
+the runtime does. Bundling 14 MB removes **no mechanism** — it pre-pays one
+download for readers who never use the feature. *Never bundled* is right for a
+reason its own figure did not carry.
+
+That is the shape to keep from it: **price the removal, and let it fail.** A habit
+of checking that only ever returns *yes, remove it* has stopped being a check.
+
+### It runs without the wrapper, and the glue is three small things
+
+`@huggingface/transformers@4.2.0` is the obvious route and its tree is the
+objection — ADR-0050 one package along. It pins that 220 MB native package, a dev
+prerelease of `onnxruntime-web` (`1.26.0-dev.20260416-b7804b056c`) and `sharp`, the
+dependency enhance-scans already measured as unnecessary and the wrong tool.
+
+So the spike wrote the glue: MuPDF rasterises a drawn line, the raster becomes a
+`[1, 3, 384, 384]` normalised tensor, the quantised encoder answers
+`[1, 578, 384]` — 576 patches and two class tokens, which is the ViT arithmetic
+agreeing — and a greedy argmax loop over the decoder produces token ids. Under two
+hundred lines, none of it a tokenizer.
+
+### THE EMPTY STRING, which is this project's own reassuring answer
+
+The first detokeniser assumed GPT-2 byte-level BPE, because that is what a RoBERTa
+decoder usually carries. The vocabulary lookup found nothing and the spike printed
+`""` — and on an OCR feature **that is a product answer**: *this image has no
+text*. It reads as a model that could not see rather than a harness that could not
+look.
+
+What it actually is: `Unigram` with a `Metaspace` decoder, the vocab an array of
+`[piece, score]` indexed by id, 64,002 entries. Printing the ids and their pieces
+took one edit and the answer was there —
+`["▁MON","STER","A","▁DEL","IC","I","OS","KA"]` against a line drawn as
+`Monstera deliciosa`. Detokenising is joining pieces and replacing `U+2581`; no
+merge rules, no encoder side.
+
+**Nothing about the wrong version looked wrong**, and that is 4b arriving in a
+place where the instrument's failure and the subject's failure produce the same
+sentence. The habit that recovered it is the dull one: dump the intermediate before
+theorising about the result.
+
+### What a line costs, and what that decides
+
+Quantised small, single-threaded, no KV cache:
+
+| | cold | warm |
+|---|---|---|
+| both sessions from bytes | 12,264 ms | 3,426 ms |
+| encoder, one line | 10,138 ms | 2,899 ms |
+| greedy decode, 8 tokens | 4,888 ms | 1,044 ms |
+| peak RSS | 581 MB | 569 MB |
+
+Tesseract reads a **whole page** in 3.8–4.4 s. A thirty-line page through TrOCR is
+thirty encoder runs — a minute and a half before decoding, at half a gigabyte
+resident.
+
+So the row is offered **on a region and never on a page**, which is a design the
+measurement forced rather than a limitation accepted: TrOCR reads one text line,
+that is the model and not the wiring, and a *recognise this page* control would
+work and take minutes. Row 6's region gesture is already the right one. This is the
+second time this stage that a number changed a row's shape rather than its
+schedule.
+
+### Two things not claimed, written down because they will be asked
+
+The merged decoder's KV cache was deliberately not wired and `numThreads > 1`
+failed — the threaded build fetches its worker through a URL the file scheme does
+not satisfy in Node. Both are unmeasured headroom, and neither is a promised
+speedup.
+
+And **handwriting accuracy is unmeasured.** The spike read printed text. A labelled
+handwriting sample is not something this repository has; the corpus is not one
+either, since its content may not be quoted and an accuracy figure with no ground
+truth is a number with nothing behind it. The row will ship with its own subject
+unmeasured, and saying so is cheaper than a figure the next reader would have to
+withdraw.
+
+---
+
 ## 2026-09-11 — FFFFFF-1: the third coordinate frame, and the control that took measuring to find
 
 A page's `/Rotate` is in the recognition path now, in both directions, and in the
