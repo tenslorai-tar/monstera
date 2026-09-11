@@ -236,6 +236,10 @@ export const SPELL_CHECK_ADDED = messageKey('dialog.spell-check.added');
 export const SPELL_CHECK_SAVE = messageKey('dialog.spell-check.save');
 export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
 export const OCR_EXPORT_COMMAND_TITLE = messageKey('command.ocr-export.title');
+export const ENHANCE_COMMAND_TITLE = messageKey('command.enhance-scans.title');
+export const ENHANCE_OUTCOME_TITLE = messageKey('dialog.enhance-outcome.title');
+export const ENHANCE_OUTCOME_PAGES = messageKey('dialog.enhance-outcome.pages');
+export const ENHANCE_OUTCOME_NONE = messageKey('dialog.enhance-outcome.none');
 export const OCR_TITLE = messageKey('dialog.ocr.title');
 export const OCR_UNAVAILABLE = messageKey('dialog.ocr.unavailable');
 export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
@@ -621,6 +625,8 @@ export const SPELL_CHECK_PROGRESS = messageKey('task.spell-check');
  * which is why the bar it names is not optional (`BUILD-PROMPT.md` M5).
  */
 export const OCR_PROGRESS = messageKey('task.ocr');
+/** The READ's name, because the write is one command and takes no walk. */
+export const ENHANCE_PROGRESS = messageKey('task.enhance');
 export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
@@ -759,6 +765,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // NAMES THE FILE, because that is the difference from the command above: both
   // recognise, and this one also writes a copy.
   [OCR_EXPORT_COMMAND_TITLE]: 'Export a searchable copy',
+  // SAYS WHAT CHANGES, not how. *Enhance* alone reads as a slider nobody is given:
+  // the levels come from each image's own histogram.
+  [ENHANCE_COMMAND_TITLE]: 'Clean up scanned pages',
+  [ENHANCE_OUTCOME_TITLE]: 'Clean up',
+  [ENHANCE_OUTCOME_PAGES]:
+    '{count, plural, one {Cleaned up one scanned page} other {Cleaned up # scanned pages}}.',
+  // THE EMPTY ANSWER SAID OUT LOUD, and it names the reason rather than the count.
+  [ENHANCE_OUTCOME_NONE]: 'No scanned pages here — every page already carries text.',
   [OCR_TITLE]: 'Recognise text',
   // SAYS WHAT IS MISSING AND WHAT IT IS FOR, which is §10.5's no-binary state: a
   // dialog reading "unavailable" tells a reader nothing they can act on.
@@ -1417,6 +1431,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WORD_COUNT_PROGRESS]: 'Counting words',
   [SPELL_CHECK_PROGRESS]: 'Checking spelling',
   [OCR_PROGRESS]: 'Recognising text',
+  // NAMES THE READ, which is what the bar actually counts: *looking for scans*.
+  [ENHANCE_PROGRESS]: 'Looking for scanned pages',
   // THE LABEL FIRST, so a screen reader announces what is running before the
   // numbers. "12 of 400" alone is the shape a progress region most often has
   // and the one that says least.

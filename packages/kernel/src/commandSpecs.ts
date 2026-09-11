@@ -86,6 +86,7 @@ import {
   invertReplacePage,
 } from './pageMerge.js';
 import { applyDeskewPages, captureDeskewPages, invertDeskewPages } from './pageDeskew.js';
+import { applyEnhancePages, captureEnhancePages, invertEnhancePages } from './pageEnhance.js';
 import { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 import {
   applySetPageTransition,
@@ -297,6 +298,15 @@ const declared = {
     apply: applyDeskewPages,
     capture: captureDeskewPages,
     invert: invertDeskewPages,
+  },
+  // THE FIRST COMMAND THAT REWRITES AN IMAGE rather than a page attribute or a
+  // content stream. Its writer is MuPDF for the same reason `deskewPages`' is: the
+  // engine that can decode the image is the engine that is about to write it.
+  enhancePages: {
+    ...declaredCommands.enhancePages,
+    apply: applyEnhancePages,
+    capture: captureEnhancePages,
+    invert: invertEnhancePages,
   },
   // THE FIRST `sources: 'one'` ENTRY. The spread carries that axis in, and
   // `WriterBinding`'s cross product is what makes `apply` here obliged to be

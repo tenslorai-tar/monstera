@@ -888,6 +888,70 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-11 — Enhance scans: the codec it waited for was already in the engine
+
+The enhance-scans row was deferred to Stage 6 on a premise, corrected once, and was
+about to be deferred again. **The premise was false both times**, and the row is
+done.
+
+### What it said, and what the engine does
+
+The row: *enhancing a scan rewrites the image XObject, which needs a decoder and an
+encoder for whatever that image is, and this build has neither* — with a correction
+on 2026-09-10 saying `sharp` is in the devDependencies, so the step is a dependency
+promotion plus a native-addon packaging decision.
+
+Measured 2026-09-11 against the shipped MuPDF:
+
+| what the row said was missing | what the engine does |
+|---|---|
+| a decoder for the embedded image | `new Image(obj.readRawStream()).toPixmap()` — 600×800, 1 component, 8 bpc |
+| an encoder to put it back | `Pixmap.asJPEG`, and `PDFObject.writeRawStream` replaces the stream |
+| a round trip that survives a save | read back **from the saved bytes**: same size, the changed pixel |
+
+So nothing was promoted and nothing new ships. The correction's own sentence —
+*reaching for `sharp` is a promotion plus a packaging decision* — was true and was
+about a step that did not need taking.
+
+**And the promotion would not have closed the row anyway.** `sharp` decodes JPEG,
+PNG, TIFF and WebP: the same JPEG MuPDF already decodes. It does not decode
+`/CCITTFaxDecode` or `/JBIG2Decode`, which is what a 1-bit fax scan carries. A
+second decoder for the easy case, still failing the hard one. That is the part worth
+keeping from this item: **the dependency was not only unnecessary, it was the wrong
+tool** — and nothing in the row's two readings would have found that out, because
+neither asked what the engine already did.
+
+### LEVELS, not binarisation, and the set is why
+
+The operation is a greyscale conversion and a contrast stretch anchored on **Otsu's
+two class means**, both derived from the image's own histogram. No strength, no
+threshold, no radius — the scanned-page row's *no constant* argument one operation
+along, and `pageSkew.ts` owns that split now that it has a second caller.
+
+Binarisation was the obvious choice and is refused on the set the command is offered
+over. `pageKindOf` answers `'image-only'` for *a raster and no text*, which is a
+scan **and a photograph and a full-page diagram** — the three states row 1 landed.
+A threshold improves the first and destroys the other two; a levels pass improves
+the first and leaves the others recognisable.
+
+### What it refuses, per image, and counts
+
+A stencil `/ImageMask`, an image carrying an `/SMask` whose transparency a re-encode
+would strip, and raw samples behind a filter MuPDF cannot build a standalone `Image`
+from are **skipped and counted** rather than thrown on. *Nothing changed* and *this
+page's image is a kind I cannot read* are different answers.
+
+### One command, one undo, no dialog
+
+The surface reads the page kinds and sends **one** `enhancePages` naming them: a
+reader who cleans up a ten-page scan expects one undo, and the checkpoint behind it
+is one document image rather than ten. No dialog, because nothing is chosen.
+
+Seven kernel cases and two UI cases. The page-list control bites: levelling every
+page regardless of the list reddens exactly the two cases that name it.
+
+---
+
 ## 2026-09-11 — Row 5: the sequence, and the renderer NOT taken
 
 `document.export-searchable` recognises every image-only page and then calls

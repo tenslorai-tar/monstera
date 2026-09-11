@@ -774,6 +774,34 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  enhancePages: {
+    kind: 'enhancePages',
+    // `docs/ARCHITECTURE.md:372`'s page-tree row and the object surgery beside it:
+    // this replaces an image XObject's stream and restates its dictionary, in
+    // place, in the session. It is NOT content composition — nothing is drawn onto
+    // the page, and the page's content stream is untouched.
+    writer: 'mupdf',
+    // The prior state is the image streams themselves, which is document-scaled and
+    // exactly what an invertible entry may not retain. §4's reserved list again.
+    invertible: false,
+    undo: 'checkpoint',
+    // DERIVED FROM EACH IMAGE'S OWN HISTOGRAM — Otsu's two class means — so the
+    // same document levels to the same bytes. Nothing is read from a clock and
+    // nothing is minted. It is NOT idempotent, which is a different property: the
+    // second run levels an already-levelled image, and `reproducible` asks whether
+    // re-running against the SAME document produces the same result.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // Self-contained: a page list is the user's own selection, not an answer read
+    // earlier that the document could have moved past.
+    targets: 'none',
+    // Needs nothing read through another engine: it decodes, levels and re-encodes
+    // inside the session it is writing.
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   ocrPage: {
     kind: 'ocrPage',
     // §3's matrix puts content composition on `@cantoo/pdf-lib`, and a text layer

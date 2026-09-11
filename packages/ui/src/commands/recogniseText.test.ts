@@ -2,11 +2,16 @@ import { type Command, type ContractClient, channels, createClient } from '@mons
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
 import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
 import type { CommandContext } from '../registries/commands.js';
 import { type TrackTask, UNTRACKED } from '../runningTask.js';
-import { exportSearchableCommand, recogniseTextCommand } from './recogniseText.js';
+import {
+  enhanceScansCommand,
+  exportSearchableCommand,
+  recogniseTextCommand,
+} from './recogniseText.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fe');
 
@@ -349,6 +354,46 @@ describe('the recognise-text command', () => {
       id: OCR_OUTCOME_DIALOG_ID,
       props: { recognised: 1, skipped: 0, stopped: true },
     });
+  });
+
+  it('ENHANCE: sends ONE command naming the scanned pages', async () => {
+    const { client, dispatched, read } = clientOver(['image-only', 'text', 'image-only', 'empty']);
+    const { ask, opened } = recordingAsk(undefined);
+
+    await enhanceScansCommand({
+      client,
+      onApplied: () => undefined,
+      ask,
+      track: UNTRACKED,
+    }).run(contextWith(4));
+
+    // ONE COMMAND, not one per page: a reader who cleans up a four-page scan expects
+    // one undo, and the checkpoint behind it is one document image rather than four.
+    expect(read).toStrictEqual([0, 1, 2, 3]);
+    expect(dispatched).toStrictEqual([{ kind: 'enhancePages', pages: [0, 2] }]);
+    // NO DIALOG BEFORE IT — the levels come from each image's own histogram, so
+    // there is nothing to ask. The only dialog is the outcome.
+    expect(opened).toStrictEqual([
+      { id: ENHANCE_OUTCOME_DIALOG_ID, props: { pages: 2 } },
+    ]);
+  });
+
+  it('ENHANCE: says so when there is nothing to clean up, and dispatches nothing', async () => {
+    const { client, dispatched } = clientOver(['text', 'empty']);
+    const { ask, opened } = recordingAsk(undefined);
+
+    await enhanceScansCommand({
+      client,
+      onApplied: () => undefined,
+      ask,
+      track: UNTRACKED,
+    }).run(contextWith(2));
+
+    // THE OUTCOME A READER CANNOT SEE. A command that closed silently here is
+    // indistinguishable from one that is broken, and `pages: 0` is what the dialog
+    // turns into a sentence rather than a count.
+    expect(dispatched).toStrictEqual([]);
+    expect(opened).toStrictEqual([{ id: ENHANCE_OUTCOME_DIALOG_ID, props: { pages: 0 } }]);
   });
 
   it('stops when a page’s kind cannot be read', async () => {

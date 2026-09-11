@@ -306,6 +306,15 @@ export interface CommandPrior {
    */
   readonly ocrPage: never;
   /**
+   * **`never`**, and the prior state is the clearest case of document-scaled on
+   * this type: the image streams themselves.
+   *
+   * A levelled scan could only be put back by restoring every image XObject the
+   * command rewrote, which is most of a scanned document's bytes. §4 reserves a
+   * checkpoint for exactly this.
+   */
+  readonly enhancePages: never;
+  /**
    * **`never`**, and this is the first entry whose reason involves a second
    * document — which changes nothing, and saying why is the point.
    *

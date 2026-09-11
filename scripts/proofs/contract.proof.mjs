@@ -254,6 +254,27 @@ const DESKEW_SPEC = `  deskewPages: {
 /**
  * Filler, kept separate for {@link MOVE_SPEC}'s reason.
  *
+ * The spec that rewrites an IMAGE rather than a page attribute or a content
+ * stream, and it routes to MuPDF for the reason `deskewPages` does: the engine that
+ * can decode the image is the engine about to write it.
+ */
+const ENHANCE_SPEC = `  enhancePages: {
+    kind: 'enhancePages',
+    writer: 'mupdf',
+    apply: applyEnhancePages,
+    capture: captureEnhancePages,
+    invert: invertEnhancePages,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason.
+ *
  * **The only spec here declaring a pre-read that is not the document's** and the
  * only `stored-effect` one (ADR-0051). It carries no `read`, and that is the
  * probe's subject rather than an omission: the resolver lives on the
@@ -844,6 +865,9 @@ const SPEC_IMPORTS = `import {
   applyDeskewPages,
   captureDeskewPages,
   invertDeskewPages,
+  applyEnhancePages,
+  captureEnhancePages,
+  invertEnhancePages,
   applyOcrPage,
   captureOcrPage,
   invertOcrPage,
@@ -1420,6 +1444,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${ENHANCE_SPEC}
 ${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
@@ -1516,6 +1541,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${ENHANCE_SPEC}
 ${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
@@ -1577,6 +1603,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${ENHANCE_SPEC}
 ${OCR_SPEC}
   notDeclared: {
     kind: 'notDeclared',
@@ -1639,6 +1666,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${ENHANCE_SPEC}
 ${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
@@ -1699,6 +1727,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${ENHANCE_SPEC}
 ${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
@@ -1768,6 +1797,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${ENHANCE_SPEC}
 ${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
@@ -1833,6 +1863,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${DESKEW_SPEC}
+${ENHANCE_SPEC}
 ${OCR_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
@@ -2720,7 +2751,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`, nine
     // since `watermarkPages` (all 2026-09-04), 23 since `createFormField`
     // (2026-09-08), 29 since `replaceTextObject` (2026-09-09), 30 since
-    // `deskewPages` (2026-09-10) and 31 since `ocrPage` (2026-09-11).
+    // `deskewPages` (2026-09-10), 31 since `ocrPage` and 32 since `enhancePages`
+    // (both 2026-09-11).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2738,7 +2770,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 32 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 33 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

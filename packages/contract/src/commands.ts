@@ -608,6 +608,35 @@ export const deskewPagesSchema = z.object({
 });
 
 /**
+ * Level the scanned images on the named pages.
+ *
+ * ## A PAGE LIST, and `'all'` is deliberately not offered
+ *
+ * Every other page-scoped command here takes `'all' | number[]` because *do this to
+ * the whole document* is the ordinary use. Enhancing is not: the operation is only
+ * meaningful on a page whose content **is** a raster, and `pageKindOf` is what says
+ * which those are. So the surface reads the kinds and names the pages, which keeps
+ * *what is this page made of* in the one place that answers it (B3a) rather than
+ * giving the kernel a second opinion about it.
+ *
+ * The list is a page selection the user's own action produced, which is the shape
+ * `cropPages` and `deletePages` already carry — bounded by the document and not by
+ * anything a document contributes.
+ *
+ * ## It carries no parameters, because there is nothing to choose
+ *
+ * The levels come from each image's own histogram through Otsu's two class means,
+ * so there is no strength, no threshold and no radius. A slider here would be a
+ * tunable in a substrate whose character is that it has none — the scanned-page
+ * row's own argument, one operation along.
+ */
+export const enhancePagesSchema = z.object({
+  kind: z.literal('enhancePages'),
+  /** Which pages, as a list. Zero-based, at least one. */
+  pages: z.array(z.number().int().nonnegative()).min(1),
+});
+
+/**
  * Recognise one page and write its text into that page, invisibly.
  *
  * D6 rows 2 and 3 are one command, because neither half is a feature on its own:
@@ -3125,6 +3154,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   setPageBackgroundSchema,
   resizePagesSchema,
   deskewPagesSchema,
+  enhancePagesSchema,
   ocrPageSchema,
   insertImagePageSchema,
   generateTocSchema,
@@ -3192,6 +3222,10 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // measured main-side from the page's own ink at apply time, so there is no
   // payload for it to scale with.
   deskewPagesSchema,
+  // RENDERABLE, and the page list is what makes it so: the intent is *these pages*
+  // and nothing else. The image data it rewrites is read and written inside the
+  // engine — the renderer could not express a bitmap here if it wanted to.
+  enhancePagesSchema,
   // RENDERABLE, and it is the sharpest case in this union: the page's recognised
   // text is what the command produces and none of it is in the payload. A page
   // index and a language name the intent, the recognition is read inside the

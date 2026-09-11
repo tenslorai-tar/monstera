@@ -63,6 +63,15 @@ export {
 } from './pageTransition.js';
 export { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 export { applyDeskewPages, captureDeskewPages, invertDeskewPages } from './pageDeskew.js';
+// BEHIND THE SUBPATH, and this one must be: `pageEnhance.ts` value-imports `mupdf`
+// for `Image`, `Pixmap` and `ColorSpace`, so reaching it from `main` would bind the
+// native library (ADR-0026, invariant 20).
+export {
+  applyEnhancePages,
+  captureEnhancePages,
+  enhancedPages,
+  invertEnhancePages,
+} from './pageEnhance.js';
 // ON THIS SUBPATH RATHER THAN THE BARREL, and the reason is the opposite of the
 // one the note below gives for its neighbours: `ocrTextLayer.ts` reaches only
 // `@cantoo/pdf-lib`, so nothing about the module binds a native library — but

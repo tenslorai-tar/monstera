@@ -177,6 +177,7 @@ export {
   replacePageSchema,
   sourceIdsOf,
   deskewPagesSchema,
+  enhancePagesSchema,
   ocrPageSchema,
   resizePagesSchema,
   rotatePagesSchema,

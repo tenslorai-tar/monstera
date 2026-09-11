@@ -83,7 +83,11 @@ import { FindBar } from './FindBar.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { type RunningTask, trackerOver } from './runningTask.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
-import { exportSearchableCommand, recogniseTextCommand } from './commands/recogniseText.js';
+import {
+  enhanceScansCommand,
+  exportSearchableCommand,
+  recogniseTextCommand,
+} from './commands/recogniseText.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
@@ -93,6 +97,7 @@ import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
 import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
 import { OCR_DIALOG } from './dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
+import { ENHANCE_OUTCOME_DIALOG } from './dialogs/enhanceOutcome.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
@@ -326,6 +331,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         SPELL_CHECK_DIALOG,
         OCR_DIALOG,
         OCR_OUTCOME_DIALOG,
+        ENHANCE_OUTCOME_DIALOG,
         SAVE_PROBLEM_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
@@ -1224,6 +1230,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         // which is why it registers beside the command it shares a walk with
         // rather than growing a pipeline of its own.
         exportSearchableCommand({ client, onApplied: applied, ask, track }),
+        // D2's ENHANCE-SCANS ROW, whose trigger fires in this stage. It needs no
+        // dialog — the levels come from each image's own histogram — and it reads the
+        // page kinds for the same reason the OCR commands do: levelling is only
+        // meaningful where the page's content is a raster.
+        enhanceScansCommand({ client, onApplied: applied, ask, track }),
         insertImageCommand({ client, onApplied: applied, ask }),
         mergeDocumentCommand({ client, onApplied: applied, ask }),
         insertFromPdfCommand({ client, onApplied: applied, ask }),

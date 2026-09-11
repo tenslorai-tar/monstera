@@ -96,8 +96,14 @@ export const SKEW_DPI = 150;
  *
  * Computed from the page rather than chosen, which is what keeps this free of
  * the constant the row's own note warns about.
+ *
+ * **Exported since 2026-09-11, for `pageEnhance.ts`** (B3a). *Which grey level
+ * separates this image's ink from its paper* is one question, and a second
+ * implementation of it would agree with this one on an ordinary scan and differ
+ * on the pages that matter — a faint one, a dark one, a photograph. The skew
+ * detector found the answer first; it does not own the question.
  */
-function otsu(grey: Uint8Array): number {
+export function otsu(grey: Uint8Array | Uint8ClampedArray): number {
   const histogram = new Array<number>(256).fill(0);
   for (const value of grey) histogram[value] = (histogram[value] ?? 0) + 1;
   const total = grey.length;

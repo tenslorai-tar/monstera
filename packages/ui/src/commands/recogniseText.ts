@@ -4,8 +4,11 @@ import type { DocId } from '@monstera/shared';
 import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
 import { OCR_RESULT } from '../dialogs/ocrResult.js';
+import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import {
+  ENHANCE_COMMAND_TITLE,
+  ENHANCE_PROGRESS,
   GROUP_OCR,
   OCR_COMMAND_TITLE,
   OCR_EXPORT_COMMAND_TITLE,
@@ -112,6 +115,79 @@ export function recogniseTextCommand(
       // a cancel too, which is this command's own rule rather than the spell
       // check's: the pages already done carry real text.
       void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+    },
+  };
+}
+
+/**
+ * Levels the scanned pages' own images.
+ *
+ * ## ONE COMMAND, a page list, and no dialog
+ *
+ * `deskewPagesCommand`'s shape: the operation has nothing to choose — the levels
+ * come from each image's own histogram — so a dialog would be a step that asks
+ * nothing. What it does have is a page **list**, because levelling is only
+ * meaningful where the page's content is a raster, and `document.pageTextLayer`'s
+ * `kind` is what says which pages those are.
+ *
+ * So the walk here is a READ and the write is ONE command: a reader who levels a
+ * ten-page scan expects one undo, and the checkpoint that undo restores is one
+ * document image rather than ten.
+ *
+ * ## IT SAYS WHEN IT DID NOTHING, which is the state this row can produce most
+ *
+ * A document with no image-only pages has nothing to level, and an image behind a
+ * filter this engine cannot round-trip is skipped. Both arrive as a dialog rather
+ * than as silence, for the reason the OCR outcome does: what a reader cannot see in
+ * their document has to be said.
+ */
+export function enhanceScansCommand(
+  deps: DocumentCommandDeps & { readonly track: TrackTask },
+): UiCommand {
+  return {
+    id: 'document.enhance-scans',
+    title: ENHANCE_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 30 }],
+    when: hasDocument,
+    run: async (context: CommandContext): Promise<void> => {
+      const { docId, pageCount } = context;
+      if (docId === undefined || pageCount === undefined) return;
+
+      // THE READ IS TRACKED TOO, and it is the only part of this command that takes
+      // time per page: the write is one command. A four-hundred-page document is
+      // four hundred reads before anything happens, which is what the status bar is
+      // for.
+      const task = deps.track(ENHANCE_PROGRESS, pageCount);
+      const scanned: number[] = [];
+      try {
+        for (let page = 0; page < pageCount; page += 1) {
+          if (task.signal.aborted) return;
+          const layer = await deps.client['document.pageTextLayer']({
+            docId,
+            page,
+            limit: MAX_TEXT_LAYER_LINES,
+          });
+          if (!layer.ok) break;
+          if (layer.value.kind === 'image-only') scanned.push(page);
+          task.step(page + 1);
+        }
+      } finally {
+        task.end();
+      }
+
+      if (scanned.length === 0) {
+        void deps.ask(ENHANCE_OUTCOME_DIALOG_ID, { pages: 0 });
+        return;
+      }
+      const applied = await applyDocumentCommand(deps, docId, {
+        kind: 'enhancePages',
+        pages: scanned,
+      });
+      if (!applied) return;
+      // THE PAGE COUNT AND NOT THE SKIPPED ONE: `document.execute` answers a version
+      // and a byte length rather than what the command found, and the dialog's own
+      // note records where that count does live.
+      void deps.ask(ENHANCE_OUTCOME_DIALOG_ID, { pages: scanned.length });
     },
   };
 }
