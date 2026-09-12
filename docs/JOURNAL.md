@@ -13,8 +13,11 @@ the fact is not a baseline, it is a rationalisation.
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
-| 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 40 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done; D6 row 8 ships complete and carries one trigger only its owner can clear** | **1.50× — continue** |
-| 7 — security and signatures | **owner's to set** | **in progress** — opened 2026-09-12 at the commit after Stage 6 closed. Fifteen rows; the `@signpdf` gate is done | — |
+| 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 38 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done; D6 row 8 ships complete and carries one trigger only its owner can clear** | **1.50× — continue** |
+| 7 — security and signatures | **2 working days** (owner, 2026-09-12) | **in progress** — opened 2026-09-12 at the commit after Stage 6 closed. Fifteen rows; the `@signpdf` gate is done | — |
+| 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | — | — |
+| 9 — AI and cloud | **2 working days** (owner, 2026-09-12) | — | — |
+| 10 — ship | **2 working days** (owner, 2026-09-12) | — | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -886,6 +889,60 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-12 — Baselines for the four remaining stages, and two figures corrected
+
+**The owner set every remaining baseline in one act: Stages 7, 8, 9 and 10 are
+each 2 working days.** Owner-set 2026-09-12, not derived, and explicitly not to
+be revised to meet an actual — the same standing as Stage 2's, which this journal
+already records as the property that makes a baseline a baseline rather than the
+rationalisation its own header warns about. The 3× gate therefore arms at 6 days
+in each of the four. They are written into the stage table above and into the
+`docs/FEATURES.md` Progress rows in this commit, which is the half that goes
+stale otherwise: a baseline recorded in one of the two documents is a number the
+other will eventually contradict.
+
+**Stage 7's row had said *owner's to set*, and that was honest** — the stage had
+opened with no baseline and the row said so rather than inventing one. What is
+new is that three rows now carry a baseline for a stage that has not begun, which
+is the first time this table has looked forward. Nothing is asserted by it: the
+*actual* and *verdict* cells stay empty until the stage runs.
+
+### Correction: Stage 6's commit count is 38, not 40
+
+The stage table said **40 commits** for Stage 6 and the `docs/FEATURES.md`
+Progress row said **38**. `git rev-list --count 70f52b7..b431a3d` answers **38**,
+so the table was wrong and is edited to match — the table is a live specification
+of where the build is, not a record of a moment, and this file's header already
+says that is the half it edits rather than corrects underneath.
+
+**The interesting part is that the wrong figure was the one that travelled.** The
+close was reported to the owner as 40, and the report was written from the table
+rather than from the command. Both documents were open in the range that closed
+the stage and neither was checked against the other, because each read as the
+place the number lives. **Two documents holding one figure is two opinions about
+one authority** (B3a), and the authority here is `git`, which neither had been
+asked. The figure is not load-bearing — nothing computes from it, the trajectory
+is days against days — and that is precisely why it survived: a number nothing
+reads is a number nothing contradicts.
+
+### Correction: Stage 7's fifteen rows, and arithmetic that reached the right total
+
+The Progress row read *"Fifteen rows: D7's fourteen plus the @signpdf gate"*.
+D7's table holds **fourteen rows with the gate already among them**, and the
+fifteenth is D3 row 131's redact burn-in, which the same row then says it
+carries. So the total was right and the sum reaching it counted the gate twice
+and the burn-in not at all.
+
+**That is the half-true compound claim this repository's audit section names, in
+its quietest form yet**: a sentence whose *conclusion* is correct. Nothing
+downstream disagrees, no check can fire, and the wrong operand is what survives
+into the next count — the next person to add a row to D7 reads *fourteen plus the
+gate* and writes sixteen. Edited in the body, because a FEATURES row is a live
+specification and a correction underneath leaves the false sum in the contract
+position.
 
 ---
 
