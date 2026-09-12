@@ -892,6 +892,95 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — The encrypted read, isolated: `needsPassword()` is an authentication attempt
+
+The reproduction recorded earlier today is explained, and the row is unblocked.
+**`needsPassword()` called on a document that has already been authenticated
+un-authenticates it**, and every stream read after that point decrypts with the
+wrong key.
+
+### The mechanism, in one sentence
+
+`Document.needsPassword()` is `fz_needs_password`, which is
+`pdf_needs_password`, which is **not a flag read**: it calls
+`pdf_authenticate_password(ctx, doc, "")`, and that function begins by clearing
+`doc->crypt->access` and then derives the file key from the password it was
+given — so the empty password's failed attempt overwrites the key the successful
+authentication stored, and every stream decrypted afterwards comes out as
+garbage that `inflate` rejects with *incorrect header check*.
+
+### Measured before the source was read, and the source agrees
+
+Four readings, `.probe/encryptedOrder.mjs` and `.probe/encryptedMechanism.mjs`,
+over `render-standard-font.pdf` encrypted `aes-256` by MuPDF's own writer:
+
+| between `authenticatePassword` and `loadPage` | blocks |
+|---|---|
+| nothing | **24** |
+| `countPages()` | **24** |
+| `getTrailer()` | **24** |
+| `authenticatePassword()` a second time | **24** |
+| `hasPermission` over all eight | **24** |
+| **`needsPassword()`** | **0** |
+| `needsPassword()` then `countPages()` | **0** |
+| `countPages()` then `needsPassword()` | **0** |
+
+Three predictions were written down before they were run, each chosen to
+separate *this* mechanism from *some call invalidates a cache*, and all three
+held:
+
+1. **any failed authentication does it, not only the one `needsPassword` hides**
+   — `authenticatePassword('wrong')` by hand produces the identical zero;
+2. **authenticating again REPAIRS it** — so the broken state is a derived key
+   and not a torn document;
+3. **`hasPermission` does not do it**, because it reads bits rather than
+   authenticating.
+
+Only then was `pdf-crypt.c` opened, and it states the mechanism in its own
+comment — *"the failed attempt to authenticate the owner password will have
+invalidated the stored keys"* — in the branch that re-authenticates the user
+password to compensate for exactly this, **in the one case MuPDF can compensate
+for.** A wholly failed attempt has nothing to restore to.
+
+### It is not a display-only defect, and that is worth knowing precisely
+
+A page rastered before the break is **9,109 bytes of PNG** and the same page
+after it is **2,056** — blank. So the damage reaches the renderer as well as
+search, which is the less dangerous of the two possibilities: a build where the
+page still drew and only the text layer emptied would have shipped.
+
+### What this retires, and what it changes about the row
+
+Journal fact 2 from this morning — *"`needsPassword()` STAYS true after a
+successful authentication"* — is **correct and was the wrong reading of its own
+observation.** It does not stay true because unlocking is a session property the
+document does not record. It stays true because the call **re-runs the empty
+password every time**, and that attempt fails. The same sentence describes the
+symptom and the defect; reading it as a quirk of a getter is what put a
+`while (doc.needsPassword())` loop within one step of being written.
+
+**And the obvious surface is the dangerous one.** A prompt that loops until
+`needsPassword()` goes false never terminates *and* destroys the document's key
+on the first turn — so the second password the user types would be checked
+against a document whose state the first check had already broken.
+
+**No shipped code calls either function** — `grep` over `packages/`, `apps/` and
+`scripts/` finds neither outside a probe — so nothing is broken today. This is a
+defect that would have been written the moment the row was, by the name that
+reads as the right one.
+
+### The rule the row now carries
+
+`needsPassword` is barred from this codebase and the bar is structural rather
+than remembered: one module owns the question *is this document locked* and the
+answer comes from `authenticatePassword`'s own return, which is the only call
+that can tell a user password from an owner password anyway. That is B3a — the
+authority is MuPDF's crypt state and exactly one module here may ask it — and
+B5, because a document handed to the rest of the kernel after unlocking never
+exposes the call that would break it.
+
+---
+
 ## 2026-09-12 — Baselines for the four remaining stages, and two figures corrected
 
 **The owner set every remaining baseline in one act: Stages 7, 8, 9 and 10 are
@@ -1009,6 +1098,17 @@ question.** The cost was four hypotheses formed and tested against a symptom
 whose own diagnosis was on screen the whole time.
 
 Nothing is built on this, and the row stays not-started rather than in-progress.
+
+**Correction appended 2026-09-12, later the same day: the mechanism is
+`needsPassword()`, and it is an authentication attempt.** The entry above states
+as fact 2 that `needsPassword()` stays `true` after a successful
+authentication — true, and read as a property of the document when it is the
+defect itself: the call is `pdf_authenticate_password(doc, "")`, which clears
+and re-derives the crypt key, so it un-authenticates the document it is asked
+about. The reproduction's variable was never which script did the reading; it
+was whether the reading script called `needsPassword()` after authenticating.
+The three hypotheses this entry rejects were all rejected correctly. See the
+2026-09-12 entry *"The encrypted read, isolated"* above.
 
 ---
 
