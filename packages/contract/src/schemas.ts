@@ -225,6 +225,30 @@ export const AZURE_ENDPOINT_SETTING_ID = 'editing.azure-di-endpoint';
 export const AZURE_KEY_SETTING_ID = 'editing.azure-di-key';
 
 /**
+ * Every setting id whose value is a SECRET, and the only list of them.
+ *
+ * ## Why the contract has to know, when a setting id is otherwise the registry's
+ *
+ * `settings.save` carried `record(string, unknown)` and main wrote whatever
+ * arrived into `settings.json`. The renderer's store includes secrets in
+ * `all()`, and `persistSettings` sent `all()` — so a key set in that store
+ * reached the plaintext document, measured 2026-09-12 by a case that failed
+ * with the key present in what the channel carried. It had not happened only
+ * because nothing had set one. That is a rule held by nobody doing a thing,
+ * which is not a rule.
+ *
+ * With the ids here, `settings.save` REFUSES a record carrying one and
+ * `settings.saveSecret` accepts nothing else, so the separation is a property of
+ * the wire rather than of every caller's memory (B5). The registry's
+ * `secret: true` flags must equal this list, and `settings/all.test.ts` asserts
+ * that in both directions — a second list that agreed today is B3a's shape.
+ */
+export const SECRET_SETTING_IDS = [AZURE_KEY_SETTING_ID] as const;
+
+/** One of {@link SECRET_SETTING_IDS}. */
+export type SecretSettingId = (typeof SECRET_SETTING_IDS)[number];
+
+/**
  * How long a document password may be, on any wire in this build
  * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
  *

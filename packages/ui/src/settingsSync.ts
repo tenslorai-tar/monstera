@@ -73,12 +73,18 @@ export async function hydrateSettings(client: ContractClient, store: SettingsSto
  * does not understand until the user actually changes something, and even then
  * the loss is theirs to have caused rather than a launch's.
  *
- * ## `all()` rather than the one id that moved
+ * ## The whole non-secret state rather than the one id that moved
  *
  * `settings.save` replaces the whole document, so what crosses is the store's
  * current state — the shape where *what is on disk* has one answer. A per-id
  * write would make the file the sum of a sequence, and an interrupted sequence
  * leaves a state no single write produced.
+ *
+ * **`exportable()`, not `all()`, since 2026-09-12.** `all()` includes secrets,
+ * and sending it put a key set in this store into `settings.json` — measured by
+ * the case in `settingsSync.test.ts` that failed with the key in the payload.
+ * The secret half has its own channel, and `settings.save` now refuses a record
+ * carrying one, so a regression here is a refused save rather than a leak.
  *
  * ## The result is not awaited, and the failure IS reported — since 2026-09-02
  *
@@ -113,7 +119,7 @@ export function persistSettings(
     // when the write comes back, and a user who changed it twice would be told
     // about the wrong one.
     const title = store.definition(id)?.title;
-    void client['settings.save']({ values: store.all() }).then(
+    void client['settings.save']({ values: store.exportable() }).then(
       (answer) => {
         if (answer.ok || title === undefined) return;
         void ask(SETTINGS_PROBLEM_DIALOG_ID, { setting: title });

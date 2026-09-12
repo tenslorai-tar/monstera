@@ -299,9 +299,12 @@ export function createContractHandlers(deps: {
       // proving persistence and asserting a write.
       return Promise.resolve(ok({ stored: true } as const));
     },
-    // THE SECRETS ARE A SEPARATE PAIR, and the separation is the mechanism: a
-    // value that never travels on `settings.save` cannot reach the plain
-    // settings document, whatever anybody remembers about a `secret` flag.
+    // THE SECRETS ARE A SEPARATE PAIR, and the pair alone was NOT the mechanism,
+    // measured 2026-09-12: `settings.save` accepted any record and the renderer
+    // sent `all()`, so a key set in its store reached the plain document through
+    // the handler above. What holds the separation is the schema —
+    // `settings.save` refuses a `SECRET_SETTING_IDS` member before this runs,
+    // and `settings.saveSecret` accepts nothing else.
     'settings.loadSecrets': () =>
       Promise.resolve(
         ok({ secrets: deps.secrets.read(), available: deps.secrets.available() }),

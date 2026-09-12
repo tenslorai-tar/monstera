@@ -220,6 +220,8 @@ export {
   // titles — so adding a language is two compile errors and a digest.
   AZURE_ENDPOINT_SETTING_ID,
   AZURE_KEY_SETTING_ID,
+  SECRET_SETTING_IDS,
+  type SecretSettingId,
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
   type DocumentAccess,

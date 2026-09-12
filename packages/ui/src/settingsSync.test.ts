@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SETTINGS_PROBLEM_DIALOG_ID } from './dialogs/settingsProblem.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { THEME_SETTING } from './settings/appearance.js';
+import { AZURE_DI_KEY_SETTING } from './settings/editing.js';
 import { SettingsStore } from './settingsStore.js';
 import { hydrateSettings, persistSettings } from './settingsSync.js';
 
@@ -238,6 +239,29 @@ describe('settings sync', () => {
     await Promise.resolve();
 
     expect(shown).toStrictEqual([]);
+  });
+
+  it('a SECRET setting never travels on settings.save, even when the store holds one', async () => {
+    // THE ROUTE THIS CLOSES, read end to end on 2026-09-12: `store.all()`
+    // includes secrets, `settings.save` accepts any record, and main writes it
+    // into `settings.json` as it arrives. Nothing set a key in the renderer's
+    // store, so the key stayed out by nobody doing it — not by shape.
+    //
+    // THE THEME IS THE CONTROL, in the same case: a key absent from a document
+    // that received nothing would pass for a sync that saved nothing at all.
+    const store = new SettingsStore(new SettingsRegistry([THEME_SETTING, AZURE_DI_KEY_SETTING]));
+    const { client, stored } = persistentClient();
+    const stop = persistSettings(client, store, () => Promise.resolve(undefined));
+    try {
+      store.set(AZURE_DI_KEY_SETTING.id, 'not-a-real-key');
+      store.set(THEME_SETTING.id, 'dark');
+      await vi.waitFor(() => {
+        expect(stored()[THEME_SETTING.id]).toBe('dark');
+      });
+      expect(stored()).not.toHaveProperty(AZURE_DI_KEY_SETTING.id);
+    } finally {
+      stop();
+    }
   });
 
   it('unsubscribing stops the saves', async () => {

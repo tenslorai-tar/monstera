@@ -108,13 +108,15 @@ export class SettingsStore {
   }
 
   /**
-   * Everything currently set, for the layer that persists it.
+   * Everything currently set, secrets included.
    *
-   * **Includes secrets.** The exclusion §7 assigns to `secret` is EXPORT's, and
-   * export is a different operation from persistence — a user who set an API
-   * key expects it to survive a restart. Conflating the two would either leak
-   * the key into a shared file or forget it every launch, and which of those
-   * you get would depend on which caller reached for this first.
+   * **Not what persistence sends**, and this comment said it was until
+   * 2026-09-12. Its reasoning — *a user who set an API key expects it to survive
+   * a restart* — was right about the expectation and wrong about the route: a key
+   * survives a restart through `settings.saveSecret` and the OS credential store,
+   * and sending it on `settings.save` put it in the plaintext settings document.
+   * `persistSettings` sends {@link exportable}; `settings.save` refuses a secret
+   * id outright.
    */
   all(): Readonly<Record<string, unknown>> {
     return Object.fromEntries(this.#values);

@@ -23,6 +23,7 @@ import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
   OCR_LANGUAGES,
+  SECRET_SETTING_IDS,
   TROCR_SIZES,
   docIdSchema,
   docVersionSchema,
@@ -3003,7 +3004,16 @@ export const channels = {
    */
   'settings.save': channel(
     'Replaces the stored NON-SECRET settings with the values the renderer holds.',
-    z.object({ values: z.record(z.string(), z.unknown()) }),
+    z.object({
+      // A SECRET ID IS REFUSED HERE, not stripped. Stripping would store the
+      // rest and answer `stored: true`, and the caller that sent a key would
+      // never learn it had been handed to the wrong channel.
+      values: z
+        .record(z.string(), z.unknown())
+        .refine((values) => SECRET_SETTING_IDS.every((id) => !(id in values)), {
+          message: 'a secret setting travels on settings.saveSecret, never on settings.save',
+        }),
+    }),
     z.object({ stored: z.literal(true) }),
   ),
 
@@ -3068,7 +3078,10 @@ export const channels = {
   'settings.saveSecret': channel(
     'Stores one secret setting through the OS credential store, or refuses.',
     z.object({
-      id: z.string().min(1).max(MAX_SETTING_ID),
+      // ONLY A DECLARED SECRET, the other half of `settings.save`'s refusal: an
+      // ordinary setting written here would be encrypted into a document the
+      // renderer never hydrates from, and read back as unset every launch.
+      id: z.enum(SECRET_SETTING_IDS),
       value: z.string().max(MAX_SECRET_SETTING),
     }),
     z.object({ stored: z.literal(true) }),

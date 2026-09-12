@@ -10,6 +10,7 @@ import {
   type ContractHandlers,
 } from './channels.js';
 import type { Incident } from './incident.js';
+import { AZURE_KEY_SETTING_ID } from './schemas.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
 function ignore(_incident: Incident): void {
@@ -334,6 +335,26 @@ describe('the shipping contract, exercised through its own map', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('internal');
+  });
+
+  it('settings.save REFUSES a secret id, and CONTROL: accepts the same record without it', () => {
+    // THE SCHEMA IS THE MECHANISM, so the case asserts the schema rather than a
+    // handler declining. Measured before this existed: a key set in the
+    // renderer's store travelled on this channel and main wrote it into
+    // `settings.json`. The control is the identical record minus the key — a
+    // schema that refused every record would pass the first line alone.
+    const params = channels['settings.save'].params;
+    expect(
+      params.safeParse({ values: { 'appearance.theme': 'dark', [AZURE_KEY_SETTING_ID]: 'k' } })
+        .success,
+    ).toBe(false);
+    expect(params.safeParse({ values: { 'appearance.theme': 'dark' } }).success).toBe(true);
+  });
+
+  it('settings.saveSecret REFUSES an ordinary id, and CONTROL: accepts a declared secret', () => {
+    const params = channels['settings.saveSecret'].params;
+    expect(params.safeParse({ id: 'appearance.theme', value: 'dark' }).success).toBe(false);
+    expect(params.safeParse({ id: AZURE_KEY_SETTING_ID, value: 'k' }).success).toBe(true);
   });
 
   // ---------------------------------------------------------------------------

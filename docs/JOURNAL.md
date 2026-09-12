@@ -892,6 +892,51 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — A secret could reach the plaintext settings file, and nothing entered one
+
+Found while answering the owner's question *where does the Azure key go*. The
+answer to that question is **nowhere a person can reach**, and on the way to it
+the route a key would have taken turned out to be the wrong one.
+
+### The route, read end to end and then run
+
+- `SettingsStore.all()` includes secrets — its comment said so on purpose.
+- `persistSettings` sent `all()` on `settings.save`.
+- `settings.save` accepted `record(string, unknown)`.
+- Main passed `values` to `createJsonFile.write`, which `JSON.stringify`s it
+  into `settings.json` with no filter.
+
+`contractHandlers.ts` called the separate secret channels *the mechanism*. They
+were a route, and nothing refused the other one. A case in
+`settingsSync.test.ts` set the Azure key in a store and asserted it absent from
+what `settings.save` carried; **it failed with the key present**. It had not
+happened in the product only because nothing had ever set one — a rule held by
+nobody doing a thing.
+
+### The repair is on the wire
+
+`SECRET_SETTING_IDS` is declared once in the contract, beside the ids main
+already reads by name. `settings.save` **refuses** a record carrying one —
+refused rather than stripped, because stripping would answer `stored: true` to a
+caller that sent a key to the wrong channel. `settings.saveSecret` accepts
+nothing else. `persistSettings` sends `exportable()`. `settings/all.test.ts`
+asserts the registry's `secret: true` ids equal the contract's list in both
+directions, with a vacuity guard, because two empty lists agree.
+
+### What this does NOT fix, and it is the larger half
+
+**No surface anywhere lets a person enter the endpoint or the key.** Searched
+with a positive control — the renderer's `settings.load` caller is found — and
+nothing in `packages/ui/src` calls `settings.loadSecrets` or
+`settings.saveSecret`, nothing calls the registry's `inCategory`, and no
+settings dialog or panel exists. `StylePanel.tsx` names a `SettingsPanel` that is
+not in the repository.
+
+And the cloud tool's visibility reads the key from the renderer's store, which is
+hydrated only from `settings.load` and so can never hold one: **D6 row 8's tool
+cannot appear in the shipped application**, whatever is stored. Its FEATURES
+body said *everything but one live run*. Both are the next commit.
+
 ## 2026-09-12 — Visible signatures, and a catch that chose its sentence by elimination
 
 D7's visible-signatures row. A drag with the place-signature tool (Protect ›
