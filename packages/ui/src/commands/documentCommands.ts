@@ -17,6 +17,8 @@ import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
 import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
 import { APPLY_REDACTIONS_DIALOG_ID } from '../dialogs/applyRedactions.js';
 import type { ApplyRedactionsAnswer } from '../dialogs/applyRedactions.js';
+import { REDACT_MATCHES_DIALOG_ID } from '../dialogs/redactMatches.js';
+import type { RedactMatchesAnswer } from '../dialogs/redactMatches.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -72,6 +74,7 @@ import {
   EDIT_PAGE_OBJECT_COMMAND_TITLE,
   PROTECT_DOCUMENT_COMMAND_TITLE,
   APPLY_REDACTIONS_COMMAND_TITLE,
+  REDACT_MATCHES_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -2141,6 +2144,37 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
               };
 
       await applyDocumentCommand(deps, context.docId, command);
+    },
+  };
+}
+
+/**
+ * PROTECT › Redact — mark every occurrence of a term.
+ *
+ * **It marks and does not remove**, which is the row's own design rather than
+ * an incomplete half: a search that redacts in one irreversible step removes
+ * content on a guess, and what a person cannot check beforehand is what else
+ * matched. The marks are visible and erasable; `applyRedactions` is the
+ * irreversible command, behind its own confirm.
+ */
+export function redactMatchesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.redact-matches',
+    title: REDACT_MATCHES_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 20 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(REDACT_MATCHES_DIALOG_ID, { page: context.page })) as
+        | RedactMatchesAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'markMatchesForRedaction',
+        query: answer.query,
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+      });
     },
   };
 }

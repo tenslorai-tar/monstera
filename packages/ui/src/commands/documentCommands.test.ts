@@ -34,6 +34,7 @@ import {
   generateTocCommand,
   protectDocumentCommand,
   applyRedactionsCommand,
+  redactMatchesCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -2421,6 +2422,43 @@ describe('protectDocumentCommand', () => {
       const { client, sent } = recordingClient();
 
       await applyRedactionsCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([]);
+    });
+  });
+
+  describe('redactMatchesCommand', () => {
+    it('dispatches the MARKING command, never the burn-in', async () => {
+      // THE WHOLE DESIGN OF THE ROW, asserted as the command that was sent: a
+      // find-and-redact that removed on the spot would leave the document
+      // looking the same to any assertion about the dispatch count.
+      const { client, sent } = recordingClient();
+
+      await redactMatchesCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve({ query: 'Salary', pages: 'all' }),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.execute',
+          params: {
+            docId: DOC,
+            command: { kind: 'markMatchesForRedaction', query: 'Salary', pages: 'all' },
+          },
+        },
+      ]);
+    });
+
+    it('CONTROL: a DISMISSED dialog dispatches nothing', async () => {
+      const { client, sent } = recordingClient();
+
+      await redactMatchesCommand({
         client,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),

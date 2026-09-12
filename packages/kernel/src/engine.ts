@@ -129,8 +129,11 @@ export {
 } from './documentProtection.js';
 export {
   applyApplyRedactions,
+  applyMarkMatchesForRedaction,
   captureApplyRedactions,
+  captureMarkMatchesForRedaction,
   invertApplyRedactions,
+  invertMarkMatchesForRedaction,
 } from './pageRedact.js';
 export {
   applyImportFormData,

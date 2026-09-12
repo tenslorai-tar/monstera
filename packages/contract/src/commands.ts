@@ -2531,6 +2531,87 @@ export const flattenFormFieldsSchema = z.object({
 });
 
 /**
+ * The longest find or replacement string this boundary will carry.
+ *
+ * Not an L11 bound — both are the *renderer's* strings and neither scales with
+ * the document — but a schema that accepted an unbounded one would let a
+ * renderer hand main an arbitrarily large allocation, and every other payload
+ * here is bounded.
+ *
+ * **THIS COMMENT CLAIMED A DERIVATION THAT HAD BEEN UNDONE**, and said so from
+ * one side while `channels.ts` said the opposite from the other: it read
+ * *`MAX_QUERY_LENGTH` is derived from this*, while that constant's own comment
+ * has recorded since 2026-09-10 that it is **a literal again**, with the reason
+ * — a query is a read's parameter and a find string is a command's, and the two
+ * can correctly differ. Both halves of a cross-module relationship were in the
+ * repository and only one of them was true. Corrected here 2026-09-12, in the
+ * half that was stale.
+ *
+ * Three payloads take this bound and the relationship between them is real
+ * rather than coincidental: `replaceAllText`'s find and replace, and
+ * `markMatchesForRedaction`'s query. All three are a **command's** string, and
+ * all three rewrite a document.
+ *
+ * **Moved above the redaction schemas 2026-09-12** for a reason with no opinion
+ * in it: a `const` is in its temporal dead zone until its declaration
+ * evaluates, and a schema that referenced it from higher up the file would
+ * throw at import.
+ */
+export const MAX_FIND_TEXT = 512;
+
+/**
+ * How many hits one page may carry before this build refuses to mark any.
+ *
+ * MuPDF's `PDFPage.search(needle, max_hits)` answers up to `max_hits` and says
+ * nothing about whether it stopped. So a cap reached is indistinguishable from
+ * a document that had exactly that many — and for a redaction, *some matches
+ * were not marked* is the failure the whole feature exists to prevent. The
+ * kernel refuses the page rather than marking a prefix of it.
+ *
+ * 4,096 is `MAX_ANNOTATIONS`' own bound: a page that would carry more redact
+ * marks than the annotation channel can report is one nothing downstream could
+ * show a person anyway.
+ */
+export const MAX_REDACT_MATCHES_PER_PAGE = 4096;
+
+/**
+ * Marks every occurrence of a search term for redaction.
+ *
+ * ## It MARKS, and burning in is still the other command
+ *
+ * *Find and redact* in one irreversible step is a search that removes content
+ * on a guess: a person types a term, and the thing they cannot check is what
+ * else matched it. This creates `/Redact` marks, which are visible, movable and
+ * erasable; `applyRedactions` is what removes anything, behind its own confirm.
+ *
+ * The two-step shape is also what makes *mixed in one pass* real — marks from a
+ * search and marks somebody drew are the same annotation, and one burn-in takes
+ * both.
+ *
+ * ## NO CASE OPTION, and that is the engine rather than a gap
+ *
+ * Measured 2026-09-12: MuPDF's page search is **case-insensitive** and its JS
+ * binding takes no option to change that — a needle and its upper-cased form
+ * answer the same 24 hits. A *match case* control would be one that renders and
+ * does nothing.
+ *
+ * ## Why it does not reuse the application's own search
+ *
+ * `textSearch.ts` answers *where in this document's text*, as a line and an
+ * offset, and the substrate reports no per-character geometry — so a mark built
+ * from it would cover the whole **line**, redacting text nobody searched for.
+ * MuPDF's page search answers *where on this page*, as quads. Its own header
+ * records that the two answer different questions; this is the caller that
+ * needs the second one.
+ */
+export const markMatchesForRedactionSchema = z.object({
+  kind: z.literal('markMatchesForRedaction'),
+  /** What to look for. Bounded like every string that crosses. */
+  query: z.string().min(1).max(MAX_FIND_TEXT),
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+});
+
+/**
  * What a burned-in redaction leaves where the content was.
  *
  * Measured 2026-09-12 (`.probe/redact.mjs`): MuPDF's `applyRedactions` takes
@@ -3289,21 +3370,6 @@ export const promoteFormObjectsSchema = z.object({
   page: z.number().int().nonnegative(),
 });
 
-/**
- * The longest find or replacement string this boundary will carry.
- *
- * Not an L11 bound — both are the *renderer's* strings and neither scales with
- * the document — but a schema that accepted an unbounded one would let a
- * renderer hand main an arbitrarily large allocation, and every other payload
- * here is bounded.
- *
- * `MAX_QUERY_LENGTH` is **derived from this**, in `channels.ts`, because it is
- * the same question with the same answer: *how long a string may a person type
- * into a box*. The derivation runs that way round because the module graph only
- * allows one direction — `channels.ts` imports this file — and one number with
- * one reason beats two that agree until one moves.
- */
-export const MAX_FIND_TEXT = 512;
 
 /**
  * Replaces every occurrence of a string across the whole document.
@@ -3413,6 +3479,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
+  markMatchesForRedactionSchema,
   createFormFieldSchema,
   importFormDataSchema,
   replaceTextObjectSchema,
@@ -3546,6 +3613,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // about which annotations are redactions — with the failure mode that a mark
   // it did not know about survives a burn-in that reported success.
   applyRedactionsSchema,
+  // RENDERABLE, and its payload is a term somebody typed plus a scope. What it
+  // cannot express is WHERE the matches are: the geometry comes from MuPDF's
+  // own page search, which is the only reader that answers *where on this page*
+  // with quads rather than a line and an offset.
+  markMatchesForRedactionSchema,
   // RENDERABLE, and the test it passes is the one `addAnnotation` passes: the
   // intent is a page index, a rectangle in the page's own space, a name and a
   // kind — bounded by `MAX_FIELD_NAME` and `MAX_FIELD_OPTIONS`, so the payload

@@ -522,6 +522,16 @@ export interface CommandPrior {
   readonly applyRedactions: never;
 
   /**
+   * Marking by search has no prior state worth recording.
+   *
+   * `addAnnotation` inverts because it adds exactly one and knows where. This
+   * adds one per match, and an inverse would have to name every one of them in
+   * a walk its own creation moved — `deleteFormFields`' shape without its
+   * bound.
+   */
+  readonly markMatchesForRedaction: never;
+
+  /**
    * A create has no prior state, and this is the one entry here where that is
    * **not** because the prior state is too large.
    *

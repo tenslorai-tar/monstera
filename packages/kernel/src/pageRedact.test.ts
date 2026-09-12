@@ -4,7 +4,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
-import { applyApplyRedactions, captureApplyRedactions } from './pageRedact.js';
+import {
+  applyApplyRedactions,
+  applyMarkMatchesForRedaction,
+  captureApplyRedactions,
+} from './pageRedact.js';
 
 /**
  * Burning redact marks in — D3 row 131's other half.
@@ -193,6 +197,89 @@ describe('applyRedactions', () => {
       } finally {
         document.destroy();
       }
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('MARKS BY SEARCH, and the marks then burn in like any other', async () => {
+    const session = await mupdfWriter.open(written);
+    try {
+      await applyMarkMatchesForRedaction(session, {
+        kind: 'markMatchesForRedaction',
+        query: '91000',
+        pages: 'all',
+      });
+      // NOTHING IS REMOVED YET, which is the two-step shape asserted rather
+      // than described: a command that redacted on the spot would pass every
+      // assertion below and take away the review the design exists for.
+      const [beforeFirst, beforeSecond] = await readBack(session);
+      expect(beforeFirst).toContain(SECRET);
+      expect(beforeSecond).toContain(SECRET);
+
+      await applyApplyRedactions(session, {
+        kind: 'applyRedactions',
+        pages: 'all',
+        cover: 'solid',
+        images: 'pixels',
+      });
+      const [first, second] = await readBack(session);
+      expect(first).not.toContain('91000');
+      expect(second).not.toContain('91000');
+      // AND THE REST OF THE LINE SURVIVES, which is what a line-scoped mark
+      // would have taken: the application's own search answers a line and an
+      // offset, and the substrate reports no per-character geometry — so a
+      // mark built from it would have covered `Salary … GBP` too.
+      expect(first).toContain('Salary');
+      expect(first).toContain(KEPT);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a term the document does not carry marks nothing', async () => {
+    // Without this, a command that marked the whole page whatever it was given
+    // would pass the case above — and burn the document.
+    const session = await mupdfWriter.open(written);
+    try {
+      await applyMarkMatchesForRedaction(session, {
+        kind: 'markMatchesForRedaction',
+        query: 'zzqq-not-in-this-document',
+        pages: 'all',
+      });
+      await applyApplyRedactions(session, {
+        kind: 'applyRedactions',
+        pages: 'all',
+        cover: 'solid',
+        images: 'pixels',
+      });
+      const [first, second] = await readBack(session);
+      expect(first).toContain(SECRET);
+      expect(first).toContain(KEPT);
+      expect(second).toContain(SECRET);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: the search IGNORES capitalisation, which is why no control offers it', async () => {
+    // Measured 2026-09-12 and asserted here, because the absent *match case*
+    // control is a decision: a dialog offering one would render and do nothing.
+    const session = await mupdfWriter.open(written);
+    try {
+      await applyMarkMatchesForRedaction(session, {
+        kind: 'markMatchesForRedaction',
+        query: 'salary',
+        pages: [0],
+      });
+      await applyApplyRedactions(session, {
+        kind: 'applyRedactions',
+        pages: [0],
+        cover: 'solid',
+        images: 'pixels',
+      });
+      const [first] = await readBack(session);
+      expect(first).not.toContain('Salary');
     } finally {
       await mupdfWriter.close(session);
     }

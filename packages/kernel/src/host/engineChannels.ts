@@ -11,6 +11,7 @@ import {
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
+  markMatchesForRedactionSchema,
   MAX_ANNOTATION_BORDER,
   addLinkSchema,
   annotationKindNameSchema,
@@ -921,6 +922,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   // anyway, which is the one place they can do the work.
   setDocumentProtectionSchema,
   applyRedactionsSchema,
+  markMatchesForRedactionSchema,
   // THE SECOND ASSET-BEARING KIND, and `.omit` for `placeImage`'s reason: two
   // hand-kept shapes for one command would be a second opinion about what that
   // command is, and the derivation runs in the direction 4c allows — a field

@@ -1400,6 +1400,31 @@ const declarations = {
     // wrong produces a document that looks redacted and is not.
     purpose: 'removal',
   },
+  markMatchesForRedaction: {
+    kind: 'markMatchesForRedaction',
+    // §3's matrix names MuPDF for annotations and for redaction, and this
+    // command creates annotations. No B4 on the routing.
+    writer: 'mupdf',
+    // TERMINAL, and for `addAnnotation`'s reason at a different scale: an
+    // inverse would have to name every mark this created, in a walk whose
+    // indices the creation itself moved. `addAnnotation` inverts because it
+    // adds exactly one and knows where; this adds as many as the document has
+    // matches.
+    invertible: false,
+    undo: 'checkpoint',
+    // Two runs of the same query over the same document mark the same quads:
+    // MuPDF's search is deterministic and the marks carry no date.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    // ORDINARY. It ADDS objects; nothing is removed until the burn-in, which
+    // is the command on the removal row. Declaring this one 'removal' would
+    // garbage-collect on every save after a search that removed nothing.
+    purpose: 'ordinary',
+  },
   createFormField: {
     kind: 'createFormField',
     // `docs/ARCHITECTURE.md`:388 names the writer and the reason in one line:

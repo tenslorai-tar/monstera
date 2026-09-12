@@ -163,6 +163,8 @@ export {
   type PdfPermission,
   setDocumentProtectionSchema,
   applyRedactionsSchema,
+  markMatchesForRedactionSchema,
+  MAX_REDACT_MATCHES_PER_PAGE,
   PDF_REDACT_COVERS,
   PDF_REDACT_IMAGES,
   type PdfRedactCover,

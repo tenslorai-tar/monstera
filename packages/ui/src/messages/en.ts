@@ -669,6 +669,17 @@ export const APPLY_REDACTIONS_IMAGES_PIXELS = messageKey('dialog.apply-redaction
 export const APPLY_REDACTIONS_IMAGES_REMOVE = messageKey('dialog.apply-redactions.images-remove');
 export const APPLY_REDACTIONS_APPLY = messageKey('dialog.apply-redactions.apply');
 
+export const REDACT_MATCHES_COMMAND_TITLE = messageKey('command.redact-matches.title');
+export const REDACT_MATCHES_TITLE = messageKey('dialog.redact-matches.title');
+export const REDACT_MATCHES_LABEL = messageKey('dialog.redact-matches.label');
+export const REDACT_MATCHES_SCOPE = messageKey('dialog.redact-matches.scope');
+export const REDACT_MATCHES_SCOPE_ALL = messageKey('dialog.redact-matches.scope-all');
+export const REDACT_MATCHES_SCOPE_PAGE = messageKey('dialog.redact-matches.scope-page');
+export const REDACT_MATCHES_EXPLAINS = messageKey('dialog.redact-matches.explains');
+export const REDACT_MATCHES_EMPTY = messageKey('dialog.redact-matches.empty');
+export const REDACT_MATCHES_TOO_LONG = messageKey('dialog.redact-matches.too-long');
+export const REDACT_MATCHES_APPLY = messageKey('dialog.redact-matches.apply');
+
 /**
  * A long command's own name, as the status bar announces it while it runs.
  *
@@ -1551,6 +1562,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPLY_REDACTIONS_IMAGES_PIXELS]: 'Blank only the covered part',
   [APPLY_REDACTIONS_IMAGES_REMOVE]: 'Remove the whole image',
   [APPLY_REDACTIONS_APPLY]: 'Apply redactions',
+
+  [REDACT_MATCHES_COMMAND_TITLE]: 'Mark matches for redaction',
+  [REDACT_MATCHES_TITLE]: 'Mark matches for redaction',
+  [REDACT_MATCHES_LABEL]: 'Find',
+  [REDACT_MATCHES_SCOPE]: 'Search',
+  [REDACT_MATCHES_SCOPE_ALL]: 'Every page',
+  [REDACT_MATCHES_SCOPE_PAGE]: 'Page {page}',
+  [REDACT_MATCHES_EXPLAINS]:
+    'Every match is marked. Nothing is removed until you choose Apply redactions, so you can check the marks and delete any you did not mean. The search ignores capitalisation.',
+  [REDACT_MATCHES_EMPTY]: 'Type the text to mark.',
+  [REDACT_MATCHES_TOO_LONG]: 'That is longer than this search will carry.',
+  [REDACT_MATCHES_APPLY]: 'Mark matches',
 
   [GROUP_MARKS]: 'Marks',
   [GROUP_INSERT]: 'Insert',

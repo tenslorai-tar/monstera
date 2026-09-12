@@ -82,8 +82,11 @@ import {
 } from './documentProtection.js';
 import {
   applyApplyRedactions,
+  applyMarkMatchesForRedaction,
   captureApplyRedactions,
+  captureMarkMatchesForRedaction,
   invertApplyRedactions,
+  invertMarkMatchesForRedaction,
 } from './pageRedact.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
@@ -417,6 +420,12 @@ const declared = {
     apply: applyApplyRedactions,
     capture: captureApplyRedactions,
     invert: invertApplyRedactions,
+  },
+  markMatchesForRedaction: {
+    ...declaredCommands.markMatchesForRedaction,
+    apply: applyMarkMatchesForRedaction,
+    capture: captureMarkMatchesForRedaction,
+    invert: invertMarkMatchesForRedaction,
   },
   importFormData: {
     ...declaredCommands.importFormData,

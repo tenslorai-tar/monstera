@@ -892,6 +892,71 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Find-and-redact is two commands, and a cross-module claim was true on one side only
+
+D7's *find-and-redact by search* row, built as **mark by search** plus the
+burn-in that already exists.
+
+### Two steps, deliberately
+
+*Find and redact* in one irreversible move removes content on a guess: the thing
+a person cannot check beforehand is what else matched the term. So the command
+marks — `/Redact` annotations, visible, movable, erasable — and `applyRedactions`
+is what removes anything, behind its own confirm. It is also where *mixed in one
+pass* becomes real, because marks from a search and marks somebody drew are the
+same annotation and one burn-in takes both.
+
+### The geometry had to come from MuPDF's own search, and that is not a second opinion
+
+`textSearch.ts`'s header records that it deliberately does not call MuPDF's
+`search`, and gives two reasons: the application's search spans line breaks, and
+it consumes the one structure export and extraction also consume. It also
+records that **the two answer different questions** — *where in this document's
+text*, as a line and an offset, against *where on this page*, as quads.
+
+This row needs the second one. The substrate reports no per-character geometry,
+so a mark built from a line and an offset covers the whole **line** — a search
+for a name would redact the sentence around it. Measured 2026-09-12:
+`page.search` answers a hit whose box is x 46.0–91.5 inside a line whose box is
+x 20 and 333 wide.
+
+**A hit is a list of quads**, because a match that wraps is two boxes on two
+lines. Each quad gets its own mark; marking their union would cover everything
+between them, which on a wrap is the remainder of both lines.
+
+### Two refusals rather than two defaults
+
+**A capped search is refused, not truncated.** `search(needle, max_hits)`
+answers up to the cap and says nothing about whether it stopped, so a complete
+result and a truncated one are the same value — and *some matches were not
+marked* is the failure this feature exists to prevent. The page is refused with
+nothing marked.
+
+**There is no *match case* control.** MuPDF's page search is case-insensitive
+and its binding takes no option: measured, a needle and its upper-cased form
+answer the same 24 hits. A control for it would render and do nothing, and the
+dialog says the search ignores capitalisation instead.
+
+### The finding: a cross-module relationship that was true from one side
+
+`MAX_FIND_TEXT`'s comment said *`MAX_QUERY_LENGTH` is **derived from this**, in
+`channels.ts`* — and `MAX_QUERY_LENGTH`'s own comment has said since 2026-09-10
+that it is **a literal again**, with the reason: a query is a read's parameter
+and a find string is a command's, and the two can correctly differ.
+
+Both halves were in the repository and only one was true. Nothing could catch
+it: each comment is correct about its own constant and wrong only about the
+other, and the citation resolves. It is NNN-4's shape — a document falsified by
+a commit that never opened it — inside one package, found because this row
+needed the bound and went to read where it came from.
+
+Corrected in the stale half. Three payloads take `MAX_FIND_TEXT` now, and the
+relationship between them is real rather than coincidental: a find string, a
+replacement, and a redaction query are all a **command's** string and all three
+rewrite a document.
+
+---
+
 ## 2026-09-12 — True redaction, and a row whose name asked for something the engine does not have
 
 D7's *true redaction* row is done, and D3 row 131's trigger — the mark that
