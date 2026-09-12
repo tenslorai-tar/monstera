@@ -680,6 +680,16 @@ export const REDACT_MATCHES_EMPTY = messageKey('dialog.redact-matches.empty');
 export const REDACT_MATCHES_TOO_LONG = messageKey('dialog.redact-matches.too-long');
 export const REDACT_MATCHES_APPLY = messageKey('dialog.redact-matches.apply');
 
+export const SANITIZE_DOCUMENT_COMMAND_TITLE = messageKey('command.sanitize-document.title');
+export const SANITIZE_DOCUMENT_TITLE = messageKey('dialog.sanitize-document.title');
+export const SANITIZE_DOCUMENT_EXPLAINS = messageKey('dialog.sanitize-document.explains');
+export const SANITIZE_DOCUMENT_EMPTY = messageKey('dialog.sanitize-document.empty');
+export const SANITIZE_DOCUMENT_APPLY = messageKey('dialog.sanitize-document.apply');
+export const SANITIZE_PART_JAVASCRIPT = messageKey('sanitize.javascript');
+export const SANITIZE_PART_EMBEDDED_FILES = messageKey('sanitize.embedded-files');
+export const SANITIZE_PART_EXTERNAL_ACTIONS = messageKey('sanitize.external-actions');
+export const SANITIZE_PART_FLATTEN = messageKey('sanitize.flatten');
+
 /**
  * A long command's own name, as the status bar announces it while it runs.
  *
@@ -1574,6 +1584,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REDACT_MATCHES_EMPTY]: 'Type the text to mark.',
   [REDACT_MATCHES_TOO_LONG]: 'That is longer than this search will carry.',
   [REDACT_MATCHES_APPLY]: 'Mark matches',
+
+  [SANITIZE_DOCUMENT_COMMAND_TITLE]: 'Sanitize document',
+  [SANITIZE_DOCUMENT_TITLE]: 'Sanitize document',
+  [SANITIZE_DOCUMENT_EXPLAINS]: 'Remove from this document:',
+  [SANITIZE_DOCUMENT_EMPTY]: 'Choose at least one thing to remove.',
+  [SANITIZE_DOCUMENT_APPLY]: 'Sanitize',
+  [SANITIZE_PART_JAVASCRIPT]: 'Embedded JavaScript and automatic actions',
+  [SANITIZE_PART_EMBEDDED_FILES]: 'Attached files',
+  [SANITIZE_PART_EXTERNAL_ACTIONS]: 'Actions that submit or fetch data',
+  [SANITIZE_PART_FLATTEN]: 'Form fields and comments, flattened into the page',
 
   [GROUP_MARKS]: 'Marks',
   [GROUP_INSERT]: 'Insert',

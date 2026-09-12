@@ -88,6 +88,11 @@ import {
   invertApplyRedactions,
   invertMarkMatchesForRedaction,
 } from './pageRedact.js';
+import {
+  applySanitizeDocument,
+  captureSanitizeDocument,
+  invertSanitizeDocument,
+} from './documentSanitize.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
@@ -426,6 +431,12 @@ const declared = {
     apply: applyMarkMatchesForRedaction,
     capture: captureMarkMatchesForRedaction,
     invert: invertMarkMatchesForRedaction,
+  },
+  sanitizeDocument: {
+    ...declaredCommands.sanitizeDocument,
+    apply: applySanitizeDocument,
+    capture: captureSanitizeDocument,
+    invert: invertSanitizeDocument,
   },
   importFormData: {
     ...declaredCommands.importFormData,

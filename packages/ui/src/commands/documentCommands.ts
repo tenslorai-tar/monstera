@@ -19,6 +19,8 @@ import { APPLY_REDACTIONS_DIALOG_ID } from '../dialogs/applyRedactions.js';
 import type { ApplyRedactionsAnswer } from '../dialogs/applyRedactions.js';
 import { REDACT_MATCHES_DIALOG_ID } from '../dialogs/redactMatches.js';
 import type { RedactMatchesAnswer } from '../dialogs/redactMatches.js';
+import { SANITIZE_DOCUMENT_DIALOG_ID } from '../dialogs/sanitizeDocument.js';
+import type { SanitizeDocumentAnswer } from '../dialogs/sanitizeDocument.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -75,6 +77,7 @@ import {
   PROTECT_DOCUMENT_COMMAND_TITLE,
   APPLY_REDACTIONS_COMMAND_TITLE,
   REDACT_MATCHES_COMMAND_TITLE,
+  SANITIZE_DOCUMENT_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -2144,6 +2147,34 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
               };
 
       await applyDocumentCommand(deps, context.docId, command);
+    },
+  };
+}
+
+/**
+ * PROTECT › Document — strip active content, and optionally flatten.
+ *
+ * Invariant 24 says this build runs none of what this removes. The command is
+ * about the document a person hands to **somebody else**, whose reader makes
+ * its own choices.
+ */
+export function sanitizeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.sanitize',
+    title: SANITIZE_DOCUMENT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_ENCRYPTION, order: 20 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = (await deps.ask(SANITIZE_DOCUMENT_DIALOG_ID, {})) as
+        | SanitizeDocumentAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'sanitizeDocument',
+        parts: [...answer.parts],
+      });
     },
   };
 }

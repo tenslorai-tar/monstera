@@ -136,6 +136,12 @@ export {
   invertMarkMatchesForRedaction,
 } from './pageRedact.js';
 export {
+  activeContentIn,
+  applySanitizeDocument,
+  captureSanitizeDocument,
+  invertSanitizeDocument,
+} from './documentSanitize.js';
+export {
   applyImportFormData,
   captureImportFormData,
   type ExportedField,

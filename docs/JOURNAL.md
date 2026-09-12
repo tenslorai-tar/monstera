@@ -892,6 +892,62 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Sanitize, and the reader that hides exactly the annotations it had to visit
+
+D7's *sanitize / flatten document* row. Four parts a person picks from, because
+*sanitize* is not one thing: a person removing attachments may want their form
+still fillable.
+
+### The finding, and it was the test that produced it
+
+The first draft walked `page.getAnnotations()` to find `/A` actions to strip.
+**MuPDF filters `/Link` out of that reader.** Measured 2026-09-12: a Link
+created through `createAnnotation` is `[7 0 R]` in the saved page's `/Annots`
+and `getAnnotations()` answers **0**.
+
+A link is exactly where an `/A` action lives. So the draft would have walked
+past every object it exists to clean, removed nothing, and reported success —
+and every assertion about *no submit action survives* would have passed, because
+the reader that checked was the reader that could not see it.
+
+**The codebase already knew this reader filters something**: `pageAnnotations.ts`
+records that MuPDF filters widgets out of `getAnnotations()`, and the whole
+annotation-identity scheme is built around that. Links are the second class, and
+knowing about the first did not transfer. The walk is `/Annots` itself now.
+
+What caught it was the fixture refusing to load: `setRect` on a Link answers
+*"Link annotations have no Rect property"* — the same shape as the Redact's
+refusal of `setBorderWidth`, recorded in D3 row 131. Putting the key on the
+object directly worked, and the annotation then did not appear in the reader,
+which is what sent me to `/Annots`.
+
+### Read before delete, and the case that makes it matter
+
+`/URI` and `/GoTo` are **content**: a link a person clicks is part of the
+document. A sanitiser that deleted every `/A` would answer *no external actions
+remain* exactly as correctly and take every link in the file with it.
+
+So the strip reads the action's `/S` first, against a set of four —
+`/JavaScript`, `/Launch`, `/ImportData`, `/SubmitForm` — and the load-bearing
+case plants a submit action and a plain link side by side and asserts the second
+survives. `/AA` is the one key that goes whole, because every entry in an
+additional-actions dictionary is a trigger and none of them is content.
+
+### Flattening leaves links, and the case says so rather than asserting zero
+
+`bake(true, true)` writes an annotation's **appearance** into the page content
+and removes it; a `/Link` has no appearance, so baking leaves it — measured. The
+first version of that case asserted zero annotations afterwards, which is a
+claim about something flattening cannot do. It asserts two now, with the drawn
+one gone, and the fixture gained a `Square` so there is something bakeable in it
+at all.
+
+That is the same mistake as the roster's shared assertion one entry along:
+an expectation written from what the command's *name* suggests rather than from
+what it does.
+
+---
+
 ## 2026-09-12 — Find-and-redact is two commands, and a cross-module claim was true on one side only
 
 D7's *find-and-redact by search* row, built as **mark by search** plus the

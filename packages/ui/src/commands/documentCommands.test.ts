@@ -35,6 +35,7 @@ import {
   protectDocumentCommand,
   applyRedactionsCommand,
   redactMatchesCommand,
+  sanitizeDocumentCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -2422,6 +2423,43 @@ describe('protectDocumentCommand', () => {
       const { client, sent } = recordingClient();
 
       await applyRedactionsCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([]);
+    });
+  });
+
+  describe('sanitizeDocumentCommand', () => {
+    it('dispatches EXACTLY the parts the dialog answered', async () => {
+      // THE LIST IS THE PAYLOAD'S WHOLE CONTENT, and a command that sent all
+      // four whatever the dialog said would dispatch exactly as correctly and
+      // flatten a form somebody meant to keep fillable.
+      const { client, sent } = recordingClient();
+
+      await sanitizeDocumentCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve({ parts: ['javascript', 'embedded-files'] }),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.execute',
+          params: {
+            docId: DOC,
+            command: { kind: 'sanitizeDocument', parts: ['javascript', 'embedded-files'] },
+          },
+        },
+      ]);
+    });
+
+    it('CONTROL: a DISMISSED dialog dispatches nothing', async () => {
+      const { client, sent } = recordingClient();
+
+      await sanitizeDocumentCommand({
         client,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),

@@ -1425,6 +1425,28 @@ const declarations = {
     // garbage-collect on every save after a search that removed nothing.
     purpose: 'ordinary',
   },
+  sanitizeDocument: {
+    kind: 'sanitizeDocument',
+    // §3's matrix names MuPDF for *optimize* and for the object model this
+    // walks. No B4 on the routing.
+    writer: 'mupdf',
+    // TERMINAL, and `flattenFormFields`' reason one step wider: the removals
+    // are catalogue subtrees whose size is the document's, and flattening
+    // rewrites the content stream of every page an annotation sat on.
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    // THE THIRD COMMAND ON §4's REMOVAL ROW, and the row names sanitize by
+    // name. Deleting a catalogue key unlinks the object and a plain save writes
+    // it back out — so without this the JavaScript is still in the file and a
+    // scan for it would find it.
+    purpose: 'removal',
+  },
   createFormField: {
     kind: 'createFormField',
     // `docs/ARCHITECTURE.md`:388 names the writer and the reason in one line:

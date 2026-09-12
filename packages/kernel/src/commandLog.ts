@@ -532,6 +532,14 @@ export interface CommandPrior {
   readonly markMatchesForRedaction: never;
 
   /**
+   * A sanitise has no prior state, for `flattenFormFields`' reason one step
+   * wider: the removals are catalogue subtrees whose size is the document's,
+   * and flattening rewrites the content stream of every page an annotation sat
+   * on.
+   */
+  readonly sanitizeDocument: never;
+
+  /**
    * A create has no prior state, and this is the one entry here where that is
    * **not** because the prior state is too large.
    *

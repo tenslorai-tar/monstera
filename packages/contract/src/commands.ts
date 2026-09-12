@@ -2531,6 +2531,49 @@ export const flattenFormFieldsSchema = z.object({
 });
 
 /**
+ * What a sanitise takes out, by the name a person reads.
+ *
+ * **Every member is something invariant 24 already says this build never runs**
+ * — no embedded JavaScript, no automatic action, no external fetch, no embedded
+ * file to disk. That invariant is about what *this* application does with a
+ * document it opens; this command is about the document a person hands to
+ * somebody else, whose reader makes its own choices.
+ *
+ * `flatten` is here rather than in a command of its own because it is the same
+ * sentence: *make this document inert*. A form that can still be filled in and
+ * an annotation that can still be edited are the two remaining ways a reader
+ * changes what the page says.
+ */
+export const PDF_SANITIZE_PARTS = [
+  'javascript',
+  'embedded-files',
+  'external-actions',
+  'flatten',
+] as const;
+
+/** One of {@link PDF_SANITIZE_PARTS}. */
+export type PdfSanitizePart = (typeof PDF_SANITIZE_PARTS)[number];
+
+/**
+ * Strips active content from a document, and optionally flattens it.
+ *
+ * ## A LIST, because *sanitize* is not one thing
+ *
+ * A person removing embedded files may want to keep their form fillable, and a
+ * person flattening a form for archive may not care about JavaScript. A boolean
+ * named `sanitize` would make one choice for all four and put the reason in a
+ * tooltip.
+ *
+ * **Empty is refused by the schema**, because a sanitise that removes nothing
+ * is a command that reports success for doing nothing — and it would still
+ * take a checkpoint and bump the version.
+ */
+export const sanitizeDocumentSchema = z.object({
+  kind: z.literal('sanitizeDocument'),
+  parts: z.array(z.enum(PDF_SANITIZE_PARTS)).min(1).max(PDF_SANITIZE_PARTS.length),
+});
+
+/**
  * The longest find or replacement string this boundary will carry.
  *
  * Not an L11 bound — both are the *renderer's* strings and neither scales with
@@ -3480,6 +3523,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   setDocumentProtectionSchema,
   applyRedactionsSchema,
   markMatchesForRedactionSchema,
+  sanitizeDocumentSchema,
   createFormFieldSchema,
   importFormDataSchema,
   replaceTextObjectSchema,
@@ -3618,6 +3662,12 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // own page search, which is the only reader that answers *where on this page*
   // with quads rather than a line and an offset.
   markMatchesForRedactionSchema,
+  // RENDERABLE, and the payload is four words at most — the same size for any
+  // document. What it cannot express is WHICH OBJECTS: the catalogue entries,
+  // the page actions and the annotation actions that carry each part are the
+  // format's, and a renderer naming them would be a second opinion about what
+  // JavaScript lives in a PDF.
+  sanitizeDocumentSchema,
   // RENDERABLE, and the test it passes is the one `addAnnotation` passes: the
   // intent is a page index, a rectangle in the page's own space, a name and a
   // kind — bounded by `MAX_FIELD_NAME` and `MAX_FIELD_OPTIONS`, so the payload

@@ -48,7 +48,11 @@ import { mupdfWriter, withDocument } from './mupdfWriter.js';
  * still passes. This list is the independent claim that has to be edited
  * separately, so removing a command from the axis is a visible decision.
  */
-const EXPECTED: readonly CommandKind[] = ['flattenFormFields', 'applyRedactions'];
+const EXPECTED: readonly CommandKind[] = [
+  'flattenFormFields',
+  'applyRedactions',
+  'sanitizeDocument',
+];
 
 /** The kinds the declaration table actually puts on the removal axis. */
 const REMOVALS = (Object.keys(declaredCommands) as CommandKind[]).filter(
@@ -179,6 +183,43 @@ async function marked(): Promise<Uint8Array> {
  * cross-reference table, and a walk from the catalog cannot see the unlinked
  * object that is the whole question.
  */
+/** A one-page document carrying a JavaScript open-action. */
+async function scripted(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  document.addPage([400, 600]).drawText('Ordinary text', { font, size: 18, x: 20, y: 540 });
+  const plain = await document.save();
+
+  const session = await mupdfWriter.open(plain);
+  try {
+    await withDocument(session, (opened) => {
+      const action = opened.addObject(opened.newDictionary());
+      action.put('S', opened.newName('JavaScript'));
+      action.put('JS', 'app.alert("hello");');
+      opened.getTrailer().get('Root').put('OpenAction', action);
+    });
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+/**
+ * `/JavaScript` action dictionaries still IN the bytes.
+ *
+ * {@link residue}'s reason: unlinking the catalogue key leaves the object, and
+ * only the cross-reference table can see it.
+ */
+async function javascriptActions(bytes: Uint8Array): Promise<number> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  let found = 0;
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict)) continue;
+    if (object.lookupMaybe(PDFName.of('S'), PDFName) === PDFName.of('JavaScript')) found += 1;
+  }
+  return found;
+}
+
 async function redactAnnotations(bytes: Uint8Array): Promise<number> {
   const document = await PDFDocument.load(bytes, { updateMetadata: false });
   let found = 0;
@@ -239,6 +280,12 @@ const REMOVAL_CASES: Readonly<Record<string, RemovalCase>> = {
     fixture: marked,
     payload: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels' },
     residue: redactAnnotations,
+    before: 1,
+  },
+  sanitizeDocument: {
+    fixture: scripted,
+    payload: { kind: 'sanitizeDocument', parts: ['javascript'] },
+    residue: javascriptActions,
     before: 1,
   },
 };
