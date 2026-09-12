@@ -2590,6 +2590,25 @@ export const signDocumentSchema = z.object({
   location: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
   /** `/ContactInfo` — how to reach the signer. */
   contactInfo: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+  /**
+   * What a reader may still change, for a CERTIFYING signature.
+   *
+   * Absent means an ordinary approval signature, which says *I signed this*
+   * and permits everything a normal document permits. Present writes a
+   * `/DocMDP` transform, which says *I am the author and this is what may
+   * change* — ISO 32000-2 table 257's `/P`:
+   *
+   * | | |
+   * |---|---|
+   * | `no-changes` | 1 — any change invalidates the certification |
+   * | `form-fill` | 2 — filling in forms and signing is permitted |
+   * | `form-fill-and-annotate` | 3 — that, plus comments |
+   *
+   * **The words rather than the numbers**, for `/P`'s own reason one row up:
+   * the mapping is the format's and the kernel owns it, and a renderer sending
+   * `2` would be sending a number whose meaning it had to know.
+   */
+  certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
 });
 
 /**

@@ -892,6 +892,49 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Certification is an axis, and a flake with a clock in it
+
+D7's certify row, built as a field on the signing command rather than a second
+command: certifying **is** signing with a different claim attached, and a person
+chooses a certificate and a passphrase either way.
+
+### Two halves, written together
+
+A certifying signature is a `/DocMDP` transform on the signature's own
+`/Reference` **and** a `/Perms /DocMDP` entry in the catalogue pointing back at
+it. A reader honours neither alone — `/Reference` without `/Perms` is a
+transform nothing points at, and `/Perms` without `/Reference` names a signature
+that makes no claim — so either half alone produces a document that opens, signs
+and verifies and certifies nothing.
+
+That is the control case: an ordinary signature writes **neither**, and without
+it a placeholder that always certified would pass the positive case while
+silently locking every approval signature in the product.
+
+A third case asserts the three levels write three **different** `/P` values,
+because a table answering one number for every word passes the first two.
+
+### The flake, and it had already passed several times
+
+The gate case parses the PKCS#7 out of `/Contents`, which is a fixed-size hole
+padded with zero bytes. It trimmed them with `replace(/0+$/u, '')` — **on the
+hex string**, which removes zero *characters* rather than zero *bytes*.
+
+The P12 is minted per run, so the signature's length varies. Whenever its last
+byte happened to end in a `0` nibble, the trim ate half a byte and left an
+odd-length hex string, and node-forge answered *Too few bytes to read ASN.1
+value*. It passed on the run that introduced it and on several after, and failed
+on the run that added three unrelated cases.
+
+Two things worth keeping. **A per-run credential is a clock**: it makes the
+input different every time, which is what a fixture normally is not, and it
+turns a latent off-by-one into a flake rather than a failure. And **the shipped
+reader had the same trim and got it right** — `stripPadding` walks bytes —
+because it was written against a `Uint8Array` where the unit is not in doubt.
+The test was written against hex, where it is.
+
+---
+
 ## 2026-09-12 — Verification, and the control that is the whole row
 
 D7's signature-verification row, built on the signing row an hour old.

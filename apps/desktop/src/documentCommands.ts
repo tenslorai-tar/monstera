@@ -2606,6 +2606,7 @@ export class DocumentCommands {
       readonly reason?: string;
       readonly location?: string;
       readonly contactInfo?: string;
+      readonly certify?: 'no-changes' | 'form-fill' | 'form-fill-and-annotate';
     },
   ): Promise<SignOutcome> {
     if (this.#documents.nameOf(docId) === undefined) {
@@ -2627,6 +2628,7 @@ export class DocumentCommands {
         ...(options.reason === undefined ? {} : { reason: options.reason }),
         ...(options.location === undefined ? {} : { location: options.location }),
         ...(options.contactInfo === undefined ? {} : { contactInfo: options.contactInfo }),
+        ...(options.certify === undefined ? {} : { certify: options.certify }),
       });
       return { kind: 'signed', ...applied };
     } catch (error) {

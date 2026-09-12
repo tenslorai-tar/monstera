@@ -49,6 +49,20 @@ const BYTE_RANGE_SLOT = '*'.repeat(10);
  */
 const SIGNATURE_BYTES = 8192;
 
+/**
+ * `/DocMDP`'s `/P`, by the word the payload carries.
+ *
+ * ISO 32000-2 table 257. Keyed on the contract's own enum, so a level added
+ * there without a number here is a compile error rather than a certification
+ * that silently permits everything.
+ */
+const DOC_MDP_LEVELS: Readonly<Record<'no-changes' | 'form-fill' | 'form-fill-and-annotate', number>> =
+  {
+    'no-changes': 1,
+    'form-fill': 2,
+    'form-fill-and-annotate': 3,
+  };
+
 /** `/Filter` and `/SubFilter`, the two names a reader dispatches on. */
 const ADOBE_PPKLITE = 'Adobe.PPKLite';
 const DETACHED_PKCS7 = 'adbe.pkcs7.detached';
@@ -102,7 +116,36 @@ function placeSignature(
   if (command.contactInfo !== undefined) {
     signature.set(PDFName.of('ContactInfo'), PDFString.of(command.contactInfo));
   }
+  // CERTIFICATION, which is a different claim from a signature.
+  //
+  // An approval signature says *I signed this*. A certifying one says *I am
+  // the author, and this is what may change* — written as a `/DocMDP`
+  // transform on the signature's own `/Reference`, plus a `/Perms /DocMDP`
+  // entry in the catalogue pointing back at it. ISO 32000-2: there may be at
+  // most ONE, and it must be the first signature in the document.
+  //
+  // The two halves are written together because a reader honours neither
+  // alone: `/Reference` without `/Perms` is a transform nothing points at, and
+  // `/Perms` without `/Reference` names a signature that makes no claim.
+  if (command.certify !== undefined) {
+    const reference = context.obj({
+      Type: PDFName.of('SigRef'),
+      TransformMethod: PDFName.of('DocMDP'),
+      TransformParams: context.obj({
+        Type: PDFName.of('TransformParams'),
+        V: PDFName.of('1.2'),
+        P: PDFNumber.of(DOC_MDP_LEVELS[command.certify]),
+      }),
+    });
+    signature.set(PDFName.of('Reference'), context.obj([context.register(reference)]));
+  }
   const signatureRef = context.register(signature);
+  if (command.certify !== undefined) {
+    document.catalog.set(
+      PDFName.of('Perms'),
+      context.obj({ DocMDP: signatureRef }),
+    );
+  }
 
   const widget = context.obj({
     Type: PDFName.of('Annot'),

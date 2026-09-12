@@ -1676,6 +1676,15 @@ export const channels = {
       reason: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
       location: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
       contactInfo: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+      /**
+       * What a reader may still change, for a CERTIFYING signature.
+       *
+       * Absent is an ordinary approval signature. Present writes a `/DocMDP`
+       * transform, which is a claim about authorship rather than about having
+       * signed — and the words rather than the numbers, because the mapping to
+       * `/P` is the format's and the kernel owns it.
+       */
+      certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({

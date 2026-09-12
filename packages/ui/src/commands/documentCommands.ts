@@ -2227,6 +2227,7 @@ export function signDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         ...(answer.reason === undefined ? {} : { reason: answer.reason }),
         ...(answer.location === undefined ? {} : { location: answer.location }),
         ...(answer.contactInfo === undefined ? {} : { contactInfo: answer.contactInfo }),
+        ...(answer.certify === undefined ? {} : { certify: answer.certify }),
       });
       if (!signed.ok) {
         reportProblem(deps, signed.error);

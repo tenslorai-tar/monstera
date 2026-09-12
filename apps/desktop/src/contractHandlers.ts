@@ -527,6 +527,7 @@ function signHandler(commands: DocumentCommands): ContractHandlers['document.sig
         ...(params.reason === undefined ? {} : { reason: params.reason }),
         ...(params.location === undefined ? {} : { location: params.location }),
         ...(params.contactInfo === undefined ? {} : { contactInfo: params.contactInfo }),
+        ...(params.certify === undefined ? {} : { certify: params.certify }),
       });
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);

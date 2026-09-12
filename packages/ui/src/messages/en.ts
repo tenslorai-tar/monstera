@@ -703,6 +703,11 @@ export const SIGN_DOCUMENT_LOCATION = messageKey('dialog.sign-document.location'
 export const SIGN_DOCUMENT_CONTACT = messageKey('dialog.sign-document.contact');
 export const SIGN_DOCUMENT_TOO_LONG = messageKey('dialog.sign-document.too-long');
 export const SIGN_DOCUMENT_APPLY = messageKey('dialog.sign-document.apply');
+export const SIGN_DOCUMENT_CERTIFY = messageKey('dialog.sign-document.certify');
+export const SIGN_DOCUMENT_CERTIFY_NONE = messageKey('dialog.sign-document.certify-none');
+export const SIGN_DOCUMENT_CERTIFY_LOCKED = messageKey('dialog.sign-document.certify-locked');
+export const SIGN_DOCUMENT_CERTIFY_FORMS = messageKey('dialog.sign-document.certify-forms');
+export const SIGN_DOCUMENT_CERTIFY_COMMENTS = messageKey('dialog.sign-document.certify-comments');
 export const SIGN_PROBLEM_TITLE = messageKey('dialog.sign-problem.title');
 export const SIGN_PROBLEM_WRONG_PASSPHRASE = messageKey('dialog.sign-problem.wrong-passphrase');
 export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadable');
@@ -1634,6 +1639,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_CONTACT]: 'Contact (optional)',
   [SIGN_DOCUMENT_TOO_LONG]: 'One of these is longer than the document can carry.',
   [SIGN_DOCUMENT_APPLY]: 'Choose certificate and sign',
+  [SIGN_DOCUMENT_CERTIFY]: 'This signature says',
+  [SIGN_DOCUMENT_CERTIFY_NONE]: 'I approve this document',
+  [SIGN_DOCUMENT_CERTIFY_LOCKED]: 'I am the author — nothing may be changed',
+  [SIGN_DOCUMENT_CERTIFY_FORMS]: 'I am the author — forms may be filled in',
+  [SIGN_DOCUMENT_CERTIFY_COMMENTS]:
+    'I am the author — forms may be filled in and comments added',
   [SIGN_PROBLEM_TITLE]: 'The document was not signed',
   [SIGN_PROBLEM_WRONG_PASSPHRASE]:
     'That password did not open the certificate. Nothing has been changed.',

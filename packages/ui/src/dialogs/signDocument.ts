@@ -42,6 +42,15 @@ export const SIGN_DOCUMENT_RESULT = z
     reason: z.string().trim().min(1).max(MAX_SIGNATURE_FIELD).optional(),
     location: z.string().trim().min(1).max(MAX_SIGNATURE_FIELD).optional(),
     contactInfo: z.string().trim().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+    /**
+     * What a reader may still change, for a certifying signature.
+     *
+     * **In this dialog rather than a second one**, because certifying IS
+     * signing with a different claim attached — a person chooses a certificate
+     * and a passphrase either way, and two screens would ask them to know
+     * which of two acts they are performing before they have seen either.
+     */
+    certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
   })
   .strict();
 

@@ -119,6 +119,54 @@ describe('the placeholder this build writes', () => {
   });
 });
 
+describe('a CERTIFYING signature', () => {
+  it('writes both halves — the /DocMDP transform AND the catalogue’s /Perms', async () => {
+    // BOTH, because a reader honours neither alone: `/Reference` without
+    // `/Perms` is a transform nothing points at, and `/Perms` without
+    // `/Reference` names a signature that makes no claim. Either alone would
+    // produce a document that opens, signs and verifies, and certifies nothing.
+    const placed = await withSignaturePlaceholder(unsigned, {
+      ...command,
+      bytes: certificate,
+      certify: 'form-fill',
+    });
+    const text = Buffer.from(placed).toString('latin1');
+    expect(text).toContain('/TransformMethod /DocMDP');
+    expect(text).toContain('/Perms');
+    // `/P 2` — ISO 32000-2 table 257's *filling in forms and signing is
+    // permitted*. The number is asserted rather than the word, because the
+    // number is what a reader acts on and the mapping is this build's.
+    expect(text).toMatch(/\/P 2\b/u);
+  });
+
+  it('CONTROL: an ordinary signature writes NEITHER', async () => {
+    // Without this, a placeholder that always certified would pass the case
+    // above — and every approval signature in the product would silently claim
+    // authorship and lock the document.
+    const placed = await withSignaturePlaceholder(unsigned, { ...command, bytes: certificate });
+    const text = Buffer.from(placed).toString('latin1');
+    expect(text).not.toContain('DocMDP');
+    expect(text).not.toContain('/Perms');
+  });
+
+  it('the three levels write three different /P values', async () => {
+    // The mapping is the whole of what this build contributes here, and a table
+    // that answered one number for every word would pass the case above.
+    const levels = ['no-changes', 'form-fill', 'form-fill-and-annotate'] as const;
+    const written = await Promise.all(
+      levels.map(async (certify) => {
+        const placed = await withSignaturePlaceholder(unsigned, {
+          ...command,
+          bytes: certificate,
+          certify,
+        });
+        return /\/P (\d)\b/u.exec(Buffer.from(placed).toString('latin1'))?.[1];
+      }),
+    );
+    expect(written).toStrictEqual(['1', '2', '3']);
+  });
+});
+
 describe('applySignDocument', () => {
   it('signs, and the signed file is EXACTLY as long as its placeholder', async () => {
     // The property the whole scheme rests on, and the apply asserts it too —
@@ -158,7 +206,16 @@ describe('applySignDocument', () => {
     const hole = /\/Contents <([0-9A-Fa-f]+)>/u.exec(text);
     expect(hole, 'the signed file carries a PKCS#7 blob').not.toBeNull();
     if (hole === null) return;
-    const der = Buffer.from((hole[1] ?? '').replace(/0+$/u, ''), 'hex').toString('latin1');
+    // THE PADDING IS TRIMMED BY BYTE, not by hex character — and the first
+    // draft trimmed characters, which is a flake with a clock in it. The P12
+    // is minted per run, so the signature's length varies; whenever its last
+    // byte happened to end in a `0` nibble, `replace(/0+$/)` ate half a byte
+    // and left an odd-length string, and node-forge answered *Too few bytes to
+    // read ASN.1 value*. It passed for several runs before it did not.
+    const whole = Buffer.from(hole[1] ?? '', 'hex');
+    let end = whole.length;
+    while (end > 0 && whole[end - 1] === 0) end -= 1;
+    const der = whole.subarray(0, end).toString('latin1');
     const message = forge.pkcs7.messageFromAsn1(forge.asn1.fromDer(der)) as unknown as {
       rawCapture: { authenticatedAttributes: unknown[] };
     };
