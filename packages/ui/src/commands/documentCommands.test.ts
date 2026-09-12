@@ -37,6 +37,7 @@ import {
   redactMatchesCommand,
   sanitizeDocumentCommand,
   signDocumentCommand,
+  signaturesCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -2535,6 +2536,66 @@ describe('protectDocumentCommand', () => {
       }).run(CONTEXT);
 
       expect(sent).toStrictEqual([]);
+    });
+  });
+
+  describe('signaturesCommand', () => {
+    it('SHOWS what the read answered, including a signature that no longer covers', async () => {
+      // THE PANEL'S OWN CONTENT is the assertion. A command that opened the
+      // dialog with an empty list would look identical from the outside and
+      // would tell a person their tampered document is unsigned.
+      const answer = {
+        signatures: [
+          {
+            signer: 'Grace Hopper',
+            organisation: 'Tenslor Inc.',
+            reason: '',
+            location: '',
+            notBefore: '2026-01-01T00:00:00.000Z',
+            notAfter: '2027-01-01T00:00:00.000Z',
+            coversDocument: false,
+            coversWholeFile: true,
+          },
+        ],
+        unreadable: false,
+      };
+      const client = createClient(channels, () => Promise.resolve(ok(answer)));
+      const shown: { id: string; props: unknown }[] = [];
+
+      await signaturesCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          shown.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(shown).toStrictEqual([{ id: 'dialog.signatures', props: answer }]);
+    });
+
+    it('CONTROL: an unsigned document still opens the panel, with an empty list', async () => {
+      // *This document is not signed* is the answer a person asked for. A
+      // command that opened nothing would be one that appears not to have run,
+      // and this is the case that stops the one above from being *show a
+      // dialog only when there is something in it*.
+      const client = createClient(channels, () =>
+        Promise.resolve(ok({ signatures: [], unreadable: false })),
+      );
+      const shown: { id: string; props: unknown }[] = [];
+
+      await signaturesCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          shown.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(shown).toStrictEqual([
+        { id: 'dialog.signatures', props: { signatures: [], unreadable: false } },
+      ]);
     });
   });
 

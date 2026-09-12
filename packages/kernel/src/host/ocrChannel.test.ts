@@ -142,6 +142,9 @@ async function joined(
       access: () => {
         throw new Error('a recognition must not ask what a password bought');
       },
+      signatures: () => {
+        throw new Error('a recognition must not verify a signature');
+      },
       files: {
         readSnapshot: () => {
           throw new Error('a recognition must not read the snapshot directory');

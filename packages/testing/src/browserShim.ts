@@ -535,6 +535,16 @@ export interface BrowserShimOptions {
   readonly signings?: readonly SignAnswer[];
 
   /**
+   * What `document.signatures` answers.
+   *
+   * **One value rather than a queue**, unlike its two neighbours: reading the
+   * signatures is a query and answers the same thing until the document
+   * changes, so a sequence would be modelling a state machine this channel does
+   * not have.
+   */
+  readonly signatures?: ChannelResult<'document.signatures'>;
+
+  /**
    * What `document.recent` answers.
    *
    * Empty by default, because a first launch is the real state a start screen
@@ -754,6 +764,20 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * The default is `cancelled` — the outcome that changes no state and is a
      * person dismissing a picker, exactly as `document.open`'s is.
      */
+    /**
+     * The document's signatures.
+     *
+     * **An empty list and `unreadable: false`** unless a test says otherwise,
+     * which is what an ordinary document answers. A fixture here would put a
+     * signature panel in front of every case that renders one.
+     */
+    'document.signatures': ({ docId }) => {
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(
+        ok(options.signatures ?? { signatures: [], unreadable: false }),
+      );
+    },
+
     'document.sign': ({ docId }) => {
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
       return Promise.resolve(ok(queuedSignings.shift() ?? { kind: 'cancelled' as const }));

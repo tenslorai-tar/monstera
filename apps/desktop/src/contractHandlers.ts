@@ -25,6 +25,7 @@ import {
   DocumentPoisonedError,
   EngineUnavailableError,
   InvalidSearchPatternError,
+  MissingSessionError,
 } from './documentCommands.js';
 import type { HandwritingCache } from './handwritingCache.js';
 import type { RecentFiles } from './recentFiles.js';
@@ -275,6 +276,7 @@ export function createContractHandlers(deps: {
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
+    'document.signatures': signaturesHandler(deps.commands),
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
@@ -1003,6 +1005,30 @@ function layersHandler(commands: DocumentCommands): ContractHandlers['document.l
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The document's signatures. `layersHandler`'s shape, with one code more:
+ * `engine-unavailable` for a build with no host, which is what a `read`
+ * needing a session answers when there is none.
+ */
+function signaturesHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.signatures'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.signatures']>>> => {
+    try {
+      const { signatures, unreadable } = await commands.signatures(docId);
+      return ok({ signatures: signatures.map((signature) => ({ ...signature })), unreadable });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof MissingSessionError) return err({ code: 'engine-unavailable' });
       throw thrown;
     }
   };

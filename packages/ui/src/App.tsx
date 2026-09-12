@@ -30,6 +30,7 @@ import {
   redactMatchesCommand,
   sanitizeDocumentCommand,
   signDocumentCommand,
+  signaturesCommand,
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
@@ -135,6 +136,7 @@ import { REDACT_MATCHES_DIALOG } from './dialogs/redactMatches.js';
 import { SANITIZE_DOCUMENT_DIALOG } from './dialogs/sanitizeDocument.js';
 import { SIGN_DOCUMENT_DIALOG } from './dialogs/signDocument.js';
 import { SIGN_PROBLEM_DIALOG } from './dialogs/signProblem.js';
+import { SIGNATURES_DIALOG } from './dialogs/signatures.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
@@ -366,6 +368,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         SANITIZE_DOCUMENT_DIALOG,
         SIGN_DOCUMENT_DIALOG,
         SIGN_PROBLEM_DIALOG,
+        SIGNATURES_DIALOG,
         LINK_ADDRESS_DIALOG,
         LINK_PAGE_DIALOG,
         CALLOUT_DIALOG,
@@ -1360,6 +1363,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         protectDocumentCommand({ client, onApplied: applied, ask }),
         sanitizeDocumentCommand({ client, onApplied: applied, ask }),
         signDocumentCommand({ client, onApplied: applied, ask }),
+        signaturesCommand({ client, onApplied: applied, ask }),
         redactMatchesCommand({ client, onApplied: applied, ask }),
         applyRedactionsCommand({ client, onApplied: applied, ask }),
         watermarkPagesCommand({ client, onApplied: applied, ask }),

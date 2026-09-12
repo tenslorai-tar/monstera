@@ -618,6 +618,16 @@ const linkBoundsSchema = z.object({
 export const MAX_QUERY_LENGTH = 512;
 
 /**
+ * How many signatures one document may report.
+ *
+ * `ENGINE_SIGNATURES_MAX`'s twin on the renderer's side of the boundary, and a
+ * literal here for `MAX_QUERY_LENGTH`'s own reason: the two could correctly
+ * differ, because one bounds what a contained host may say and one bounds what
+ * a panel will draw.
+ */
+export const MAX_SIGNATURES = 256;
+
+/**
  * What opening a document answers, for the two channels that open one.
  *
  * Named once because `document.open` and `document.openRecent` differ in what
@@ -1573,6 +1583,56 @@ export const channels = {
    * the renderer does know: the tool drew the box on the page in view, and
    * *every page* is one click in a surface. Both are numbers.
    */
+  /**
+   * Every signature the document carries, with what each one covers.
+   *
+   * ## A READ, and the answer is BOUNDED
+   *
+   * Eight short strings per signature and at most 256 of them, so the payload
+   * is the same size for a two-page document and a two-thousand-page one —
+   * invariant L11's test, which a channel answering *the signatures* rather
+   * than *the certificates* passes by construction.
+   *
+   * ## `coversDocument` and `coversWholeFile` are TWO answers
+   *
+   * They fail differently and a surface must say which: a digest mismatch is
+   * *these bytes changed since it was signed*, and a range that stops short is
+   * *something was appended that the signature says nothing about*. A reader
+   * that folded them into one green tick would report an intact signature over
+   * half a document — which is the specific way signature indicators lie.
+   *
+   * ## What it does NOT answer
+   *
+   * Whether the certificate is TRUSTED. Chain building, revocation and trust
+   * anchors are a different question, and ADR-0054 says so in its own words.
+   * The channel's members are the ones this build can answer, and a `trusted`
+   * field would be the green check that verifies nothing.
+   */
+  'document.signatures': channel(
+    'Reads and verifies the signatures an open document carries.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      signatures: z
+        .array(
+          z.object({
+            signer: z.string().max(MAX_SIGNATURE_FIELD),
+            organisation: z.string().max(MAX_SIGNATURE_FIELD),
+            reason: z.string().max(MAX_SIGNATURE_FIELD),
+            location: z.string().max(MAX_SIGNATURE_FIELD),
+            notBefore: z.string().max(MAX_SIGNATURE_FIELD),
+            notAfter: z.string().max(MAX_SIGNATURE_FIELD),
+            coversDocument: z.boolean(),
+            coversWholeFile: z.boolean(),
+          }),
+        )
+        .max(MAX_SIGNATURES)
+        .readonly(),
+      /** A signature this build could not parse at all. */
+      unreadable: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
   /**
    * Signs the document with a certificate the user picks.
    *

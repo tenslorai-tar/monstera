@@ -4,6 +4,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { applySignDocument, withSignaturePlaceholder } from './documentSign.js';
 import type { ByteImage } from './engineSeam.js';
+import { mupdfWriter } from './mupdfWriter.js';
+import { readSignatures } from './signatureRead.js';
 
 /**
  * Signing — Stage 7's PKCS#7 row, paying ADR-0054's gate.
@@ -190,5 +192,83 @@ describe('applySignDocument', () => {
     await expect(
       applySignDocument(unsigned, { ...command, bytes: unsigned }),
     ).rejects.toThrow();
+  }, 60_000);
+});
+
+/**
+ * Reading back what was just signed — the verification row, end to end.
+ *
+ * ## The two halves are tested TOGETHER because neither is the claim alone
+ *
+ * A verifier that always answers *intact* passes every case over a correctly
+ * signed document. What separates it is a document that was signed and then
+ * **changed**, and the only honest way to make one is to sign and then edit.
+ */
+describe('readSignatures', () => {
+  it('CONTROL: an unsigned document reports no signatures', async () => {
+    const session = await mupdfWriter.open(unsigned);
+    try {
+      expect(await readSignatures(session, unsigned)).toStrictEqual([]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('reads the signer, the organisation and the reason back out', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const session = await mupdfWriter.open(signed);
+    try {
+      const [read] = await readSignatures(session, signed);
+      expect(read).toBeDefined();
+      expect(read?.signer).toBe('Grace Hopper');
+      // FROM THE CERTIFICATE, not from the signature dictionary: the `/Name`
+      // above is what the signer typed, and this is what their certificate
+      // says. A reader that answered both from one source would report a name
+      // an issuer never vouched for.
+      expect(read?.organisation).toBe('Tenslor Inc.');
+      expect(read?.reason).toBe('I approve this document');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
+  it('THE CLAIM: a freshly signed document reports coversDocument', async () => {
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const session = await mupdfWriter.open(signed);
+    try {
+      const [read] = await readSignatures(session, signed);
+      expect(read?.coversDocument).toBe(true);
+      expect(read?.coversWholeFile).toBe(true);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+
+  it('THE CONTROL: a document CHANGED after signing reports coversDocument FALSE', async () => {
+    // Without this, a verifier that answers `true` unconditionally passes every
+    // case above — and a signature indicator that always says *intact* is the
+    // specific lie this row exists to prevent.
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+
+    // ONE BYTE, inside the FIRST covered span, and it is the `/Reason` string
+    // rather than the page's text: pdf-lib compresses content streams, so the
+    // words on the page are not findable as bytes — the first draft searched
+    // for them and got -1. A PDF string in the signature dictionary is plain,
+    // is inside the covered range, and leaves the file parseable.
+    //
+    // The ranges are unchanged, so this is exactly the state a tampered
+    // document is in: the signature intact, the bytes it attests not.
+    const tampered = Uint8Array.from(signed);
+    const at = Buffer.from(signed).indexOf('I approve this document');
+    expect(at, 'the reason string is in the signed bytes').toBeGreaterThan(-1);
+    tampered[at] = 'X'.charCodeAt(0);
+
+    const session = await mupdfWriter.open(tampered);
+    try {
+      const [read] = await readSignatures(session, tampered);
+      expect(read?.coversDocument).toBe(false);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   }, 60_000);
 });

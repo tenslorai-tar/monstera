@@ -57,6 +57,28 @@ const handlers: ContractHandlers = {
   // what a handler returning its own idea of a default would produce, and this
   // one is a variant only a real refusal reaches.
   'document.sign': () => Promise.resolve(ok({ kind: 'wrong-passphrase' as const })),
+  // ONE SIGNATURE THAT DOES NOT COVER THE DOCUMENT, rather than an empty list:
+  // an empty list is what a handler dropping the field produces and also the
+  // ordinary state, and `coversDocument: true` is the reassuring answer. This
+  // fixture is the shape the channel exists to carry.
+  'document.signatures': () =>
+    Promise.resolve(
+      ok({
+        signatures: [
+          {
+            signer: 'Grace Hopper',
+            organisation: 'Tenslor Inc.',
+            reason: '',
+            location: '',
+            notBefore: '2026-01-01T00:00:00.000Z',
+            notAfter: '2027-01-01T00:00:00.000Z',
+            coversDocument: false,
+            coversWholeFile: true,
+          },
+        ],
+        unreadable: false,
+      }),
+    ),
   // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
   // list and `lastExitClean: true` are what a boundary that dropped both fields
   // produces, and they are also the ordinary state — so the fixture that

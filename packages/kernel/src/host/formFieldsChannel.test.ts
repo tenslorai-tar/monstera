@@ -132,6 +132,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       access: () => {
         throw new Error('a field read must not ask what a password bought');
       },
+      signatures: () => {
+        throw new Error('a field read must not verify a signature');
+      },
       files: {
         readSnapshot: () => {
           throw new Error('a field read must not read the snapshot directory');

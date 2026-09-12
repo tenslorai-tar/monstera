@@ -892,6 +892,75 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Verification, and the control that is the whole row
+
+D7's signature-verification row, built on the signing row an hour old.
+
+### MuPDF's binding does not verify, so node-forge does
+
+Measured before designing it, because *the authority may already do the hard
+part*: `PDFWidget` exposes **no** signature member, and `PDFDocument` exposes
+only `validateChangeHistory`. The native library has `pdf_check_signature`; the
+JS layer does not bind it.
+
+So §3's matrix line — *node-forge (verify)* — is the answer, and ADR-0054
+Decision 4 had already written the sentence that makes it cheap: verifying a
+signature this build did not write needs no `@signpdf` at all.
+
+### It runs in the contained host
+
+Parsing a stranger's PKCS#7 is parsing a document, and invariant 25 names the
+process that happens in. `main` holds the bytes and serves ranges out of them
+without reading their structure; an ASN.1 parser there would be the first thing
+to change that.
+
+The host **serialises its own session** for the bytes a `/ByteRange` indexes
+into, so nothing crosses the pipe in the direction §9.17's budget exists to keep
+a document out of.
+
+### The byte range comes from the object model
+
+A regular expression over the file would be a second parser for a question the
+engine answers — and the one that disagrees on a document signed twice, which
+carries two `/ByteRange` arrays and no way for a text search to say which is
+whose. `getWidgets()` walks `/AcroForm` and each signature's `/V` is its
+dictionary.
+
+### Two answers, because one tick is how signature indicators lie
+
+`coversDocument` is *the bytes this signature attests have changed*.
+`coversWholeFile` is *something was appended that this signature says nothing
+about*. They fail differently and a surface that folded them would show an
+intact signature over half a document. The panel also says, in its own words,
+that the **certificate's trust is not checked** — the digest is verified, the
+chain is not, and a tick without that sentence is the promise ADR-0054
+explicitly does not make.
+
+### Two measurements the first draft got wrong, both loud
+
+**`/Contents` must be read with `asByteString`.** `asString` is
+`pdf_to_text_string`, which decodes a PDF *text* string — PDFDocEncoding or
+UTF-16 — and a PKCS#7 blob is neither. node-forge answered *Only 8, 16, 24, or
+32 bits supported: 776*, which names a bit width and not the encoding that
+produced it; the first fix stripped padding and changed nothing, which is what
+said the problem was upstream of the padding.
+
+**And the fixed-size hole's trailing NULs are not DER**, so they go too.
+
+### The control IS the row
+
+A verifier that answers *intact* unconditionally passes every case over a
+correctly signed document. What separates it is a document that was signed and
+then **changed**, so the case signs, flips one byte inside the first covered
+span, and asserts `coversDocument` goes false.
+
+The byte it flips is in the `/Reason` string rather than the page's text — the
+first draft searched for the words on the page and got `-1`, because pdf-lib
+compresses content streams. A PDF string in the signature dictionary is plain,
+is inside the covered range, and leaves the file parseable.
+
+---
+
 ## 2026-09-12 — Signing ships, and building it sharpened two of the gate's own constraints
 
 D7's PKCS#7 row. ADR-0054 executed the whole flow in a scratch tree this

@@ -5,6 +5,7 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
+import type { ReadSignature } from '../signatureRead.js';
 import {
   type EngineChannels,
   type MupdfWireCommand,
@@ -382,6 +383,26 @@ export function remoteMupdfLayers(
       'engine/layers',
       await client['engine/layers']({ session: sessions.handleFor(session) }),
     ).layers;
+}
+
+/**
+ * The document's signatures, verified, over the boundary.
+ *
+ * **Main never sends the bytes**, which is what the two-parameter reader type
+ * on the other side looks like from here: the host serialises its own session,
+ * so this call carries a session id and nothing else. The `bytes` parameter
+ * exists in `HostSignaturesReader` because the LOCAL reader takes one; the
+ * remote shape is the boundary doing its job.
+ */
+export function remoteMupdfSignatures(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): (session: MupdfSession) => Promise<readonly ReadSignature[]> {
+  return async (session) =>
+    answered(
+      'engine/signatures',
+      await client['engine/signatures']({ session: sessions.handleFor(session) }),
+    ).signatures;
 }
 
 /**

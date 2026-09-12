@@ -11,6 +11,7 @@ import { DocumentLocked } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
 import type { Layer } from '../layers.js';
+import type { ReadSignature } from '../signatureRead.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
@@ -127,6 +128,18 @@ export type HostDestinationsReader = (
 
 /** Reads the document's layers. Injected for the readers above's reason. */
 export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer[]>;
+
+/**
+ * Reading and verifying a document's signatures.
+ *
+ * Takes the SERIALISED bytes beside the session, unlike every other reader
+ * here, and that is what a `/ByteRange` is: an index into a file rather than a
+ * question about a parse.
+ */
+export type HostSignaturesReader = (
+  session: MupdfSession,
+  bytes: ByteImage,
+) => Promise<readonly ReadSignature[]>;
 
 /**
  * Lists every annotation in the document. Injected for the readers above's
@@ -373,6 +386,8 @@ export interface EngineHandlerParts {
    * is state a forged token could carry too.
    */
   readonly access: (session: MupdfSession) => DocumentAccess;
+  /** Reads and verifies the document's signatures. `readSignatures`. */
+  readonly signatures: HostSignaturesReader;
   readonly files: HostFilesystem;
   readonly probe: HostContainmentProbe;
   readonly geometry: PageGeometryReader;
@@ -400,6 +415,7 @@ export function createEngineHandlers({
   execution,
   writer,
   access,
+  signatures,
   files,
   probe,
   geometry,
@@ -726,6 +742,23 @@ export function createEngineHandlers({
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       return { ok: true, value: { layers: [...(await layers(held.session))] } };
+    },
+
+    'engine/signatures': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        // SERIALISED HERE, because a `/ByteRange` indexes into a file and the
+        // host is the side that can make one without the document crossing the
+        // pipe in the direction §9.17's budget exists to prevent.
+        const bytes = await writer.serialise(held.session);
+        return { ok: true, value: { signatures: [...(await signatures(held.session, bytes))] } };
+      } catch (error) {
+        // A DOCUMENT'S FAULT rather than the host's, like `extract-failed`
+        // above: a PKCS#7 this build cannot parse is a distinguishable outcome
+        // and must not be counted as a host death.
+        return failed('signatures-unreadable', error);
+      }
     },
 
     'engine/annotations': async ({ session }) => {

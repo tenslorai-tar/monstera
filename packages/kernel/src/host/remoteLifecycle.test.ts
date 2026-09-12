@@ -13,6 +13,7 @@ import { readFormData, serialiseFormData } from '../formData.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { accessFor, mupdfWriter } from '../mupdfWriter.js';
+import { readSignatures } from '../signatureRead.js';
 import { type EngineChannels, engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import {
@@ -195,6 +196,7 @@ function joined(
       execution: localMupdfExecution,
       writer: { ...mupdfWriter, ...override },
       access: accessFor,
+      signatures: readSignatures,
       files: {
         readSnapshot: async (directory, name) =>
           new Uint8Array(await readFile(join(directory, name))),
@@ -461,6 +463,7 @@ describe('remoteMupdfLifecycle', () => {
         execution: localMupdfExecution,
         writer: mupdfWriter,
         access: accessFor,
+        signatures: readSignatures,
         files: {
           readSnapshot: async (directory, name) =>
             new Uint8Array(await readFile(join(directory, name))),

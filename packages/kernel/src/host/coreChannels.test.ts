@@ -68,6 +68,12 @@ const MUPDF_READS = [
   'engine/exportFormData',
   'engine/flat-fields',
   'engine/duplicate-pages',
+  // VERIFICATION IS ONE OF MuPDF'S READS for `engine/ocr-page`'s reason with a
+  // different library at the end of it: parsing a stranger's PKCS#7 is parsing
+  // a document, and invariant 25 names the process that happens in. The walk
+  // that finds the signature fields is MuPDF's object model; node-forge is what
+  // reads the blob it finds.
+  'engine/signatures',
 ] as const;
 
 /**
@@ -237,7 +243,7 @@ describe('the core channel set', () => {
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core six, the live-session one, and its own thirteen reads', () => {
+  it('is the core six, the live-session one, and its own fourteen reads', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
       [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );

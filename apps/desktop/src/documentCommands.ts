@@ -46,6 +46,8 @@ import {
   textLayerOf,
   saveDocument,
   type SplitOutcome,
+  type MupdfSession,
+  type ReadSignature,
   writeDocumentCopy,
   writeDocumentSplit,
 } from '@monstera/kernel';
@@ -1201,6 +1203,14 @@ export interface DocumentCommandsParts {
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
   readonly ocr: DocumentOcrReader;
   readonly layers: DocumentLayersReader;
+  /**
+   * Reads and verifies the document's signatures, in the contained host.
+   *
+   * Takes a session and not a `DocId`, unlike `layers`: the host serialises its
+   * own session for the bytes a `/ByteRange` indexes into, so nothing on this
+   * side has to hold or send them.
+   */
+  readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly restore: DocumentRestore;
   /**
    * THE SIXTEENTH DEPENDENCY, and the first added since this became an options
@@ -1246,6 +1256,7 @@ export class DocumentCommands {
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
   readonly #layers: DocumentLayersReader;
+  readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
   readonly #formFields: DocumentFormFieldsReader;
@@ -1273,6 +1284,7 @@ export class DocumentCommands {
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
     this.#layers = parts.layers;
+    this.#signatures = parts.signatures;
     this.#restore = parts.restore;
     this.#annotations = parts.annotations;
     this.#formFields = parts.formFields;
@@ -1557,6 +1569,41 @@ export class DocumentCommands {
    *
    * @throws the same set `viewModel` throws, for the same reasons.
    */
+  /**
+   * The document's signatures, verified, inside its lane.
+   *
+   * `layers`' guards in `layers`' order. The lane matters more here than for
+   * most reads: the host serialises its own session to get the bytes a
+   * `/ByteRange` indexes into, so a command landing between the walk and the
+   * serialise would verify one document's signatures against another's bytes —
+   * and answer *this signature no longer covers the document*, which is the
+   * one wrong answer a person acts on.
+   */
+  async signatures(
+    docId: DocId,
+  ): Promise<{ readonly signatures: readonly ReadSignature[]; readonly unreadable: boolean }> {
+    return this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      try {
+        return { signatures: await this.#signatures(session), unreadable: false };
+      } catch {
+        // A SIGNATURE THIS BUILD CANNOT PARSE is an outcome rather than a
+        // defect: the document is a stranger's and its PKCS#7 may be anything.
+        // Reported as a flag beside an empty list, because *no signatures* and
+        // *a signature nobody could read* are different sentences and only one
+        // of them is reassuring.
+        return { signatures: [], unreadable: true };
+      }
+    }).then(({ value }) => value);
+  }
+
   async layers(docId: DocId): Promise<DocumentLayers> {
     const { version, value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);

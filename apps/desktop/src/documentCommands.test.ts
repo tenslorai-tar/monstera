@@ -491,6 +491,7 @@ const INERT = {
   // `commandBus.test.ts` is where the pre-read's resolution is.
   ocr: noOcr,
   layers: noLayers,
+  signatures: () => Promise.reject(new Error('this case does not read signatures')),
   restore: noRestore,
   annotations: noAnnotations,
   formFields: noFormFields,

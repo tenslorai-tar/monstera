@@ -24,6 +24,7 @@ import type { SanitizeDocumentAnswer } from '../dialogs/sanitizeDocument.js';
 import { SIGN_DOCUMENT_DIALOG_ID } from '../dialogs/signDocument.js';
 import type { SignDocumentAnswer } from '../dialogs/signDocument.js';
 import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
+import { SIGNATURES_DIALOG_ID } from '../dialogs/signatures.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -83,6 +84,7 @@ import {
   REDACT_MATCHES_COMMAND_TITLE,
   SANITIZE_DOCUMENT_COMMAND_TITLE,
   SIGN_DOCUMENT_COMMAND_TITLE,
+  SIGNATURES_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -2152,6 +2154,37 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
               };
 
       await applyDocumentCommand(deps, context.docId, command);
+    },
+  };
+}
+
+/**
+ * PROTECT › Signatures — what the document's signatures say.
+ *
+ * A READ, so the panel it opens answers nothing: what a person does with the
+ * answer is decide whether to trust the document, which is a judgement rather
+ * than a command.
+ */
+export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.check-signatures',
+    title: SIGNATURES_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 20 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const read = await deps.client['document.signatures']({ docId: context.docId });
+      if (!read.ok) {
+        reportProblem(deps, read.error);
+        return;
+      }
+      // SHOWN EVEN WHEN THE LIST IS EMPTY. *This document is not signed* is the
+      // answer a person asked for, and a command that opened nothing would be
+      // one that appears not to have run.
+      void deps.ask(SIGNATURES_DIALOG_ID, {
+        signatures: read.value.signatures.map((signature) => ({ ...signature })),
+        unreadable: read.value.unreadable,
+      });
     },
   };
 }

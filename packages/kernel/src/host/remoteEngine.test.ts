@@ -6,6 +6,7 @@ import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { accessFor, mupdfWriter, withDocument } from '../mupdfWriter.js';
+import { readSignatures } from '../signatureRead.js';
 import { extractPages } from '../pageExtract.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
@@ -157,6 +158,9 @@ async function joined(): Promise<{
       },
       access: () => {
         throw new Error('the execution half opens nothing, so nothing has an access');
+      },
+      signatures: () => {
+        throw new Error('the execution half reads no signatures');
       },
       files: {
         readSnapshot: () => {
@@ -438,6 +442,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         access: () => {
           throw new Error('unused');
         },
+        signatures: () => {
+          throw new Error('unused');
+        },
         files: {
           readSnapshot: () => {
             throw new Error('unused');
@@ -539,6 +546,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         execution: localMupdfExecution,
         writer: mupdfWriter,
         access: accessFor,
+        signatures: readSignatures,
         files: {
           readSnapshot: () => {
             throw new Error('unused');

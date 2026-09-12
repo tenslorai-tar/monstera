@@ -707,6 +707,16 @@ export const SIGN_PROBLEM_TITLE = messageKey('dialog.sign-problem.title');
 export const SIGN_PROBLEM_WRONG_PASSPHRASE = messageKey('dialog.sign-problem.wrong-passphrase');
 export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadable');
 
+export const SIGNATURES_COMMAND_TITLE = messageKey('command.signatures.title');
+export const SIGNATURES_TITLE = messageKey('dialog.signatures.title');
+export const SIGNATURES_NONE = messageKey('dialog.signatures.none');
+export const SIGNATURES_UNREADABLE = messageKey('dialog.signatures.unreadable');
+export const SIGNATURES_INTACT = messageKey('dialog.signatures.intact');
+export const SIGNATURES_CHANGED = messageKey('dialog.signatures.changed');
+export const SIGNATURES_APPENDED = messageKey('dialog.signatures.appended');
+export const SIGNATURES_VALID_BETWEEN = messageKey('dialog.signatures.valid-between');
+export const SIGNATURES_NOT_TRUSTED = messageKey('dialog.signatures.not-trusted');
+
 /**
  * A long command's own name, as the status bar announces it while it runs.
  *
@@ -1629,6 +1639,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'That password did not open the certificate. Nothing has been changed.',
   [SIGN_PROBLEM_UNREADABLE]:
     'That file is not a certificate this application can read. Nothing has been changed.',
+
+  [SIGNATURES_COMMAND_TITLE]: 'Check signatures',
+  [SIGNATURES_TITLE]: 'Signatures',
+  [SIGNATURES_NONE]: 'This document is not signed.',
+  [SIGNATURES_UNREADABLE]:
+    'This document carries a signature this application could not read. That is not the same as an invalid one — nothing here can say whether it is good.',
+  [SIGNATURES_INTACT]: 'Unchanged since it was signed',
+  [SIGNATURES_CHANGED]: 'The document has changed since this signature was made',
+  [SIGNATURES_APPENDED]:
+    'Intact, but something was added to the document afterwards that this signature does not cover',
+  [SIGNATURES_VALID_BETWEEN]: 'Certificate valid from {from} to {to}',
+  [SIGNATURES_NOT_TRUSTED]:
+    'These checks compare the signature against the bytes it covers. They do not say whether the certificate itself is one you should trust.',
 
   [GROUP_MARKS]: 'Marks',
   [GROUP_INSERT]: 'Insert',

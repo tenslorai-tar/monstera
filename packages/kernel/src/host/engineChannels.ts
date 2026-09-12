@@ -261,6 +261,31 @@ export const ENGINE_DESTINATION_TITLE_MAX = 512;
 export const ENGINE_LAYERS_MAX = 1024;
 export const ENGINE_LAYER_NAME_MAX = 256;
 
+/**
+ * How many signatures one document may report, and how long each field is.
+ *
+ * A document with more signatures than this is one nothing downstream could
+ * usefully show; the field bound is `MAX_SIGNATURE_FIELD`'s, from the other
+ * side — a signature this build wrote cannot exceed it, and one it did not is
+ * a stranger's string that must be bounded like every other.
+ */
+export const ENGINE_SIGNATURES_MAX = 256;
+export const ENGINE_SIGNATURE_FIELD_MAX = 256;
+
+/** One signature, verified, as it crosses from the host. */
+const engineSignatureSchema = z
+  .object({
+    signer: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
+    organisation: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
+    reason: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
+    location: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
+    notBefore: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
+    notAfter: z.string().max(ENGINE_SIGNATURE_FIELD_MAX),
+    coversDocument: z.boolean(),
+    coversWholeFile: z.boolean(),
+  })
+  .strict();
+
 /** One optional-content group, as it crosses from the host. */
 const engineLayerSchema = z
   .object({
@@ -2054,6 +2079,37 @@ export const engineChannels = {
     z.object({ session: sessionSchema }).strict(),
     z.object({ layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX) }).strict(),
     ['no-such-session'],
+  ),
+
+  /**
+   * Reads and verifies every signature the document carries.
+   *
+   * ## It runs HERE because a PKCS#7 is a stranger's bytes
+   *
+   * Invariant 25 names the process a document is parsed in, and an ASN.1 parse
+   * over a signature blob is exactly that. `main` holds the document's bytes
+   * and serves ranges out of them without reading their structure; a reader
+   * there would be the first thing to change that.
+   *
+   * ## It needs the SERIALISED bytes, and the host makes them
+   *
+   * A signature's `/ByteRange` indexes into a file, so verification needs one.
+   * The host serialises its own session rather than main sending bytes back
+   * down the pipe — which would be the document crossing in the direction §9.17
+   * spends its budget keeping it out of.
+   *
+   * **What it verifies is the DIGEST, not the trust chain.** ADR-0054 says so
+   * in its own words: chain building, revocation and trust anchors are a
+   * different question, and answering half of it under a name that sounds like
+   * all of it is the green check that verifies nothing.
+   */
+  'engine/signatures': channel(
+    'Reads and verifies the signatures in a session this host holds.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({ signatures: z.array(engineSignatureSchema).max(ENGINE_SIGNATURES_MAX) })
+      .strict(),
+    ['no-such-session', 'signatures-unreadable'],
   ),
 
   'engine/annotations': channel(

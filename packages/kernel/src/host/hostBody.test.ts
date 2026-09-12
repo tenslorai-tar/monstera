@@ -114,6 +114,9 @@ function start(stream: HostByteStream) {
     access: () => {
       throw new Error('no case here opens, so nothing has an access');
     },
+    signatures: () => {
+      throw new Error('no case here reads a signature');
+    },
     files: {
       readSnapshot: () => {
         throw new Error('no case here reads a snapshot');

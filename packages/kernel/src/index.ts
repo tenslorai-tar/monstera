@@ -144,6 +144,11 @@ export {
 // A TYPE ONLY, which is what keeps it on this barrel: `flatFields.ts` binds the
 // native library, and main reads its answers without ever calling it.
 export type { FlatFieldCandidate } from './flatFields.js';
+// A TYPE ONLY, and for a sharper version of the reason above: `signatureRead.ts`
+// imports `node-forge` at module scope, so a VALUE export from this barrel would
+// put an ASN.1 parser into `main` — the one process invariant 25 keeps document
+// parsing out of.
+export type { ReadSignature } from './signatureRead.js';
 // TYPES ONLY, and the rule is sharper here than for the line above:
 // `ocrRecognise.ts` instantiates 2.8 MB of Tesseract on its first call, and the
 // recognition itself runs in the engine host. Main composes the reader and passes
@@ -217,6 +222,7 @@ export {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
+  remoteMupdfSignatures,
   remoteMupdfHandwriting,
   remoteMupdfOcr,
   remoteMupdfPageLinks,

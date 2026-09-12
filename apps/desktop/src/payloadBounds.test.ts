@@ -218,6 +218,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // is not on this wire at all — main picks the file and mints the command, so
   // the largest thing the renderer can send is `MAX_SIGNATURE_FIELD` four times.
   'document.sign': 'takes bounded strings and answers a variant; the certificate never crosses',
+  // A `DocId` in; at most `MAX_SIGNATURES` rows of eight bounded fields out.
+  // The answer is about the SIGNATURES rather than the certificates, which is
+  // what keeps it the same size for a two-page document and a two-thousand-page
+  // one — a channel answering certificates would carry a chain per signature.
+  'document.signatures': 'answers a bounded list of bounded rows',
   // These four need an engine session, and no engine host runs in a unit test.
   // Their bounds are asserted where they can be: the search channel by
   // ADR-0035 and `documentCommands.test.ts`, the rest by the caller-stated

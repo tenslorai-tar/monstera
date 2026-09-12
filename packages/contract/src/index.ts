@@ -27,6 +27,7 @@ export {
   // this file's comment and nothing else, which is what the audit of
   // `87540a5..HEAD` found it to be.
   MAX_RECENT_ENTRIES,
+  MAX_SIGNATURES,
   // The text layer's two bounds. Exported because the caller that sizes a read
   // under the line limit is the renderer, and the per-line cap is what the
   // main-side reader passes to `textLayerOf` — a second spelling of either

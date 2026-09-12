@@ -117,6 +117,9 @@ async function joined(): Promise<{
       access: () => {
         throw new Error('the execution half opens nothing, so nothing has an access');
       },
+      signatures: () => {
+        throw new Error('the execution half reads no signatures');
+      },
       files: {
         // THE ONE STUB HERE THAT WORKS, and only for the directory this session
         // was granted: a handler reading anywhere else fails loudly, which is
