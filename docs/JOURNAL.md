@@ -892,6 +892,83 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Signing ships, and building it sharpened two of the gate's own constraints
+
+D7's PKCS#7 row. ADR-0054 executed the whole flow in a scratch tree this
+morning; this is the flow in the product, and the difference between a spike's
+reading and a shipped caller's produced two corrections to the ADR.
+
+### The dependency, measured against its own prediction
+
+**330 packages → 334.** Exactly the four the ADR names, each with its own licence
+file, and `npm run notice:generate` regenerated NOTICE without complaint. The
+121-package alternative the ADR refused stays refused.
+
+### The certificate never crosses the renderer wire
+
+`document.sign` carries no bytes: main picks the `.p12`, reads it, and mints
+`signDocument` — which `renderableCommandSchema` **removes**, so the renderer
+has no way to express a command carrying a private key. That is
+`document.placeImage`'s shape applied to the payload where it matters most, and
+it makes the property a type rather than a rule.
+
+The passphrase does travel, because a person types it. ADR-0055's rule applies
+unchanged: one call, kept nowhere, named in no diagnostic, and
+`CommandPrior['signDocument']` is `never` so the command log holds neither it
+nor the key.
+
+### Correction one: the instance is TWO levels in
+
+ADR-0054 Decision 3 says `@signpdf/signpdf` is CommonJS with a `default` export
+and *the instance is one level in*. With the package installed:
+
+```
+namespace.default.sign          undefined
+namespace.default.default.sign  function
+```
+
+`module.exports` is what `default` gives, and the singleton is `default` again
+inside it. A caller following the sentence literally gets *`sign` is not a
+function* — the exact failure it warned about, from the exact route it
+recommended.
+
+What ships takes neither: `SignPdf` is on the namespace directly, so this build
+constructs its own instance. No interop reasoning, and it avoids the singleton's
+`lastSignature` — per-instance state two concurrent signs would share.
+
+### Correction two: the byte range is a TOKEN shape, not a string
+
+The ADR writes the requirement as `/ByteRange [0 /********** …]`.
+`@cantoo/pdf-lib` serialises an array with spaces inside the brackets, and
+`@signpdf` signs it — the gate case proves it by recomputing the digest over the
+ranges that came back.
+
+The first version of that case asserted the ADR's literal string and failed
+against a placeholder that is correct. **A pinned shape had become a pinned
+formatter**, which is the same error as asserting a number's spelling instead of
+its value.
+
+### The gate case does not ask the signer whether it worked
+
+ADR-0054's own sentence, kept: the assertion recomputes SHA-256 over the two
+covered spans and compares it with the `messageDigest` attribute parsed out of
+the PKCS#7. It also asserts `b + d + hole === byteLength` — that the ranges
+describe the file they are in — because a signature over the wrong bytes is the
+failure nothing else here would see.
+
+The certificate is **minted in memory** by node-forge for each run. B10 forbids
+committing a binary or an unvetted fixture, and a private key is the worst
+example of both; nothing on disk is a credential and nothing has to be rotated.
+
+### One small thing, kept because it was loud
+
+The first byte-range assertion interpolated ten unescaped asterisks into a
+`RegExp` and produced *Nothing to repeat* — a regular expression that refuses to
+compile. Worth a line only because it is the pleasant kind of mistake: a pattern
+that is wrong in a way the engine will not accept at all.
+
+---
+
 ## 2026-09-12 — Sanitize, and the reader that hides exactly the annotations it had to visit
 
 D7's *sanitize / flatten document* row. Four parts a person picks from, because

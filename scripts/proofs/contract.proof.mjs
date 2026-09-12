@@ -836,6 +836,27 @@ const SANITIZE_SPEC = `  sanitizeDocument: {
     reads: 'none',
   },`;
 
+/**
+ * Filler, and the only spec here routed to a THIRD writer.
+ *
+ * `signpdf` is byte-image like `pdf-lib`, so the shape is the same; what makes
+ * it worth a fixture of its own is that `commandSpecs.ts` spreads three writers'
+ * tables now, and a table missing one is the failure this file exists for.
+ */
+const SIGN_SPEC = `  signDocument: {
+    kind: 'signDocument',
+    writer: 'signpdf',
+    apply: applySignDocument,
+    capture: captureSignDocument,
+    invert: invertSignDocument,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: false,
+    replay: 'stored-effect',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -981,6 +1002,9 @@ const SPEC_IMPORTS = `import {
   applySanitizeDocument,
   captureSanitizeDocument,
   invertSanitizeDocument,
+  applySignDocument,
+  captureSignDocument,
+  invertSignDocument,
   applyImportFormData,
   captureImportFormData,
   invertImportFormData,
@@ -1086,6 +1110,7 @@ export const handlers: ContractHandlers = {
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
+  'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
@@ -1186,6 +1211,7 @@ export const handlers: ContractHandlers = {
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
+  'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1359,6 +1385,7 @@ export const shim: ContractClient = {
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
+  'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1552,6 +1579,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1653,6 +1681,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1782,6 +1811,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1847,6 +1877,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1921,6 +1952,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1991,6 +2023,7 @@ ${PROTECT_SPEC}
 ${REDACT_SPEC}
 ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
+${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -2865,9 +2898,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // since `watermarkPages` (all 2026-09-04), 23 since `createFormField`
     // (2026-09-08), 29 since `replaceTextObject` (2026-09-09), 30 since
     // `deskewPages` (2026-09-10), 31 since `ocrPage` and 32 since `enhancePages`
-    // (both 2026-09-11), and 38 through 41 since `setDocumentProtection`,
-    // `applyRedactions`, `markMatchesForRedaction` and `sanitizeDocument` (all
-    // 2026-09-12).
+    // (both 2026-09-11), and 38 through 42 since `setDocumentProtection`,
+    // `applyRedactions`, `markMatchesForRedaction`, `sanitizeDocument` and
+    // `signDocument` (all 2026-09-12).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2885,7 +2918,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 37 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 38 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

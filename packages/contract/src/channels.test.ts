@@ -53,6 +53,10 @@ const handlers: ContractHandlers = {
   // separates a fixture carrying the engine's bitfield from one that invented a
   // value; `4` is a reading only an owner password produces.
   'document.unlock': () => Promise.resolve(ok({ kind: 'unlocked' as const, access: 4 as const })),
+  // `wrong-passphrase` rather than `signed` or `cancelled`: the first two are
+  // what a handler returning its own idea of a default would produce, and this
+  // one is a variant only a real refusal reaches.
+  'document.sign': () => Promise.resolve(ok({ kind: 'wrong-passphrase' as const })),
   // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
   // list and `lastExitClean: true` are what a boundary that dropped both fields
   // produces, and they are also the ordinary state — so the fixture that

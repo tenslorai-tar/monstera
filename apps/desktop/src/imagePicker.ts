@@ -82,3 +82,28 @@ export function createFormDataOpenPicker(): PickFormDataFile {
     return result.filePaths[0] ?? null;
   };
 }
+
+/**
+ * The open dialog for a signing certificate, narrowed to PKCS#12.
+ *
+ * `createImagePicker`'s shape with two extensions instead of three, and the
+ * same sentence about the filter: it is a convenience and not a check. A user
+ * may choose *All files* and pick anything, and what refuses that is
+ * `@signpdf/signer-p12`'s own parse — which is where a file whose contents
+ * nobody has looked at belongs.
+ *
+ * **`.pfx` and `.p12` are one format under two names.** PKCS#12 is what both
+ * hold; Windows has spelt it `.pfx` since it shipped its own predecessor, and
+ * offering only one would hide half the certificates on the machine this build
+ * runs on.
+ */
+export function createCertificatePicker(): () => Promise<string | null> {
+  return async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: 'Certificates', extensions: ['p12', 'pfx'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}

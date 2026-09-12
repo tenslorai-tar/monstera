@@ -137,3 +137,44 @@ correct byte range, which is what the matrix line says and no more.
 
 **And the certificate was self-signed by the spike.** Chain building, revocation
 and trust anchors are the verification row's subject, not this one's.
+
+## Correction, 2026-09-12 — two of Decision 3's three constraints are sharper than written
+
+Both were found by **building the row**, which is the difference between a
+spike's reading and a shipped caller's.
+
+### The instance is TWO levels in, not one
+
+Decision 3 says `@signpdf/signpdf` is CommonJS with a `default` export and *the
+instance is one level in*. Measured with the package installed:
+
+```
+namespace keys:              SignPdf, SignPdfError, Signer, __esModule, default, module.exports
+typeof namespace.default:    object
+namespace.default keys:      SignPdf, SignPdfError, Signer, default
+namespace.default.sign:      undefined
+namespace.default.default.sign: function
+```
+
+So `module.exports` is what `default` gives, and the singleton is `default`
+again inside it. The sentence describes the shape from one side and a caller who
+follows it literally gets `sign is not a function` — the exact failure it
+warned about.
+
+**What ships takes neither route.** `SignPdf` is on the namespace directly, so
+`documentSign.ts` constructs its own instance: no interop reasoning at all, and
+it avoids the singleton's `lastSignature`, which is per-instance state two
+concurrent signs would share.
+
+### The byte-range shape is a TOKEN requirement, not a byte-exact string
+
+Decision 3 writes the requirement as `/ByteRange [0 /********** /**********
+/**********]`. `@cantoo/pdf-lib` serialises an array with spaces inside the
+brackets — `[ 0 /********** /********** /********** ]` — and `@signpdf` signs it
+without complaint, which the row's own gate case proves by recomputing the
+digest over the ranges that came back.
+
+So what the ADR pins is the **tokens**: a number, then three name objects of ten
+asterisks, in that order. Four numbers is still refused. The distinction matters
+because a caller asserting the literal string would fail against a correct
+placeholder, which is how a pinned shape becomes a pinned *formatter*.

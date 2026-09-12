@@ -100,6 +100,12 @@ export function harnessSurfaces(
     readImage: () => {
       throw new Error(`${harness} inserts no image, so nothing may read one`);
     },
+    pickCertificate: () => {
+      throw new Error(`${harness} signs nothing, so nothing may pick a certificate`);
+    },
+    readCertificate: () => {
+      throw new Error(`${harness} signs nothing, so nothing may read a certificate`);
+    },
     settings: createEphemeralSettings(),
     recent: createRecentFiles(createEphemeralSettings()),
     // NULL, which is the state every unit test and every non-Windows run is in:

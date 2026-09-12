@@ -1447,6 +1447,35 @@ const declarations = {
     // scan for it would find it.
     purpose: 'removal',
   },
+  signDocument: {
+    kind: 'signDocument',
+    // §3's matrix names the writer in its own words: `@signpdf/signpdf` +
+    // `@signpdf/signer-p12`, over a placeholder THIS BUILD writes. `signpdf`
+    // has been a declared byte-image writer in `writerShapes` since Stage 0
+    // with nothing behind it; this is the command that puts something there.
+    writer: 'signpdf',
+    // TERMINAL. The prior state is the unsigned document, which is the whole
+    // file — and the checkpoint holds exactly that.
+    invertible: false,
+    undo: 'checkpoint',
+    // NOT REPRODUCIBLE, and this one is not a clock artefact to argue away: a
+    // PKCS#7 signature is over a document carrying `/M`, the signing time, and
+    // the PKCS#7 itself carries a signing-time attribute. Two runs of the same
+    // intent produce different bytes by design, which is what a signature IS.
+    reproducible: false,
+    replay: 'stored-effect',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    // THE CERTIFICATE, and the axis is what keeps it off the renderer's wire:
+    // `document.sign` carries no bytes, main picks the file and mints this
+    // command, and `renderableCommandSchema` has this kind removed.
+    asset: 'bytes',
+    // ORDINARY. A signature ADDS three objects and removes nothing, and a
+    // collecting save would renumber a document whose byte ranges have just
+    // been written to describe the file they are in.
+    purpose: 'ordinary',
+  },
   createFormField: {
     kind: 'createFormField',
     // `docs/ARCHITECTURE.md`:388 names the writer and the reason in one line:

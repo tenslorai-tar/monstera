@@ -1,0 +1,57 @@
+import { DOCUMENT_PASSWORD_MAX_CHARS, MAX_SIGNATURE_FIELD } from '@monstera/contract';
+import { lazy } from 'react';
+import { z } from 'zod';
+
+import { SIGN_DOCUMENT_TITLE } from '../messages/en.js';
+import { declareDialog } from '../registries/dialogs.js';
+
+/** The id the Protect ribbon's signing command opens. */
+export const SIGN_DOCUMENT_DIALOG_ID = 'dialog.sign-document';
+
+/**
+ * What a person supplies to sign, besides the certificate itself.
+ *
+ * ## The CERTIFICATE is not here, and that is the row's whole security property
+ *
+ * A PKCS#12 is a private key. Main opens the picker, reads the file and mints
+ * the command, so the renderer never holds one and this dialog has no field for
+ * it — the capability is unrepresentable rather than discouraged
+ * ([ADR-0055](../../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)'s
+ * rule applied to the other kind of secret).
+ *
+ * The dialog's own words say where the file is chosen, because a person
+ * pressing *Sign* and meeting a file dialog they did not expect is a surprise
+ * the sentence costs nothing to avoid.
+ *
+ * ## An EMPTY passphrase is valid
+ *
+ * Many certificates have none, so the field has no minimum — unlike every
+ * other password field in this build, where an empty value is the attempt the
+ * engine already made.
+ *
+ * ## The four descriptive fields are OPTIONAL and trimmed
+ *
+ * `/Reason`, `/Location`, `/ContactInfo` and `/Name` are displayed by readers,
+ * so a value of three spaces is one a person sees as blank — the annotation
+ * dialogs' rule, and the opposite of the passphrase's.
+ */
+export const SIGN_DOCUMENT_RESULT = z
+  .object({
+    passphrase: z.string().max(DOCUMENT_PASSWORD_MAX_CHARS),
+    name: z.string().trim().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+    reason: z.string().trim().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+    location: z.string().trim().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+    contactInfo: z.string().trim().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+  })
+  .strict();
+
+/** What the signing dialog answers with. */
+export type SignDocumentAnswer = z.infer<typeof SIGN_DOCUMENT_RESULT>;
+
+export const SIGN_DOCUMENT_DIALOG = declareDialog({
+  id: SIGN_DOCUMENT_DIALOG_ID,
+  title: SIGN_DOCUMENT_TITLE,
+  props: z.object({}).strict(),
+  result: SIGN_DOCUMENT_RESULT,
+  component: lazy(() => import('./SignDocumentBody.js')),
+});

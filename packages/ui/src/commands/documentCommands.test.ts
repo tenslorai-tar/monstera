@@ -36,6 +36,7 @@ import {
   applyRedactionsCommand,
   redactMatchesCommand,
   sanitizeDocumentCommand,
+  signDocumentCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -2423,6 +2424,111 @@ describe('protectDocumentCommand', () => {
       const { client, sent } = recordingClient();
 
       await applyRedactionsCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([]);
+    });
+  });
+
+  describe('signDocumentCommand', () => {
+    /** A client answering `document.sign` and recording what it was sent. */
+    function signingClient(answer: unknown): {
+      readonly client: ContractClient;
+      readonly sent: { id: string; params: unknown }[];
+    } {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        return Promise.resolve(ok(answer));
+      });
+      return { client, sent };
+    }
+
+    it('calls document.sign — never document.execute — with the dialog’s fields', async () => {
+      // THE CHANNEL IS THE ASSERTION. A command that reached for
+      // `document.execute` would need a `signDocument` payload, which carries a
+      // private key — and `renderableCommandSchema` has that kind removed, so
+      // this side cannot express one. The case says that is what happens rather
+      // than leaving it to the type.
+      const { client, sent } = signingClient({
+        kind: 'signed',
+        version: asDocVersion(2),
+        byteLength: 4096,
+        historyDropped: 0,
+      });
+      const applied: unknown[] = [];
+
+      await signDocumentCommand({
+        client,
+        onApplied: (value) => applied.push(value),
+        ask: () =>
+          Promise.resolve({ passphrase: 'secret', name: 'Grace Hopper', reason: 'Approved' }),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.sign',
+          params: {
+            docId: DOC,
+            passphrase: 'secret',
+            name: 'Grace Hopper',
+            reason: 'Approved',
+          },
+        },
+      ]);
+      expect(applied).toStrictEqual([{ version: asDocVersion(2), byteLength: 4096 }]);
+    });
+
+    it('SHOWS a wrong passphrase rather than returning quietly', async () => {
+      // A person chose a certificate and got no signature. Returning quietly is
+      // the display-only failure — a control that ran and appeared to do
+      // nothing — and it is indistinguishable from success in every assertion
+      // about the document.
+      const { client } = signingClient({ kind: 'wrong-passphrase' });
+      const shown: { id: string; props: unknown }[] = [];
+
+      await signDocumentCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          shown.push({ id, props });
+          return Promise.resolve(
+            id === 'dialog.sign-document' ? { passphrase: 'wrong' } : undefined,
+          );
+        },
+      }).run(CONTEXT);
+
+      expect(shown[1]).toStrictEqual({
+        id: 'dialog.sign-problem',
+        props: { reason: 'wrong-passphrase' },
+      });
+    });
+
+    it('CONTROL: a CANCELLED picker shows nothing, because the user did that on purpose', async () => {
+      // The other side of the case above, and the one that stops it from being
+      // *show a dialog whatever happens*.
+      const { client } = signingClient({ kind: 'cancelled' });
+      const shown: string[] = [];
+
+      await signDocumentCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id) => {
+          shown.push(id);
+          return Promise.resolve(id === 'dialog.sign-document' ? { passphrase: '' } : undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(shown).toStrictEqual(['dialog.sign-document']);
+    });
+
+    it('CONTROL: a DISMISSED dialog dispatches nothing', async () => {
+      const { client, sent } = signingClient({ kind: 'cancelled' });
+
+      await signDocumentCommand({
         client,
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),

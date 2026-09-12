@@ -491,6 +491,44 @@ export interface ImageSource {
   readonly read: (path: string) => Promise<ImageRead>;
 }
 
+/**
+ * How a PKCS#12 certificate reaches the signer.
+ *
+ * {@link ImageSource}'s shape, and it exists as its own surface for the reason
+ * that one does: the picker's filters differ, and a single *pick a file*
+ * surface would be one whose caller decides what the dialog offers — which is
+ * the second opinion about a question each row already answers.
+ *
+ * **The bytes are a private key**, so the one thing this surface must never do
+ * is put them anywhere but the command it was read for. `documentCommands.ts`
+ * holds them in a local, hands them to `execute`, and lets the frame end
+ * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)'s
+ * rule, applied to the other kind of secret this build touches).
+ */
+export interface CertificateSource {
+  /** Runs the platform's open dialog, narrowed to `.p12` and `.pfx`. */
+  readonly pick: () => Promise<string | null>;
+  /** The bytes at a path, or why they could not be read. */
+  readonly read: (path: string) => Promise<CertificateRead>;
+}
+
+/** What {@link CertificateSource.read} answers. */
+export type CertificateRead =
+  | { readonly kind: 'read'; readonly bytes: Uint8Array }
+  | { readonly kind: 'unreadable' };
+
+/** What signing produced. */
+export type SignOutcome =
+  | {
+      readonly kind: 'signed';
+      readonly version: DocVersion;
+      readonly byteLength: number;
+      readonly historyDropped: number;
+    }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'wrong-passphrase' }
+  | { readonly kind: 'unreadable' };
+
 /** What {@link ImageSource.read} answers. */
 export type ImageRead =
   | { readonly kind: 'read'; readonly bytes: Uint8Array }
@@ -1189,6 +1227,8 @@ export interface DocumentCommandsParts {
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
   readonly image: ImageSource;
+  /** Where a signing certificate comes from. See {@link CertificateSource}. */
+  readonly certificate: CertificateSource;
   readonly extract: DocumentExtractReader;
   readonly snapshot: SnapshotSource;
   readonly formData: FormDataSource;
@@ -1216,6 +1256,7 @@ export class DocumentCommands {
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
+  readonly #certificate: CertificateSource;
   readonly #extract: DocumentExtractReader;
   readonly #snapshot: SnapshotSource;
   readonly #formData: FormDataSource;
@@ -1242,6 +1283,7 @@ export class DocumentCommands {
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
+    this.#certificate = parts.certificate;
     this.#extract = parts.extract;
     this.#snapshot = parts.snapshot;
     this.#formData = parts.formData;
@@ -2484,6 +2526,71 @@ export class DocumentCommands {
       }
       if (error instanceof DocumentNotOpenError) throw error;
       return { kind: 'unreadable' };
+    }
+  }
+
+  /**
+   * Signs the document with a certificate the user picks.
+   *
+   * `placeImage`'s shape and its ordering — the document is checked before the
+   * dialog opens, so a closed document does not put a picker on screen.
+   *
+   * ## Two outcomes for what is sometimes one failure, stated rather than hidden
+   *
+   * A PKCS#12's MAC check fails the same way for a wrong passphrase and for a
+   * truncated file, so the two cannot always be told apart. The rule is which
+   * stage failed: a **read** that could not produce bytes is `unreadable`, and
+   * anything the signer refuses afterwards is `wrong-passphrase`. That is the
+   * honest split — the first is a file the user picked wrongly and the second
+   * is a credential they typed wrongly — and it is why the catch does not try
+   * to read the engine's message.
+   *
+   * ## The bytes and the passphrase end with this frame
+   *
+   * Both are locals. Nothing on this class holds either, no log entry carries
+   * the key — `CommandPrior['signDocument']` is `never` — and the command's own
+   * payload is the only place they exist, for the length of one `execute`.
+   */
+  async sign(
+    docId: DocId,
+    options: {
+      readonly passphrase: string;
+      readonly name?: string;
+      readonly reason?: string;
+      readonly location?: string;
+      readonly contactInfo?: string;
+    },
+  ): Promise<SignOutcome> {
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'sign');
+    }
+
+    const picked = await this.#certificate.pick();
+    if (picked === null) return { kind: 'cancelled' };
+
+    const read = await this.#certificate.read(picked);
+    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+
+    try {
+      const applied = await this.execute(docId, {
+        kind: 'signDocument',
+        bytes: read.bytes,
+        passphrase: options.passphrase,
+        ...(options.name === undefined ? {} : { name: options.name }),
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+        ...(options.location === undefined ? {} : { location: options.location }),
+        ...(options.contactInfo === undefined ? {} : { contactInfo: options.contactInfo }),
+      });
+      return { kind: 'signed', ...applied };
+    } catch (error) {
+      // `placeImage`'s catch and its reason: the three classes below are
+      // outcomes the handler already turns into declared codes, and everything
+      // else reaching here is the signer refusing the credential.
+      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
+        throw error;
+      }
+      if (error instanceof DocumentNotOpenError) throw error;
+      return { kind: 'wrong-passphrase' };
     }
   }
 

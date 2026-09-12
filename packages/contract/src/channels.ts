@@ -13,6 +13,7 @@ import {
   formFieldKindSchema,
   renderableCommandSchema,
 } from './commands.js';
+import { MAX_SIGNATURE_FIELD } from './commands.js';
 import {
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
@@ -1572,6 +1573,66 @@ export const channels = {
    * the renderer does know: the tool drew the box on the page in view, and
    * *every page* is one click in a surface. Both are numbers.
    */
+  /**
+   * Signs the document with a certificate the user picks.
+   *
+   * ## `document.placeImage`'s shape, and every one of its arguments
+   *
+   * The ask carries **no bytes**: main opens the picker, reads the PKCS#12 file
+   * and mints `signDocument` straight into the bus, and
+   * `renderableCommandSchema` has that command removed so the capability is
+   * unrepresentable rather than merely unused. A private key travelling
+   * renderer → main is the one payload here that would be worse than a large
+   * one.
+   *
+   * ## The PASSPHRASE does travel, and it is used rather than kept
+   *
+   * A person types it, so the renderer is where it is composed — the same rule
+   * `document.unlock` follows
+   * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)):
+   * main holds it for the length of one call, nothing records it, and no
+   * diagnostic names it. An **empty** passphrase is real and common, which is
+   * why the field has no minimum.
+   *
+   * ## `wrong-passphrase` is an OUTCOME, and `unreadable` is its sibling
+   *
+   * A person mistyping is not a defect. A file that is not a PKCS#12 at all is
+   * not one either — they picked the wrong file — and the two are separate
+   * because the sentence a person needs differs: *try the password again*
+   * against *that is not a certificate*.
+   *
+   * **They are not always distinguishable**, and that is stated rather than
+   * hidden: a PKCS#12's MAC check fails the same way for a wrong passphrase and
+   * for a truncated file, so the kernel reports `wrong-passphrase` when a
+   * passphrase was supplied and `unreadable` when the parse failed before any
+   * key material was reached.
+   */
+  'document.sign': channel(
+    'Signs an open document with a PKCS#12 certificate the user picks.',
+    z.object({
+      docId: docIdSchema,
+      passphrase: z.string().max(DOCUMENT_PASSWORD_MAX_CHARS),
+      name: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+      reason: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+      location: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+      contactInfo: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('signed'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      /** The passphrase did not open the certificate. */
+      z.object({ kind: z.literal('wrong-passphrase') }),
+      /** The file was picked and is not a PKCS#12 this build can read. */
+      z.object({ kind: z.literal('unreadable') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.placeImage': channel(
     'Places an image on pages of an open document, from a file the user picks.',
     z.object({

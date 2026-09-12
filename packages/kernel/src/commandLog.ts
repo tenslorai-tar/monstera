@@ -540,6 +540,12 @@ export interface CommandPrior {
   readonly sanitizeDocument: never;
 
   /**
+   * A signature has no prior state to record: the prior state is the unsigned
+   * document, which is the whole file — and a checkpoint holds exactly that.
+   */
+  readonly signDocument: never;
+
+  /**
    * A create has no prior state, and this is the one entry here where that is
    * **not** because the prior state is too large.
    *

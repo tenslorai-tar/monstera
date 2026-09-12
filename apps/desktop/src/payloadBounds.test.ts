@@ -213,6 +213,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // schema — `DOCUMENT_PASSWORD_MAX_CHARS`, the same constant `engine/open`
   // takes — so nothing about this call scales with the document it unlocks.
   'document.unlock': 'takes a bounded password and answers a variant',
+  // A `DocId`, a bounded passphrase and four bounded strings in; a variant and
+  // three scalars out. The CERTIFICATE is the payload that would scale, and it
+  // is not on this wire at all — main picks the file and mints the command, so
+  // the largest thing the renderer can send is `MAX_SIGNATURE_FIELD` four times.
+  'document.sign': 'takes bounded strings and answers a variant; the certificate never crosses',
   // These four need an engine session, and no engine host runs in a unit test.
   // Their bounds are asserted where they can be: the search channel by
   // ADR-0035 and `documentCommands.test.ts`, the rest by the caller-stated

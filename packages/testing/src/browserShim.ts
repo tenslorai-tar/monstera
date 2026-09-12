@@ -103,6 +103,9 @@ export type OpenAnswer = ChannelResult<'document.open'>;
  */
 export type UnlockAnswer = ChannelResult<'document.unlock'>;
 
+/** What one `document.sign` answers — {@link UnlockAnswer}'s sibling. */
+export type SignAnswer = ChannelResult<'document.sign'>;
+
 export interface BrowserShim {
   /** The renderer-facing surface. Complete by construction. */
   readonly client: ContractClient;
@@ -524,6 +527,14 @@ export interface BrowserShimOptions {
   readonly unlocks?: readonly UnlockAnswer[];
 
   /**
+   * What `document.sign` answers, in order.
+   *
+   * {@link BrowserShimOptions.unlocks}' sibling. Unset, or exhausted, answers
+   * `cancelled` — the outcome that changes no state.
+   */
+  readonly signings?: readonly SignAnswer[];
+
+  /**
    * What `document.recent` answers.
    *
    * Empty by default, because a first launch is the real state a start screen
@@ -604,6 +615,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
   const queuedUnlocks: UnlockAnswer[] = [...(options.unlocks ?? [])];
+  const queuedSignings: SignAnswer[] = [...(options.signings ?? [])];
 
   // Copied rather than aliased, for the same reason the queue above is: a test
   // holding the object it seeded would otherwise see it change underneath as
@@ -731,6 +743,22 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * other test is: a shim whose default was `wrong-password` would make an
      * unrelated test that happened to unlock fail for a reason it never set up.
      */
+    /**
+     * Signing, answered from a queue the test seeds.
+     *
+     * `document.unlock`'s shape and its reason: a shim that decided whether a
+     * passphrase was right would be this package holding an opinion about
+     * PKCS#12, which is `@signpdf/signer-p12`'s answer and nobody else's. What
+     * a surface test needs is the sequence.
+     *
+     * The default is `cancelled` — the outcome that changes no state and is a
+     * person dismissing a picker, exactly as `document.open`'s is.
+     */
+    'document.sign': ({ docId }) => {
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(ok(queuedSignings.shift() ?? { kind: 'cancelled' as const }));
+    },
+
     'document.unlock': ({ docId }) => {
       // REFUSED FOR A DOCUMENT NOTHING OPENED, like every other per-document
       // channel here. Answering `unlocked` for an id the shim has never seen

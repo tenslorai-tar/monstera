@@ -12,7 +12,11 @@ import {
 } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
-import { createFormDataOpenPicker, createImagePicker } from './imagePicker.js';
+import {
+  createCertificatePicker,
+  createFormDataOpenPicker,
+  createImagePicker,
+} from './imagePicker.js';
 import { createEngineHostPlatform, createPdfiumHostPlatform } from './engineHostPlatform.js';
 import { createHandwritingCache } from './handwritingCache.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
@@ -108,6 +112,9 @@ startShell(() => {
     // `pickerProbe.ts` is absent from this commit too — which is the churn fix
     // holding rather than being claimed.
     pickDirectory: createDirectoryPicker(),
+    // SIGNING'S CERTIFICATE, and the surface is added through this object for
+    // the reason the two above record — `pickerProbe.ts` is untouched again.
+    pickCertificate: createCertificatePicker(),
     // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
     // function here rather than a `readFile` at the call site: `stat` costs
     // nothing and a 4 GB file a user picked by mistake is refused as a decided
@@ -126,6 +133,19 @@ startShell(() => {
         // you picked it* and *permission denied* is one this build cannot act on
         // differently, so inventing two outcomes would be two sentences for one
         // situation.
+        return { kind: 'unreadable' as const };
+      }
+    },
+    // NO BOUND, and that is the decision `composition.ts` records: a file
+    // picked through a dialog filtered to `.p12` is a few kilobytes or it is
+    // not a certificate, and the signer's own parse is what says so. A number
+    // here would be a second opinion about what a PKCS#12 is.
+    readCertificate: async (path: string) => {
+      try {
+        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
+      } catch {
+        // `readImage`'s reason: *deleted since you picked it* and *permission
+        // denied* are one situation from where the user stands.
         return { kind: 'unreadable' as const };
       }
     },

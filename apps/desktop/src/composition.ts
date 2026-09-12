@@ -85,6 +85,7 @@ import { type AppInfo, type PickDocument, createContractHandlers } from './contr
 import {
   DocumentCommands,
   type FormDataSource,
+  type CertificateSource,
   type ImageSource,
   type PickDestination,
   type PickDirectory,
@@ -369,6 +370,25 @@ export interface ShellComposition {
    * mistake.
    */
   readonly readImage: ImageSource['read'];
+  /**
+   * Which certificate signs. Electron's open dialog, narrowed to `.p12`/`.pfx`.
+   *
+   * Its own surface rather than a parameter on `pickImage` for that member's
+   * own reason: the filters differ, and a shared picker is one whose caller
+   * decides what the dialog offers.
+   */
+  readonly pickCertificate: CertificateSource['pick'];
+  /**
+   * The certificate's bytes. `readImage`'s shape, with no bound.
+   *
+   * **No size bound, and that is a decision rather than an omission.** The
+   * bound on `readImage` exists because a person can pick a 4 GB video by
+   * mistake; a file picked through a dialog filtered to `.p12` is a few
+   * kilobytes or it is not a certificate, and the signer's own parse is what
+   * says so. A bound here would be a second opinion about what a PKCS#12 is,
+   * expressed as a number nobody measured.
+   */
+  readonly readCertificate: CertificateSource['read'];
   /** Where settings are stored. Required — see the note above. */
   readonly settings: SettingsSurface;
   /**
@@ -450,6 +470,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickImage,
     pickDirectory,
     readImage,
+    pickCertificate,
+    readCertificate,
     settings,
     secrets,
     recent,
@@ -863,6 +885,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // reason: the picker needs Electron and the read needs Node's filesystem,
     // and this file imports neither.
     image: { pick: pickImage, read: readImage },
+    // SIGNING, and both members are parameters for `image`'s reason exactly.
+    certificate: { pick: pickCertificate, read: readCertificate },
     // THE EXTRACT, composed like every reader above it: resolve the session,
     // then hand it to whichever host is live. What differs is that it produces
     // a SECOND document's bytes rather than answering a question about this

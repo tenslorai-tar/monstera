@@ -165,6 +165,8 @@ export {
   applyRedactionsSchema,
   markMatchesForRedactionSchema,
   sanitizeDocumentSchema,
+  signDocumentSchema,
+  MAX_SIGNATURE_FIELD,
   PDF_SANITIZE_PARTS,
   type PdfSanitizePart,
   MAX_REDACT_MATCHES_PER_PAGE,

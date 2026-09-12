@@ -266,6 +266,7 @@ export function createContractHandlers(deps: {
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.placeImage': placeImageHandler(deps.commands),
+    'document.sign': signHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
@@ -492,6 +493,46 @@ function placeImageHandler(commands: DocumentCommands): ContractHandlers['docume
       }
       return ok({
         kind: 'placed',
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        historyDropped: outcome.historyDropped,
+      } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The signing handler.
+ *
+ * `placeImageHandler`'s body with one call changed, and written out for the
+ * reason `extractHandler`'s header gives: four lines of agreement is cheaper
+ * than a shared function two rows must not diverge inside.
+ */
+function signHandler(commands: DocumentCommands): ContractHandlers['document.sign'] {
+  return async (params): Promise<Awaited<ReturnType<ContractHandlers['document.sign']>>> => {
+    try {
+      // THE PASSPHRASE IS FORWARDED AND NOT LOGGED, and this handler is the one
+      // place a diagnostic would be easy to add. The catch below matches on
+      // classes and never renders the params (ADR-0055).
+      const outcome = await commands.sign(params.docId, {
+        passphrase: params.passphrase,
+        ...(params.name === undefined ? {} : { name: params.name }),
+        ...(params.reason === undefined ? {} : { reason: params.reason }),
+        ...(params.location === undefined ? {} : { location: params.location }),
+        ...(params.contactInfo === undefined ? {} : { contactInfo: params.contactInfo }),
+      });
+      if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'wrong-passphrase') {
+        return ok({ kind: 'wrong-passphrase' } as const);
+      }
+      return ok({
+        kind: 'signed',
         version: outcome.version,
         byteLength: outcome.byteLength,
         historyDropped: outcome.historyDropped,

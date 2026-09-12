@@ -141,6 +141,16 @@ export {
   captureSanitizeDocument,
   invertSanitizeDocument,
 } from './documentSanitize.js';
+// `documentSign.ts` BINDS NO NATIVE LIBRARY — it is pdf-lib and `@signpdf`,
+// both plain JavaScript — so it could live on the main barrel. It is here
+// because `signpdfWriter.ts` is what the bus registers and this is the subpath
+// its siblings use; nothing in main imports either.
+export {
+  applySignDocument,
+  captureSignDocument,
+  invertSignDocument,
+  withSignaturePlaceholder,
+} from './documentSign.js';
 export {
   applyImportFormData,
   captureImportFormData,

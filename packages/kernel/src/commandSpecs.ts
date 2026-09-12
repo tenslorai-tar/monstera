@@ -113,6 +113,7 @@ import {
 } from './pageTransition.js';
 import type { CommandExecution } from './commandRouting.js';
 import { pdfLibSpecs } from './pdfLibWriter.js';
+import { signpdfSpecs } from './signpdfWriter.js';
 import { pdfiumSpecs } from './pdfiumSpecs.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
@@ -462,6 +463,10 @@ const declared = {
   // and cannot run the other, and the PDFium host imports `pdfiumSpecs.js`
   // directly rather than reaching for this table.
   ...pdfiumSpecs,
+  // AND SPREAD FROM `signpdfWriter.ts`, for `pdfLibSpecs`' reason exactly: that
+  // file runs in `main` and must be reachable without a native library, and
+  // this one reaches `rotatePages.ts` → `mupdfWriter.ts`.
+  ...signpdfSpecs,
 } satisfies CommandSpecs;
 
 /** The table as declared, with each writer's literal type intact. */

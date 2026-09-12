@@ -2531,6 +2531,68 @@ export const flattenFormFieldsSchema = z.object({
 });
 
 /**
+ * How long a signature's descriptive fields may be.
+ *
+ * `/Reason`, `/Location`, `/ContactInfo` and the signer's name go into the
+ * signature dictionary as PDF strings. None scales with the document; the bound
+ * exists because every string that crosses here is bounded.
+ */
+export const MAX_SIGNATURE_FIELD = 256;
+
+/**
+ * Signs the document with a PKCS#12 certificate the user picked.
+ *
+ * ## The certificate's BYTES are the command's asset, and main reads them
+ *
+ * `document.placeImage`'s shape and its argument, sharpened: the ask carries no
+ * bytes, main opens the picker, reads the file and mints this command straight
+ * into the bus. A private key must not travel renderer → main, and with this
+ * shape it cannot — the renderer has no field to put one in.
+ *
+ * `renderableCommandSchema` therefore has this command removed, exactly as
+ * `importFormData` is: the capability is unrepresentable rather than merely
+ * unused.
+ *
+ * ## The passphrase DOES travel, and is used rather than kept
+ *
+ * It is typed by a person, so the renderer is where it is composed. ADR-0055's
+ * rule applies unchanged: main holds it for the length of one call, nothing
+ * records it, and no diagnostic names it.
+ *
+ * ## What this command is NOT
+ *
+ * Not a timestamp and not a certification. Both are their own rows and both
+ * change the signature dictionary; `signpdf`'s own placeholder writer is the
+ * seam they will register into ([ADR-0054](../../../docs/DECISIONS/0054-the-signing-core-ships-and-the-placeholder-is-ours.md)).
+ */
+export const signDocumentSchema = z.object({
+  kind: z.literal('signDocument'),
+  /** The PKCS#12 file's bytes, attached by main. */
+  // `z.custom` rather than `z.instanceof`, for the reason the two image
+  // payloads give and one more: `z.instanceof` narrows to
+  // `Uint8Array<ArrayBuffer>`, which a `Uint8Array<ArrayBufferLike>` off a
+  // filesystem read is not assignable to — a type error at the one call site
+  // that has real bytes, about a distinction nothing here depends on.
+  //
+  // NO SIZE BOUND, unlike the image payloads: a PKCS#12 is a few kilobytes or
+  // it is not one, and the signer's own parse is what says so. A number here
+  // would be a second opinion about what a certificate is.
+  bytes: z.custom<Uint8Array>((value) => value instanceof Uint8Array, {
+    message: 'not a PKCS#12 certificate’s bytes',
+  }),
+  /** The passphrase that opens it. Empty is a real and common choice. */
+  passphrase: z.string().max(DOCUMENT_PASSWORD_MAX_CHARS),
+  /** `/Name` — who signed. Absent leaves the field out rather than empty. */
+  name: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+  /** `/Reason` — why. */
+  reason: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+  /** `/Location` — where. */
+  location: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+  /** `/ContactInfo` — how to reach the signer. */
+  contactInfo: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+});
+
+/**
  * What a sanitise takes out, by the name a person reads.
  *
  * **Every member is something invariant 24 already says this build never runs**
@@ -3524,6 +3586,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   applyRedactionsSchema,
   markMatchesForRedactionSchema,
   sanitizeDocumentSchema,
+  signDocumentSchema,
   createFormFieldSchema,
   importFormDataSchema,
   replaceTextObjectSchema,
@@ -3740,7 +3803,15 @@ export type RenderableCommand = z.infer<typeof renderableCommandSchema>;
 // renderer able to send one would be a renderer holding a multi-megabyte
 // payload. Withheld rather than merely unused — `renderableCommandSchema` has
 // it removed, so the capability is unrepresentable (B5).
-type WithheldFromRenderer = 'insertImagePage' | 'placeImage' | 'importFormData';
+// `signDocument` JOINS THEM on 2026-09-12 and for a sharper version of the same
+// reason: what it carries is a PKCS#12 private key. Main picks the file, reads
+// it and mints the command, so the renderer has no field to put one in — the
+// capability is unrepresentable rather than discouraged.
+type WithheldFromRenderer =
+  | 'insertImagePage'
+  | 'placeImage'
+  | 'importFormData'
+  | 'signDocument';
 type LeftOver = Exclude<Command['kind'], RenderableCommand['kind']>;
 const _withheldIsExactlyThat: LeftOver extends WithheldFromRenderer ? true : never = true;
 const _andNothingElseIsWithheld: WithheldFromRenderer extends LeftOver ? true : never = true;

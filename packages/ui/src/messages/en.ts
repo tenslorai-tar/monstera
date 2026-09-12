@@ -690,6 +690,23 @@ export const SANITIZE_PART_EMBEDDED_FILES = messageKey('sanitize.embedded-files'
 export const SANITIZE_PART_EXTERNAL_ACTIONS = messageKey('sanitize.external-actions');
 export const SANITIZE_PART_FLATTEN = messageKey('sanitize.flatten');
 
+/** PROTECT › Signatures, where Stage 7's four signing rows land. */
+export const GROUP_SIGNATURES = messageKey('surface.ribbon.group.signatures');
+
+export const SIGN_DOCUMENT_COMMAND_TITLE = messageKey('command.sign-document.title');
+export const SIGN_DOCUMENT_TITLE = messageKey('dialog.sign-document.title');
+export const SIGN_DOCUMENT_EXPLAINS = messageKey('dialog.sign-document.explains');
+export const SIGN_DOCUMENT_PASSPHRASE = messageKey('dialog.sign-document.passphrase');
+export const SIGN_DOCUMENT_NAME = messageKey('dialog.sign-document.name');
+export const SIGN_DOCUMENT_REASON = messageKey('dialog.sign-document.reason');
+export const SIGN_DOCUMENT_LOCATION = messageKey('dialog.sign-document.location');
+export const SIGN_DOCUMENT_CONTACT = messageKey('dialog.sign-document.contact');
+export const SIGN_DOCUMENT_TOO_LONG = messageKey('dialog.sign-document.too-long');
+export const SIGN_DOCUMENT_APPLY = messageKey('dialog.sign-document.apply');
+export const SIGN_PROBLEM_TITLE = messageKey('dialog.sign-problem.title');
+export const SIGN_PROBLEM_WRONG_PASSPHRASE = messageKey('dialog.sign-problem.wrong-passphrase');
+export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadable');
+
 /**
  * A long command's own name, as the status bar announces it while it runs.
  *
@@ -1594,6 +1611,24 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SANITIZE_PART_EMBEDDED_FILES]: 'Attached files',
   [SANITIZE_PART_EXTERNAL_ACTIONS]: 'Actions that submit or fetch data',
   [SANITIZE_PART_FLATTEN]: 'Form fields and comments, flattened into the page',
+
+  [GROUP_SIGNATURES]: 'Signatures',
+  [SIGN_DOCUMENT_COMMAND_TITLE]: 'Sign document',
+  [SIGN_DOCUMENT_TITLE]: 'Sign document',
+  [SIGN_DOCUMENT_EXPLAINS]:
+    'You will be asked for your certificate file (.p12 or .pfx) after this. The certificate never leaves this computer.',
+  [SIGN_DOCUMENT_PASSPHRASE]: 'Certificate password (leave empty if it has none)',
+  [SIGN_DOCUMENT_NAME]: 'Signed by (optional)',
+  [SIGN_DOCUMENT_REASON]: 'Reason (optional)',
+  [SIGN_DOCUMENT_LOCATION]: 'Location (optional)',
+  [SIGN_DOCUMENT_CONTACT]: 'Contact (optional)',
+  [SIGN_DOCUMENT_TOO_LONG]: 'One of these is longer than the document can carry.',
+  [SIGN_DOCUMENT_APPLY]: 'Choose certificate and sign',
+  [SIGN_PROBLEM_TITLE]: 'The document was not signed',
+  [SIGN_PROBLEM_WRONG_PASSPHRASE]:
+    'That password did not open the certificate. Nothing has been changed.',
+  [SIGN_PROBLEM_UNREADABLE]:
+    'That file is not a certificate this application can read. Nothing has been changed.',
 
   [GROUP_MARKS]: 'Marks',
   [GROUP_INSERT]: 'Insert',

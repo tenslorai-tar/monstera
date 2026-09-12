@@ -54,6 +54,7 @@ import {
   type DocumentLayersReader,
   type DocumentPageLinksReader,
   type CopySource,
+  type CertificateSource,
   type ImageSource,
   type DocumentAnnotationsReader,
   type DocumentFlatFieldsReader,
@@ -266,6 +267,12 @@ const noCopying: CopySource = {
 const noImages: ImageSource = {
   pick: () => Promise.reject(new Error('this case does not insert an image')),
   read: () => Promise.reject(new Error('this case does not read an image')),
+};
+
+/** A certificate source neither member of which any case here reaches. */
+const noCertificates: CertificateSource = {
+  pick: () => Promise.reject(new Error('this case does not sign')),
+  read: () => Promise.reject(new Error('this case does not read a certificate')),
 };
 
 /**
@@ -494,6 +501,7 @@ const INERT = {
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
+  certificate: noCertificates,
   extract: localExtract,
   snapshot: localSnapshot,
   formData: localFormData,

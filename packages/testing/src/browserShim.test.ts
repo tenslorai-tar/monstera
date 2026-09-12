@@ -217,6 +217,7 @@ describe('browser shim', () => {
       'document.save',
       'document.saveCopy',
       'document.searchPage',
+      'document.sign',
       'document.snapshotRegion',
       'document.split',
       'document.textLines',

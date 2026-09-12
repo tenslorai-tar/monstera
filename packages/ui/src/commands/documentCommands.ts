@@ -21,6 +21,9 @@ import { REDACT_MATCHES_DIALOG_ID } from '../dialogs/redactMatches.js';
 import type { RedactMatchesAnswer } from '../dialogs/redactMatches.js';
 import { SANITIZE_DOCUMENT_DIALOG_ID } from '../dialogs/sanitizeDocument.js';
 import type { SanitizeDocumentAnswer } from '../dialogs/sanitizeDocument.js';
+import { SIGN_DOCUMENT_DIALOG_ID } from '../dialogs/signDocument.js';
+import type { SignDocumentAnswer } from '../dialogs/signDocument.js';
+import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -64,6 +67,7 @@ import {
   GROUP_DISPLAY,
   GROUP_ENCRYPTION,
   GROUP_REDACT,
+  GROUP_SIGNATURES,
   GROUP_FIELDS,
   GROUP_FILE,
   GROUP_FIND,
@@ -78,6 +82,7 @@ import {
   APPLY_REDACTIONS_COMMAND_TITLE,
   REDACT_MATCHES_COMMAND_TITLE,
   SANITIZE_DOCUMENT_COMMAND_TITLE,
+  SIGN_DOCUMENT_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -2147,6 +2152,67 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
               };
 
       await applyDocumentCommand(deps, context.docId, command);
+    },
+  };
+}
+
+/**
+ * PROTECT › Signatures — sign the document with a certificate the user picks.
+ *
+ * ## It calls `document.sign`, not `document.execute`
+ *
+ * The certificate is a private key and main picks it, so the command that
+ * carries the bytes is minted main-side and is removed from
+ * `renderableCommandSchema` — this side has no way to express it
+ * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md),
+ * `document.placeImage`'s shape).
+ *
+ * ## The two refusals are SHOWN
+ *
+ * A person chose a certificate and got no signature. Returning quietly would be
+ * the display-only failure — a control that ran and appeared to do nothing —
+ * and a dismissal is the third outcome, which opens nothing because they did it
+ * on purpose.
+ */
+export function signDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.sign-document',
+    title: SIGN_DOCUMENT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 10 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, {})) as
+        | SignDocumentAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      const signed = await deps.client['document.sign']({
+        docId: context.docId,
+        passphrase: answer.passphrase,
+        ...(answer.name === undefined ? {} : { name: answer.name }),
+        ...(answer.reason === undefined ? {} : { reason: answer.reason }),
+        ...(answer.location === undefined ? {} : { location: answer.location }),
+        ...(answer.contactInfo === undefined ? {} : { contactInfo: answer.contactInfo }),
+      });
+      if (!signed.ok) {
+        reportProblem(deps, signed.error);
+        return;
+      }
+      if (signed.value.kind === 'cancelled') return;
+      if (signed.value.kind === 'signed') {
+        deps.onApplied({ version: signed.value.version, byteLength: signed.value.byteLength });
+        // THE TRIM IS TOLD, exactly as `applyDocumentCommand` tells it: the log
+        // has a ceiling, and a person whose earliest undo went away finds out
+        // here or not at all.
+        if (signed.value.historyDropped > 0) {
+          void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: signed.value.historyDropped });
+        }
+        return;
+      }
+      // VOIDED for `reportProblem`'s reason: this dialog declares no result, so
+      // awaiting it would hold the command open until a person closed a message.
+      void deps.ask(SIGN_PROBLEM_DIALOG_ID, { reason: signed.value.kind });
     },
   };
 }
