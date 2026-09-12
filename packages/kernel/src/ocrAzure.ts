@@ -42,6 +42,26 @@ import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecogn
 /** The API version this build speaks, pinned rather than floating. */
 export const AZURE_API_VERSION = '2024-11-30';
 
+/**
+ * Device pixels per PDF point for the raster sent to Azure.
+ *
+ * **2, which is `OCR_DPI`'s 200 dpi within a rounding** (200/72 = 2.78) and is
+ * deliberately not the same number: that one is the input to a local engine and
+ * this one is bytes crossing the internet, so the trade is different. At 2 a
+ * one-line region of about 340×50 points is 680×100 pixels — a few tens of
+ * kilobytes, and comfortably above the resolution the service's own guidance
+ * asks for.
+ *
+ * A constant rather than a setting: a reader has no way to judge it, and the
+ * failure it would cause — a recognition that reads badly — looks like the
+ * service being poor rather than like a number somebody set.
+ *
+ * **Here rather than in main's composition root, since 2026-09-13.** The live
+ * harness, `scripts/probes/azureLive.mjs`, sends a raster at this scale too, and
+ * a second `2` typed there would be a copy nothing compares with this one.
+ */
+export const AZURE_RASTER_SCALE = 2;
+
 /** The model: text and word boxes, which is what a `RecognisedPage` holds. */
 const MODEL = 'prebuilt-read';
 

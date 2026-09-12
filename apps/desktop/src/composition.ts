@@ -24,6 +24,7 @@ import {
   EngineOpenFailed,
   type LockedReason,
   type HostDestinationsReader,
+  AZURE_RASTER_SCALE,
   type AzureCredentials,
   type HostHandwritingReader,
   type HostOcrReader,
@@ -2143,21 +2144,6 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
  * the one the document itself arrives through — so an asset grants the
  * contained process nothing it did not already have.
  */
-/**
- * Device pixels per PDF point for the raster sent to Azure.
- *
- * **2, which is `OCR_DPI`'s 200 dpi within a rounding** (200/72 = 2.78) and is
- * deliberately not the same number: that one is the input to a local engine and
- * this one is bytes crossing the internet, so the trade is different. At 2 a
- * one-line region of about 340×50 points is 680×100 pixels — a few tens of
- * kilobytes, and comfortably above the resolution the service's own guidance
- * asks for.
- *
- * A constant rather than a setting: a reader has no way to judge it, and the
- * failure it would cause — a recognition that reads badly — looks like the
- * service being poor rather than like a number somebody set.
- */
-const AZURE_RASTER_SCALE = 2;
 
 /**
  * The endpoint and key, or `null` where either half is missing.

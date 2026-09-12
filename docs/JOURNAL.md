@@ -892,6 +892,40 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — The live Azure run has a harness, and the key never touches a file
+
+D6 row 8's trigger — one recognition against the live service — now has a
+command: `npm run probe:azure`, in `scripts/probes/`, which no workflow runs.
+
+### Where the credentials come from
+
+Two environment variables, set in one shell for one run:
+`MONSTERA_AZURE_DI_ENDPOINT` and `MONSTERA_AZURE_DI_KEY`. **Never a file and never
+this repository** — there is no `.env` here and there must not be one, because a
+committed secret is permanent (B10). Neither value is printed, logged or put in a
+URL; the key travels only in the header `recogniseThroughAzure` already sets, and
+the script writes nothing to disk.
+
+**Absent either one, the run reports UNVERIFIABLE** through `unverifiable.mjs`, the
+one owner of that verdict, and exits 0 saying *NOT a pass*. `--require-azure` turns
+the same absence into a failure.
+
+### What it proves, and its control
+
+The page is drawn by the script — a known word at a known point, never a corpus
+document. The region is rasterised by the same `snapshotRegion` the contained host
+runs, at `AZURE_RASTER_SCALE`, which moved out of main's composition root into
+`ocrAzure.ts` so the harness and main send one number rather than two copies.
+
+It passes only if a recognised word contains the drawn text, its box lies inside
+the region, and the box sits over where the word was drawn. The drawn word is the
+positive control: a service that answered nothing, or answered the right text in
+the wrong frame, cannot satisfy it. A refusal is reported by its reason alone.
+
+**Not yet run against the service** — that is the owner's run. When it passes, row
+8 closes and Stage 6's count becomes ten by a dated correction, with Stage 6's
+trajectory figure unchanged.
+
 ## 2026-09-12 — A valid signature could read as unreadable, one in 256
 
 Found by the Settings dialog's pre-push run, in a file that range did not touch:

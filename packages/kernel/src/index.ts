@@ -170,6 +170,7 @@ export type { HandwritingScope } from './ocrHandwriting.js';
 // property is untouched (ADR-0052's 2026-09-12 addition).
 export {
   AZURE_API_VERSION,
+  AZURE_RASTER_SCALE,
   AzureRecognitionRefused,
   type AzureCredentials,
   type AzureRefusal,
