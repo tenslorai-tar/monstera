@@ -147,7 +147,11 @@ const CONTAINED = {
 };
 
 /** A session the host issued. Lower-case hex and hyphens, like every handed name. */
-const SESSION = { ok: true, value: { session: 'ab0f' } };
+// `access: 1` — a document with no `/Encrypt` dictionary, which is what every
+// fixture in this file is. `2` would be the answer for one a user password
+// opened, and using it here would have the composition root record a password
+// it never sent (ADR-0055).
+const SESSION = { ok: true, value: { session: 'ab0f', access: 1 } };
 
 /**
  * A host that answers the command channels as a working engine would.
@@ -507,7 +511,7 @@ describe('the composition root, with an engine host platform', () => {
       channel === 'engine/probe-containment'
         ? CONTAINED
         : channel === 'engine/open'
-          ? { ok: true, value: { session: `ab0${String(next)}` } }
+          ? { ok: true, value: { session: `ab0${String(next)}`, access: 1 } }
           : ENGINE(channel, null),
     );
     const { handlers } = createShellDependencies({
@@ -559,7 +563,7 @@ describe('the composition root, with an engine host platform', () => {
       channel === 'engine/probe-containment'
         ? CONTAINED
         : channel === 'engine/open'
-          ? { ok: true, value: { session: 'ab01' } }
+          ? { ok: true, value: { session: 'ab01', access: 1 } }
           : ENGINE(channel, null),
     );
     const path = aDocument('quitting.pdf');
@@ -776,6 +780,12 @@ function pdfiumPeer(): PdfiumPeerLog {
         case 'engine/open': {
           const sent = params as { snapshotDirectory: string; outputDirectory: string };
           area = { snapshot: sent.snapshotDirectory, output: sent.outputDirectory };
+          // NO `access`, and the strict schema is what enforces it: a
+          // byte-image host's open registers a granted area and parses nothing,
+          // so it has no password and nothing to report about one. The MuPDF
+          // fakes above all carry `access: 1`; this one carrying it would be
+          // refused, which is the pair being a property rather than a
+          // description (ADR-0055).
           return { ok: true, value: { session: 'cd12' } };
         }
         case 'engine/capture':

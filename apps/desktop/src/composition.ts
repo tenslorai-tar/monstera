@@ -19,7 +19,10 @@ import {
   type EngineChannels,
   DocumentNotOpenError,
   DocumentService,
+  type DocumentAccess,
+  EngineDocumentLocked,
   EngineOpenFailed,
+  type LockedReason,
   type HostDestinationsReader,
   type AzureCredentials,
   type HostHandwritingReader,
@@ -911,6 +914,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   });
 
   const openedDocument = engineHost.openedDocument;
+  const unlockDocument = engineHost.unlockDocument;
 
   return {
     // `pickDocument` is a PARAMETER, not an import, and that is what keeps this
@@ -925,6 +929,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       commands,
       documents,
       openedDocument,
+      unlockDocument,
       pickDocument,
       recent,
       settings,
@@ -1084,6 +1089,13 @@ function engineSessionOpener(
    * this one would diverge on the granted pair's lifetime first.
    */
   readonly restoreSessions: (docId: DocId, write: SnapshotWrite) => Promise<DocumentSessions>;
+  /**
+   * One password attempt for a document the supervisor recorded as locked
+   * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+   */
+  readonly unlockDocument: (docId: DocId, password: string) => Promise<UnlockOutcome>;
+  /** Why a document has no session, when the reason is a password. */
+  readonly lockedDocument: (docId: DocId) => LockedReason | undefined;
 } {
   /** The live host, or the attempt to build one. Cleared when it ends. */
   let host: Promise<EngineHostConnection> | null = null;
@@ -1506,10 +1518,21 @@ function engineSessionOpener(
       throw error;
     }));
 
-  const buildSessions = async (
+  /**
+   * One document's sessions AND what its password bought.
+   *
+   * The pair travels together because the access is only obtainable at the
+   * open: every MuPDF call that answers it is an authentication attempt, and a
+   * failed attempt destroys the session's key (ADR-0055). The two exported
+   * members below drop the access, because recycling and restoring do not carry
+   * one — a recycle of an unlocked document is refused, and a restore replays
+   * bytes the same password already opened.
+   */
+  const buildWithAccess = async (
     docId: DocId,
     write: SnapshotWrite,
-  ): Promise<DocumentSessions> => {
+    password?: string,
+  ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> => {
     const live = await ensure();
     if (platform === null) throw new Error('unreachable: a host exists without a platform');
 
@@ -1548,15 +1571,32 @@ function engineSessionOpener(
       },
     };
 
+    // WRITTEN BY THE ONE CALL BELOW, and read after it resolves. A `let` rather
+    // than a return value because `EngineOpenFromPath` is the seam
+    // `openEngineSessionFrom` calls and its shape is *a path becomes a
+    // session* — widening it to carry an engine-specific bitfield would make
+    // every future engine's opener declare a field only MuPDF has.
+    let opened: DocumentAccess | undefined;
+
     // THE PATH, NEVER THE BYTES. `openEngineSession` has the service write the
     // canonical image straight into the granted directory, so main never holds
     // a second copy and this function never holds the document at all.
-    const open: EngineOpenFromPath = async () => {
+    const open: EngineOpenFromPath = async (_snapshotPath, password) => {
       const answer = await client['engine/open']({
         snapshotDirectory: paths.snapshot,
         snapshotName,
         outputDirectory: paths.output,
+        password,
       });
+      // A PASSWORD REFUSAL IS NOT AN UNREADABLE DOCUMENT, and the two classes
+      // are what carry that across the throw. `EngineOpenFailed` poisons the
+      // document without a second attempt; an encrypted file parses as soon as
+      // somebody types a password, so poisoning it would refuse every command
+      // against a document whose only problem is that nobody has been asked
+      // (ADR-0055).
+      if (!answer.ok && (answer.error.code === 'needs-password' || answer.error.code === 'wrong-password')) {
+        throw new EngineDocumentLocked(answer.error.code);
+      }
       // THE CLASS, NOT A MESSAGE. `onDocumentOpened` has to tell a document
       // that will never parse from a host that is unwell, and the only thing
       // carrying that distinction across the throw is the error's identity —
@@ -1564,6 +1604,7 @@ function engineSessionOpener(
       // host build and a false `engine-host-gone` establishing what the host
       // already said.
       if (!answer.ok) throw new EngineOpenFailed(answer.error.code);
+      opened = answer.value.access;
       // THE AREA GOES IN WITH THE HANDLE. A token stands for both halves and
       // the registry owns the pair (ADR-0030 Decision 2), which is what lets
       // `serialise` and `close` work on a session this root opened — they read
@@ -1574,7 +1615,13 @@ function engineSessionOpener(
       });
     };
 
-    const { session } = await openEngineSessionFrom(write, areas, open);
+    const { session } = await openEngineSessionFrom(write, areas, open, password);
+    if (opened === undefined) {
+      // UNREACHABLE, and asserted rather than defaulted. A default here would
+      // report an access the host never stated — which for a bitfield the
+      // permission rows read is the display-only defect with a number in it.
+      throw new Error('the engine host issued a session without stating its access');
+    }
 
     // THE PAIR'S LIFETIME ENDS WITH THE DOCUMENT, and until this it did not.
     // `live()` rather than the captured `writer`: a host rebuilt between the
@@ -1601,19 +1648,30 @@ function engineSessionOpener(
       }
     });
 
-    return { mupdf: session };
+    return { sessions: { mupdf: session }, access: opened };
   };
+
+  const buildSessions = async (
+    docId: DocId,
+    write: SnapshotWrite,
+  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write)).sessions;
 
   /**
    * One document's sessions from the canonical image — open, reopen, recycle.
    *
-   * The write is built here rather than inside {@link buildSessions} because
+   * The write is built here rather than inside {@link buildWithAccess} because
    * that function's whole parameterisation is *which bytes*: a restore hands it
    * a checkpoint's writer instead, and the two paths are then the same code with
    * one argument different rather than two ways to build a session.
    */
-  const create = (docId: DocId): Promise<DocumentSessions> =>
-    buildSessions(docId, canonicalImageWrite(documents, docId));
+  const createWithAccess = (
+    docId: DocId,
+    password?: string,
+  ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> =>
+    buildWithAccess(docId, canonicalImageWrite(documents, docId), password);
+
+  const create = async (docId: DocId): Promise<DocumentSessions> =>
+    (await createWithAccess(docId)).sessions;
 
   const openedDocument = (docId: DocId): void => {
     void onDocumentOpened(sessions, docId, {
@@ -1621,8 +1679,58 @@ function engineSessionOpener(
       failures,
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
+      documentLocked: (error) =>
+        error instanceof EngineDocumentLocked ? error.reason : undefined,
       create,
     });
+  };
+
+  /**
+   * One unlock attempt for a document the supervisor recorded as locked.
+   *
+   * ## It runs in the document's LANE, which is what makes it safe rather than
+   * lucky
+   *
+   * The open-time attempt is a lane entry too, so an unlock issued while that
+   * entry is still settling queues behind it and cannot race it. Without the
+   * lane a person typing quickly could have two opens of the same bytes in
+   * flight, and the loser's session would be held for a document whose entry
+   * the winner had already replaced.
+   *
+   * ## The password is not held, anywhere, for any duration
+   *
+   * It arrives as an argument, reaches `engine/open` once, and leaves with the
+   * frame. Nothing records it — not the entry, not the record, not a retry —
+   * which is what makes the refusal in `recycle` honest rather than arbitrary
+   * (ADR-0055).
+   */
+  const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
+    // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
+    // bytes and bumps no version — it gives the engine a session it could not
+    // build — so returning a `Versioned` here would put a number in front of a
+    // caller that means nothing about what happened.
+    const settled = await documents.run(docId, async (): Promise<UnlockOutcome> => {
+      // ASKED BEFORE THE ATTEMPT, so a document that was never locked is told
+      // apart from one that has already been unlocked by an earlier call.
+      // Without it a second unlock would spend a parse to answer a question the
+      // supervisor already holds.
+      if (sessions.locked(docId) === undefined) return { kind: 'not-locked' } as const;
+      try {
+        const built = await createWithAccess(docId, password);
+        sessions.hold(docId, built.sessions);
+        return { kind: 'unlocked', access: built.access } as const;
+      } catch (error) {
+        if (error instanceof EngineDocumentLocked) {
+          // RE-MARKED rather than left as it was: the reason moves from
+          // `needs-password` to `wrong-password` on the first attempt, and a
+          // surface reading the state is entitled to know which it is.
+          sessions.markLocked(docId, error.reason);
+          return { kind: 'wrong-password' } as const;
+        }
+        throw error;
+      }
+    });
+    return settled.value;
   };
 
   /**
@@ -1675,8 +1783,16 @@ function engineSessionOpener(
     closeHost,
     rebuildSessions: create,
     restoreSessions: buildSessions,
+    unlockDocument,
+    lockedDocument: sessions.locked,
   };
 }
+
+/** What one unlock attempt produced. */
+export type UnlockOutcome =
+  | { readonly kind: 'unlocked'; readonly access: DocumentAccess }
+  | { readonly kind: 'wrong-password' }
+  | { readonly kind: 'not-locked' };
 
 /** One page's text runs, over the second host's wire. */
 type PdfiumTextRuns = ReturnType<typeof remotePdfiumTextRuns>;

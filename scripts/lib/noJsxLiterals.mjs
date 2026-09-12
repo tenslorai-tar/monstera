@@ -52,6 +52,7 @@
 
 import { noBareYFlip } from './noBareYFlip.mjs';
 import { noUnpinnedPdfLoad } from './noUnpinnedPdfLoad.mjs';
+import { noNeedsPassword } from './noNeedsPassword.mjs';
 import { noClassComponents } from './noClassComponents.mjs';
 import { noInstallRootWrites } from './noInstallRootWrites.mjs';
 import { noRawHex } from './noRawHex.mjs';
@@ -116,6 +117,7 @@ export const monsteraPlugin = {
     'no-bare-y-flip': noBareYFlip,
     'no-class-components': noClassComponents,
     'no-unpinned-pdf-load': noUnpinnedPdfLoad,
+    'no-needs-password': noNeedsPassword,
   },
 };
 

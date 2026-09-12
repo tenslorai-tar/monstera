@@ -140,6 +140,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     commands: {} as unknown as DocumentCommands,
     documents: service,
     openedDocument: () => undefined,
+    unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
     settings: createEphemeralSettings(),
@@ -207,6 +208,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // document, which is the rare case where L11's question has a one-line
   // answer rather than a bound.
   'document.close': 'takes an id and answers a boolean',
+  // A `DocId` and a bounded string in; a variant and a four-value bitfield out.
+  // The bound on the way IN is the interesting half here and it is in the
+  // schema — `DOCUMENT_PASSWORD_MAX_CHARS`, the same constant `engine/open`
+  // takes — so nothing about this call scales with the document it unlocks.
+  'document.unlock': 'takes a bounded password and answers a variant',
   // These four need an engine session, and no engine host runs in a unit test.
   // Their bounds are asserted where they can be: the search channel by
   // ADR-0035 and `documentCommands.test.ts`, the rest by the caller-stated

@@ -169,8 +169,14 @@ describe('the core channel set', () => {
     expect(open.failures).toStrictEqual([]);
 
     // AND THE LIVE-SESSION SIDE, which is what makes the pair a property rather
-    // than a description of one object.
-    expect(engineChannels['engine/open'].failures).toStrictEqual(['open-failed']);
+    // than a description of one object. The two password refusals are on this
+    // side alone: a byte-image open parses nothing, so it has nothing that can
+    // be encrypted (ADR-0055).
+    expect(engineChannels['engine/open'].failures).toStrictEqual([
+      'open-failed',
+      'needs-password',
+      'wrong-password',
+    ]);
     expect(
       engineChannels['engine/open'].params.safeParse({
         snapshotDirectory: 'C:\\a',
@@ -178,6 +184,19 @@ describe('the core channel set', () => {
       }).success,
       'a live-session open must REQUIRE the document it is going to parse',
     ).toBe(false);
+    // THE ANSWER DIFFERS TOO, and this is the half the failures column cannot
+    // say: a live-session open reports what the password bought, and a
+    // byte-image one has no parse to report anything about. Without this the
+    // `opened` shape could be empty on both and every assertion above would
+    // still pass.
+    expect(
+      engineChannels['engine/open'].result.safeParse({ session: 'a'.repeat(43) }).success,
+      'a live-session open must state the access it obtained',
+    ).toBe(false);
+    expect(
+      open.result.safeParse({ session: 'a'.repeat(43) }).success,
+      'a byte-image open parses nothing, so it has no access to state',
+    ).toBe(true);
   });
 
   it('answers a write with the engine’s own result shape', () => {

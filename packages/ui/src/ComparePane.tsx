@@ -124,6 +124,8 @@ const ignoreVersion = (): void => undefined;
 const ignorePage = (_page: number): void => undefined;
 const ignoreZoom = (_shown: number): void => undefined;
 const ignoreWentTo = (): void => undefined;
+/** A module constant so its identity is stable — see {@link ignoreVersion}. */
+const declinePassword = (): Promise<string | undefined> => Promise.resolve(undefined);
 
 /**
  * The compared document's own scroller, over its own parser.
@@ -156,7 +158,13 @@ function CompareView({
   // already stable, which is what the hook's effect needs — and the compiler's
   // rule that a memo takes an inline function is right: memoizing a value that
   // never changes is ceremony that hides where the stability comes from.
-  const { ready, failed } = useDocumentView(client, against, ignoreVersion);
+  // NO PROMPT IN THE COMPARE PANE, stated rather than left to be inferred. A
+  // document can only be compared against once it is open in a tab, and opening
+  // it there is where its password was asked for and where main's session was
+  // established. A second prompt here would be asking twice for the one
+  // document — and refusing quietly instead of asking is the honest answer for
+  // a pane that cannot be the first to meet a locked file.
+  const { ready, failed } = useDocumentView(client, against, ignoreVersion, declinePassword);
 
   if (failed) return <canvas className="m-page" data-failed="true" />;
   if (ready === undefined) return <div className="m-page-list" />;

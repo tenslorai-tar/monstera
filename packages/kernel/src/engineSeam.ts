@@ -238,9 +238,86 @@ export type WriterShapeOf = typeof writerShapes;
  * *is* the byte image and both are identity — the shape difference shows up in
  * {@link Apply}, not here.
  */
+/**
+ * Why a `DocumentAccess` is the answer to an open and not a boolean.
+ *
+ * MuPDF's `authenticatePassword` returns a **bitfield**, and every value it
+ * distinguishes is one this application has a row for. Measured 2026-09-12
+ * (`.probe/authValues.mjs`, JOURNAL that date) over `aes-256` documents this
+ * engine wrote:
+ *
+ * | document | password offered | answer |
+ * |---|---|---|
+ * | unencrypted | anything, including none | **1** |
+ * | user + owner | the user's | **2** |
+ * | user + owner | the owner's | **4** |
+ * | one password for both | that one | **6** |
+ * | user + owner | wrong, or none | **0** |
+ * | **owner only** | **none** | **2** — an owner-only document opens for everybody, which is what an owner password MEANS |
+ *
+ * The permission rows later in Stage 7 turn on *which* of these it was, so
+ * collapsing it to a boolean here would throw away an answer the engine gives
+ * precisely and force a second opinion about it later (B3a).
+ *
+ * **AND `0` DOES NOT MEAN UNREADABLE**, which is the one reading nothing in the
+ * declarations warns about. A document written with a user password and no
+ * owner password answers `0` to the empty attempt and **still reads 24 blocks**:
+ * MuPDF derives the key from the empty *owner* password, then zeroes `access`
+ * to match Acrobat, which refuses an empty owner password. So `0` is *this
+ * application declines to open it*, which is stricter than *the engine could
+ * not*. Stricter is the right direction — it asks for a password the engine
+ * would not have required — and it is recorded because the permission rows must
+ * not read `0` as evidence of anything about the document.
+ */
+export type { DocumentAccess } from '@monstera/contract';
+
+/** Why an open produced no session, when the reason is the password. */
+export type LockedReason = 'needs-password' | 'wrong-password';
+
+/**
+ * An open refused because the document is encrypted.
+ *
+ * A class rather than a variant in the return type, because `open` has exactly
+ * one success shape and every writer already signals failure by rejecting —
+ * a result union here would make three adapters carry a discriminant for a
+ * state only one of them can produce.
+ *
+ * **It carries no password and no document bytes**, and that is the rule rather
+ * than an accident of this one: ADR-0055 puts the secret out of every
+ * diagnostic, and an error is the thing most likely to be logged whole.
+ */
+export class DocumentLocked extends Error {
+  readonly reason: LockedReason;
+
+  constructor(reason: LockedReason) {
+    super(
+      reason === 'needs-password'
+        ? 'The document is encrypted and no password was supplied.'
+        : 'The document is encrypted and the password supplied did not open it.',
+    );
+    this.name = 'DocumentLocked';
+    this.reason = reason;
+  }
+}
+
 export interface EngineWriter<TSession> {
-  /** Parses `image` into a session. The image is not retained by the engine. */
-  open(image: ByteImage): Promise<TSession>;
+  /**
+   * Parses `image` into a session. The image is not retained by the engine.
+   *
+   * ## `password` is an OPEN parameter, which is ADR-0055's whole shape
+   *
+   * There is no `authenticate` on a session, and there must not be: MuPDF's
+   * authentication **re-derives the file key**, so a failed attempt destroys
+   * the key a successful one left, and a session that has been authenticated
+   * against and lost reads as a structurally sound document that decrypts to
+   * garbage. One attempt per open makes that state unrepresentable rather than
+   * something a caller must avoid producing (B5).
+   *
+   * @throws DocumentLocked when the document is encrypted and this password —
+   * or its absence — did not open it. The session is not created, so there is
+   * nothing to close.
+   */
+  open(image: ByteImage, password?: string): Promise<TSession>;
   /**
    * The canonical bytes for the session's current state.
    *

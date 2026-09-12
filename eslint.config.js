@@ -504,6 +504,16 @@ export default tseslint.config(
       // second. Four call sites had the flag and two did not.
       'monstera/no-unpinned-pdf-load': 'error',
 
+      // ADR-0055. MuPDF's `needsPassword()` is `pdf_authenticate_password(doc,
+      // "")` — an authentication attempt, and a failed attempt re-derives and
+      // so destroys the file key a successful one left. Measured 2026-09-12:
+      // one call after the right password takes a page from 24 structured-text
+      // blocks to 0 and rasters it blank. The surface it invites — prompt until
+      // the document stops needing a password — never terminates AND breaks the
+      // document on its first turn, and nothing about writing it looks wrong,
+      // which is what a rule is for and a comment is not.
+      'monstera/no-needs-password': 'error',
+
       // ADR-0029 DECISION 4'S EXHAUSTIVENESS, WHICH WAS A COMMENT UNTIL NOW.
       // Each projection switches on `placement.surface` and ends in a `default`
       // assigning to `never`, so a fifth `Placement` variant fails to compile in

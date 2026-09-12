@@ -1,6 +1,14 @@
 import * as mupdf from 'mupdf';
 
-import type { ByteImage, EngineWriter, MupdfSession, SavePurpose } from './engineSeam.js';
+import type {
+  ByteImage,
+  DocumentAccess,
+  EngineWriter,
+  MupdfSession,
+  SavePurpose,
+} from './engineSeam.js';
+import { DocumentLocked } from './engineSeam.js';
+import { DOCUMENT_ACCESS_VALUES } from '@monstera/contract';
 
 /**
  * The structural writer of record, behind the engine seam.
@@ -43,6 +51,49 @@ import type { ByteImage, EngineWriter, MupdfSession, SavePurpose } from './engin
  * relying on this.
  */
 const documents = new WeakMap<MupdfSession, mupdf.PDFDocument>();
+
+/**
+ * What the password that opened this session bought.
+ *
+ * Beside the document map rather than re-asked, because **re-asking is the one
+ * thing that breaks the session**: every call that answers this question in
+ * MuPDF is an authentication attempt, and an attempt that fails destroys the
+ * key (ADR-0055). So the answer is recorded at the single moment it is safe to
+ * obtain — the open — and read from here afterwards.
+ *
+ * Weak and keyed on the session for `documents`' reasons, and deliberately a
+ * second map rather than a field on a record: a session's identity is the token
+ * and nothing may hang off the token itself, or `{ engine: 'mupdf' }` would
+ * start carrying state a forged one could carry too.
+ */
+const accesses = new WeakMap<MupdfSession, DocumentAccess>();
+
+/**
+ * What the password that opened `session` bought — 1 unencrypted, 2 user,
+ * 4 owner, 6 both.
+ *
+ * Stage 7's permission rows read this. It throws for a session this adapter did
+ * not open, matching every other lookup here: map membership is the provenance.
+ */
+/**
+ * Whether the engine's answer is one of the four this build names.
+ *
+ * DERIVED from `DOCUMENT_ACCESS_VALUES`, and this is a case where deriving is
+ * right in both directions: the danger is a value the set does not carry, so a
+ * hand-written list here would be a second opinion about the same bitfield the
+ * channel schema validates (B3a, and 4c's question asked rather than assumed).
+ */
+function isDocumentAccess(value: number): value is DocumentAccess {
+  return (DOCUMENT_ACCESS_VALUES as readonly number[]).includes(value);
+}
+
+export function accessFor(session: MupdfSession): DocumentAccess {
+  const access = accesses.get(session);
+  if (access === undefined) {
+    throw new Error('This session was not opened by the MuPDF adapter, or has been closed.');
+  }
+  return access;
+}
 
 /**
  * Runs synchronous engine work as a promise, turning a **throw into a
@@ -294,7 +345,7 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
   // writing `.catch()` around a call that throws before returning a promise
   // does not catch it. Mixing the two is the trap `DocumentService.run` closed
   // the same way.
-  open(image: ByteImage): Promise<MupdfSession> {
+  open(image: ByteImage, password?: string): Promise<MupdfSession> {
     return promised(() => {
       const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
       if (!(document instanceof mupdf.PDFDocument)) {
@@ -302,10 +353,45 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
         // that parsed would otherwise reach page-tree code assuming PDF objects.
         throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
       }
+      // THE ONE ATTEMPT, and it is made whether or not the document is
+      // encrypted — which is what lets this module never call `needsPassword`.
+      //
+      // `authenticatePassword` answers `1` for a document with no `/Encrypt`
+      // dictionary at all, so the unencrypted path is the same call and the
+      // same branch rather than a second one guarded by a question. The
+      // question is the banned one: `needsPassword()` IS
+      // `pdf_authenticate_password(doc, "")`, so asking it here would be this
+      // attempt made twice, the second one discarding the first's key
+      // (ADR-0055, measured 2026-09-12).
+      // TYPED AS THE ENGINE'S NUMBER, narrowed below. `DocumentAccess` does not
+      // include `0` on purpose — a refusal produces no session, so no caller
+      // can ever hold that value — and declaring the call as it would make the
+      // one branch that must exist look like dead code.
+      const access: number = document.authenticatePassword(password ?? '');
+      if (access === 0) {
+        // Destroyed rather than kept: after a refused attempt the crypt holds
+        // a key derived from the wrong password, and the next attempt arrives
+        // as a fresh open. Keeping it would be the session ADR-0055 exists to
+        // make unreachable.
+        document.destroy();
+        throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
+      }
+      if (!isDocumentAccess(access)) {
+        // AN ANSWER THE ENGINE IS NOT DOCUMENTED TO GIVE. Refused rather than
+        // widened: `DocumentAccess` is what the permission rows read, and a
+        // value nobody has measured reaching them as a number would be worse
+        // than a refusal — a bit this build cannot name is a permission it
+        // cannot honestly report.
+        document.destroy();
+        throw new Error(
+          `The engine answered an access this build does not know: ${String(access)}.`,
+        );
+      }
       // The one place a MupdfSession is minted. Keeping this cast unexported is
       // what makes the brand mean "this adapter produced it".
       const session = { engine: 'mupdf' } as MupdfSession;
       documents.set(session, document);
+      accesses.set(session, access);
       return session;
     });
   },
@@ -363,6 +449,9 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
       // Removed BEFORE destroying, so a second close is a named error rather
       // than a second `destroy()` on a freed native document.
       documents.delete(session);
+      // The access goes with it, so a closed session cannot be asked what its
+      // password bought — the same refusal, from the same cause.
+      accesses.delete(session);
       document.destroy();
     });
   },

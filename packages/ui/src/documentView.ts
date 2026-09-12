@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
+import { GlobalWorkerOptions, PasswordException, getDocument } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 // `?url` rather than a bare specifier: Vite emits the worker as its own asset
 // and gives back a relative URL, which is what a `file://` document needs. A
@@ -71,6 +71,22 @@ export async function openDocumentView(options: {
   readonly version: DocVersion;
   readonly byteLength: number;
   readonly onVersionMoved: OnVersionMoved;
+  /**
+   * The password this document needs, for one that is encrypted.
+   *
+   * ## The renderer holds it because PDF.js needs it, and main decides whether
+   * it is right
+   *
+   * The parser here reads the canonical bytes through a
+   * `PDFDataRangeTransport`, so it meets the `/Encrypt` dictionary itself and
+   * cannot draw a page without the password. What it must never be is the
+   * **authority**: the caller sends the password to `document.unlock` first and
+   * only reaches this call if main unlocked with it, so a disagreement between
+   * the two engines can never end with a page drawn from a document main could
+   * not open (ADR-0055, and §3.2's standing rule that PDF.js is never a source
+   * of truth).
+   */
+  readonly password?: string;
 }): Promise<DocumentView> {
   // THE VIEW CLOSES ITSELF, and the caller is told afterwards (finding IIIII-1).
   //
@@ -95,6 +111,11 @@ export async function openDocumentView(options: {
 
   const task = getDocument({
     range: transport,
+    // OMITTED rather than passed as `undefined`, because PDF.js treats the
+    // presence of the key as an attempt: an unencrypted document handed
+    // `password: undefined` is unaffected, and keeping the shape honest costs
+    // one spread.
+    ...(options.password === undefined ? {} : { password: options.password }),
     // ICC colour management is unavailable under this CSP and that is settled:
     // `qcms` arrives by a synchronous XHR, which `connect-src 'none'` refuses
     // before WebAssembly is ever reached. `useWorkerFetch: false` closes the
@@ -137,4 +158,26 @@ export async function openDocumentView(options: {
     await close();
     throw cause;
   }
+}
+
+/**
+ * Whether a failed open failed **for want of a password**.
+ *
+ * ## Here rather than at the call site, and keyed on the CLASS
+ *
+ * PDF.js announces this as `PasswordException`, and matching on the class is
+ * what keeps a caller from keying on a message — the same rule every failure in
+ * this repository follows. It lives beside the opener because that is the one
+ * module that imports PDF.js for this purpose; a hook testing `instanceof
+ * PasswordException` would be a second place that knows how the parser reports
+ * it.
+ *
+ * **This is a trigger, not an answer.** It says the parser cannot proceed
+ * without a password, which is a fact about parsing. Whether a password is the
+ * RIGHT one is main's answer through `document.unlock`, and §3.2's standing
+ * rule — PDF.js is never a source of truth — is why the caller asks main first
+ * and this parser second.
+ */
+export function needsPasswordToParse(cause: unknown): boolean {
+  return cause instanceof PasswordException;
 }

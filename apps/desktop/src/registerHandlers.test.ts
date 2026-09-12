@@ -72,6 +72,9 @@ function handlers() {
     openedDocument: () => {
       throw new Error('registration cases must not reach the session opener');
     },
+    unlockDocument: () => {
+      throw new Error('registration cases must not reach the session opener');
+    },
     pickDocument: () => {
       throw new Error('registration cases must not reach the picker');
     },

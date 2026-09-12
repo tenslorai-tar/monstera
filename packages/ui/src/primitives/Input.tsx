@@ -43,6 +43,22 @@ export interface InputProps {
    * feel different from a label is that it is optional.
    */
   placeholder?: MessageKey | undefined;
+  /**
+   * Whether what is typed is a secret the screen must not show.
+   *
+   * **A boolean rather than a `type` passthrough**, and the difference is B5:
+   * `type` would let a caller spell `email`, `number` or `url` — four more
+   * behaviours nothing here has designed, each with its own browser validation
+   * and its own mobile keyboard — while this names the one distinction the
+   * application actually has. The wrong choice stops being expressible instead
+   * of being discouraged.
+   *
+   * It is also the only reason this primitive knows anything about input types
+   * at all: a document password is text a person types into a dialog like any
+   * other, and rendering it in the clear is the one thing that would be wrong
+   * (ADR-0055).
+   */
+  secret?: boolean;
 }
 
 export function Input({
@@ -51,6 +67,7 @@ export function Input({
   onValueChange,
   disabled = false,
   placeholder,
+  secret = false,
 }: InputProps): ReactElement {
   // Subscribed rather than resolved once — see `Button`.
   const { _ } = useLingui();
@@ -67,6 +84,7 @@ export function Input({
         // an absent placeholder and a placeholder that resolves to nothing are
         // different, and only one of them is a catalogue defect.
         placeholder={placeholder === undefined ? undefined : _(placeholder)}
+        type={secret ? 'password' : 'text'}
         value={value}
       />
     </Field.Root>

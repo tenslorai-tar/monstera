@@ -1008,6 +1008,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
+  'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
@@ -1107,6 +1108,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
+  'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1279,6 +1281,7 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
+  'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

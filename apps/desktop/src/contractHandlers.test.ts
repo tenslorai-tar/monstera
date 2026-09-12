@@ -62,6 +62,9 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     commands: unusedCommands,
     documents,
     openedDocument: (docId) => sessioned.push(docId),
+    // `not-locked` IS THE ORDINARY DOCUMENT'S ANSWER, so cases that never
+    // mention encryption get the state every fixture here is in.
+    unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
     pickDocument,
     recent,
     // RETURNED, so cases about persistence read the same object the handlers
@@ -298,6 +301,7 @@ describe('document.open', () => {
           commands: unusedCommands,
           documents,
           openedDocument: () => undefined,
+          unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
           settings: createEphemeralSettings(),
@@ -477,6 +481,7 @@ describe('the recent list', () => {
       commands: unusedCommands,
       documents,
       openedDocument: () => undefined,
+      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent,
       settings: createEphemeralSettings(),
@@ -523,6 +528,7 @@ describe('log.reveal', () => {
       commands: unusedCommands,
       documents: {} as unknown as DocumentService,
       openedDocument: () => undefined,
+      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
       settings: createEphemeralSettings(),

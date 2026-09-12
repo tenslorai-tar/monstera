@@ -17,6 +17,7 @@ import type {
   DocumentTeardown,
   EngineSupervisor,
   HostTermination,
+  LockedReason,
   MupdfSession,
   SnapshotWrite,
 } from '@monstera/kernel';
@@ -101,7 +102,10 @@ export interface SessionAreaOwner {
  * A parameter typed to the whole writer would let this function grow into them
  * without anybody choosing to.
  */
-export type EngineOpenFromPath = (snapshotPath: string) => Promise<MupdfSession>;
+export type EngineOpenFromPath = (
+  snapshotPath: string,
+  password?: string,
+) => Promise<MupdfSession>;
 
 /**
  * Creates the engine session for one open document.
@@ -132,8 +136,9 @@ export async function openEngineSession(
   docId: DocId,
   areas: SessionAreaOwner,
   open: EngineOpenFromPath,
+  password?: string,
 ): Promise<{ readonly session: MupdfSession; readonly snapshotBytes: number }> {
-  return openEngineSessionFrom(canonicalImageWrite(documents, docId), areas, open);
+  return openEngineSessionFrom(canonicalImageWrite(documents, docId), areas, open, password);
 }
 
 /**
@@ -157,11 +162,15 @@ export async function openEngineSessionFrom(
   write: SnapshotWrite,
   areas: SessionAreaOwner,
   open: EngineOpenFromPath,
+  password?: string,
 ): Promise<{ readonly session: MupdfSession; readonly snapshotBytes: number }> {
   const { snapshotPath } = await areas.create();
   try {
     const snapshotBytes = await write(snapshotPath);
-    const session = await open(snapshotPath);
+    // THE PASSWORD IS PASSED THROUGH AND NOT HELD. It arrives as an argument,
+    // reaches one call, and leaves with the stack frame — nothing on this
+    // module's side of the seam records it (ADR-0055).
+    const session = await open(snapshotPath, password);
     return { session, snapshotBytes };
   } catch (error) {
     await areas.remove();
@@ -267,6 +276,18 @@ export interface DocumentOpenSurfaces {
    * binding into `main`. The composition root already imports the kernel.
    */
   readonly documentUnreadable: (error: unknown) => boolean;
+  /**
+   * Why a lane entry failed because the document is ENCRYPTED, or `undefined`.
+   *
+   * Injected for `documentUnreadable`'s reason exactly — `EngineDocumentLocked`
+   * is a class, `instanceof` needs it at run time, and naming it here would
+   * pull the kernel barrel into this module.
+   *
+   * Separate from `documentUnreadable` rather than a third value of it, because
+   * the two lead to opposite places: unreadable poisons the document without a
+   * second attempt, and locked spends no attempt at all and waits for a person.
+   */
+  readonly documentLocked: (error: unknown) => LockedReason | undefined;
   /** Creates one document's sessions. Runs **inside** that document's lane. */
   readonly create: (docId: DocId) => Promise<DocumentSessions>;
 }
@@ -339,6 +360,23 @@ export async function onDocumentOpened(
         return;
       } catch (error) {
         if (surfaces.closedMeanwhile(error)) return;
+
+        // THE PASSWORD EXIT, and it is ABOVE the deterministic one because it
+        // is the stronger claim: the host parsed the file far enough to read
+        // its `/Encrypt` dictionary, so *this document will never parse* is
+        // false about it. Spending an attempt here would poison a document on
+        // the second open of a session nobody has been asked about, and a
+        // poisoned document answers every command with `document-poisoned`
+        // until it is closed and reopened — which would lock it again.
+        //
+        // No `recordFailure`, deliberately. The count is the supervisor's
+        // evidence about the HOST, and a host that answered a question
+        // correctly is healthy (ADR-0055).
+        const locked = surfaces.documentLocked(error);
+        if (locked !== undefined) {
+          sessions.markLocked(docId, locked);
+          return;
+        }
 
         // THE DETERMINISTIC EXIT, and it is the one this loop's bound cannot
         // decide. Everything below treats a failure as possibly transient and
@@ -541,6 +579,35 @@ interface DocumentEntry {
    * a document closing while a host dies (B3).
    */
   release: (() => Promise<void>) | null;
+  /**
+   * Why this document has no session, when the reason is a password.
+   *
+   * `null` in every other state. A locked document is one whose session
+   * creation reached the host and was **answered**, and it is deliberately not
+   * a failure count: an encrypted document is not evidence about the host's
+   * health and is not a document that will never parse, so neither of this
+   * class's two existing terminal states fits it
+   * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+   *
+   * On this entry rather than in a second map, for `consecutiveFailures`'
+   * reason: its lifetime IS this entry's, and two maps keyed by `DocId` drift
+   * at the moment a document closes underneath a host death (B3).
+   */
+  locked: LockedReason | null;
+  /**
+   * Whether a password is what gave this document its session.
+   *
+   * **Not the negation of {@link locked}**, and not derivable from the access
+   * either: an owner-only document opens for everybody with `access: 2` and no
+   * password at all, and recycling that is fine. What this records is the one
+   * fact that makes a rebuild impossible — a session nothing can re-create,
+   * because the password that made it is not kept anywhere (ADR-0055).
+   *
+   * Set on a successful unlock and never cleared: the document is the same
+   * document for the rest of its life, and close-and-reopen is what starts
+   * over.
+   */
+  unlockedByPassword: boolean;
 }
 
 /**
@@ -612,7 +679,32 @@ export class EngineSessions implements EngineSessionSource {
    */
   begin(docId: DocId): void {
     if (this.#entries.has(docId)) return;
-    this.#entries.set(docId, { sessions: {}, consecutiveFailures: 0, release: null });
+    this.#entries.set(docId, {
+      sessions: {},
+      consecutiveFailures: 0,
+      release: null,
+      locked: null,
+      unlockedByPassword: false,
+    });
+  }
+
+  /** Why this document has no session, when the reason is a password. */
+  readonly locked = (docId: DocId): LockedReason | undefined =>
+    this.#entries.get(docId)?.locked ?? undefined;
+
+  /**
+   * Records that the host answered an open with a password refusal.
+   *
+   * **No failure is counted**, which is the whole of why this is a method and
+   * not a third `SessionFailureReason`: `recordFailure` feeds the bound that
+   * poisons, and a document nobody has typed a password for must not consume
+   * an attempt. A poisoned encrypted document would refuse every command until
+   * close-and-reopen, which would poison it again.
+   */
+  markLocked(docId: DocId, reason: LockedReason): void {
+    const entry = this.#entries.get(docId);
+    if (entry === undefined) return;
+    entry.locked = reason;
   }
 
   /**
@@ -634,10 +726,27 @@ export class EngineSessions implements EngineSessionSource {
       );
     }
     if (entry === undefined) {
-      this.#entries.set(docId, { sessions, consecutiveFailures: 0, release: null });
+      this.#entries.set(docId, {
+        sessions,
+        consecutiveFailures: 0,
+        release: null,
+        locked: null,
+        unlockedByPassword: false,
+      });
       return;
     }
+    // A DOCUMENT THAT WAS LOCKED AND NOW HAS A SESSION WAS UNLOCKED BY A
+    // PASSWORD, which is why this is read before the line below clears it. The
+    // supervisor's own state is the evidence rather than a second argument the
+    // caller has to pass correctly.
+    if (entry.locked !== null) entry.unlockedByPassword = true;
     entry.sessions = sessions;
+    // A HELD SESSION IS AN UNLOCKED DOCUMENT, by construction: the host issues
+    // no session for a document it refused on a password, so reaching this line
+    // is the proof rather than a second thing to remember. Clearing it here
+    // rather than at the unlock call site is what stops the two answers
+    // disagreeing (B3).
+    entry.locked = null;
   }
 
   /**
@@ -763,6 +872,26 @@ export class EngineSessions implements EngineSessionSource {
   async recycle(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
     const entry = this.#entries.get(docId);
     if (entry === undefined) return;
+
+    // REFUSED FOR A DOCUMENT A PASSWORD OPENED, and this is ADR-0055's rule
+    // arriving as a mechanism rather than a note. Nothing here holds the
+    // password — main does not keep it, the entry does not carry it — so a
+    // rebuild would ask the engine to open the same encrypted bytes with
+    // nothing, and the session it got back would be a locked one held for a
+    // document the supervisor believes is unlocked.
+    //
+    // A throw rather than a silent skip. Invariant 22 offers recycling and
+    // nothing schedules it, so every caller is deliberate and is entitled to
+    // know the capability does not apply here. Caching the password to make it
+    // work was the alternative and it keeps a user's secret in main's memory
+    // for the life of the document, to serve a capability nothing calls.
+    if (entry.unlockedByPassword) {
+      throw new Error(
+        `Document ${docId.slice(0, 8)}… was opened with a password, which this build does not ` +
+          `keep, so its engine session cannot be rebuilt without asking for it again. ` +
+          `Close and reopen is what re-establishes it.`,
+      );
+    }
 
     const release = entry.release;
     // CLEARED BEFORE THE AWAIT, like `holdRelease` does and for the same

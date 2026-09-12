@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
-import { mupdfWriter } from '../mupdfWriter.js';
+import { accessFor, mupdfWriter } from '../mupdfWriter.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
@@ -136,6 +136,7 @@ const engineHandlers = createEngineHandlers({
   sessions: createHostSessions(cryptoBytes),
   execution: localMupdfExecution,
   writer: mupdfWriter,
+  access: accessFor,
   files: {
     readSnapshot: async (directory, name) => new Uint8Array(await readFile(join(directory, name))),
     writeOutput: async (directory, name, bytes) => {

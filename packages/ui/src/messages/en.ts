@@ -479,6 +479,14 @@ export const HANDWRITING_REGION_TOOL_TITLE = messageKey('command.tools.handwriti
 export const CLOUD_REGION_TOOL_TITLE = messageKey('command.tools.cloud-region');
 export const LINK_ADDRESS_TOOL_TITLE = messageKey('command.annotate.link-address');
 export const LINK_PAGE_TOOL_TITLE = messageKey('command.annotate.link-page');
+export const DOCUMENT_PASSWORD_TITLE = messageKey('dialog.document-password.title');
+export const DOCUMENT_PASSWORD_ASKS = messageKey('dialog.document-password.asks');
+export const DOCUMENT_PASSWORD_LABEL = messageKey('dialog.document-password.label');
+export const DOCUMENT_PASSWORD_APPLY = messageKey('dialog.document-password.apply');
+export const DOCUMENT_PASSWORD_EMPTY = messageKey('dialog.document-password.empty');
+export const DOCUMENT_PASSWORD_WRONG = messageKey('dialog.document-password.wrong');
+export const DOCUMENT_PASSWORD_TOO_LONG = messageKey('dialog.document-password.too-long');
+
 export const LINK_ADDRESS_TITLE = messageKey('dialog.link-address.title');
 export const LINK_ADDRESS_LABEL = messageKey('dialog.link-address.label');
 export const LINK_ADDRESS_APPLY = messageKey('dialog.link-address.apply');
@@ -1211,6 +1219,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_REGION_TOOL_TITLE]: 'Send a box to Azure to recognise',
   [LINK_ADDRESS_TOOL_TITLE]: 'Link to a web address',
   [LINK_PAGE_TOOL_TITLE]: 'Link to a page',
+  [DOCUMENT_PASSWORD_TITLE]: 'This document is protected',
+  [DOCUMENT_PASSWORD_ASKS]: '{name} needs a password before it can be opened.',
+  [DOCUMENT_PASSWORD_LABEL]: 'Password',
+  [DOCUMENT_PASSWORD_APPLY]: 'Open document',
+  [DOCUMENT_PASSWORD_EMPTY]: 'Type the password to open this document.',
+  [DOCUMENT_PASSWORD_WRONG]: 'That password did not open the document. Try again.',
+  [DOCUMENT_PASSWORD_TOO_LONG]: 'That is longer than any password this format can carry.',
+
   [LINK_ADDRESS_TITLE]: 'Link to a web address',
   [LINK_ADDRESS_LABEL]: 'Address',
   [LINK_ADDRESS_APPLY]: 'Add link',

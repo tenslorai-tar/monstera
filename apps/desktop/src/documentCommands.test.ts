@@ -758,6 +758,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           commands,
           documents: service,
           openedDocument: () => undefined,
+          unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
           settings: { read: () => ({}), write: () => undefined },

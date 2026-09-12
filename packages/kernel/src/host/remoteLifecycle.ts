@@ -1,6 +1,6 @@
 import type { ClientApi, FormDataFormat } from '@monstera/contract';
 
-import type { ByteImage, MupdfSession } from '../engineSeam.js';
+import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import type { EngineChannels } from './engineChannels.js';
 import type { RemoteSessions, SessionArea } from './remoteEngine.js';
@@ -53,6 +53,37 @@ export class EngineOpenFailed extends Error {
         'failure rather than the host\'s — a file that will never parse must not be counted as ' +
         'evidence that the host is unhealthy, or a rebuild-and-retry loop follows.',
     );
+  }
+}
+
+/**
+ * The host refused the open because the document is encrypted.
+ *
+ * **Its own class rather than an {@link EngineOpenFailed} with a different
+ * detail string, and the distinction is the whole feature**: `EngineOpenFailed`
+ * means *this document will never parse*, and the supervisor answers it by
+ * poisoning the document without a second attempt. An encrypted document parses
+ * perfectly as soon as somebody types a password, so poisoning it would refuse
+ * every command against a file whose only problem is that nobody has been
+ * asked yet — and close-and-reopen, the documented way to clear a poisoning,
+ * would produce the identical refusal for ever.
+ *
+ * Carries the reason and **never the password**
+ * ([ADR-0055](../../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)):
+ * an error is the value most likely to be logged whole.
+ */
+export class EngineDocumentLocked extends Error {
+  override readonly name = 'EngineDocumentLocked';
+
+  readonly reason: LockedReason;
+
+  constructor(reason: LockedReason) {
+    super(
+      reason === 'needs-password'
+        ? 'The engine host reports the document is encrypted and no password was supplied.'
+        : 'The engine host reports the password supplied did not open the document.',
+    );
+    this.reason = reason;
   }
 }
 

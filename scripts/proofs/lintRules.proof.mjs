@@ -63,6 +63,7 @@ import {
   PLANTED_Y_FLIP_OFFENDER,
 } from '../lib/noBareYFlip.mjs';
 import { PLANTED_PINNED_LOAD, PLANTED_UNPINNED_LOAD } from '../lib/noUnpinnedPdfLoad.mjs';
+import { PLANTED_AUTHENTICATES, PLANTED_NEEDS_PASSWORD } from '../lib/noNeedsPassword.mjs';
 import {
   CLASS_COMPONENT_OWNER,
   PLANTED_CLASS_COMPONENT_INNOCENT,
@@ -669,6 +670,47 @@ async function main() {
         }\n      A rule that reported the pinned call is one somebody disables, which costs ` +
           `the class rather than the case — and one that reported any \`.load\` would fire on ` +
           `every unrelated object in the tree.`,
+      );
+
+      // -------------------------------------------------------------------
+      // ADR-0055. MuPDF's `needsPassword()` is an AUTHENTICATION ATTEMPT —
+      // `pdf_authenticate_password(doc, "")` — and a failed attempt re-derives
+      // and so destroys the file key a successful one left. Measured
+      // 2026-09-12: one call after the right password takes a page from 24
+      // structured-text blocks to 0 and rasters it blank.
+      // -------------------------------------------------------------------
+      const NEEDS = 'monstera/no-needs-password';
+      const asks = join(shippedDirectory, 'asks.ts');
+      writeFileSync(asks, `${PLANTED_NEEDS_PASSWORD}\n`, 'utf8');
+      const asked = (await eslint.lintFiles([asks]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === NEEDS);
+
+      check(
+        'all three ways of asking are reported, at error severity',
+        asked.filter((message) => message.severity === 2).length === 3,
+        `findings on the planted module: ${
+          asked.map((m) => `${m.ruleId}(${String(m.severity)})`).join(', ') || 'none'
+        }\n      THREE, because asking has three shapes: the LOOP, which is how the defect ` +
+          `would actually be written and which never terminates; the plain read somebody adds ` +
+          `to a status line; and the NEGATION, which is what a person writes when they think ` +
+          `they are checking that a document is fine.`,
+      );
+
+      const authenticates = join(shippedDirectory, 'authenticates.ts');
+      writeFileSync(authenticates, `${PLANTED_AUTHENTICATES}\n`, 'utf8');
+      const authenticated = (await eslint.lintFiles([authenticates]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === NEEDS);
+
+      check(
+        'CONTROL: the call this build makes, an uncalled property of that NAME, and another method are NOT reported',
+        authenticated.length === 0,
+        `findings on the innocent module: ${
+          authenticated.map((m) => m.message).join(' | ') || 'none'
+        }\n      The middle case is the one that matters: \`flags.needsPassword\` as a plain ` +
+          `property READ is a fact somebody recorded, not a call into the engine, and a rule ` +
+          `that reported it would fire on every surface that displays the state.`,
       );
 
       // -------------------------------------------------------------------

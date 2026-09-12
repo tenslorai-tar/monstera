@@ -892,6 +892,90 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Encrypted documents open, and one decision was written from the wrong sequence
+
+Stage 7's first feature row is done. The design is ADR-0055's and the
+measurement behind it is the entry below; what this entry records is what
+building it changed about the ADR, and one thing the row is stricter about than
+the engine.
+
+### The correction is worth more than the row
+
+**ADR-0055 Decision 4 described a shape this architecture does not have**, and
+nothing about reading it says so. It put a `needs-password` outcome on
+`document.open` with a pending-open token the renderer then unlocks — every
+channel it names exists, the token is mintable, the renderer flow reads
+correctly.
+
+`document.open` **returns before any engine session exists.**
+`onDocumentOpened` queues session creation into the document's lane and its own
+header says why nothing awaits it: *a document opens whether or not an engine is
+available*. So at the moment opening answers, nothing in this application has
+parsed the document and nothing can know it is encrypted.
+
+The decision was written from the channel declarations without re-reading the
+path that creates a session. That is the half-true compound claim in its
+quietest form yet — **a conclusion that is correct** (the renderer does need
+telling; a token-shaped thing does need to identify the document) resting on a
+sequence that is wrong. No check can fire on it, and the clause a reader would
+verify is the one that holds.
+
+What replaces it: the document opens, the supervisor records it **locked**
+rather than poisoning it, PDF.js's own `PasswordException` triggers the prompt,
+and `document.unlock` takes the `DocId` the renderer already holds. The ADR
+carries a dated correction; the decision above it is left standing, because what
+was believed at the time is the record.
+
+### `0` does not mean unreadable, and this build is stricter than the engine
+
+Measured while choosing what `open` should refuse on. A document written with a
+**user password and no owner password** answers `access: 0` to the empty attempt
+and **still reads 24 blocks**: MuPDF derives the key from the empty *owner*
+password, then zeroes `access` to match Acrobat, which refuses an empty owner
+password. So `0` is *this application declines to open it*, which is stricter
+than *the engine could not*.
+
+Stricter is the right direction — it asks for a password the engine would not
+have required — and it is recorded because the permission rows three rows from
+here must not read `0` as evidence of anything about the document.
+
+### What the row ships
+
+`engine/open` carries an optional password and answers the access; the wire's
+`opened` shape is per engine, so a byte-image host's open still answers a
+session id and nothing else — it parses nothing and has nothing to report. The
+supervisor gained a **locked** state that counts no failure, because an
+encrypted document is neither evidence about the host's health nor a document
+that will never parse, and poisoning it would refuse every command until a
+close-and-reopen that would poison it again.
+
+`recycle` **refuses** on a document a password opened. Nothing keeps the
+password, so a rebuild would hand the engine the same encrypted bytes with
+nothing and hold the locked session that came back for a document the supervisor
+believes is unlocked. The alternative was caching the secret for the life of the
+document to serve a capability invariant 22 offers and nothing calls.
+
+**The pair, and what each half can see.** `mupdfWriter.test.ts` opens an
+encrypted document with the right password and asserts a **block count**, never
+the absence of a throw — a wrong key produces a structurally sound document
+whose streams decrypt to garbage, so `open` resolving proves nothing. Its
+fixture carries real glyphs, because an empty page answers zero blocks whatever
+the key is and would be a fixture the bug handles correctly.
+`useDocumentView.test.tsx` asserts the **call**: unlock with that password,
+`retry` false then true, once and no more after a dismissal, and not at all for
+an unencrypted document.
+
+### A test that failed for the hook being right
+
+Three of the four renderer cases hung on the first run. The prompt callback was
+written inline in `renderHook`'s render function, so it was a new dependency on
+every render — and the effect correctly cancels the open in flight and starts
+another, for ever. `App.tsx` binds it through `useCallback`; the test did not.
+Worth keeping because the failure looked like a deadlock in the feature and was
+the feature's own cancellation working.
+
+---
+
 ## 2026-09-12 — The encrypted read, isolated: `needsPassword()` is an authentication attempt
 
 The reproduction recorded earlier today is explained, and the row is unblocked.

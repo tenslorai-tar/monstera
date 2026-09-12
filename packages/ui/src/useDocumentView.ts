@@ -2,7 +2,7 @@ import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useState } from 'react';
 
-import { type DocumentView, openDocumentView } from './documentView.js';
+import { type DocumentView, needsPasswordToParse, openDocumentView } from './documentView.js';
 
 /**
  * One document's live parser, opened on mount and closed on the way out.
@@ -52,6 +52,22 @@ export function useDocumentView(
    * renderer reading a document at a version it does not know it has.
    */
   onVersionMoved: (next: { readonly version: DocVersion; readonly byteLength: number }) => void,
+  /**
+   * Asks a person for this document's password, or answers `undefined` when
+   * they decline
+   * ([ADR-0055](../../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+   *
+   * **A parameter rather than a dialog opened here**, for `onVersionMoved`'s
+   * reason: `App.tsx`'s `ask` is bound to the dialog host for that render, and
+   * a hook that reached for one would be a second wiring place. `retry` is
+   * passed so the second prompt can say what happened to the first.
+   *
+   * Required, not optional. A caller that wants to refuse the whole flow has to
+   * say so by answering `undefined`, because a hook that silently skipped the
+   * prompt would report an encrypted document as one this renderer cannot show
+   * — which is the sentence a person sees instead of being asked.
+   */
+  requestPassword: (retry: boolean) => Promise<string | undefined>,
 ): {
   /** The live view, or `undefined` while it opens or after it fails. */
   readonly ready: DocumentView | undefined;
@@ -68,9 +84,82 @@ export function useDocumentView(
     const stopped = (): boolean => cancelled;
     let view: DocumentView | undefined;
 
+    /**
+     * Opens the view, asking for a password if the parser cannot proceed
+     * without one.
+     *
+     * ## MAIN IS ASKED FIRST, every time, and that ordering is the design
+     *
+     * `document.unlock` is what decides whether a password is right, because
+     * MuPDF is the writer of record for encryption and PDF.js is never a source
+     * of truth (§3.2). Only a password main accepted reaches `getDocument`, so
+     * the two parsers cannot end up disagreeing in the direction that matters —
+     * a page drawn from a document main could not open.
+     *
+     * It also does the necessary work either way: main has no engine session
+     * for this document until somebody unlocks it, so a renderer that gave the
+     * password only to PDF.js would show a document that refuses every command.
+     *
+     * ## The loop is bounded by the PERSON, not by a count
+     *
+     * A dismissal ends it. There is no attempt limit, because there is nothing
+     * here for one to protect: the document is already on this machine, in this
+     * process, and a person guessing at their own file is not an attacker. A
+     * cap would only lock somebody out of their own document and make them
+     * close and reopen it.
+     */
+    const openWithPassword = async (): Promise<DocumentView | undefined> => {
+      let retry = false;
+      for (;;) {
+        const password = await requestPassword(retry);
+        // DISMISSED. Not a failure to report — a person who changes their mind
+        // about opening a protected document has not hit an error — but there
+        // is no view, so the caller shows the same *cannot display* surface a
+        // failed parse produces.
+        if (password === undefined) return undefined;
+        if (stopped()) return undefined;
+
+        const unlocked = await client['document.unlock']({ docId, password });
+        if (stopped()) return undefined;
+        // A REFUSAL FROM THE CHANNEL ITSELF — the document closed while
+        // somebody was typing — ends the loop rather than asking again. There
+        // is nothing left to unlock.
+        if (!unlocked.ok) return undefined;
+        if (unlocked.value.kind === 'wrong-password') {
+          retry = true;
+          continue;
+        }
+        // `not-locked` reaches here too, and it is not a contradiction: the
+        // engine may have had no `/Encrypt` dictionary at all while PDF.js
+        // refused for a reason of its own. Handing the password to the parser
+        // is still the right next step, and if the parser refuses again the
+        // loop asks again.
+        return openDocumentView({
+          client,
+          docId,
+          version,
+          byteLength,
+          onVersionMoved,
+          password,
+        });
+      }
+    };
+
     const show = async (): Promise<void> => {
       try {
-        view = await openDocumentView({ client, docId, version, byteLength, onVersionMoved });
+        try {
+          view = await openDocumentView({ client, docId, version, byteLength, onVersionMoved });
+        } catch (cause) {
+          // THE ONE FAILURE THAT IS A QUESTION rather than a defect. Everything
+          // else falls through to the outer catch and becomes `failed`.
+          if (!needsPasswordToParse(cause)) throw cause;
+          if (stopped()) return;
+          view = await openWithPassword();
+          if (view === undefined) {
+            if (!stopped()) setFailed(true);
+            return;
+          }
+        }
         if (stopped()) {
           await view.close();
           return;
@@ -95,7 +184,7 @@ export function useDocumentView(
       setReady(undefined);
       void view?.close();
     };
-  }, [byteLength, client, docId, onVersionMoved, version]);
+  }, [byteLength, client, docId, onVersionMoved, requestPassword, version]);
 
   return { ready, failed };
 }

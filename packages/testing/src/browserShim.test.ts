@@ -221,6 +221,7 @@ describe('browser shim', () => {
       'document.split',
       'document.textLines',
       'document.undo',
+      'document.unlock',
       'document.viewModel',
       'log.reveal',
       'settings.load',

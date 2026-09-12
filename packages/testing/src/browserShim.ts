@@ -95,6 +95,14 @@ import {
  */
 export type OpenAnswer = ChannelResult<'document.open'>;
 
+/**
+ * What one `document.unlock` answers — {@link OpenAnswer}'s sibling, derived
+ * from the channel for the same reason: a variant added there makes every
+ * construction of one here a compile error rather than a silently unhandled
+ * case.
+ */
+export type UnlockAnswer = ChannelResult<'document.unlock'>;
+
 export interface BrowserShim {
   /** The renderer-facing surface. Complete by construction. */
   readonly client: ContractClient;
@@ -503,6 +511,19 @@ export interface BrowserShimOptions {
   readonly opens?: readonly OpenAnswer[];
 
   /**
+   * What `document.unlock` answers, in order.
+   *
+   * `opens`' sibling and for its reason: the outcome a surface has to handle is
+   * a *sequence* — a wrong password, then a right one — and a shim answering
+   * one fixed outcome forever cannot express it.
+   *
+   * Unset, or exhausted, answers `not-locked`, which is what every document in
+   * every other test is. A default of `wrong-password` would fail an unrelated
+   * test that happened to unlock, for a reason it never set up.
+   */
+  readonly unlocks?: readonly UnlockAnswer[];
+
+  /**
    * What `document.recent` answers.
    *
    * Empty by default, because a first launch is the real state a start screen
@@ -582,6 +603,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied, not aliased: `options` is the caller's, and a handler that shifted
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
+  const queuedUnlocks: UnlockAnswer[] = [...(options.unlocks ?? [])];
 
   // Copied rather than aliased, for the same reason the queue above is: a test
   // holding the object it seeded would otherwise see it change underneath as
@@ -693,6 +715,28 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // would assert on a shape nothing ships.
       if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
+    },
+
+    /**
+     * One password attempt, answered from a queue the test seeds.
+     *
+     * **Queued rather than keyed on the password**, and that is the difference
+     * between a shim and a second implementation: a shim that compared the
+     * password against a stored one would be this package deciding what a right
+     * password is, which is MuPDF's answer and nobody else's (B3a). What a
+     * surface test needs is the *sequence* — a wrong attempt, then a right
+     * one — and a queue is exactly that and nothing more.
+     *
+     * The default is `not-locked`, because that is what every document in every
+     * other test is: a shim whose default was `wrong-password` would make an
+     * unrelated test that happened to unlock fail for a reason it never set up.
+     */
+    'document.unlock': ({ docId }) => {
+      // REFUSED FOR A DOCUMENT NOTHING OPENED, like every other per-document
+      // channel here. Answering `unlocked` for an id the shim has never seen
+      // would be the one state the real boundary cannot produce.
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' as const }));
+      return Promise.resolve(ok(queuedUnlocks.shift() ?? { kind: 'not-locked' as const }));
     },
 
     /**

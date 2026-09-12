@@ -1,9 +1,9 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
-import { mupdfWriter } from './mupdfWriter.js';
+import { accessFor, mupdfWriter, withDocument } from './mupdfWriter.js';
 
 /**
  * The seam's one live adapter, exercised end to end.
@@ -136,6 +136,183 @@ describe('mupdfWriter — the bytes it hands out', () => {
       const view = document.saveToBuffer('').asUint8Array();
       expect(view.byteLength).toBeGreaterThan(0);
       expect(view.buffer.byteLength).toBeGreaterThan(view.byteLength);
+    } finally {
+      document.destroy();
+    }
+  });
+});
+
+/**
+ * Encrypted documents — Stage 7's first feature row
+ * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+ *
+ * ## Every case asserts a BLOCK COUNT, never the absence of a throw
+ *
+ * This is the whole shape of the defect these exist for. A document whose key
+ * is wrong does not fail to open, does not throw, and does not answer an empty
+ * document — it answers a **structurally sound document whose streams decrypt
+ * to garbage**, which `toStructuredText` reports as zero blocks and MuPDF
+ * mentions only on stderr. So `open` resolving proves nothing, and a case that
+ * asserted it would pass against the broken engine.
+ *
+ * ## The fixture carries real text, and that is not decoration
+ *
+ * An empty page answers zero blocks whatever the key is, so it is a fixture the
+ * bug handles correctly — the audit's own *never build a fixture the bug also
+ * handles* rule. `drawText` with an embedded standard font is what makes the
+ * two states distinguishable.
+ */
+describe('mupdfWriter — encrypted documents', () => {
+  const USER = 'reader-secret';
+  const OWNER = 'owner-secret';
+
+  /** A one-page document with real glyphs on it. */
+  let written: ByteImage;
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    document.addPage([612, 792]).drawText('Monstera encrypted document row', {
+      font,
+      size: 24,
+      x: 72,
+      y: 720,
+    });
+    written = await document.save();
+  });
+
+  /**
+   * The same bytes under `aes-256`, with whichever passwords are named.
+   *
+   * MuPDF's own writer, because §3's matrix makes MuPDF the writer of record
+   * for encryption: a fixture encrypted by a second library would be a case
+   * about that library's interpretation of the format.
+   */
+  const encrypted = (options: string): ByteImage => {
+    const source = mupdf.PDFDocument.openDocument(written, 'application/pdf');
+    // NARROWED RATHER THAN CAST, for the reason the ownership control above
+    // gives: `openDocument` is typed as returning the base `Document`, and a
+    // non-PDF opens successfully and answers one with no `saveToBuffer`.
+    if (!(source instanceof mupdf.PDFDocument)) throw new Error('the fixture is not a PDF');
+    try {
+      return Uint8Array.from(source.saveToBuffer(`encrypt=aes-256,${options}`).asUint8Array());
+    } finally {
+      source.destroy();
+    }
+  };
+
+  /** How many structured-text blocks page 0 answers, through a live session. */
+  const blocksThrough = (session: MupdfSession): Promise<number> =>
+    withDocument(session, (document) => {
+      const structured = JSON.parse(document.loadPage(0).toStructuredText().asJSON()) as {
+        blocks?: readonly unknown[];
+      };
+      return structured.blocks?.length ?? 0;
+    });
+
+  it('CONTROL: the unencrypted fixture has text on it, so zero blocks means something', async () => {
+    // Without this every assertion below is satisfied by a fixture with nothing
+    // on it, and a broken decrypt would be indistinguishable from an empty
+    // page. It also pins `access: 1` — a document with no `/Encrypt`
+    // dictionary — which is the value the encrypted cases must NOT answer.
+    const session = await mupdfWriter.open(written);
+    try {
+      expect(await blocksThrough(session)).toBeGreaterThan(0);
+      expect(accessFor(session)).toBe(1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('opens with the user password and READS THE TEXT, answering access 2', async () => {
+    const bytes = encrypted(`user-password=${USER},owner-password=${OWNER}`);
+    const session = await mupdfWriter.open(bytes, USER);
+    try {
+      expect(await blocksThrough(session)).toBeGreaterThan(0);
+      expect(accessFor(session)).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('tells the OWNER password apart from the user’s, which a boolean could not', async () => {
+    // The permission rows later in this stage turn entirely on this
+    // distinction, and MuPDF answers it precisely — so the seam carries the
+    // bitfield rather than collapsing it and forcing a second opinion later.
+    const bytes = encrypted(`user-password=${USER},owner-password=${OWNER}`);
+    const session = await mupdfWriter.open(bytes, OWNER);
+    try {
+      expect(accessFor(session)).toBe(4);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('refuses with NEEDS-PASSWORD when none was offered', async () => {
+    const bytes = encrypted(`user-password=${USER},owner-password=${OWNER}`);
+    await expect(mupdfWriter.open(bytes)).rejects.toMatchObject({
+      name: 'DocumentLocked',
+      reason: 'needs-password',
+    });
+  });
+
+  it('refuses with WRONG-PASSWORD when one was, which is a different sentence', async () => {
+    // Two refusals rather than one, because the surfaces differ: the first
+    // prompt says nothing happened yet and the second says the last attempt was
+    // refused. A single code would make the second prompt unable to say so.
+    const bytes = encrypted(`user-password=${USER},owner-password=${OWNER}`);
+    await expect(mupdfWriter.open(bytes, 'not-the-password')).rejects.toMatchObject({
+      name: 'DocumentLocked',
+      reason: 'wrong-password',
+    });
+  });
+
+  it('carries NO password on the refusal, because an error is what gets logged whole', async () => {
+    const bytes = encrypted(`user-password=${USER},owner-password=${OWNER}`);
+    const refusal = await mupdfWriter.open(bytes, USER + '-typo').catch((error: unknown) => error);
+    // The whole error, not a field of it: a password that reached `message` or
+    // rode along as an extra property would be in every diagnostic that
+    // stringifies a rejection.
+    expect(JSON.stringify(refusal, Object.getOwnPropertyNames(refusal))).not.toContain(USER);
+  });
+
+  it('THE CONTROL FOR THE BAN: needsPassword() after authenticating empties the page', () => {
+    // REACHES PAST THE ADAPTER DELIBERATELY, like the ownership control above
+    // and for the same reason: this is the behaviour `monstera/no-needs-password`
+    // exists to prevent, and the rule stops the application from being able to
+    // express it — so the only place left that can demonstrate it is a case
+    // that calls the engine directly.
+    //
+    // Without this the ban is a rule with a paragraph behind it. With it, the
+    // paragraph is a measurement: the same document, the same session, one call
+    // in between, and the page goes from having text to having none.
+    //
+    // NO DISABLE COMMENT, and that is the scoping working rather than luck:
+    // `monstera/no-needs-password` is registered against shipped source and
+    // ignores `**/*.test.ts`, for the reason every rule in that block records —
+    // the fixture that names the banned form is what proves a rule sees, and it
+    // must not be the thing the rule reports.
+    const bytes = encrypted(`user-password=${USER},owner-password=${OWNER}`);
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    try {
+      expect(document.authenticatePassword(USER)).toBe(2);
+      const blocks = (): number =>
+        (
+          JSON.parse(document.loadPage(0).toStructuredText().asJSON()) as {
+            blocks?: readonly unknown[];
+          }
+        ).blocks?.length ?? 0;
+
+      const before = blocks();
+      expect(before).toBeGreaterThan(0);
+
+      document.needsPassword();
+
+      expect(
+        blocks(),
+        'needsPassword() is pdf_authenticate_password(doc, "") — a failed attempt that ' +
+          're-derives and so destroys the key the successful one left',
+      ).toBe(0);
     } finally {
       document.destroy();
     }

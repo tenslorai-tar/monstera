@@ -3,6 +3,7 @@ import {
   MAX_RASTER_PIXELS,
   type ChannelResult,
   type ContractHandlers,
+  type DocumentAccess,
   type OcrLanguage,
   type SpellingLanguage,
 } from '@monstera/contract';
@@ -80,6 +81,25 @@ export type PickDocument = () => Promise<string | null>;
 export type OpenedDocument = (docId: DocId) => void;
 
 /**
+ * One password attempt against an open document the supervisor recorded as
+ * locked
+ * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+ *
+ * An arrow rather than the supervisor itself, for {@link OpenedDocument}'s
+ * reason: this module may not name `EngineSessions`, and the handler needs
+ * exactly one call. What it deliberately cannot express is *unlock without a
+ * password* and *read the password back*.
+ */
+export type UnlockDocument = (
+  docId: DocId,
+  password: string,
+) => Promise<
+  | { readonly kind: 'unlocked'; readonly access: DocumentAccess }
+  | { readonly kind: 'wrong-password' }
+  | { readonly kind: 'not-locked' }
+>;
+
+/**
  * What the application reports about itself.
  *
  * Both fields are **baked at build time** (E4) rather than detected at runtime.
@@ -131,6 +151,8 @@ export function createContractHandlers(deps: {
   readonly documents: DocumentService;
   readonly capabilities: CapabilityRegistry;
   readonly openedDocument: OpenedDocument;
+  /** One password attempt against an open encrypted document (ADR-0055). */
+  readonly unlockDocument: UnlockDocument;
   readonly pickDocument: PickDocument;
   /** The recent-files list, which is also where the clean-exit marker lives. */
   readonly recent: RecentFiles;
@@ -219,6 +241,17 @@ export function createContractHandlers(deps: {
       return ok({ bytesRemoved: await deps.handwriting.clear() });
     },
     'document.open': openDocumentHandler(deps),
+    'document.unlock': async ({ docId, password }) => {
+      try {
+        return ok(await deps.unlockDocument(docId, password));
+      } catch (thrown) {
+        // MATCHED ON THE CLASS, never on the message, like every other
+        // per-document handler here. A document closed while somebody was
+        // typing is an outcome the renderer acts on by forgetting the prompt.
+        if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+        throw thrown;
+      }
+    },
     'document.recent': recentHandler(deps),
     'document.openRecent': openRecentHandler(deps),
     'document.close': closeHandler({ documents: deps.documents, recent: deps.recent }),

@@ -501,6 +501,9 @@ describe('the engine host answers a containment probe', () => {
         throw new Error('a containment probe must not close');
       },
     },
+    access: () => {
+      throw new Error('a containment probe holds no session to have an access');
+    },
     files: {
       readSnapshot: () => {
         throw new Error('a containment probe must not read the snapshot directory');

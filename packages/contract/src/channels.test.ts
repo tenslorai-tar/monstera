@@ -47,6 +47,12 @@ const handlers: ContractHandlers = {
   'app.fetchHandwritingModel': () => Promise.resolve(ok({ ready: true, bytesToFetch: 0 })),
   'app.clearHandwritingCache': () => Promise.resolve(ok({ bytesRemoved: 0 })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  // `unlocked` WITH THE OWNER BIT, rather than the user bit or the variant with
+  // no number in it. `2` is what a handler that hard-coded the commonest answer
+  // would produce and `1` is what an unencrypted document answers, so neither
+  // separates a fixture carrying the engine's bitfield from one that invented a
+  // value; `4` is a reading only an owner password produces.
+  'document.unlock': () => Promise.resolve(ok({ kind: 'unlocked' as const, access: 4 as const })),
   // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
   // list and `lastExitClean: true` are what a boundary that dropped both fields
   // produces, and they are also the ordinary state — so the fixture that

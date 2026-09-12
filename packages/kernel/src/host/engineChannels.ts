@@ -1,6 +1,8 @@
 import {
   type CommandKind,
   type CommandOfKind,
+  DOCUMENT_ACCESS_VALUES,
+  DOCUMENT_PASSWORD_MAX_CHARS,
   addAnnotationSchema,
   placeImageSchema,
   deleteFormFieldsSchema,
@@ -1073,6 +1075,25 @@ export const outputNameSchema = z
 const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
 
 /**
+ * A user's document password, travelling main → host on `engine/open`
+ * ([ADR-0055](../../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+ *
+ * **Unconstrained in its characters, and bounded in length.** Every other
+ * string on this wire is an allowlist because main composed it; this one is
+ * typed by a person, and a charset rule here would refuse a legitimate password
+ * for looking unusual. What a password can do to this process is nothing — it
+ * reaches `pdf_authenticate_password`, which hashes it — so the bound exists
+ * for the reason every bound on this wire exists, which is that the frame is
+ * sized.
+ *
+ * The bound is `DOCUMENT_PASSWORD_MAX_CHARS`, from `@monstera/contract`, which
+ * is also what `document.unlock` uses. Two bounds for one value is the pair
+ * that disagrees the day one is raised, with the failure landing as a frame
+ * error in the middle of somebody typing (B3a).
+ */
+const documentPasswordSchema = z.string().max(DOCUMENT_PASSWORD_MAX_CHARS);
+
+/**
  * One attempt's outcome, exactly as `containment.ts` defines it.
  *
  * The code's bound and charset are imported rather than restated: the host
@@ -1109,6 +1130,7 @@ const probeOutcomeSchema = z.discriminatedUnion('kind', [
 export interface WireShape<
   TOpen extends z.ZodRawShape,
   TOpenFailure extends readonly string[],
+  TOpened extends z.ZodRawShape,
   TRead extends z.ZodRawShape,
   TWrite extends z.ZodRawShape,
   TWrote extends z.ZodType,
@@ -1133,6 +1155,21 @@ export interface WireShape<
    * produce is what ADR-0048 refuses one channel up.
    */
   readonly openFailures: TOpenFailure;
+  /**
+   * What `engine/open` ANSWERS beyond the session id.
+   *
+   * `{ access }` for a live-session engine, which authenticated the document
+   * and is the only thing that can say what the password bought — MuPDF's own
+   * bitfield, `1` unencrypted, `2` user, `4` owner, `6` both. Empty for a
+   * byte-image engine, whose open parsed nothing and has nothing to report.
+   *
+   * **Answered rather than asked for later**, and that is ADR-0055's
+   * measurement rather than a preference: every MuPDF call that answers this
+   * question is an authentication attempt, and an attempt that fails destroys
+   * the session's key. The one moment it is safe to obtain is the open, so the
+   * open is what carries it.
+   */
+  readonly opened: TOpened;
   /**
    * Where this engine READS the document image it is about to work on.
    *
@@ -1222,8 +1259,9 @@ export interface CoreChannelSchemas<
  * inventing a third arrangement.
  */
 export const liveSessionWire = {
-  open: { snapshotName: outputNameSchema },
-  openFailures: ['open-failed'],
+  open: { snapshotName: outputNameSchema, password: documentPasswordSchema.optional() },
+  openFailures: ['open-failed', 'needs-password', 'wrong-password'],
+  opened: { access: z.literal(DOCUMENT_ACCESS_VALUES) },
   read: {},
   write: {},
   wrote: z.object({}).strict(),
@@ -1231,6 +1269,7 @@ export const liveSessionWire = {
 } as const satisfies WireShape<
   z.ZodRawShape,
   readonly string[],
+  z.ZodRawShape,
   z.ZodRawShape,
   z.ZodRawShape,
   z.ZodType,
@@ -1253,6 +1292,7 @@ export const liveSessionWire = {
 export const byteImageWire = {
   open: {},
   openFailures: [],
+  opened: {},
   read: { from: outputNameSchema },
   write: { into: outputNameSchema },
   wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
@@ -1260,6 +1300,7 @@ export const byteImageWire = {
 } as const satisfies WireShape<
   z.ZodRawShape,
   readonly string[],
+  z.ZodRawShape,
   z.ZodRawShape,
   z.ZodRawShape,
   z.ZodType,
@@ -1312,6 +1353,7 @@ export function coreEngineChannels<
   TInverse extends z.ZodType,
   TOpen extends z.ZodRawShape,
   const TOpenFailure extends readonly string[],
+  TOpened extends z.ZodRawShape,
   TRead extends z.ZodRawShape,
   TWrite extends z.ZodRawShape,
   TWrote extends z.ZodType,
@@ -1321,7 +1363,7 @@ export function coreEngineChannels<
     TCommand,
     TCapture,
     TInverse,
-    WireShape<TOpen, TOpenFailure, TRead, TWrite, TWrote, TTransferFailure>
+    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure>
   >,
 ) {
   const wire = schemas.wire;
@@ -1411,8 +1453,10 @@ export function coreEngineChannels<
         .strict(),
       // The host mints the identity (Decision 10b). Main holds a token it
       // cannot dereference, and this string is what the adapter records beside
-      // it.
-      z.object({ session: sessionSchema }).strict(),
+      // it. `wire.opened` is what a live-session engine adds — the access its
+      // password bought — and is empty for a byte-image one, which parsed
+      // nothing.
+      z.object({ session: sessionSchema, ...wire.opened }).strict(),
       wire.openFailures,
     ),
 

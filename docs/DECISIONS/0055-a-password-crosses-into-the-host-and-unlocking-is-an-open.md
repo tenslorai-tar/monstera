@@ -136,3 +136,59 @@ arriving a week before the rows that need it.
   a user's secret in main's memory for the life of the document to serve a
   capability §2 offers and nothing calls. Refusing is the honest answer and it
   is one sentence.
+
+## Correction, 2026-09-12 — Decision 4 describes a shape this architecture does not have
+
+Decision 4 above puts a `needs-password` outcome on `document.open`, with a
+**pending-open token** the renderer then unlocks. That cannot be built, and the
+reason is not a detail: **`document.open` returns before any engine session
+exists.**
+
+`onDocumentOpened` queues session creation into the document's lane and its own
+header says why nothing awaits it — *"a document opens whether or not an engine
+is available, and waiting here would make every open as slow as a host build"*.
+So at the moment `document.open` answers, nothing in this application has
+parsed the document and nothing can know it is encrypted. The pending-open token
+was an answer to a question asked one step too early.
+
+**The decision was written from the channel declarations without re-reading the
+path that creates a session**, and every channel it names exists and has the
+shape it says. That is the half-true compound claim again: the outcome union is
+real, the token is mintable, the renderer flow reads correctly — and the
+sequencing underneath it is wrong, which is the one clause no reader of the
+channel file would check.
+
+### What replaces it
+
+**The document opens. The supervisor discovers the lock.** `engine/open`
+answers `needs-password`, the supervisor records the document as **locked**
+rather than poisoning it — a lock is not evidence about the host and not a
+document that will never parse — and no failure is counted against it.
+
+**The renderer learns it from the parser in front of it.** PDF.js reads the
+canonical bytes through `PDFDataRangeTransport` and raises `PasswordException`,
+which is what triggers the prompt. That is not PDF.js as a source of truth: it
+says *I cannot parse this without a password*, which is a fact about parsing and
+not a claim about the document's model. **Whether the password is right is
+main's answer and only main's** — the renderer sends it to `document.unlock`
+first, and hands it to PDF.js only if main unlocked with it. The two can
+therefore never disagree in the direction that matters, which is a page drawn
+from a document main could not open.
+
+`document.unlock` takes the `DocId` — the renderer already holds one — so the
+pending-open token is not needed and is not minted. It answers `unlocked` with
+the `DocumentAccess`, or `wrong-password`, or `not-locked` for a document that
+never needed one.
+
+### The password reaches the renderer, and that was not stated
+
+Decision 3 says the password crosses into the engine host and argued that this
+grants the host nothing. **It is also in the renderer**, because the user types
+it there and PDF.js needs it to draw a page. That is not a widening either —
+the renderer is where the value is composed — but it was unstated, and a
+security property nobody wrote down is one the next change can spend.
+
+The rule is the same in both directions: **it is used and not kept.** The
+renderer holds it for the life of the view its PDF.js instance needs it for, and
+the one thing it must never do is put it anywhere a version bump would carry it
+— not in a store, not in a recent-files entry, not in a setting.

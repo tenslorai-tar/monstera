@@ -223,3 +223,37 @@ export type TrocrSize = (typeof TROCR_SIZES)[number];
  */
 export const AZURE_ENDPOINT_SETTING_ID = 'editing.azure-di-endpoint';
 export const AZURE_KEY_SETTING_ID = 'editing.azure-di-key';
+
+/**
+ * How long a document password may be, on any wire in this build
+ * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+ *
+ * **Here rather than beside either wire, because there are two** — renderer →
+ * main on `document.unlock`, and main → host on `engine/open` — and a bound
+ * spelt twice is the pair that disagrees the day one is raised, with the
+ * failure landing as a frame error in the middle of somebody typing (B3a).
+ *
+ * Wider than PDF's own limits (32 **bytes** to revision 4, 127 at revision 6)
+ * deliberately: a password longer than the engine accepts is a **wrong
+ * password**, and refusing it at the schema would report a malformed message
+ * where a person wants to be told they mistyped.
+ */
+export const DOCUMENT_PASSWORD_MAX_CHARS = 512;
+
+/**
+ * What a document password bought, exactly as MuPDF's `authenticatePassword`
+ * answers it.
+ *
+ * Measured 2026-09-12 (JOURNAL that date): `1` a document with no `/Encrypt`
+ * dictionary, `2` the user password, `4` the owner password, `6` one password
+ * that is both. `0` — refused — is not here, because a refusal produces no
+ * session and therefore never reaches a caller as an access.
+ *
+ * In this leaf rather than in the kernel, so the channel schema and the engine
+ * seam are one declaration: the permission rows read this and a second spelling
+ * would be a second opinion about a bitfield the engine already defines (B3a).
+ */
+export const DOCUMENT_ACCESS_VALUES = [1, 2, 4, 6] as const;
+
+/** One of {@link DOCUMENT_ACCESS_VALUES}. */
+export type DocumentAccess = (typeof DOCUMENT_ACCESS_VALUES)[number];

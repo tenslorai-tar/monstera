@@ -14,6 +14,8 @@ import {
   renderableCommandSchema,
 } from './commands.js';
 import {
+  DOCUMENT_ACCESS_VALUES,
+  DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
   OCR_LANGUAGES,
   TROCR_SIZES,
@@ -1035,6 +1037,75 @@ export const channels = {
    * never answer, and which is present because the two channels share a result
    * type on purpose. A renderer handling one handles the other.
    */
+  /**
+   * One password attempt against an open document that is encrypted
+   * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+   *
+   * ## IT TAKES A `DocId`, and the document is ALREADY OPEN
+   *
+   * That reads backwards until the sequence is on the page. `document.open`
+   * answers before any engine session exists — `onDocumentOpened` queues the
+   * session into the document's lane and nothing awaits it, because *a document
+   * opens whether or not an engine is available* — so at the moment opening
+   * answers, nothing here has parsed the file and nothing can know it is
+   * encrypted. An outcome on `document.open` would be an answer to a question
+   * asked one step too early, and ADR-0055's Decision 4 said exactly that
+   * before its own correction.
+   *
+   * So the document opens, the supervisor records it as **locked** rather than
+   * poisoning it — an encrypted file is neither evidence about the host nor a
+   * document that will never parse — and this channel is how a person's answer
+   * gets to the engine.
+   *
+   * ## The RENDERER may hold the password, and that is not a widening
+   *
+   * The user types it there, and PDF.js needs it to draw a page. What the
+   * renderer must never do is put it anywhere a version bump would carry it —
+   * not in a store, not in a recent-files entry, not in a setting. Main holds
+   * it for the length of one call and nothing records it, which is why
+   * `recycle` refuses on an unlocked document rather than rebuilding a session
+   * that cannot read it.
+   *
+   * ## `wrong-password` is an OUTCOME
+   *
+   * A person mistyping is not a defect and must not arrive wearing an incident
+   * id. The document stays locked and stays open, so the next attempt is
+   * another call rather than a reopen.
+   *
+   * `not-locked` covers both a document that never needed a password and one an
+   * earlier call already unlocked — the two are the same fact from here, which
+   * is *there is nothing for this password to do*.
+   */
+  'document.unlock': channel(
+    'Tries one password against an open encrypted document.',
+    z.object({
+      docId: docIdSchema,
+      password: z.string().max(DOCUMENT_PASSWORD_MAX_CHARS),
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('unlocked'),
+        /**
+         * What the password bought — `1` unencrypted, `2` user, `4` owner, `6`
+         * both.
+         *
+         * The engine answers this precisely and Stage 7's permission rows turn
+         * on it, so it is carried rather than collapsed to a boolean here and
+         * re-derived there (B3a). A renderer that only wants *did it work* reads
+         * the variant.
+         */
+        // DERIVED from the one declaration rather than respelt. `z.literal`
+        // takes the whole set in zod 4, so there is no tuple to cast and no
+        // second list to fall behind: a value the seam gains is a value this
+        // channel accepts, in the same edit.
+        access: z.literal(DOCUMENT_ACCESS_VALUES),
+      }),
+      z.object({ kind: z.literal('wrong-password') }),
+      z.object({ kind: z.literal('not-locked') }),
+    ]),
+    ['document-not-open'],
+  ),
+
   'document.openRecent': channel(
     'Opens a document the recent list named, by its handle.',
     z.object({ handle: fileHandleSchema }),

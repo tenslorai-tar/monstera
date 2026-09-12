@@ -2,7 +2,12 @@ import type { CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
-import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession } from '../engineSeam.js';
+// A VALUE IMPORT for the same reason the two below it are: `DocumentLocked` is
+// how this handler tells an encrypted document from an unreadable one, and the
+// alternative was keying on the wording of an error message. `engineSeam.ts`
+// loads no engine.
+import { DocumentLocked } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
 import type { Layer } from '../layers.js';
@@ -356,6 +361,18 @@ export interface EngineHandlerParts {
   readonly sessions: HostSessions;
   readonly execution: CommandExecution<'mupdf'>;
   readonly writer: EngineWriter<MupdfSession>;
+  /**
+   * What the password that opened a session bought — `mupdfWriter.accessFor`.
+   *
+   * Injected rather than imported for `writer`'s reason: naming the adapter
+   * here would bind the native engine to this module's import graph, and
+   * ADR-0026's barrel discipline is what keeps `main` clear of it.
+   *
+   * It is a **second member rather than a field on the session**, because a
+   * `MupdfSession` is a brand and nothing may hang off it: state on the token
+   * is state a forged token could carry too.
+   */
+  readonly access: (session: MupdfSession) => DocumentAccess;
   readonly files: HostFilesystem;
   readonly probe: HostContainmentProbe;
   readonly geometry: PageGeometryReader;
@@ -382,6 +399,7 @@ export function createEngineHandlers({
   sessions,
   execution,
   writer,
+  access,
   files,
   probe,
   geometry,
@@ -494,7 +512,7 @@ export function createEngineHandlers({
       value: await probe({ positive, negative, loopbackPort }),
     }),
 
-    'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory }) => {
+    'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory, password }) => {
       // THE PATH IS USED, NOT VALIDATED, and that is the design rather than an
       // omission. Main composed these directories and wrote their DACLs; this
       // process reaches them because it was GRANTED them, and would reach
@@ -509,8 +527,18 @@ export function createEngineHandlers({
 
       let session: MupdfSession;
       try {
-        session = await writer.open(image);
+        session = await writer.open(image, password);
       } catch (error) {
+        // THE PASSWORD IS A SEPARATE OUTCOME FROM A BROKEN DOCUMENT, and the
+        // difference decides what main does next: an encrypted document is one
+        // to ask a person about, and an unreadable one is one to poison. Folded
+        // into `open-failed` they would both reach the supervisor as a document
+        // this engine cannot read.
+        //
+        // `DocumentLocked` carries a reason and no password, so nothing here
+        // has a secret to leak even if the whole error were rendered
+        // (ADR-0055).
+        if (error instanceof DocumentLocked) return failed(error.reason, error);
         return failed('open-failed', error);
       }
       // ISSUED ONLY AFTER THE OPEN SUCCEEDED. An id handed out for a session
@@ -519,7 +547,14 @@ export function createEngineHandlers({
       // reads as a dead host and answers with a rebuild.
       return {
         ok: true,
-        value: { session: sessions.issue({ session, outputDirectory, snapshotDirectory }) },
+        value: {
+          session: sessions.issue({ session, outputDirectory, snapshotDirectory }),
+          // READ ONCE, HERE, because this is the only moment it is safe to
+          // read: every MuPDF call that answers it is an authentication attempt
+          // and a failed attempt destroys the session's key (ADR-0055). The
+          // adapter recorded it during the open and this is a map lookup.
+          access: access(session),
+        },
       };
     },
 

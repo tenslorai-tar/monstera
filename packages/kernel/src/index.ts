@@ -10,8 +10,10 @@ export { CapabilityRegistry, type HandleBytesSource, handlesEqual } from './capa
 export type {
   Apply,
   ByteImage,
+  DocumentAccess,
   EngineWriter,
   Invert,
+  LockedReason,
   MupdfSession,
   PdfiumSession,
   // FROM HERE SINCE 2026-09-11, and it was `commandBus.ts`' until then: a
@@ -130,6 +132,7 @@ export {
   createEngineHandlers,
 } from './host/engineHandlers.js';
 export {
+  EngineDocumentLocked,
   EngineFormDataExportFailed,
   EngineOpenFailed,
   EngineSerialiseFailed,

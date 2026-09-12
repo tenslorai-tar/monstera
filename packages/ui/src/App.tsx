@@ -119,6 +119,11 @@ import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
 import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
 import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from './dialogs/annotationLink.js';
+import {
+  DOCUMENT_PASSWORD_DIALOG,
+  DOCUMENT_PASSWORD_DIALOG_ID,
+  DOCUMENT_PASSWORD_RESULT,
+} from './dialogs/documentPassword.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
@@ -343,6 +348,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         DELETE_PAGES_DIALOG,
         ANNOTATION_TEXT_DIALOG,
         ANNOTATION_NOTE_DIALOG,
+        DOCUMENT_PASSWORD_DIALOG,
         LINK_ADDRESS_DIALOG,
         LINK_PAGE_DIALOG,
         CALLOUT_DIALOG,
@@ -380,6 +386,28 @@ export function App({ client, settings }: AppProps): ReactElement {
   // only callers of `set` are registered commands, which do not exist until
   // this component has built the registry above.
   useEffect(() => persistSettings(client, settings, ask), [client, settings, ask]);
+
+  /**
+   * Asks for an encrypted document's password
+   * ([ADR-0055](../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
+   *
+   * Here because `ask` is here. It answers `undefined` for a dismissal — the
+   * schema refuses an empty string, so a parse failure and a closed dialog are
+   * one outcome, which is the honest reading: neither produced a password.
+   *
+   * **What this function must not do is remember one.** The value goes to its
+   * caller and nowhere else; nothing here stores it, and the settings store two
+   * lines up is exactly where it must never go.
+   */
+  const requestPassword = useCallback(
+    async (name: string, retry: boolean): Promise<string | undefined> => {
+      const answered = DOCUMENT_PASSWORD_RESULT.safeParse(
+        await ask(DOCUMENT_PASSWORD_DIALOG_ID, { name, retry }),
+      );
+      return answered.success ? answered.data.password : undefined;
+    },
+    [ask],
+  );
 
   /**
    * Whether the handwriting engine's downloaded stack is on this machine.
@@ -1616,6 +1644,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           onCompare={setCompareId}
           search={search ?? undefined}
           secondRenderer={secondRenderer}
+          requestPassword={requestPassword}
         />
         </ErrorBoundary>
         </>
@@ -1863,6 +1892,7 @@ function useTheme(settings: SettingsStore): void {
 function PageCanvas({
   client,
   document: open,
+  requestPassword,
   onVersionMoved,
   onCurrentPage,
   mode,
@@ -1925,6 +1955,15 @@ function PageCanvas({
   readonly search: SearchHighlight | undefined;
   /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
   readonly secondRenderer: boolean;
+  /**
+   * Asks for an encrypted document's password, or `undefined` on a dismissal.
+   *
+   * A PROP rather than a dialog opened here, for the reason the tool
+   * registrations give: `ask` is bound to the dialog host for that render and
+   * cannot be captured by a composition. The name travels with it so the prompt
+   * can say which document is asking, which matters with tabs (ADR-0055).
+   */
+  readonly requestPassword: (name: string, retry: boolean) => Promise<string | undefined>;
 }): ReactElement {
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
@@ -1945,7 +1984,15 @@ function PageCanvas({
   // THE LIFETIME LIVES IN A HOOK NOW, because compare gave it a second caller.
   // Every hazard it carries — the call-not-variable cancellation flag, the
   // close on the late path, the clear before the close — is stated there.
-  const { ready, failed } = useDocumentView(client, open, moved);
+  // BOUND TO THIS DOCUMENT'S NAME here rather than inside the hook, because the
+  // hook holds a `DocId` and a `DocId` is not something a person can read. The
+  // name is the one thing about the file the renderer has (invariant L2).
+  const askPassword = useCallback(
+    (retry: boolean) => requestPassword(open.name, retry),
+    [open.name, requestPassword],
+  );
+
+  const { ready, failed } = useDocumentView(client, open, moved, askPassword);
 
   /**
    * §6.1's second engine, or `undefined` where the setting is off.

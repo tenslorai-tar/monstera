@@ -10,6 +10,7 @@ import {
   type CommandWriter,
   DocumentNotOpenError,
   DocumentService,
+  EngineDocumentLocked,
   EngineOpenFailed,
   type HostTermination,
   type MupdfSession,
@@ -795,6 +796,8 @@ describe('onDocumentOpened', () => {
       failures: (failure) => reported.push(failure),
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
+      documentLocked: (error) =>
+        error instanceof EngineDocumentLocked ? error.reason : undefined,
       create: (docId) => {
         created.push(docId);
         if (created.length <= attempts) return Promise.reject(rejection());
