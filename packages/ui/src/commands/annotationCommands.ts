@@ -26,7 +26,7 @@ import {
 } from '../annotations/measureTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
-import { PLACE_IMAGE_TOOL_ID } from '../annotations/placeImageTool.js';
+import { PLACE_IMAGE_TOOL_ID, PLACE_SIGNATURE_TOOL_ID } from '../annotations/placeImageTool.js';
 import {
   CLOUD_REGION_TOOL_ID,
   HANDWRITING_REGION_TOOL_ID,
@@ -59,6 +59,7 @@ import {
   FORM_FIELD_TEXT_TOOL_TITLE,
   GROUP_FIELDS,
   GROUP_MARKUP,
+  GROUP_SIGNATURES,
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
@@ -77,6 +78,7 @@ import {
   REDACT_TOOL_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
+  PLACE_SIGNATURE_TOOL_TITLE,
   CLOUD_REGION_TOOL_TITLE,
   HANDWRITING_REGION_TOOL_TITLE,
   OCR_REGION_TOOL_TITLE,
@@ -615,6 +617,21 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The place-signature tool's command.
+ *
+ * **On the Protect ribbon, beside *Sign document***, which is where a person
+ * looks for signing — the tool is a way of signing that happens to start with a
+ * drag, not a mark. 15 sits between *Sign document* at 10 and *Check
+ * signatures* at 20, so the group reads invisible, visible, verify.
+ */
+export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(PLACE_SIGNATURE_TOOL_ID, PLACE_SIGNATURE_TOOL_TITLE, 15, deps, {
+    section: 'protect',
+    group: GROUP_SIGNATURES,
+  });
+}
+
+/**
  * The OCR region tool's command.
  *
  * **60, among the marks**, beside the place-image tool and for its reason: both put
@@ -720,6 +737,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     measurePerimeterToolCommand(deps),
     snapshotToolCommand(deps),
     placeImageToolCommand(deps),
+    placeSignatureToolCommand(deps),
     ocrRegionToolCommand(deps),
     handwritingRegionToolCommand(deps),
     cloudRegionToolCommand(deps),

@@ -2540,6 +2540,114 @@ export const flattenFormFieldsSchema = z.object({
 export const MAX_SIGNATURE_FIELD = 256;
 
 /**
+ * The faces a typed signature may be set in.
+ *
+ * **pdf-lib's standard fonts, so what is written is a name and not a font
+ * program** — nothing is embedded, and nothing here ships a font file. That is
+ * also the limit, stated where the choice is made: a standard font encodes
+ * WinAnsi, so text outside it cannot be drawn. The kernel refuses such text
+ * against the font's own character set (B3a — the font is the authority on what
+ * it can encode), and this list is deliberately not accompanied by a character
+ * rule of its own.
+ */
+export const SIGNATURE_FONTS = ['helvetica', 'times-roman', 'times-italic', 'courier'] as const;
+
+/** How many strokes a drawn signature may carry. */
+export const MAX_SIGNATURE_STROKES = 64;
+
+/**
+ * How many points one stroke may carry.
+ *
+ * With {@link MAX_SIGNATURE_STROKES} this bounds a drawn signature at 65,536
+ * pairs of numbers whatever the document — the L11 question answered in the
+ * schema rather than trusted to a pad that samples politely.
+ */
+export const MAX_SIGNATURE_STROKE_POINTS = 1024;
+
+/**
+ * One point of a drawn stroke, in the PAD's own unit: both coordinates divided
+ * by the pad's width, origin at its top-left, y down.
+ *
+ * **Not page space, and not normalised per axis.** Dividing both by the same
+ * length keeps a circle a circle, and the kernel fits the ink's own bounding box
+ * into the placed rectangle — so the pad's shape, and where in it a person
+ * started, decide nothing about where the ink lands.
+ */
+const signaturePointSchema = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
+
+const typedSignatureMarkSchema = z
+  .object({
+    kind: z.literal('typed'),
+    text: z.string().min(1).max(MAX_SIGNATURE_FIELD),
+    font: z.enum(SIGNATURE_FONTS),
+  })
+  .strict();
+
+const drawnSignatureMarkSchema = z
+  .object({
+    kind: z.literal('drawn'),
+    strokes: z
+      .array(z.array(signaturePointSchema).min(2).max(MAX_SIGNATURE_STROKE_POINTS))
+      .min(1)
+      .max(MAX_SIGNATURE_STROKES),
+  })
+  .strict();
+
+/**
+ * How a visible signature looks, as a RENDERER may ask for it.
+ *
+ * `image` carries nothing, for `placeImage`'s reason: the picture is a file main
+ * picks and reads, so this side has no field to put one in.
+ */
+export const requestedSignatureMarkSchema = z.discriminatedUnion('kind', [
+  typedSignatureMarkSchema,
+  drawnSignatureMarkSchema,
+  z.object({ kind: z.literal('image') }).strict(),
+]);
+
+/** One of {@link requestedSignatureMarkSchema}'s three looks. */
+export type RequestedSignatureMark = z.infer<typeof requestedSignatureMarkSchema>;
+
+/**
+ * How a visible signature looks, as the COMMAND carries it.
+ *
+ * {@link requestedSignatureMarkSchema} with the picture attached by main, and
+ * its media type from the extension — `insertImagePageSchema`'s pair and
+ * `placeImageSchema`'s bound, for their reasons.
+ */
+const signatureMarkSchema = z.discriminatedUnion('kind', [
+  typedSignatureMarkSchema,
+  drawnSignatureMarkSchema,
+  z
+    .object({
+      kind: z.literal('image'),
+      bytes: z.custom<Uint8Array>(
+        (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
+        { message: `not an image of at most ${String(MAX_IMAGE_BYTES)} bytes` },
+      ),
+      mediaType: z.enum(['image/jpeg', 'image/png']),
+    })
+    .strict(),
+]);
+
+/**
+ * Where a visible signature goes: a page and a rectangle in PDF user space.
+ *
+ * `placeImage`'s rectangle and its space ({@link annotationRectSchema} says
+ * why), on one page — a signature is one field with one widget, and a widget
+ * belongs to exactly one page.
+ */
+export const signaturePlacementSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    rect: annotationRectSchema,
+  })
+  .strict();
+
+/** See {@link signaturePlacementSchema}. */
+export type SignaturePlacement = z.infer<typeof signaturePlacementSchema>;
+
+/**
  * Signs the document with a PKCS#12 certificate the user picked.
  *
  * ## The certificate's BYTES are the command's asset, and main reads them
@@ -2609,6 +2717,16 @@ export const signDocumentSchema = z.object({
    * `2` would be sending a number whose meaning it had to know.
    */
   certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
+  /**
+   * Where the signature is SEEN, and how it looks.
+   *
+   * Absent is the invisible signature — a zero-size widget on the first page,
+   * which is a real and common choice. Present gives the widget this rectangle
+   * and an `/AP /N` appearance drawn before signing, so the appearance sits
+   * inside the covered byte ranges and changing it afterwards breaks the
+   * signature like any other change.
+   */
+  appearance: signaturePlacementSchema.extend({ mark: signatureMarkSchema }).strict().optional(),
 });
 
 /**

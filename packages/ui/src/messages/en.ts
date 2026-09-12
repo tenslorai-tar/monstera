@@ -711,6 +711,26 @@ export const SIGN_DOCUMENT_CERTIFY_COMMENTS = messageKey('dialog.sign-document.c
 export const SIGN_PROBLEM_TITLE = messageKey('dialog.sign-problem.title');
 export const SIGN_PROBLEM_WRONG_PASSPHRASE = messageKey('dialog.sign-problem.wrong-passphrase');
 export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadable');
+export const SIGN_PROBLEM_UNENCODABLE_TEXT = messageKey('dialog.sign-problem.unencodable-text');
+export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
+export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
+export const SIGN_DOCUMENT_LOOK = messageKey('dialog.sign-document.look');
+export const SIGN_DOCUMENT_LOOK_TYPED = messageKey('dialog.sign-document.look-typed');
+export const SIGN_DOCUMENT_LOOK_DRAWN = messageKey('dialog.sign-document.look-drawn');
+export const SIGN_DOCUMENT_LOOK_IMAGE = messageKey('dialog.sign-document.look-image');
+export const SIGN_DOCUMENT_TEXT = messageKey('dialog.sign-document.text');
+export const SIGN_DOCUMENT_FONT = messageKey('dialog.sign-document.font');
+export const SIGN_DOCUMENT_FONT_HELVETICA = messageKey('dialog.sign-document.font-helvetica');
+export const SIGN_DOCUMENT_FONT_TIMES = messageKey('dialog.sign-document.font-times');
+export const SIGN_DOCUMENT_FONT_TIMES_ITALIC = messageKey(
+  'dialog.sign-document.font-times-italic',
+);
+export const SIGN_DOCUMENT_FONT_COURIER = messageKey('dialog.sign-document.font-courier');
+export const SIGN_DOCUMENT_PAD = messageKey('dialog.sign-document.pad');
+export const SIGN_DOCUMENT_CLEAR = messageKey('dialog.sign-document.clear');
+export const SIGN_DOCUMENT_IMAGE_NOTE = messageKey('dialog.sign-document.image-note');
+export const SIGN_DOCUMENT_MARK_MISSING = messageKey('dialog.sign-document.mark-missing');
+export const PLACE_SIGNATURE_TOOL_TITLE = messageKey('command.protect.place-signature');
 
 export const SIGNATURES_COMMAND_TITLE = messageKey('command.signatures.title');
 export const SIGNATURES_TITLE = messageKey('dialog.signatures.title');
@@ -1650,6 +1670,27 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'That password did not open the certificate. Nothing has been changed.',
   [SIGN_PROBLEM_UNREADABLE]:
     'That file is not a certificate this application can read. Nothing has been changed.',
+  [SIGN_PROBLEM_UNENCODABLE_TEXT]:
+    'The signature has a character that font cannot draw. Try another font or plain letters. Nothing has been changed.',
+  [SIGN_PROBLEM_IMAGE_UNREADABLE]:
+    'That picture could not be read. Choose a PNG or JPEG file. Nothing has been changed.',
+  [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
+  [SIGN_DOCUMENT_LOOK]: 'How the signature looks',
+  [SIGN_DOCUMENT_LOOK_TYPED]: 'Type it',
+  [SIGN_DOCUMENT_LOOK_DRAWN]: 'Draw it',
+  [SIGN_DOCUMENT_LOOK_IMAGE]: 'Use a picture of it',
+  [SIGN_DOCUMENT_TEXT]: 'Signature',
+  [SIGN_DOCUMENT_FONT]: 'Font',
+  [SIGN_DOCUMENT_FONT_HELVETICA]: 'Helvetica',
+  [SIGN_DOCUMENT_FONT_TIMES]: 'Times',
+  [SIGN_DOCUMENT_FONT_TIMES_ITALIC]: 'Times Italic',
+  [SIGN_DOCUMENT_FONT_COURIER]: 'Courier',
+  [SIGN_DOCUMENT_PAD]: 'Draw your signature here',
+  [SIGN_DOCUMENT_CLEAR]: 'Clear',
+  [SIGN_DOCUMENT_IMAGE_NOTE]:
+    'You will be asked for a PNG or JPEG picture of your signature first, then for your certificate.',
+  [SIGN_DOCUMENT_MARK_MISSING]: 'Type or draw the signature first.',
+  [PLACE_SIGNATURE_TOOL_TITLE]: 'Place a visible signature',
 
   [SIGNATURES_COMMAND_TITLE]: 'Check signatures',
   [SIGNATURES_TITLE]: 'Signatures',

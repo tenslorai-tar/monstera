@@ -177,6 +177,7 @@ describe('rectangleToolCommand', () => {
       language: () => 'eng' as const,
       trocrSize: () => 'small' as const,
       onPlaceImage: () => undefined,
+      onPlaceSignature: () => undefined,
     }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,

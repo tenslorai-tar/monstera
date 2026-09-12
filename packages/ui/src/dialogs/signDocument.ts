@@ -1,4 +1,8 @@
-import { DOCUMENT_PASSWORD_MAX_CHARS, MAX_SIGNATURE_FIELD } from '@monstera/contract';
+import {
+  DOCUMENT_PASSWORD_MAX_CHARS,
+  MAX_SIGNATURE_FIELD,
+  requestedSignatureMarkSchema,
+} from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -51,6 +55,15 @@ export const SIGN_DOCUMENT_RESULT = z
      * which of two acts they are performing before they have seen either.
      */
     certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
+    /**
+     * How a VISIBLE signature looks — present exactly when the dialog was
+     * opened for a placement.
+     *
+     * The contract's own mark schema rather than a copy of it, so the dialog
+     * cannot answer a look the channel refuses. The typed text is trimmed by the
+     * body before it gets here, for the descriptive fields' reason.
+     */
+    mark: requestedSignatureMarkSchema.optional(),
   })
   .strict();
 
@@ -60,7 +73,13 @@ export type SignDocumentAnswer = z.infer<typeof SIGN_DOCUMENT_RESULT>;
 export const SIGN_DOCUMENT_DIALOG = declareDialog({
   id: SIGN_DOCUMENT_DIALOG_ID,
   title: SIGN_DOCUMENT_TITLE,
-  props: z.object({}).strict(),
+  /**
+   * `placed` is whether a rectangle was drawn first. The ribbon's *Sign
+   * document* opens this without one, for an invisible signature; the place
+   * signature tool opens it with one, and only then does the body ask how the
+   * signature looks.
+   */
+  props: z.object({ placed: z.boolean() }).strict(),
   result: SIGN_DOCUMENT_RESULT,
   component: lazy(() => import('./SignDocumentBody.js')),
 });

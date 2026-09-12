@@ -892,6 +892,73 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Visible signatures, and a catch that chose its sentence by elimination
+
+D7's visible-signatures row. A drag with the place-signature tool (Protect ›
+Signatures) opens the signing dialog *placed*, and only then does it ask how the
+signature looks: typed in one of pdf-lib's four standard faces, drawn on a pad,
+or a picture of it. The widget gets the drawn rectangle and an `/AP /N`
+appearance **written before the signer runs**, so the appearance is inside the
+covered byte ranges and replacing it afterwards is a change every reader reports.
+
+### PDF.js draws it — run, not read
+
+PDF.js 6.2.108's `SignatureWidgetAnnotation` sets `noHTML`, which reads as *the
+canvas draws it* — and reading a library's source is not running it. A probe
+(`.probe/sigWidget.mjs`, gitignored, run 2026-09-12) built one signature widget
+with an appearance and one with a zero `/Rect` and no `/AP`, and asked
+`getOperatorList` in both `ENABLE` and `ENABLE_FORMS`. The first produced one
+`beginAnnotation` and its path in each mode; the control produced none. The
+first run of the probe crashed before the control half executed, and its
+positive half was not taken as the answer until the control had run.
+
+### The catch that called every failure a wrong password
+
+Main's `sign()` ended its catch with *everything else reaching here is the
+signer refusing the credential*. Measured, it was not. The first draft of this
+row's refusal case fed three errors through a refusing signer and got
+`wrong-passphrase` for all three — because the signer was never reached: a
+byte-image command's bytes come from the save source's `flush`, the harness's
+refuses, and that refusal arrived at the last line. **The control passed by the
+same route as the defect.** In the product the same line would tell a person
+their password was wrong when a flush or an install failed.
+
+The repair classifies by the class thrown where the knowledge is, never by
+elimination. `signingRefusals.ts` imports nothing, so main's barrel carries it
+without loading pdf-lib (ADR-0026). It holds `SignatureAppearanceRefusedError`
+(`unencodable-text`, `unreadable-image`) and `SignatureCredentialRefusedError`,
+which `applySignDocument` throws around exactly the P12 parse and the sign call.
+Main answers `wrong-passphrase` for that class alone and rethrows everything
+else, which the handler turns into `internal`. The control is now a plain
+`Error`, asserted to **propagate**; the kernel's two credential cases assert the
+class rather than any rejection.
+
+**Queued, not fixed here — a real-app defect of the same shape.** `insertImage`
+and `placeImage` in `apps/desktop/src/documentCommands.ts` end their catches in
+`return { kind: 'unreadable' }` for every class they do not name, so a failed
+flush or install there tells a person their picture could not be read. Read
+2026-09-12; not changed in a signing commit.
+
+### Upright on a turned page, and the assertion that failed on a correct drawing
+
+The form is counter-rotated by the page's `/Rotate`, so a signature reads left
+to right as the page is seen. The first case asserted ink in the box's top third
+and failed. Dumping where the ink landed showed the drawing was right: at 90°
+the widget displays as pixels [100, 100, 180, 300] and the ink ran x 104–175,
+y 188–210 — the kernel **centres** the ink it fits. A bounding box could not
+have told upright from mirrored either, so the case now compares ROWS: the
+inked rows form exactly two runs, the line wide above the dot narrow, at 0, 90,
+180 and 270. **Mutation, run 2026-09-12:** the 90° matrix set to identity fails
+the 90° case alone (*a line and, separately, a dot: expected 1 to be 2*) and the
+other three pass.
+
+### Stated limits
+
+- Standard faces encode WinAnsi. Text outside it is refused by name
+  (`unencodable-text`) rather than set in an embedded font — no font file ships.
+- The pad has no keyboard equivalent; *Type it* is offered first and has one.
+- One page per signature, because a widget belongs to one page.
+
 ## 2026-09-12 — Certification is an axis, and a flake with a clock in it
 
 D7's certify row, built as a field on the signing command rather than a second

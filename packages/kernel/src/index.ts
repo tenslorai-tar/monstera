@@ -235,6 +235,11 @@ export {
   readFileIdentity,
 } from './documentIdentity.js';
 export {
+  type SignatureAppearanceRefusal,
+  SignatureAppearanceRefusedError,
+  SignatureCredentialRefusedError,
+} from './signingRefusals.js';
+export {
   DocumentBusyError,
   type DocumentContext,
   type BytesWriter,

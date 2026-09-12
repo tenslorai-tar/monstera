@@ -36,6 +36,7 @@ import {
   applyRedactionsCommand,
   redactMatchesCommand,
   sanitizeDocumentCommand,
+  signDocument,
   signDocumentCommand,
   signaturesCommand,
   deletePagesCommand,
@@ -2537,6 +2538,94 @@ describe('protectDocumentCommand', () => {
 
       expect(sent).toStrictEqual([]);
     });
+
+    const PLACEMENT = { page: 2, rect: { x0: 10, y0: 20, x1: 110, y1: 70 } };
+    const TYPED = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
+
+    it('a PLACEMENT opens the dialog placed and sends its look as the appearance', async () => {
+      // BOTH HALVES OF THE PAIR: the props the dialog was opened with (which is
+      // what makes it ask for a look at all) and the appearance that crossed.
+      const { client, sent } = signingClient({ kind: 'cancelled' });
+      const asked: { id: string; props: unknown }[] = [];
+
+      await signDocument(
+        {
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve({ passphrase: '', mark: TYPED });
+          },
+        },
+        DOC,
+        PLACEMENT,
+      );
+
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: true } }]);
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.sign',
+          params: { docId: DOC, passphrase: '', appearance: { ...PLACEMENT, mark: TYPED } },
+        },
+      ]);
+    });
+
+    it('CONTROL: the ribbon opens it UNPLACED and sends no appearance, even if a look came back', async () => {
+      // A dialog answer carrying a mark is the input the defect would need: an
+      // invisible signing that forwarded one would have no rectangle to put it
+      // in, and the kernel would refuse a command a person never asked for.
+      const { client, sent } = signingClient({ kind: 'cancelled' });
+      const asked: unknown[] = [];
+
+      await signDocumentCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve({ passphrase: '', mark: TYPED });
+        },
+      }).run(CONTEXT);
+
+      expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false } }]);
+      expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
+    });
+
+    it('a placement answered with NO look signs nothing, rather than signing invisibly', async () => {
+      const { client, sent } = signingClient({ kind: 'cancelled' });
+
+      await signDocument(
+        { client, onApplied: () => undefined, ask: () => Promise.resolve({ passphrase: '' }) },
+        DOC,
+        PLACEMENT,
+      );
+
+      expect(sent).toStrictEqual([]);
+    });
+
+    it.each(['unencodable-text', 'image-unreadable', 'image-too-large'] as const)(
+      'SHOWS %s rather than returning quietly',
+      async (reason) => {
+        const { client } = signingClient({ kind: reason });
+        const shown: { id: string; props: unknown }[] = [];
+
+        await signDocument(
+          {
+            client,
+            onApplied: () => undefined,
+            ask: (id, props) => {
+              shown.push({ id, props });
+              return Promise.resolve(
+                id === 'dialog.sign-document' ? { passphrase: '', mark: TYPED } : undefined,
+              );
+            },
+          },
+          DOC,
+          PLACEMENT,
+        );
+
+        expect(shown[1]).toStrictEqual({ id: 'dialog.sign-problem', props: { reason } });
+      },
+    );
   });
 
   describe('signaturesCommand', () => {

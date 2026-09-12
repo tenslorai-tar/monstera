@@ -20,6 +20,7 @@ import {
   applyDocumentCommand,
   imagePagesFor,
   placeImage,
+  signDocument,
   snapshotRegion,
   findCommand,
   fitCommand,
@@ -1204,6 +1205,22 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Where a visible signature goes.
+   *
+   * `onPlaceImage`'s shape with one page and no setting: a signature is one
+   * widget on the page the box was drawn on, so there is no *every page* mode
+   * to read. The dialog, the certificate and the outcome are `signDocument`'s,
+   * which the ribbon's invisible signing calls too.
+   */
+  const onPlaceSignature = useCallback(
+    (page: number, rect: AnnotationRect): void => {
+      if (activeId === undefined) return;
+      void signDocument({ client, ask, onApplied: applied }, activeId, { page, rect });
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
    * Restyling everything the select tool has picked.
    *
    * `removeSelection`'s shape with an appearance instead of a deletion, and the
@@ -1272,6 +1289,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           // THE SAME MECHANISM, and it is listed below for the same reason.
           trocrSize: () => trocrSize,
           onPlaceImage,
+          onPlaceSignature,
         }),
       ),
     [
@@ -1279,6 +1297,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       listAnnotations,
       ocrLanguage,
       onPlaceImage,
+      onPlaceSignature,
       onSnapshot,
       readSelection,
       scale,

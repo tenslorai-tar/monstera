@@ -13,7 +13,11 @@ import {
   formFieldKindSchema,
   renderableCommandSchema,
 } from './commands.js';
-import { MAX_SIGNATURE_FIELD } from './commands.js';
+import {
+  MAX_SIGNATURE_FIELD,
+  requestedSignatureMarkSchema,
+  signaturePlacementSchema,
+} from './commands.js';
 import {
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
@@ -1685,6 +1689,17 @@ export const channels = {
        * `/P` is the format's and the kernel owns it.
        */
       certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
+      /**
+       * Where the signature is seen and how it looks, for a VISIBLE one.
+       *
+       * The mark's `image` member carries no picture: main picks and reads it,
+       * before the certificate, so a person choosing a picture meets that dialog
+       * first and a cancelled one asks for no credential.
+       */
+      appearance: signaturePlacementSchema
+        .extend({ mark: requestedSignatureMarkSchema })
+        .strict()
+        .optional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -1698,6 +1713,12 @@ export const channels = {
       z.object({ kind: z.literal('wrong-passphrase') }),
       /** The file was picked and is not a PKCS#12 this build can read. */
       z.object({ kind: z.literal('unreadable') }),
+      /** The typed text holds a character the chosen font cannot draw. */
+      z.object({ kind: z.literal('unencodable-text') }),
+      /** The picture could not be read or decoded as a PNG or JPEG. */
+      z.object({ kind: z.literal('image-unreadable') }),
+      /** The picture is larger than `MAX_IMAGE_BYTES`. */
+      z.object({ kind: z.literal('image-too-large') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

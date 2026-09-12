@@ -7,6 +7,8 @@ import {
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   MAX_TEXT_LAYER_LINE,
+  type RequestedSignatureMark,
+  type SignaturePlacement,
   sourceIdsOf,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
@@ -48,6 +50,8 @@ import {
   type SplitOutcome,
   type MupdfSession,
   type ReadSignature,
+  SignatureAppearanceRefusedError,
+  SignatureCredentialRefusedError,
   writeDocumentCopy,
   writeDocumentSplit,
 } from '@monstera/kernel';
@@ -529,7 +533,10 @@ export type SignOutcome =
     }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'wrong-passphrase' }
-  | { readonly kind: 'unreadable' };
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'unencodable-text' }
+  | { readonly kind: 'image-unreadable' }
+  | { readonly kind: 'image-too-large' };
 
 /** What {@link ImageSource.read} answers. */
 export type ImageRead =
@@ -2607,11 +2614,19 @@ export class DocumentCommands {
       readonly location?: string;
       readonly contactInfo?: string;
       readonly certify?: 'no-changes' | 'form-fill' | 'form-fill-and-annotate';
+      readonly appearance?: SignaturePlacement & { readonly mark: RequestedSignatureMark };
     },
   ): Promise<SignOutcome> {
     if (this.#documents.nameOf(docId) === undefined) {
       throw new DocumentNotOpenError(docId, 'sign');
     }
+
+    // THE PICTURE BEFORE THE CERTIFICATE, and the order is a decision: a person
+    // who chose *use a picture of my signature* meets that dialog first, and one
+    // who cancels it — or picks a file this build cannot read — is never asked
+    // for a credential they would then have typed for nothing.
+    const appearance = await this.#appearanceFor(options.appearance);
+    if (appearance.kind !== 'ready') return appearance;
 
     const picked = await this.#certificate.pick();
     if (picked === null) return { kind: 'cancelled' };
@@ -2629,18 +2644,61 @@ export class DocumentCommands {
         ...(options.location === undefined ? {} : { location: options.location }),
         ...(options.contactInfo === undefined ? {} : { contactInfo: options.contactInfo }),
         ...(options.certify === undefined ? {} : { certify: options.certify }),
+        ...(appearance.value === undefined ? {} : { appearance: appearance.value }),
       });
       return { kind: 'signed', ...applied };
     } catch (error) {
-      // `placeImage`'s catch and its reason: the three classes below are
-      // outcomes the handler already turns into declared codes, and everything
-      // else reaching here is the signer refusing the credential.
-      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
-        throw error;
+      // EVERY OUTCOME HERE IS CHOSEN BY THE CLASS THAT WAS THROWN, never by
+      // elimination. This catch used to end in *anything else is a wrong
+      // password*, and measured it was not: a harness whose flush refused
+      // reached that line and answered `wrong-passphrase` for a document that
+      // never got as far as the signer. The kernel names the credential's
+      // refusal and the appearance's where each happens; anything else is not a
+      // person's mistake, and propagates to the handler, which turns an
+      // unmapped class into `internal` with the diagnostic kept main-side.
+      if (error instanceof SignatureAppearanceRefusedError) {
+        return {
+          kind: error.reason === 'unencodable-text' ? 'unencodable-text' : 'image-unreadable',
+        };
       }
-      if (error instanceof DocumentNotOpenError) throw error;
-      return { kind: 'wrong-passphrase' };
+      if (error instanceof SignatureCredentialRefusedError) return { kind: 'wrong-passphrase' };
+      throw error;
     }
+  }
+
+  /**
+   * The command's appearance, with a picked picture attached — or why not.
+   *
+   * `insertImage`'s ordering exactly: the extension routes to a decoder before
+   * anything is read, the read is bounded, and the decoder refusing is decided
+   * later by the apply.
+   */
+  async #appearanceFor(
+    requested: (SignaturePlacement & { readonly mark: RequestedSignatureMark }) | undefined,
+  ): Promise<
+    | {
+        readonly kind: 'ready';
+        readonly value: CommandOfKind<'signDocument'>['appearance'];
+      }
+    | { readonly kind: 'cancelled' }
+    | { readonly kind: 'image-unreadable' }
+    | { readonly kind: 'image-too-large' }
+  > {
+    if (requested === undefined) return { kind: 'ready', value: undefined };
+    const { mark, page, rect } = requested;
+    if (mark.kind !== 'image') return { kind: 'ready', value: { page, rect, mark } };
+
+    const picked = await this.#image.pick();
+    if (picked === null) return { kind: 'cancelled' };
+    const mediaType = imageMediaType(picked);
+    if (mediaType === null) return { kind: 'image-unreadable' };
+    const read = await this.#image.read(picked);
+    if (read.kind === 'too-large') return { kind: 'image-too-large' };
+    if (read.kind === 'unreadable') return { kind: 'image-unreadable' };
+    return {
+      kind: 'ready',
+      value: { page, rect, mark: { kind: 'image', bytes: read.bytes, mediaType } },
+    };
   }
 
   async save(docId: DocId): Promise<SaveOutcome> {

@@ -1784,3 +1784,35 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* ─── Signing ────────────────────────────────────────────────────────────── */
+
+.m-sign-document__look {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/*
+ * The drawing surface. `touch-action: none` is what lets a finger or a pen draw
+ * rather than scroll the dialog; without it the browser claims the gesture
+ * before a single pointermove arrives. The aspect ratio matches the viewBox, so
+ * a stroke lands under the pointer rather than stretched away from it.
+ */
+.m-signature-pad {
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  touch-action: none;
+}
+
+.m-signature-pad polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

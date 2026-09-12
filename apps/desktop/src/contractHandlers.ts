@@ -528,12 +528,12 @@ function signHandler(commands: DocumentCommands): ContractHandlers['document.sig
         ...(params.location === undefined ? {} : { location: params.location }),
         ...(params.contactInfo === undefined ? {} : { contactInfo: params.contactInfo }),
         ...(params.certify === undefined ? {} : { certify: params.certify }),
+        ...(params.appearance === undefined ? {} : { appearance: params.appearance }),
       });
-      if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
-      if (outcome.kind === 'wrong-passphrase') {
-        return ok({ kind: 'wrong-passphrase' } as const);
-      }
+      // EVERY REFUSAL IS A KIND WITH NO FIELDS, so each is answered by its own
+      // name. A refusal that grew a field would be a compile error on this line,
+      // because the wire member it names has none to receive it.
+      if (outcome.kind !== 'signed') return ok({ kind: outcome.kind });
       return ok({
         kind: 'signed',
         version: outcome.version,

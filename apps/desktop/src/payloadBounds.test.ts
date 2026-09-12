@@ -215,9 +215,14 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.unlock': 'takes a bounded password and answers a variant',
   // A `DocId`, a bounded passphrase and four bounded strings in; a variant and
   // three scalars out. The CERTIFICATE is the payload that would scale, and it
-  // is not on this wire at all — main picks the file and mints the command, so
-  // the largest thing the renderer can send is `MAX_SIGNATURE_FIELD` four times.
-  'document.sign': 'takes bounded strings and answers a variant; the certificate never crosses',
+  // is not on this wire at all — main picks the file and mints the command.
+  // A VISIBLE signature adds a rectangle and a look: typed text is one more
+  // `MAX_SIGNATURE_FIELD`, a drawing is at most `MAX_SIGNATURE_STROKES` ×
+  // `MAX_SIGNATURE_STROKE_POINTS` pairs in the schema, and a picture is the
+  // other payload that would scale — main picks and reads that too, so the
+  // `image` look carries no bytes. Nothing on this wire grows with a document.
+  'document.sign':
+    'takes bounded strings and a bounded drawing, answers a variant; no certificate or picture crosses',
   // A `DocId` in; at most `MAX_SIGNATURES` rows of eight bounded fields out.
   // The answer is about the SIGNATURES rather than the certificates, which is
   // what keeps it the same size for a two-page document and a two-thousand-page

@@ -1,10 +1,23 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, StandardFonts } from '@cantoo/pdf-lib';
+import {
+  degrees,
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFNumber,
+  StandardFonts,
+} from '@cantoo/pdf-lib';
+import * as mupdf from 'mupdf';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { applySignDocument, withSignaturePlaceholder } from './documentSign.js';
 import type { ByteImage } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
+import {
+  SignatureAppearanceRefusedError,
+  SignatureCredentialRefusedError,
+} from './signingRefusals.js';
 import { readSignatures } from './signatureRead.js';
 
 /**
@@ -240,15 +253,22 @@ describe('applySignDocument', () => {
     // Without this the cases above are satisfied by a signer that ignores the
     // credential entirely — which would sign every document with whatever key
     // it found first.
+    //
+    // BY NAME, because main answers `wrong-passphrase` for this class and for
+    // nothing else — so `rejects.toThrow()` would pass for a signer whose
+    // refusal arrived unnamed and was then reported to a person as `internal`.
     await expect(
       applySignDocument(unsigned, { ...command, bytes: certificate, passphrase: 'not-it' }),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(SignatureCredentialRefusedError);
   }, 60_000);
 
-  it('CONTROL: a file that is not a PKCS#12 refuses', async () => {
+  it('CONTROL: a file that is not a PKCS#12 refuses, and by the same name', async () => {
+    // THE SAME CLASS, and that is the format's limit: the MAC check fails
+    // identically for both, so nothing downstream of the signer can separate
+    // them either (`signingRefusals.ts`).
     await expect(
       applySignDocument(unsigned, { ...command, bytes: unsigned }),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(SignatureCredentialRefusedError);
   }, 60_000);
 });
 
@@ -328,4 +348,254 @@ describe('readSignatures', () => {
       await mupdfWriter.close(session);
     }
   }, 60_000);
+});
+
+describe('a VISIBLE signature', () => {
+  /**
+   * A page rendered WITH annotation appearances, and MuPDF's own page transform.
+   *
+   * **The pixels are the observable**, and the transform is MuPDF's rather than
+   * this build's: a case that computed where the box should be with the same
+   * arithmetic the writer used would agree with any mistake in it.
+   * `pdf_page_transform` is what MuPDF itself draws the page with.
+   */
+  function rendered(bytes: Uint8Array): {
+    readonly width: number;
+    readonly samples: Uint8Array;
+    readonly transform: readonly number[];
+  } {
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    if (!(document instanceof mupdf.PDFDocument)) throw new Error('not a PDF');
+    try {
+      const page = document.loadPage(0);
+      const pixmap = page.toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceGray, false, true);
+      return {
+        width: pixmap.getWidth(),
+        samples: Uint8Array.from(pixmap.getPixels()),
+        transform: [...page.getTransform()],
+      };
+    } finally {
+      document.destroy();
+    }
+  }
+
+  /** A user-space rectangle's box in rendered pixels, through the page transform. */
+  function seen(
+    transform: readonly number[],
+    rect: { x0: number; y0: number; x1: number; y1: number },
+  ): [number, number, number, number] {
+    const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = transform;
+    const corners = [
+      [rect.x0, rect.y0],
+      [rect.x1, rect.y1],
+    ].map(([x = 0, y = 0]) => [a * x + c * y + e, b * x + d * y + f] as const);
+    const xs = corners.map(([x]) => x);
+    const ys = corners.map(([, y]) => y);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  }
+
+  /** Dark samples inside a pixel box, and how many distinct columns hold one. */
+  function inkIn(
+    page: ReturnType<typeof rendered>,
+    [left, top, right, bottom]: readonly [number, number, number, number],
+  ): { readonly samples: number; readonly columns: number } {
+    let samples = 0;
+    const columns = new Set<number>();
+    for (let y = Math.ceil(top); y < Math.floor(bottom); y += 1) {
+      for (let x = Math.ceil(left); x < Math.floor(right); x += 1) {
+        if ((page.samples[y * page.width + x] ?? 255) < 128) {
+          samples += 1;
+          columns.add(x);
+        }
+      }
+    }
+    return { samples, columns: columns.size };
+  }
+
+  /** The first field's widget, read back with pdf-lib. */
+  async function widgetOf(bytes: Uint8Array): Promise<PDFDict> {
+    const document = await PDFDocument.load(bytes);
+    const fields = document.catalog
+      .lookup(PDFName.of('AcroForm'), PDFDict)
+      .lookup(PDFName.of('Fields'), PDFArray);
+    return fields.lookup(0, PDFDict);
+  }
+
+  /** An empty region of the fixture page, drawn right to left and top to bottom. */
+  const RECT = { x0: 300, y0: 180, x1: 100, y1: 100 };
+  const ORDERED = { x0: 100, y0: 100, x1: 300, y1: 180 };
+
+  let picture: Uint8Array;
+  beforeAll(() => {
+    // A BLACK PNG, made by the engine rather than committed (B10).
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 40, 20], false);
+    pixmap.clear(0);
+    picture = pixmap.asPNG();
+  });
+
+  it('writes the ordered rectangle and an /AP /N stream — and the invisible CONTROL writes neither', async () => {
+    const visible = await widgetOf(
+      await withSignaturePlaceholder(unsigned, {
+        ...command,
+        appearance: { page: 0, rect: RECT, mark: { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' } },
+      }),
+    );
+    const rect = visible.lookup(PDFName.of('Rect'), PDFArray).asArray();
+    expect(rect.map((value) => (value as PDFNumber).asNumber())).toStrictEqual([100, 100, 300, 180]);
+    expect(visible.lookupMaybe(PDFName.of('AP'), PDFDict)?.get(PDFName.of('N'))).toBeDefined();
+
+    const invisible = await widgetOf(await withSignaturePlaceholder(unsigned, command));
+    const none = invisible.lookup(PDFName.of('Rect'), PDFArray).asArray();
+    expect(none.map((value) => (value as PDFNumber).asNumber())).toStrictEqual([0, 0, 0, 0]);
+    expect(invisible.lookupMaybe(PDFName.of('AP'), PDFDict)).toBeUndefined();
+  });
+
+  const typedLook: { kind: 'typed'; text: string; font: 'helvetica' } = {
+    kind: 'typed',
+    text: 'Grace Hopper',
+    font: 'helvetica',
+  };
+  const drawnLook: { kind: 'drawn'; strokes: [number, number][][] } = {
+    kind: 'drawn',
+    strokes: [
+      [
+        [0.05, 0.1],
+        [0.5, 0.3],
+        [0.95, 0.05],
+      ],
+    ],
+  };
+
+  it.each([
+    ['typed', typedLook],
+    ['drawn', drawnLook],
+    ['image', 'picture'],
+  ] as const)(
+    'THE OBSERVABLE: a %s signature renders INK inside its rectangle and still covers the document',
+    async (_look, given) => {
+      const mark =
+        given === 'picture'
+          ? { kind: 'image' as const, bytes: picture, mediaType: 'image/png' as const }
+          : given;
+      const signed = await applySignDocument(unsigned, {
+        ...command,
+        bytes: certificate,
+        appearance: { page: 0, rect: RECT, mark },
+      });
+
+      const page = rendered(signed);
+      const box = seen(page.transform, ORDERED);
+      expect(inkIn(page, box).samples, 'ink inside the placed rectangle').toBeGreaterThan(50);
+
+      // THE CONTROL: the same box on the invisibly signed document is blank, so
+      // the ink above is the appearance and not something the fixture drew.
+      const plain = rendered(await applySignDocument(unsigned, { ...command, bytes: certificate }));
+      expect(inkIn(plain, seen(plain.transform, ORDERED)).samples).toBe(0);
+
+      // THE APPEARANCE IS INSIDE THE SIGNATURE, not beside it.
+      const session = await mupdfWriter.open(signed);
+      try {
+        const [read] = await readSignatures(session, signed);
+        expect(read?.coversDocument).toBe(true);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    },
+    60_000,
+  );
+
+  it.each([0, 90, 180, 270])('ON A PAGE TURNED %i° the appearance is upright as the page is SEEN', async (turn) => {
+    // A HORIZONTAL LINE with a dot BELOW it, and the assertion is about which
+    // ROWS hold which. Upright, the topmost inked rows are the line — wide
+    // across the box as displayed — and the bottommost are the dot, which is
+    // narrow. Without the counter-rotation the line is vertical on screen and no
+    // row is wide; with the wrong direction the wide rows are at the bottom. A
+    // bounding box cannot tell any of those apart, which is why the first draft
+    // of this case, asserting ink in the box's top third, failed on a correct
+    // drawing: the kernel CENTRES the ink it fits, and measured at 90° the line
+    // sat at rows 188–210 of a box running 100–300.
+    const document = await PDFDocument.create();
+    document.addPage([400, 600]).setRotation(degrees(turn));
+    const turned = await document.save();
+
+    const signed = await withSignaturePlaceholder(turned, {
+      ...command,
+      appearance: {
+        page: 0,
+        rect: ORDERED,
+        mark: {
+          kind: 'drawn',
+          strokes: [
+            [
+              [0, 0],
+              [1, 0],
+            ],
+            [
+              [0.5, 0.3],
+              [0.5, 0.3],
+            ],
+          ],
+        },
+      },
+    });
+
+    const page = rendered(signed);
+    const [left, top, right, bottom] = seen(page.transform, ORDERED);
+    const across = right - left;
+
+    // THE INK, ONE ROW AT A TIME, grouped into runs of consecutive inked rows:
+    // the line is one run and the dot, a gap below it, is another.
+    const groups: number[][] = [];
+    let previous = Number.NEGATIVE_INFINITY;
+    for (let row = Math.ceil(top); row < Math.floor(bottom); row += 1) {
+      const { columns } = inkIn(page, [left, row, right, row + 1]);
+      if (columns === 0) continue;
+      if (row !== previous + 1) groups.push([]);
+      groups[groups.length - 1]?.push(columns);
+      previous = row;
+    }
+
+    expect(groups.length, 'a line and, separately, a dot').toBe(2);
+    expect(Math.max(...(groups[0] ?? [0])) / across, 'the LINE is on top, as seen').toBeGreaterThan(0.6);
+    expect(Math.max(...(groups[1] ?? [across])) / across, 'the DOT is below it').toBeLessThan(0.2);
+  });
+
+  it('REFUSES text the chosen font cannot encode, by name', async () => {
+    const refused = applySignDocument(unsigned, {
+      ...command,
+      bytes: certificate,
+      appearance: { page: 0, rect: RECT, mark: { kind: 'typed', text: 'Grace ✓', font: 'courier' } },
+    });
+    await expect(refused).rejects.toBeInstanceOf(SignatureAppearanceRefusedError);
+    await expect(refused).rejects.toMatchObject({ reason: 'unencodable-text' });
+  });
+
+  it.each(['image/png', 'image/jpeg'] as const)(
+    'REFUSES a %s its decoder cannot read, by name',
+    async (mediaType) => {
+      const refused = applySignDocument(unsigned, {
+        ...command,
+        bytes: certificate,
+        appearance: {
+          page: 0,
+          rect: RECT,
+          mark: { kind: 'image', bytes: Uint8Array.of(1, 2, 3, 4), mediaType },
+        },
+      });
+      await expect(refused).rejects.toMatchObject({ reason: 'unreadable-image' });
+    },
+  );
+
+  it('REFUSES a page the document does not have, and a rectangle with no area', async () => {
+    const typed = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
+    await expect(
+      withSignaturePlaceholder(unsigned, { ...command, appearance: { page: 1, rect: RECT, mark: typed } }),
+    ).rejects.toThrow(/outside this document/);
+    await expect(
+      withSignaturePlaceholder(unsigned, {
+        ...command,
+        appearance: { page: 0, rect: { x0: 100, y0: 100, x1: 100, y1: 180 }, mark: typed },
+      }),
+    ).rejects.toThrow(/area/);
+  });
 });

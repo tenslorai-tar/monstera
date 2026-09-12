@@ -1,10 +1,42 @@
-import { PDFArray, PDFDict, PDFHexString, PDFName, PDFNumber, PDFString } from '@cantoo/pdf-lib';
-import type { PDFDocument, PDFPage } from '@cantoo/pdf-lib';
-import type { CommandOfKind } from '@monstera/contract';
+import {
+  beginText,
+  concatTransformationMatrix,
+  drawObject,
+  endText,
+  LineCapStyle,
+  LineJoinStyle,
+  lineTo,
+  moveText,
+  moveTo,
+  PDFArray,
+  PDFDict,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFString,
+  popGraphicsState,
+  pushGraphicsState,
+  setFillingGrayscaleColor,
+  setFontAndSize,
+  setLineCap,
+  setLineJoin,
+  setLineWidth,
+  setStrokingGrayscaleColor,
+  showText,
+  StandardFonts,
+  stroke,
+} from '@cantoo/pdf-lib';
+import type { PDFDocument, PDFOperator, PDFPage, PDFRef } from '@cantoo/pdf-lib';
+import type { AnnotationRect, CommandOfKind } from '@monstera/contract';
+import { snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage } from './engineSeam.js';
 import { openForWriting } from './pdfLibSession.js';
+import {
+  SignatureAppearanceRefusedError,
+  SignatureCredentialRefusedError,
+} from './signingRefusals.js';
 
 /**
  * Digitally signing a document — Stage 7's PKCS#7 row, over a placeholder this
@@ -68,12 +100,258 @@ const ADOBE_PPKLITE = 'Adobe.PPKLite';
 const DETACHED_PKCS7 = 'adbe.pkcs7.detached';
 
 /**
+ * How a visible signature looks, as the command carries it.
+ */
+type SignatureAppearance = NonNullable<CommandOfKind<'signDocument'>['appearance']>;
+type SignatureMark = SignatureAppearance['mark'];
+
+/**
+ * Each typed face's standard font, keyed on the contract's own list.
+ *
+ * A `Record` over the payload's member type, so a face added to
+ * `SIGNATURE_FONTS` without an entry here is a compile error rather than a
+ * signature set in whatever the default happened to be.
+ */
+const STANDARD_FACES: Readonly<Record<Extract<SignatureMark, { kind: 'typed' }>['font'], StandardFonts>> =
+  {
+    helvetica: StandardFonts.Helvetica,
+    'times-roman': StandardFonts.TimesRoman,
+    'times-italic': StandardFonts.TimesRomanItalic,
+    courier: StandardFonts.Courier,
+  };
+
+/** How much of the box the mark may fill, on its tighter axis. */
+const FILL = 0.9;
+
+/** The pen's width as a share of the box's shorter side, for a drawn mark. */
+const PEN_SHARE = 0.03;
+
+/**
+ * The form matrix that draws an appearance UPRIGHT on a page turned by
+ * `/Rotate`.
+ *
+ * A reader maps an appearance into its widget's `/Rect` by transforming the
+ * `/BBox` through `/Matrix` and fitting the result (ISO 32000-2 §12.5.5), and it
+ * then shows the whole page turned clockwise by `/Rotate`. Counter-rotating the
+ * form by the same angle is what makes a signature read left to right as the
+ * page is SEEN — and on a quarter turn the box a person drew is the rectangle's
+ * height wide, which is why {@link appearanceFor} swaps the two before drawing.
+ */
+const UPRIGHT: Readonly<Record<number, readonly number[]>> = {
+  0: [1, 0, 0, 1, 0, 0],
+  90: [0, 1, -1, 0, 0, 0],
+  180: [-1, 0, 0, -1, 0, 0],
+  270: [0, -1, 1, 0, 0, 0],
+};
+
+/** What a mark draws, and the resources its operators name. */
+interface Drawing {
+  readonly operators: PDFOperator[];
+  readonly resources: Record<string, Record<string, PDFRef>>;
+}
+
+/**
+ * Typed text, set in a standard font and centred in the box.
+ *
+ * **The font's character set is the authority on what it can draw.** A
+ * standard font encodes WinAnsi, and `encodeText` given anything outside it
+ * throws a message about glyphs that a person could not act on — so the check
+ * is made against `getCharacterSet()` first and refused by name.
+ */
+async function typedDrawing(
+  document: PDFDocument,
+  mark: Extract<SignatureMark, { kind: 'typed' }>,
+  width: number,
+  height: number,
+): Promise<Drawing> {
+  const font = await document.embedFont(STANDARD_FACES[mark.font]);
+  const encodable = new Set(font.getCharacterSet());
+  for (const character of mark.text) {
+    if (!encodable.has(character.codePointAt(0) ?? -1)) {
+      throw new SignatureAppearanceRefusedError(
+        'unencodable-text',
+        'the signature text holds a character the chosen standard font cannot encode',
+      );
+    }
+  }
+  const across = font.widthOfTextAtSize(mark.text, 1);
+  // TEXT THAT ADVANCES NOTHING DRAWS NOTHING, and a visible signature with no
+  // ink is the display-only defect on the page. The dialog trims, so this is
+  // not reachable from the surface that sends the command.
+  if (across <= 0) throw new RangeError('the signature text draws nothing');
+  const size = Math.min(height * FILL * 0.75, (width * FILL) / across);
+  const rise = font.heightAtSize(size, { descender: false });
+  return {
+    operators: [
+      setFillingGrayscaleColor(0),
+      beginText(),
+      setFontAndSize('F0', size),
+      moveText((width - across * size) / 2, (height - rise) / 2),
+      showText(font.encodeText(mark.text)),
+      endText(),
+    ],
+    resources: { Font: { F0: font.ref } },
+  };
+}
+
+/**
+ * Drawn strokes, their ink fitted into the box.
+ *
+ * **The ink's own bounding box is what is fitted, not the pad's**, so where on
+ * the pad a person started and what shape the pad was decide nothing. Both pad
+ * coordinates share one unit (the contract's point schema says so), which is
+ * what lets one scale serve both axes without turning a circle into an ellipse.
+ */
+function drawnDrawing(
+  mark: Extract<SignatureMark, { kind: 'drawn' }>,
+  width: number,
+  height: number,
+): Drawing {
+  // A LOOP AND NOT `Math.min(...points)`: a drawn signature may carry 65,536
+  // points, and spreading that many arguments is a stack limit waiting for the
+  // person with the longest name.
+  let left = Infinity;
+  let right = -Infinity;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const line of mark.strokes) {
+    for (const [x, y] of line) {
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  const pen = Math.max(1, Math.min(width, height) * PEN_SHARE);
+  const inkWide = right - left;
+  const inkTall = bottom - top;
+  // A DOT HAS NO EXTENT ON EITHER AXIS, so neither ratio exists; it is drawn at
+  // the centre, where the round cap makes it a mark.
+  const fits = [inkWide > 0 ? (width * FILL - pen) / inkWide : Infinity, inkTall > 0 ? (height * FILL - pen) / inkTall : Infinity];
+  const scale = Number.isFinite(Math.min(...fits)) ? Math.max(0, Math.min(...fits)) : 0;
+  const originX = (width - inkWide * scale) / 2;
+  const originY = (height - inkTall * scale) / 2;
+
+  const operators: PDFOperator[] = [
+    setStrokingGrayscaleColor(0),
+    setLineWidth(pen),
+    setLineCap(LineCapStyle.Round),
+    setLineJoin(LineJoinStyle.Round),
+  ];
+  for (const line of mark.strokes) {
+    line.forEach(([x, y], index) => {
+      // THE PAD IS Y-DOWN and a form is y-up, so a point's distance from the
+      // ink's BOTTOM edge is its height in the form.
+      const across = originX + (x - left) * scale;
+      const up = originY + (bottom - y) * scale;
+      operators.push(index === 0 ? moveTo(across, up) : lineTo(across, up));
+    });
+    operators.push(stroke());
+  }
+  return { operators, resources: {} };
+}
+
+/**
+ * A picture, scaled to fit the box without distortion and centred.
+ *
+ * `applyInsertImagePage`'s two calls and its rule that the media type chooses
+ * the decoder. The decoder refusing is what validates the bytes, and it is
+ * named here because main would otherwise report it as a wrong passphrase.
+ */
+async function imageDrawing(
+  document: PDFDocument,
+  mark: Extract<SignatureMark, { kind: 'image' }>,
+  width: number,
+  height: number,
+): Promise<Drawing> {
+  let embedded;
+  try {
+    embedded =
+      mark.mediaType === 'image/png'
+        ? await document.embedPng(mark.bytes)
+        : await document.embedJpg(mark.bytes);
+  } catch (cause) {
+    throw new SignatureAppearanceRefusedError(
+      'unreadable-image',
+      `the signature picture is not a ${mark.mediaType} this build can decode`,
+      { cause },
+    );
+  }
+  const scale = Math.min((width * FILL) / embedded.width, (height * FILL) / embedded.height);
+  const wide = embedded.width * scale;
+  const tall = embedded.height * scale;
+  return {
+    operators: [
+      pushGraphicsState(),
+      concatTransformationMatrix(wide, 0, 0, tall, (width - wide) / 2, (height - tall) / 2),
+      drawObject('Im0'),
+      popGraphicsState(),
+    ],
+    resources: { XObject: { Im0: embedded.ref } },
+  };
+}
+
+/** A visible widget's rectangle and the appearance stream drawn for it. */
+interface PlacedAppearance {
+  readonly rect: readonly [number, number, number, number];
+  readonly form: PDFRef;
+}
+
+/**
+ * Draws the appearance for a placement, upright as the page is seen.
+ *
+ * **The rectangle is ordered here**, `placedRect`'s rule: a drag runs whichever
+ * way the pointer went and the schema leaves ordering to the kernel. One with no
+ * area is refused rather than drawn, because a signature nobody can see placed
+ * as a visible one is the defect this row exists to not have.
+ */
+async function appearanceFor(
+  document: PDFDocument,
+  page: PDFPage,
+  appearance: SignatureAppearance,
+): Promise<PlacedAppearance> {
+  const rect: AnnotationRect = appearance.rect;
+  const x0 = Math.min(rect.x0, rect.x1);
+  const x1 = Math.max(rect.x0, rect.x1);
+  const y0 = Math.min(rect.y0, rect.y1);
+  const y1 = Math.max(rect.y0, rect.y1);
+  if (x1 - x0 <= 0 || y1 - y0 <= 0) {
+    throw new RangeError('a visible signature needs a rectangle with an area');
+  }
+
+  // THE EFFECTIVE ROTATION, snapped through the shared function — pdf-lib's
+  // `getRotation` reads the inheritable `/Rotate`, and `snapRotation` is what
+  // every other reader of it in this build agrees on.
+  const rotation = snapRotation(page.getRotation().angle);
+  const turned = rotation === 90 || rotation === 270;
+  const seenWide = turned ? y1 - y0 : x1 - x0;
+  const seenTall = turned ? x1 - x0 : y1 - y0;
+
+  const { mark } = appearance;
+  const drawing =
+    mark.kind === 'typed'
+      ? await typedDrawing(document, mark, seenWide, seenTall)
+      : mark.kind === 'drawn'
+        ? drawnDrawing(mark, seenWide, seenTall)
+        : await imageDrawing(document, mark, seenWide, seenTall);
+
+  const context = document.context;
+  const form = context.formXObject(drawing.operators, {
+    BBox: [0, 0, seenWide, seenTall],
+    Matrix: [...(UPRIGHT[rotation] ?? [1, 0, 0, 1, 0, 0])],
+    Resources: drawing.resources,
+  });
+  return { rect: [x0, y0, x1, y1], form: context.register(form) };
+}
+
+/**
  * Writes an empty signature dictionary, its widget, and the `/AcroForm` entry.
  *
- * Three objects, which is what a signature placeholder is. The widget is
- * **invisible** — a zero-size `/Rect` with the hidden flag clear and `/F 132`
- * (print + locked) — because a visible appearance is its own row and a widget
- * drawn without one renders as a black box in some readers.
+ * Three objects, which is what a signature placeholder is — four with a visible
+ * appearance. Without one the widget is **invisible**: a zero-size `/Rect` with
+ * the hidden flag clear and `/F 132` (print + locked). With one it carries the
+ * placement's rectangle and an `/AP /N` stream, because a widget given a
+ * rectangle and no appearance renders as a black box in some readers.
  *
  * @returns the document, mutated; the caller serialises.
  */
@@ -81,6 +359,7 @@ function placeSignature(
   document: PDFDocument,
   page: PDFPage,
   command: CommandOfKind<'signDocument'>,
+  placed: PlacedAppearance | undefined,
 ): void {
   const context = document.context;
 
@@ -151,7 +430,7 @@ function placeSignature(
     Type: PDFName.of('Annot'),
     Subtype: PDFName.of('Widget'),
     FT: PDFName.of('Sig'),
-    Rect: context.obj([0, 0, 0, 0]),
+    Rect: context.obj([...(placed?.rect ?? [0, 0, 0, 0])]),
     V: signatureRef,
     T: PDFString.of(`Signature${String(Date.now())}`),
     // 132 = print (bit 3) + locked (bit 8). Not hidden: a hidden widget is one
@@ -159,6 +438,10 @@ function placeSignature(
     F: 132,
     P: page.ref,
   });
+  // THE APPEARANCE IS WRITTEN BEFORE THE SIGNER RUNS, so it lies inside the
+  // covered byte ranges: replacing the picture afterwards is a change to the
+  // signed bytes, and every reader reports it as one.
+  if (placed !== undefined) widget.set(PDFName.of('AP'), context.obj({ N: placed.form }));
   const widgetRef = context.register(widget);
   page.node.addAnnot(widgetRef);
 
@@ -192,8 +475,24 @@ export async function withSignaturePlaceholder(
   command: CommandOfKind<'signDocument'>,
 ): Promise<ByteImage> {
   const document = await openForWriting(image);
-  const page = document.getPage(0);
-  placeSignature(document, page, command);
+  // THE FIRST PAGE FOR AN INVISIBLE SIGNATURE, which has no page a person
+  // chose; the placement's page for a visible one, refused rather than clamped
+  // when the document does not have it — a signature drawn on a different page
+  // from the one somebody pointed at is a signature in the wrong place.
+  const index = command.appearance?.page ?? 0;
+  const total = document.getPageCount();
+  if (index >= total) {
+    throw new RangeError(
+      `Page ${String(index)} is outside this document, which has ${String(total)} page(s). ` +
+        'Page indices are zero-based.',
+    );
+  }
+  const page = document.getPage(index);
+  const placed =
+    command.appearance === undefined
+      ? undefined
+      : await appearanceFor(document, page, command.appearance);
+  placeSignature(document, page, command, placed);
   return document.save({ useObjectStreams: false });
 }
 
@@ -227,8 +526,20 @@ export const applySignDocument: Apply<'signpdf', 'signDocument'> = async (image,
 
   // THE PASSPHRASE REACHES ONE CALL. Nothing here records it, and the error
   // below carries none of it.
-  const signer = new P12Signer(command.bytes, { passphrase: command.passphrase });
-  const signed = await new SignPdf().sign(Buffer.from(placed), signer);
+  //
+  // THE SIGNER'S REFUSAL IS NAMED HERE, because this is the one place that
+  // knows a failure is the credential's. Main used to infer it by elimination —
+  // anything not a document-state class was *a wrong password* — which would
+  // have told a person their password was wrong when a flush failed. The
+  // placeholder above runs outside this block, so its own refusals keep their
+  // names, and the length check below is a defect rather than a credential.
+  let signed: Buffer;
+  try {
+    const signer = new P12Signer(command.bytes, { passphrase: command.passphrase });
+    signed = await new SignPdf().sign(Buffer.from(placed), signer);
+  } catch (cause) {
+    throw new SignatureCredentialRefusedError({ cause });
+  }
 
   // THE LENGTH IS THE PROPERTY THE WHOLE SCHEME RESTS ON, asserted rather than
   // assumed: `@signpdf` overwrites the hole in place and rewrites the ranges to

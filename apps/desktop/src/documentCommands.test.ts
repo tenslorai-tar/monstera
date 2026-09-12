@@ -12,6 +12,9 @@ import {
   DocumentService,
   type MupdfSession,
   nodeFileSurface,
+  type RegisteredWriter,
+  SignatureAppearanceRefusedError,
+  SignatureCredentialRefusedError,
   siblingNames,
 } from '@monstera/kernel';
 // See the note in `engineSessions.test.ts`: a local engine in main's process is
@@ -1273,5 +1276,177 @@ describe('the form data export carries the format all the way to the file', () =
 
     expect(await commands.exportFormData(formDoc, 'fdf')).toBeUndefined();
     expect(existsSync(untouched)).toBe(false);
+  });
+});
+
+describe('sign — a visible signature', () => {
+  beforeAll(openDocument);
+
+  /** A certificate source that records every time it is asked anything. */
+  function recordingCertificate(): {
+    readonly source: CertificateSource;
+    readonly asked: string[];
+  } {
+    const asked: string[] = [];
+    return {
+      asked,
+      source: {
+        pick: () => {
+          asked.push('pick');
+          return Promise.resolve('certificate.p12');
+        },
+        read: () => {
+          asked.push('read');
+          return Promise.resolve({ kind: 'read' as const, bytes: Uint8Array.of(1) });
+        },
+      },
+    };
+  }
+
+  /**
+   * A signer that refuses with the error it is given.
+   *
+   * The refusal is the subject: what these cases assert is how MAIN names a
+   * failure, and `documentSign.test.ts` is where the real appearance refuses.
+   */
+  function refusingSigner(error: Error): RegisteredWriter<'signpdf'> {
+    return {
+      serialise: (session) => Promise.resolve(session),
+      apply: () => Promise.reject(error),
+      capture: () =>
+        Promise.resolve({ captured: false as const, reason: 'the refusing signer records nothing' }),
+      invert: () => Promise.reject(new Error('a refused signature is never inverted')),
+    };
+  }
+
+  const placement = { page: 0, rect: { x0: 10, y0: 10, x1: 110, y1: 60 } };
+
+  it('asks for the PICTURE first, and an unreadable one never asks for a credential', async () => {
+    // THE DECISION IS THE ASSERTION — that the certificate picker was never
+    // opened — and not the outcome alone: `image-unreadable` would also be the
+    // answer of a build that asked for the certificate first and then failed on
+    // the picture, having had somebody type a password for nothing.
+    const certificate = recordingCertificate();
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      image: {
+        pick: () => Promise.resolve('signature.gif'),
+        read: () => Promise.reject(new Error('an extension with no decoder must not be read')),
+      },
+      certificate: certificate.source,
+    });
+
+    expect(
+      await commands.sign(docId, {
+        passphrase: '',
+        appearance: { ...placement, mark: { kind: 'image' } },
+      }),
+    ).toStrictEqual({ kind: 'image-unreadable' });
+    expect(certificate.asked).toStrictEqual([]);
+  });
+
+  it('a CANCELLED picture asks for no credential either', async () => {
+    const certificate = recordingCertificate();
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      image: {
+        pick: () => Promise.resolve(null),
+        read: () => Promise.reject(new Error('a cancelled picker must not read')),
+      },
+      certificate: certificate.source,
+    });
+
+    expect(
+      await commands.sign(docId, {
+        passphrase: '',
+        appearance: { ...placement, mark: { kind: 'image' } },
+      }),
+    ).toStrictEqual({ kind: 'cancelled' });
+    expect(certificate.asked).toStrictEqual([]);
+  });
+
+  it('CONTROL: a typed look opens no picture picker and goes straight to the certificate', async () => {
+    // `noImages` REJECTS, so reaching it fails this case — which is what
+    // separates *the picture comes first* from *a picture is always asked for*.
+    const certificate = recordingCertificate();
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      certificate: {
+        ...certificate.source,
+        pick: () => {
+          certificate.asked.push('pick');
+          return Promise.resolve(null);
+        },
+      },
+    });
+
+    expect(
+      await commands.sign(docId, {
+        passphrase: '',
+        appearance: {
+          ...placement,
+          mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+        },
+      }),
+    ).toStrictEqual({ kind: 'cancelled' });
+    expect(certificate.asked).toStrictEqual(['pick']);
+  });
+
+  it('names each refusal by its CLASS, and CONTROL: an unnamed failure is not called a wrong password', async () => {
+    // THE FIXTURE REACHES THE SIGNER, which the first draft of this case did
+    // not: a byte-image command's bytes come from the save source's `flush`,
+    // `INERT`'s refuses, and that refusal arrived at the catch and was answered
+    // `wrong-passphrase` — for all three inputs, so the control passed by the
+    // same route as the defect. The flush below serialises the held session,
+    // exactly as the save cases' real one does.
+    const signing = (error: Error): Promise<unknown> => {
+      const commands = new DocumentCommands({
+        ...INERT,
+        documents: service,
+        bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: refusingSigner(error) }),
+        engine: engine(),
+        certificate: recordingCertificate().source,
+        save: {
+          ...noSaving,
+          flush: (_docId, sessions) => {
+            const held = sessions.mupdf;
+            if (held === undefined) throw new Error('the fixture holds a session');
+            return mupdfWriter.serialise(held);
+          },
+        },
+      });
+      return commands.sign(docId, {
+        passphrase: '',
+        appearance: {
+          ...placement,
+          mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+        },
+      });
+    };
+
+    expect(
+      await signing(new SignatureAppearanceRefusedError('unencodable-text', 'refused by the case')),
+    ).toStrictEqual({ kind: 'unencodable-text' });
+    expect(
+      await signing(new SignatureAppearanceRefusedError('unreadable-image', 'refused by the case')),
+    ).toStrictEqual({ kind: 'image-unreadable' });
+    expect(await signing(new SignatureCredentialRefusedError())).toStrictEqual({
+      kind: 'wrong-passphrase',
+    });
+    // THE CONTROL, and it is the one the old catch fails: a failure nobody named
+    // is not a person's mistake, so it propagates to the handler — which turns
+    // it into `internal` — instead of telling them their password was wrong.
+    await expect(signing(new Error('an install that failed'))).rejects.toThrow(
+      'an install that failed',
+    );
   });
 });

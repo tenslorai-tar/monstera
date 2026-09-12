@@ -67,8 +67,18 @@ function boxOf(gesture: Gesture): ToolPreview | undefined {
   };
 }
 
-export function placeImageTool(deps: PlaceImageDeps): UiTool {
-  const controller: ToolController = {
+/**
+ * The controller both placement tools share: a box, converted, handed on.
+ *
+ * **One controller and two registrations**, `ocrRegionTool.ts`' shape for the
+ * same reason. An image and a visible signature are placed by exactly the same
+ * gesture into exactly the same space, and each completes in a dialog main or a
+ * person answers — so what differs is which callback receives the box. A second
+ * copy of this body would be a second place `MINIMUM_BOX` and the conversion
+ * could drift apart.
+ */
+function boxPlacement(onPlace: (page: number, rect: AnnotationRect) => void): ToolController {
+  return {
     ...pointerPath,
     commit: (
       gesture: Gesture,
@@ -76,14 +86,14 @@ export function placeImageTool(deps: PlaceImageDeps): UiTool {
       transform: PageTransform,
     ): RenderableCommand | undefined => {
       // BOTH AXES, `snapshotTool`'s reason: a box flat in one direction has no
-      // area to draw an image into, and refusing here is what keeps a slip from
-      // opening a file dialog.
+      // area to draw into, and refusing here is what keeps a slip from opening
+      // a dialog.
       if (boxOf(gesture) === undefined) return undefined;
       const from = toPdf(startOf(gesture), transform);
       const to = toPdf(endOf(gesture), transform);
       // UNORDERED, deliberately: the kernel normalises, and ordering here would
       // be a second place that rule is stated.
-      deps.onPlaceImage(page, { x0: from.x, y0: from.y, x1: to.x, y1: to.y });
+      onPlace(page, { x0: from.x, y0: from.y, x1: to.x, y1: to.y });
       // NOTHING FOR THE COMMAND BUS — not because there is nothing to undo, but
       // because the command that does this cannot be expressed on this side.
       // Main mints it, and it reaches the log from there like every other one.
@@ -91,8 +101,31 @@ export function placeImageTool(deps: PlaceImageDeps): UiTool {
     },
     preview: boxOf,
   };
+}
 
-  return { id: PLACE_IMAGE_TOOL_ID, controller };
+export function placeImageTool(deps: PlaceImageDeps): UiTool {
+  return { id: PLACE_IMAGE_TOOL_ID, controller: boxPlacement(deps.onPlaceImage) };
+}
+
+/**
+ * The place-signature tool — drag a box, choose a look and a certificate.
+ *
+ * In this file rather than a file of its own because it IS this file's tool
+ * with a different destination: the command it leads to carries a private key,
+ * so, exactly like an image, it cannot be expressed on this side
+ * ([ADR-0054](../../../../docs/DECISIONS/0054-the-signing-core-ships-and-the-placeholder-is-ours.md)).
+ * The file's name is the residual inaccuracy, stated here rather than fixed by
+ * a rename nothing else needs.
+ */
+export const PLACE_SIGNATURE_TOOL_ID = 'protect.signature';
+
+export interface PlaceSignatureDeps {
+  /** Where the visible signature goes — the page and the rectangle, in PDF user space. */
+  readonly onPlaceSignature: (page: number, rect: AnnotationRect) => void;
+}
+
+export function placeSignatureTool(deps: PlaceSignatureDeps): UiTool {
+  return { id: PLACE_SIGNATURE_TOOL_ID, controller: boxPlacement(deps.onPlaceSignature) };
 }
 
 /** Exported so the cases assert against the tool's own number. */

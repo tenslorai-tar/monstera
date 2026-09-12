@@ -4,6 +4,7 @@ import type {
   FormDataFormat,
   FormDataImportFormat,
   RenderableCommand,
+  SignaturePlacement,
 } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
@@ -2215,40 +2216,66 @@ export function signDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      const answer = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, {})) as
-        | SignDocumentAnswer
-        | undefined;
-      if (answer === undefined) return;
-
-      const signed = await deps.client['document.sign']({
-        docId: context.docId,
-        passphrase: answer.passphrase,
-        ...(answer.name === undefined ? {} : { name: answer.name }),
-        ...(answer.reason === undefined ? {} : { reason: answer.reason }),
-        ...(answer.location === undefined ? {} : { location: answer.location }),
-        ...(answer.contactInfo === undefined ? {} : { contactInfo: answer.contactInfo }),
-        ...(answer.certify === undefined ? {} : { certify: answer.certify }),
-      });
-      if (!signed.ok) {
-        reportProblem(deps, signed.error);
-        return;
-      }
-      if (signed.value.kind === 'cancelled') return;
-      if (signed.value.kind === 'signed') {
-        deps.onApplied({ version: signed.value.version, byteLength: signed.value.byteLength });
-        // THE TRIM IS TOLD, exactly as `applyDocumentCommand` tells it: the log
-        // has a ceiling, and a person whose earliest undo went away finds out
-        // here or not at all.
-        if (signed.value.historyDropped > 0) {
-          void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: signed.value.historyDropped });
-        }
-        return;
-      }
-      // VOIDED for `reportProblem`'s reason: this dialog declares no result, so
-      // awaiting it would hold the command open until a person closed a message.
-      void deps.ask(SIGN_PROBLEM_DIALOG_ID, { reason: signed.value.kind });
+      await signDocument(deps, context.docId);
     },
   };
+}
+
+/**
+ * Signs a document — invisibly, or visibly where a rectangle was drawn.
+ *
+ * **One function for both entry points**, `placeImage`'s shape: the ribbon's
+ * *Sign document* has no rectangle and the place-signature tool has one, and
+ * everything after the dialog is the same call with one field more. Two copies
+ * of this body would be two places the outcome handling could diverge — and the
+ * outcome handling is where a refusal either reaches a person or does not.
+ *
+ * **A placement the dialog answered without a mark signs nothing.** The body
+ * cannot produce that answer — it disables *Sign* until a look is chosen — and
+ * signing invisibly instead would put an unseen signature where somebody drew a
+ * visible one, which is the display-only defect with a credential attached.
+ */
+export async function signDocument(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client' | 'onApplied'>,
+  docId: DocId,
+  placement?: SignaturePlacement,
+): Promise<void> {
+  const answer = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, {
+    placed: placement !== undefined,
+  })) as SignDocumentAnswer | undefined;
+  if (answer === undefined) return;
+  if (placement !== undefined && answer.mark === undefined) return;
+
+  const signed = await deps.client['document.sign']({
+    docId,
+    passphrase: answer.passphrase,
+    ...(answer.name === undefined ? {} : { name: answer.name }),
+    ...(answer.reason === undefined ? {} : { reason: answer.reason }),
+    ...(answer.location === undefined ? {} : { location: answer.location }),
+    ...(answer.contactInfo === undefined ? {} : { contactInfo: answer.contactInfo }),
+    ...(answer.certify === undefined ? {} : { certify: answer.certify }),
+    ...(placement === undefined || answer.mark === undefined
+      ? {}
+      : { appearance: { page: placement.page, rect: placement.rect, mark: answer.mark } }),
+  });
+  if (!signed.ok) {
+    reportProblem(deps, signed.error);
+    return;
+  }
+  if (signed.value.kind === 'cancelled') return;
+  if (signed.value.kind === 'signed') {
+    deps.onApplied({ version: signed.value.version, byteLength: signed.value.byteLength });
+    // THE TRIM IS TOLD, exactly as `applyDocumentCommand` tells it: the log
+    // has a ceiling, and a person whose earliest undo went away finds out
+    // here or not at all.
+    if (signed.value.historyDropped > 0) {
+      void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: signed.value.historyDropped });
+    }
+    return;
+  }
+  // VOIDED for `reportProblem`'s reason: this dialog declares no result, so
+  // awaiting it would hold the command open until a person closed a message.
+  void deps.ask(SIGN_PROBLEM_DIALOG_ID, { reason: signed.value.kind });
 }
 
 /**
