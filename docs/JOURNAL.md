@@ -889,6 +889,72 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Encrypted documents: four measurements, and one reproduction I cannot explain
+
+Stage 7's next row is *open encrypted PDFs, automatic password prompt*. Nothing
+is built, because the last thing measured is a reproduction whose mechanism I
+cannot state in a sentence — and Rule 0 is explicit that this is where building
+stops rather than where a workaround starts.
+
+### What is measured and solid
+
+MuPDF's own writer makes the fixture: `saveToBuffer` takes
+`encrypt=aes-256,user-password=…,owner-password=…`. All of `rc4-40`, `rc4-128`,
+`aes-128` and `aes-256` write an `/Encrypt` dictionary and read back; a
+`permissions=` clause is **refused** — *invalid pdf option* — so what the
+permission-flags row can set through this writer is its own question.
+
+Four facts the row turns on, none of them in the type declarations:
+
+1. **`authenticatePassword` returns a bitfield, not a boolean.** `0` wrong,
+   `2` the user password, `4` the owner password. A caller treating it as truthy
+   cannot tell a reader from an owner, which is the permission rows' whole
+   subject.
+2. **`needsPassword()` STAYS `true` after a successful authentication.** It is a
+   property of the document, not of the session — so a surface looping until it
+   goes false never stops.
+3. **`countPages()` answers with no password at all.** Structure is not what
+   encryption protects, so *did opening throw* is not *is this unlocked*, and a
+   build that used the first as the second would show a page count for a
+   document it cannot read.
+4. **`hasPermission` answered `true` for all eight permissions in every case**,
+   including unauthenticated. On a fixture whose permission bits this writer
+   would not let me set, that reading says nothing either way, and it is recorded
+   as **unmeasured** rather than as permissive.
+
+### The reproduction, stated because it will otherwise be rediscovered
+
+One script reads an authenticated, correctly encrypted document as **zero
+blocks**, with MuPDF printing `warning: ignoring zlib error: incorrect header
+check`. Two other scripts, over bytes made the same way with the same password,
+read **one block** every time.
+
+Three hypotheses tested and all three rejected:
+
+- **call order** — `needsPassword`, `countPages` or even `loadPage` before
+  authenticating: all read one block;
+- **an unrelated `saveToBuffer` in between**: one block;
+- **the source document's lifetime**, destroyed or alive: one block both ways.
+
+So the difference is real, reproducible in the one file, and not yet isolated.
+
+### THE PART WORTH KEEPING IS HOW LONG THE WARNING WAS INVISIBLE
+
+The zlib line was in the output from the first run. I did not see it for five
+experiments, because every one of those runs was inspected through
+`grep -E "^---|structured text"` — a filter written to make the table readable,
+which removed the one line that named the failure.
+
+That is *read the dump before theorising* arriving from a new direction: the dump
+was read, through a lens that had been chosen before there was anything to look
+for. **A filter written for a tidy answer is a filter written before the
+question.** The cost was four hypotheses formed and tested against a symptom
+whose own diagnosis was on screen the whole time.
+
+Nothing is built on this, and the row stays not-started rather than in-progress.
+
+---
+
 ## 2026-09-12 — Stage 7 opens: the signing gate, and a tree that is worse than the last one
 
 Stage 7's first row is a gate, and it goes first because four signing rows depend
