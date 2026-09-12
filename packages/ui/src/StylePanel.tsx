@@ -41,8 +41,9 @@ import { useSetting } from './useSetting.js';
  *
  * Nothing here reaches a tool. The four values live in the settings registry,
  * the tools read them through `annotationTools`' deps, and this panel is one
- * more reader-and-writer of the same store — the shape `SettingsPanel` already
- * has for the rulers and the grid. A control that handed a colour straight to a
+ * more reader-and-writer of the same store — the shape the rulers' and the grid's
+ * toggle commands already have. (This named a `SettingsPanel` until 2026-09-12;
+ * no such component has existed in this repository.) A control that handed a colour straight to a
  * tool would be the second place a tool is configured, and the first would be
  * whatever a person set last session.
  *

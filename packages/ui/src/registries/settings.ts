@@ -1,5 +1,5 @@
 import type { MessageKey } from '@monstera/shared';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 /**
  * The settings registry — §7's third row.
@@ -58,6 +58,17 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
   readonly category: SettingCategory;
   /** Excluded from export when true. Defaults to false. */
   readonly secret?: boolean;
+  /**
+   * A title for each member of an ENUMERATED setting, and absent for every other
+   * kind ([ADR-0056](../../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)).
+   *
+   * An enum's members are values rather than words — `pt`, `system` — so a
+   * derived dialog could not show them (B9). Checked at construction in both
+   * directions: an enum missing a member's title, a title for a member the enum
+   * does not have, and titles on a setting that is not an enum are all refused,
+   * naming the setting.
+   */
+  readonly optionTitles?: Readonly<Record<string, MessageKey>>;
   /** Reads a stored value written by an older build. */
   readonly migrate?: (stored: unknown) => unknown;
 }
@@ -93,6 +104,31 @@ export class SettingsRegistry {
             `would then be invalid — which happens on a fresh install and on no machine that has ` +
             `ever written this value.`,
         );
+      }
+      // AN ENUM'S MEMBERS ARE VALUES, NOT WORDS (ADR-0056), so an enumerated
+      // setting must title exactly its members and nothing else may carry
+      // titles. Both directions are checked, because iterating either set alone
+      // makes it the universe: the titles alone pass a missing member, and the
+      // members alone pass a title for one that does not exist.
+      const members = setting.schema instanceof z.ZodEnum ? setting.schema.options.map(String) : null;
+      const titled = setting.optionTitles === undefined ? null : Object.keys(setting.optionTitles);
+      if (members === null && titled !== null) {
+        throw new Error(
+          `Setting "${setting.id}" titles ${titled.join(', ')} and is not an enumerated setting, so ` +
+            'there is nothing for those titles to name (ADR-0056).',
+        );
+      }
+      if (members !== null) {
+        const missing = members.filter((member) => !(titled ?? []).includes(member));
+        const extra = (titled ?? []).filter((member) => !members.includes(member));
+        if (missing.length > 0 || extra.length > 0) {
+          throw new Error(
+            `Setting "${setting.id}" is enumerated and its titles do not match its members` +
+              (missing.length > 0 ? `: no title for ${missing.join(', ')}` : '') +
+              (extra.length > 0 ? `; a title for ${extra.join(', ')}, which it does not have` : '') +
+              '. A derived dialog cannot show a value as a word (ADR-0056).',
+          );
+        }
       }
       this.#byId.set(setting.id, setting);
     }

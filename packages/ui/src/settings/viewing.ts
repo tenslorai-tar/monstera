@@ -8,6 +8,7 @@ import {
   RULERS_TITLE,
   RULER_UNIT_TITLE,
   SECOND_RENDERER_TITLE,
+  UNIT_TITLES,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -163,6 +164,9 @@ export const RULER_UNIT_SETTING: SettingDefinition<
   schema: z.enum(['in', 'cm', 'pt']),
   fallback: 'in',
   category: 'viewing',
+  // THE MEASUREMENT'S UNIT TITLES, the three this ruler draws: one word per unit
+  // in this build, so a ruler and a measurement never call centimetres two things.
+  optionTitles: { in: UNIT_TITLES.in, cm: UNIT_TITLES.cm, pt: UNIT_TITLES.pt },
 };
 
 /**

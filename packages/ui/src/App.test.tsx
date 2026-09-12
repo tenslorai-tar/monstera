@@ -157,7 +157,15 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // handwriting tool is hidden until its models are downloaded, so the registry
   // has to ask before it can decide whether to offer the control — a read that
   // happens because a surface loaded, never because a reader did anything.
-  return calls.filter((id) => id !== 'document.recent' && id !== 'app.handwritingCache');
+  //
+  // `settings.loadSecrets` joins them for the handwriting read's reason exactly
+  // (ADR-0056): the cloud tool is hidden until a key is stored, so the registry
+  // asks which secrets are stored when the surface loads — an id list, and never
+  // something a reader did.
+  return calls.filter(
+    (id) =>
+      id !== 'document.recent' && id !== 'app.handwritingCache' && id !== 'settings.loadSecrets',
+  );
 }
 
 /** One recorded call, with what the renderer sent. */
@@ -1513,10 +1521,13 @@ describe('App', () => {
     // `.m-start-actions`, not `.m-start-screen`: the screen now holds a
     // problem region as well, and scoping to the projection's own container is
     // what keeps this counting COMMANDS rather than every control on the page.
-    expect(container.querySelectorAll('.m-start-actions button')).toHaveLength(3);
+    expect(container.querySelectorAll('.m-start-actions button')).toHaveLength(4);
     expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Reveal diagnostics log' })).toBeDefined();
+    // SETTINGS, the fourth (ADR-0056): wanted before anything is open, and where a
+    // person whose cloud engine is missing its key comes looking.
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined();
   });
 
   describe('the start screen reports an open that produced no document', () => {

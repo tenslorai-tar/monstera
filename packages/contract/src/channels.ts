@@ -3018,7 +3018,7 @@ export const channels = {
   ),
 
   /**
-   * Every secret the previous run stored, decrypted, plus whether it can store.
+   * Which secret settings are stored, plus whether this machine can store one.
    *
    * ## `available` is a state, not an error
    *
@@ -3033,21 +3033,22 @@ export const channels = {
    * machine cannot keep a key for you*, which is `spelling.dictionary`'s
    * `available: false` on a different subject.
    *
-   * ## Decrypted, and that is where the boundary is
+   * ## NO VALUE CROSSES, and this said the opposite until 2026-09-12
    *
-   * The renderer needs the value to put in a box a person edits. Handing over
-   * ciphertext would mean the renderer holding a key to decrypt it, which is
-   * the whole thing `safeStorage` exists to avoid. What crosses is the plain
-   * value, once, into the process that was going to render it anyway.
+   * It answered every secret decrypted, on the ground that *the renderer needs
+   * the value to put in a box a person edits*. `BUILD-PROMPT.md` E5 had already
+   * ruled the other way — a write-only field with a `••••` placeholder, where
+   * *the UI can replace or remove a key but never read it back* — and a key in
+   * renderer state is there whatever a field draws
+   * ([ADR-0056](../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)).
+   * So what crosses is which declared secrets are stored, and the box a person
+   * edits starts empty with a placeholder saying one is.
    */
   'settings.loadSecrets': channel(
-    'Every stored secret setting, decrypted, and whether this machine can store one.',
+    'Which secret settings are stored, never their values, and whether this machine can store one.',
     z.object({}),
     z.object({
-      // THE KEYS ARE BOUNDED TOO, and `payloadBounds.test.ts` is what said so:
-      // a record's `propertyNames` is a string a caller cannot bound unless the
-      // schema does, and the ids here are this build's own registered names.
-      secrets: z.record(z.string().max(MAX_SETTING_ID), z.string().max(MAX_SECRET_SETTING)),
+      stored: z.array(z.enum(SECRET_SETTING_IDS)).max(SECRET_SETTING_IDS.length),
       available: z.boolean(),
     }),
   ),

@@ -278,11 +278,12 @@ const handlers: ContractHandlers = {
   // the schema quietly rewrite this" a real question rather than a rhetorical
   // one.
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
-  // NON-EMPTY AND `available: true`, so a case asserting a secret crossed has
-  // something to find: an empty record is what a machine with no keyring
-  // answers, and it is the reassuring shape for every question here.
+  // NON-EMPTY AND `available: true`, so a case asserting what crossed has
+  // something to find: an empty list is what a machine with no keyring answers,
+  // and it is the reassuring shape for every question here. An id and never a
+  // value, which is all this channel can carry since ADR-0056.
   'settings.loadSecrets': () =>
-    Promise.resolve(ok({ secrets: { 'ai.key': 'a stored key' }, available: true })),
+    Promise.resolve(ok({ stored: [AZURE_KEY_SETTING_ID], available: true })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'spelling.dictionary': () =>

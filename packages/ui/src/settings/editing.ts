@@ -24,6 +24,10 @@ import {
   EDITING_PERSONAL_DICTIONARY_TITLE,
   MEASURE_SCALE_TITLE,
   MEASURE_UNIT_TITLE,
+  IMAGE_PAGES_TITLES,
+  OCR_LANGUAGE_NAMES,
+  TROCR_SIZE_TITLES,
+  UNIT_TITLES,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -140,6 +144,7 @@ export const MEASURE_UNIT_SETTING: SettingDefinition<typeof measureUnitSchema> =
   schema: measureUnitSchema,
   fallback: 'pt',
   category: 'editing',
+  optionTitles: UNIT_TITLES,
 };
 
 /**
@@ -175,6 +180,7 @@ export const IMAGE_PAGES_SETTING: SettingDefinition<z.ZodEnum<{ this: 'this'; al
   schema: z.enum(['this', 'all']),
   fallback: 'this',
   category: 'editing',
+  optionTitles: IMAGE_PAGES_TITLES,
 };
 
 /**
@@ -269,6 +275,10 @@ export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguageSchema> =
   schema: ocrLanguageSchema,
   fallback: 'eng',
   category: 'editing',
+  // THE OCR DIALOG'S OWN NAMES, not a second set: `OCR_LANGUAGE_NAMES` is keyed
+  // on the contract's language list, so a fifteenth language is a compile error
+  // there and a construction refusal here, never a blank option.
+  optionTitles: OCR_LANGUAGE_NAMES,
 };
 
 /**
@@ -300,6 +310,7 @@ export const TROCR_SIZE_SETTING: SettingDefinition<typeof trocrSizeSchema> = {
   schema: trocrSizeSchema,
   fallback: 'small',
   category: 'editing',
+  optionTitles: TROCR_SIZE_TITLES,
 };
 
 /**

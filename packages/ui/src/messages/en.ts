@@ -577,6 +577,75 @@ export const GO_FORWARD_TITLE = messageKey('command.go-forward.title');
 export const SETTINGS_PROBLEM_TITLE = messageKey('dialog.settings-problem.title');
 export const SETTINGS_APPLIED_NOW = messageKey('dialog.settings-problem.applied');
 export const SETTINGS_NOT_STORED = messageKey('dialog.settings-problem.not-stored');
+export const SETTINGS_SECRET_NOT_STORED = messageKey('dialog.settings-problem.secret-not-stored');
+export const SETTINGS_COMMAND_TITLE = messageKey('command.show-settings.title');
+export const SETTINGS_TITLE = messageKey('dialog.settings.title');
+export const SETTINGS_SAVE = messageKey('dialog.settings.save');
+export const SETTINGS_INVALID = messageKey('dialog.settings.invalid');
+export const SETTINGS_SECRET_STORED = messageKey('dialog.settings.secret-stored');
+export const SETTINGS_SECRET_PLACEHOLDER = messageKey('dialog.settings.secret-placeholder');
+export const SETTINGS_SECRET_REMOVE = messageKey('dialog.settings.secret-remove');
+export const SETTINGS_SECRET_UNAVAILABLE = messageKey('dialog.settings.secret-unavailable');
+// EACH MEMBER IS ITS OWN EXPORTED KEY, and the records below name them: the
+// catalogue's reachability case finds keys by their exports, so a key minted
+// inside a record is one it reports as an orphan — `OCR_LANGUAGE_NAMES`' shape.
+export const SETTINGS_CATEGORY_GENERAL = messageKey('dialog.settings.category.general');
+export const SETTINGS_CATEGORY_APPEARANCE = messageKey('dialog.settings.category.appearance');
+export const SETTINGS_CATEGORY_VIEWING = messageKey('dialog.settings.category.viewing');
+export const SETTINGS_CATEGORY_EDITING = messageKey('dialog.settings.category.editing');
+export const SETTINGS_CATEGORY_PRIVACY = messageKey('dialog.settings.category.privacy');
+export const SETTINGS_CATEGORY_ADVANCED = messageKey('dialog.settings.category.advanced');
+export const THEME_SYSTEM_TITLE = messageKey('setting.appearance-theme.system');
+export const THEME_LIGHT_TITLE = messageKey('setting.appearance-theme.light');
+export const THEME_DARK_TITLE = messageKey('setting.appearance-theme.dark');
+export const UNIT_PT_TITLE = messageKey('setting.unit.pt');
+export const UNIT_MM_TITLE = messageKey('setting.unit.mm');
+export const UNIT_CM_TITLE = messageKey('setting.unit.cm');
+export const UNIT_M_TITLE = messageKey('setting.unit.m');
+export const UNIT_IN_TITLE = messageKey('setting.unit.in');
+export const UNIT_FT_TITLE = messageKey('setting.unit.ft');
+export const IMAGE_PAGES_THIS_TITLE = messageKey('setting.editing.image-pages.this');
+export const IMAGE_PAGES_ALL_TITLE = messageKey('setting.editing.image-pages.all');
+export const TROCR_SIZE_SMALL_TITLE = messageKey('setting.editing.trocr-size.small');
+export const TROCR_SIZE_BASE_TITLE = messageKey('setting.editing.trocr-size.base');
+/** Each registered category's heading in the Settings dialog. */
+export const SETTINGS_CATEGORY_TITLES = {
+  general: SETTINGS_CATEGORY_GENERAL,
+  appearance: SETTINGS_CATEGORY_APPEARANCE,
+  viewing: SETTINGS_CATEGORY_VIEWING,
+  editing: SETTINGS_CATEGORY_EDITING,
+  privacy: SETTINGS_CATEGORY_PRIVACY,
+  advanced: SETTINGS_CATEGORY_ADVANCED,
+} as const;
+/** `appearance.theme`'s members, by the word a person reads (ADR-0056). */
+export const THEME_OPTION_TITLES = {
+  system: THEME_SYSTEM_TITLE,
+  light: THEME_LIGHT_TITLE,
+  dark: THEME_DARK_TITLE,
+} as const;
+/**
+ * Every unit a setting offers, once. The ruler's three are a subset of the
+ * measurement's six, so both settings take their titles from here rather than
+ * each naming *centimetres* for itself.
+ */
+export const UNIT_TITLES = {
+  pt: UNIT_PT_TITLE,
+  mm: UNIT_MM_TITLE,
+  cm: UNIT_CM_TITLE,
+  m: UNIT_M_TITLE,
+  in: UNIT_IN_TITLE,
+  ft: UNIT_FT_TITLE,
+} as const;
+/** `editing.image-pages`' members. */
+export const IMAGE_PAGES_TITLES = {
+  this: IMAGE_PAGES_THIS_TITLE,
+  all: IMAGE_PAGES_ALL_TITLE,
+} as const;
+/** `editing.trocr-size`'s members. */
+export const TROCR_SIZE_TITLES = {
+  small: TROCR_SIZE_SMALL_TITLE,
+  base: TROCR_SIZE_BASE_TITLE,
+} as const;
 export const FIND_LABEL = messageKey('surface.find.label');
 export const FIND_SUBMIT = messageKey('surface.find.submit');
 export const FIND_MATCHES = messageKey('surface.find.matches');
@@ -1408,6 +1477,36 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_PROBLEM_TITLE]: 'Preference not saved',
   [SETTINGS_APPLIED_NOW]: '{setting} is in effect now.',
   [SETTINGS_NOT_STORED]: 'It could not be stored, so it will not be remembered next time.',
+  [SETTINGS_SECRET_NOT_STORED]:
+    '{setting} was not saved. Whatever was stored before is unchanged.',
+  [SETTINGS_COMMAND_TITLE]: 'Settings',
+  [SETTINGS_TITLE]: 'Settings',
+  [SETTINGS_SAVE]: 'Save',
+  [SETTINGS_INVALID]: '{setting} holds a value it does not accept.',
+  [SETTINGS_SECRET_STORED]: 'A key is stored. Type a new one to replace it.',
+  [SETTINGS_SECRET_PLACEHOLDER]: '••••••••',
+  [SETTINGS_SECRET_REMOVE]: 'Remove the stored key',
+  [SETTINGS_SECRET_UNAVAILABLE]:
+    'This computer has no secure place to keep a key, so one cannot be saved here.',
+  [SETTINGS_CATEGORY_TITLES.general]: 'General',
+  [SETTINGS_CATEGORY_TITLES.appearance]: 'Appearance',
+  [SETTINGS_CATEGORY_TITLES.viewing]: 'Viewing',
+  [SETTINGS_CATEGORY_TITLES.editing]: 'Editing',
+  [SETTINGS_CATEGORY_TITLES.privacy]: 'Privacy',
+  [SETTINGS_CATEGORY_TITLES.advanced]: 'Advanced',
+  [THEME_OPTION_TITLES.system]: 'Match the system',
+  [THEME_OPTION_TITLES.light]: 'Light',
+  [THEME_OPTION_TITLES.dark]: 'Dark',
+  [UNIT_TITLES.pt]: 'Points',
+  [UNIT_TITLES.mm]: 'Millimetres',
+  [UNIT_TITLES.cm]: 'Centimetres',
+  [UNIT_TITLES.m]: 'Metres',
+  [UNIT_TITLES.in]: 'Inches',
+  [UNIT_TITLES.ft]: 'Feet',
+  [IMAGE_PAGES_TITLES.this]: 'This page only',
+  [IMAGE_PAGES_TITLES.all]: 'Every page',
+  [TROCR_SIZE_TITLES.small]: 'Small',
+  [TROCR_SIZE_TITLES.base]: 'Base',
   [FIND_LABEL]: 'Find on this page',
   // NOT 'Find', which is the toolbar command's title: two controls sharing an
   // accessible name is one a screen-reader user cannot tell apart, and it was

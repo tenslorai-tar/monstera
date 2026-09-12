@@ -56,6 +56,15 @@ export const SETTINGS_PROBLEM_DIALOG = declareDialog({
      * the moment a language change is what failed to save.
      */
     setting: z.string().min(1),
+    /**
+     * Whether the setting was a SECRET.
+     *
+     * The ordinary sentence says the value *is in effect now*, which is true of a
+     * setting the store holds and false of a key: main reads a key from the
+     * credential store when it makes a call, so a key that did not store is not in
+     * effect anywhere.
+     */
+    secret: z.boolean().optional(),
   }),
   component: lazy(() => import('./SettingsProblemBody.js')),
 });

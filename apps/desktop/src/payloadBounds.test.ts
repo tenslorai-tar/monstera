@@ -191,7 +191,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // build's own set, and a very short one — and no document contributes to it.
   // The keys and values are bounded in the schema, which is the other half of
   // L11's requirement.
-  'settings.loadSecrets': "carries the user's stored keys, which no document contributes to",
+  'settings.loadSecrets': 'answers which declared secret ids are stored, never a value; no document contributes',
   'settings.saveSecret': 'answers a boolean',
   'log.reveal': 'answers a boolean',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its

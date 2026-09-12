@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { THEME_TITLE } from '../messages/en.js';
+import { THEME_OPTION_TITLES, THEME_TITLE } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -42,6 +42,7 @@ export const THEME_SETTING: SettingDefinition<z.ZodEnum<{
   schema: z.enum(['system', 'light', 'dark']),
   fallback: 'system',
   category: 'appearance',
+  optionTitles: THEME_OPTION_TITLES,
 };
 
 /** What the setting resolves to, for the one writer that applies it. */

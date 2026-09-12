@@ -892,6 +892,90 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — A valid signature could read as unreadable, one in 256
+
+Found by the Settings dialog's pre-push run, in a file that range did not touch:
+`documentSign.test.ts`' typed visible-signature case failed with
+`SignaturesUnreadable: … Too few bytes to read ASN.1 value`, and passed alone.
+
+### The mechanism
+
+`signatureRead.ts` stripped every trailing zero byte from `/Contents` before
+parsing, because `/Contents` is a fixed-size hole — the DER signature, then zeros
+out to the reserved length. **A DER encoding may end in a zero byte.** When a
+signature's last byte was zero, the strip removed it with the padding, and the
+parser ran out of bytes. The test mints a P12 per run, so the last byte is
+effectively random: roughly one run in 256, which is why the full suite found it
+and an isolated run did not.
+
+That is a shipped defect in the verification row, not a test flake: a correctly
+signed document, reported as a signature this build cannot read, in the panel
+whose whole job is to be believed.
+
+### The repair, and the correction it owes
+
+node-forge's DER reader already knows where the element ends — its length is in
+its header — and `asn1.fromDer` takes `parseAllBytes: false` to stop there
+(node-forge 1.4.0, `lib/asn1.js`). `pkcs7Asn1` asks it, through a typed adapter,
+because `@types/node-forge` declares only a `strict` boolean. The reader and the
+gate case both take it.
+
+**The gate case's own comment was a partial fix recorded as a whole one.** It said
+the earlier hex-character trim, which ate half a byte, had been fixed by trimming
+BYTES instead. That repair was the same flaw one unit wider, and the comment read
+as settled. It now says so.
+
+**The control is a constructed element**, because a real signature cannot be made
+to end in zero on purpose: `SEQUENCE { INTEGER 0 }` in a zero-padded hole reads
+back exactly, and the replaced strip-first shape, inline in the case, fails on it
+with the logged *Too few bytes*.
+
+## 2026-09-12 — The Settings dialog, and a key that could not be entered
+
+[ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)
+built, the commit after its amendment. Settings is on Tools › Application and the
+start screen, and it is a projection of the registry: one control per schema
+kind, grouped by category, answering the command that opened it.
+
+### What it made reachable
+
+Every registered setting whose schema is a boolean, an enum, a number or a
+string — the theme, which nothing in the application could change before, and
+the Azure Document Intelligence endpoint and key, which nothing could enter.
+Three are excluded by name and pinned by a case: the accent and the annotation
+colour (a union with a pattern) and the personal dictionary (an array).
+
+### The key is write-only, and the channel is what makes it so
+
+`settings.loadSecrets` answered every secret **decrypted** to the renderer, on
+the ground that a person edits it in a box. E5 had ruled that out and the
+channel had no caller, so nothing had exercised the ruling. It now answers which
+declared secrets are stored and whether storage is available; the field starts
+empty with a placeholder, typing replaces the key and a checkbox removes it. A
+contract client cannot even construct a value on that answer.
+
+**The cloud tool's visibility moved with it.** It read the key from the
+renderer's settings store, which is hydrated only from `settings.load` and so
+never holds a secret — D6 row 8's tool could not appear however the key was
+stored. It reads main's stored-ids answer, refreshed when the command moves a
+key.
+
+### An enum's members are values, not words
+
+The one thing the registry could not say: `pt` and `system` are not labels.
+`optionTitles` is refused at construction unless it titles **exactly** an enum's
+members, checked in both directions, and refused outright on a setting that is
+not an enum. The OCR language reuses `OCR_LANGUAGE_NAMES`; the ruler's three
+units and the measurement's six take one `UNIT_TITLES`, so centimetres has one
+word in this build.
+
+### Two smaller things the same range corrected
+
+- The *Preference not saved* dialog said a setting *is in effect now*. For a key
+  that did not store that is false — main reads the credential store — so a
+  secret gets its own sentence.
+- `StylePanel.tsx` named a `SettingsPanel` that has never existed here.
+
 ## 2026-09-12 — A secret could reach the plaintext settings file, and nothing entered one
 
 Found while answering the owner's question *where does the Azure key go*. The

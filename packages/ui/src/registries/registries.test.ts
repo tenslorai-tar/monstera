@@ -153,15 +153,110 @@ describe('DialogRegistry', () => {
 
 describe('SettingsRegistry', () => {
   function setting(over: Partial<SettingDefinition> = {}): SettingDefinition {
+    // TITLES BELONG TO THE DEFAULT ENUM, so they are attached only when the case
+    // keeps that schema. A case that swaps in a string or a boolean would
+    // otherwise carry three titles for members its schema does not have — which
+    // `SettingsRegistry` refuses, and which is not what that case is about.
+    const titles =
+      over.schema === undefined
+        ? {
+            optionTitles: {
+              light: messageKey('setting.theme.light'),
+              dark: messageKey('setting.theme.dark'),
+              system: messageKey('setting.theme.system'),
+            },
+          }
+        : {};
     return {
       id: 'general.theme',
       title: messageKey('setting.theme.label'),
       schema: z.enum(['light', 'dark', 'system']),
       fallback: 'system',
       category: 'appearance',
+      ...titles,
       ...over,
     };
   }
+
+  it('refuses an enumerated setting missing a title for one of its members', () => {
+    // NAMED IN THE REFUSAL, because the member is what the author has to add.
+    expect(
+      () =>
+        new SettingsRegistry([
+          setting({
+            optionTitles: {
+              light: messageKey('setting.theme.light'),
+              dark: messageKey('setting.theme.dark'),
+            },
+          }),
+        ]),
+    ).toThrow(/system/);
+  });
+
+  it('refuses a title for a member the enum does not have', () => {
+    // The other direction: iterating the titles alone would pass the case above
+    // and this one both, because every title it visits is fine.
+    expect(
+      () =>
+        new SettingsRegistry([
+          setting({
+            optionTitles: {
+              light: messageKey('setting.theme.light'),
+              dark: messageKey('setting.theme.dark'),
+              system: messageKey('setting.theme.system'),
+              sepia: messageKey('setting.theme.sepia'),
+            },
+          }),
+        ]),
+    ).toThrow(/sepia/);
+  });
+
+  it('refuses an enumerated setting with no titles at all', () => {
+    expect(
+      () =>
+        new SettingsRegistry([
+          {
+            id: 'general.theme',
+            title: messageKey('setting.theme.label'),
+            schema: z.enum(['light', 'dark', 'system']),
+            fallback: 'system',
+            category: 'appearance',
+          },
+        ]),
+    ).toThrow(/general\.theme/);
+  });
+
+  it('refuses titles on a setting that is not enumerated', () => {
+    expect(
+      () =>
+        new SettingsRegistry([
+          {
+            id: 'viewing.rulers',
+            title: messageKey('setting.rulers.label'),
+            schema: z.boolean(),
+            fallback: false,
+            category: 'viewing',
+            optionTitles: { true: messageKey('setting.rulers.on') },
+          },
+        ]),
+    ).toThrow(/viewing\.rulers/);
+  });
+
+  it('CONTROL: an enum titled exactly, and a boolean with no titles, both construct', () => {
+    expect(
+      () =>
+        new SettingsRegistry([
+          setting(),
+          {
+            id: 'viewing.rulers',
+            title: messageKey('setting.rulers.label'),
+            schema: z.boolean(),
+            fallback: false,
+            category: 'viewing',
+          },
+        ]),
+    ).not.toThrow();
+  });
 
   it('refuses a fallback its own schema refuses', () => {
     // The defect this catches appears on a fresh install and on no machine that

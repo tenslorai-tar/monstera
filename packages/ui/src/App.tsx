@@ -1,9 +1,10 @@
-import type {
-  AnnotationRect,
-  ContractClient,
-  FieldFill,
-  MeasureScale,
-  RenderableCommand,
+import {
+  type AnnotationRect,
+  AZURE_KEY_SETTING_ID,
+  type ContractClient,
+  type FieldFill,
+  type MeasureScale,
+  type RenderableCommand,
 } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import {
@@ -99,6 +100,8 @@ import { handwritingModelCommands } from './commands/handwritingModel.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
+import { showSettingsCommand } from './commands/showSettings.js';
+import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
@@ -192,7 +195,6 @@ import {
   MEASURE_SCALE_SETTING,
   MEASURE_UNIT_SETTING,
   AZURE_DI_ENDPOINT_SETTING,
-  AZURE_DI_KEY_SETTING,
   OCR_LANGUAGE_SETTING,
   TROCR_SIZE_SETTING,
 } from './settings/editing.js';
@@ -394,6 +396,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         SPLIT_DOCUMENT_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
+        SETTINGS_DIALOG,
         ...FORM_FIELD_DIALOGS,
       ]),
     [],
@@ -1093,15 +1096,40 @@ export function App({ client, settings }: AppProps): ReactElement {
   /** The handwriting registration's model size. Read here for the same reason. */
   const trocrSize = useSetting(settings, TROCR_SIZE_SETTING);
   /**
-   * The cloud engine's credentials, read here only to decide whether to OFFER it.
+   * Whether the cloud engine can be OFFERED: an endpoint in the settings, and a
+   * key stored in the credential store.
    *
-   * **The values never leave this component**: main reads both documents itself
-   * when it makes the call, because the key is a secret and a renderer holding
-   * one to hand back would be the plaintext path E5's rule exists to close. What
-   * the registry needs is one boolean, and that is all this computes.
+   * **The key is not read here, and until 2026-09-12 it was read from the wrong
+   * place.** This took the key from the renderer's settings store, which is
+   * hydrated from `settings.load` and so can never hold a secret — the tool could
+   * not appear whatever was stored. What is asked now is main's answer to *which
+   * secrets are stored*, an id list with no value in it
+   * ([ADR-0056](../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)),
+   * and main reads the key itself when it makes the call.
    */
   const azureEndpoint = useSetting(settings, AZURE_DI_ENDPOINT_SETTING);
-  const azureKey = useSetting(settings, AZURE_DI_KEY_SETTING);
+  const [azureKeyStored, setAzureKeyStored] = useState(false);
+
+  /**
+   * Asks main which secrets are stored — `refreshHandwriting`'s one-shot
+   * subscription shape and its `live` flag, for its reasons: a slow answer must
+   * not overwrite a newer one, and a refusal is not a stored key.
+   */
+  const refreshSecrets = useCallback((): (() => void) => {
+    let live = true;
+    void client['settings.loadSecrets']({}).then(
+      (answer) => {
+        if (live) setAzureKeyStored(answer.ok && answer.value.stored.includes(AZURE_KEY_SETTING_ID));
+      },
+      () => {
+        if (live) setAzureKeyStored(false);
+      },
+    );
+    return (): void => {
+      live = false;
+    };
+  }, [client]);
+  useEffect(() => refreshSecrets(), [refreshSecrets]);
 
   /**
    * Whether the handwriting engine's downloaded stack is on this machine.
@@ -1353,6 +1381,16 @@ export function App({ client, settings }: AppProps): ReactElement {
       new CommandRegistry([
         openCommand,
         showAboutCommand({ client, ask }),
+        // RE-ASKS MAIN WHICH SECRETS ARE STORED when a key moved, so the cloud
+        // tool appears the moment its key lands rather than on the next launch.
+        showSettingsCommand({
+          client,
+          settings,
+          ask,
+          onSecretsChanged: () => {
+            refreshSecrets();
+          },
+        }),
         showWordCountCommand({ client, ask, track }),
         // TAKES THE SETTINGS STORE, which no other command here does. The
         // personal dictionary is what makes this feature manageable rather than
@@ -1450,7 +1488,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           // THE PAIR, read here rather than as two predicates: an endpoint with
           // no key reaches the service and comes back unauthorised, which a
           // reader reads as a wrong key rather than as a missing one.
-          cloudReady: () => azureEndpoint !== '' && azureKey !== '',
+          cloudReady: () => azureEndpoint !== '' && azureKeyStored,
         }),
         // THE DOWNLOAD AND ITS REMOVAL, which is what a reader meets while the
         // tool above is hidden. `onChanged` re-asks main, so the tool appears
@@ -1482,11 +1520,12 @@ export function App({ client, settings }: AppProps): ReactElement {
     [
       applied,
       ask,
-      // THE CREDENTIALS' OWN VALUES, for `handwritingReady`'s reason one line
+      // THE PREDICATE'S TWO INPUTS, for `handwritingReady`'s reason one line
       // down: `cloudReady` closes over this render's pair, so without these the
-      // cloud tool would stay hidden however many keys were entered.
+      // cloud tool would stay hidden however many keys were entered. The second
+      // is main's answer to *is a key stored*, never the key.
       azureEndpoint,
-      azureKey,
+      azureKeyStored,
       changeZoom,
       client,
       // THE PREDICATE'S OWN VALUE, and it has to be here for the same reason
@@ -1500,6 +1539,9 @@ export function App({ client, settings }: AppProps): ReactElement {
       openPalette,
       readTool,
       refreshHandwriting,
+      // THE SETTINGS COMMAND'S `onSecretsChanged` closes over it, for
+      // `refreshHandwriting`'s reason one line up.
+      refreshSecrets,
       selectionDeps,
       settings,
       track,

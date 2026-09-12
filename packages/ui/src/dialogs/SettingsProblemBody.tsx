@@ -2,7 +2,11 @@ import { useLingui } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
-import { SETTINGS_APPLIED_NOW, SETTINGS_NOT_STORED } from '../messages/en.js';
+import {
+  SETTINGS_APPLIED_NOW,
+  SETTINGS_NOT_STORED,
+  SETTINGS_SECRET_NOT_STORED,
+} from '../messages/en.js';
 
 /**
  * The settings-problem dialog's body.
@@ -26,8 +30,10 @@ import { SETTINGS_APPLIED_NOW, SETTINGS_NOT_STORED } from '../messages/en.js';
  */
 export default function SettingsProblemBody({
   setting,
+  secret,
 }: {
   readonly setting: string;
+  readonly secret?: boolean | undefined;
 }): ReactElement {
   const { _ } = useLingui();
 
@@ -37,8 +43,16 @@ export default function SettingsProblemBody({
           the prop is a schema-validated string, so a non-key means the caller
           passed a rendered sentence — and a dialog that silently displayed it
           would make the locale bug invisible. */}
-      <p>{_(SETTINGS_APPLIED_NOW, { setting: _(messageKey(setting)) })}</p>
-      <p>{_(SETTINGS_NOT_STORED)}</p>
+      {secret === true ? (
+        // A KEY IS NOT IN EFFECT ANYWHERE if it did not store: main reads it
+        // from the credential store when it makes a call.
+        <p>{_(SETTINGS_SECRET_NOT_STORED, { setting: _(messageKey(setting)) })}</p>
+      ) : (
+        <>
+          <p>{_(SETTINGS_APPLIED_NOW, { setting: _(messageKey(setting)) })}</p>
+          <p>{_(SETTINGS_NOT_STORED)}</p>
+        </>
+      )}
     </div>
   );
 }

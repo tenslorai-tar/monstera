@@ -6,12 +6,26 @@ import { SettingsRegistry, type SettingDefinition } from './registries/settings.
 import { SettingsStore } from './settingsStore.js';
 
 function setting(over: Partial<SettingDefinition> = {}): SettingDefinition {
+  // TITLES FOR THE DEFAULT ENUM ONLY: `SettingsRegistry` refuses an enumerated
+  // setting that does not title exactly its members (ADR-0056), and a case that
+  // swaps in a string schema must not carry titles for members it lacks.
+  const titles =
+    over.schema === undefined
+      ? {
+          optionTitles: {
+            light: messageKey('setting.theme.light'),
+            dark: messageKey('setting.theme.dark'),
+            system: messageKey('setting.theme.system'),
+          },
+        }
+      : {};
   return {
     id: 'appearance.theme',
     title: messageKey('setting.theme.label'),
     schema: z.enum(['light', 'dark', 'system']),
     fallback: 'system',
     category: 'appearance',
+    ...titles,
     ...over,
   };
 }

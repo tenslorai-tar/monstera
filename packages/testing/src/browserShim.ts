@@ -7,6 +7,7 @@ import {
   type OcrLanguage,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
+  SECRET_SETTING_IDS,
   channels,
   createClient,
   wrapHandlers,
@@ -1466,7 +1467,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // is `true` here so a UI case can exercise the path that stores; the
     // refusing machine is `secretStore.test.ts`' subject, against the real one.
     'settings.loadSecrets': () =>
-      Promise.resolve(ok({ secrets: { ...secrets }, available: true })),
+      Promise.resolve(
+        ok({
+          stored: SECRET_SETTING_IDS.filter((id) => (secrets[id] ?? '') !== ''),
+          available: true,
+        }),
+      ),
     'settings.saveSecret': ({ id, value }) => {
       if (value === '') Reflect.deleteProperty(secrets, id);
       else secrets[id] = value;

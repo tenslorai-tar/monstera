@@ -1,6 +1,8 @@
 import { SECRET_SETTING_IDS } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
+import { controlFor, DIALOG_SETTINGS } from '../dialogs/settings.js';
+import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from './all.js';
 
 /**
@@ -25,5 +27,28 @@ describe('the registered settings', () => {
     // marking anything secret would agree with a contract that listed nothing.
     expect(marked.length).toBeGreaterThan(0);
     expect(marked).toStrictEqual([...SECRET_SETTING_IDS].sort());
+  });
+
+  it('constructs as a registry, which refuses an enumerated setting not titled exactly', () => {
+    // THE PRODUCTION SET, through the production check: `main.tsx` builds this
+    // registry at startup, so a title missing here is a crash on launch rather
+    // than a blank option — and this is the case that says so before a launch.
+    expect(() => new SettingsRegistry(ALL_SETTINGS)).not.toThrow();
+  });
+
+  it('leaves out of the Settings dialog EXACTLY the kinds it has no honest control for', () => {
+    // PINNED BY ID (ADR-0056 Decision 3), so a setting of such a kind registered
+    // later changes this list in the same commit — a visible decision rather
+    // than a preference that silently has nowhere to be set.
+    const excluded = ALL_SETTINGS.filter((setting) => controlFor(setting) === undefined)
+      .map((setting) => setting.id)
+      .sort();
+    expect(excluded).toStrictEqual([
+      'appearance.accent',
+      'editing.annotation-colour',
+      'editing.personal-dictionary',
+    ]);
+    // AND NOTHING ELSE IS LOST: every setting is either in the dialog or named above.
+    expect(DIALOG_SETTINGS.length + excluded.length).toBe(ALL_SETTINGS.length);
   });
 });

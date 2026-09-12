@@ -1158,7 +1158,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
-  'settings.loadSecrets': () => Promise.resolve(ok({ secrets: {}, available: false })),
+  'settings.loadSecrets': () => Promise.resolve(ok({ stored: [], available: false })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'spelling.dictionary': () =>
@@ -1258,7 +1258,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
-  'settings.loadSecrets': () => Promise.resolve(ok({ secrets: {}, available: false })),
+  'settings.loadSecrets': () => Promise.resolve(ok({ stored: [], available: false })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'spelling.dictionary': () =>
@@ -1433,7 +1433,7 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
-  'settings.loadSecrets': () => Promise.resolve(ok({ secrets: {}, available: false })),
+  'settings.loadSecrets': () => Promise.resolve(ok({ stored: [], available: false })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'spelling.dictionary': () =>

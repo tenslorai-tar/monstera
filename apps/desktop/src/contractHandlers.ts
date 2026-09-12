@@ -1,6 +1,7 @@
 import {
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
+  SECRET_SETTING_IDS,
   type ChannelResult,
   type ContractHandlers,
   type DocumentAccess,
@@ -305,10 +306,17 @@ export function createContractHandlers(deps: {
     // the handler above. What holds the separation is the schema —
     // `settings.save` refuses a `SECRET_SETTING_IDS` member before this runs,
     // and `settings.saveSecret` accepts nothing else.
-    'settings.loadSecrets': () =>
-      Promise.resolve(
-        ok({ secrets: deps.secrets.read(), available: deps.secrets.available() }),
-      ),
+    'settings.loadSecrets': () => {
+      // WHICH ARE STORED, AND NO VALUE (ADR-0056). The store decrypts to answer
+      // this, and the plaintext ends in this frame: what crosses is the list.
+      const held = deps.secrets.read();
+      return Promise.resolve(
+        ok({
+          stored: SECRET_SETTING_IDS.filter((id) => (held[id] ?? '') !== ''),
+          available: deps.secrets.available(),
+        }),
+      );
+    },
     'settings.saveSecret': ({ id, value }) => {
       // ASKED BEFORE WRITING rather than caught after. The store throws for the
       // same condition, and this turns it into the DECLARED refusal a renderer
