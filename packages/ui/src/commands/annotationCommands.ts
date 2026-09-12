@@ -28,6 +28,7 @@ import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import { PLACE_IMAGE_TOOL_ID, PLACE_SIGNATURE_TOOL_ID } from '../annotations/placeImageTool.js';
 import {
+  CLAUDE_REGION_TOOL_ID,
   CLOUD_REGION_TOOL_ID,
   HANDWRITING_REGION_TOOL_ID,
   OCR_REGION_TOOL_ID,
@@ -79,6 +80,7 @@ import {
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
   PLACE_SIGNATURE_TOOL_TITLE,
+  CLAUDE_REGION_TOOL_TITLE,
   CLOUD_REGION_TOOL_TITLE,
   HANDWRITING_REGION_TOOL_TITLE,
   OCR_REGION_TOOL_TITLE,
@@ -153,6 +155,13 @@ export interface ToolCommandDeps {
    * they never entered one.
    */
   readonly cloudReady?: () => boolean;
+  /**
+   * Whether the Claude engine can be offered: an Anthropic key is stored.
+   *
+   * One input rather than a pair, because this service needs no endpoint — the
+   * API's address is the provider's and is not a setting (ADR-0057).
+   */
+  readonly claudeReady?: () => boolean;
 }
 
 /** What a command acting on the selection needs. */
@@ -692,6 +701,24 @@ export function cloudRegionToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The Claude engine's control, hidden until an Anthropic key is stored.
+ *
+ * The cloud tool's `when` and its reason: without a key the drag would spend a
+ * round trip to be told there is none, which reads as a broken service. **63**,
+ * beside the cloud tool at 62.
+ */
+export function claudeRegionToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(
+    CLAUDE_REGION_TOOL_ID,
+    CLAUDE_REGION_TOOL_TITLE,
+    63,
+    deps,
+    { section: 'comment', group: GROUP_MARKUP },
+    () => deps.claudeReady?.() ?? true,
+  );
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -741,6 +768,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     ocrRegionToolCommand(deps),
     handwritingRegionToolCommand(deps),
     cloudRegionToolCommand(deps),
+    claudeRegionToolCommand(deps),
     ...formFieldToolCommands(deps),
   ];
 }

@@ -185,5 +185,19 @@ export function cloudRegionTool(deps: OcrRegionDeps): UiTool {
   return regionTool(CLOUD_REGION_TOOL_ID, 'azure', deps);
 }
 
+/** The Claude tool's id. */
+export const CLAUDE_REGION_TOOL_ID = 'annotate.claude-region';
+
+/**
+ * Drag a box; its raster is SENT to Anthropic's Claude and read there.
+ *
+ * The same registration with a different engine — the network engines share one
+ * shape end to end (ADR-0057), so a second service is a member rather than a
+ * surface.
+ */
+export function claudeRegionTool(deps: OcrRegionDeps): UiTool {
+  return regionTool(CLAUDE_REGION_TOOL_ID, 'claude', deps);
+}
+
 /** Exported so the cases assert against the tool's own number. */
 export { MINIMUM_REGION };

@@ -1,7 +1,9 @@
 import {
   type AnnotationRect,
+  ANTHROPIC_KEY_SETTING_ID,
   AZURE_KEY_SETTING_ID,
   type ContractClient,
+  type SecretSettingId,
   type FieldFill,
   type MeasureScale,
   type RenderableCommand,
@@ -1108,7 +1110,12 @@ export function App({ client, settings }: AppProps): ReactElement {
    * and main reads the key itself when it makes the call.
    */
   const azureEndpoint = useSetting(settings, AZURE_DI_ENDPOINT_SETTING);
-  const [azureKeyStored, setAzureKeyStored] = useState(false);
+  // THE IDS OF STORED SECRETS, from which each network engine's readiness is
+  // derived — never a key (ADR-0056). One state rather than a boolean per engine,
+  // so a second provider's key is a derived line rather than a second setter.
+  const [storedSecrets, setStoredSecrets] = useState<readonly SecretSettingId[]>([]);
+  const azureKeyStored = storedSecrets.includes(AZURE_KEY_SETTING_ID);
+  const claudeKeyStored = storedSecrets.includes(ANTHROPIC_KEY_SETTING_ID);
 
   /**
    * Asks main which secrets are stored — `refreshHandwriting`'s one-shot
@@ -1119,10 +1126,10 @@ export function App({ client, settings }: AppProps): ReactElement {
     let live = true;
     void client['settings.loadSecrets']({}).then(
       (answer) => {
-        if (live) setAzureKeyStored(answer.ok && answer.value.stored.includes(AZURE_KEY_SETTING_ID));
+        if (live) setStoredSecrets(answer.ok ? answer.value.stored : []);
       },
       () => {
-        if (live) setAzureKeyStored(false);
+        if (live) setStoredSecrets([]);
       },
     );
     return (): void => {
@@ -1489,6 +1496,8 @@ export function App({ client, settings }: AppProps): ReactElement {
           // no key reaches the service and comes back unauthorised, which a
           // reader reads as a wrong key rather than as a missing one.
           cloudReady: () => azureEndpoint !== '' && azureKeyStored,
+          // ONE INPUT: the Anthropic API needs no endpoint setting (ADR-0057).
+          claudeReady: () => claudeKeyStored,
         }),
         // THE DOWNLOAD AND ITS REMOVAL, which is what a reader meets while the
         // tool above is hidden. `onChanged` re-asks main, so the tool appears
@@ -1526,6 +1535,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       // is main's answer to *is a key stored*, never the key.
       azureEndpoint,
       azureKeyStored,
+      claudeKeyStored,
       changeZoom,
       client,
       // THE PREDICATE'S OWN VALUE, and it has to be here for the same reason

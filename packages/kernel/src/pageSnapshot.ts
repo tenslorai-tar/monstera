@@ -1,4 +1,4 @@
-import type { AnnotationRect } from '@monstera/contract';
+import { type AnnotationRect, MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract';
 import type { Rotation } from '@monstera/shared';
 import { ColorSpace, DrawDevice, Matrix, Pixmap } from 'mupdf';
 
@@ -56,17 +56,10 @@ import { frameOf, placedRect } from './pageAnnotations.js';
  */
 export const MAX_SNAPSHOT_PIXELS = 32_000_000;
 
-/**
- * How many device pixels one PDF point becomes.
- *
- * Bounded on both sides for two different reasons. Below 1 the snapshot is
- * coarser than the page's own points, which is a picture of a picture and not
- * what anybody drags a region for; above 8 the pixel bound above is reached by
- * quite ordinary regions, and a refusal at that end reads as the feature being
- * broken rather than as a scale being silly. Eight is 576 dpi.
- */
-export const MIN_SNAPSHOT_SCALE = 1;
-export const MAX_SNAPSHOT_SCALE = 8;
+// THE SCALE BOUNDS ARE THE CONTRACT'S, re-exported under the names this module
+// always had: the host enforces them below and main now chooses a scale inside
+// them too, so there is one definition (see `MIN_SNAPSHOT_SCALE`'s comment).
+export { MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE };
 
 /**
  * What a snapshot is asked for.

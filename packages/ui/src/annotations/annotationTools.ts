@@ -12,7 +12,12 @@ import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
 import type { OcrRegionDeps } from './ocrRegionTool.js';
-import { cloudRegionTool, handwritingRegionTool, ocrRegionTool } from './ocrRegionTool.js';
+import {
+  claudeRegionTool,
+  cloudRegionTool,
+  handwritingRegionTool,
+  ocrRegionTool,
+} from './ocrRegionTool.js';
 import type { SnapshotDeps } from './snapshotTool.js';
 import { snapshotTool } from './snapshotTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
@@ -84,6 +89,9 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // has no network. Nothing about that is visible here, which is the point of
     // the engine being a field of the request.
     cloudRegionTool(deps),
+    // AND THE FOURTH, the second network engine: the same gesture, a different
+    // service. Composed here for the reason every tool is (ADR-0057).
+    claudeRegionTool(deps),
     placeImageTool(deps),
     // THE SAME GESTURE AGAIN, ending in the signing dialog rather than an image
     // picker. Composed here for the reason every tool is: this is the list the

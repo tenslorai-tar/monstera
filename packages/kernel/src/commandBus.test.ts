@@ -1,7 +1,7 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { Command, CommandOfKind } from '@monstera/contract';
+import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
@@ -1488,6 +1488,39 @@ describe('CommandBus and a parameterised pre-read', () => {
       { engine: 'handwriting', page: 2, region: [10, 20, 30, 40], size: 'base' },
     ]);
   });
+
+  it.each(NETWORK_OCR_ENGINES)(
+    'hands the resolver the NETWORK arm for %s — the region, and no language and no size',
+    async (engine) => {
+      // THE DEFECT THIS CLOSES (ADR-0057): the pre-read was a ternary on 'azure',
+      // so any other engine reached the handwriting arm — which carries a SIZE. A
+      // German language and `trocrSize: 'base'` are what a wrong route would carry
+      // into the request, and `toStrictEqual` refuses an extra key. The case above
+      // is the control that the handwriting arm still routes with its size.
+      //
+      // EVERY DECLARED NETWORK ENGINE, from the contract's own list rather than a
+      // list typed here, so an engine added there is covered without an edit.
+      const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+      const context = contextStub(true);
+      const inputs = recordingOcr(flat);
+
+      await bus.execute(
+        {},
+        context,
+        {
+          kind: 'ocrPage',
+          page: 2,
+          language: 'deu',
+          engine,
+          trocrSize: 'base',
+          region: { x0: 10, y0: 20, x1: 30, y1: 40 },
+        },
+        inputs,
+      );
+
+      expect(inputs.requests()).toStrictEqual([{ engine, page: 2, region: [10, 20, 30, 40] }]);
+    },
+  );
 
   it('replays the recognition it stored, without reading again', async () => {
     const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });

@@ -1,4 +1,4 @@
-import type { CommandKind } from '@monstera/contract';
+import { type CommandKind, isNetworkOcrEngine } from '@monstera/contract';
 
 import type {
   CommandAsset,
@@ -870,18 +870,30 @@ const declarations = {
               'carry a region (ADR-0052 §4 and its 2026-09-12 addition)',
           );
         }
-        return command.engine === 'azure'
-          ? // NO LANGUAGE AND NO MODEL SIZE. `prebuilt-read` detects the
-            // language, and passing the reader's OCR setting would be telling a
-            // service something it did not ask for and then believing its answer
-            // was about that language.
-            access.ocr({ engine: 'azure', page: command.page, region })
-          : access.ocr({
-              engine: 'handwriting',
-              page: command.page,
-              region,
-              size: command.trocrSize,
-            });
+        // THE NETWORK ENGINES BY THE ONE DECLARED SET (ADR-0057), never by a
+        // literal. This was a ternary on `'azure'` that sent every engine it did
+        // not name to the handwriting recogniser — so a fourth engine added to the
+        // contract alone would have been read as handwriting, silently.
+        if (isNetworkOcrEngine(command.engine)) {
+          // NO LANGUAGE AND NO MODEL SIZE. Each service detects the language, and
+          // passing the reader's OCR setting would be telling a service something
+          // it did not ask for and then believing its answer was about that
+          // language.
+          return access.ocr({ engine: command.engine, page: command.page, region });
+        }
+        // EXHAUSTIVE BY A BINDING, NOT A BRANCH. After the network guard the only
+        // local engine left is `handwriting`, so any comparison is always true and
+        // lint rightly refuses it. Binding the engine to that one literal keeps the
+        // guarantee a branch would have given: a local engine added to the
+        // contract makes this line a compile error, rather than a request that
+        // reaches the handwriting recogniser.
+        const local: 'handwriting' = command.engine;
+        return access.ocr({
+          engine: local,
+          page: command.page,
+          region,
+          size: command.trocrSize,
+        });
       }
 
       return access.ocr({

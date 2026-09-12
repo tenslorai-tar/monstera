@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
-import type { OcrLanguage } from '@monstera/contract';
+import type { NetworkOcrEngine, OcrLanguage } from '@monstera/contract';
 import type { Matrix as MupdfMatrix } from 'mupdf';
 import { ColorSpace, Matrix, Rect } from 'mupdf';
 
@@ -477,12 +477,12 @@ export type RecognitionRequest =
   | ({ readonly engine: 'handwriting' } & HandwritingScope)
   | {
       /**
-       * The cloud engine. Its arm carries no language and no model size — the
-       * service detects the language — and, like the handwriting arm, a
-       * REQUIRED region: what it is given is uploaded, so *the whole page* is
-       * not a request this type can express.
+       * The NETWORK engines, by the one declared set (ADR-0057). Their arm carries
+       * no language and no model size — each service detects the language — and,
+       * like the handwriting arm, a REQUIRED region: what it is given is uploaded,
+       * so *the whole page* is not a request this type can express.
        */
-      readonly engine: 'azure';
+      readonly engine: NetworkOcrEngine;
       readonly page: number;
       readonly region: readonly [number, number, number, number];
     };

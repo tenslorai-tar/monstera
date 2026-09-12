@@ -21,7 +21,11 @@ export type SettingCategory =
   | 'viewing'
   | 'editing'
   | 'privacy'
-  | 'advanced';
+  | 'advanced'
+  // PART F'S AI GROUP, and a provider's key lives here rather than beside the
+  // feature that first needed it: D6's Claude recogniser placed the Anthropic key,
+  // and Stage 9's provider registry takes the same entry (ADR-0057 Decision 5).
+  | 'ai';
 
 /**
  * One registered setting.

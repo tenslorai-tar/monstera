@@ -4,8 +4,12 @@ import { type Server, connect, createServer } from 'node:net';
 import { join } from 'node:path';
 
 import {
+  ANTHROPIC_KEY_SETTING_ID,
   AZURE_ENDPOINT_SETTING_ID,
   AZURE_KEY_SETTING_ID,
+  isNetworkOcrEngine,
+  MIN_SNAPSHOT_SCALE,
+  type NetworkOcrEngine,
   ENGINE_HOST_MAX_IN_FLIGHT,
   type ClientApi,
   type IncidentSink,
@@ -26,6 +30,11 @@ import {
   type HostDestinationsReader,
   AZURE_RASTER_SCALE,
   type AzureCredentials,
+  type AzureRequest,
+  ClaudeRecognitionRefused,
+  claudeRasterScale,
+  recogniseThroughClaude,
+  type RecognisedPage,
   type HostHandwritingReader,
   type HostOcrReader,
   recogniseThroughAzure,
@@ -689,37 +698,43 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      // THE CLOUD ENGINE RUNS HERE, and this is the whole of what that means:
+      // THE NETWORK ENGINES RUN HERE, and this is the whole of what that means:
       // the host rasterises the region into the granted output directory as it
       // already does for a snapshot, main reads the file, and main makes the
       // HTTPS call — because invariant 25 gives the host no network (ADR-0052's
       // 2026-09-12 addition). The frame travels with the raster so the boxes
       // come back to the page through the one converter.
-      if (request.engine === 'azure') {
-        const credentials = azureCredentials(settings, secrets);
-        if (credentials === null) {
-          throw new Error(
-            'the Azure Document Intelligence endpoint and key are not both set, so there is ' +
-              'nowhere to send the region. Both are settings; the key is a secret one and lives ' +
-              'in the OS keychain.',
-          );
-        }
+      //
+      // ONE LOOKUP, keyed by the declared set (ADR-0057). Each engine's
+      // credentials, raster scale and call live in its own entry, checked before
+      // anything is rasterised, and an engine the contract declares without an
+      // entry does not compile.
+      // NARROWED ON THE REQUEST, not on its engine field. A type predicate on
+      // `request.engine` narrows that field and leaves the union whole, so the
+      // region would not be known present inside and the network arm would still
+      // be in the union the Tesseract call spreads below. The guard lives here
+      // rather than beside `RecognitionRequest`, whose module loads the engine.
+      const isNetworkRequest = (
+        candidate: typeof request,
+      ): candidate is Extract<typeof request, { readonly engine: NetworkOcrEngine }> =>
+        isNetworkOcrEngine(candidate.engine);
+      if (isNetworkRequest(request)) {
+        const [x0, y0, x1, y1] = request.region;
+        const prepared = networkRecognisers(settings, secrets)[request.engine].prepare(
+          Math.abs(x1 - x0),
+          Math.abs(y1 - y0),
+        );
         const raster = await engineHost.snapshot(session, {
           page: request.page,
-          rect: {
-            x0: request.region[0],
-            y0: request.region[1],
-            x1: request.region[2],
-            y1: request.region[3],
-          },
-          scale: AZURE_RASTER_SCALE,
+          rect: { x0, y0, x1, y1 },
+          scale: prepared.scale,
         });
-        return recogniseThroughAzure(credentials, {
+        return prepared.recognise({
           png: raster.png,
           crop: raster.crop,
           rotation: raster.rotation,
           origin: raster.origin,
-          scale: AZURE_RASTER_SCALE,
+          scale: prepared.scale,
         });
       }
 
@@ -2166,6 +2181,88 @@ function azureCredentials(
   if (typeof endpoint !== 'string' || endpoint === '') return null;
   if (typeof key !== 'string' || key === '') return null;
   return { endpoint, key };
+}
+
+/** One region's raster and the frame it sits in, as every network recogniser takes it. */
+type RegionRaster = Omit<AzureRequest, 'fetchImpl'>;
+
+/**
+ * One network engine's route, split where the work splits
+ * ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md)).
+ *
+ * `prepare` runs BEFORE anything is rasterised: it reads the engine's own
+ * credentials and chooses the scale the host rasterises at, so a missing key or a
+ * region the service cannot take is refused without the host doing work nobody
+ * will send. What it answers is the scale and the call, with the credentials the
+ * check already read closed over — read once, never twice.
+ */
+interface NetworkRecogniser {
+  readonly prepare: (
+    widthPoints: number,
+    heightPoints: number,
+  ) => {
+    readonly scale: number;
+    readonly recognise: (raster: RegionRaster) => Promise<RecognisedPage>;
+  };
+}
+
+/**
+ * Every network engine's route, keyed by the one declared set.
+ *
+ * **A `Record` over `NetworkOcrEngine`**, so an engine the contract declares
+ * without an entry here is a compile error rather than a request that reaches the
+ * wrong service — the defect the pre-read's old ternary carried (ADR-0057).
+ */
+function networkRecognisers(
+  settings: SettingsSurface,
+  secrets: SecretStoreSurface | undefined,
+): Readonly<Record<NetworkOcrEngine, NetworkRecogniser>> {
+  return {
+    azure: {
+      prepare: () => {
+        const credentials = azureCredentials(settings, secrets);
+        if (credentials === null) {
+          throw new Error(
+            'the Azure Document Intelligence endpoint and key are not both set, so there is ' +
+              'nowhere to send the region. Both are settings; the key is a secret one and lives ' +
+              'in the OS keychain.',
+          );
+        }
+        return {
+          scale: AZURE_RASTER_SCALE,
+          recognise: (raster) => recogniseThroughAzure(credentials, raster),
+        };
+      },
+    },
+    claude: {
+      prepare: (widthPoints, heightPoints) => {
+        const key = secrets?.read()[ANTHROPIC_KEY_SETTING_ID];
+        if (typeof key !== 'string' || key === '') {
+          throw new Error(
+            'no Anthropic API key is stored, so there is nowhere to send the region. It is a ' +
+              'secret setting, in Settings under AI, and lives in the OS keychain.',
+          );
+        }
+        // AZURE'S SCALE AS THE CEILING, for that constant's own reason — the bytes
+        // cross the internet either way — and lowered only as far as Claude's
+        // image limits require, never below the floor the host refuses.
+        const scale = claudeRasterScale(
+          widthPoints,
+          heightPoints,
+          AZURE_RASTER_SCALE,
+          MIN_SNAPSHOT_SCALE,
+        );
+        if (scale === null) {
+          throw new ClaudeRecognitionRefused(
+            'too-large',
+            `a ${widthPoints.toFixed(0)}×${heightPoints.toFixed(0)} pt region is too large for ` +
+              'Claude to read without resizing, even at the smallest snapshot scale',
+          );
+        }
+        return { scale, recognise: (raster) => recogniseThroughClaude({ key }, raster) };
+      },
+    },
+  };
 }
 
 function sessionAssets(): SessionAssets {

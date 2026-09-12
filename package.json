@@ -59,6 +59,7 @@
     "probe:hook": "node scripts/hooks/recordHookProbe.mjs",
     "probe:picker": "node scripts/probes/recordPickerProbe.mjs",
     "probe:azure": "node scripts/probes/azureLive.mjs",
+    "probe:claude": "node scripts/probes/claudeLive.mjs",
     "proof:pickerprobe": "node scripts/proofs/pickerProbe.proof.mjs",
     "proof:buildfreshness": "node scripts/proofs/buildFreshness.proof.mjs",
     "proof:canary": "node scripts/lib/scannerCanary.proof.mjs",

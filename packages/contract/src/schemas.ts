@@ -167,20 +167,42 @@ export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
  * - `azure` is Azure Document Intelligence, **on a region only** and for a
  *   different reason: the region's raster leaves the machine, and sending a
  *   whole page would send more of a reader's document than they asked about. It
- *   is the one engine that executes in `main` rather than in the engine host,
- *   because invariant 25 gives that process no network (ADR-0052's 2026-09-12
- *   addition).
+ *   executes in `main` rather than in the engine host, because invariant 25 gives
+ *   that process no network (ADR-0052's 2026-09-12 addition).
+ * - `claude` is Anthropic's Claude, reading the same region raster for the same
+ *   reasons and in the same process — the second network engine, added
+ *   2026-09-12 after Stage 6 closed ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md)).
  *
  * Named for what a reader is choosing rather than for the library behind it: a
  * person picks *handwriting*, and `trocr` would put a model's name in a surface
- * and in every payload that carries the choice. `azure` is the exception and is
- * deliberate — it names a **service the reader's document is sent to**, and that
- * is the fact they are choosing rather than an implementation detail.
+ * and in every payload that carries the choice. `azure` and `claude` are the
+ * exceptions and are deliberate — each names a **service the reader's document is
+ * sent to**, and that is the fact they are choosing rather than an implementation
+ * detail.
  */
-export const OCR_ENGINES = ['tesseract', 'handwriting', 'azure'] as const;
+export const OCR_ENGINES = ['tesseract', 'handwriting', 'azure', 'claude'] as const;
 
 /** One of {@link OCR_ENGINES}. */
 export type OcrEngine = (typeof OCR_ENGINES)[number];
+
+/**
+ * The engines that execute in `main`, because their input must reach a network —
+ * and the ONLY list of them ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md)).
+ *
+ * *Runs in main* used to be three literals, one of them a ternary that sent any
+ * engine it did not name to the handwriting recogniser. Every question with an
+ * engine in it now reads this set: the command's pre-read, the composition root's
+ * record of recognisers, the request type, and the tools that send a region out.
+ */
+export const NETWORK_OCR_ENGINES = ['azure', 'claude'] as const satisfies readonly OcrEngine[];
+
+/** One of {@link NETWORK_OCR_ENGINES}. */
+export type NetworkOcrEngine = (typeof NETWORK_OCR_ENGINES)[number];
+
+/** Whether an engine executes in `main`. The guard every engine question reads. */
+export function isNetworkOcrEngine(engine: OcrEngine): engine is NetworkOcrEngine {
+  return NETWORK_OCR_ENGINES.some((network) => network === engine);
+}
 
 /**
  * Which TrOCR the handwriting engine loads — `BUILD-PROMPT.md`:619's setting.
@@ -225,6 +247,36 @@ export const AZURE_ENDPOINT_SETTING_ID = 'editing.azure-di-endpoint';
 export const AZURE_KEY_SETTING_ID = 'editing.azure-di-key';
 
 /**
+ * The Anthropic API key — the PROVIDER's key, not a recogniser's
+ * ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md) Decision 5).
+ *
+ * D6's Claude recogniser is the first thing to need it and main reads it by name
+ * to make that call, which is why it is here beside the Azure pair. **Stage 9's
+ * provider registry takes this id for Anthropic** rather than minting a second
+ * one: two ids would be two stored copies of one credential, and a person who
+ * rotated the key in one place would leave the other working on the old one.
+ */
+export const ANTHROPIC_KEY_SETTING_ID = 'ai.anthropic-key';
+
+/**
+ * How many device pixels one PDF point becomes, in a region snapshot.
+ *
+ * Bounded on both sides for two different reasons. Below 1 the snapshot is
+ * coarser than the page's own points, which is a picture of a picture and not
+ * what anybody drags a region for; above 8 the pixel bound above is reached by
+ * quite ordinary regions, and a refusal at that end reads as the feature being
+ * broken rather than as a scale being silly. Eight is 576 dpi.
+ *
+ * **Here rather than in `pageSnapshot.ts`, since 2026-09-13.** The host enforces
+ * them, and main now chooses a scale too: the Claude recogniser lowers its raster
+ * to fit the service's image limits and must not go below the floor the host
+ * refuses. `pageSnapshot.ts` imports these and re-exports them, so there is one
+ * definition and neither side restates it.
+ */
+export const MIN_SNAPSHOT_SCALE = 1;
+export const MAX_SNAPSHOT_SCALE = 8;
+
+/**
  * Every setting id whose value is a SECRET, and the only list of them.
  *
  * ## Why the contract has to know, when a setting id is otherwise the registry's
@@ -243,7 +295,7 @@ export const AZURE_KEY_SETTING_ID = 'editing.azure-di-key';
  * `secret: true` flags must equal this list, and `settings/all.test.ts` asserts
  * that in both directions — a second list that agreed today is B3a's shape.
  */
-export const SECRET_SETTING_IDS = [AZURE_KEY_SETTING_ID] as const;
+export const SECRET_SETTING_IDS = [AZURE_KEY_SETTING_ID, ANTHROPIC_KEY_SETTING_ID] as const;
 
 /** One of {@link SECRET_SETTING_IDS}. */
 export type SecretSettingId = (typeof SECRET_SETTING_IDS)[number];

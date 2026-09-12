@@ -892,6 +892,66 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Claude reads a region, and a ternary would have read it as handwriting
+
+D6's Claude row, added by the owner on 2026-09-12 after Stage 6 closed, built
+behind [ADR-0057](DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md),
+which was committed on its own first.
+
+### The trigger was real, and it was found in the code
+
+The owner named it: a second network engine is where *one network-recogniser
+shape, parameterised by provider* is decided. Read from the tree, *runs in main*
+was three literals, and one of them was a defect waiting for exactly this row. The
+command's pre-read was `engine === 'azure' ? azure : handwriting` — so `claude`,
+added to the contract's list and nowhere else, would have been sent to TrOCR and
+answered with a confident line of text about a region it never read.
+
+Now `NETWORK_OCR_ENGINES` is the only list. The pre-read routes by it and ends in a
+`never`, main's recognisers sit in a `Record` over it, and the request type's cloud
+arm is keyed on it. An engine declared without a route does not compile.
+
+### What Anthropic documents, read 2026-09-13, and what each rule became
+
+- **Coordinates are pixels in the image Claude sees, after any resize.** The raster
+  is sized to fit the high-resolution tier — 2576 px an edge, 4784 visual tokens,
+  one per 28 px patch — by `claudeRasterScale`, and the image block carries
+  `oversized_image: "error"`, so a resize becomes a 400 rather than a silent shift
+  of every box.
+- **The schema cannot bound a number or an array's length.** Every box is checked
+  against the raster it claims; one outside it refuses the whole answer.
+- **A refusal is an HTTP 200, and `max_tokens` cuts the JSON off.** Any stop reason
+  but `end_turn` is refused by name.
+
+### Two things that moved
+
+- **`MIN_SNAPSHOT_SCALE` and `MAX_SNAPSHOT_SCALE` are the contract's.** Main now
+  chooses a scale and must not go below the floor the host refuses; the engine
+  subpath main may not import was their only home, and a `1` typed in composition
+  would have been a copy nothing compares. `pageSnapshot.ts` imports and
+  re-exports them.
+- **The Anthropic key is `ai.anthropic-key`, in a new AI settings category**, and
+  Stage 9's provider-registry row now says it takes that entry.
+
+### Queued, not fixed here — a real-app defect in the shipped Azure row
+
+`AzureRecognitionRefused` names eight reasons, and **nothing outside the kernel
+handles it**: searched 2026-09-13, its only other occurrence is the barrel export.
+`executeCommandHandler` maps `DocumentNotOpenError`, `DocumentBusyError`,
+`DocumentPoisonedError` and `StaleTargetError` to declared codes and nothing else,
+so a wrong Azure key or a service that is down reaches a person as an internal
+failure with an incident id. `ClaudeRecognitionRefused` inherits the same route.
+The reasons exist and never arrive.
+
+### What is not done
+
+**One live run**, `npm run probe:claude`, whose absent-key branch reports
+UNVERIFIABLE. Anthropic calls its boxes approximate; how approximate is that run's
+to say. **No per-page cost string ships**: Azure's Read price, read the same day
+from Microsoft's retail prices API, is $1.50 per 1,000 pages for the first million,
+so *a cent or two per page* is wrong for Azure by about ten times, and Claude's cost
+turns on output tokens nobody has measured.
+
 ## 2026-09-13 — The live Azure run has a harness, and the key never touches a file
 
 D6 row 8's trigger — one recognition against the live service — now has a

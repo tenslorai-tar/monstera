@@ -142,16 +142,21 @@ describe('SettingsBody', () => {
     expect(answers).toStrictEqual([{ values: {}, secrets: {} }]);
   });
 
-  it('with no secure storage the key field is disabled, says why, and answers no secret', () => {
+  it('with no secure storage EVERY key field is disabled, each says why, and no secret is answered', () => {
     const { answers } = opened({ secretsAvailable: false });
-    const field = control(AZURE_DI_KEY_SETTING.title) as HTMLInputElement;
+    const secretSettings = DIALOG_SETTINGS.filter((setting) => controlFor(setting) === 'secret');
 
-    expect(field.disabled).toBe(true);
+    // A VACUITY GUARD, then the join: one field and one note per secret setting
+    // the dialog derives, counted from the registered set rather than typed here.
+    expect(secretSettings.length).toBeGreaterThan(0);
+    for (const setting of secretSettings) {
+      expect((control(setting.title) as HTMLInputElement).disabled, setting.id).toBe(true);
+    }
     expect(
-      screen.getByText(
+      screen.getAllByText(
         'This computer has no secure place to keep a key, so one cannot be saved here.',
       ),
-    ).toBeDefined();
+    ).toHaveLength(secretSettings.length);
     fireEvent.click(SAVE());
     expect(answers).toStrictEqual([{ values: {}, secrets: {} }]);
   });

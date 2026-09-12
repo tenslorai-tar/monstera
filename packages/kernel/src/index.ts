@@ -177,6 +177,22 @@ export {
   type AzureRequest,
   recogniseThroughAzure,
 } from './ocrAzure.js';
+// THE SECOND NETWORK RECOGNISER, on main's barrel for the first one's reason: it
+// runs in `main`, imports no engine, and main's composition root calls it
+// (ADR-0057).
+export {
+  CLAUDE_MAX_EDGE,
+  CLAUDE_MAX_VISUAL_TOKENS,
+  CLAUDE_OCR_MODEL,
+  type ClaudeCredentials,
+  ClaudeRecognitionRefused,
+  type ClaudeRefusal,
+  type ClaudeRequest,
+  claudeRasterScale,
+  fitsClaudeImage,
+  pngSize,
+  recogniseThroughClaude,
+} from './ocrClaude.js';
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';

@@ -608,6 +608,9 @@ export const IMAGE_PAGES_THIS_TITLE = messageKey('setting.editing.image-pages.th
 export const IMAGE_PAGES_ALL_TITLE = messageKey('setting.editing.image-pages.all');
 export const TROCR_SIZE_SMALL_TITLE = messageKey('setting.editing.trocr-size.small');
 export const TROCR_SIZE_BASE_TITLE = messageKey('setting.editing.trocr-size.base');
+export const SETTINGS_CATEGORY_AI = messageKey('dialog.settings.category.ai');
+export const AI_ANTHROPIC_KEY_TITLE = messageKey('setting.ai.anthropic-key.title');
+export const CLAUDE_REGION_TOOL_TITLE = messageKey('command.annotate.claude-region');
 /** Each registered category's heading in the Settings dialog. */
 export const SETTINGS_CATEGORY_TITLES = {
   general: SETTINGS_CATEGORY_GENERAL,
@@ -616,6 +619,7 @@ export const SETTINGS_CATEGORY_TITLES = {
   editing: SETTINGS_CATEGORY_EDITING,
   privacy: SETTINGS_CATEGORY_PRIVACY,
   advanced: SETTINGS_CATEGORY_ADVANCED,
+  ai: SETTINGS_CATEGORY_AI,
 } as const;
 /** `appearance.theme`'s members, by the word a person reads (ADR-0056). */
 export const THEME_OPTION_TITLES = {
@@ -1507,6 +1511,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [IMAGE_PAGES_TITLES.all]: 'Every page',
   [TROCR_SIZE_TITLES.small]: 'Small',
   [TROCR_SIZE_TITLES.base]: 'Base',
+  [SETTINGS_CATEGORY_AI]: 'AI',
+  [AI_ANTHROPIC_KEY_TITLE]: 'Anthropic API key',
+  [CLAUDE_REGION_TOOL_TITLE]: 'Send a box to Claude to recognise',
   [FIND_LABEL]: 'Find on this page',
   // NOT 'Find', which is the toolbar command's title: two controls sharing an
   // accessible name is one a screen-reader user cannot tell apart, and it was
