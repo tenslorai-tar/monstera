@@ -26,6 +26,7 @@ import {
   deletePageCommand,
   cropPagesCommand,
   protectDocumentCommand,
+  applyRedactionsCommand,
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
@@ -126,6 +127,7 @@ import {
   DOCUMENT_PASSWORD_RESULT,
 } from './dialogs/documentPassword.js';
 import { PROTECT_DOCUMENT_DIALOG } from './dialogs/protectDocument.js';
+import { APPLY_REDACTIONS_DIALOG } from './dialogs/applyRedactions.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
@@ -352,6 +354,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         ANNOTATION_NOTE_DIALOG,
         DOCUMENT_PASSWORD_DIALOG,
         PROTECT_DOCUMENT_DIALOG,
+        APPLY_REDACTIONS_DIALOG,
         LINK_ADDRESS_DIALOG,
         LINK_PAGE_DIALOG,
         CALLOUT_DIALOG,
@@ -1344,6 +1347,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         deletePagesCommand({ client, onApplied: applied, ask }),
         cropPagesCommand({ client, onApplied: applied, ask }),
         protectDocumentCommand({ client, onApplied: applied, ask }),
+        applyRedactionsCommand({ client, onApplied: applied, ask }),
         watermarkPagesCommand({ client, onApplied: applied, ask }),
         headerFooterCommand({ client, onApplied: applied, ask }),
         batesNumberCommand({ client, onApplied: applied, ask }),

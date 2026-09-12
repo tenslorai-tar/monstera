@@ -628,6 +628,9 @@ export const GROUP_OCR = messageKey('surface.ribbon.group.ocr');
 /** PROTECT › Encryption, where Stage 7's password rows land. */
 export const GROUP_ENCRYPTION = messageKey('surface.ribbon.group.encryption');
 
+/** PROTECT › Redact, where the mark's tool and its burn-in meet. */
+export const GROUP_REDACT = messageKey('surface.ribbon.group.redact');
+
 export const PROTECT_DOCUMENT_COMMAND_TITLE = messageKey('command.protect-document.title');
 export const PROTECT_DOCUMENT_TITLE = messageKey('dialog.protect-document.title');
 export const PROTECT_DOCUMENT_SCHEME = messageKey('dialog.protect-document.scheme');
@@ -651,6 +654,20 @@ export const PERMISSION_ANNOTATE = messageKey('permission.annotate');
 export const PERMISSION_FILL_FORMS = messageKey('permission.fill-forms');
 export const PERMISSION_ASSEMBLE = messageKey('permission.assemble');
 export const PERMISSION_PRINT_HIGH_QUALITY = messageKey('permission.print-high-quality');
+
+export const APPLY_REDACTIONS_COMMAND_TITLE = messageKey('command.apply-redactions.title');
+export const APPLY_REDACTIONS_TITLE = messageKey('dialog.apply-redactions.title');
+export const APPLY_REDACTIONS_WARNS = messageKey('dialog.apply-redactions.warns');
+export const APPLY_REDACTIONS_SCOPE = messageKey('dialog.apply-redactions.scope');
+export const APPLY_REDACTIONS_SCOPE_PAGE = messageKey('dialog.apply-redactions.scope-page');
+export const APPLY_REDACTIONS_SCOPE_ALL = messageKey('dialog.apply-redactions.scope-all');
+export const APPLY_REDACTIONS_COVER = messageKey('dialog.apply-redactions.cover');
+export const APPLY_REDACTIONS_COVER_SOLID = messageKey('dialog.apply-redactions.cover-solid');
+export const APPLY_REDACTIONS_COVER_NONE = messageKey('dialog.apply-redactions.cover-none');
+export const APPLY_REDACTIONS_IMAGES = messageKey('dialog.apply-redactions.images');
+export const APPLY_REDACTIONS_IMAGES_PIXELS = messageKey('dialog.apply-redactions.images-pixels');
+export const APPLY_REDACTIONS_IMAGES_REMOVE = messageKey('dialog.apply-redactions.images-remove');
+export const APPLY_REDACTIONS_APPLY = messageKey('dialog.apply-redactions.apply');
 
 /**
  * A long command's own name, as the status bar announces it while it runs.
@@ -1493,6 +1510,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_PAGES]: 'Pages',
   [GROUP_ARRANGE]: 'Arrange',
   [GROUP_ENCRYPTION]: 'Encryption',
+  [GROUP_REDACT]: 'Redact',
   [PROTECT_DOCUMENT_COMMAND_TITLE]: 'Password and permissions',
   [PROTECT_DOCUMENT_TITLE]: 'Password and permissions',
   [PROTECT_DOCUMENT_SCHEME]: 'Encryption',
@@ -1518,6 +1536,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PERMISSION_FILL_FORMS]: 'Fill in form fields',
   [PERMISSION_ASSEMBLE]: 'Insert, delete and rotate pages',
   [PERMISSION_PRINT_HIGH_QUALITY]: 'Print at full resolution',
+
+  [APPLY_REDACTIONS_COMMAND_TITLE]: 'Apply redactions',
+  [APPLY_REDACTIONS_TITLE]: 'Apply redactions',
+  [APPLY_REDACTIONS_WARNS]:
+    'The marked content is removed from the document, not covered over. The only way back is Undo, in this session.',
+  [APPLY_REDACTIONS_SCOPE]: 'Apply to',
+  [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
+  [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',
+  [APPLY_REDACTIONS_COVER]: 'Leave behind',
+  [APPLY_REDACTIONS_COVER_SOLID]: 'A filled box',
+  [APPLY_REDACTIONS_COVER_NONE]: 'Nothing',
+  [APPLY_REDACTIONS_IMAGES]: 'Images under a mark',
+  [APPLY_REDACTIONS_IMAGES_PIXELS]: 'Blank only the covered part',
+  [APPLY_REDACTIONS_IMAGES_REMOVE]: 'Remove the whole image',
+  [APPLY_REDACTIONS_APPLY]: 'Apply redactions',
 
   [GROUP_MARKS]: 'Marks',
   [GROUP_INSERT]: 'Insert',

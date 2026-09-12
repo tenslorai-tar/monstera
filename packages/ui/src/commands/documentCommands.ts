@@ -15,6 +15,8 @@ import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/co
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
 import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
+import { APPLY_REDACTIONS_DIALOG_ID } from '../dialogs/applyRedactions.js';
+import type { ApplyRedactionsAnswer } from '../dialogs/applyRedactions.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -57,6 +59,7 @@ import {
   GROUP_ARRANGE,
   GROUP_DISPLAY,
   GROUP_ENCRYPTION,
+  GROUP_REDACT,
   GROUP_FIELDS,
   GROUP_FILE,
   GROUP_FIND,
@@ -68,6 +71,7 @@ import {
   REPLACE_TEXT_OBJECT_COMMAND_TITLE,
   EDIT_PAGE_OBJECT_COMMAND_TITLE,
   PROTECT_DOCUMENT_COMMAND_TITLE,
+  APPLY_REDACTIONS_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -2137,6 +2141,43 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
               };
 
       await applyDocumentCommand(deps, context.docId, command);
+    },
+  };
+}
+
+/**
+ * PROTECT › Redact — burn every mark on the scoped pages into the document.
+ *
+ * The other half of D3 row 131's mark, which has said since 2026-09-06 that
+ * applying is *a different command with a different save mode*. This is it.
+ *
+ * **The dialog is the confirm**, and the command dispatches nothing on a
+ * dismissal — the mutation-dialog gate, which matters more here than anywhere
+ * else in this file: the undo is a checkpoint, and a checkpoint is dropped when
+ * the document closes.
+ */
+export function applyRedactionsCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.apply-redactions',
+    title: APPLY_REDACTIONS_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 10 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(APPLY_REDACTIONS_DIALOG_ID, { page: context.page })) as
+        | ApplyRedactionsAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'applyRedactions',
+        // PASSED THROUGH, never expanded: `'all'` stays `'all'` so the payload
+        // is the same size for a two-page document and a two-thousand-page one
+        // (invariant L11), which is `cropPages`' own argument.
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        cover: answer.cover,
+        images: answer.images,
+      });
     },
   };
 }

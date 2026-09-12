@@ -6,7 +6,7 @@ import type { CommandKind, Command } from '@monstera/contract';
 import { commandSpecs } from './commandSpecs.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { MupdfSession } from './engineSeam.js';
-import { mupdfWriter } from './mupdfWriter.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
 /**
  * Every command declaring `purpose: 'removal'` produces bytes its removal is
@@ -48,7 +48,7 @@ import { mupdfWriter } from './mupdfWriter.js';
  * still passes. This list is the independent claim that has to be edited
  * separately, so removing a command from the axis is a visible decision.
  */
-const EXPECTED: readonly CommandKind[] = ['flattenFormFields'];
+const EXPECTED: readonly CommandKind[] = ['flattenFormFields', 'applyRedactions'];
 
 /** The kinds the declaration table actually puts on the removal axis. */
 const REMOVALS = (Object.keys(declaredCommands) as CommandKind[]).filter(
@@ -139,6 +139,56 @@ async function residue(
   return { objects: all.length, widgets, fields };
 }
 
+/**
+ * A one-page document with text and a `/Redact` mark over the first line.
+ *
+ * Built through MuPDF rather than pdf-lib, because `createAnnotation('Redact')`
+ * is the writer of record's own call and a hand-built dictionary would be this
+ * file deciding what a redact mark is.
+ */
+async function marked(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  document.addPage([400, 600]).drawText('CONFIDENTIAL', { font, size: 18, x: 20, y: 540 });
+  const plain = await document.save();
+
+  const session = await mupdfWriter.open(plain);
+  try {
+    await withDocument(session, (opened) => {
+      const page = opened.loadPage(0);
+      const structured = JSON.parse(page.toStructuredText().asJSON()) as {
+        blocks: readonly { lines: readonly { bbox: { x: number; y: number; w: number; h: number } }[] }[];
+      };
+      const box = structured.blocks[0]?.lines[0]?.bbox;
+      if (box === undefined) throw new Error('the fixture has no text to mark');
+      const annotation = page.createAnnotation('Redact');
+      annotation.setRect([box.x, box.y, box.x + box.w, box.y + box.h]);
+      annotation.update();
+    });
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+/**
+ * `/Redact` annotation dictionaries still IN the bytes, whatever references
+ * them.
+ *
+ * {@link residue}'s reason exactly: `enumerateIndirectObjects` reads the
+ * cross-reference table, and a walk from the catalog cannot see the unlinked
+ * object that is the whole question.
+ */
+async function redactAnnotations(bytes: Uint8Array): Promise<number> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  let found = 0;
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict)) continue;
+    if (object.lookupMaybe(PDFName.of('Subtype'), PDFName) === PDFName.of('Redact')) found += 1;
+  }
+  return found;
+}
+
 async function onSession<T>(
   bytes: Uint8Array,
   work: (session: MupdfSession) => Promise<T>,
@@ -151,9 +201,46 @@ async function onSession<T>(
   }
 }
 
-/** The payload each removal kind is exercised with. */
-const PAYLOADS: Readonly<Record<string, Command>> = {
-  flattenFormFields: { kind: 'flattenFormFields' },
+/**
+ * What each removal kind is exercised with, and what its removal IS.
+ *
+ * ## Why this became a table of three things rather than a table of payloads
+ *
+ * It held payloads alone while `flattenFormFields` was the only kind on the
+ * axis, and the per-kind case asserted *no widget or field dictionary* — which
+ * is **flatten's** claim, not the axis's. `applyRedactions` joined the axis on
+ * 2026-09-12 and passes that assertion on a form fixture by doing nothing at
+ * all, which is the shape a roster is for and the shape a shared assertion
+ * hides.
+ *
+ * So each kind now supplies its own fixture, its own payload, and its own
+ * **residue** — what must not be in the bytes afterwards. The axis's claim is
+ * the one they have in common: *the objects this command unlinked are not
+ * written out*, and only the kind knows which objects those are.
+ */
+interface RemovalCase {
+  /** Bytes with the thing this command removes in them. */
+  readonly fixture: () => Promise<Uint8Array>;
+  readonly payload: Command;
+  /** How many of the removed object are in these bytes. */
+  readonly residue: (bytes: Uint8Array) => Promise<number>;
+  /** What {@link RemovalCase.residue} answers before the command runs. */
+  readonly before: number;
+}
+
+const REMOVAL_CASES: Readonly<Record<string, RemovalCase>> = {
+  flattenFormFields: {
+    fixture: form,
+    payload: { kind: 'flattenFormFields' },
+    residue: async (bytes) => (await residue(bytes)).widgets,
+    before: 9,
+  },
+  applyRedactions: {
+    fixture: marked,
+    payload: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels' },
+    residue: redactAnnotations,
+    before: 1,
+  },
 };
 
 describe('a command whose purpose is removal', () => {
@@ -185,14 +272,26 @@ describe('a command whose purpose is removal', () => {
   });
 
   for (const kind of REMOVALS) {
-    it(`${kind}: its bytes carry no widget or field dictionary afterwards`, async () => {
-      const payload = PAYLOADS[kind];
-      // A kind on the axis with no payload here is a case that would silently
-      // not run. It throws instead, which is what makes the roster owe evidence
+    it(`${kind}: what it unlinked is not in the bytes afterwards`, async () => {
+      const removal = REMOVAL_CASES[kind];
+      // A kind on the axis with no case here is one that would silently not
+      // run. It throws instead, which is what makes the roster owe evidence
       // rather than merely list a name.
-      expect(payload, `${kind} declares purpose 'removal' and has no payload here`).toBeDefined();
+      expect(removal, `${kind} declares purpose 'removal' and has no case here`).toBeDefined();
+      if (removal === undefined) return;
 
-      const bytes = await form();
+      const bytes = await removal.fixture();
+      // THE FIXTURE'S OWN CONTROL, per kind. *None left* is also what a probe
+      // that cannot recognise the object answers, so each kind's residue reader
+      // has to find them in the untouched document first.
+      expect(await removal.residue(bytes)).toBe(removal.before);
+
+      // AND THE DIRECTION THAT MATTERS, per kind: a plain serialise of the same
+      // fixture must still carry them, or the case below would pass for a
+      // reason that has nothing to do with the purpose axis.
+      const plain = await onSession(bytes, (session) => mupdfWriter.serialise(session));
+      expect(await removal.residue(plain)).toBe(removal.before);
+
       const collected = await onSession(bytes, async (session) => {
         // Through `commandSpecs`, not by importing the apply directly: the
         // question is whether the command as REGISTERED collects, and an apply
@@ -200,16 +299,14 @@ describe('a command whose purpose is removal', () => {
         const spec = commandSpecs[kind];
         await spec.apply(
           session as never,
-          payload as never,
+          removal.payload as never,
           undefined as never,
           undefined as never,
         );
         return mupdfWriter.serialise(session);
       });
 
-      const after = await residue(collected);
-      expect(after.widgets).toBe(0);
-      expect(after.fields).toBe(0);
+      expect(await removal.residue(collected)).toBe(0);
     });
   }
 });

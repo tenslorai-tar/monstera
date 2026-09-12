@@ -128,6 +128,11 @@ export {
   protectionOptions,
 } from './documentProtection.js';
 export {
+  applyApplyRedactions,
+  captureApplyRedactions,
+  invertApplyRedactions,
+} from './pageRedact.js';
+export {
   applyImportFormData,
   captureImportFormData,
   type ExportedField,

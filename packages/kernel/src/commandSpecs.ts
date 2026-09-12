@@ -80,6 +80,11 @@ import {
   captureSetDocumentProtection,
   invertSetDocumentProtection,
 } from './documentProtection.js';
+import {
+  applyApplyRedactions,
+  captureApplyRedactions,
+  invertApplyRedactions,
+} from './pageRedact.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
@@ -406,6 +411,12 @@ const declared = {
     apply: applySetDocumentProtection,
     capture: captureSetDocumentProtection,
     invert: invertSetDocumentProtection,
+  },
+  applyRedactions: {
+    ...declaredCommands.applyRedactions,
+    apply: applyApplyRedactions,
+    capture: captureApplyRedactions,
+    invert: invertApplyRedactions,
   },
   importFormData: {
     ...declaredCommands.importFormData,

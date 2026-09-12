@@ -1367,6 +1367,39 @@ const declarations = {
     // re-encrypted anyway.
     purpose: 'ordinary',
   },
+  applyRedactions: {
+    kind: 'applyRedactions',
+    // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *redaction* and has
+    // since the founding record, so no B4 on the routing.
+    writer: 'mupdf',
+    // TERMINAL, and this is the one command in the table where that is the
+    // POINT rather than a cost. The prior state is the content that was
+    // removed; recording it would put the redacted text back in the command
+    // log, which is the document's own secret in main's memory. `deletePages`
+    // is terminal because its prior state is too large; this one is terminal
+    // because its prior state must not exist.
+    //
+    // The checkpoint is the pre-command bytes, which the user asked to be able
+    // to undo — and which close-and-reopen drops with the log.
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // NAMES NO ANNOTATION. The marks are in the document and the engine walks
+    // them; a payload naming a subset would be a second opinion about which
+    // annotations are redactions, whose failure mode is a mark surviving a
+    // burn-in that reported success.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    // THE SECOND COMMAND ON §4's REMOVAL ROW, and the row names redaction
+    // first. An incremental save leaves the covered content readable by walking
+    // the xref chain (ADR-0008 rule 1), which is the whole failure redaction
+    // exists to prevent — so this is the one place where getting the purpose
+    // wrong produces a document that looks redacted and is not.
+    purpose: 'removal',
+  },
   createFormField: {
     kind: 'createFormField',
     // `docs/ARCHITECTURE.md`:388 names the writer and the reason in one line:

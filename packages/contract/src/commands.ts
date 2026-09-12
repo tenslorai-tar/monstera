@@ -2531,6 +2531,82 @@ export const flattenFormFieldsSchema = z.object({
 });
 
 /**
+ * What a burned-in redaction leaves where the content was.
+ *
+ * Measured 2026-09-12 (`.probe/redact.mjs`): MuPDF's `applyRedactions` takes
+ * `black_boxes` and draws a filled rectangle into the page's own content when
+ * it is true. `none` removes the content and draws nothing, which is what a
+ * person wants when the mark's own colour was the design.
+ *
+ * **There is no `blurred`, and that is a ruling with a measurement behind it.**
+ * MuPDF offers no blur. Every way to add one puts either a REMOVABLE annotation
+ * over redacted content — a cover a reader can delete — or a second writer
+ * inside one command. And the cover is cosmetic by then: the content is gone,
+ * so a blur would be an appearance implying something is still underneath it.
+ * What replaces it is {@link PDF_REDACT_IMAGES}, which is a real choice about
+ * what is removed rather than about how the hole looks.
+ */
+export const PDF_REDACT_COVERS = ['solid', 'none'] as const;
+
+/** One of {@link PDF_REDACT_COVERS}. */
+export type PdfRedactCover = (typeof PDF_REDACT_COVERS)[number];
+
+/**
+ * What a burned-in redaction does to an IMAGE it covers.
+ *
+ * Measured 2026-09-12 (`.probe/redactImages.mjs`) over a one-image page, with a
+ * mark across the middle half of it:
+ *
+ * | MuPDF method | images left | bytes |
+ * |---|---|---|
+ * | `REDACT_IMAGE_NONE` | 1 | 62,936 — **the covered pixels survive** |
+ * | `REDACT_IMAGE_REMOVE` | 0 | 556 |
+ * | `REDACT_IMAGE_PIXELS` | 1 | 65,699 — the image is rewritten with the covered pixels blanked |
+ * | `REDACT_IMAGE_UNLESS_INVISIBLE` | 0 | 556 |
+ *
+ * **`none` is not offered**, and that is the whole reason this is an enum of
+ * two rather than a passthrough of MuPDF's four: it leaves the covered image
+ * content in the file, under a black box, which is the failure redaction exists
+ * to prevent. A command that can express it is a command somebody can get
+ * wrong (B5).
+ *
+ * `pixels` is the default a surface offers because it is the one that removes
+ * what was marked and nothing else; `remove` is there for a person who wants
+ * the whole image gone.
+ */
+export const PDF_REDACT_IMAGES = ['pixels', 'remove'] as const;
+
+/** One of {@link PDF_REDACT_IMAGES}. */
+export type PdfRedactImages = (typeof PDF_REDACT_IMAGES)[number];
+
+/**
+ * Burns every redact mark on the named pages into the document.
+ *
+ * ## It is the OTHER HALF of the mark, and D3 row 131 said so first
+ *
+ * A `/Subtype /Redact` annotation says *this is to be removed* and removes
+ * nothing; `addAnnotation`'s own payload has carried that sentence since
+ * 2026-09-06. This is the command it named, and it is a different command with
+ * a different save mode: `purpose: 'removal'`, because an incremental save
+ * leaves the covered content readable by walking the xref chain
+ * ([ADR-0008](../../../docs/DECISIONS/0008-save-mode-is-determined-by-purpose.md)
+ * rule 1).
+ *
+ * ## PAGES, because MuPDF redacts a page at a time
+ *
+ * `applyRedactions` is on `PDFPage`, so *one pass over the whole document* is a
+ * loop this build writes rather than a call the engine offers. The scope
+ * travels as `'all'` or a list, exactly as `cropPages`' does and for the same
+ * reason: expanding `'all'` would put one integer per page on the wire (L11).
+ */
+export const applyRedactionsSchema = z.object({
+  kind: z.literal('applyRedactions'),
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  cover: z.enum(PDF_REDACT_COVERS),
+  images: z.enum(PDF_REDACT_IMAGES),
+});
+
+/**
  * The encryption schemes this build will WRITE.
  *
  * Measured 2026-09-12 (`.probe/passwordSave.mjs`, JOURNAL that date): MuPDF's
@@ -3336,6 +3412,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
+  applyRedactionsSchema,
   createFormFieldSchema,
   importFormDataSchema,
   replaceTextObjectSchema,
@@ -3459,6 +3536,16 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // the format owns (B3a). So the wire carries what is GRANTED, by name, and
   // the kernel — which is the only side that should hold that rule — inverts.
   setDocumentProtectionSchema,
+  // RENDERABLE, and it is `cropPages`' shape: a scope and two closed choices.
+  // The payload is the same size for a two-page document and a two-thousand
+  // page one, because `'all'` stays `'all'`.
+  //
+  // What the renderer cannot express is WHICH MARKS. There is no list of
+  // annotations here, and there must not be: the marks are in the document, the
+  // engine walks them, and a renderer naming a subset would be a second opinion
+  // about which annotations are redactions — with the failure mode that a mark
+  // it did not know about survives a burn-in that reported success.
+  applyRedactionsSchema,
   // RENDERABLE, and the test it passes is the one `addAnnotation` passes: the
   // intent is a page index, a rectangle in the page's own space, a name and a
   // kind — bounded by `MAX_FIELD_NAME` and `MAX_FIELD_OPTIONS`, so the payload

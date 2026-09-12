@@ -892,6 +892,77 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — True redaction, and a row whose name asked for something the engine does not have
+
+D7's *true redaction* row is done, and D3 row 131's trigger — the mark that
+removes nothing, carried since 2026-09-06 — is what it pays.
+
+### The measurements, taken before designing anything
+
+`.probe/redact.mjs` and `.probe/redactImages.mjs`, 2026-09-12.
+`PDFPage.applyRedactions(black_boxes, image_method, line_art_method,
+text_method)` — read from the binding, then run. Over a one-image page with a
+mark across the middle half of it:
+
+| image method | images left | bytes |
+|---|---|---|
+| `REDACT_IMAGE_NONE` | 1 | 62,936 — **the covered pixels survive** |
+| `REDACT_IMAGE_REMOVE` | 0 | 556 |
+| `REDACT_IMAGE_PIXELS` | 1 | 65,699 — rewritten with the covered pixels blanked |
+| `REDACT_IMAGE_UNLESS_INVISIBLE` | 0 | 556 |
+
+`NONE` is the trap and it is not offered: it leaves the covered image content in
+the file, under a black box, which is the failure redaction exists to prevent.
+Two of the four arguments are constants rather than payload fields for the same
+reason — `REDACT_TEXT_NONE` would draw a box over text a reader can still
+select, and the line-art options either take away content nobody marked or leave
+drawn content under the cover.
+
+### The half of the row's name that is withdrawn
+
+The row asks for *solid and blurred; mixed in one pass*. **MuPDF has no blur**,
+and the ways to add one are all worse than not having it: a rasterised, blurred
+stamp is a **removable annotation** over redacted content, and drawing into the
+content stream is a second writer inside one command. And the cover is cosmetic
+by the time it is drawn — the content is gone, so a blur would be an appearance
+implying something is still underneath it.
+
+So *blurred* is withdrawn, with the measurement, and what replaces it is a
+choice that is about what is **removed** rather than about how the hole looks.
+Written into the row rather than dropped, because a requirement that quietly
+disappears is one the next reader assumes was built.
+
+### The probe's control did the work again
+
+The byte-level check — *does the redacted run appear in the flattened bytes* —
+answered **true** after redacting. Its control answered **false** for the
+untouched document, which means the needle was never findable as a literal run
+in either: the fixture's text is a subset-font glyph sequence, not the
+characters. So the check said nothing, and the control is the only reason that
+was visible rather than a finding about redaction not working.
+
+The case that ships reads `toStructuredText` back out of serialised bytes, with
+the **other line on the page** asserted too: a command that rewrote the page's
+content stream to nothing would pass *the secret is gone* and take the document
+with it.
+
+### What the roster change is, and why it was owed
+
+`removalCollects.test.ts` derives its roster from `declaredCommands` — every
+kind on §4's removal row owes evidence — and its per-kind assertion was *no
+widget or field dictionary survives*, which is **flatten's** claim rather than
+the axis's. `applyRedactions` passes that assertion on a form fixture by doing
+nothing at all.
+
+So each kind now supplies its own fixture, payload and residue, and its own two
+controls: the fixture carries the object before, and a plain serialise still
+carries it. The axis's claim is the one they have in common — *what this command
+unlinked is not written out* — and only the kind knows which objects those are.
+A shared assertion in a derived roster is the roster reading as coverage for a
+kind it cannot see.
+
+---
+
 ## 2026-09-12 — Protection is a property of the write, and `/P` is built by subtraction
 
 Three D7 rows — set user/owner password, permission flags, remove password —

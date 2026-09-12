@@ -510,6 +510,18 @@ export interface CommandPrior {
   readonly setDocumentProtection: never;
 
   /**
+   * A burned-in redaction has no prior state, and recording one would be the
+   * defect rather than a cost.
+   *
+   * The prior state is the content somebody asked to have removed. A capture is
+   * serialised into this log, so recording it would put the redacted text back
+   * in main's memory under a command whose whole purpose was taking it out —
+   * the second entry here that is `never` for a rule rather than a size, and
+   * the sharper of the two.
+   */
+  readonly applyRedactions: never;
+
+  /**
    * A create has no prior state, and this is the one entry here where that is
    * **not** because the prior state is too large.
    *

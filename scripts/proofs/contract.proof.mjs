@@ -791,6 +791,21 @@ const PROTECT_SPEC = `  setDocumentProtection: {
     reads: 'none',
   },`;
 
+/** Filler, on §4's removal row like `FLATTEN_SPEC` and for the same reason. */
+const REDACT_SPEC = `  applyRedactions: {
+    kind: 'applyRedactions',
+    writer: 'mupdf',
+    apply: applyApplyRedactions,
+    capture: captureApplyRedactions,
+    invert: invertApplyRedactions,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -927,6 +942,9 @@ const SPEC_IMPORTS = `import {
   applySetDocumentProtection,
   captureSetDocumentProtection,
   invertSetDocumentProtection,
+  applyApplyRedactions,
+  captureApplyRedactions,
+  invertApplyRedactions,
   applyImportFormData,
   captureImportFormData,
   invertImportFormData,
@@ -1495,6 +1513,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${PROTECT_SPEC}
+${REDACT_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1593,6 +1612,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${PROTECT_SPEC}
+${REDACT_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1719,6 +1739,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${PROTECT_SPEC}
+${REDACT_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1781,6 +1802,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${PROTECT_SPEC}
+${REDACT_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1852,6 +1874,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${PROTECT_SPEC}
+${REDACT_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -1919,6 +1942,7 @@ ${FILL_SPEC}
 ${DELETE_FIELDS_SPEC}
 ${FLATTEN_SPEC}
 ${PROTECT_SPEC}
+${REDACT_SPEC}
 ${CREATE_FIELD_SPEC}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
@@ -2793,7 +2817,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // since `watermarkPages` (all 2026-09-04), 23 since `createFormField`
     // (2026-09-08), 29 since `replaceTextObject` (2026-09-09), 30 since
     // `deskewPages` (2026-09-10), 31 since `ocrPage` and 32 since `enhancePages`
-    // (both 2026-09-11), and 38 since `setDocumentProtection` (2026-09-12).
+    // (both 2026-09-11), 38 since `setDocumentProtection` and 39 since
+    // `applyRedactions` (both 2026-09-12).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2811,7 +2836,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 34 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 35 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

@@ -33,6 +33,7 @@ import {
   splitDocumentCommand,
   generateTocCommand,
   protectDocumentCommand,
+  applyRedactionsCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -2370,5 +2371,62 @@ describe('protectDocumentCommand', () => {
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([]);
+  });
+
+  /**
+   * The RENDERER half of the redaction row's pair. The kernel half is
+   * `pageRedact.test.ts`, which reads the removed words back out of real bytes.
+   */
+  describe('applyRedactionsCommand', () => {
+    it('dispatches the scope and both choices, with `all` unexpanded', async () => {
+      const { client, sent } = recordingClient();
+      const opened: { id: string; props: unknown }[] = [];
+
+      await applyRedactionsCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          opened.push({ id, props });
+          return Promise.resolve({ pages: 'all', cover: 'none', images: 'remove' });
+        },
+      }).run(CONTEXT);
+
+      // THE PAGE WENT IN, so the dialog can offer *this page* by number.
+      expect(opened).toStrictEqual([
+        { id: 'dialog.apply-redactions', props: { page: CONTEXT.page } },
+      ]);
+      expect(sent).toStrictEqual([
+        {
+          id: 'document.execute',
+          params: {
+            docId: DOC,
+            command: {
+              kind: 'applyRedactions',
+              // `'all'`, not a list. Expanding it would put one integer per
+              // page on the wire (invariant L11).
+              pages: 'all',
+              // NEITHER IS THE DEFAULT. A command that ignored the dialog and
+              // sent `solid`/`pixels` would dispatch exactly as correctly.
+              cover: 'none',
+              images: 'remove',
+            },
+          },
+        },
+      ]);
+    });
+
+    it('CONTROL: a DISMISSED confirm dispatches nothing', async () => {
+      // The gate, and it matters more here than anywhere else in this file: the
+      // undo is a checkpoint, and a checkpoint goes when the document closes.
+      const { client, sent } = recordingClient();
+
+      await applyRedactionsCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([]);
+    });
   });
 });
