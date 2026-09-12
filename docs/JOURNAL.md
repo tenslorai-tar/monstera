@@ -14,6 +14,7 @@ the fact is not a baseline, it is a rationalisation.
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
 | 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 40 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done; D6 row 8 ships complete and carries one trigger only its owner can clear** | **1.50× — continue** |
+| 7 — security and signatures | **owner's to set** | **in progress** — opened 2026-09-12 at the commit after Stage 6 closed. Fifteen rows; the `@signpdf` gate is done | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -885,6 +886,74 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-12 — Stage 7 opens: the signing gate, and a tree that is worse than the last one
+
+Stage 7's first row is a gate, and it goes first because four signing rows depend
+on its answer: ADR-0006 executed the matrix's MuPDF and pdf-lib rows in Stage 0
+and left `@signpdf` owed by the stage that first signs anything. This one.
+
+### The row is executed, and the assertion is the digest
+
+A placeholder written by **this build's own writer**, a self-signed P12 minted
+with node-forge, and the result verified **without asking the signer whether it
+had worked**: the PKCS#7 parses as `signedData`, the signature checks against the
+certificate's public key, and the `messageDigest` attribute equals SHA-256 of
+exactly the two covered spans.
+
+That last one is the row. A signature that succeeded over the *wrong bytes* is
+the failure nothing else in the file would see — the PDF opens, the blob parses,
+a viewer shows a signature — so the digest is recomputed from the ranges and
+compared with what the signature actually attests.
+
+The signed file is **18,084 bytes and so was the placeholder**. The signature goes
+into the hole rather than after it, which is the property the whole scheme rests
+on: a rewrite that changed the length would invalidate the ranges it just wrote.
+
+### THE FINDING IS THE TREE, AGAIN, AND IT IS SEVENTEEN TIMES WORSE
+
+`@signpdf/placeholder-plain` is the obvious way to write the placeholder.
+Measured in a scratch tree: **4 packages become 125.**
+
+It depends on `@signpdf/placeholder-pdfkit010`, whose peer is `pdfkit@~0.10.0`,
+and npm installs peers. What comes with it: **seven packages shipping no licence
+file while declaring MIT**, two whose licence field is `undefined`, a
+**deprecated `crypto-js@3.3.0`**, and pdfkit from 2019 with a font-shaping stack
+— to write a dictionary.
+
+That is ADR-0050's refusal — `tesseract.js` reaching one package with no licence
+text — at seventeen times the scale, and `generateNotice.mjs` is right to refuse
+it. The signing **core** is clean: four packages, every one carrying its licence,
+none deprecated.
+
+**Twice in one stage boundary, the obvious package's TREE was the objection.**
+The habit that found both is the same and it is cheap: install into a scratch
+tree and count before writing a line of glue. `npm install` is the probe.
+
+### Three shapes that no document carries, and each costs a session to rediscover
+
+The matrix's one line — *`@signpdf`, node-forge (verify)* — cannot hold what the
+integration actually requires, and none of it is in a README either:
+
+- `/ByteRange [0 /********** /********** /**********]`, with slots 1 to 3 as PDF
+  **name** objects. The obvious shape — four numbers — is refused with *"No
+  ByteRangeStrings found within PDF buffer"*, which **names the wrong thing**:
+  they were found, and they were not the shape it wanted. That message cost the
+  first run, and it is the kind that sends you looking at your PDF writer.
+- `useObjectStreams: false`, because the signer locates the `/Contents` hole in
+  raw bytes and an object stream compresses it out of sight.
+- `@signpdf/signpdf` is CommonJS with a `default` export, so an ESM import hands
+  back `module.exports` and the instance is one level in.
+
+### And the matrix's own words understate node-forge
+
+*node-forge (verify)* is right and reads as half a pair. `@signpdf/signer-p12`
+declares node-forge as a **peer** and uses it for the PKCS#12 parse and the
+PKCS#7 build — so forge is the cryptography and `@signpdf` is the PDF-shaped
+wrapper around it. The consequence is for a later row: verifying a signature this
+build did not write needs no `@signpdf` at all.
 
 ---
 
