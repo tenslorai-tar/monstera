@@ -892,6 +892,81 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-12 — Protection is a property of the write, and `/P` is built by subtraction
+
+Three D7 rows — set user/owner password, permission flags, remove password —
+built as one command, because the format writes them as one thing: `/Encrypt`
+present with these terms, or absent.
+
+### The measurement that decided the shape
+
+Before designing it, one premise: **what does a plain save do to a document
+opened from encrypted bytes?** `.probe/passwordSave.mjs`, 2026-09-12:
+
+| save of an authenticated encrypted document | reads back |
+|---|---|
+| `saveToBuffer('')` | **still encrypted** |
+| `saveToBuffer('garbage')` | still encrypted |
+| `saveToBuffer('decompress=yes')` | still encrypted |
+| `saveToBuffer('encrypt=none')` | **no `/Encrypt` key at all** |
+
+MuPDF's default is `encrypt=keep`. So protection is a property of **how a
+document is written**, there is no in-session call that sets one, and the
+command records terms that every later serialise reads — `flattenFormFields`'
+shape for garbage collection (ADR-0045), which is the precedent rather than a
+new idea. The good half of that answer is the one nobody would have guessed
+wrong safely: had a plain save **dropped** the encryption, every ordinary save
+of a protected document would have silently unprotected it.
+
+**And the record is a MAP, not a `WeakSet`.** `removals` is one-way on purpose —
+a document that has had content removed does not stop having had it — and
+copying that here would make *remove password* a row nothing could build.
+
+### `/P` is built by subtraction, and that is the control case
+
+The wire carries what is **granted**, by name; `/P` withholds. It is a signed
+32-bit bitfield whose low two bits and bits 7–8 are reserved and must stay set,
+so *everything granted* is `-1` and each refusal clears one bit.
+
+Built additively from the seven named permissions, *withhold everything* answers
+**0** — every reserved bit clear, and a document readers refuse for a reason no
+dialog mentions. Built by subtraction it answers **−3389**. That is the case:
+the two compositions agree on the common inputs and disagree only at the
+extreme, which is exactly the direction rule — mutate towards disagreement,
+because agreement is also what absence produces.
+
+**Seven, not eight.** PDF 2.0 deprecates bit 10 and grants accessibility
+extraction regardless, so a control for it would be one the format says is
+ignored — the wired-tools rule with a specification behind it.
+
+### What it is NOT allowed to do, and why that is a rule rather than a limit
+
+`CommandPrior['setDocumentProtection']` is `never`. Every other `never` in that
+table is there because the prior state is too large; this one is there because
+**the prior state is a password**, a capture is serialised into main's command
+log, and ADR-0055 puts a password out of every place main keeps anything. It is
+the only entry that would be perfectly representable and must not be.
+
+**Two things that follow, and both are stated rather than left to be noticed.**
+A checkpoint taken on a document that was already protected is **encrypted**, so
+undoing a second protection change needs the first password — which nothing
+keeps, so that undo refuses. And the command's **payload** does live in main's
+per-document command log, in memory, for the life of the document: it is the
+intent, and replay is what a log is. Closing the document drops it and nothing
+writes it to disk.
+
+### The axis that nearly got declared backwards
+
+`reproducible` was written `false` first, on the ground that `aes-256` derives a
+fresh file key per save. The type refused it — `reproducible: false` cannot be
+written without `replay: 'stored-effect'` — and the refusal was right for a
+reason the first draft had not reached: the axis is about the **apply**, which
+writes nothing, and the per-save key is true of every save of a protected
+document whether or not this command ever ran. The stored effect would have been
+the whole encrypted document.
+
+---
+
 ## 2026-09-12 — Encrypted documents open, and one decision was written from the wrong sequence
 
 Stage 7's first feature row is done. The design is ADR-0055's and the

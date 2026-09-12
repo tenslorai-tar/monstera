@@ -75,6 +75,11 @@ import {
   invertFillFormField,
   invertFlattenFormFields,
 } from './formFields.js';
+import {
+  applySetDocumentProtection,
+  captureSetDocumentProtection,
+  invertSetDocumentProtection,
+} from './documentProtection.js';
 import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
@@ -395,6 +400,12 @@ const declared = {
     apply: applyFlattenFormFields,
     capture: captureFlattenFormFields,
     invert: invertFlattenFormFields,
+  },
+  setDocumentProtection: {
+    ...declaredCommands.setDocumentProtection,
+    apply: applySetDocumentProtection,
+    capture: captureSetDocumentProtection,
+    invert: invertSetDocumentProtection,
   },
   importFormData: {
     ...declaredCommands.importFormData,

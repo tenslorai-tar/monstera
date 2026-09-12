@@ -121,6 +121,13 @@ export {
   readFormFields,
 } from './formFields.js';
 export {
+  applySetDocumentProtection,
+  captureSetDocumentProtection,
+  invertSetDocumentProtection,
+  permissionBits,
+  protectionOptions,
+} from './documentProtection.js';
+export {
   applyImportFormData,
   captureImportFormData,
   type ExportedField,

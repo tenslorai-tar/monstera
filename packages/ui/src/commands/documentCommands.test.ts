@@ -32,6 +32,7 @@ import {
   replacePageCommand,
   splitDocumentCommand,
   generateTocCommand,
+  protectDocumentCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -2276,5 +2277,98 @@ describe('generate table of contents', () => {
 
     expect(sent).toStrictEqual([]);
     expect(record.shown).toStrictEqual([]);
+  });
+});
+
+/**
+ * The RENDERER half of Stage 7's protection rows' wired pair.
+ *
+ * The kernel half is `documentProtection.test.ts`, which round-trips real bytes
+ * through the writer. This asserts which command the control dispatched and
+ * with what — a `run` that opened the dialog and then sent `encryption: 'none'`
+ * would protect nothing and report success.
+ */
+describe('protectDocumentCommand', () => {
+  function recordingClient(): {
+    readonly client: ContractClient;
+    readonly sent: { id: string; params: unknown }[];
+  } {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+    });
+    return { client, sent };
+  }
+
+  it('dispatches EXACTLY what the dialog answered, permissions included', async () => {
+    const { client, sent } = recordingClient();
+
+    await protectDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () =>
+        Promise.resolve({
+          encryption: 'aes-256',
+          userPassword: 'open-me',
+          ownerPassword: 'own-me',
+          permissions: ['print', 'copy'],
+        }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'setDocumentProtection',
+            encryption: 'aes-256',
+            userPassword: 'open-me',
+            ownerPassword: 'own-me',
+            // TWO OF SEVEN, and the list is what the assertion is for: a
+            // command that sent the whole set, or omitted the field, would
+            // produce a document that grants everything and would dispatch
+            // exactly as correctly.
+            permissions: ['print', 'copy'],
+          },
+        },
+      },
+    ]);
+  });
+
+  it('sends a REMOVAL with no passwords on it', async () => {
+    // `encrypt=none` with a password beside it is a value MuPDF ignores and a
+    // diff reads as a removal that kept the password. The dialog's schema
+    // refuses the shape; this asserts the command does not reintroduce it.
+    const { client, sent } = recordingClient();
+
+    await protectDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve({ encryption: 'none', permissions: [] }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: { kind: 'setDocumentProtection', encryption: 'none', permissions: [] },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED dialog dispatches nothing', async () => {
+    const { client, sent } = recordingClient();
+
+    await protectDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 });

@@ -625,6 +625,33 @@ export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
 /** TOOLS › OCR, which `BUILD-PROMPT.md`:472 names as D6's ribbon placement. */
 export const GROUP_OCR = messageKey('surface.ribbon.group.ocr');
 
+/** PROTECT › Encryption, where Stage 7's password rows land. */
+export const GROUP_ENCRYPTION = messageKey('surface.ribbon.group.encryption');
+
+export const PROTECT_DOCUMENT_COMMAND_TITLE = messageKey('command.protect-document.title');
+export const PROTECT_DOCUMENT_TITLE = messageKey('dialog.protect-document.title');
+export const PROTECT_DOCUMENT_SCHEME = messageKey('dialog.protect-document.scheme');
+export const PROTECT_DOCUMENT_SCHEME_NONE = messageKey('dialog.protect-document.scheme-none');
+export const PROTECT_DOCUMENT_SCHEME_AES256 = messageKey('dialog.protect-document.scheme-aes256');
+export const PROTECT_DOCUMENT_SCHEME_AES128 = messageKey('dialog.protect-document.scheme-aes128');
+export const PROTECT_DOCUMENT_SCHEME_RC4128 = messageKey('dialog.protect-document.scheme-rc4128');
+export const PROTECT_DOCUMENT_SCHEME_RC440 = messageKey('dialog.protect-document.scheme-rc440');
+export const PROTECT_DOCUMENT_USER = messageKey('dialog.protect-document.user');
+export const PROTECT_DOCUMENT_OWNER = messageKey('dialog.protect-document.owner');
+export const PROTECT_DOCUMENT_PERMISSIONS = messageKey('dialog.protect-document.permissions');
+export const PROTECT_DOCUMENT_APPLY = messageKey('dialog.protect-document.apply');
+export const PROTECT_DOCUMENT_REMOVE = messageKey('dialog.protect-document.remove');
+export const PROTECT_DOCUMENT_NEEDS_A_PASSWORD = messageKey('dialog.protect-document.needs');
+export const PROTECT_DOCUMENT_EXPLAINS = messageKey('dialog.protect-document.explains');
+export const PROTECT_DOCUMENT_REMOVES = messageKey('dialog.protect-document.removes');
+export const PERMISSION_PRINT = messageKey('permission.print');
+export const PERMISSION_MODIFY = messageKey('permission.modify');
+export const PERMISSION_COPY = messageKey('permission.copy');
+export const PERMISSION_ANNOTATE = messageKey('permission.annotate');
+export const PERMISSION_FILL_FORMS = messageKey('permission.fill-forms');
+export const PERMISSION_ASSEMBLE = messageKey('permission.assemble');
+export const PERMISSION_PRINT_HIGH_QUALITY = messageKey('permission.print-high-quality');
+
 /**
  * A long command's own name, as the status bar announces it while it runs.
  *
@@ -1465,6 +1492,33 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_FIND]: 'Find',
   [GROUP_PAGES]: 'Pages',
   [GROUP_ARRANGE]: 'Arrange',
+  [GROUP_ENCRYPTION]: 'Encryption',
+  [PROTECT_DOCUMENT_COMMAND_TITLE]: 'Password and permissions',
+  [PROTECT_DOCUMENT_TITLE]: 'Password and permissions',
+  [PROTECT_DOCUMENT_SCHEME]: 'Encryption',
+  [PROTECT_DOCUMENT_SCHEME_NONE]: 'None — remove the password',
+  [PROTECT_DOCUMENT_SCHEME_AES256]: 'AES-256 (recommended)',
+  [PROTECT_DOCUMENT_SCHEME_AES128]: 'AES-128',
+  [PROTECT_DOCUMENT_SCHEME_RC4128]: 'RC4 128-bit (old readers)',
+  [PROTECT_DOCUMENT_SCHEME_RC440]: 'RC4 40-bit (very old readers)',
+  [PROTECT_DOCUMENT_USER]: 'Password to open (optional)',
+  [PROTECT_DOCUMENT_OWNER]: 'Password to change permissions (optional)',
+  [PROTECT_DOCUMENT_PERMISSIONS]: 'Allow without the permissions password',
+  [PROTECT_DOCUMENT_APPLY]: 'Protect document',
+  [PROTECT_DOCUMENT_REMOVE]: 'Remove protection',
+  [PROTECT_DOCUMENT_NEEDS_A_PASSWORD]: 'Set at least one password, or choose None.',
+  [PROTECT_DOCUMENT_EXPLAINS]:
+    'Protection is applied when the document is saved. Permissions are honoured by readers that choose to; they are not enforced by the file.',
+  [PROTECT_DOCUMENT_REMOVES]:
+    'Saving will write this document with no password and no permission limits.',
+  [PERMISSION_PRINT]: 'Print',
+  [PERMISSION_MODIFY]: 'Change the document',
+  [PERMISSION_COPY]: 'Copy text and images',
+  [PERMISSION_ANNOTATE]: 'Add comments and markup',
+  [PERMISSION_FILL_FORMS]: 'Fill in form fields',
+  [PERMISSION_ASSEMBLE]: 'Insert, delete and rotate pages',
+  [PERMISSION_PRINT_HIGH_QUALITY]: 'Print at full resolution',
+
   [GROUP_MARKS]: 'Marks',
   [GROUP_INSERT]: 'Insert',
   [GROUP_TEXT]: 'Text',

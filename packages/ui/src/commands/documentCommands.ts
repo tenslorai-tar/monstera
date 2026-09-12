@@ -13,6 +13,8 @@ import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
+import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
+import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
@@ -54,6 +56,7 @@ import {
   FIT_WIDTH_TITLE,
   GROUP_ARRANGE,
   GROUP_DISPLAY,
+  GROUP_ENCRYPTION,
   GROUP_FIELDS,
   GROUP_FILE,
   GROUP_FIND,
@@ -64,6 +67,7 @@ import {
   GROUP_TEXT,
   REPLACE_TEXT_OBJECT_COMMAND_TITLE,
   EDIT_PAGE_OBJECT_COMMAND_TITLE,
+  PROTECT_DOCUMENT_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -2133,6 +2137,54 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
               };
 
       await applyDocumentCommand(deps, context.docId, command);
+    },
+  };
+}
+
+/**
+ * PROTECT › Encryption — set, change or remove a document's password.
+ *
+ * ## ONE COMMAND FOR THREE ROWS
+ *
+ * D7 lists *set user/owner password*, *permission flags* and *remove password*
+ * separately, and the format writes all three as one thing: `/Encrypt` present
+ * with these terms, or absent. Three commands would be three writers of one
+ * concern (B3), and the first of them to learn a term the others did not would
+ * be the one that quietly disagreed.
+ *
+ * ## The effect is on the SAVE, and the surface says so
+ *
+ * Measured 2026-09-12: MuPDF keeps a document's encryption through an ordinary
+ * save and there is no in-session call that sets one, so the command records
+ * the terms and the next save writes them. The dialog's own sentence tells a
+ * person that — a protection command that appeared to have done something to
+ * the file on screen would be claiming an effect that has not happened yet.
+ */
+export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.protect',
+    title: PROTECT_DOCUMENT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_ENCRYPTION, order: 10 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = (await deps.ask(PROTECT_DOCUMENT_DIALOG_ID, {})) as
+        | ProtectDocumentAnswer
+        | undefined;
+      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'setDocumentProtection',
+        encryption: answer.encryption,
+        ...(answer.userPassword === undefined ? {} : { userPassword: answer.userPassword }),
+        ...(answer.ownerPassword === undefined ? {} : { ownerPassword: answer.ownerPassword }),
+        // SENT EVEN WHEN EVERYTHING IS GRANTED, and not omitted as a
+        // "default". The payload's optional `permissions` means *this caller
+        // has no opinion*; this caller has one, it is on screen, and a person
+        // who unticked nothing chose to withhold nothing.
+        permissions: [...answer.permissions],
+      });
     },
   };
 }

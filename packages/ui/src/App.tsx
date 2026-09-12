@@ -25,6 +25,7 @@ import {
   fitCommand,
   deletePageCommand,
   cropPagesCommand,
+  protectDocumentCommand,
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
@@ -124,6 +125,7 @@ import {
   DOCUMENT_PASSWORD_DIALOG_ID,
   DOCUMENT_PASSWORD_RESULT,
 } from './dialogs/documentPassword.js';
+import { PROTECT_DOCUMENT_DIALOG } from './dialogs/protectDocument.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
@@ -349,6 +351,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         ANNOTATION_TEXT_DIALOG,
         ANNOTATION_NOTE_DIALOG,
         DOCUMENT_PASSWORD_DIALOG,
+        PROTECT_DOCUMENT_DIALOG,
         LINK_ADDRESS_DIALOG,
         LINK_PAGE_DIALOG,
         CALLOUT_DIALOG,
@@ -1340,6 +1343,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // whole of the mutation-dialog gate (ADR-0038).
         deletePagesCommand({ client, onApplied: applied, ask }),
         cropPagesCommand({ client, onApplied: applied, ask }),
+        protectDocumentCommand({ client, onApplied: applied, ask }),
         watermarkPagesCommand({ client, onApplied: applied, ask }),
         headerFooterCommand({ client, onApplied: applied, ask }),
         batesNumberCommand({ client, onApplied: applied, ask }),

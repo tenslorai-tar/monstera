@@ -9,6 +9,7 @@ import {
   fieldFillSchema,
   fillFormFieldSchema,
   flattenFormFieldsSchema,
+  setDocumentProtectionSchema,
   MAX_ANNOTATION_BORDER,
   addLinkSchema,
   annotationKindNameSchema,
@@ -914,6 +915,10 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
+  // CARRIES PASSWORDS ACROSS THIS PIPE, and that is ADR-0055's rule rather than
+  // an exception to it: they reach the process that is holding the plaintext
+  // anyway, which is the one place they can do the work.
+  setDocumentProtectionSchema,
   // THE SECOND ASSET-BEARING KIND, and `.omit` for `placeImage`'s reason: two
   // hand-kept shapes for one command would be a second opinion about what that
   // command is, and the derivation runs in the direction 4c allows — a field

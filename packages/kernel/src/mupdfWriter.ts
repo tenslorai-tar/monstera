@@ -220,6 +220,44 @@ export function withDocument<T>(
 const removals = new WeakSet<MupdfSession>();
 
 /**
+ * The encryption terms a session's serialised bytes are to carry.
+ *
+ * {@link removals}' shape and its reasoning, with one difference that matters.
+ * Measured 2026-09-12: a plain save of a document opened from encrypted bytes
+ * **keeps** its encryption, so protection is a property of the write rather
+ * than of the page tree, and there is no in-session call that sets it.
+ *
+ * **Unlike `removals` this is NOT one-way**, and the direction is the point:
+ * removing a password is a thing a person does on purpose, so the map holds
+ * whichever terms the last protection command asked for — `encrypt=none`
+ * included. A `WeakSet`'s *once true, always true* would make removal
+ * unsayable.
+ *
+ * **The values are passwords.** They live here, in the contained host, beside
+ * the plaintext the same process is holding, and they reach nothing else: main
+ * never sees this map and the capture of the command that wrote it is a refusal
+ * (ADR-0055).
+ */
+const protections = new WeakMap<MupdfSession, string>();
+
+/**
+ * Records the MuPDF save terms this session's bytes are to be written with.
+ *
+ * Takes a composed option string rather than the command, so this module holds
+ * no opinion about what protection means — `documentProtection.ts` owns that,
+ * including the `/P` arithmetic, and this owns when a serialise applies it.
+ *
+ * `documentFor` first, so a forged session is refused before anything is
+ * recorded — the same provenance check every other member here makes.
+ */
+export function protectSession(session: MupdfSession, options: string): Promise<void> {
+  return promised(() => {
+    documentFor(session);
+    protections.set(session, options);
+  });
+}
+
+/**
  * Runs `work` and records that this session has had content removed.
  *
  * {@link withDocument}'s shape for a command declaring `purpose: 'removal'`.
@@ -433,7 +471,19 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
     // one that keeps what a command removed.
     const options: Record<SavePurpose, string> = { ordinary: '', removal: 'garbage' };
     const purpose: SavePurpose = removals.has(session) ? 'removal' : 'ordinary';
-    return promised(() => copiedOut(documentFor(session).saveToBuffer(options[purpose])));
+    // COMPOSED, and the protection goes LAST so a reader of the string meets
+    // the purpose first. The two are independent terms of one option list —
+    // `garbage` decides what is written, `encrypt=` decides how — and joining
+    // them here is what keeps `serialise` the one place a save's terms are
+    // decided (B3).
+    //
+    // Absent, the string is exactly what it was: an unprotected document saves
+    // with no encryption term, and a document opened from encrypted bytes keeps
+    // its encryption by MuPDF's own default. So a session nothing protected is
+    // unaffected by this line.
+    const protection = protections.get(session);
+    const terms = [options[purpose], protection ?? ''].filter((term) => term !== '').join(',');
+    return promised(() => copiedOut(documentFor(session).saveToBuffer(terms)));
   },
 
   /**

@@ -2,6 +2,7 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
 import {
+  DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
   OCR_LANGUAGES,
   TROCR_SIZES,
@@ -2530,6 +2531,95 @@ export const flattenFormFieldsSchema = z.object({
 });
 
 /**
+ * The encryption schemes this build will WRITE.
+ *
+ * Measured 2026-09-12 (`.probe/passwordSave.mjs`, JOURNAL that date): MuPDF's
+ * writer accepts all four and each reads back. `aes-256` is what the surface
+ * offers; the three weaker ones are here because a document already carrying
+ * one has to be re-saved with it rather than silently upgraded, and because
+ * removing a password is `none`.
+ *
+ * **`none` is a member rather than a separate command**, and that is the row
+ * boundary being drawn where the format draws it: *set a password*, *change the
+ * permission flags* and *remove the password* are three surfaces over one write
+ * — `/Encrypt` present with these terms, or absent. Three commands would be
+ * three writers of one concern (B3), disagreeing the first time one learns a
+ * term the others do not.
+ */
+export const PDF_ENCRYPTIONS = ['none', 'rc4-40', 'rc4-128', 'aes-128', 'aes-256'] as const;
+
+/** One of {@link PDF_ENCRYPTIONS}. */
+export type PdfEncryption = (typeof PDF_ENCRYPTIONS)[number];
+
+/**
+ * The permissions a PDF's `/P` entry can withhold, by the name a person reads.
+ *
+ * **Named rather than numbered on the wire.** `/P` is a bitfield of *negative*
+ * permissions in a signed 32-bit integer with reserved bits that must stay set,
+ * and a renderer composing one is a renderer holding a rule the format owns
+ * (B3a). The composition happens once, in the kernel, from this list.
+ *
+ * The set is PDF 2.0's, less the two this build cannot honestly offer:
+ * bit 10 (accessibility extraction) is **deprecated and always granted** in
+ * PDF 2.0, and offering a control that the format says is ignored is the
+ * wired-tools rule's own defect.
+ */
+export const PDF_PERMISSIONS = [
+  'print',
+  'modify',
+  'copy',
+  'annotate',
+  'fill-forms',
+  'assemble',
+  'print-high-quality',
+] as const;
+
+/** One of {@link PDF_PERMISSIONS}. */
+export type PdfPermission = (typeof PDF_PERMISSIONS)[number];
+
+/**
+ * Sets, changes or removes a document's protection.
+ *
+ * ## It is a SAVE-SIDE effect, and that is the engine's own shape
+ *
+ * Measured 2026-09-12: a plain `saveToBuffer('')` of a document opened from
+ * encrypted bytes **keeps the encryption** — MuPDF's default is
+ * `encrypt=keep`. So protection is a property of how a document is written,
+ * not a mutation of its page tree, and this command records that property on
+ * the engine's session for every later serialise to read. It is the same shape
+ * `flattenFormFields` already uses for garbage collection (ADR-0045), which is
+ * the precedent rather than a new idea.
+ *
+ * ## The passwords travel to the host and no further
+ *
+ * Same rule as `document.unlock`'s (ADR-0055): the values reach the process
+ * that holds the plaintext anyway, and nothing on this side keeps them.
+ *
+ * ## `permissions` is what is GRANTED
+ *
+ * The positive list, because that is what a person chooses. `/P` withholds, so
+ * the inversion happens where the bitfield is composed — once, in the kernel.
+ * An omitted list means **all of them**, which is what an unprotected document
+ * already grants and therefore the only safe default for a command whose
+ * payload can be built by something that has not thought about it.
+ */
+export const setDocumentProtectionSchema = z.object({
+  kind: z.literal('setDocumentProtection'),
+  encryption: z.enum(PDF_ENCRYPTIONS),
+  /**
+   * The password a reader needs to OPEN the document, or absent for none.
+   *
+   * Absent with an owner password set is a real and useful state: the document
+   * opens for everybody and only its permissions are protected.
+   */
+  userPassword: z.string().min(1).max(DOCUMENT_PASSWORD_MAX_CHARS).optional(),
+  /** The password that grants full rights, or absent for none. */
+  ownerPassword: z.string().min(1).max(DOCUMENT_PASSWORD_MAX_CHARS).optional(),
+  /** What a reader without the owner password may do. Absent means everything. */
+  permissions: z.array(z.enum(PDF_PERMISSIONS)).max(PDF_PERMISSIONS.length).optional(),
+});
+
+/**
  * How large a form-data file this build will read.
  *
  * A form's values are text — the largest real one anybody has put in front of
@@ -3245,6 +3335,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   fillFormFieldSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
+  setDocumentProtectionSchema,
   createFormFieldSchema,
   importFormDataSchema,
   replaceTextObjectSchema,
@@ -3357,6 +3448,17 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // owns and nothing on this side could describe.
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
+  // RENDERABLE, and it passes the test on its most sensitive field: what a
+  // person types in a protection dialog IS the intent, and the payload is the
+  // same size for a two-page document and a two-thousand-page one — two bounded
+  // strings, a scheme name and a list of at most seven words.
+  //
+  // What the renderer cannot express is `/P`. It is a bitfield of NEGATIVE
+  // permissions in a signed 32-bit integer with reserved bits that must stay
+  // set, and a renderer composing one would be a second opinion about a rule
+  // the format owns (B3a). So the wire carries what is GRANTED, by name, and
+  // the kernel — which is the only side that should hold that rule — inverts.
+  setDocumentProtectionSchema,
   // RENDERABLE, and the test it passes is the one `addAnnotation` passes: the
   // intent is a page index, a rectangle in the page's own space, a name and a
   // kind — bounded by `MAX_FIELD_NAME` and `MAX_FIELD_OPTIONS`, so the payload

@@ -499,6 +499,17 @@ export interface CommandPrior {
   readonly flattenFormFields: never;
 
   /**
+   * A protection change has no prior state, and this is the one entry here
+   * where that is **not** a question of size.
+   *
+   * The prior state is a password. A capture is serialised into this log, and
+   * ADR-0055 puts a document password out of every place main keeps anything —
+   * so `never` is a rule rather than a measurement, and it is the only entry in
+   * this table that would be perfectly representable and must not be.
+   */
+  readonly setDocumentProtection: never;
+
+  /**
    * A create has no prior state, and this is the one entry here where that is
    * **not** because the prior state is too large.
    *

@@ -1325,6 +1325,48 @@ const declarations = {
     // object count growing 49 to 55.
     purpose: 'removal',
   },
+  setDocumentProtection: {
+    kind: 'setDocumentProtection',
+    // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *encryption,
+    // permissions* and has since the founding record, so no B4 on the routing.
+    writer: 'mupdf',
+    // TERMINAL, and the reason is a rule rather than a size: the prior state of
+    // this command IS a password, and a capture would put one in main's command
+    // log — the one place ADR-0055 says it must never be. A checkpoint holds
+    // bytes, which for a previously unprotected document are the plain ones
+    // main already had.
+    //
+    // **The stated limit that follows**: a checkpoint taken on a document that
+    // was ALREADY protected is encrypted, so undoing a second protection change
+    // needs the first password. Nothing keeps it, so that undo refuses rather
+    // than producing a session that cannot read its own document. Recorded here
+    // and in the FEATURES row, because a limit nobody wrote down is one the
+    // next reader treats as a bug.
+    invertible: false,
+    undo: 'checkpoint',
+    // REPRODUCIBLE, and the axis is about the APPLY rather than about the
+    // bytes a later save happens to produce. This apply writes nothing to the
+    // document: it records an option string on the session, and re-running the
+    // same intent leaves the session in the identical state.
+    //
+    // `aes-256` does derive a fresh file key per save, so two SAVES of one
+    // protected document differ — that is the format working, it is true of
+    // every save of an already-protected document whether or not this command
+    // ever ran, and it is not this command's effect. Declaring
+    // `reproducible: false` here would force `replay: 'stored-effect'`, whose
+    // stored effect is the whole encrypted document.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    // ORDINARY. Protection changes how the document is WRITTEN and removes no
+    // object, so there is nothing for a collection to reclaim — and asking for
+    // one would rewrite every object in a document whose bytes are about to be
+    // re-encrypted anyway.
+    purpose: 'ordinary',
+  },
   createFormField: {
     kind: 'createFormField',
     // `docs/ARCHITECTURE.md`:388 names the writer and the reason in one line:
