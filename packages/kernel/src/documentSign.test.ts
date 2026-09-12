@@ -18,7 +18,7 @@ import {
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
 } from './signingRefusals.js';
-import { readSignatures } from './signatureRead.js';
+import { pkcs7Asn1, readSignatures } from './signatureRead.js';
 
 /**
  * Signing — Stage 7's PKCS#7 row, paying ADR-0054's gate.
@@ -219,17 +219,17 @@ describe('applySignDocument', () => {
     const hole = /\/Contents <([0-9A-Fa-f]+)>/u.exec(text);
     expect(hole, 'the signed file carries a PKCS#7 blob').not.toBeNull();
     if (hole === null) return;
-    // THE PADDING IS TRIMMED BY BYTE, not by hex character — and the first
-    // draft trimmed characters, which is a flake with a clock in it. The P12
-    // is minted per run, so the signature's length varies; whenever its last
-    // byte happened to end in a `0` nibble, `replace(/0+$/)` ate half a byte
-    // and left an odd-length string, and node-forge answered *Too few bytes to
-    // read ASN.1 value*. It passed for several runs before it did not.
+    // THE BLOB IS READ TO ITS OWN DER LENGTH, not trimmed at all. The first
+    // draft trimmed zero hex CHARACTERS and ate half a byte whenever the last
+    // nibble was `0`. The repair trimmed zero BYTES — and that is the same flaw
+    // one unit wider, measured 2026-09-12: a DER encoding may end in a zero
+    // byte, the P12 is minted per run, and about once in 256 the trim removed
+    // the signature's own last byte and node-forge answered *Too few bytes to
+    // read ASN.1 value*. The shipped reader had the identical trim and the same
+    // failure, so both take `pkcs7Asn1`, which asks the DER reader where the
+    // element ends (`signatureRead.test.ts` holds the constructed case).
     const whole = Buffer.from(hole[1] ?? '', 'hex');
-    let end = whole.length;
-    while (end > 0 && whole[end - 1] === 0) end -= 1;
-    const der = whole.subarray(0, end).toString('latin1');
-    const message = forge.pkcs7.messageFromAsn1(forge.asn1.fromDer(der)) as unknown as {
+    const message = forge.pkcs7.messageFromAsn1(pkcs7Asn1(whole)) as unknown as {
       rawCapture: { authenticatedAttributes: unknown[] };
     };
 

@@ -126,11 +126,12 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
   // 16, 24, or 32 bits supported*, which names a bit width and not the
   // encoding that produced it.
   //
-  // The trailing NULs go too. `/Contents` is a fixed-size hole — the signature
-  // plus padding out to the reserved length — and the padding is not DER.
-  const blob = latin1(stripPadding(contents.asByteString()));
-
-  const verified = verify(blob, bytes, [a, b, c, d]);
+  //
+  // THE PADDING IS NOT TRIMMED HERE. `/Contents` is a fixed-size hole — the
+  // signature plus zero bytes out to the reserved length — and stripping trailing
+  // zeros also strips a DER encoding's own final zero byte, about one signature
+  // in 256. `pkcs7Asn1` reads the element to the length its header declares.
+  const verified = verify(contents.asByteString(), bytes, [a, b, c, d]);
   const subject = verified.certificate?.subject;
   const digestMatches = verified.digestMatches;
   // `/Name` FIRST, then the certificate's CN. A signature dictionary's own
@@ -160,18 +161,16 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
  * answers both halves at once.
  */
 function verify(
-  blob: string,
+  contents: Uint8Array,
   bytes: Uint8Array,
   [a, b, c, d]: readonly [number, number, number, number],
 ): { readonly certificate: ForgeCertificate | null; readonly digestMatches: boolean } {
   try {
-    // THE ONE CAST IN THIS MODULE, and the interfaces above are what it is
-    // cast TO — a typed adapter rather than an `any` one. `@types/node-forge`
-    // types `messageFromAsn1` as a union whose PKCS#7 half carries neither
+    // TWO CASTS IN THIS MODULE, each to a typed adapter rather than to `any`:
+    // this one, and `pkcs7Asn1`'s DER reader. `@types/node-forge` types
+    // `messageFromAsn1` as a union whose PKCS#7 half carries neither
     // `certificates` nor `rawCapture`, and both are what a verification reads.
-    const message = forge.pkcs7.messageFromAsn1(
-      forge.asn1.fromDer(blob),
-    ) as unknown as ForgeMessage;
+    const message = forge.pkcs7.messageFromAsn1(pkcs7Asn1(contents)) as unknown as ForgeMessage;
     const covered = latin1(bytes.subarray(a, a + b)) + latin1(bytes.subarray(c, c + d));
     const digest = forge.md.sha256.create();
     digest.update(covered);
@@ -205,11 +204,41 @@ function attestedDigest(message: ForgeMessage): string | null {
   return null;
 }
 
-/** The blob without the trailing NULs the fixed-size hole is padded with. */
-function stripPadding(bytes: Uint8Array): Uint8Array {
-  let end = bytes.length;
-  while (end > 0 && bytes[end - 1] === 0) end -= 1;
-  return bytes.subarray(0, end);
+/**
+ * `asn1.fromDer` with the options object node-forge 1.x reads.
+ *
+ * `@types/node-forge` declares the second argument as a `strict` boolean; the
+ * library's own reader takes `{ strict, parseAllBytes, decodeBitStrings }`
+ * (node-forge 1.4.0, `lib/asn1.js`). A typed adapter over that one call rather
+ * than an `any` one.
+ */
+interface ForgeDerReader {
+  fromDer(bytes: string, options: { readonly parseAllBytes: boolean }): forge.asn1.Asn1;
+}
+
+/**
+ * The PKCS#7 element at the start of `/Contents`, read to its OWN declared length.
+ *
+ * `/Contents` is a fixed-size hole: the DER signature, then zero bytes out to the
+ * reserved length. This used to strip every trailing zero byte before parsing —
+ * and a DER encoding may END in a zero byte. Measured 2026-09-12: a freshly
+ * signed document read as *not a PKCS#7 this build can read — Too few bytes to
+ * read ASN.1 value* in one full-suite run and not in isolation, because the key
+ * is minted per run and a signature's last byte is zero about once in 256. A
+ * valid signature reported unreadable is the display-only defect in the one
+ * panel whose whole job is to be believed.
+ *
+ * The DER reader already knows where the element ends — its length is in its
+ * own header — so it is asked to stop there (`parseAllBytes: false`) rather
+ * than handed a guess about where the padding starts (B3a).
+ *
+ * Exported so the control can drive it with a constructed element whose final
+ * byte is zero: a real signature cannot be made to end in one on purpose.
+ */
+export function pkcs7Asn1(contents: Uint8Array): forge.asn1.Asn1 {
+  return (forge.asn1 as unknown as ForgeDerReader).fromDer(latin1(contents), {
+    parseAllBytes: false,
+  });
 }
 
 /** `Uint8Array` as latin-1, which is how node-forge spells raw bytes. */
