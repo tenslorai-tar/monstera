@@ -560,10 +560,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // how a session is built (B3a).
   rebuildSessions = engineHost;
 
-  // NO LONGER EMPTY. `WriterRegistry` stays partial because the seam declares
-  // four writers of record and one has an adapter; a command routed to an
-  // unregistered writer is refused by name rather than failing at a native
-  // call. What changed is that `mupdf` is now registered, and the object behind
+  // NO LONGER EMPTY. `WriterRegistry` stays partial for ONE writer: PDFium,
+  // which has an adapter only where its host could be built — so a command
+  // routed to it on a machine without one is refused by name rather than
+  // failing at a native call. Every other declared writer is required by the
+  // annotation on `engineSessionOpener`'s map. What changed is that `mupdf` is now registered, and the object behind
   // it runs commands in the engine host rather than in this process —
   // invariant 20 is satisfied by *where the session is*, not by the registry
   // being empty.
@@ -1196,7 +1197,14 @@ function engineSessionOpener(
   // clever one is a second opinion about what the bus calls, and it would keep
   // compiling after the interface changed (B7's no-premature-abstraction, and
   // the reason `localMupdfExecution` is written out too).
-  const writers: WriterRegistry = {
+  // EVERY DECLARED WRITER BUT PDFIUM IS REQUIRED HERE, by the type. The registry
+  // is partial because PDFium is absent by design where no host can be built,
+  // and it is added at the bus. A partial annotation on THIS map let `signpdf`
+  // be missing from the shipped application for a whole stage while every
+  // signing test built its own bus; a writer declared in `writerShapes` and not
+  // registered below is now a compile error rather than a refusal a person
+  // meets when they press Sign.
+  const writers: Required<Omit<WriterRegistry, 'pdfium'>> = {
     mupdf: {
       capture: (session, command) => liveWriter().capture(session, command),
       apply: (session, command) => liveWriter().apply(session, command),

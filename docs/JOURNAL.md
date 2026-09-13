@@ -948,6 +948,20 @@ or a fourth left out — compiles and fails only when a person uses it. The next
 commit makes the composition's static map require every declared writer except
 PDFium, which is absent by design where no host can be built.
 
+### Addition, 2026-09-13 — the class is closed, and the mutation bites
+
+The map in `engineSessionOpener` is annotated
+`Required<Omit<WriterRegistry, 'pdfium'>>`. A writer declared in `writerShapes`
+and missing from that map is now a compile error. PDFium stays the one optional
+entry, added at the bus where a host exists.
+
+**Mutation**: with `signpdf` removed from the map, `tsc` refuses with *TS2741:
+Property 'signpdf' is missing … but required in type
+'Required<Omit<WriterRegistry, "pdfium">>'*. With it restored, the package
+typechecks. The comment above the bus that said the registry was partial
+because *one has an adapter* is corrected: three have one, and PDFium is the
+only reason it is partial.
+
 ---
 
 ## 2026-09-13 — A forged document read as unchanged since it was signed
