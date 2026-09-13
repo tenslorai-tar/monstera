@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1044,4 +1044,207 @@ describe('the composition root, SIGNING', () => {
     // bytes would pass the lines above.
     expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(opensBefore);
   }, 120_000);
+});
+
+/** What a compose peer was asked, so a case can assert what reached the host. */
+interface ComposePeerLog {
+  readonly peer: FakePeer;
+  /** The source's text, read from the snapshot directory AT THE MOMENT of the call. */
+  readonly sources: string[];
+  /** Every `from` name, so a case can check the source is gone afterwards. */
+  readonly fromPaths: string[];
+}
+
+/** The bytes the compose peer answers as its PDF. */
+const COMPOSED_BYTES = [0x25, 0x50, 0x44, 0x46, 0x2d, 0x37];
+
+/**
+ * A compose host peer that reads its source and writes its output on the real disk.
+ *
+ * `pdfiumPeer`'s reason for reading the input from INSIDE the call: main writes the
+ * source, calls, and removes it, so after the call returns *written, then called*
+ * and *called, then written* leave the same directory. Only the peer can tell them
+ * apart.
+ */
+function composePeer(): ComposePeerLog {
+  let area: { snapshot: string; output: string } | null = null;
+  const sources: string[] = [];
+  const fromPaths: string[] = [];
+
+  return {
+    sources,
+    fromPaths,
+    peer: (channel, params) => {
+      switch (channel) {
+        case 'engine/probe-containment':
+          return CONTAINED;
+        case 'engine/open': {
+          const sent = params as { snapshotDirectory: string; outputDirectory: string };
+          area = { snapshot: sent.snapshotDirectory, output: sent.outputDirectory };
+          return { ok: true, value: { session: 'ef56' } };
+        }
+        case 'engine/compose-markdown': {
+          if (area === null) throw new Error('engine/compose-markdown arrived before engine/open');
+          const { from, into } = params as { from: string; into: string };
+          const source = join(area.snapshot, from);
+          fromPaths.push(source);
+          sources.push(existsSync(source) ? readFileSync(source, 'utf8') : '(absent at the call)');
+          writeFileSync(join(area.output, into), new Uint8Array(COMPOSED_BYTES));
+          return { ok: true, value: { kind: 'composed', bytes: COMPOSED_BYTES.length } };
+        }
+        default:
+          return null;
+      }
+    },
+  };
+}
+
+describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
+  it('composes in the compose host, writes where the person chose, and opens that file', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const compose = composePeer();
+    const third = platformAnswering(compose.peer);
+    const destination = join(scratch, 'from-markdown.pdf');
+    const suggested: string[] = [];
+
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickMarkdown: () => Promise.resolve(join(scratch, 'draft.md')),
+      readMarkdown: () =>
+        Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode('# Title\n') }),
+      pickDestination: (name) => {
+        suggested.push(name);
+        return Promise.resolve(destination);
+      },
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+
+    const answer = await handlers['document.newFromMarkdown']({});
+    expect(answer.ok, JSON.stringify(answer)).toBe(true);
+    if (!answer.ok) throw new Error('unreachable');
+    expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
+    if (answer.value.kind !== 'opened') throw new Error('unreachable');
+
+    // THE HOST READ THE PERSON'S TEXT, and it was on disk when it was asked.
+    expect(compose.sources).toStrictEqual(['# Title\n']);
+    // AND IT IS GONE NOW: a copy of a picked file does not stay in a directory a
+    // contained process may read.
+    expect(compose.fromPaths.map((path) => existsSync(path))).toStrictEqual([false]);
+
+    // THE FILE ON DISK IS THE HOST'S OUTPUT, byte for byte, at the chosen place —
+    // and the document that opened is that file, by its name.
+    expect([...readFileSync(destination)]).toStrictEqual(COMPOSED_BYTES);
+    expect(answer.value.name).toBe('from-markdown.pdf');
+    expect(answer.value.byteLength).toBe(COMPOSED_BYTES.length);
+    expect(suggested).toStrictEqual(['draft.pdf']);
+
+    // ITS OWN HOST, probed on its own token; the document engine never saw the source.
+    expect(third.harness.calls).toContain('peer.request:engine/probe-containment');
+    expect(third.harness.calls).toContain('peer.request:engine/compose-markdown');
+    expect(mupdf.harness.calls).not.toContain('peer.request:engine/compose-markdown');
+  }, 120_000);
+
+  it('appends: opens the composed file as a tab, waits for its session, and merges it', async () => {
+    // A MuPDF COMMAND WITH A SOURCE. `mergeDocument` reads the composed document
+    // through ITS OWN session, so the order under test is open, session, merge — a
+    // merge that reached the bus before the source's session existed is refused for
+    // a document that was about to have one.
+    // A MERGE CAPTURES NOTHING, and the peer says so as the kernel's
+    // `captureMergeDocument` does. `ENGINE` answers every capture with a rotate's prior
+    // state, which the bus rightly refuses for a merge — the first draft of this case
+    // met exactly that refusal, which is the check working, not the route failing.
+    //
+    // AND ONE OUTPUT DIRECTORY PER SESSION. `serialisingEngine` remembers the last
+    // `engine/open` and answers one session id for every document, which holds while
+    // one document is open. Here two are — the target and the composed file — and the
+    // target's checkpoint serialise wrote into the composed document's area, which main
+    // then could not find. So each open gets its own session, and a serialise writes
+    // into the area of the session it names, as a host does.
+    const outputs = new Map<string, string>();
+    const mupdf = platformAnswering((channel, params) => {
+      if (channel === 'engine/open') {
+        const session = `ab${String(outputs.size + 10)}`;
+        outputs.set(session, (params as { outputDirectory: string }).outputDirectory);
+        return { ok: true, value: { session, access: 1 } };
+      }
+      if (channel === 'engine/serialise') {
+        const { session, into } = params as { session: string; into: string };
+        const output = outputs.get(session);
+        if (output === undefined) throw new Error(`engine/serialise named an unopened session ${session}`);
+        const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
+        writeFileSync(join(output, into), bytes);
+        return { ok: true, value: { bytes: bytes.length } };
+      }
+      if (channel === 'engine/capture') {
+        return { ok: true, value: { captured: false, reason: 'merging has no recordable prior state' } };
+      }
+      return ENGINE(channel, params);
+    });
+    const compose = composePeer();
+    const third = platformAnswering(compose.peer);
+    const target = aDocument('append-target.pdf');
+    const destination = join(scratch, 'appended-from-markdown.pdf');
+
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(target),
+      pickMarkdown: () => Promise.resolve(join(scratch, 'more.md')),
+      readMarkdown: () =>
+        Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode('More\n') }),
+      pickDestination: () => Promise.resolve(destination),
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const opensBefore = spy(mupdf.harness.calls, 'peer.request:engine/open');
+
+    const appended = await handlers['document.appendMarkdown']({ docId: opened.value.docId, at: 1 });
+    expect(appended.ok, JSON.stringify(appended)).toBe(true);
+    if (!appended.ok) throw new Error('unreachable');
+    expect(appended.value.kind, JSON.stringify(appended.value)).toBe('appended');
+    if (appended.value.kind !== 'appended') throw new Error('unreachable');
+
+    // THE TARGET MOVED, and the composed document is a different document, open.
+    expect(appended.value.version).toBeGreaterThan(opened.value.version);
+    expect(appended.value.opened.docId).not.toBe(opened.value.docId);
+    expect(appended.value.opened.name).toBe('appended-from-markdown.pdf');
+
+    // THE MERGE REACHED THE ENGINE HOST, after the composed document got a session
+    // there: at least one more `engine/open` than before, then an `engine/apply`.
+    const calls = mupdf.harness.calls;
+    const lastOpen = calls.lastIndexOf('peer.request:engine/open');
+    const apply = calls.lastIndexOf('peer.request:engine/apply');
+    expect(spy(calls, 'peer.request:engine/open')).toBeGreaterThan(opensBefore);
+    expect(apply).toBeGreaterThan(-1);
+    expect(calls.indexOf('peer.request:engine/open', opensBefore)).toBeLessThan(apply);
+    expect(lastOpen).toBeGreaterThan(-1);
+  }, 120_000);
+
+  it('CONTROL: with no compose platform the import is refused before any picker opens', async () => {
+    // THE STATE A MACHINE WITH NO WIN32 PLATFORM IS IN. The refusal must come before
+    // the person is asked for a file — and it must be a refusal rather than the
+    // source being parsed in main, which a fallback would do.
+    const mupdf = platformAnswering(serialisingEngine());
+    let picks = 0;
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickMarkdown: () => {
+        picks += 1;
+        return Promise.resolve(null);
+      },
+      enginePlatform: mupdf.platform,
+    });
+
+    const answer = await handlers['document.newFromMarkdown']({});
+    expect(answer.ok).toBe(false);
+    if (answer.ok) throw new Error('unreachable');
+    expect(answer.error.code).toBe('engine-unavailable');
+    expect(picks).toBe(0);
+  });
 });

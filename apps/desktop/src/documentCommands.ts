@@ -6,7 +6,9 @@ import {
   type FormDataImportFormat,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_MARKDOWN_BYTES,
   MAX_TEXT_LAYER_LINE,
+  type MarkdownComposeRefusal,
   type RequestedSignatureMark,
   type SignaturePlacement,
   type DocusignRefusalKind,
@@ -338,6 +340,28 @@ export function suggestedCopyName(name: string): string {
 }
 
 /**
+ * The page every composed Markdown document is set at: US Letter, in points.
+ *
+ * See {@link DocumentCommands.composeMarkdownFile} for why it is one size.
+ */
+export const COMPOSED_PAGE = { width: 612, height: 792 } as const;
+
+/**
+ * The name the destination picker opens with for a composed Markdown file: the
+ * source's own name with `.pdf` in place of its extension.
+ *
+ * The file NAME only, taken after the last separator of either kind, because the
+ * picker is given a filename and a path would suggest a folder. A source whose name
+ * is only an extension keeps it — `.md` becomes `.md.pdf` — rather than suggesting a
+ * file called `.pdf`, which Windows hides.
+ */
+export function suggestedComposedName(source: string): string {
+  const name = source.slice(Math.max(source.lastIndexOf('/'), source.lastIndexOf('\\')) + 1);
+  const dot = name.lastIndexOf('.');
+  return `${dot > 0 ? name.slice(0, dot) : name}.pdf`;
+}
+
+/**
  * The name an extract's picker opens with.
  *
  * *pages* rather than *copy*, because the two files are different things and a
@@ -545,6 +569,78 @@ export type SignOutcome =
   // refusals and nothing else, and a kind added to `SIGN_REFUSALS` is one main
   // must be able to return.
   | { readonly kind: SignRefusal };
+
+/**
+ * Which Markdown file becomes a PDF.
+ *
+ * {@link PickImage}'s shape: nothing is suggested, and `null` is the user
+ * dismissing the dialog.
+ */
+export type PickMarkdown = () => Promise<string | null>;
+
+/** What {@link MarkdownSource.read} answers. {@link ImageRead}'s shape. */
+export type MarkdownRead =
+  | { readonly kind: 'read'; readonly bytes: Uint8Array }
+  | { readonly kind: 'too-large'; readonly byteLength: number }
+  | { readonly kind: 'unreadable' };
+
+/**
+ * What composing a Markdown file needs from outside this module.
+ *
+ * {@link ImageSource}'s bundling, for its reason: the picker needs Electron and the
+ * bounded read needs Node's filesystem, and neither may be imported here.
+ */
+export interface MarkdownSource {
+  /** Runs the platform's open dialog, narrowed to Markdown. */
+  readonly pick: PickMarkdown;
+  /** The bytes at a path, bound-checked against `MAX_MARKDOWN_BYTES` before the read. */
+  readonly read: (path: string) => Promise<MarkdownRead>;
+}
+
+/**
+ * What the compose host answers for one source
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ *
+ * Declared here, where it is consumed, and the composition root's binding answers
+ * this type rather than a second one beside it.
+ */
+export type ComposedMarkdown =
+  | { readonly kind: 'composed'; readonly pdf: Uint8Array }
+  | {
+      readonly kind: 'refused';
+      readonly reason: MarkdownComposeRefusal;
+      /** The one-based source line the refusal is about, where there is one. */
+      readonly line: number | null;
+    };
+
+/**
+ * How a source becomes a PDF, through the compose host — or `null` where no compose
+ * host can exist, which is refused as {@link EngineUnavailableError} rather than
+ * composed in `main`.
+ */
+export type ComposeMarkdown =
+  | ((source: Uint8Array, page: { readonly width: number; readonly height: number }) => Promise<ComposedMarkdown>)
+  | null;
+
+/**
+ * What composing a picked Markdown file into a file on disk answers.
+ *
+ * `written` carries the destination, which is a **path** and never crosses to the
+ * renderer: the handler opens it through the one route a document is opened by, and
+ * what crosses is that open's outcome.
+ */
+export type ComposeMarkdownFileOutcome =
+  | { readonly kind: 'written'; readonly destination: string }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | { readonly kind: 'unreadable' }
+  | {
+      readonly kind: 'composition-refused';
+      readonly reason: MarkdownComposeRefusal;
+      readonly line: number | null;
+    }
+  | { readonly kind: 'destination-contested'; readonly openElsewhere: number }
+  | { readonly kind: 'write-failed' };
 
 /** What {@link ImageSource.read} answers. */
 export type ImageRead =
@@ -917,14 +1013,19 @@ export interface DocumentFlatFields {
  * Both become `engine-unavailable` at the boundary, and that is one code for two
  * causes on the axis that matters — *can this installation do it at all* — which
  * is the same reasoning `engine-refused` carries on the host wire.
+ *
+ * **The message names no engine**, because more than one reaches here: PDFium where
+ * it was not provisioned, and the compose host where no platform exists to create
+ * it (ADR-0060). A sentence naming PDFium would tell a person importing Markdown
+ * about the wrong engine; `what` says which operation it was.
  */
 export class EngineUnavailableError extends Error {
   override readonly name = 'EngineUnavailableError';
 
   constructor(what: string) {
     super(
-      `${what} needs an engine this installation does not have. The document is untouched. ` +
-        'PDFium is provisioned separately and no host was created for it, so nothing was asked.',
+      `${what} needs an engine this installation does not have. Nothing has changed, and ` +
+        'nothing was asked of a host that was never created.',
     );
   }
 }
@@ -1252,6 +1353,14 @@ export interface DocumentCommandsParts {
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
   readonly image: ImageSource;
+  /** Which Markdown file is imported, and its bounded read. See {@link MarkdownSource}. */
+  readonly markdown: MarkdownSource;
+  /**
+   * The compose host, or `null` where none can exist. Required and undefaulted for
+   * `textLines`' reason: *this build cannot import Markdown* is a decided answer, not
+   * a state a caller reaches by saying nothing.
+   */
+  readonly compose: ComposeMarkdown;
   /** Where a signing certificate comes from. See {@link CertificateSource}. */
   readonly certificate: CertificateSource;
   /**
@@ -1288,6 +1397,8 @@ export class DocumentCommands {
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
+  readonly #markdown: MarkdownSource;
+  readonly #compose: ComposeMarkdown;
   readonly #certificate: CertificateSource;
   readonly #docusign: DocusignSession;
   readonly #extract: DocumentExtractReader;
@@ -1317,6 +1428,8 @@ export class DocumentCommands {
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
+    this.#markdown = parts.markdown;
+    this.#compose = parts.compose;
     this.#certificate = parts.certificate;
     this.#docusign = parts.docusign;
     this.#extract = parts.extract;
@@ -2640,6 +2753,75 @@ export class DocumentCommands {
       if (error instanceof DocumentNotOpenError) throw error;
       return { kind: 'unreadable' };
     }
+  }
+
+  /**
+   * Composes a Markdown file the person picks as a new PDF, in the compose host, and
+   * writes it where they choose
+   * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+   *
+   * ## It answers a PATH, and the path does not cross
+   *
+   * Both import routes open what this writes through the one route a document is
+   * opened by, which the handler holds — so this ends at the file on disk, and
+   * `written` carries the destination for the handler alone.
+   *
+   * ## Refused BEFORE the picker where nothing can compose
+   *
+   * `null` means no compose host can exist on this installation, and a person asked
+   * to choose a file for an import that cannot happen would choose it for nothing.
+   * The source is never parsed in `main` instead: threat model §2 keeps parsing of
+   * any kind out of it.
+   *
+   * ## `target`, for append
+   *
+   * Checked before the picker for `insertImage`'s reason. Nothing is merged here —
+   * the composed document is opened as a tab first (ADR-0060's correction) — so the
+   * check is only that the person is not asked to pick a file for a document that
+   * has already closed.
+   *
+   * ## US Letter
+   *
+   * The geometry main reads carries rotations and a page count, not page sizes, so
+   * there is no size of the target to set a composition at. A reader for sizes is a
+   * row of its own; until then both routes compose at US Letter, and the row says so.
+   */
+  async composeMarkdownFile(target?: DocId): Promise<ComposeMarkdownFileOutcome> {
+    if (target !== undefined && this.#documents.nameOf(target) === undefined) {
+      throw new DocumentNotOpenError(target, 'append Markdown');
+    }
+    const compose = this.#compose;
+    if (compose === null) throw new EngineUnavailableError('Importing Markdown');
+
+    const picked = await this.#markdown.pick();
+    if (picked === null) return { kind: 'cancelled' };
+
+    const read = await this.#markdown.read(picked);
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_MARKDOWN_BYTES };
+    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+
+    const composed = await compose(read.bytes, COMPOSED_PAGE);
+    if (composed.kind === 'refused') {
+      return { kind: 'composition-refused', reason: composed.reason, line: composed.line };
+    }
+
+    const destination = await this.#copy.pick(suggestedComposedName(picked));
+    if (destination === null) return { kind: 'cancelled' };
+
+    // NO LANE: no open document is read or changed. The contested-destination check
+    // is the copy's own, so a destination another open document holds is refused
+    // exactly as a copy onto it would be.
+    const written = await writeDocumentCopy(
+      this.#save.deps,
+      this.#copy.checkTarget,
+      () => Promise.resolve(composed.pdf),
+      destination,
+    );
+    if (written.kind === 'refused') {
+      return { kind: 'destination-contested', openElsewhere: written.others.length };
+    }
+    if (written.kind === 'write-failed') return { kind: 'write-failed' };
+    return { kind: 'written', destination };
   }
 
   /**

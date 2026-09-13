@@ -209,6 +209,12 @@ export {
   type PdfiumChannels,
   pdfiumChannels,
 } from './host/pdfiumChannels.js';
+// MAIN'S SIDE OF THE THIRD HOST, on this barrel for `pdfiumChannels`' reason:
+// `composeChannels.ts` imports the contract and the shared host channels and
+// nothing else, so it declares schemas and loads no parser. The composer itself
+// is behind `@monstera/kernel/compose`, and `proof:kernelload` asserts this barrel
+// never reaches it (ADR-0060).
+export { type ComposeChannels, composeChannels } from './host/composeChannels.js';
 export {
   type PdfiumArea,
   type PdfiumTransfer,

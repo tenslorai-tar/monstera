@@ -3110,6 +3110,27 @@ export const setDocumentProtectionSchema = z.object({
 export const MAX_FORM_DATA_BYTES = 8 * 1024 * 1024;
 
 /**
+ * How large a Markdown file this build will compose into a PDF.
+ *
+ * Checked before the read, for `MAX_IMAGE_BYTES`' reason. The figure is chosen
+ * against what composing costs in the compose host
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)),
+ * measured 2026-09-13 with a scratch probe, one input per process, reading the
+ * operating system's peak resident set:
+ *
+ * - four MiB of prose: 5.8 s and 472 MiB, 1,293 pages;
+ * - four MiB of alternating emphasis — the costliest shape found, because no two
+ *   adjacent runs share a face: 27.6 s and 1,742 MiB.
+ *
+ * So the worst measured input at this bound stays inside the host's 3 GiB job
+ * limit, and a source past it is a file nobody writes by hand. A crafted source
+ * under it can still be slow; that is contained in a process whose ending affects
+ * no open document, which is why the bound exists for mistakes rather than for
+ * attackers.
+ */
+export const MAX_MARKDOWN_BYTES = 4 * 1024 * 1024;
+
+/**
  * Which encodings an IMPORT can read.
  *
  * It was `['json', 'fdf']` for one commit, because XFDF needed a reader this

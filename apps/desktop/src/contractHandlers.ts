@@ -25,6 +25,7 @@ import {
   type DocumentCommands,
   DocumentPoisonedError,
   EngineUnavailableError,
+  type ComposeMarkdownFileOutcome,
   InvalidSearchPatternError,
   MissingSessionError,
 } from './documentCommands.js';
@@ -80,7 +81,15 @@ export type PickDocument = () => Promise<string | null>;
  * the session would make every open as slow as a host build and would buy
  * nothing the lane does not already guarantee.
  */
-export type OpenedDocument = (docId: DocId) => void;
+/**
+ * Gives a just-opened document its engine sessions, answering when that has
+ * settled — sessioned or poisoned.
+ *
+ * A PROMISE, and most callers do not await it: a document opens whether or not an
+ * engine is available. The caller that does is one about to use the document's
+ * sessions next, such as a merge naming it as a source (ADR-0060's correction).
+ */
+export type OpenedDocument = (docId: DocId) => Promise<void>;
 
 /**
  * One password attempt against an open document the supervisor recorded as
@@ -267,6 +276,8 @@ export function createContractHandlers(deps: {
     'document.split': splitHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
+    'document.newFromMarkdown': newFromMarkdownHandler(deps),
+    'document.appendMarkdown': appendMarkdownHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
     'docusign.send': docusignSendHandler(deps.commands),
@@ -479,6 +490,145 @@ function insertImageHandler(commands: DocumentCommands): ContractHandlers['docum
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The import's own outcomes, which both Markdown channels answer alike. */
+type ComposeRefusalAnswer = Extract<
+  ChannelResult<'document.appendMarkdown'>,
+  { readonly kind: Exclude<ComposeMarkdownFileOutcome['kind'], 'written'> }
+>;
+
+/**
+ * An import that wrote nothing, as the wire states it.
+ *
+ * Member by member, for `saveCopyHandler`'s reason: two unions that agree today are
+ * not one type, and passing the object through would put a new command-side member
+ * on a wire that does not declare it.
+ */
+function composeRefusal(
+  outcome: Exclude<ComposeMarkdownFileOutcome, { readonly kind: 'written' }>,
+): ComposeRefusalAnswer {
+  switch (outcome.kind) {
+    case 'cancelled':
+      return { kind: 'cancelled' };
+    case 'too-large':
+      return { kind: 'too-large', limitBytes: outcome.limitBytes };
+    case 'unreadable':
+      return { kind: 'unreadable' };
+    case 'composition-refused':
+      return { kind: 'composition-refused', reason: outcome.reason, line: outcome.line };
+    case 'destination-contested':
+      return { kind: 'destination-contested', openElsewhere: outcome.openElsewhere };
+    case 'write-failed':
+      return { kind: 'write-failed' };
+  }
+}
+
+/**
+ * Composes a picked Markdown file into a PDF on disk, and opens it
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ *
+ * The file opens through {@link openPath}, so a composed document is opened exactly
+ * as a picked one is — the same handle, the same recent-list entry and the same
+ * session — and the answer is that open's outcome.
+ */
+function newFromMarkdownHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.newFromMarkdown'] {
+  return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
+    try {
+      const composed = await deps.commands.composeMarkdownFile();
+      if (composed.kind !== 'written') return ok(composeRefusal(composed));
+      return ok((await openPath(deps, composed.destination)).outcome);
+    } catch (thrown) {
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Composes a picked Markdown file, opens it as a tab, and merges it into `docId`.
+ *
+ * ## A visible tab, then the existing merge
+ *
+ * ADR-0040 Decision 2 refuses a hidden transient open, so the composed file is opened
+ * by {@link openPath} like any other and merged with `mergeDocument`, whose source
+ * must be an open document. The SESSIONS are awaited first: the merge reads the
+ * source through its engine session, and a merge that reached the bus before the
+ * session existed would be refused for a document that is about to have one.
+ *
+ * ## A refused merge closes the tab it opened
+ *
+ * The renderer learns of the composed document only from `appended`. A merge that
+ * throws answers a failure code instead, so a document left open here would be held
+ * in `main` with no tab anywhere — counted against the resident ceiling, and closable
+ * by nobody. It is closed through the service and dropped from the session list, as
+ * `document.close` does; the file stays on disk where the person saved it.
+ *
+ * ## `already-open` cannot happen, and it is a fault if it does
+ *
+ * The write refuses a destination any open document reaches, so the file just
+ * written cannot be open already. Merging from whatever document answered would
+ * merge the wrong bytes, so it is thrown rather than handled.
+ */
+function appendMarkdownHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.appendMarkdown'] {
+  return async ({
+    docId,
+    at,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.appendMarkdown']>>> => {
+    try {
+      const composed = await deps.commands.composeMarkdownFile(docId);
+      if (composed.kind !== 'written') return ok(composeRefusal(composed));
+
+      const { outcome, sessions } = await openPath(deps, composed.destination);
+      if (outcome.kind === 'absent') return ok({ kind: 'absent' });
+      if (outcome.kind === 'at-capacity') {
+        return ok({ kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling });
+      }
+      if (outcome.kind !== 'opened') {
+        throw new Error(
+          `the composed file answered ${outcome.kind} on open, and the write that preceded it refuses ` +
+            'a destination an open document reaches',
+        );
+      }
+
+      await sessions;
+      let applied: Awaited<ReturnType<DocumentCommands['execute']>>;
+      try {
+        applied = await deps.commands.execute(docId, {
+          kind: 'mergeDocument',
+          source: outcome.docId,
+          at,
+        });
+      } catch (thrown) {
+        await deps.documents.close(outcome.docId);
+        deps.recent.closed(outcome.docId);
+        throw thrown;
+      }
+
+      return ok({
+        kind: 'appended',
+        version: applied.version,
+        byteLength: applied.byteLength,
+        historyDropped: applied.historyDropped,
+        opened: {
+          docId: outcome.docId,
+          version: outcome.version,
+          byteLength: outcome.byteLength,
+          name: outcome.name,
+        },
+      });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
     }
   };
@@ -1355,44 +1505,79 @@ function undoHandler(commands: DocumentCommands): ContractHandlers['document.und
  * outcomes is correct on two, harmless on the one that took the handle, and
  * destructive on the one where two callers share it.
  */
-function openDocumentHandler(deps: {
-  readonly documents: DocumentService;
-  readonly capabilities: CapabilityRegistry;
-  readonly openedDocument: OpenedDocument;
-  readonly pickDocument: PickDocument;
-  readonly recent: RecentFiles;
-}): ContractHandlers['document.open'] {
+function openDocumentHandler(deps: OpenPathParts & { readonly pickDocument: PickDocument }): ContractHandlers['document.open'] {
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.open']>>> => {
     const picked = await deps.pickDocument();
     if (picked === null) return ok({ kind: 'cancelled' } as const);
-
-    const handle = deps.capabilities.mint(picked);
-    const outcome: ChannelResult<'document.open'> = await deps.documents.open(handle);
-
-    if (outcome.kind === 'absent' || outcome.kind === 'at-capacity') {
-      deps.capabilities.revoke(handle);
-    }
-
-    // ONLY FOR A DOCUMENT THIS CALL OPENED, and `already-open` is the outcome
-    // that makes the distinction load-bearing rather than pedantic: that
-    // document has a session or is poisoned already, and a second entry for it
-    // would spend Decision 9a's failure bound a second time on a document that
-    // never failed.
-    if (outcome.kind === 'opened') {
-      deps.openedDocument(outcome.docId);
-      // RECORDED HERE, where the path and the name are both in hand. Recording
-      // in the service would put a list of paths inside the thing that holds
-      // documents; recording in the renderer is impossible, which is L2 doing
-      // its job.
-      deps.recent.record({ path: picked, name: outcome.name });
-      // AND RECORDED AS OPEN. The recent list is *what this user has looked
-      // at*; the session is *what is on screen now*, which is what a crash
-      // recovery has to offer once several documents can be.
-      deps.recent.opened(outcome.docId, { path: picked, name: outcome.name });
-    }
-
-    return ok(outcome);
+    return ok((await openPath(deps, picked)).outcome);
   };
+}
+
+/** What {@link openPath} opens a document through. */
+interface OpenPathParts {
+  readonly documents: DocumentService;
+  readonly capabilities: CapabilityRegistry;
+  readonly openedDocument: OpenedDocument;
+  readonly recent: RecentFiles;
+}
+
+/**
+ * Opens the file at a path main already holds as a document on screen, answering
+ * the channel's outcome and — for a document this call opened — the promise that
+ * settles when its engine sessions exist.
+ *
+ * ## ONE WAY TO OPEN A DOCUMENT, and this is it
+ *
+ * ADR-0040 Decision 2 refuses a hidden transient open because a second route would
+ * answer identity, dedup, the handle, the byte ceiling and the session again. So
+ * picking a file, and composing one from Markdown
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)
+ * and its correction), reach the document through this one sequence rather than two
+ * copies of it.
+ *
+ * ## The sessions promise is RETURNED, and `document.open` ignores it
+ *
+ * `onDocumentOpened` says a caller that wants to know may wait: a document opens
+ * whether or not an engine is available. The picker path does not wait, as before.
+ * A caller that must use the document's sessions next — a merge naming it as a
+ * source — waits, or the merge can reach the bus first and be refused.
+ */
+async function openPath(
+  deps: OpenPathParts,
+  path: string,
+): Promise<{
+  // THE SERVICE'S OWN OUTCOME, not a channel's: `document.open` adds `cancelled`
+  // and this never produces it, while `document.openRecent` answers exactly this.
+  readonly outcome: Awaited<ReturnType<DocumentService['open']>>;
+  readonly sessions: Promise<void>;
+}> {
+  const handle = deps.capabilities.mint(path);
+  const outcome = await deps.documents.open(handle);
+
+  if (outcome.kind === 'absent' || outcome.kind === 'at-capacity') {
+    deps.capabilities.revoke(handle);
+  }
+
+  // ONLY FOR A DOCUMENT THIS CALL OPENED, and `already-open` is the outcome
+  // that makes the distinction load-bearing rather than pedantic: that
+  // document has a session or is poisoned already, and a second entry for it
+  // would spend Decision 9a's failure bound a second time on a document that
+  // never failed.
+  if (outcome.kind === 'opened') {
+    const sessions = deps.openedDocument(outcome.docId);
+    // RECORDED HERE, where the path and the name are both in hand. Recording
+    // in the service would put a list of paths inside the thing that holds
+    // documents; recording in the renderer is impossible, which is L2 doing
+    // its job.
+    deps.recent.record({ path, name: outcome.name });
+    // AND RECORDED AS OPEN. The recent list is *what this user has looked
+    // at*; the session is *what is on screen now*, which is what a crash
+    // recovery has to offer once several documents can be.
+    deps.recent.opened(outcome.docId, { path, name: outcome.name });
+    return { outcome, sessions };
+  }
+
+  return { outcome, sessions: Promise.resolve() };
 }
 
 /** The recent list, with a handle per entry rather than a path. */
@@ -1437,12 +1622,7 @@ function recentHandler(deps: {
  * document moved or was deleted since it was opened, and leaving it in the list
  * would offer the user the same dead file every launch.
  */
-function openRecentHandler(deps: {
-  readonly documents: DocumentService;
-  readonly capabilities: CapabilityRegistry;
-  readonly openedDocument: OpenedDocument;
-  readonly recent: RecentFiles;
-}): ContractHandlers['document.openRecent'] {
+function openRecentHandler(deps: OpenPathParts): ContractHandlers['document.openRecent'] {
   return async ({
     handle,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.openRecent']>>> => {
@@ -1452,23 +1632,17 @@ function openRecentHandler(deps: {
     // acts on by asking for the list again — not a defect.
     if (path === undefined) return err({ code: 'unknown-handle' });
 
-    const outcome: ChannelResult<'document.openRecent'> = await deps.documents.open(handle);
+    // THROUGH `openPath`, the one way to open a document. `mint` is idempotent
+    // per path, so the handle it mints IS the one the recent list handed out, and
+    // its revocation and recording are this route's exactly — including recording
+    // the session, which is the route a recovery itself takes: reopening after a
+    // crash puts the documents back on screen, and a run that recorded only
+    // picker-opened documents would lose them all to a second crash.
+    const { outcome } = await openPath(deps, path);
 
-    if (outcome.kind === 'absent') {
-      deps.capabilities.revoke(handle);
-      deps.recent.forget(path);
-    }
-    if (outcome.kind === 'at-capacity') deps.capabilities.revoke(handle);
-
-    if (outcome.kind === 'opened') {
-      deps.openedDocument(outcome.docId);
-      deps.recent.record({ path, name: outcome.name });
-      // BOTH ROUTES RECORD THE SESSION, and this one is the route a recovery
-      // itself takes: reopening after a crash puts the documents back on
-      // screen, and a run that recorded only picker-opened documents would
-      // lose them all to a second crash.
-      deps.recent.opened(outcome.docId, { path, name: outcome.name });
-    }
+    // WHAT THIS ROUTE ADDS: a file that has gone is FORGOTTEN, because leaving it
+    // in the list would offer the user the same dead file every launch.
+    if (outcome.kind === 'absent') deps.recent.forget(path);
 
     return ok(outcome);
   };

@@ -139,7 +139,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     capabilities,
     commands: {} as unknown as DocumentCommands,
     documents: service,
-    openedDocument: () => undefined,
+    openedDocument: () => Promise.resolve(),
     unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
@@ -283,6 +283,13 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.importFormData': 'needs an engine session and an open dialog',
   'document.split': 'needs an engine session and a folder dialog',
   'document.insertImage': 'needs an engine session and an image picker',
+  // THE ASK IS NOTHING, OR A `DocId` AND ONE INDEX, and the source never crosses:
+  // main picks and reads the Markdown file, the compose host sets it, and main
+  // writes and opens the result. What returns is an open's outcome — a name bounded
+  // by `MAX_DOCUMENT_NAME_LENGTH` and numbers — whether the file held one line or
+  // four megabytes.
+  'document.newFromMarkdown': 'needs a compose host, an open dialog and a save dialog',
+  'document.appendMarkdown': 'needs an engine session, a compose host and two dialogs',
   // THE IMAGE GOES THE OTHER WAY AND NEVER CROSSES THIS BOUNDARY, which is the
   // sentence to read before the page list. The renderer sends a page list and a
   // rectangle; main runs the picker, reads the file and mints `placeImage`, and

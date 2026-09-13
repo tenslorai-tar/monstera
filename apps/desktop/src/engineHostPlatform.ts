@@ -302,3 +302,54 @@ export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPl
     },
   };
 }
+
+/**
+ * The compose host's platform, DERIVED from MuPDF's as PDFium's is
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ *
+ * ## The same two things replaced, and nothing else
+ *
+ * {@link createPdfiumHostPlatform}'s reasoning, unchanged: the session root, the
+ * directory surface, the pipe and reader surfaces, this process's user SID and the
+ * containment negative belong to the application, and building them twice would
+ * make two writers of one concern. What differs is the **container** — its own
+ * moniker, so a file picked for import is never readable by a host holding a
+ * document's bytes, or the reverse — and the **program**.
+ *
+ * The positive probe target is this host's own entry, for PDFium's reason: a
+ * check that passed against another host's script would pass against a file this
+ * process happens to be able to read.
+ *
+ * ## `null` only where MuPDF's platform is, or the SID cannot be derived
+ *
+ * Unlike PDFium, this host needs no provisioned library — `markdown-it` ships in the
+ * kernel's dependencies — so there is no third road to `null`.
+ */
+export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {
+  const container = hostContainerSid(ENGINE_HOST_CONTAINER.compose);
+  if (!container.ok) return null;
+
+  const entry = hostEntryPath(ENGINE_HOST_ENTRY_FILE.compose);
+  const binary = electronBinaryOfThisProcess();
+
+  return {
+    ...base,
+    surfaces: {
+      ...base.surfaces,
+      hostFor: (pipeName) =>
+        createWin32HostSurface({
+          executablePath: binary,
+          commandArguments: [...hostCommandArguments({ kind: 'compose' }, entry, pipeName)],
+          workingDirectory: dirname(binary),
+          containerName: ENGINE_HOST_CONTAINER.compose,
+          // A NAME OF ITS OWN, per host and per creation, as the other two have.
+          diagnosticPath: hostDiagnosticPath(base.sessionRoot, diagnosticName()),
+        }),
+    },
+    container: container.value,
+    probe: {
+      positive: { path: entry, origin: 'install-root' },
+      negative: base.probe.negative,
+    },
+  };
+}

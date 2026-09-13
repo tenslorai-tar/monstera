@@ -34,6 +34,7 @@ import {
   docIdSchema,
   docVersionSchema,
   fileHandleSchema,
+  MARKDOWN_COMPOSE_REFUSALS,
 } from './schemas.js';
 
 /**
@@ -1580,6 +1581,106 @@ export const channels = {
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Composes a Markdown file the user picks as a new PDF, saves it where they choose,
+   * and opens it
+   * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+   *
+   * ## THE ASK CARRIES NOTHING, `document.open`'s shape
+   *
+   * Main opens both pickers, reads the source, composes it in the compose host,
+   * writes the result and opens it through the one route a document is opened by.
+   * What crosses is the outcome.
+   *
+   * ## Every open outcome, and the import's own beside them
+   *
+   * The composed file is opened exactly as a picked one is, so this answers
+   * everything `document.open` can. The rest are the file's: `too-large` and
+   * `unreadable` before anything is composed, `composition-refused` with the reason
+   * and the source line — its own name, because `refused` on `document.saveCopy`
+   * already means *another document holds the destination* — and the destination's
+   * two outcomes a copy has.
+   */
+  'document.newFromMarkdown': channel(
+    'Composes a Markdown file the user picks as a new PDF, saves it where they choose, and opens it.',
+    z.object({}),
+    z.discriminatedUnion('kind', [
+      ...openOutcomeSchema.options,
+      /** Past {@link MAX_MARKDOWN_BYTES} — refused before it is read into memory. */
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      /** The file could not be read. */
+      z.object({ kind: z.literal('unreadable') }),
+      z.object({
+        kind: z.literal('composition-refused'),
+        reason: z.enum(MARKDOWN_COMPOSE_REFUSALS),
+        /** The one-based source line the refusal is about, where there is one. */
+        line: z.number().int().positive().nullable(),
+      }),
+      /** Another open document reaches the chosen destination. Nothing was written. */
+      z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
+      /** The filesystem refused. Nothing at the destination was replaced. */
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['engine-unavailable'],
+  ),
+
+  /**
+   * Composes a Markdown file into a new PDF, opens it, and merges it into this
+   * document at `at`.
+   *
+   * ## A VISIBLE TAB, never a hidden open
+   *
+   * ADR-0040 Decision 2 refuses a hidden transient open, and ADR-0060's correction
+   * applies it: the composed document is saved where the user chooses and opened
+   * as a tab by the same route as `document.newFromMarkdown`, then merged with the
+   * existing `mergeDocument`. So `appended` carries both the target's new state and
+   * the tab that opened.
+   *
+   * ## US Letter, stated
+   *
+   * The composition is set at US Letter whatever size this document's pages are:
+   * the geometry main reads carries rotations and a page count, not sizes, and a
+   * reader for them is a row of its own.
+   */
+  'document.appendMarkdown': channel(
+    'Composes a Markdown file into a new PDF, opens it, and merges it into this document.',
+    z.object({ docId: docIdSchema, at: z.number().int().nonnegative() }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('appended'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+        /** The composed document, open as its own tab. */
+        opened: z.object({
+          docId: docIdSchema,
+          version: docVersionSchema,
+          byteLength: z.number().int().nonnegative(),
+          name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+        }),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      z.object({ kind: z.literal('unreadable') }),
+      z.object({
+        kind: z.literal('composition-refused'),
+        reason: z.enum(MARKDOWN_COMPOSE_REFUSALS),
+        line: z.number().int().positive().nullable(),
+      }),
+      z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      /** The composed file was written and could not be opened within main's ceiling. */
+      z.object({
+        kind: z.literal('at-capacity'),
+        wouldHold: z.number().int().nonnegative(),
+        ceiling: z.number().int().nonnegative(),
+      }),
+      /** The composed file was written and was gone before it could be opened. */
+      z.object({ kind: z.literal('absent') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
 
   /**

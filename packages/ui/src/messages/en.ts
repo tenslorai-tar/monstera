@@ -177,6 +177,25 @@ export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
 export const INSERT_IMAGE_TOO_LARGE = messageKey('dialog.insert-image-problem.too-large');
+/** TOOLS › Create, where D9's import rows land. */
+export const GROUP_CREATE = messageKey('surface.ribbon.group.create');
+export const NEW_FROM_MARKDOWN_COMMAND_TITLE = messageKey('command.new-from-markdown.title');
+export const APPEND_MARKDOWN_COMMAND_TITLE = messageKey('command.append-markdown.title');
+export const MARKDOWN_IMPORT_PROBLEM_TITLE = messageKey('dialog.markdown-import-problem.title');
+export const MARKDOWN_IMPORT_UNREADABLE = messageKey('dialog.markdown-import-problem.unreadable');
+export const MARKDOWN_IMPORT_TOO_LARGE = messageKey('dialog.markdown-import-problem.too-large');
+export const MARKDOWN_IMPORT_NOT_UTF8 = messageKey('dialog.markdown-import-problem.not-utf8');
+export const MARKDOWN_IMPORT_UNENCODABLE = messageKey('dialog.markdown-import-problem.unencodable');
+export const MARKDOWN_IMPORT_UNENCODABLE_LINE = messageKey(
+  'dialog.markdown-import-problem.unencodable-line',
+);
+export const MARKDOWN_IMPORT_NOTHING_TO_DRAW = messageKey(
+  'dialog.markdown-import-problem.nothing-to-draw',
+);
+export const MARKDOWN_IMPORT_CONTESTED = messageKey('dialog.markdown-import-problem.contested');
+export const MARKDOWN_IMPORT_WRITE_FAILED = messageKey('dialog.markdown-import-problem.write-failed');
+export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
+export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const GENERATE_TOC_COMMAND_TITLE = messageKey('command.generate-toc.title');
 export const GENERATE_TOC_PROBLEM_TITLE = messageKey('dialog.generate-toc-problem.title');
 export const GENERATE_TOC_NO_OUTLINE = messageKey('dialog.generate-toc-problem.no-outline');
@@ -1768,6 +1787,31 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_IMAGE_TOO_LARGE]:
     'That image is larger than {megabytes} MB, which is the most this app will make a page from. ' +
     'Your document has not changed.',
+  [GROUP_CREATE]: 'Create',
+  [NEW_FROM_MARKDOWN_COMMAND_TITLE]: 'New PDF from Markdown…',
+  [APPEND_MARKDOWN_COMMAND_TITLE]: 'Add pages from Markdown…',
+  [MARKDOWN_IMPORT_PROBLEM_TITLE]: 'That Markdown file could not be imported',
+  [MARKDOWN_IMPORT_UNREADABLE]: 'The file you chose could not be read. Nothing was imported.',
+  [MARKDOWN_IMPORT_TOO_LARGE]:
+    'That file is larger than {megabytes} MB, which is the most this app will import. ' +
+    'Nothing was imported.',
+  [MARKDOWN_IMPORT_NOT_UTF8]:
+    'That file is not UTF-8 text, so it cannot be read as Markdown. Nothing was imported.',
+  [MARKDOWN_IMPORT_UNENCODABLE]:
+    'The file has a character the built-in fonts cannot draw. Nothing was imported.',
+  [MARKDOWN_IMPORT_UNENCODABLE_LINE]:
+    'Line {line} has a character the built-in fonts cannot draw. Nothing was imported.',
+  [MARKDOWN_IMPORT_NOTHING_TO_DRAW]: 'That file has no text to put on a page. Nothing was imported.',
+  // THE REMEDY IS THE PERSON'S: close the document holding that file, or pick another
+  // name. `saveCopy`'s contested sentence is the same situation.
+  [MARKDOWN_IMPORT_CONTESTED]:
+    'That file is open in this app, so nothing was written there. Close it, or choose another name.',
+  [MARKDOWN_IMPORT_WRITE_FAILED]: 'The PDF could not be saved there. Nothing was imported.',
+  [MARKDOWN_IMPORT_ABSENT]:
+    'The PDF was saved, but the file was gone before it could be opened.',
+  [MARKDOWN_IMPORT_AT_CAPACITY]:
+    'The PDF was saved, but there is not enough room to open it beside the documents already ' +
+    'open. Close one, then open the PDF from where you saved it.',
   [GENERATE_TOC_COMMAND_TITLE]: 'Table of contents',
   [GENERATE_TOC_PROBLEM_TITLE]: 'There is nothing to tabulate',
   // NAMES WHAT IS MISSING AND WHERE IT COMES FROM. "No bookmarks" alone reads

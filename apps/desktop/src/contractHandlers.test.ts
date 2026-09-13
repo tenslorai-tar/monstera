@@ -61,7 +61,10 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     capabilities,
     commands: unusedCommands,
     documents,
-    openedDocument: (docId) => sessioned.push(docId),
+    openedDocument: (docId) => {
+      sessioned.push(docId);
+      return Promise.resolve();
+    },
     // `not-locked` IS THE ORDINARY DOCUMENT'S ANSWER, so cases that never
     // mention encryption get the state every fixture here is in.
     unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
@@ -300,7 +303,7 @@ describe('document.open', () => {
           capabilities: new CapabilityRegistry(),
           commands: unusedCommands,
           documents,
-          openedDocument: () => undefined,
+          openedDocument: () => Promise.resolve(),
           unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
@@ -480,7 +483,7 @@ describe('the recent list', () => {
       capabilities,
       commands: unusedCommands,
       documents,
-      openedDocument: () => undefined,
+      openedDocument: () => Promise.resolve(),
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent,
@@ -527,7 +530,7 @@ describe('log.reveal', () => {
       capabilities: new CapabilityRegistry(),
       commands: unusedCommands,
       documents: {} as unknown as DocumentService,
-      openedDocument: () => undefined,
+      openedDocument: () => Promise.resolve(),
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),

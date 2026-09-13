@@ -892,6 +892,65 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Markdown → PDF: wired end to end through the compose host, owing one real-host run
+
+Stage 8's first row. `0fe2f54` built the compose host's kernel half; this range
+wires `main`, the contract and the renderer to it. ADR-0060 went first, in
+`9b212cb`.
+
+### What was built
+
+- **Two channels.** `document.newFromMarkdown` takes nothing and answers every
+  `document.open` outcome plus the import's own. `document.appendMarkdown` takes a
+  document and an index and answers `appended`, carrying the target's new state and
+  the tab that opened.
+- **`DocumentCommands.composeMarkdownFile`** refuses before any picker where no
+  compose host can exist, and before the picker for a closed target. It then picks,
+  reads under `MAX_MARKDOWN_BYTES`, composes in the host at US Letter, picks a
+  destination, and writes through `writeDocumentCopy`, so a destination another open
+  document holds is refused as a copy onto it would be.
+- **`openPath`**, extracted from `document.open` and `document.openRecent`, is now
+  the one sequence all four routes open a file by.
+- **Append** opens the composed file as a tab, awaits its engine sessions, then
+  executes `mergeDocument`. A merge that throws closes that tab, because the renderer
+  learns of it only from `appended`.
+- **Renderer:** Tools › Create, two commands, and one problem dialog whose reasons
+  are the import's. The append rebuilds the target, adds the tab, and brings the
+  target back to the front.
+
+### Measurements the row's body points here for
+
+From `0fe2f54`, taken 2026-09-13 with scratch probes. One `drawText` per word took
+16 s and 725 MiB peak RSS for 1 MiB of prose. One text object per line takes 1 MiB
+of alternating emphasis to 3.0–4.4 s, 4 MiB of prose to 5.8 s and 472 MiB, and 4 MiB
+of alternating emphasis to 27.6 s and 1,742 MiB — which is what puts
+`MAX_MARKDOWN_BYTES` at 4 MiB under the host's 3 GiB job limit. The parser choice is
+ADR-0060's table.
+
+### Found while proving it
+
+- **The first append case failed on the fixture, and the product was right.** The
+  shared fake host answers every `engine/capture` with a rotate's prior state, and
+  the bus refused that for a `mergeDocument`: *"engine/capture answered prior state
+  tagged rotatePages for a mergeDocument command"*. The case now answers
+  `captured: false`, as `captureMergeDocument` does.
+- **The second failure was the fixture too.** `serialisingEngine` remembers one
+  output directory and answers one session id for every open, which holds while one
+  document is open. With the target and the composed file both open, the target's
+  checkpoint serialise wrote into the other document's area, and main's read failed
+  with `ENOENT`. The append case gives each open its own session and area.
+- **Lint caught a `default:` in the problem mapping** that would have let a new
+  channel outcome fall silent. The cases are now named.
+
+### Not done
+
+**Nothing has started the real compose host.** Every host case drives a fake
+platform, so *started in its own AppContainer, contained by its own verdict, composed
+through its pipe* is asserted and not executed. The row is recorded as built, owing
+that one run, which is the next unit.
+
+---
+
 ## 2026-09-13 — Stage audit of `622f794..4971b60`: a verifier that says "changed" when it cannot check, and a residue narrowed by the rewrite that made it per kind
 
 Fifty-five commits and 198 files: Stage 6's close-out, all of Stage 7, the Claude

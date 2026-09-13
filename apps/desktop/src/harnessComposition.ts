@@ -97,6 +97,12 @@ export function harnessSurfaces(
     pickDirectory: () => {
       throw new Error(`${harness} splits nothing, so nothing may pick a folder`);
     },
+    pickMarkdown: () => {
+      throw new Error(`${harness} imports no Markdown, so nothing may pick a file for it`);
+    },
+    readMarkdown: () => {
+      throw new Error(`${harness} imports no Markdown, so nothing may read one`);
+    },
     readImage: () => {
       throw new Error(`${harness} inserts no image, so nothing may read one`);
     },

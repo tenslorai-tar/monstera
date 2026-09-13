@@ -110,6 +110,7 @@ export {
   MIN_ANNOTATION_FONT,
   MAX_INK_POINTS,
   MAX_PAGE_COORDINATE,
+  MAX_MARKDOWN_BYTES,
   addAnnotationSchema,
   addLinkSchema,
   annotationColourSchema,

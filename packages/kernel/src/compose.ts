@@ -1,4 +1,3 @@
-export { type ComposeChannels, composeChannels } from './host/composeChannels.js';
 export { type ComposePageSize, MarkdownComposeRefused, composeMarkdown } from './markdownCompose.js';
 
 /**
@@ -18,9 +17,13 @@ export { type ComposePageSize, MarkdownComposeRefused, composeMarkdown } from '.
  * `markdownCompose.js`, and this module must, which is the control that says the
  * walk can see it.
  *
- * ## Who imports what
+ * ## The CHANNELS are not here, and `main` must never import this
  *
- * `main` takes `composeChannels` and the types, to build a client for the host. The
- * compose host's entry imports the composer directly. The composer is exported here
- * so the proof's control has a root-level module that reaches it.
+ * `main` needs `composeChannels` to build a client for the host, and it takes them
+ * from the kernel's barrel, as it takes `pdfiumChannels`. Their module imports only
+ * the contract and the shared host channels, so the barrel stays clear of the
+ * parser. Exporting them here as well would make this entry a place `main` could
+ * reasonably import, and that import would load `markdown-it` into the process
+ * that holds every open document. So this entry exports the composer and nothing a
+ * `main`-side caller needs.
  */

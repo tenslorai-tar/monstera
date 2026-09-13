@@ -35,8 +35,16 @@
  * illegal state is unrepresentable rather than refused (B5).
  */
 
-/** The engines a contained host is built around. */
-export type EngineHostKind = 'mupdf' | 'pdfium';
+/**
+ * The programs a contained host is built around.
+ *
+ * `compose` is not a document engine: it parses a file picked for import and sets
+ * it as a new PDF
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ * It is a kind here for the same reason the two engines are: a host is contained
+ * by being a principal of its own, and the records below are what give it one.
+ */
+export type EngineHostKind = 'mupdf' | 'pdfium' | 'compose';
 
 /**
  * One host's program: which engine, and what that engine needs to start.
@@ -46,6 +54,7 @@ export type EngineHostKind = 'mupdf' | 'pdfium';
  */
 export type EngineHostProgram =
   | { readonly kind: 'mupdf' }
+  | { readonly kind: 'compose' }
   | {
       readonly kind: 'pdfium';
       /**
@@ -75,6 +84,9 @@ export const ENGINE_HOST_CONTAINER: Record<EngineHostKind, string> = {
   // `${MUPDF}-pdfium` would put the two one edit away from collapsing, which is
   // exactly the edit nothing downstream can see.
   pdfium: 'monstera-pdfium-host',
+  // A THIRD DISTINCT STRING, for the reason above: a file picked for import and a
+  // document's bytes must never be readable by one principal.
+  compose: 'monstera-compose-host',
 };
 
 /**
@@ -87,6 +99,7 @@ export const ENGINE_HOST_CONTAINER: Record<EngineHostKind, string> = {
 export const ENGINE_HOST_ENTRY_FILE: Record<EngineHostKind, string> = {
   mupdf: 'hostEntry.js',
   pdfium: 'pdfiumHostEntry.js',
+  compose: 'composeHostEntry.js',
 };
 
 /**

@@ -513,6 +513,20 @@ export interface BrowserShimOptions {
    * that never mentions opening quietly open a document.
    */
   readonly opens?: readonly OpenAnswer[];
+  /**
+   * What `document.newFromMarkdown` answers, in order — `opens`' queue and its
+   * default, for its reason: unset or exhausted is `cancelled`, the outcome that
+   * changes nothing. An `opened` answer seeds the document as `document.open`'s does.
+   */
+  readonly markdownNews?: readonly ChannelResult<'document.newFromMarkdown'>[];
+  /**
+   * What `document.appendMarkdown` answers, in order, with the same default.
+   *
+   * An `appended` answer moves the target to its version AND seeds the composed
+   * document, because the real channel leaves both: the merge changed one, and the
+   * other is open as a tab (ADR-0060's correction).
+   */
+  readonly markdownAppends?: readonly ChannelResult<'document.appendMarkdown'>[];
 
   /**
    * What `document.unlock` answers, in order.
@@ -625,6 +639,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied, not aliased: `options` is the caller's, and a handler that shifted
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
+  const queuedMarkdownNews = [...(options.markdownNews ?? [])];
+  const queuedMarkdownAppends = [...(options.markdownAppends ?? [])];
   const queuedUnlocks: UnlockAnswer[] = [...(options.unlocks ?? [])];
   const queuedSignings: SignAnswer[] = [...(options.signings ?? [])];
 
@@ -737,6 +753,25 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // state the real boundary cannot produce, and the test written against it
       // would assert on a shape nothing ships.
       if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+
+    // `document.open`'s seeding, for its reason: a composed document reported open
+    // must be one the rest of the shim accepts commands against.
+    'document.newFromMarkdown': () => {
+      const answer = queuedMarkdownNews.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+
+    'document.appendMarkdown': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const answer = queuedMarkdownAppends.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'appended') {
+        versions.set(docId, answer.version);
+        versions.set(answer.opened.docId, answer.opened.version);
+      }
       return Promise.resolve(ok(answer));
     },
 

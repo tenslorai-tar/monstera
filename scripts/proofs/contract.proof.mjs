@@ -1135,6 +1135,8 @@ export const handlers: ContractHandlers = {
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.appendMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
@@ -1237,6 +1239,8 @@ export const handlers: ContractHandlers = {
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.appendMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
@@ -1414,6 +1418,8 @@ export const shim: ContractClient = {
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.appendMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),

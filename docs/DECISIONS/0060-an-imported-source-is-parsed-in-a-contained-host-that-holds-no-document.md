@@ -132,6 +132,19 @@ open for one merge without a tab the renderer knows about. That is the row's to
 measure. If it cannot, append is a separate question, not an exception to this
 decision.
 
+## Correction, 2026-09-13 — the law already answered this, and the answer is no
+
+ADR-0040 Decision 2, restated on `mergeDocumentSchema` itself: *"there is no
+hidden transient open, so merging a file that is not open means opening it as a
+tab first"* — which is what buys one way to open a document. A composed document
+held open in `main` for one merge would be exactly the hidden transient open that
+decision refuses. So **append composes, saves to a destination the person picks,
+opens that file as a tab by the same route as *new*, and merges it into the
+document that was in front of them** with the existing `mergeDocument`. The
+composed document stays open as a tab for the person to close. This was findable
+by reading the merge command before writing the sentence above; the sentence named
+an open question that a citation already closed.
+
 ## Decision 6 — the Markdown parser is `markdown-it`
 
 It is the one of the three that bounded every input above, and its bound is its

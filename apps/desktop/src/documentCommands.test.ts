@@ -5,10 +5,18 @@ import { join } from 'node:path';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type Command, channels, type Incident, wrapHandler, IncidentLog } from '@monstera/contract';
+import {
+  type Command,
+  channels,
+  type Incident,
+  wrapHandler,
+  IncidentLog,
+  MAX_MARKDOWN_BYTES,
+} from '@monstera/contract';
 import {
   CapabilityRegistry,
   CommandBus,
+  DocumentNotOpenError,
   DocumentService,
   type MupdfSession,
   nodeFileSurface,
@@ -41,7 +49,7 @@ import {
   snapshotRegion,
   withDocument,
 } from '@monstera/kernel/engine';
-import type { DocId } from '@monstera/shared';
+import { type DocId, asDocId } from '@monstera/shared';
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
@@ -62,12 +70,14 @@ import {
   type CopySource,
   type CertificateSource,
   type ImageSource,
+  type MarkdownSource,
   type DocumentAnnotationsReader,
   type DocumentFlatFieldsReader,
   type DocumentTextLinesReader,
   type DocumentPageObjectsReader,
   type DocumentPageRasteriser,
   EngineUnavailableError,
+  suggestedComposedName,
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
@@ -274,6 +284,12 @@ const noCopying: CopySource = {
 const noImages: ImageSource = {
   pick: () => Promise.reject(new Error('this case does not insert an image')),
   read: () => Promise.reject(new Error('this case does not read an image')),
+};
+
+/** A Markdown source neither member of which a case reaches unless it supplies its own. */
+const noMarkdown: MarkdownSource = {
+  pick: () => Promise.reject(new Error('this case does not import Markdown')),
+  read: () => Promise.reject(new Error('this case does not read a Markdown file')),
 };
 
 /** A certificate source neither member of which any case here reaches. */
@@ -516,6 +532,10 @@ const INERT = {
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
+  markdown: noMarkdown,
+  // NO COMPOSE HOST, which is the state a build with no Win32 platform is in — so a
+  // case that reached the import without meaning to is refused by name.
+  compose: null,
   certificate: noCertificates,
   extract: localExtract,
   snapshot: localSnapshot,
@@ -780,7 +800,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           capabilities: new CapabilityRegistry(),
           commands,
           documents: service,
-          openedDocument: () => undefined,
+          openedDocument: () => Promise.resolve(),
           unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
@@ -1621,5 +1641,148 @@ describe('sign — a visible signature', () => {
     await expect(signing(new Error('an install that failed'))).rejects.toThrow(
       'an install that failed',
     );
+  });
+});
+
+describe('composeMarkdownFile: what an import answers before anything is written', () => {
+  beforeAll(openDocument);
+
+  /** A source that records what was asked of it, answering from what the case gives. */
+  function markdownFrom(
+    picked: string | null,
+    read: Awaited<ReturnType<MarkdownSource['read']>>,
+  ): { readonly source: MarkdownSource; readonly calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      source: {
+        pick: () => {
+          calls.push('pick');
+          return Promise.resolve(picked);
+        },
+        read: (path) => {
+          calls.push(`read:${path}`);
+          return Promise.resolve(read);
+        },
+      },
+    };
+  }
+
+  const TEXT = { kind: 'read' as const, bytes: new TextEncoder().encode('# Title\n') };
+
+  it('REFUSES BEFORE THE PICKER where no compose host can exist', async () => {
+    // THE DECISION IS THE CALL NOT MADE: an answer of `engine-unavailable` after a
+    // picker would read the same at the boundary, and would have asked a person to
+    // choose a file for an import that could not happen.
+    const markdown = markdownFrom('notes.md', TEXT);
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      markdown: markdown.source,
+      compose: null,
+    });
+
+    await expect(commands.composeMarkdownFile()).rejects.toBeInstanceOf(EngineUnavailableError);
+    expect(markdown.calls).toStrictEqual([]);
+  });
+
+  it('REFUSES A CLOSED TARGET before the picker, for append', async () => {
+    const markdown = markdownFrom('notes.md', TEXT);
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      markdown: markdown.source,
+      compose: () => Promise.reject(new Error('this case composes nothing')),
+    });
+
+    await expect(commands.composeMarkdownFile(asDocId('never-opened'))).rejects.toBeInstanceOf(
+      DocumentNotOpenError,
+    );
+    expect(markdown.calls).toStrictEqual([]);
+  });
+
+  it('answers the bound, not the file, when the read refuses it — and composes nothing', async () => {
+    const composed: number[] = [];
+    const markdown = markdownFrom('notes.md', { kind: 'too-large', byteLength: MAX_MARKDOWN_BYTES + 1 });
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      markdown: markdown.source,
+      compose: (source) => {
+        composed.push(source.length);
+        return Promise.reject(new Error('unreachable'));
+      },
+    });
+
+    // THE LIMIT IS MAIN'S CONSTANT, never the file's size: a sentence reading *larger
+    // than 4.0000002 MB* would state the file rather than the rule.
+    expect(await commands.composeMarkdownFile()).toStrictEqual({
+      kind: 'too-large',
+      limitBytes: MAX_MARKDOWN_BYTES,
+    });
+    expect(markdown.calls).toStrictEqual(['pick', 'read:notes.md']);
+    expect(composed).toStrictEqual([]);
+  });
+
+  it('CARRIES THE HOST’S REFUSAL AND ITS LINE, and asks for no destination', async () => {
+    const markdown = markdownFrom('notes.md', TEXT);
+    const pages: unknown[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      markdown: markdown.source,
+      // `noCopying` rejects its picker, so a refusal that went on to ask for a
+      // destination fails here rather than answering.
+      compose: (_source, page) => {
+        pages.push(page);
+        return Promise.resolve({ kind: 'refused', reason: 'unencodable-text', line: 7 });
+      },
+    });
+
+    expect(await commands.composeMarkdownFile()).toStrictEqual({
+      kind: 'composition-refused',
+      reason: 'unencodable-text',
+      line: 7,
+    });
+    // US LETTER, the one size both routes compose at, stated in points.
+    expect(pages).toStrictEqual([{ width: 612, height: 792 }]);
+  });
+
+  it('CONTROL: a dismissed picker reads nothing and composes nothing', async () => {
+    const composed: number[] = [];
+    const markdown = markdownFrom(null, TEXT);
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      markdown: markdown.source,
+      compose: (source) => {
+        composed.push(source.length);
+        return Promise.reject(new Error('unreachable'));
+      },
+    });
+
+    expect(await commands.composeMarkdownFile()).toStrictEqual({ kind: 'cancelled' });
+    expect(markdown.calls).toStrictEqual(['pick']);
+    expect(composed).toStrictEqual([]);
+  });
+});
+
+describe('suggestedComposedName', () => {
+  it('takes the file name after either separator and replaces its extension', () => {
+    expect(suggestedComposedName('C:\\notes\\draft.md')).toBe('draft.pdf');
+    expect(suggestedComposedName('/home/someone/read.me.markdown')).toBe('read.me.pdf');
+    expect(suggestedComposedName('C:\\notes\\README')).toBe('README.pdf');
+    // A NAME THAT IS ONLY AN EXTENSION keeps it, rather than suggesting a hidden `.pdf`.
+    expect(suggestedComposedName('C:\\notes\\.md')).toBe('.md.pdf');
   });
 });

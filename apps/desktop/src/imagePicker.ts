@@ -2,7 +2,12 @@ import { dialog } from 'electron';
 
 import type { FormDataImportFormat } from '@monstera/contract';
 
-import { FORM_DATA_FILES, type PickFormDataFile, type PickImage } from './documentCommands.js';
+import {
+  FORM_DATA_FILES,
+  type PickFormDataFile,
+  type PickImage,
+  type PickMarkdown,
+} from './documentCommands.js';
 
 /**
  * The real image picker: Electron's open dialog, narrowed to what this build
@@ -52,6 +57,27 @@ export function createImagePicker(): PickImage {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'dontAddToRecent'],
       filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}
+
+/**
+ * The open dialog for a Markdown file to import
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ *
+ * `createImagePicker`'s shape, and the same sentence about the filter: it is a
+ * convenience and not a check. `.txt` is offered because Markdown is plain text and
+ * is often saved as such. What refuses a file that is not Markdown-shaped text is the
+ * composer in the compose host — a source that is not UTF-8, or draws nothing — which
+ * is where a file nobody has looked at belongs.
+ */
+export function createMarkdownPicker(): PickMarkdown {
+  return async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
     });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;

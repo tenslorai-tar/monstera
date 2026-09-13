@@ -127,6 +127,8 @@ import { REPLACE_TEXT_OBJECT_DIALOG } from './dialogs/replaceTextObject.js';
 import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
+import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
+import { appendMarkdownCommand, newFromMarkdownCommand } from './commands/importMarkdown.js';
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
 import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
@@ -396,6 +398,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         EDIT_PAGE_OBJECT_DIALOG,
         IMPORT_FORM_DATA_PROBLEM_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
+        MARKDOWN_IMPORT_PROBLEM_DIALOG,
         GENERATE_TOC_PROBLEM_DIALOG,
         MERGE_DOCUMENT_DIALOG,
         MERGE_DOCUMENT_NONE_DIALOG,
@@ -1473,6 +1476,17 @@ export function App({ client, settings }: AppProps): ReactElement {
         // meaningful where the page's content is a raster.
         enhanceScansCommand({ client, onApplied: applied, ask, track }),
         insertImageCommand({ client, onApplied: applied, ask }),
+        // D9's MARKDOWN ROW. The new document arrives as a tab by `openCommand`'s
+        // callbacks; the append also adds a tab, then returns to the document it
+        // changed (ADR-0060's correction).
+        newFromMarkdownCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        appendMarkdownCommand({
+          client,
+          onApplied: applied,
+          ask,
+          onOpened: opened,
+          onActivate: activate,
+        }),
         mergeDocumentCommand({ client, onApplied: applied, ask }),
         insertFromPdfCommand({ client, onApplied: applied, ask }),
         replacePageCommand({ client, onApplied: applied, ask }),
@@ -1547,6 +1561,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         goToCommand(),
       ]),
     [
+      activate,
       applied,
       ask,
       // THE PREDICATE'S TWO INPUTS, for `handwritingReady`'s reason one line
@@ -1568,6 +1583,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       navigator,
       openCommand,
       openPalette,
+      opened,
       readTool,
       refreshHandwriting,
       // THE SETTINGS COMMAND'S `onSecretsChanged` closes over it, for

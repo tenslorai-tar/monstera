@@ -68,6 +68,8 @@ import {
   signpdfWriterWith,
   parsePageText,
   pdfiumChannels,
+  type ComposeChannels,
+  composeChannels,
   remotePdfiumPageObjects,
   remotePdfiumRenderPage,
   remotePdfiumTextRuns,
@@ -100,6 +102,8 @@ import {
   type FormDataSource,
   type CertificateSource,
   type ImageSource,
+  type ComposedMarkdown,
+  type MarkdownSource,
   type PickDestination,
   type PickDirectory,
   type PickImage,
@@ -387,6 +391,16 @@ export interface ShellComposition {
    */
   readonly readImage: ImageSource['read'];
   /**
+   * Which Markdown file is imported. Electron's open dialog, narrowed — `pickImage`'s
+   * shape, added through this object for that field's reason (ADR-0060).
+   */
+  readonly pickMarkdown: MarkdownSource['pick'];
+  /**
+   * The Markdown file's bytes, bounded by `MAX_MARKDOWN_BYTES` before the read, for
+   * `readImage`'s reason: a person can pick a large file by mistake.
+   */
+  readonly readMarkdown: MarkdownSource['read'];
+  /**
    * Which certificate signs. Electron's open dialog, narrowed to `.p12`/`.pfx`.
    *
    * Its own surface rather than a parameter on `pickImage` for that member's
@@ -463,6 +477,20 @@ export interface ShellComposition {
    */
   readonly pdfiumPlatform?: EngineHostPlatform | null;
   /**
+   * The same surfaces under the THIRD AppContainer profile, for the compose host,
+   * or `null`.
+   *
+   * A separate field for `pdfiumPlatform`'s reason: the container SID is what
+   * makes a host one of its own, and a file picked for import must never be
+   * readable by a host holding a document's bytes
+   * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+   *
+   * `null` wherever MuPDF's platform is — no Win32 surfaces — or where the SID
+   * cannot be derived. An import is then refused by name, and the source is never
+   * parsed in `main` instead.
+   */
+  readonly composePlatform?: EngineHostPlatform | null;
+  /**
    * How a rasterised page becomes PNG bytes. See {@link EncodePng}.
    *
    * Optional, and its absence is a decided state rather than a default: a
@@ -494,6 +522,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickImage,
     pickDirectory,
     readImage,
+    pickMarkdown,
+    readMarkdown,
     pickCertificate,
     readCertificate,
     openInBrowser,
@@ -503,6 +533,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     handwriting: handwritingCache,
     enginePlatform = null,
     pdfiumPlatform = null,
+    composePlatform = null,
     encodePng,
     log = null,
   } = composition;
@@ -565,6 +596,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // `null` when there is no platform, which is what leaves `writers.pdfium`
   // absent below.
   const pdfiumHost = pdfiumPlatform === null ? null : pdfiumHostBinding(pdfiumPlatform, failures);
+  // THE COMPOSE HOST, built at the first import rather than here — this only
+  // prepares the binding. `null` without a platform, and a Markdown import is
+  // then refused by name rather than composed in `main` (ADR-0060).
+  const composeHost =
+    composePlatform === null ? null : composeHostBinding(composePlatform, failures);
   // THE BACK-REFERENCE CLOSED, one line after the only thing that could close
   // it. `recycleHandle` above was written against this because `create` opens
   // documents from `documents`, so the service exists first and the factory can
@@ -935,6 +971,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // reason: the picker needs Electron and the read needs Node's filesystem,
     // and this file imports neither.
     image: { pick: pickImage, read: readImage },
+    // IMPORTING MARKDOWN: the picker and the read are parameters for `image`'s reason,
+    // and the composition is the compose host's — `null` where no host can exist, so
+    // the import is refused by name and the source is never parsed here (ADR-0060).
+    markdown: { pick: pickMarkdown, read: readMarkdown },
+    compose: composeHost === null ? null : composeHost.composeMarkdown,
     // SIGNING, and both members are parameters for `image`'s reason exactly.
     certificate: { pick: pickCertificate, read: readCertificate },
     // THE SAME STORE the settings channels write the integration key into, so a
@@ -1061,6 +1102,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // that skipped this leaves a granted pair behind exactly the way a crash
       // does, which is the state the sweep exists to distinguish.
       await pdfiumHost?.close();
+      // AND THE COMPOSE HOST, for the second host's reason: its granted area is a
+      // directory under the same session root, and a quit that skipped this would
+      // leave the pair behind the way a crash does (ADR-0060).
+      await composeHost?.close();
       // LAST, and after the awaits rather than before them. The marker says
       // *this run reached the end of its shutdown*, so writing it first would
       // set it for a run that then hung closing the host — which is exactly the
@@ -1102,7 +1147,7 @@ function engineSessionOpener(
   sessions: EngineSessions,
   failures: ShellFailureSink,
 ): {
-  readonly openedDocument: (docId: DocId) => void;
+  readonly openedDocument: (docId: DocId) => Promise<void>;
   readonly writers: WriterRegistry;
   readonly geometry: PageGeometryReader;
   /** One page's structured text as MuPDF's JSON, from whichever host is live. */
@@ -1777,8 +1822,13 @@ function engineSessionOpener(
   const create = async (docId: DocId): Promise<DocumentSessions> =>
     (await createWithAccess(docId)).sessions;
 
-  const openedDocument = (docId: DocId): void => {
-    void onDocumentOpened(sessions, docId, {
+  // THE PROMISE IS RETURNED, not voided. `onDocumentOpened` queues its lane entry
+  // before its first await, so the ordering it guarantees holds either way; what
+  // returning it adds is that a caller about to use this document's sessions — a
+  // merge naming it as a source — can wait for them (ADR-0060's correction). The
+  // picker path still ignores it.
+  const openedDocument = (docId: DocId): Promise<void> =>
+    onDocumentOpened(sessions, docId, {
       documents,
       failures,
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
@@ -1787,7 +1837,6 @@ function engineSessionOpener(
         error instanceof EngineDocumentLocked ? error.reason : undefined,
       create,
     });
-  };
 
   /**
    * One unlock attempt for a document the supervisor recorded as locked.
@@ -2138,6 +2187,180 @@ function pdfiumHostBinding(
       // Invariant 25 makes the host hostile and nothing in the boundary client
       // bounds a call — a host that accepts the frame and never answers hangs
       // the shutdown, which is the one place a hang is least recoverable.
+      built.connection.close();
+      removeSessionDirectories(platform.directories, built.paths);
+    },
+  };
+}
+
+/**
+ * The compose host, built at the first import
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ *
+ * ## `pdfiumHostBinding`'s shape, for its reasons
+ *
+ * Built lazily, because most sessions never import and a `CreateProcessW`, an
+ * AppContainer and a job object are not free. Its own containment verdict, taken of
+ * its own token. One granted area for the host's lifetime, and a fresh file name per
+ * call inside it. An ending that schedules no reopen: this host holds no document
+ * session, so every open document is exactly as usable as it was.
+ *
+ * ## What crosses is names and a count
+ *
+ * The source is written into the snapshot directory — the one the host holds READ
+ * on — and removed whatever the call answered. The composed PDF is read back from
+ * the output directory and compared with the count the host reported, which
+ * separates *the host wrote nothing* from *the read found nothing*.
+ *
+ * ## A refusal is an answer, and everything else is a fault
+ *
+ * `refused` carries the reason and the line to the person who picked the file. A
+ * failure code, a count that disagrees with the file, or a host that could not be
+ * built throws — none of those is a fact about the person's Markdown.
+ */
+function composeHostBinding(
+  platform: EngineHostPlatform,
+  failures: ShellFailureSink,
+): {
+  readonly composeMarkdown: (
+    source: Uint8Array,
+    page: { readonly width: number; readonly height: number },
+  ) => Promise<ComposedMarkdown>;
+  readonly close: () => Promise<void>;
+} {
+  /** What one built host holds. Cleared together, or not at all. */
+  interface Live {
+    readonly connection: EngineHostConnection;
+    readonly client: ClientApi<ComposeChannels>;
+    /** The granted pair, so `close` can remove exactly what `connect` created. */
+    readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
+    readonly session: string;
+  }
+
+  let host: Promise<Live> | null = null;
+  const areas = sessionAreas(platform);
+
+  const connect = async (): Promise<Live> => {
+    const live = await createEngineHostConnection(platform.surfaces, {
+      pipeName: `\\\\.\\pipe\\monstera-compose-${randomBytes(16).toString('hex')}`,
+      user: platform.user,
+      container: platform.container,
+      readBytes: 64 * 1024,
+      maxOutstandingWrites: 16,
+      maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
+      processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+      correlate: () => randomBytes(8).toString('hex'),
+      onEnded: (termination: HostTermination) => {
+        // CLEARED, AND THAT IS ALL, for PDFium's reason: `onEngineHostEnded` walks
+        // the open documents and schedules a reopen for each, which is wrong for a
+        // host that holds none. The granted pair is collected by the startup sweep,
+        // as a pair left by a crash is.
+        host = null;
+        failures({
+          event: 'engine-host-gone',
+          detail:
+            `the compose host ended (${termination.code}): ${termination.detail}. No document is ` +
+            'affected: this host holds no session, so the next import builds a new host.',
+        });
+      },
+    });
+    if (!live.ok) {
+      throw new Error(`the compose host was refused at ${live.error.stage}: ${live.error.detail}`);
+    }
+
+    const client = createClient(composeChannels, live.value.client.invoke);
+
+    // ITS OWN VERDICT, never another host's: a verdict is about one token.
+    const verdict = await containmentOf(
+      (request) => client['engine/probe-containment'](request),
+      platform,
+    );
+    if (verdict.kind !== 'contained') {
+      live.value.close();
+      throw new Error(
+        `the compose host was created and is not contained (${verdict.kind}): ` +
+          ('detail' in verdict ? verdict.detail : 'no detail'),
+      );
+    }
+
+    const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
+    if (!minted.ok) throw new Error(`the compose area name was refused: ${minted.error}`);
+    const paths = sessionDirectoryPaths(platform.sessionRoot, minted.value);
+    const made = createSessionDirectories(
+      platform.directories,
+      paths,
+      platform.user,
+      platform.container,
+    );
+    if (!made.ok) {
+      live.value.close();
+      throw new Error(`the compose area was not created: ${made.error.stage}: ${made.error.detail}`);
+    }
+
+    const opened = await client['engine/open']({
+      snapshotDirectory: paths.snapshot,
+      outputDirectory: paths.output,
+    });
+    if (!opened.ok) {
+      removeSessionDirectories(platform.directories, paths);
+      live.value.close();
+      throw new Error(`the compose host refused its area: ${opened.error.code}`);
+    }
+
+    return { connection: live.value, client, paths, session: opened.value.session };
+  };
+
+  const ensure = (): Promise<Live> =>
+    (host ??= connect().catch((error: unknown) => {
+      // CLEARED ON FAILURE, for `pdfiumHostBinding`'s reason: a rejected promise
+      // left in place would refuse every later import with the first one's error.
+      host = null;
+      throw error;
+    }));
+
+  return {
+    composeMarkdown: async (source, page) => {
+      const built = await ensure();
+      const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+      const from = areas.mintName();
+      const into = areas.mintName();
+
+      await writeFile(join(area.snapshotDirectory, from), source);
+      // THE SOURCE GOES WHATEVER THE CALL ANSWERED. It is a copy of a file a person
+      // picked, in a directory a contained process may read, and a refusal or a
+      // fault is no reason to leave it there.
+      const answer = await built.client['engine/compose-markdown']({
+        session: built.session,
+        from,
+        into,
+        page: { width: page.width, height: page.height },
+      }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
+
+      if (!answer.ok) {
+        throw new Error(`the compose host could not compose the source: ${answer.error.code}`);
+      }
+      if (answer.value.kind === 'refused') {
+        return { kind: 'refused', reason: answer.value.reason, line: answer.value.line };
+      }
+
+      const pdf = await areas.takeOutput(area, into);
+      if (pdf.length !== answer.value.bytes) {
+        throw new Error(
+          `the compose host reported ${String(answer.value.bytes)} bytes and ${String(pdf.length)} ` +
+            'were read back, so the composed document is not the one it wrote.',
+        );
+      }
+      return { kind: 'composed', pdf };
+    },
+
+    close: async () => {
+      const live = host;
+      host = null;
+      if (live === null) return;
+      const built = await live.catch(() => null);
+      if (built === null) return;
+      // THE HOST FIRST, THEN THE DIRECTORIES, and no `engine/close` on the quit
+      // path — `pdfiumHostBinding`'s ordering and its reasons.
       built.connection.close();
       removeSessionDirectories(platform.directories, built.paths);
     },

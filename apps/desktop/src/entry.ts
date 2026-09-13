@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { MAX_FORM_DATA_BYTES, MAX_IMAGE_BYTES } from '@monstera/contract';
+import { MAX_FORM_DATA_BYTES, MAX_IMAGE_BYTES, MAX_MARKDOWN_BYTES } from '@monstera/contract';
 import { app, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
@@ -16,8 +16,13 @@ import {
   createCertificatePicker,
   createFormDataOpenPicker,
   createImagePicker,
+  createMarkdownPicker,
 } from './imagePicker.js';
-import { createEngineHostPlatform, createPdfiumHostPlatform } from './engineHostPlatform.js';
+import {
+  createComposeHostPlatform,
+  createEngineHostPlatform,
+  createPdfiumHostPlatform,
+} from './engineHostPlatform.js';
 import { createHandwritingCache } from './handwritingCache.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createSecretStore } from './secretStore.js';
@@ -108,6 +113,9 @@ startShell(() => {
     // together — and the first surface added since composition became an
     // object, which is why `pickerProbe.ts` is absent from this commit.
     pickImage: createImagePicker(),
+    // A MARKDOWN FILE TO IMPORT, beside the image picker because both open a file a
+    // person chose so that main can make pages of it (ADR-0060).
+    pickMarkdown: createMarkdownPicker(),
     // THE SECOND SURFACE ADDED SINCE COMPOSITION BECAME AN OBJECT, and
     // `pickerProbe.ts` is absent from this commit too — which is the churn fix
     // holding rather than being claimed.
@@ -175,6 +183,18 @@ startShell(() => {
         return { kind: 'unreadable' as const };
       }
     },
+    // `readFormData`'s shape against the Markdown bound, and written out for its
+    // reason: `MAX_MARKDOWN_BYTES` was set from what composing costs in the host
+    // (ADR-0060), which is a different decision from either bound above.
+    readMarkdown: async (path: string) => {
+      try {
+        const { size } = await stat(path);
+        if (size > MAX_MARKDOWN_BYTES) return { kind: 'too-large' as const, byteLength: size };
+        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
+      } catch {
+        return { kind: 'unreadable' as const };
+      }
+    },
     // `userData` and not `sessionData` or `temp`: settings outlive every
     // document and every session, and the two other directories are ones the
     // application and the OS respectively are entitled to empty. Resolved here
@@ -214,6 +234,10 @@ startShell(() => {
     // deliberate — no PDFium host is created, and a command routed to `pdfium`
     // is refused by name at the registry rather than reaching a native call.
     pdfiumPlatform: enginePlatform === null ? null : createPdfiumHostPlatform(enginePlatform),
+    // THE COMPOSE HOST'S PLATFORM, derived the same way and `null` on the same
+    // roads but one: it needs no provisioned library, so only a missing Win32
+    // platform or an underivable container SID leaves it absent (ADR-0060).
+    composePlatform: enginePlatform === null ? null : createComposeHostPlatform(enginePlatform),
     // THE ENCODER, and it is here because `nativeImage` is Electron's.
     //
     // `composition.ts` imports no Electron — which is what lets
