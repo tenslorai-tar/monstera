@@ -892,6 +892,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Live runs: Claude and Open from URL pass, Azure refuses at its gateway, the camera is still owed
+
+The owner approved all four live runs and corrected the Anthropic key. All three variables
+were read from the owner's user environment (`HKCU\Environment`), which gave the same values
+as this session held; no value was printed. Each run used a fresh `npm run build`.
+
+### Claude — PASSED
+
+`npm run probe:claude`: the drawn word came back as one word, with its box inside the region
+and over the drawing. The Claude recognition row in D6 is **done**. It was added after
+Stage 6 closed, so **Stage 6's figure does not move** (9 of 10, 1.50×).
+
+### Open from URL — PASSED
+
+A scratch script ran the **built** `fetchGuardedPdf` against the live network:
+
+- `https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf` came back as
+  13,264 bytes with `%PDF-` in the first 1,024.
+- `localtest.me` → 127.0.0.1, `10.0.0.1.nip.io` → 10.0.0.1 and `192.168.1.1.nip.io` →
+  192.168.1.1 were each refused as `blocked-address`. The script first resolved each name
+  with the system resolver and checked that every address was in a blocked range, so none of
+  these refusals can be an unresolvable name. A fourth name, `169.254.169.254.nip.io`, did not
+  resolve here and is not counted.
+
+What this run covers is the guard against a real server. `main`'s streaming into the save
+pipeline is what `openFromUrl.test.ts` and `savePipeline.test.ts` already assert. The row is
+**done**.
+
+### Azure — not done, and not a request defect
+
+`npm run probe:azure` still fails `unauthorised`. The probe reports only the reason, so one
+diagnostic request read the service's own body:
+
+- **401, code `401`**: *"Access denied due to invalid subscription key or wrong API endpoint."*
+- **The same answer with no key header at all.**
+- The same answer on the older `formrecognizer` path at `api-version=2023-07-31`.
+- The key is 84 characters with no surrounding whitespace, matching what the reviewing seat
+  found.
+- **Control:** a made-up subdomain under `cognitiveservices.azure.com` does not resolve
+  (`ENOTFOUND`), while the owner's does. So the host is a real one.
+
+**What was measured rules out the request's shape**: two paths and two API versions, with and
+without the header, all get one answer. **What was not measured** is how this service
+answers a resource with key authentication disabled, or of the wrong kind, so neither is
+ruled out by reading here. The message names the two that fit best: a key from another
+resource, or one regenerated since. **Which it is can only be read from the resource's
+*Keys and Endpoint* page and its authentication settings**, and those are the owner's. `ocrAzure.ts`
+builds the request the service expects; nothing here changes code. The row stays **not done**.
+
+### Webcam — not run
+
+The app was launched with `npm start`, and the request to control its window was declined.
+So no capture was taken, and the camera-off check was not made. Windows' webcam consent
+store (`CapabilityAccessManager\ConsentStore\webcam`) was read as a baseline, and it is the
+instrument for that check: `LastUsedTimeStop` is 0 while an app holds the camera. The launched
+processes were stopped. The row stays **not done**.
+
+### `npm run lint` on this machine: the default heap, not npm
+
+The building seat had recorded *"npm segfaults here"* and was running the underlying tools.
+That was a symptom recorded as a cause. Read again, one run at a time:
+
+- `npm run typecheck` exits 0.
+- `npm run lint` exited 139 once and 134 twice. The logs name the failure: the last
+  Mark-Compact at about 2,034 MB, then *"JavaScript heap out of memory"*.
+- Removing the one Node-related variable in the session (`NODE_USE_SYSTEM_CA`) gave the same
+  abort, and eslint run directly aborted the same way.
+
+**Mechanism:** V8 sizes its default old-space limit from physical memory. This machine has
+11.9 GB, which gives about 2 GB, and a type-aware `eslint .` over this tree needs more. CI's
+runners have more memory, which is why CI never saw it. **Whether lint's memory is a defect to
+fix is open and recorded, not decided.** Until then, run the verb with a larger heap
+(`NODE_OPTIONS=--max-old-space-size=8192 npm run lint`), never the binary.
+
+---
+
 ## 2026-09-13 — CI red at `dc7c2af`: a tamper that tampered with nothing, one run in 256
 
 The webcam commit's CI run failed on the Ubuntu leg only, in the unit tests, at
