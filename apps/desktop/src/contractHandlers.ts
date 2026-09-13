@@ -253,6 +253,7 @@ export function createContractHandlers(deps: {
       return ok({ bytesRemoved: await deps.handwriting.clear() });
     },
     'document.open': openDocumentHandler(deps),
+    'document.openFromUrl': openFromUrlHandler(deps),
     'document.unlock': async ({ docId, password }) => {
       try {
         return ok(await deps.unlockDocument(docId, password));
@@ -1543,6 +1544,34 @@ function undoHandler(commands: DocumentCommands): ContractHandlers['document.und
  * outcomes is correct on two, harmless on the one that took the handle, and
  * destructive on the one where two callers share it.
  */
+/**
+ * Fetches a PDF from a URL through the SSRF guard, and opens the file it wrote
+ * ([ADR-0061](../../../docs/DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).
+ *
+ * The file opens through {@link openPath}, `newFromImportHandler`'s route: a fetched
+ * document is opened exactly as a picked one is. The outcomes before the open are
+ * answered member by member, for `composeRefusal`'s reason.
+ */
+function openFromUrlHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.openFromUrl'] {
+  return async ({ url }): Promise<Awaited<ReturnType<ContractHandlers['document.openFromUrl']>>> => {
+    const fetched = await deps.commands.openFromUrl(url);
+    switch (fetched.kind) {
+      case 'cancelled':
+        return ok({ kind: 'cancelled' });
+      case 'url-refused':
+        return ok({ kind: 'url-refused', reason: fetched.reason });
+      case 'destination-contested':
+        return ok({ kind: 'destination-contested', openElsewhere: fetched.openElsewhere });
+      case 'write-failed':
+        return ok({ kind: 'write-failed' });
+      case 'written':
+        return ok((await openPath(deps, fetched.destination)).outcome);
+    }
+  };
+}
+
 function openDocumentHandler(deps: OpenPathParts & { readonly pickDocument: PickDocument }): ContractHandlers['document.open'] {
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.open']>>> => {
     const picked = await deps.pickDocument();

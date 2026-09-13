@@ -9,7 +9,12 @@ import type {
   SaveWriter,
   WriteTargetVerdict,
 } from './documentService.js';
-import { type SaveDependencies, saveDocument, writeDocumentCopy } from './savePipeline.js';
+import {
+  type SaveDependencies,
+  saveDocument,
+  writeDocumentCopy,
+  writeStreamedDocument,
+} from './savePipeline.js';
 
 /**
  * §4's save pipeline, and above all **invariant 18**, which words its own
@@ -127,6 +132,13 @@ function fake(
         refuse('write', path);
         files.set(path, new TextDecoder().decode(bytes));
         return Promise.resolve();
+      },
+      writeStream: async (path, chunks) => {
+        calls.push(`writeStream:${path}`);
+        refuse('write', path);
+        let text = '';
+        for await (const chunk of chunks) text += new TextDecoder().decode(chunk);
+        files.set(path, text);
       },
       sync: (path) => {
         calls.push(`sync:${path}`);
@@ -377,6 +389,98 @@ const COPY_NAMES = {
 function copyDeps(surface: AtomicWriteSurface): Pick<SaveDependencies, 'surface' | 'names' | 'wait'> {
   return { surface, names: () => COPY_NAMES, wait: () => Promise.resolve() };
 }
+
+describe('writeStreamedDocument', () => {
+  /** A source that yields its chunks one at a time, as a response body does. */
+  async function* chunks(...parts: string[]): AsyncIterable<Uint8Array> {
+    for (const part of parts) {
+      await Promise.resolve();
+      yield new TextEncoder().encode(part);
+    }
+  }
+
+  it('streams the source to the DESTINATION through the temp, counting what arrived', async () => {
+    const files: Files = new Map([[TARGET, 'original']]);
+    const f = fake(files);
+
+    const outcome = await writeStreamedDocument(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'writable' }),
+      () => Promise.resolve(chunks('%PDF-', '1.7 body')),
+      ELSEWHERE,
+    );
+
+    expect(outcome).toStrictEqual({ kind: 'copied', bytes: 13 });
+    expect(files.get(ELSEWHERE)).toBe('%PDF-1.7 body');
+    expect(files.get(TARGET)).toBe('original');
+    // THE ORDERING IS THE ATOMIC WRITE'S: a stream to the temp, then the rename. A writer
+    // that streamed straight at the destination would leave the same file.
+    expect(f.calls.filter((call) => call.startsWith('writeStream:') || call.startsWith('rename:'))).toStrictEqual([
+      `writeStream:${COPY_NAMES.temp}`,
+      `rename:${COPY_NAMES.temp}->${ELSEWHERE}`,
+    ]);
+  });
+
+  it('REFUSES a contested destination WITHOUT STARTING THE SOURCE', async () => {
+    // THE DECISION IS THE CALL NOT MADE: a refusal after the fetch began would leave the
+    // same file and would have reached across the network for nothing.
+    const files: Files = new Map([[ELSEWHERE, 'someone else’s work']]);
+    const f = fake(files);
+    let opened = 0;
+
+    const outcome = await writeStreamedDocument(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'contested', others: [asDocId('other-tab')] }),
+      () => {
+        opened += 1;
+        return Promise.resolve(chunks('%PDF-'));
+      },
+      ELSEWHERE,
+    );
+
+    expect(outcome).toStrictEqual({ kind: 'refused', others: [asDocId('other-tab')] });
+    expect(opened).toBe(0);
+    expect(files.get(ELSEWHERE)).toBe('someone else’s work');
+  });
+
+  it('RETHROWS a source that fails part way as ITSELF, leaving the destination and no temp', async () => {
+    const files: Files = new Map([[ELSEWHERE, 'the previous file']]);
+    const f = fake(files);
+    const died = new Error('the connection closed');
+    async function* dying(): AsyncIterable<Uint8Array> {
+      yield new TextEncoder().encode('%PDF-partial');
+      await Promise.resolve();
+      throw died;
+    }
+
+    await expect(
+      writeStreamedDocument(
+        copyDeps(f.surface),
+        () => Promise.resolve({ kind: 'writable' }),
+        () => Promise.resolve(dying()),
+        ELSEWHERE,
+      ),
+    ).rejects.toBe(died);
+    expect(files.get(ELSEWHERE)).toBe('the previous file');
+    expect(files.has(COPY_NAMES.temp)).toBe(false);
+  });
+
+  it('CONTROL: a DISK failure under a healthy source is write-failed, not a thrown source error', async () => {
+    // WITHOUT THIS a writer that rethrew every temp failure passes the case above.
+    const files: Files = new Map([[TARGET, 'original']]);
+    const f = fake(files, { step: 'write', code: 'ENOSPC' });
+
+    const outcome = await writeStreamedDocument(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'writable' }),
+      () => Promise.resolve(chunks('%PDF-', 'body')),
+      ELSEWHERE,
+    );
+
+    expect(outcome).toMatchObject({ kind: 'write-failed', failure: { stage: 'temp-write', detail: 'ENOSPC' } });
+    expect(files.has(ELSEWHERE)).toBe(false);
+  });
+});
 
 describe('writeDocumentCopy', () => {
   it('writes the flushed bytes to the DESTINATION, leaving the original alone', async () => {

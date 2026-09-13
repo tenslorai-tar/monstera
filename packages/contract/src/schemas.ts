@@ -412,6 +412,36 @@ export const COMPOSE_REFUSALS = [
   'too-many-pixels',
 ] as const;
 
+/**
+ * Why a document was not fetched from a URL a person gave
+ * ([ADR-0061](../../../docs/DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).
+ *
+ * THE KERNEL'S GUARD REFUSES WITH EXACTLY THESE, and takes its type from this list, so a
+ * reason the guard gains is a reason the channel can carry and the renderer must say.
+ */
+export const URL_FETCH_REFUSALS = [
+  /** Not a URL, or a scheme other than `https:` — on the first request or a redirect. */
+  'not-https',
+  /** The URL carries a user name or password. */
+  'credentials',
+  /** The host is, or resolved to, an address that is not public. */
+  'blocked-address',
+  /** The host resolved to no address. */
+  'unresolvable',
+  /** More redirects than one fetch follows. */
+  'too-many-redirects',
+  /** The server answered with a status that is not a document. */
+  'http-error',
+  /** No answer: refused, reset, or silent past the idle limit. */
+  'unreachable',
+  /** The document passed the ceiling on bytes that arrived. */
+  'too-large',
+  /** The answer does not begin with `%PDF-`. */
+  'not-a-pdf',
+] as const;
+
+export type UrlFetchRefusal = (typeof URL_FETCH_REFUSALS)[number];
+
 /** One of {@link COMPOSE_REFUSALS}. */
 export type ComposeRefusal = (typeof COMPOSE_REFUSALS)[number];
 

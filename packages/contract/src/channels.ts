@@ -5,6 +5,7 @@ import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } 
 import {
   MAX_ANNOTATION_BORDER,
   MAX_IMAGE_PAGES,
+  MAX_LINK_URI,
   MAX_REPLACED_TEXT,
   annotationKindNameSchema,
   annotationRectSchema,
@@ -35,6 +36,7 @@ import {
   docVersionSchema,
   fileHandleSchema,
   COMPOSE_REFUSALS,
+  URL_FETCH_REFUSALS,
 } from './schemas.js';
 
 /**
@@ -1023,6 +1025,37 @@ export const channels = {
     'Opens a document chosen in a picker main owns, returning its id and version.',
     z.object({}),
     openOutcomeSchema,
+  ),
+
+  /**
+   * Fetches a PDF from a web address the user gives, saves it where they choose, and
+   * opens it ([ADR-0061](../../../docs/DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).
+   *
+   * ## THE ASK IS THE ADDRESS, and nothing comes back but outcomes
+   *
+   * Bounded by `MAX_LINK_URI`, the contract's bound on a URI a person types. Main checks
+   * it, runs the save dialog, fetches through the SSRF guard, streams the body into the
+   * save pipeline and opens the file through the one open route. No byte of the
+   * response crosses.
+   *
+   * ## A refusal carries its REASON
+   *
+   * `url-refused` names which of the guard's rules stopped it, from the one list the
+   * guard refuses with, because *that address points inside your network* and *that
+   * address did not return a PDF* are different sentences with different remedies.
+   */
+  'document.openFromUrl': channel(
+    'Fetches a PDF from a web address the user gives, saves it where they choose, and opens it.',
+    z.object({ url: z.string().trim().min(1).max(MAX_LINK_URI) }),
+    z.discriminatedUnion('kind', [
+      ...openOutcomeSchema.options,
+      /** The guard refused the address, a redirect, or the answer. Nothing was written. */
+      z.object({ kind: z.literal('url-refused'), reason: z.enum(URL_FETCH_REFUSALS) }),
+      /** Another open document reaches the chosen destination. Nothing was fetched. */
+      z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
+      /** The filesystem refused. Nothing at the destination was replaced. */
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
   ),
 
   /**

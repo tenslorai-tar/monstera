@@ -209,6 +209,7 @@ describe('browser shim', () => {
       'document.newFromImages',
       'document.newFromMarkdown',
       'document.open',
+      'document.openFromUrl',
       'document.openRecent',
       'document.pageLinks',
       'document.pageObjects',

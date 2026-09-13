@@ -303,6 +303,7 @@ export {
   saveDocument,
   writeDocumentCopy,
   writeDocumentSplit,
+  writeStreamedDocument,
 } from './savePipeline.js';
 export { TOKEN_BYTES, type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 export {
@@ -459,6 +460,23 @@ export {
   readWithin,
   receivedByteMeter,
 } from './verifiedDownload.js';
+// ON THE MAIN BARREL for `verifiedDownload.ts`' reason: `node:https`, `node:dns`,
+// `node:net` and the received-byte meter are all it reaches (ADR-0061).
+export {
+  type GuardedFetchParts,
+  type HopResponse,
+  type HopTransport,
+  MAX_URL_REDIRECTS,
+  PDF_PREFIX_BYTES,
+  type Resolve,
+  URL_IDLE_MS,
+  UrlFetchRefused,
+  type UrlRefusal,
+  addressBlocked,
+  checkedUrl,
+  fetchGuardedPdf,
+  guardedLookup,
+} from './guardedFetch.js';
 // ON THE MAIN BARREL: `node:crypto`, the contract's types and `readWithin` are all
 // it reaches, so nothing native enters the graph of the composition root that
 // imports this (ADR-0059).

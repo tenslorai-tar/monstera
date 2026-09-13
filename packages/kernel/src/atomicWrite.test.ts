@@ -66,6 +66,13 @@ function fake(
         files.set(path, new TextDecoder().decode(bytes));
         return Promise.resolve();
       },
+      writeStream: async (path, chunks) => {
+        calls.push(`writeStream:${path}`);
+        maybeThrow('write');
+        let text = '';
+        for await (const chunk of chunks) text += new TextDecoder().decode(chunk);
+        files.set(path, text);
+      },
       sync: (path) => {
         calls.push(`sync:${path}`);
         maybeThrow('sync');
@@ -105,7 +112,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files);
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.backedUp).toBe(true);
@@ -130,7 +137,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map();
     const f = fake(files);
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.backedUp).toBe(false);
@@ -142,7 +149,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files, { write: { times: 1, code: 'ENOSPC' } });
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.stage).toBe('temp-write');
@@ -155,7 +162,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files, { sync: { times: 1, code: 'EIO' } });
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.stage).toBe('sync');
@@ -171,7 +178,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files, { copy: { times: 1, code: 'EACCES' } });
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.stage).toBe('backup');
@@ -187,7 +194,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files, { rename: { times: 2, code: 'EBUSY' } });
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, (ms) => {
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, (ms) => {
       f.waits.push(ms);
       return Promise.resolve();
     });
@@ -204,7 +211,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files, { rename: { times: 99, code: 'EPERM' } });
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -222,7 +229,7 @@ describe('atomicWrite', () => {
     const files: Files = new Map([['/doc.pdf', 'original']]);
     const f = fake(files, { rename: { times: 99, code: 'ENOSPC' } });
 
-    const result = await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+    const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.attempts).toBe(1);
@@ -253,7 +260,7 @@ describe('atomicWrite', () => {
     ]) {
       const files: Files = new Map([['/doc.pdf', 'original']]);
       const f = fake(files, failure);
-      await atomicWrite(f.surface, '/doc.pdf', BYTES, NAMES, () => Promise.resolve());
+      await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
       expect(files.has('/doc.pdf.tmp')).toBe(false);
     }
   });

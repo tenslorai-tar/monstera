@@ -37,6 +37,9 @@ async function syncFile(path: string): Promise<void> {
 /** Reads the filesystem, for the ordering §4 fixes. */
 export const nodeFileSurface: AtomicWriteSurface = {
   write: (path, bytes) => writeFile(path, bytes),
+  // `writeFile` takes an async iterable and writes each chunk as it arrives, so a
+  // fetched document is never assembled in memory.
+  writeStream: (path, chunks) => writeFile(path, chunks),
   sync: syncFile,
   rename: (from, to) => rename(from, to),
   copy: (from, to) => copyFile(from, to),

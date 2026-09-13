@@ -183,6 +183,27 @@ export const NEW_FROM_MARKDOWN_COMMAND_TITLE = messageKey('command.new-from-mark
 export const APPEND_MARKDOWN_COMMAND_TITLE = messageKey('command.append-markdown.title');
 export const NEW_FROM_CSV_COMMAND_TITLE = messageKey('command.new-from-csv.title');
 export const NEW_FROM_IMAGES_COMMAND_TITLE = messageKey('command.new-from-images.title');
+export const OPEN_FROM_URL_COMMAND_TITLE = messageKey('command.open-from-url.title');
+export const OPEN_FROM_URL_TITLE = messageKey('dialog.open-from-url.title');
+export const OPEN_FROM_URL_LABEL = messageKey('dialog.open-from-url.label');
+export const OPEN_FROM_URL_APPLY = messageKey('dialog.open-from-url.apply');
+export const OPEN_FROM_URL_EMPTY = messageKey('dialog.open-from-url.empty');
+export const OPEN_FROM_URL_TOO_LONG = messageKey('dialog.open-from-url.too-long');
+export const OPEN_FROM_URL_SCHEME = messageKey('dialog.open-from-url.scheme');
+export const URL_OPEN_PROBLEM_TITLE = messageKey('dialog.url-open-problem.title');
+export const URL_OPEN_NOT_HTTPS = messageKey('dialog.url-open-problem.not-https');
+export const URL_OPEN_CREDENTIALS = messageKey('dialog.url-open-problem.credentials');
+export const URL_OPEN_BLOCKED_ADDRESS = messageKey('dialog.url-open-problem.blocked-address');
+export const URL_OPEN_UNRESOLVABLE = messageKey('dialog.url-open-problem.unresolvable');
+export const URL_OPEN_TOO_MANY_REDIRECTS = messageKey('dialog.url-open-problem.too-many-redirects');
+export const URL_OPEN_HTTP_ERROR = messageKey('dialog.url-open-problem.http-error');
+export const URL_OPEN_UNREACHABLE = messageKey('dialog.url-open-problem.unreachable');
+export const URL_OPEN_TOO_LARGE = messageKey('dialog.url-open-problem.too-large');
+export const URL_OPEN_NOT_A_PDF = messageKey('dialog.url-open-problem.not-a-pdf');
+export const URL_OPEN_CONTESTED = messageKey('dialog.url-open-problem.contested');
+export const URL_OPEN_WRITE_FAILED = messageKey('dialog.url-open-problem.write-failed');
+export const URL_OPEN_ABSENT = messageKey('dialog.url-open-problem.absent');
+export const URL_OPEN_AT_CAPACITY = messageKey('dialog.url-open-problem.at-capacity');
 export const MARKDOWN_IMPORT_PROBLEM_TITLE = messageKey('dialog.markdown-import-problem.title');
 export const MARKDOWN_IMPORT_UNREADABLE = messageKey('dialog.markdown-import-problem.unreadable');
 export const MARKDOWN_IMPORT_TOO_LARGE = messageKey('dialog.markdown-import-problem.too-large');
@@ -1822,6 +1843,38 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPEND_MARKDOWN_COMMAND_TITLE]: 'Add pages from Markdown…',
   [NEW_FROM_CSV_COMMAND_TITLE]: 'New PDF table from CSV…',
   [NEW_FROM_IMAGES_COMMAND_TITLE]: 'New PDF from images…',
+  [OPEN_FROM_URL_COMMAND_TITLE]: 'Open from web address…',
+  [OPEN_FROM_URL_TITLE]: 'Open a PDF from a web address',
+  [OPEN_FROM_URL_LABEL]: 'Address',
+  [OPEN_FROM_URL_APPLY]: 'Open',
+  [OPEN_FROM_URL_EMPTY]: 'Type the address of the PDF to open.',
+  [OPEN_FROM_URL_TOO_LONG]: 'That address is too long.',
+  // NAMES WHAT IS ACCEPTED, the link dialog's reason: the person is about to type again.
+  [OPEN_FROM_URL_SCHEME]: 'Only secure addresses can be opened: start with https://.',
+  [URL_OPEN_PROBLEM_TITLE]: 'The PDF could not be opened',
+  [URL_OPEN_NOT_HTTPS]:
+    'Only secure web addresses, starting with https://, can be opened — and that includes any address the website sends this app on to. Nothing was saved.',
+  [URL_OPEN_CREDENTIALS]:
+    'That address contains a user name or password, which this app will not send. Nothing was saved.',
+  // THE REMEDY IS NOT "TRY AGAIN": the refusal is deliberate, and the sentence says what
+  // the address points at so a person does not keep retrying a link someone sent them.
+  [URL_OPEN_BLOCKED_ADDRESS]:
+    'That address points inside your own computer or network, which this app will not open. Nothing was saved.',
+  [URL_OPEN_UNRESOLVABLE]: 'That website could not be found. Check the address and try again.',
+  [URL_OPEN_TOO_MANY_REDIRECTS]:
+    'That address sent this app on to too many other addresses. Nothing was saved.',
+  [URL_OPEN_HTTP_ERROR]: 'The website did not return a document at that address. Nothing was saved.',
+  [URL_OPEN_UNREACHABLE]:
+    'The website could not be reached, or stopped responding. Nothing was saved.',
+  [URL_OPEN_TOO_LARGE]: 'That document is larger than this app can open. Nothing was saved.',
+  [URL_OPEN_NOT_A_PDF]: 'That address did not return a PDF. Nothing was saved.',
+  [URL_OPEN_CONTESTED]:
+    'That file is open in this app, so nothing was written there. Close it, or choose another name.',
+  [URL_OPEN_WRITE_FAILED]: 'The PDF could not be saved there. Nothing was opened.',
+  [URL_OPEN_ABSENT]: 'The PDF was saved, but the file was gone before it could be opened.',
+  [URL_OPEN_AT_CAPACITY]:
+    'The PDF was saved, but there is not enough room to open it beside the documents already ' +
+    'open. Close one, then open the PDF from where you saved it.',
   // NOT "THAT MARKDOWN FILE": three imports open this dialog, and a title naming one
   // format told a person who picked a CSV or a folder of scans the wrong thing.
   [MARKDOWN_IMPORT_PROBLEM_TITLE]: 'The import did not finish',

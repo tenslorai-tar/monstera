@@ -158,7 +158,7 @@ export async function saveDocument(
   const written = await atomicWrite(
     deps.surface,
     context.path,
-    bytes,
+    (temp) => deps.surface.write(temp, bytes),
     deps.names(context.path),
     deps.wait,
   );
@@ -282,7 +282,7 @@ export async function writeDocumentSplit(
     const written = await atomicWrite(
       deps.surface,
       part.destination,
-      bytes,
+      (temp) => deps.surface.write(temp, bytes),
       deps.names(part.destination),
       deps.wait,
     );
@@ -352,11 +352,71 @@ export async function writeDocumentCopy(
   const written = await atomicWrite(
     deps.surface,
     destination,
-    bytes,
+    (temp) => deps.surface.write(temp, bytes),
     deps.names(destination),
     deps.wait,
   );
   if (!written.ok) return { kind: 'write-failed', failure: written.error };
 
   return { kind: 'copied', bytes: bytes.byteLength };
+}
+
+/**
+ * Writes a document that arrives over time — a fetched URL's body — to a destination
+ * the user chose, through the same ordering, never holding it whole
+ * ([ADR-0061](../../../docs/DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).
+ *
+ * {@link writeDocumentCopy}'s shape and its reasons: the destination is checked FIRST,
+ * so a contested one is refused before anything is fetched, and nothing is stamped.
+ *
+ * ## A SOURCE FAILURE IS NOT A FILESYSTEM FAILURE
+ *
+ * A body that stops — past its ceiling, not a PDF, a dead connection — fails the temp
+ * write, which `atomicWrite` reports as `temp-write` with the original untouched and the
+ * temp removed. That is true and not enough: the person is owed WHICH. So the iterator
+ * records a failure of its own source, and that failure is rethrown as itself, where a
+ * failure of the disk under a source that was still delivering is `write-failed`.
+ *
+ * @param open starts the source. Called only once the destination is known to be free.
+ * @throws whatever the source failed with
+ */
+export async function writeStreamedDocument(
+  deps: Pick<SaveDependencies, 'surface' | 'names' | 'wait'>,
+  check: (destination: string) => Promise<CopyTargetVerdict>,
+  open: () => Promise<AsyncIterable<Uint8Array>>,
+  destination: string,
+): Promise<CopyOutcome> {
+  const verdict = await check(destination);
+  if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
+
+  const source = await open();
+  let bytes = 0;
+  // A LIST AND NOT A NULLABLE LOCAL: the generator records into it from a closure, and
+  // control-flow analysis cannot see a closure's writes, so a local would be narrowed to
+  // its initial `null` at the check below.
+  const sourceFailures: unknown[] = [];
+  async function* counted(): AsyncIterable<Uint8Array> {
+    try {
+      for await (const chunk of source) {
+        bytes += chunk.byteLength;
+        yield chunk;
+      }
+    } catch (error) {
+      sourceFailures.push(error);
+      throw error;
+    }
+  }
+
+  const written = await atomicWrite(
+    deps.surface,
+    destination,
+    (temp) => deps.surface.writeStream(temp, counted()),
+    deps.names(destination),
+    deps.wait,
+  );
+  if (!written.ok) {
+    if (sourceFailures.length > 0) throw sourceFailures[0];
+    return { kind: 'write-failed', failure: written.error };
+  }
+  return { kind: 'copied', bytes };
 }

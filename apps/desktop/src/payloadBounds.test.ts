@@ -296,6 +296,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // one at a time and decoded in the compose host, and an open's outcome returns — or a
   // file NAME bounded by `MAX_DOCUMENT_NAME_LENGTH`, never a path or a byte of a picture.
   'document.newFromImages': 'needs a compose host, a multi-file open dialog and a save dialog',
+  // THE ASK IS AN ADDRESS BOUNDED BY `MAX_LINK_URI`, and the answer is an open's outcome
+  // or a reason from a closed list. The document itself streams from the network into a
+  // file main writes, and no byte of it is on this wire (ADR-0061).
+  'document.openFromUrl': 'needs the network, a save dialog and the SSRF guard',
   'document.appendMarkdown': 'needs an engine session, a compose host and two dialogs',
   // THE IMAGE GOES THE OTHER WAY AND NEVER CROSSES THIS BOUNDARY, which is the
   // sentence to read before the page list. The renderer sends a page list and a

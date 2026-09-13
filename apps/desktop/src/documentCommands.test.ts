@@ -30,6 +30,7 @@ import {
   SignatureTooLargeError,
   TimestampRefusedError,
   TimestampUnreachableError,
+  UrlFetchRefused,
   siblingNames,
 } from '@monstera/kernel';
 // See the note in `engineSessions.test.ts`: a local engine in main's process is
@@ -83,6 +84,7 @@ import {
   type DocumentPageRasteriser,
   EngineUnavailableError,
   suggestedComposedName,
+  suggestedUrlName,
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
@@ -197,6 +199,7 @@ const noSaving: SaveSource = {
     checkWriteTarget: () => Promise.reject(new Error('this case does not save')),
     surface: {
       write: () => Promise.reject(new Error('this case does not save')),
+      writeStream: () => Promise.reject(new Error('this case does not save')),
       sync: () => Promise.reject(new Error('this case does not save')),
       rename: () => Promise.reject(new Error('this case does not save')),
       copy: () => Promise.reject(new Error('this case does not save')),
@@ -550,6 +553,9 @@ const INERT = {
   compose: null,
   imageFiles: noImageFiles,
   composeImages: null,
+  // REFUSES BY NAME, like every inert surface: a case that reached the network without
+  // meaning to fails at the call rather than fetching anything.
+  fetchUrl: () => Promise.reject(new Error('INERT: this case does not fetch a URL')),
   certificate: noCertificates,
   extract: localExtract,
   snapshot: localSnapshot,
@@ -1992,6 +1998,129 @@ describe('DocumentCommands.composeImageFiles', () => {
       Promise.resolve({ kind: 'refused', reason: 'image-unreadable', line: null, item: 2 }),
     );
     await expect(commands.composeImageFiles()).rejects.toThrow('image 2 of 1');
+  });
+});
+
+describe('DocumentCommands.openFromUrl', () => {
+  beforeAll(openDocument);
+
+  /** A save source over the real disk, for the cases that write a fetched body. */
+  function realSave(): SaveSource {
+    return {
+      deps: {
+        checkWriteTarget: () => Promise.reject(new Error('a fetch writes a copy, never a save')),
+        surface: nodeFileSurface,
+        names: siblingNames,
+        wait: () => Promise.resolve(),
+      },
+      flush: () => Promise.reject(new Error('a fetch flushes no document')),
+    };
+  }
+
+  function commandsFetching(
+    fetchUrl: DocumentCommandsParts['fetchUrl'],
+    destination: string,
+  ): { readonly commands: DocumentCommands; readonly picked: string[] } {
+    const picked: string[] = [];
+    const copy: CopySource = {
+      pick: (suggested) => {
+        picked.push(suggested);
+        return Promise.resolve(destination);
+      },
+      checkTarget: () => Promise.resolve({ kind: 'writable' }),
+    };
+    return {
+      picked,
+      commands: new DocumentCommands({
+        ...INERT,
+        documents: service,
+        bus: bus(),
+        engine: engine(),
+        save: realSave(),
+        copy,
+        fetchUrl,
+      }),
+    };
+  }
+
+  async function* body(...parts: string[]): AsyncIterable<Uint8Array> {
+    for (const part of parts) {
+      await Promise.resolve();
+      yield new TextEncoder().encode(part);
+    }
+  }
+
+  it('REFUSES a blocked address BEFORE the save dialog, and fetches nothing', async () => {
+    // THE DECISION IS THE CALLS NOT MADE: the same refusal after a save dialog would read
+    // the same at the boundary, and would have asked a person to name a file for nothing.
+    let fetched = 0;
+    const { commands, picked } = commandsFetching(() => {
+      fetched += 1;
+      return Promise.resolve(body('%PDF-'));
+    }, join(directory, 'never.pdf'));
+
+    expect(await commands.openFromUrl('https://127.0.0.1/a.pdf')).toStrictEqual({
+      kind: 'url-refused',
+      reason: 'blocked-address',
+    });
+    expect(await commands.openFromUrl('http://example.com/a.pdf')).toStrictEqual({
+      kind: 'url-refused',
+      reason: 'not-https',
+    });
+    expect(picked).toStrictEqual([]);
+    expect(fetched).toBe(0);
+  });
+
+  it('writes a fetched body to the chosen destination, byte for byte, suggesting its name', async () => {
+    const destination = join(directory, 'fetched-report.pdf');
+    const { commands, picked } = commandsFetching(
+      () => Promise.resolve(body('%PDF-1.7 ', 'the body')),
+      destination,
+    );
+
+    expect(await commands.openFromUrl('https://example.com/files/Q3%20report.pdf')).toStrictEqual({
+      kind: 'written',
+      destination,
+    });
+    expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 the body');
+    expect(picked).toStrictEqual(['Q3 report.pdf']);
+  });
+
+  it('answers a guard refusal met WHILE THE BODY ARRIVES by its reason, leaving no file and no temp', async () => {
+    const destination = join(directory, 'too-large.pdf');
+    async function* refusing(): AsyncIterable<Uint8Array> {
+      yield new TextEncoder().encode('%PDF-1.7 ');
+      await Promise.resolve();
+      throw new UrlFetchRefused('too-large', 'refused for the case');
+    }
+    const { commands } = commandsFetching(() => Promise.resolve(refusing()), destination);
+
+    expect(await commands.openFromUrl('https://example.com/big.pdf')).toStrictEqual({
+      kind: 'url-refused',
+      reason: 'too-large',
+    });
+    expect(existsSync(destination)).toBe(false);
+    expect(existsSync(siblingNames(destination).temp)).toBe(false);
+  });
+
+  it('CONTROL: a failure that is NOT the guard’s propagates, rather than blaming the address', async () => {
+    const { commands } = commandsFetching(
+      () => Promise.reject(new Error('a defect in this build')),
+      join(directory, 'defect.pdf'),
+    );
+    await expect(commands.openFromUrl('https://example.com/a.pdf')).rejects.toThrow('a defect in this build');
+  });
+});
+
+describe('suggestedUrlName', () => {
+  it('takes the last path segment, decoded, as a PDF name — and the whole host with no path', () => {
+    expect(suggestedUrlName(new URL('https://example.com/files/Q3%20report.pdf'))).toBe('Q3 report.pdf');
+    expect(suggestedUrlName(new URL('https://example.com/download.php?id=1'))).toBe('download.pdf');
+    expect(suggestedUrlName(new URL('https://example.com/'))).toBe('example.com.pdf');
+    // A SEPARATOR DECODED FROM THE PATH would suggest a folder, so it is replaced.
+    expect(suggestedUrlName(new URL('https://example.com/a%2Fb.pdf'))).toBe('a_b.pdf');
+    // A MALFORMED ESCAPE keeps the segment as written rather than throwing.
+    expect(suggestedUrlName(new URL('https://example.com/100%25%E0.pdf'))).toBe('100%25%E0.pdf');
   });
 });
 

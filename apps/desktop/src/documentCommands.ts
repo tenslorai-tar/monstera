@@ -12,6 +12,7 @@ import {
   MAX_IMPORT_IMAGE_BYTES,
   MAX_TEXT_LAYER_LINE,
   type ComposeRefusal,
+  type UrlFetchRefusal,
   type RequestedSignatureMark,
   type SignaturePlacement,
   type DocusignRefusalKind,
@@ -66,6 +67,9 @@ import {
   type DocusignSigner,
   writeDocumentCopy,
   writeDocumentSplit,
+  writeStreamedDocument,
+  UrlFetchRefused,
+  checkedUrl,
 } from '@monstera/kernel';
 import {
   type DocId,
@@ -717,6 +721,46 @@ export type ImageImportOutcome =
  * of one set of files come out the same on every machine.
  */
 const IMAGE_PAGE_ORDER = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+/**
+ * How a document is fetched from a URL a person gave: the kernel's SSRF guard, bounded,
+ * in production (ADR-0061). A failure of the guard is a `UrlFetchRefused`, thrown when
+ * the fetch starts or while its body is read.
+ */
+export type FetchUrl = (url: string) => Promise<AsyncIterable<Uint8Array>>;
+
+/** What opening from a URL answers before the open. `written` carries a path, which never crosses. */
+export type UrlOpenOutcome =
+  | { readonly kind: 'written'; readonly destination: string }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'url-refused'; readonly reason: UrlFetchRefusal }
+  | { readonly kind: 'destination-contested'; readonly openElsewhere: number }
+  | { readonly kind: 'write-failed' };
+
+/**
+ * The name the save dialog opens with for a document fetched from a URL: the path's last
+ * segment, decoded, as a PDF name — or the host, for an address with no path.
+ *
+ * A separator a segment decodes to is replaced, because the dialog is given a file name
+ * and `%2F` would otherwise suggest a folder.
+ */
+export function suggestedUrlName(url: URL): string {
+  const segment = url.pathname.split('/').filter((part) => part !== '').at(-1);
+  // THE HOST WHOLE, never through the extension rule below: `example.com` is a name,
+  // and treating `.com` as its extension would suggest `example.pdf`.
+  if (segment === undefined) return `${url.hostname}.pdf`;
+  let name: string;
+  try {
+    name = decodeURIComponent(segment);
+  } catch (error) {
+    // A MALFORMED ESCAPE is the address's own spelling, and the segment as written is
+    // still a usable name. Anything other than that one error is not this case.
+    if (!(error instanceof URIError)) throw error;
+    name = segment;
+  }
+  const safe = name.replace(/[\\/]/gu, '_');
+  return /\.pdf$/iu.test(safe) ? safe : suggestedComposedName(safe);
+}
 
 /** A path's file name: what follows the last separator of either kind. */
 function fileNameOf(path: string): string {
@@ -1446,6 +1490,8 @@ export interface DocumentCommandsParts {
   readonly imageFiles: ImageFilesSource;
   /** The compose host's image composition, or `null` where none can exist — `compose`'s reason. */
   readonly composeImages: ComposeImages;
+  /** How a document is fetched from a URL a person gave. See {@link FetchUrl}. */
+  readonly fetchUrl: FetchUrl;
   /** Where a signing certificate comes from. See {@link CertificateSource}. */
   readonly certificate: CertificateSource;
   /**
@@ -1486,6 +1532,7 @@ export class DocumentCommands {
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
   readonly #composeImages: ComposeImages;
+  readonly #fetchUrl: FetchUrl;
   readonly #certificate: CertificateSource;
   readonly #docusign: DocusignSession;
   readonly #extract: DocumentExtractReader;
@@ -1519,6 +1566,7 @@ export class DocumentCommands {
     this.#compose = parts.compose;
     this.#imageFiles = parts.imageFiles;
     this.#composeImages = parts.composeImages;
+    this.#fetchUrl = parts.fetchUrl;
     this.#certificate = parts.certificate;
     this.#docusign = parts.docusign;
     this.#extract = parts.extract;
@@ -2970,6 +3018,55 @@ export class DocumentCommands {
 
     // `ordered` is not empty: an empty pick answered `cancelled` above.
     return this.#writeComposed(composed.pdf, ordered[0] ?? 'images');
+  }
+
+  /**
+   * Fetches a PDF from a URL a person gave, through the SSRF guard, and writes it where
+   * they choose ([ADR-0061](../../../docs/DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).
+   *
+   * ## The address is judged BEFORE the save dialog
+   *
+   * A scheme, a credential or a blocked literal host is refused from the text alone, and
+   * a person asked to choose a file name for an address that could never be fetched
+   * would choose it for nothing. What only the network can say — a name's resolution, a
+   * redirect, the body — is the guard's, once a destination is known to be free.
+   *
+   * ## The body never sits whole in `main`
+   *
+   * `writeStreamedDocument` streams it through the save pipeline's temporary file, and
+   * a refusal met while it arrives removes that file and leaves the destination as it
+   * was. It answers a path, which only the handler opens.
+   */
+  async openFromUrl(url: string): Promise<UrlOpenOutcome> {
+    let checked: URL;
+    try {
+      checked = checkedUrl(url);
+    } catch (error) {
+      if (error instanceof UrlFetchRefused) return { kind: 'url-refused', reason: error.reason };
+      throw error;
+    }
+
+    const destination = await this.#copy.pick(suggestedUrlName(checked));
+    if (destination === null) return { kind: 'cancelled' };
+
+    try {
+      const written = await writeStreamedDocument(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => this.#fetchUrl(checked.href),
+        destination,
+      );
+      if (written.kind === 'refused') {
+        return { kind: 'destination-contested', openElsewhere: written.others.length };
+      }
+      if (written.kind === 'write-failed') return { kind: 'write-failed' };
+      return { kind: 'written', destination };
+    } catch (error) {
+      // ONLY THE GUARD'S REFUSAL IS AN ANSWER. Anything else is a defect in this build
+      // and propagates, rather than telling a person their address was the problem.
+      if (error instanceof UrlFetchRefused) return { kind: 'url-refused', reason: error.reason };
+      throw error;
+    }
   }
 
   /**

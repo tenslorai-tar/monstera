@@ -892,6 +892,79 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Open from URL: the SSRF guard is built, and it owes one fetch from a real server
+
+D9's fourth row, after its B4 (`7aff532`, ADR-0061). Office import stays blocked on the
+owner's LibreOffice download consent and its own B4, so the row order moved to this one.
+
+### What was built
+
+- **`packages/kernel/src/guardedFetch.ts`, the one route for a URL a person chose.**
+  - `checkedUrl` refuses a scheme other than `https:`, a user name or password, and a
+    blocked **literal** host. A literal never reaches `lookup` (measured, ADR-0061), and
+    the WHATWG parser has already turned `2130706433` and `0x7f.1` into `127.0.0.1`.
+  - `guardedLookup` is the pin. It refuses the whole answer if any address is blocked, and
+    otherwise hands the socket exactly the addresses it checked.
+  - `addressBlocked` holds IANA's not-globally-reachable blocks, both multicast blocks, and
+    6to4 and Teredo whole; IPv4-mapped and NAT64 addresses are judged by the IPv4 inside.
+  - `fetchGuardedPdf` follows at most five redirects by hand, each hop through
+    `node:https` with `agent: false`. The body passes `receivedByteMeter` and a `%PDF-`
+    check over its first 1,024 bytes.
+- **The save seam.** `atomicWrite`'s first stage takes a writer, and the surface gains
+  `writeStream`. `writeStreamedDocument` checks the destination before starting the
+  source, and tells a failure of the source from a failure of the disk by recording it
+  inside the iterator, not by reading a message.
+- **Contract.** `URL_FETCH_REFUSALS` is the one list: the kernel takes its refusal type
+  from it, the channel `document.openFromUrl` carries it, and the problem dialog keys a
+  `Record` on it.
+- **Desktop.** `DocumentCommands.openFromUrl` judges the address before the save dialog,
+  so a refused address never asks a person for a file name. The handler opens through the
+  one `openPath`.
+- **UI.** *Open from web address* at Tools › Create, order 50: a prompt accepting `https:`
+  only, and a problem dialog with one sentence per reason.
+- **Documents.** D7's TSA row said *"no SSRF guard exists"*; it now says one did not exist
+  then.
+
+### Executed, and not
+
+- **Typecheck:** both halves, exit 0.
+- **Tests:** the full suite, 195 files and 2,704 cases, after both mutations were restored;
+  before it, the nine changed files, 156 cases.
+  - `guardedFetch.test.ts` sends a name that resolves to a **listening** loopback socket;
+    the guard refuses it and the socket records no connection. The control shows the same
+    socket does record one from an unguarded request.
+  - Every hop's resolution is recorded, the same name twice included.
+- **Two mutations, each run and restored:**
+  - **the pin's refusal deleted** — exactly three cases went red (the real-socket name, a
+    redirect to a private name, the mixed answer) and the other thirteen stayed green;
+  - **the literal check deleted** — exactly three went red (the literal spellings, the
+    real-socket literal, and the desktop refusal before the save dialog), 66 green.
+- **Not executed: a fetch from a real HTTPS server.** Every success path here runs against
+  a scripted transport. A real one downloads a document from an outside host, which needs
+  the owner's go-ahead, so the row reads *not done — one live run*.
+
+### Found while building it, all fixed before commit
+
+- **`writeStreamedDocument` failed to typecheck.** Its source failure was recorded from
+  inside the generator, a closure control-flow analysis cannot see, so the local narrowed
+  to `null`. It is now a list the generator pushes to.
+- **My body test decoded UTF-8 bytes as Latin-1**, turning a three-byte BOM into six
+  characters. The fixture was wrong, not the check.
+- **`suggestedUrlName` would have called `https://example.com/` `example.pdf`**, reading
+  `.com` as an extension. The host is now kept whole.
+- **Lint, three findings.**
+  - `||` in the NAT64 group parse: the rule's `??` would be *wrong* there, because a
+    compressed address splits into empty strings. It is now an explicit helper.
+  - A `default` the switch-exhaustiveness rule does not accept: every reason is now named.
+
+### Tooling, recorded and not queued
+
+- **`eslint .` run directly exited 139 with no output**, a segfault, on its second
+  tree-wide run of the day. It was not read as a pass: the same command, run again, exited
+  0. npm's own segfault is recorded above; the mechanism of this one is not established.
+
+---
+
 ## 2026-09-13 — Image(s) → PDF: bounds on pixels, read before the decode they bound
 
 D9's third row. Tools › Create gains *New PDF from images*: one page per picked JPEG or

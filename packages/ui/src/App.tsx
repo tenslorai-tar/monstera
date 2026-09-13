@@ -128,6 +128,9 @@ import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
+import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
+import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
+import { openFromUrlCommand } from './commands/openFromUrl.js';
 import {
   appendMarkdownCommand,
   newFromCsvCommand,
@@ -404,6 +407,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         IMPORT_FORM_DATA_PROBLEM_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
         MARKDOWN_IMPORT_PROBLEM_DIALOG,
+        OPEN_FROM_URL_DIALOG,
+        URL_OPEN_PROBLEM_DIALOG,
         GENERATE_TOC_PROBLEM_DIALOG,
         MERGE_DOCUMENT_DIALOG,
         MERGE_DOCUMENT_NONE_DIALOG,
@@ -1489,6 +1494,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         newFromCsvCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's IMAGES ROW, the same callbacks: the composed pages arrive as a tab.
         newFromImagesCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.
+        openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({
           client,
           onApplied: applied,

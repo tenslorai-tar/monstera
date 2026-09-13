@@ -89,6 +89,7 @@ import {
   remoteMupdfPageText,
   remoteMupdfWriter,
   siblingNames,
+  fetchGuardedPdf,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
@@ -1001,6 +1002,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // is the same compose host's, `null` where it cannot exist.
     imageFiles: { pick: pickImages, size: sizeImage, read: readImage },
     composeImages: composeHost === null ? null : composeHost.composeImages,
+    // A URL A PERSON GAVE goes through the kernel's SSRF guard and nowhere else
+    // (ADR-0061), bounded by the ceiling a document must fit to be opened at all.
+    fetchUrl: (url) => fetchGuardedPdf(url, MAIN_DOCUMENT_BYTES_CEILING),
     // SIGNING, and both members are parameters for `image`'s reason exactly.
     certificate: { pick: pickCertificate, read: readCertificate },
     // THE SAME STORE the settings channels write the integration key into, so a

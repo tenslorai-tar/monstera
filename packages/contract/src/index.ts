@@ -242,6 +242,8 @@ export {
   type DocusignRefusalKind,
   COMPOSE_REFUSALS,
   type ComposeRefusal,
+  URL_FETCH_REFUSALS,
+  type UrlFetchRefusal,
   MAX_DOCUSIGN_RECIPIENT_FIELD,
   MAX_DOCUSIGN_SIGNERS,
   MAX_DOCUSIGN_SUBJECT,

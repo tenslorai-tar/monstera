@@ -65,6 +65,13 @@ export interface AtomicWriteSurface {
   /** Writes `bytes` to `path`, creating or truncating. */
   readonly write: (path: string, bytes: Uint8Array) => Promise<void>;
   /**
+   * Writes `chunks` to `path` as they arrive, creating or truncating.
+   *
+   * For contents that must never be held whole — a document fetched from a URL
+   * (ADR-0061 Decision 6). A failure of the source arrives as this call's rejection.
+   */
+  readonly writeStream: (path: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>;
+  /**
    * Flushes `path`'s data to the device.
    *
    * Separated from {@link write} rather than folded into it, because it is the
@@ -123,8 +130,10 @@ export const RENAME_BACKOFF_MS: readonly number[] = [0, 50, 150, 400, 900];
 
 /**
  * @param surface the filesystem calls
- * @param target the file to end up holding `bytes`
- * @param bytes the new contents
+ * @param target the file to end up holding the new contents
+ * @param writeTemp writes the new contents to the temp path it is given, through
+ *   `surface`. A WRITER rather than a byte array (ADR-0061 Decision 6), so contents
+ *   that arrive over time are never held whole; the ordering after it is unchanged.
  * @param names where the temp and backup files go — supplied rather than
  *   derived, because *what a sibling file may be called* is a question about
  *   the destination directory rather than about this ordering, and a caller
@@ -135,12 +144,12 @@ export const RENAME_BACKOFF_MS: readonly number[] = [0, 50, 150, 400, 900];
 export async function atomicWrite(
   surface: AtomicWriteSurface,
   target: string,
-  bytes: Uint8Array,
+  writeTemp: (temp: string) => Promise<void>,
   names: { readonly temp: string; readonly backup: string },
   wait: (ms: number) => Promise<void>,
 ): Promise<Result<{ readonly backedUp: boolean }, AtomicWriteFailure>> {
   try {
-    await surface.write(names.temp, bytes);
+    await writeTemp(names.temp);
   } catch (cause) {
     // NOTHING TO UNDO. The original has not been touched and the temp may or
     // may not exist; removing it is best-effort and its failure must not
