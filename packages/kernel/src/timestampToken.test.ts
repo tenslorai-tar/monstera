@@ -193,7 +193,15 @@ function reply(query: TimestampQuery, twist: Twist = {}): Uint8Array {
   signed.update(der(set(attributes)));
   const signature = keys.privateKey.sign(signed);
 
-  const signedTstInfo = twist.tamperAfterSigning === true ? `${tstInfoDer.slice(0, -1)}\x7f` : tstInfoDer;
+  // THE LAST BYTE WITH ONE BIT FLIPPED, never a fixed byte. The TSTInfo's last field is
+  // the nonce, and `query()` asks for a random one, so its last byte IS the TSTInfo's. A
+  // fixed replacement (`\x7f`, until 2026-09-13) changed nothing whenever that random byte
+  // already was the replacement — one run in 256 — and the case then submitted an
+  // untampered token, which the verifier rightly accepted. CI's Ubuntu leg met it at
+  // `dc7c2af`. A flipped bit differs from every byte, so the tamper is always a tamper.
+  const tampered = (): string =>
+    `${tstInfoDer.slice(0, -1)}${String.fromCharCode(tstInfoDer.charCodeAt(tstInfoDer.length - 1) ^ 0x01)}`;
+  const signedTstInfo = twist.tamperAfterSigning === true ? tampered() : tstInfoDer;
   const signerInfo = seq([
     integer(asn1.integerToDer(1).getBytes()),
     seq([
@@ -276,6 +284,20 @@ describe('acceptTimestampReply', () => {
 
   it('check 5: refuses a TSTInfo changed after its digest was attested', () => {
     const error = refusal(query(), { tamperAfterSigning: true });
+    expect(error.reason).toBe('unverifiable');
+    expect(error.message).toContain('does not verify');
+  });
+
+  it('check 5: refuses the tamper for a nonce ending in the byte the old fixture wrote, as CI met it', () => {
+    // THE RUN CI'S UBUNTU LEG HAD, made certain rather than one in 256: a nonce whose last
+    // byte is 0x7f, the byte the old fixture replaced the TSTInfo's last byte WITH. Under
+    // that fixture this token was untampered and accepted; under the flipped bit it is not.
+    const asked = timestampQuery('the signature value this timestamps', () => `${'\x01'.repeat(7)}\x7f`);
+    // THE CONDITION IS REACHED, asserted rather than assumed: the nonce the query carries
+    // ends in the very byte, so this case cannot pass by missing the shape it exists for.
+    expect(asked.nonce.charCodeAt(asked.nonce.length - 1)).toBe(0x7f);
+
+    const error = refusal(asked, { tamperAfterSigning: true });
     expect(error.reason).toBe('unverifiable');
     expect(error.message).toContain('does not verify');
   });
