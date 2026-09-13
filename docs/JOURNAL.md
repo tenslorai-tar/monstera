@@ -892,6 +892,77 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — `main` was red on a proof case judged against a second measurement; the host had not moved
+
+CI at `0fe2f54` failed one step, *Prove the performance gate follows the declared
+budgets*, on one case. Read from run 34750855232's check-run annotations:
+*mupdf-host-real: an absolute ceiling below its peak turns the gate red* — declared
+1570 MB against a measured 1578.3 MB, `withinAbsolute=true`. Reproduced locally the
+same day at 1556 MB against 1564.9 MB.
+
+### Is it the app?
+
+`0fe2f54` changed `hostEntry.ts` and `engineChannels.ts`, so the question was
+real. **No, measured.** `npm run perf:gate` at that state, 2026-09-13, on this
+machine: `mupdf-host-real` peaked at **1577.7 MB** on the image-heavy fixture and
+**319.7 MB** on the object-dense one, against `3 GB, base 128 MB`, with baselines
+of 120.9 and 122.8 MB. And the failure's direction rules the app out on its own: a
+host whose peak rose raises both readings, and this case fails only when the
+**second** reading comes in **lower** than the first. The hostEntry change moved the
+pipe and filesystem surfaces into `hostNodeSurfaces.ts`, byte for byte.
+
+**Not covered by CI, stated:** the gate step after the proof was **skipped** at
+`0fe2f54`, because the proof failed first. The reading above is this machine's.
+
+### The mechanism
+
+The case set its ceiling to `floor(peak) − 8 MB` from the proof's own baseline run,
+then called `runBudgetGate`, **which measures again**. A second peak more than 8 MB
+lower passes a ceiling set under the first. The base was `floor(baseline) − 4 MB`
+the same way, and the case passed no `documentPath`, so the gate built its own
+fixture rather than the one the ceiling came from. That is `a21b6c0`'s defect in
+the absolute case, which that commit fixed in the baseline pair beside it. **This
+closes the carried *proof:perfbudget's `mupdf-host-real` lines* item.**
+
+### The fix, and the first attempt the parser refused
+
+The baseline pair's remedy is a limit no reading can cross, judged against the
+gate's own numbers. A 1 MB ceiling beside a 32 GB base was tried and refused:
+*"declares a baseline at or above its absolute cap, which leaves no room for a
+document"*. The parser is right. So both limits sit between the role's readings —
+base at twice the measured baseline, ceiling halfway from there to the peak — each
+tens of megabytes from the reading it must not cross, on the same fixture, and the
+case asserts `withinAbsolute === false`, the gate's own `peakBytes > absoluteLimit`,
+`withinBaseline === true` and the ratio control. **33 cases passed**, including all
+four absolute cases, run 2026-09-13.
+
+**The B2 control was NOT executed.** Its run — `withinAbsolute` forced `true` in
+`budgetGate.mjs` — was refused by this session's permission check, and the file was
+restored and confirmed unchanged by `git diff`. The case asserts
+`withinAbsolute === false`, so a gate reporting `true` fails it by construction, and
+that is asserted rather than run.
+
+---
+
+## 2026-09-13 — Two owner decisions: blurred redaction is removed, DocuSign's run moves to Stage 10
+
+**Blurred redaction is removed.** This build had withdrawn it on 2026-09-12 with a
+measurement (MuPDF has no blur; below, *The half of the row's name that is
+withdrawn*). The owner's decision makes it a removal rather than a withdrawal, so
+the documents now say *solid* only: D7's true-redaction row name and body, and D3's
+redact-marks row, whose preview is solid only. `BUILD-PROMPT.md` still names blur
+and is not edited, because it is the founding record. No user-facing string ever
+offered blur; `applyRedactions.ts` and `commands.ts` say so in comments.
+
+**DocuSign's live run is deferred to Stage 10.** The row's trigger was the owner's
+integration key; it is now Stage 10 opening, and ADR-0059 carries the same
+correction. The row stays not done, so Stage 7's 14 of 15 does not move.
+
+> **Correction to *Stage 7 closes*, below, 2026-09-13.** *"three premises only a
+> run with the owner's integration key can settle"* — that run is now Stage 10's.
+
+---
+
 ## 2026-09-13 — Stage 7 closes: 14 of 15, 1.00×, continue
 
 ### The trajectory gate

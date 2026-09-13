@@ -562,13 +562,53 @@ const thrown = guarded(() => {
     {
       // The absolute term is a separate limit and needs its own case: a gate
       // that only ever consulted the multiplier would pass every case above.
-      const belowPeakMB = Math.max(1, Math.floor(measured.peakBytes / MB) - 8);
+      //
+      // A CEILING FAR FROM BOTH READINGS, and the baseline pair's reasoning above
+      // applies unchanged. This ceiling was `floor(peak) - 8 MB` from the baseline run, judged
+      // against the peak the gate measures for itself moments later, and the
+      // base was `floor(baseline) - 4 MB` the same way. Run 34750855232 at
+      // 0fe2f54 (read 2026-09-13 from the check-run annotations): the proof
+      // measured `mupdf-host-real` at 1578.3 MB, declared 1570 MB, and the
+      // gate's own re-measurement came in at or under it — `withinAbsolute=true`.
+      // Reproduced locally the same day, 1564.9 MB against 1556 MB. A second
+      // peak 8 MB lower is inside that role's run-to-run spread, so the case was
+      // a coin toss; the real gate at the same state measured 1577.7 MB, inside
+      // its budget, so nothing in the host had moved.
+      //
+      // It also measured a DIFFERENT DOCUMENT: with no `documentPath` the gate
+      // builds its own large fixture, where every other differential case here
+      // passes the baseline's.
+      //
+      // WHAT IS GIVEN UP is the same as the baseline pair's — *just under the
+      // peak is refused* — and it was never proven, because the two sides were
+      // two measurements. What replaces it is the gate's verdict held against
+      // the gate's own reading in one run.
+      //
+      // NOT ONE MEGABYTE, which the baseline pair's shape suggests and the parser
+      // refuses: a base at or above the absolute cap *"leaves no room for a
+      // document"* (`memoryBudgets.mjs`, measured 2026-09-13 when this case first
+      // tried it). So both limits sit BETWEEN the role's two readings: the base at
+      // twice the measured fixed cost, and the ceiling halfway from there to the
+      // measured peak. On the image-heavy fixture every role's peak is over four
+      // times its baseline (`npm run perf:gate`, 2026-09-13: 247.2 MB over 47.8 MB
+      // is the narrowest), so each limit is tens of megabytes from the reading it
+      // must not cross, where the spread that reddened this case was under ten.
+      const generousBaseMB = 2 * Math.ceil(measured.baselineBytes / MB);
+      const belowPeakMB = Math.floor((generousBaseMB + measured.peakBytes / MB) / 2);
+      if (belowPeakMB <= generousBaseMB || belowPeakMB * MB >= measured.peakBytes) {
+        // A FIXTURE THAT LEAVES NO ROOM is a reason to stop, not a case to pass:
+        // with the two limits touching, the verdict would be decided by whichever
+        // reading moved, which is the defect this case just had.
+        throw new Error(
+          `${measured.role}: peak ${formatBytes(measured.peakBytes)} leaves no room above twice its baseline ` +
+            `${formatBytes(measured.baselineBytes)} for an absolute case`,
+        );
+      }
       const gate = runBudgetGate({
+        documentPath: baseline.fixture.path,
+        documentBytes: baseline.fixture.bytes,
         budgetsText: withEntries([
-          entry(
-            `${String(belowPeakMB)} MB`,
-            `${String(Math.max(1, Math.floor(measured.baselineBytes / MB) - 4))} MB`,
-          ),
+          entry(`${String(belowPeakMB)} MB`, `${String(generousBaseMB)} MB`),
           ...others,
           'renderer = provisional',
         ]),
@@ -576,9 +616,19 @@ const thrown = guarded(() => {
       const role = gate.results.find((result) => result.role === measured.role);
       check(
         `${measured.role}: an absolute ceiling below its peak turns the gate red, with the multiplier generous`,
-        role?.withinAbsolute === false && ratioIsNotWhatFailed(role),
-        `declared ${String(belowPeakMB)} MB against a measured ${formatBytes(measured.peakBytes)}; ` +
-          `withinAbsolute=${String(role?.withinAbsolute)} withinMultiplier=${String(role?.withinMultiplier)}. ` +
+        role?.withinAbsolute === false &&
+          // SELF-CONSISTENT: the refusal follows from the two numbers the gate
+          // itself holds. `withinAbsolute === false` alone is satisfied by a
+          // gate that always refuses.
+          role.peakBytes > role.absoluteLimit &&
+          // And the absolute is what failed: a base the gate refused would make
+          // this case pass for a gate that never read the absolute term.
+          role.withinBaseline === true &&
+          ratioIsNotWhatFailed(role),
+        `declared ${String(belowPeakMB)} MB; the gate measured ${formatBytes(role?.peakBytes ?? 0)} against ` +
+          `a limit of ${formatBytes(role?.absoluteLimit ?? 0)} and answered ` +
+          `withinAbsolute=${String(role?.withinAbsolute)} withinBaseline=${String(role?.withinBaseline)} ` +
+          `withinMultiplier=${String(role?.withinMultiplier)}. ` +
           `The absolute term must be consulted independently of the ratio.`,
       );
     }

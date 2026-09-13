@@ -137,3 +137,9 @@ exists to replace.
 - **Docusign's discovery documents advertise only client-secret token
   authentication**, while its blog describes public clients. The first sign-in
   against the owner's key settles which is current.
+
+> **Corrected 2026-09-13 — the live run is deferred to Stage 10** (owner's
+> decision). The first and third triggers above named *the owner's integration
+> key*; both now fire when Stage 10 opens, beside the second, which was already
+> Stage 10's. Nothing in this decision changes before that run, and D7's DocuSign
+> row stays not done until it passes.
