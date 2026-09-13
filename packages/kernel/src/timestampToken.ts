@@ -1,7 +1,7 @@
 import forge from 'node-forge';
 
-import { attributeValues, bytesOf, checkSigner, DIGESTS } from './signedDataCheck.js';
-import type { ForgeCertificate, ForgeMessage } from './signedDataCheck.js';
+import { attributeValues, bytesOf, checkSigner, DIGESTS, readSignedDataBody } from './signedDataCheck.js';
+import type { ForgeCertificate } from './signedDataCheck.js';
 import { TimestampRefusedError } from './signingRefusals.js';
 
 /**
@@ -163,25 +163,6 @@ function childrenOf(node: forge.asn1.Asn1 | undefined, what: string): forge.asn1
 }
 
 /**
- * The half of node-forge's DER validator this module calls.
- *
- * `@types/node-forge` declares neither `asn1.validate` nor `pkcs7.asn1`; both exist
- * at runtime in node-forge 1.4.0 (`lib/asn1.js`, `lib/pkcs7asn1.js`). A typed
- * adapter over those two members rather than an `any`.
- */
-interface ForgeValidation {
-  readonly asn1: {
-    validate(
-      node: forge.asn1.Asn1,
-      validator: unknown,
-      capture: Record<string, unknown>,
-      errors: unknown[],
-    ): boolean;
-  };
-  readonly pkcs7: { readonly asn1: { readonly signedDataValidator: unknown } };
-}
-
-/**
  * The reply, as a token — or a refusal. See the module header for every check.
  *
  * @param reply the body the authority answered, already bounded by the caller.
@@ -214,16 +195,14 @@ export function acceptTimestampReply(reply: Uint8Array, query: TimestampQuery): 
   const signedData = childrenOf(explicit, 'the token content')[0];
   if (signedData === undefined) unverifiable('the token carries no SignedData');
 
-  const capture: Record<string, unknown> = {};
-  const validation = forge as unknown as ForgeValidation;
-  if (!validation.asn1.validate(signedData, validation.pkcs7.asn1.signedDataValidator, capture, [])) {
-    unverifiable('the SignedData does not have the shape RFC 5652 gives it');
-  }
-  const eContentType = capture['contentType'];
-  if (typeof eContentType !== 'string' || asn1.derToOid(eContentType) !== OIDS.tstInfo) {
+  const signed = readSignedDataBody(signedData);
+  if (signed === null) unverifiable('the SignedData does not have the shape RFC 5652 gives it');
+  const capture = signed.capture;
+  const eContentType = capture.contentType;
+  if (eContentType === undefined || asn1.derToOid(eContentType) !== OIDS.tstInfo) {
     unverifiable('the SignedData does not carry a TSTInfo');
   }
-  const eContent = childrenOf(capture['content'] as forge.asn1.Asn1 | undefined, 'the eContent')[0];
+  const eContent = childrenOf(capture.content, 'the eContent')[0];
   if (
     eContent?.type !== asn1.Type.OCTETSTRING ||
     eContent.constructed ||
@@ -233,63 +212,32 @@ export function acceptTimestampReply(reply: Uint8Array, query: TimestampQuery): 
   }
   const tstInfoDer = eContent.value;
 
-  // THE CERTIFICATES THIS BUILD CAN READ, each kept beside the node it came from:
-  // check 7 hashes the certificate's own DER.
-  //
-  // A CERTIFICATE node-forge CANNOT PARSE IS SKIPPED, NOT REFUSED, and the reason
-  // is measured. node-forge reads RSA keys only — *Cannot read public key. OID is
-  // not RSA.* This first parsed every certificate in the token and refused on any
-  // failure, so a chain certificate the signer check never needs would refuse a
-  // token whose signer this build can verify. Only the SIGNER'S certificate must
-  // be readable, and when it is not, the refusal says so by name.
-  const certificateNodes = childrenOf(
-    capture['certificates'] as forge.asn1.Asn1 | undefined,
-    'the certificates field',
-  );
-  const readable: { readonly node: forge.asn1.Asn1; readonly certificate: ForgeCertificate }[] = [];
-  const unreadableSerials: string[] = [];
-  for (const node of certificateNodes) {
-    try {
-      readable.push({
-        node,
-        certificate: forge.pki.certificateFromAsn1(node) as unknown as ForgeCertificate,
-      });
-    } catch {
-      // node-forge's refusal IS the answer — this certificate is not one it reads —
-      // and what is kept is the serial, so an unreadable SIGNER can be named below.
-      const tbs = Array.isArray(node.value) ? node.value[0]?.value : undefined;
-      if (Array.isArray(tbs)) {
-        const versioned = tbs[0]?.tagClass === asn1.Class.CONTEXT_SPECIFIC;
-        const serial = bytesOf(tbs[versioned ? 1 : 0]);
-        if (serial !== null) unreadableSerials.push(forge.util.createBuffer(serial).toHex());
-      }
-    }
+  // 5 — THE SIGNER, by the one verifier, over the one reading of the certificate bag
+  // (`signedDataCheck.ts`). A CHAIN CERTIFICATE THIS BUILD CANNOT READ IS NOT A
+  // REFUSAL: only the signer's must be readable. This first parsed every certificate
+  // and refused on any failure, which refused tokens whose signer this build verifies.
+  const signer = checkSigner(signed, tstInfoDer);
+  // A KEY THAT CANNOT BE READ IS NAMED, because it is not a malformed token and
+  // *does not verify* would say it was.
+  if (signer.refusal === 'unreadable-key') {
+    unverifiable('the token is signed with a key this build cannot read');
   }
-
-  // THE SIGNER'S KEY IS ONE THIS BUILD DOES NOT VERIFY. Measured 2026-09-13: a live
-  // authority's token was signed with ECDSA over an EC key, and node-forge verifies
-  // RSA only. That is not a malformed token, and *does not verify* would say it was.
-  const signerSerial =
-    typeof capture['serial'] === 'string' ? forge.util.createBuffer(capture['serial']).toHex() : null;
-  if (signerSerial !== null && unreadableSerials.includes(signerSerial)) {
-    unverifiable('the token is signed with a key type this build does not verify (RSA only)');
-  }
-
-  // 5 — THE SIGNER, by the one verifier.
-  const message: ForgeMessage = {
-    certificates: readable.map((entry) => entry.certificate),
-    rawCapture: capture,
-  };
-  const signer = checkSigner(message, tstInfoDer);
   if (!signer.verified || signer.certificate === null) {
     unverifiable('the token’s signature does not verify');
   }
   const certificate = signer.certificate;
-  const certificateNode = readable.find((entry) => entry.certificate === certificate)?.node;
-  if (certificateNode === undefined) unverifiable('the verifying certificate has no node');
 
-  // 6 — ONE PURPOSE, TIMESTAMPING, CRITICAL.
-  const usage = certificate.getExtension('extKeyUsage');
+  // 6 — ONE PURPOSE, TIMESTAMPING, CRITICAL. Read through node-forge, because Node's
+  // reading of a certificate does not say whether an extension is critical — and
+  // node-forge reads RSA certificates only. So an authority whose key is not RSA
+  // verifies above and is refused HERE, by that reason. Measured 2026-09-13: a live
+  // authority's token was signed with ECDSA.
+  if (certificate.forge === null) {
+    unverifiable(
+      'the token’s certificate is not RSA, and a timestamping certificate’s extensions are read from RSA ones only',
+    );
+  }
+  const usage = certificate.forge.getExtension('extKeyUsage');
   const purposes =
     usage === null
       ? []
@@ -301,11 +249,7 @@ export function acceptTimestampReply(reply: Uint8Array, query: TimestampQuery): 
   }
 
   // 7 — THE CERTIFICATE IDENTIFIER.
-  acceptCertificateIdentifier(
-    capture['authenticatedAttributes'] as readonly forge.asn1.Asn1[] | undefined,
-    certificate,
-    asn1.toDer(certificateNode).getBytes(),
-  );
+  acceptCertificateIdentifier(capture.authenticatedAttributes, certificate.forge, certificate.der);
 
   // 3 and 4 — THE TSTInfo ITSELF.
   let tstInfo: forge.asn1.Asn1;

@@ -892,6 +892,87 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — GGGGGG-2: ECDSA and RSA-PSS signatures verify, because the signature check is now Node's
+
+The last of the queued signature defects. A valid ECDSA signature read as *unreadable*,
+and a valid RSA-PSS one as *the document has changed*.
+
+### The mechanism, in two halves
+
+- **ECDSA:** `signatureRead.ts` parsed `/Contents` with node-forge's `messageFromAsn1`.
+  That call converts every certificate in the bag and throws on any key that is not RSA
+  (*Cannot read public key. OID is not RSA.*). The whole signature became
+  `SignaturesUnreadable`.
+- **RSA-PSS:** the certificate is RSA, so it parsed. But `signedDataCheck.ts` accepted
+  only PKCS#1 v1.5 algorithm identifiers, because node-forge's `verify` implements only
+  that scheme. It answered `verified: false`, which the panel says as *changed*.
+
+### The fix
+
+node-forge keeps what it does here: the DER walk and RFC 5652's shape. What it cannot do
+moves to Node's OpenSSL.
+
+- **The bag is read once, in `signedDataCheck.ts`.** `readSignedDataBody` uses the
+  validator's capture, which takes the certificates as nodes and converts none. Each
+  certificate becomes a record of its DER, its issuer and serial bytes from its own tree,
+  `X509Certificate` (OpenSSL's reading) and node-forge's reading where it has one.
+  `signatureRead.ts` and the timestamp check both read the bag through it.
+- **The signer is matched by bytes**: the SignerInfo's issuer DER and serial bytes
+  against the certificate's own. A certificate is found whichever reader can read its key.
+- **The signature is checked by `crypto.verify`:**
+  - PKCS#1 v1.5, where the algorithm fixes its hash or the SignerInfo's digest applies;
+  - ECDSA, including `id-ecPublicKey` with the SignerInfo's digest;
+  - RSA-PSS with its parameters READ (hash, MGF1, salt, trailer). A mask hash different
+    from the signature hash is refused as unsupported, because Node's PSS takes no
+    separate mask hash.
+- **`SignerCheck` now says why it did not verify:** `no-signer`, `attributes`,
+  `digest-mismatch`, `unsupported-algorithm`, `unreadable-key`, `signature`.
+- **The panel's name, organisation and validity come from OpenSSL's reading.** They are
+  read with `toLegacyObject()`, not the `subject` string, which escapes a comma inside a
+  value. Measured on a CN of *Ada, Countess = Lovelace*.
+
+### The timestamp check changed its refusal wording, deliberately
+
+`timestampToken.test.ts` built its *unreadable signer* by labelling an RSA key
+`id-ecPublicKey`. Its refusal said *a key type this build does not verify (RSA only)*.
+Once ECDSA verifies, that sentence is false. The fixture's key cannot be decoded by any
+reader, so the refusal now names that: *signed with a key this build cannot read*.
+
+A real EC authority now verifies at check 5 and is refused at **check 6**, by name. That
+check reads the extended key usage's `critical` flag through node-forge. Node's
+`X509Certificate` does not expose criticality, and node-forge reads RSA certificates
+only. So timestamping with a non-RSA authority is still refused, and says why. No case
+builds a real EC authority, which is recorded here as a gap rather than left for someone
+to assume is covered.
+
+### Cases, and both controls
+
+`signedDataCheck.test.ts` builds every key per run with `node:crypto`, and every
+certificate and SignedData node by node. The same builder's output was accepted by
+`openssl cms -verify` (OpenSSL 3.5.4) on 2026-09-13, so what is verified is CMS as a
+second implementation reads it.
+
+- **Unit, 13 cases.** Each scheme verifies. A changed content byte is a
+  `digest-mismatch`, and a changed signature byte is a `signature` refusal, for each
+  scheme. A salt declared as 20 on a signature made with 32 does not verify. A PSS mask
+  over SHA-1 is `unsupported-algorithm`. An unknown serial is `no-signer`.
+- **Real PDF, 4 cases.** A document signed by this build has its `/Contents` replaced
+  with an ECDSA or RSA-PSS signature over the same covered bytes. `readSignatures`
+  answers `coversDocument` and `coversWholeFile`, with the NEW certificate's
+  organisation; this build's P12 names another. With a covered byte changed,
+  `coversDocument` is false.
+
+**Control 1, the old RSA-only algorithm check restored:** 7 red, 10 green. The red ones
+are both *verifies* cases, their two changed-byte cases (the refusal became
+`unsupported-algorithm`, not `signature`), the PSS-parameter case, and both real-PDF
+*covering* cases. The two changed-document controls stayed green, as they should: they
+guard against a verifier that always answers *covered*, and the passing cases already
+rule that out.
+
+**Control 2, a salt of 32 assumed:** exactly the PSS-parameter case went red, 16 green.
+
+---
+
 ## 2026-09-13 — Five queued defects fixed: a forged range, three signature reads, a redaction, and a decode bomb in `main`
 
 Owner's rule: errors in the real app are reported and fixed. These were queued at the

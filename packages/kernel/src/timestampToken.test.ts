@@ -354,13 +354,15 @@ describe('acceptTimestampReply', () => {
     expect(accepted.genTime).toBeInstanceOf(Date);
   });
 
-  it('LIVE SHAPE: refuses a signer whose key this build cannot verify, BY THAT NAME', () => {
-    // A live token was signed with ECDSA, and node-forge verifies RSA only. The first
-    // run's refusal said *a certificate in the token could not be read*, which named
-    // a symptom; a person choosing an authority needs the reason.
+  it('refuses a signer whose key this build cannot READ, BY THAT NAME', () => {
+    // THE FIXTURE IS AN RSA KEY LABELLED `id-ecPublicKey`, which no reader can decode.
+    // This case read *key type this build does not verify* until 2026-09-13, when the
+    // signature check moved to `node:crypto` and began verifying ECDSA (GGGGGG-2): an
+    // EC key is no longer the reason, and a key that cannot be decoded is. A real EC
+    // authority is refused at check 6 instead, where its extensions are read.
     const error = refusal(query(), { unreadableSigner: true });
     expect(error.reason).toBe('unverifiable');
-    expect(error.message).toContain('key type this build does not verify');
+    expect(error.message).toContain('signed with a key this build cannot read');
   });
 });
 

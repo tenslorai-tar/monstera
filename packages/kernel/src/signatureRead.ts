@@ -1,10 +1,12 @@
+import type { X509Certificate } from 'node:crypto';
+
 import type * as mupdf from 'mupdf';
 import forge from 'node-forge';
 
 import { withDocument } from './mupdfWriter.js';
 import type { MupdfSession } from './engineSeam.js';
-import { checkSigner } from './signedDataCheck.js';
-import type { ForgeCertificate, ForgeMessage } from './signedDataCheck.js';
+import { checkSigner, readContentInfo } from './signedDataCheck.js';
+import type { SignedData, SignerCheck } from './signedDataCheck.js';
 
 /**
  * Reading the signatures a document already carries — Stage 7's verification
@@ -185,18 +187,21 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
   // in 256. `pkcs7Asn1` reads the element to the length its header declares.
   const contentBytes = contents.asByteString();
   const checked = verify(contentBytes, bytes, [a, b, c, d]);
-  const subject = checked.certificate?.subject;
+  // OPENSSL'S READING OF THE CERTIFICATE, which reads every key type a signature is
+  // verified with. node-forge's reads RSA only, and a panel that named only RSA
+  // signers would be GGGGGG-2 again, in the heading rather than the tick.
+  const x509 = checked.certificate?.x509 ?? null;
   // `/Name` FIRST, then the certificate's CN. A signature dictionary's own
   // name is what the signer chose to display; the CN is what their certificate
   // says they are, and the second is the fallback rather than the answer.
   const stated = signature.get('Name').asString();
   return {
-    signer: stated === '' ? (subject?.getField('CN')?.value ?? '') : stated,
-    organisation: subject?.getField('O')?.value ?? '',
+    signer: stated === '' ? subjectField(x509, 'CN') : stated,
+    organisation: subjectField(x509, 'O'),
     reason: signature.get('Reason').asString(),
     location: signature.get('Location').asString(),
-    notBefore: checked.certificate?.validity.notBefore.toISOString() ?? '',
-    notAfter: checked.certificate?.validity.notAfter.toISOString() ?? '',
+    notBefore: x509?.validFromDate.toISOString() ?? '',
+    notAfter: x509?.validToDate.toISOString() ?? '',
     coversDocument: checked.verified,
     coversWholeFile: rangeCoversWholeFile([a, b, c, d], contentBytes, bytes),
   };
@@ -251,6 +256,22 @@ export function rangeCoversWholeFile(
 }
 
 /**
+ * One subject field of a certificate, as OpenSSL parsed it, or `''`.
+ *
+ * `toLegacyObject`, NEVER the `subject` string: that string escapes a comma inside a
+ * value, so reading it would be a second parser for OpenSSL's escaping. Measured
+ * 2026-09-13: a CN of *Ada, Countess = Lovelace* arrives unescaped here and as
+ * `CN=Ada\, Countess = Lovelace` in the string. A field that repeats answers its first.
+ */
+function subjectField(x509: X509Certificate | null, field: 'CN' | 'O'): string {
+  if (x509 === null) return '';
+  const value: unknown = x509.toLegacyObject().subject[field];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return '';
+}
+
+/**
  * Parses one PKCS#7 blob and checks its signer against the bytes its ranges name.
  *
  * Split out of {@link readOne} so the parse's refusal has one place to become
@@ -260,20 +281,23 @@ function verify(
   contents: Uint8Array,
   bytes: Uint8Array,
   [a, b, c, d]: readonly [number, number, number, number],
-): { readonly certificate: ForgeCertificate | null; readonly verified: boolean } {
-  let message: ForgeMessage;
+): SignerCheck {
+  let signed: SignedData | null;
   try {
-    // ONE CAST, to a typed adapter rather than to `any`: `@types/node-forge`
-    // types `messageFromAsn1` as a union whose PKCS#7 half carries neither
-    // `certificates` nor `rawCapture`, and both are what a verification reads.
-    message = forge.pkcs7.messageFromAsn1(pkcs7Asn1(contents)) as unknown as ForgeMessage;
+    // NOT `messageFromAsn1`, which converts every certificate in the bag and throws on
+    // any key that is not RSA — so a valid ECDSA signature read as unreadable
+    // (GGGGGG-2). The bag is read by `signedDataCheck.ts`, the one reader of it.
+    signed = readContentInfo(pkcs7Asn1(contents));
   } catch (error) {
     throw new SignaturesUnreadable(
       `a signature in this document is not a PKCS#7 this build can read: ${String(error)}`,
     );
   }
+  if (signed === null) {
+    throw new SignaturesUnreadable('a signature in this document is not a CMS SignedData');
+  }
   const covered = latin1(bytes.subarray(a, a + b)) + latin1(bytes.subarray(c, c + d));
-  return checkSigner(message, covered);
+  return checkSigner(signed, covered);
 }
 
 /**
