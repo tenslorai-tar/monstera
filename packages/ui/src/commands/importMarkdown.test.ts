@@ -3,7 +3,12 @@ import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
-import { appendMarkdownCommand, newFromCsvCommand, newFromMarkdownCommand } from './importMarkdown.js';
+import {
+  appendMarkdownCommand,
+  newFromCsvCommand,
+  newFromImagesCommand,
+  newFromMarkdownCommand,
+} from './importMarkdown.js';
 
 /**
  * The UI half of D9's Markdown row: which channel each control reaches, with what,
@@ -112,6 +117,7 @@ describe('newFromMarkdownCommand', () => {
         kind: 'composition-refused',
         reason: 'unencodable-text',
         line: 12,
+        file: null,
       }),
     });
     const { calls, record, ask } = callbacks();
@@ -271,7 +277,7 @@ describe('newFromCsvCommand', () => {
     // shares used to send every reason it did not name to `nothing-to-draw`.
     for (const reason of ['malformed-csv', 'too-many-columns'] as const) {
       const { client } = recording({
-        'document.newFromCsv': ok({ kind: 'composition-refused', reason, line: 7 }),
+        'document.newFromCsv': ok({ kind: 'composition-refused', reason, line: 7, file: null }),
       });
       const { calls, record, ask } = callbacks();
 
@@ -285,6 +291,69 @@ describe('newFromCsvCommand', () => {
       expect(calls).toStrictEqual([
         { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason, line: 7 } } },
       ]);
+    }
+  });
+});
+
+describe('newFromImagesCommand', () => {
+  it('SENDS NOTHING on its OWN channel and adds the composed document as a tab', async () => {
+    // THE CHANNEL IS THE DECISION, `newFromCsvCommand`'s reason: a command dispatching on
+    // another import's channel would open the wrong picker and read correctly here.
+    const { client, sent } = recording({
+      'document.newFromImages': ok({
+        kind: 'opened',
+        docId: COMPOSED,
+        version: asDocVersion(1),
+        byteLength: 8192,
+        name: 'scans.pdf',
+      }),
+    });
+    const { calls, record, ask } = callbacks();
+
+    await newFromImagesCommand({
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.newFromImages', params: {} }]);
+    expect(calls).toStrictEqual([
+      { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 8192, name: 'scans.pdf' } },
+    ]);
+  });
+
+  it('NAMES THE FILE of a per-image refusal, and states the set’s two bounds', async () => {
+    // FOUR ANSWERS, FOUR PROPS. The per-image reasons must carry the NAME and not a line —
+    // a mapping that reused `line` would hand the dialog `null` and lose the file.
+    const cases = [
+      [
+        { kind: 'composition-refused', reason: 'image-unreadable', line: null, file: 'scan 3.png' },
+        { reason: 'image-unreadable', file: 'scan 3.png' },
+      ],
+      [
+        { kind: 'composition-refused', reason: 'too-many-pixels', line: null, file: 'huge.png' },
+        { reason: 'too-many-pixels', file: 'huge.png' },
+      ],
+      [{ kind: 'too-many-images', limit: 500 }, { reason: 'too-many-images', limit: 500 }],
+      [
+        { kind: 'images-too-large', limitBytes: 268_435_456 },
+        { reason: 'images-too-large', limitBytes: 268_435_456 },
+      ],
+    ] as const;
+
+    for (const [answer, props] of cases) {
+      const { client } = recording({ 'document.newFromImages': ok(answer) });
+      const { calls, record, ask } = callbacks();
+
+      await newFromImagesCommand({
+        client,
+        ask,
+        onOpened: record('opened'),
+        onAlreadyOpen: record('already-open'),
+      }).run(CONTEXT);
+
+      expect(calls).toStrictEqual([{ name: 'ask', value: { id: 'dialog.markdown-import-problem', props } }]);
     }
   });
 });

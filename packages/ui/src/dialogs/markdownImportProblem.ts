@@ -47,6 +47,19 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('write-failed') }),
   z.object({ reason: z.literal('absent') }),
   z.object({ reason: z.literal('at-capacity') }),
+  // AN IMAGE IMPORT'S OWN, and the two per-image reasons carry the FILE NAME where the
+  // line reasons carry a line: a person finds a picture by its name. 255 is the channel's
+  // name bound, restated because a dialog cannot import that constant.
+  z.object({
+    reason: z.literal('image-unreadable'),
+    file: z.string().min(1).max(255).nullable(),
+  }),
+  z.object({
+    reason: z.literal('too-many-pixels'),
+    file: z.string().min(1).max(255).nullable(),
+  }),
+  z.object({ reason: z.literal('too-many-images'), limit: z.number().int().positive() }),
+  z.object({ reason: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
 ]);
 
 /**

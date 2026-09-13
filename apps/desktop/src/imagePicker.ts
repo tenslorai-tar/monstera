@@ -7,6 +7,7 @@ import {
   type PickFormDataFile,
   type PickImage,
   type PickImportFile,
+  type PickImportFiles,
 } from './documentCommands.js';
 
 /**
@@ -99,6 +100,25 @@ export function createCsvPicker(): PickImportFile {
     });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
+  };
+}
+
+/**
+ * The open dialog for images to make a new PDF from.
+ *
+ * `createImagePicker`'s filter and its sentence about it, with `multiSelections`: one
+ * import makes one page per file, so here — unlike inserting an image — a picker that
+ * returns several is the shape downstream takes. The order the paths come back in is
+ * not the order pages are made in; `DocumentCommands` states that order.
+ */
+export function createImagesPicker(): PickImportFiles {
+  return async (): Promise<readonly string[] | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths;
   };
 }
 

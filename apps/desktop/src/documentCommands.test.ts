@@ -13,6 +13,9 @@ import {
   IncidentLog,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
+  MAX_IMAGE_BYTES,
+  MAX_IMPORT_IMAGES,
+  MAX_IMPORT_IMAGE_BYTES,
 } from '@monstera/contract';
 import {
   CapabilityRegistry,
@@ -70,6 +73,7 @@ import {
   type DocumentPageLinksReader,
   type CopySource,
   type CertificateSource,
+  type ImageFilesSource,
   type ImageSource,
   type ImportSource,
   type DocumentAnnotationsReader,
@@ -291,6 +295,13 @@ const noImages: ImageSource = {
 const noImportFile: ImportSource = {
   pick: () => Promise.reject(new Error('this case does not import a file')),
   read: () => Promise.reject(new Error('this case does not read an imported file')),
+};
+
+/** An image import source none of whose members any case here reaches unless it supplies one. */
+const noImageFiles: ImageFilesSource = {
+  pick: () => Promise.reject(new Error('this case does not import images')),
+  size: () => Promise.reject(new Error('this case does not size an image')),
+  read: () => Promise.reject(new Error('this case does not read an imported image')),
 };
 
 /** A certificate source neither member of which any case here reaches. */
@@ -537,6 +548,8 @@ const INERT = {
   // NO COMPOSE HOST, which is the state a build with no Win32 platform is in — so a
   // case that reached the import without meaning to is refused by name.
   compose: null,
+  imageFiles: noImageFiles,
+  composeImages: null,
   certificate: noCertificates,
   extract: localExtract,
   snapshot: localSnapshot,
@@ -1744,7 +1757,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       // destination fails here rather than answering.
       compose: (_format, _source, page) => {
         pages.push(page);
-        return Promise.resolve({ kind: 'refused', reason: 'unencodable-text', line: 7 });
+        return Promise.resolve({ kind: 'refused', reason: 'unencodable-text', line: 7, item: null });
       },
     });
 
@@ -1752,6 +1765,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
       kind: 'composition-refused',
       reason: 'unencodable-text',
       line: 7,
+      file: null,
     });
     // US LETTER, the one size both routes compose at, stated in points.
     expect(pages).toStrictEqual([{ width: 612, height: 792 }]);
@@ -1814,15 +1828,170 @@ describe('composeMarkdownFile: what an import answers before anything is written
       imports: { markdown: markdown.source, csv: readable.source },
       compose: (format) => {
         formats.push(format);
-        return Promise.resolve({ kind: 'refused', reason: 'nothing-to-draw', line: null });
+        return Promise.resolve({ kind: 'refused', reason: 'nothing-to-draw', line: null, item: null });
       },
     });
     expect(await second.composeImportFile('csv')).toStrictEqual({
       kind: 'composition-refused',
       reason: 'nothing-to-draw',
       line: null,
+      file: null,
     });
     expect(formats).toStrictEqual(['csv']);
+  });
+});
+
+describe('DocumentCommands.composeImageFiles', () => {
+  beforeAll(openDocument);
+
+  /** An image source recording every call, with each file's size from a table. */
+  function imagesFrom(
+    picked: readonly string[] | null,
+    sizeOf: (path: string) => number | null,
+  ): { readonly source: ImageFilesSource; readonly calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      source: {
+        pick: () => {
+          calls.push('pick');
+          return Promise.resolve(picked);
+        },
+        size: (path) => {
+          calls.push(`size:${path}`);
+          return Promise.resolve(sizeOf(path));
+        },
+        read: (path) => {
+          calls.push(`read:${path}`);
+          return Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) });
+        },
+      },
+    };
+  }
+
+  function commandsWith(
+    images: ImageFilesSource,
+    composeImages: DocumentCommandsParts['composeImages'],
+  ): DocumentCommands {
+    return new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      imageFiles: images,
+      composeImages,
+    });
+  }
+
+  it('REFUSES BEFORE THE PICKER where no compose host can exist', async () => {
+    const images = imagesFrom(['a.png'], () => 1);
+    await expect(commandsWith(images.source, null).composeImageFiles()).rejects.toBeInstanceOf(
+      EngineUnavailableError,
+    );
+    expect(images.calls).toStrictEqual([]);
+  });
+
+  it('makes pages in NAME ORDER with digits as numbers, and names the file a refusal is about', async () => {
+    // THE PICKER'S ORDER IS DELIBERATELY NOT NAME ORDER, and plain string order would
+    // put `scan 10` before `scan 2`. The host refuses POSITION 3, so only a command that
+    // sent the sorted list and mapped back through it names `scan 10.png`.
+    const images = imagesFrom(['C:\\s\\scan 10.png', 'C:\\s\\scan 2.jpg', 'C:\\s\\Scan 1.JPEG'], () => 8);
+    const sent: string[] = [];
+    const commands = commandsWith(images.source, async (items) => {
+      for (const item of items) {
+        const read = await item.read();
+        if (read.kind !== 'read') throw new Error('the fixture reads every file');
+        sent.push(`${item.mediaType}:${new TextDecoder().decode(read.bytes)}`);
+      }
+      return { kind: 'refused', reason: 'too-many-pixels', line: null, item: 3 };
+    });
+
+    // `noCopying` rejects its picker, so a refusal that went on to ask for a destination
+    // fails here rather than answering.
+    expect(await commands.composeImageFiles()).toStrictEqual({
+      kind: 'composition-refused',
+      reason: 'too-many-pixels',
+      line: null,
+      file: 'scan 10.png',
+    });
+    expect(sent).toStrictEqual([
+      'image/jpeg:C:\\s\\Scan 1.JPEG',
+      'image/jpeg:C:\\s\\scan 2.jpg',
+      'image/png:C:\\s\\scan 10.png',
+    ]);
+  });
+
+  it('decides every bound it can BEFORE ANY FILE IS READ, and composes nothing', async () => {
+    // THE DECISION IS THE CALLS NOT MADE. Each refusal below is also what the host or
+    // the bounded read would eventually say, so only the absent `read:` calls separate
+    // deciding up front from finding out later.
+    let composed = 0;
+    const composer: DocumentCommandsParts['composeImages'] = () => {
+      composed += 1;
+      return Promise.reject(new Error('unreachable'));
+    };
+
+    const many = imagesFrom(
+      Array.from({ length: MAX_IMPORT_IMAGES + 1 }, (_, at) => `${String(at)}.png`),
+      () => 1,
+    );
+    expect(await commandsWith(many.source, composer).composeImageFiles()).toStrictEqual({
+      kind: 'too-many-images',
+      limit: MAX_IMPORT_IMAGES,
+    });
+    expect(many.calls).toStrictEqual(['pick']);
+
+    const gif = imagesFrom(['a.png', 'b.gif'], () => 1);
+    expect(await commandsWith(gif.source, composer).composeImageFiles()).toStrictEqual({
+      kind: 'composition-refused',
+      reason: 'image-unreadable',
+      line: null,
+      file: 'b.gif',
+    });
+
+    const oneLarge = imagesFrom(['a.png', 'b.png'], (path) => (path === 'b.png' ? MAX_IMAGE_BYTES + 1 : 1));
+    expect(await commandsWith(oneLarge.source, composer).composeImageFiles()).toStrictEqual({
+      kind: 'too-large',
+      limitBytes: MAX_IMAGE_BYTES,
+    });
+
+    // EVERY FILE UNDER ITS OWN BOUND, and the set over its: only the running total refuses.
+    // FIVE FILES, not four: the set's bound is four times a file's, so four files over it
+    // are each over their own bound too, and the per-file refusal answers first — the
+    // assertion on the line after this caught exactly that when it said four.
+    const perFile = Math.floor(MAX_IMPORT_IMAGE_BYTES / 5) + 1;
+    const set = imagesFrom(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'], () => perFile);
+    expect(perFile).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
+    expect(await commandsWith(set.source, composer).composeImageFiles()).toStrictEqual({
+      kind: 'images-too-large',
+      limitBytes: MAX_IMPORT_IMAGE_BYTES,
+    });
+
+    const unstated = imagesFrom(['a.png'], () => null);
+    expect(await commandsWith(unstated.source, composer).composeImageFiles()).toStrictEqual({
+      kind: 'unreadable',
+    });
+
+    const reads = [...many.calls, ...gif.calls, ...oneLarge.calls, ...set.calls, ...unstated.calls];
+    expect(reads.filter((call) => call.startsWith('read:'))).toStrictEqual([]);
+    expect(composed).toBe(0);
+  });
+
+  it('CONTROL: a dismissed picker, or an empty pick, sizes nothing and composes nothing', async () => {
+    for (const picked of [null, []]) {
+      const images = imagesFrom(picked, () => 1);
+      const commands = commandsWith(images.source, () => Promise.reject(new Error('unreachable')));
+      expect(await commands.composeImageFiles()).toStrictEqual({ kind: 'cancelled' });
+      expect(images.calls).toStrictEqual(['pick']);
+    }
+  });
+
+  it('THROWS for a refused position past the list it sent, rather than naming some file', async () => {
+    const images = imagesFrom(['a.png'], () => 1);
+    const commands = commandsWith(images.source, () =>
+      Promise.resolve({ kind: 'refused', reason: 'image-unreadable', line: null, item: 2 }),
+    );
+    await expect(commands.composeImageFiles()).rejects.toThrow('image 2 of 1');
   });
 });
 

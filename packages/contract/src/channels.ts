@@ -718,11 +718,37 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
     reason: z.enum(COMPOSE_REFUSALS),
     /** The one-based source line the refusal is about, where there is one. */
     line: z.number().int().positive().nullable(),
+    /**
+     * The NAME of the picked file the refusal is about, where an import took several.
+     *
+     * Its own field and never `line`, because an image has no lines. A name and not a
+     * position, because the person knows their files by name and not by the order a
+     * dialog returned them in: the compose host answers a position, and main — which
+     * holds the picked list — is the one place the two meet. A name is not a path.
+     */
+    file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
   }),
   /** Another open document reaches the chosen destination. Nothing was written. */
   z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
   /** The filesystem refused. Nothing at the destination was replaced. */
   z.object({ kind: z.literal('write-failed') }),
+]);
+
+/**
+ * What an import of several images answers: every single-file import outcome, and the
+ * two bounds only a set of files has.
+ *
+ * The per-file byte bound is `too-large` with {@link MAX_IMAGE_BYTES}, as inserting one
+ * image answers. The set's own bounds are separate members, because *that file is
+ * larger than 64 MB* and *those files together are larger than 256 MB* are different
+ * sentences with different remedies.
+ */
+const imageImportOutcomeSchema = z.discriminatedUnion('kind', [
+  ...composedImportOutcomeSchema.options,
+  /** More files were picked than one import takes. Nothing was read. */
+  z.object({ kind: z.literal('too-many-images'), limit: z.number().int().positive() }),
+  /** The picked files together are past the import's byte bound. Nothing was read. */
+  z.object({ kind: z.literal('images-too-large'), limitBytes: z.number().int().positive() }),
 ]);
 
 export const channels = {
@@ -1652,6 +1678,21 @@ export const channels = {
   ),
 
   /**
+   * Makes a new PDF with one page per image the user picks, saves it where they
+   * choose, and opens it ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+   *
+   * `document.newFromCsv`'s shape: the ask carries nothing, main runs both pickers and
+   * the compose host decodes the images. {@link imageImportOutcomeSchema} adds the two
+   * bounds a set of files has.
+   */
+  'document.newFromImages': channel(
+    'Makes a new PDF with one page per image the user picks, saves it where they choose, and opens it.',
+    z.object({}),
+    imageImportOutcomeSchema,
+    ['engine-unavailable'],
+  ),
+
+  /**
    * Composes a Markdown file into a new PDF, opens it, and merges it into this
    * document at `at`.
    *
@@ -1693,6 +1734,7 @@ export const channels = {
         kind: z.literal('composition-refused'),
         reason: z.enum(COMPOSE_REFUSALS),
         line: z.number().int().positive().nullable(),
+        file: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
       }),
       z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),

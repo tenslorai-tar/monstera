@@ -3,14 +3,17 @@ import { describe, expect, it } from 'vitest';
 import {
   ENGINE_HOST_FRAME_MAX_BYTES,
   FRAME_HEADER_BYTES,
+  MAX_IMPORT_IMAGES,
   MAX_PAGE_COORDINATE,
   encodeFrame,
 } from '@monstera/contract';
 
 import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
+import type { ImportImage } from '../imageCompose.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
 import { createComposeHandlers } from './composeHandlers.js';
+import { ENGINE_SESSION_ID_MAX_CHARS } from './engineChannels.js';
 import type { HostArea } from './engineHandlers.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
 import { createHostSessions } from './hostSessions.js';
@@ -100,6 +103,10 @@ function start(
   files: Files,
   compose: (source: Uint8Array, page: ComposePageSize) => Promise<Uint8Array> = () =>
     Promise.resolve(COMPOSED),
+  images: (images: readonly ImportImage[]) => Promise<Uint8Array> = async (listed) => {
+    for (const image of listed) await image.read();
+    return COMPOSED;
+  },
 ) {
   const calls: string[] = [];
   const handlers = createComposeHandlers({
@@ -133,6 +140,19 @@ function start(
       calls.push(`csv:${[...source].join(',')}:${String(page.width)}x${String(page.height)}`);
       return compose(source, page);
     },
+    // EACH IMAGE'S DECODER AND THE BYTES ITS READ ANSWERED, recorded as the composer reads
+    // them — so a case can assert the handler bound each entry to the file it named.
+    composeImages: (listed) =>
+      images(
+        listed.map((image) => ({
+          mediaType: image.mediaType,
+          read: async () => {
+            const bytes = await image.read();
+            calls.push(`image:${image.mediaType}:${[...bytes].join(',')}`);
+            return bytes;
+          },
+        })),
+      ),
   });
 
   startEngineHost(
@@ -173,9 +193,10 @@ function request(id: string, channel: string, params: unknown): Uint8Array {
 async function openArea(
   files: Files,
   compose?: (source: Uint8Array, page: ComposePageSize) => Promise<Uint8Array>,
+  images?: (images: readonly ImportImage[]) => Promise<Uint8Array>,
 ): Promise<{ session: string; calls: string[] }> {
   stream = stubStream();
-  const { calls } = start(files, compose);
+  const { calls } = start(files, compose, images);
   stream.feed(
     request('o1', 'engine/open', {
       snapshotDirectory: AREA.snapshotDirectory,
@@ -206,6 +227,7 @@ describe('the compose host channel set', () => {
       [
         'engine/close',
         'engine/compose-csv',
+        'engine/compose-images',
         'engine/compose-markdown',
         'engine/open',
         'engine/probe-containment',
@@ -227,6 +249,97 @@ describe('the compose host channel set', () => {
     await stream.whenSent(3);
 
     expect(calls).toStrictEqual(['csv:97,44,98:612x792', 'compose:97,44,98:612x792']);
+  });
+
+  it('binds each listed image to the file it names, in order, and answers the composition', async () => {
+    // TWO FILES, TWO DECODERS, listed in the opposite order to their names: a handler
+    // that read one file for both, or lost the list's order, is visible in the calls.
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2]));
+    files.read.set(`${AREA.snapshotDirectory}|${OUT}`, new Uint8Array([3]));
+
+    stream.feed(
+      request('i1', 'engine/compose-images', {
+        session,
+        images: [
+          { from: OUT, mediaType: 'image/jpeg' },
+          { from: IN, mediaType: 'image/png' },
+        ],
+        into: 'abc-02',
+      }),
+    );
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: true, value: { kind: 'composed', bytes: COMPOSED.length } },
+    });
+    expect(calls).toStrictEqual(['image:image/jpeg:3', 'image:image/png:1,2']);
+    expect(files.written.get(`${AREA.outputDirectory}|abc-02`)).toStrictEqual(COMPOSED);
+  });
+
+  it('answers an image refusal WITH ITS POSITION, and a missing image as the transport’s', async () => {
+    const refusing = emptyFiles();
+    const refused = await openArea(refusing, undefined, () =>
+      Promise.reject(new ComposeRefused('too-many-pixels', null, 'refused for the case', 2)),
+    );
+    stream.feed(
+      request('i2', 'engine/compose-images', {
+        session: refused.session,
+        images: [{ from: IN, mediaType: 'image/png' }],
+        into: OUT,
+      }),
+    );
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: true, value: { kind: 'refused', reason: 'too-many-pixels', line: null, item: 2 } },
+    });
+    expect(refusing.written.size).toBe(0);
+
+    // A NAME THE AREA DOES NOT HOLD: `asset-missing`, and not an incident — main wrote
+    // the list, so a missing file is main's fault and a code it can act on.
+    const missing = emptyFiles();
+    const gone = await openArea(missing);
+    stream.feed(
+      request('i3', 'engine/compose-images', {
+        session: gone.session,
+        images: [{ from: IN, mediaType: 'image/png' }],
+        into: OUT,
+      }),
+    );
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
+    expect(gone.calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
+  });
+
+  it('a list at the import’s count, every name at its bound, fits in ONE frame', () => {
+    // THE WORST LEGITIMATE REQUEST, `hostProtocol.test.ts`' question for this channel: a
+    // bound on the list the frame cannot carry would refuse a 500-image import at the
+    // pipe with a framing error rather than an answer. `request` frames with the shipped
+    // encoder, which throws past the limit, and the length is asserted besides.
+    const name = 'a'.repeat(ENGINE_SESSION_ID_MAX_CHARS);
+    const frame = request('i4', 'engine/compose-images', {
+      session: 'f'.repeat(ENGINE_SESSION_ID_MAX_CHARS),
+      images: Array.from({ length: MAX_IMPORT_IMAGES }, () => ({ from: name, mediaType: 'image/jpeg' })),
+      into: name,
+    });
+    const framed = JSON.parse(new TextDecoder().decode(frame.subarray(FRAME_HEADER_BYTES))) as {
+      readonly params: unknown;
+    };
+    expect(composeChannels['engine/compose-images'].params.safeParse(framed.params).success).toBe(true);
+    expect(frame.length).toBeLessThanOrEqual(ENGINE_HOST_FRAME_MAX_BYTES);
+  });
+
+  it('bounds the image list at the import’s count, and CONTROL: accepts the count itself', () => {
+    const params = composeChannels['engine/compose-images'].params;
+    const listOf = (count: number) => ({
+      session: 's',
+      images: Array.from({ length: count }, () => ({ from: IN, mediaType: 'image/png' })),
+      into: OUT,
+    });
+    expect(params.safeParse(listOf(MAX_IMPORT_IMAGES)).success).toBe(true);
+    expect(params.safeParse(listOf(MAX_IMPORT_IMAGES + 1)).success).toBe(false);
+    expect(params.safeParse(listOf(0)).success).toBe(false);
   });
 
   it('bounds the page by the format, and CONTROL: accepts the limit itself', () => {

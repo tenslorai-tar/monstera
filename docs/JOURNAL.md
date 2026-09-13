@@ -892,6 +892,122 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Image(s) → PDF: bounds on pixels, read before the decode they bound
+
+D9's third row. Tools › Create gains *New PDF from images*: one page per picked JPEG or
+PNG, decoded in the compose host on its own channel, `engine/compose-images`.
+
+### What was built
+
+- **Kernel.**
+  - `imageDimensions.ts` reads a PNG's size from its signature and `IHDR`, strictly, and
+    answers `null` for anything else.
+  - `pageImage.ts`' insert became `addImagePage`, which inserting one image and this
+    import both call.
+  - `imageCompose.ts` makes the pages in **two passes**: every PNG header against both
+    pixel bounds first, then the decodes. A set that breaks a bound is refused before any
+    decoder runs, rather than after twenty seconds of decoding the images ahead of it.
+    Each pass reads one file at a time.
+- **Host.** `engine/compose-images` takes a list of area file names and media types,
+  bounded at `MAX_IMPORT_IMAGES`. A missing file answers `asset-missing`; a refusal
+  carries the image's **one-based position**.
+- **Contract.** `COMPOSE_REFUSALS` gains `image-unreadable` and `too-many-pixels`. The
+  renderer-facing refusal carries the file's **name**, not the position:
+  - the host knows positions, the person knows names;
+  - `main` sent the list, so `main` is the one place the two meet;
+  - a name is not a path.
+  `document.newFromImages` adds two outcomes only a set of files has: `too-many-images`
+  and `images-too-large`.
+- **Desktop.** `composeImageFiles` sorts the picked paths by name, digits as numbers. A
+  dialog returns a multiple selection in the platform's order, which is not one a person
+  can predict. Every bound `main` can decide — count, decoder, per-file bytes, set bytes —
+  is decided from the list and `stat` before any file is read. The binding writes each
+  file into the area one at a time and removes every one whatever the call answered. The
+  write tail is now one private method shared with the single-file imports.
+- **UI.** The command at order 40, and four dialog reasons with their sentences. The
+  dialog's title said *That Markdown file could not be imported* for all three imports;
+  it now reads *The import did not finish*.
+
+### The bounds, and the readings they came from
+
+A scratch probe running pdf-lib's own embedding, one shape per process, 2026-09-13:
+
+| shape | time | peak |
+|---|---|---|
+| one flat PNG, 8,000 × 8,000, 203 KB | 7.2 s | 744 MiB |
+| one flat PNG, 12,000 × 12,000, 450 KB | 18.2 s | 1,583 MiB |
+| two / four flat 8,000 × 8,000 PNGs | 15.6 / 29.4 s | 929 / 1,294 MiB |
+| one noise PNG, 4,000 × 4,000, 1.8 MB | 4.1 s | 247 MiB |
+| four of that noise PNG | 16.0 s | 385 MiB |
+| one noise JPEG, 8,000 × 8,000, 82 MB | 0.26 s | 228 MiB |
+| three of that JPEG | 1.0 s | 541 MiB |
+| 500 noise PNGs, 200 × 200, 8.5 KB each | 10.3 s | 163 MiB |
+
+`embedPng` decodes every pixel and `embedJpg` decodes none, so a PNG's cost follows its
+pixels and a JPEG's its bytes.
+
+| bound | value | set by |
+|---|---|---|
+| `MAX_IMPORT_IMAGE_PIXELS` | 100 MP per PNG | about 1.1 GiB of decode, inside the host's 3 GiB |
+| `MAX_IMPORT_PNG_PIXELS` | 200 MP together | about 22 s, inside Markdown's measured 27.6 s |
+| `MAX_IMPORT_IMAGE_BYTES` | 256 MiB together | about half a gibibyte of JPEGs in the host |
+| `MAX_IMPORT_IMAGES` | 500 files | time, not memory: 500 small PNGs took 10.3 s and 163 MiB |
+| per-file bytes | `MAX_IMAGE_BYTES`, 64 MiB | unchanged |
+
+### A page past the format's limit, found by the bound and fixed at the function
+
+`addImagePage` made each page the image's size at one point a pixel. PDF 32000-1 Annex
+C.2 bounds a page side at 14,400 points, so an image more than 14,400 pixels on a side
+made a non-conforming page. The 100 MP bound allows 20,000 × 5,000, and **Insert image
+already did this before this row**. The fix is in the one function both routes call: a
+page is scaled down until its longer side is 14,400, keeping its shape. This **changes
+Insert image**, and D2's row says so. `pageImage.test.ts` and `imageCompose.test.ts` each
+carry a case.
+
+### A shipped defect, reported and queued, not fixed here
+
+**D2's Insert image decodes a picked PNG in `main`, bounded only by 64 MiB of bytes.** The
+second row of the table above is a 450 KB file peaking at 1,583 MiB. That exceeds §9.17's
+1.5 GB budget for `main` from a file any person could pick. `documentSign.ts` embeds a
+signature image the same way. The root fix is the one this row applies — a pixel bound
+read from the header, and the decode out of `main` — and it is the D2 row's to take.
+
+### Executed, and not
+
+- **Executed:**
+  - typecheck, both halves;
+  - lint;
+  - 173 cases across the eleven changed test files;
+  - `npm run proof:composehost --require-containment`, 8 of 8 on this machine. The new
+    case composed two pictures through the real host, and the real MuPDF host read two
+    pages.
+- **Not executed:** a mutation against that live case. The order, binding and position
+  controls are in `composeHostBody.test.ts` and `documentCommands.test.ts`, against fake
+  hosts.
+
+### Found while building it, all fixed before commit
+
+- **My set-bound fixture split 256 MiB across four files.** Each was then 64 MiB and one
+  byte, over the per-file bound, so the per-file refusal answered and the running total
+  was never reached. The assertion I had put beside it failed on exactly that. It now
+  uses five files.
+- **Lint:** `JSON.parse(...).params` in the one-frame case read a member of `any`.
+- **The binding had two copies of the output-length check coming.** `takeComposed` is now
+  one check every compose channel calls.
+
+### Tooling, recorded and not queued
+
+- **`npm run lint` segfaulted in npm's own process**, the fault already recorded for
+  `npm run typecheck`.
+- **`eslint .` run directly ran out of JavaScript heap** at about 1.9 GB after three
+  minutes. That is the whole tree's typed program in one process. The same command
+  under `node --max-old-space-size=8192` finished with one finding, fixed above. No
+  project setting was changed.
+- **The escape guard refused a `node -e` board read**, which was the reflex the rule
+  names. The read went through a scratch script by path instead.
+
+---
+
 ## 2026-09-13 — CSV → PDF table: a strict reader, a shared table, and a bound set by time
 
 D9's second row. `c8f1006` moved the Markdown composer's layout into `composeLayout.ts`

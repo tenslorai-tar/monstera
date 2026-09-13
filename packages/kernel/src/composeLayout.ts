@@ -41,6 +41,8 @@ export class ComposeRefused extends Error {
     /** The one-based source line the refusal is about, where there is one. */
     readonly line: number | null,
     message: string,
+    /** The one-based position of the picked file the refusal is about, for a multi-file import. */
+    readonly item: number | null = null,
   ) {
     super(message);
     this.name = 'ComposeRefused';

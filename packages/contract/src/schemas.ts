@@ -399,6 +399,17 @@ export const COMPOSE_REFUSALS = [
    * would be drawn one character per line. The refusal names the table's line.
    */
   'too-many-columns',
+  /**
+   * A picked image the decoder refused, or a PNG whose header states no size. The
+   * refusal names which image, by its position among the files picked.
+   */
+  'image-unreadable',
+  /**
+   * A PNG larger than one image may be, or PNGs that together pass the import's pixel
+   * bound — decoding cost follows pixels, not bytes. The refusal names the image where
+   * the bound was crossed.
+   */
+  'too-many-pixels',
 ] as const;
 
 /** One of {@link COMPOSE_REFUSALS}. */

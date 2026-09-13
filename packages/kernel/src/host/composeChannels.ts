@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { COMPOSE_REFUSALS, MAX_PAGE_COORDINATE, channel } from '@monstera/contract';
+import {
+  COMPOSE_REFUSALS,
+  MAX_IMPORT_IMAGES,
+  MAX_PAGE_COORDINATE,
+  channel,
+  insertImagePageSchema,
+} from '@monstera/contract';
 
 import { byteImageWire, hostAreaChannels, outputNameSchema, sessionSchema } from './engineChannels.js';
 
@@ -71,6 +77,8 @@ const composeResultSchema = z.discriminatedUnion('kind', [
       reason: z.enum(COMPOSE_REFUSALS),
       /** The one-based source line the refusal is about, where there is one. */
       line: z.number().int().positive().nullable(),
+      /** The one-based position of the picked file the refusal is about, for a multi-file import. */
+      item: z.number().int().positive().nullable(),
     })
     .strict(),
 ]);
@@ -102,6 +110,38 @@ export const composeChannels = {
   'engine/compose-csv': channel(
     'Sets a CSV source from the area as a table on new PDF pages, written into the area.',
     composeRequestSchema,
+    composeResultSchema,
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * Makes each image in the area a page of a new PDF, in the order listed.
+   *
+   * ## Its own request, because an image import is a LIST of sources
+   *
+   * Each entry names a file main wrote into the snapshot directory and the decoder it
+   * goes to; the list is bounded by `MAX_IMPORT_IMAGES`, so the frame is too. There is
+   * no page size: each page is its image's size, scaled down only past the format's
+   * page limit (`addImagePage`). The result is the shared one, and a
+   * refusal carries the one-based position of the image it is about.
+   *
+   * The media type is the contract's `insertImagePage` enum, taken rather than spelt
+   * again, so the two routes to a page from an image name one set of decoders.
+   */
+  'engine/compose-images': channel(
+    'Makes each listed image from the area a page of a new PDF, written into the area.',
+    z
+      .object({
+        session: sessionSchema,
+        images: z
+          .array(
+            z.object({ from: outputNameSchema, mediaType: insertImagePageSchema.shape.mediaType }).strict(),
+          )
+          .min(1)
+          .max(MAX_IMPORT_IMAGES),
+        into: outputNameSchema,
+      })
+      .strict(),
     composeResultSchema,
     ['no-such-session', 'asset-missing'],
   ),

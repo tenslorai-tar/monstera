@@ -1,4 +1,6 @@
-import type { CommandOfKind } from '@monstera/contract';
+import type { PDFDocument } from '@cantoo/pdf-lib';
+
+import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
@@ -28,6 +30,11 @@ import { openForWriting } from './pdfLibSession.js';
  * That is the same convention every viewer applies to an image with no explicit
  * density, so a 2480×3508 scan arrives as a page a reader recognises as A4.
  *
+ * **With one exception, the format's own:** a side past `MAX_PAGE_COORDINATE`
+ * (PDF 32000-1 Annex C.2, 14,400 points) would make a page no conforming reader need
+ * open, so an image more than 14,400 pixels on a side is scaled down until its longer
+ * side is exactly that, keeping its shape. Every smaller image is its own size.
+ *
  * ## Non-invertible, for `watermarkPages`' reason arriving at a page boundary
  *
  * The prior state of *this page did not exist* is the whole document minus a
@@ -41,6 +48,54 @@ import { openForWriting } from './pdfLibSession.js';
  * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)):
  * the bytes serialised for it are the bytes this `apply` consumes.
  */
+
+/**
+ * The image encodings a page can be made from — the contract's list, never a copy.
+ *
+ * Taken from `insertImagePage`'s own `mediaType`, so a format the contract adds is a
+ * format this function must handle, rather than one a second spelling here forgets.
+ */
+export type EmbeddableImageType = CommandOfKind<'insertImagePage'>['mediaType'];
+
+/**
+ * Embeds one image and inserts the page it makes, at the image's own size — scaled
+ * down only past the format's page limit, per the header above.
+ *
+ * **ONE FUNCTION FOR EVERY ROUTE that makes a page from a picked image** — the
+ * insert-image command below, in `main`, and the image import composed in the compose
+ * host. The two would otherwise hold two opinions about a page's size and where the
+ * picture sits on it (B3a).
+ *
+ * TWO CALLS AND NOT ONE, because pdf-lib offers two and the choice is the caller's. A
+ * sniffer here would be a second opinion about a question the media type already
+ * answers — and the decoder refusing is what validates the bytes, which is where a
+ * validation belongs.
+ *
+ * @param at where the page goes; clamped to the end, per {@link applyInsertImagePage}
+ * @throws whatever pdf-lib's decoder throws for bytes that are not the named type
+ */
+export async function addImagePage(
+  document: PDFDocument,
+  bytes: Uint8Array,
+  mediaType: EmbeddableImageType,
+  at: number,
+): Promise<void> {
+  const embedded =
+    mediaType === 'image/png' ? await document.embedPng(bytes) : await document.embedJpg(bytes);
+
+  // NEVER PAST THE FORMAT'S PAGE LIMIT. One pixel is one point, and PDF 32000-1 Annex
+  // C.2 bounds a page side at `MAX_PAGE_COORDINATE`, so an image more than 14,400 pixels
+  // on a side would make a page no conforming reader need open. It is scaled down to
+  // fit, both sides by one factor so the picture keeps its shape; nothing smaller moves.
+  const scale = Math.min(1, MAX_PAGE_COORDINATE / Math.max(embedded.width, embedded.height));
+  const width = embedded.width * scale;
+  const height = embedded.height * scale;
+
+  const page = document.insertPage(Math.min(at, document.getPageCount()), [width, height]);
+  // AT THE ORIGIN AND AT FULL SIZE. The page was made to these dimensions one line
+  // up, so any inset here would be a margin nobody asked for.
+  page.drawImage(embedded, { x: 0, y: 0, width, height });
+}
 
 /**
  * Embeds the image and inserts the page it makes.
@@ -61,22 +116,7 @@ export const applyInsertImagePage: Apply<'pdf-lib', 'insertImagePage'> = async (
   command: CommandOfKind<'insertImagePage'>,
 ): Promise<ByteImage> => {
   const document = await openForWriting(image);
-
-  // TWO CALLS AND NOT ONE, because pdf-lib offers two and the choice is the
-  // caller's. A sniffer here would be a second opinion about a question the
-  // media type already answers — and the decoder refusing is what validates the
-  // bytes, which is where a validation belongs.
-  const embedded =
-    command.mediaType === 'image/png'
-      ? await document.embedPng(command.bytes)
-      : await document.embedJpg(command.bytes);
-
-  const at = Math.min(command.at, document.getPageCount());
-  const page = document.insertPage(at, [embedded.width, embedded.height]);
-  // AT THE ORIGIN AND AT FULL SIZE. The page was made to these dimensions one
-  // line up, so any inset here would be a margin nobody asked for.
-  page.drawImage(embedded, { x: 0, y: 0, width: embedded.width, height: embedded.height });
-
+  await addImagePage(document, command.bytes, command.mediaType, command.at);
   return document.save();
 };
 

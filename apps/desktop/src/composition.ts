@@ -103,6 +103,8 @@ import {
   type CertificateSource,
   type ImageSource,
   type ComposedImport,
+  type ComposeImages,
+  type ImageFilesSource,
   type ImportFormat,
   type ImportSource,
   type PickDestination,
@@ -405,6 +407,13 @@ export interface ShellComposition {
   readonly pickCsv: ImportSource['pick'];
   /** The CSV file's bytes, bounded by `MAX_CSV_BYTES` before the read. */
   readonly readCsv: ImportSource['read'];
+  /** Which images a new PDF is made from. Electron's open dialog, several files at once. */
+  readonly pickImages: ImageFilesSource['pick'];
+  /**
+   * A picked image's size, from a `stat`. Nothing is read, so the import's bounds are
+   * decided with no picked byte in `main`; the read itself is `readImage`.
+   */
+  readonly sizeImage: ImageFilesSource['size'];
   /**
    * Which certificate signs. Electron's open dialog, narrowed to `.p12`/`.pfx`.
    *
@@ -531,6 +540,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     readMarkdown,
     pickCsv,
     readCsv,
+    pickImages,
+    sizeImage,
     pickCertificate,
     readCertificate,
     openInBrowser,
@@ -986,6 +997,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       csv: { pick: pickCsv, read: readCsv },
     },
     compose: composeHost === null ? null : composeHost.compose,
+    // IMAGES TO A NEW PDF: the read is `image`'s own bounded read, and the composition
+    // is the same compose host's, `null` where it cannot exist.
+    imageFiles: { pick: pickImages, size: sizeImage, read: readImage },
+    composeImages: composeHost === null ? null : composeHost.composeImages,
     // SIGNING, and both members are parameters for `image`'s reason exactly.
     certificate: { pick: pickCertificate, read: readCertificate },
     // THE SAME STORE the settings channels write the integration key into, so a
@@ -2237,6 +2252,7 @@ function composeHostBinding(
     source: Uint8Array,
     page: { readonly width: number; readonly height: number },
   ) => Promise<ComposedImport>;
+  readonly composeImages: NonNullable<ComposeImages>;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -2321,6 +2337,25 @@ function composeHostBinding(
     return { connection: live.value, client, paths, session: opened.value.session };
   };
 
+  /**
+   * The composed PDF, taken from the output directory and held to the count the host
+   * reported — one check for every compose channel, so no channel can skip it.
+   */
+  const takeComposed = async (
+    area: Parameters<typeof areas.takeOutput>[0],
+    into: string,
+    reported: number,
+  ): Promise<Uint8Array> => {
+    const pdf = await areas.takeOutput(area, into);
+    if (pdf.length !== reported) {
+      throw new Error(
+        `the compose host reported ${String(reported)} bytes and ${String(pdf.length)} ` +
+          'were read back, so the composed document is not the one it wrote.',
+      );
+    }
+    return pdf;
+  };
+
   const ensure = (): Promise<Live> =>
     (host ??= connect().catch((error: unknown) => {
       // CLEARED ON FAILURE, for `pdfiumHostBinding`'s reason: a rejected promise
@@ -2358,17 +2393,61 @@ function composeHostBinding(
         throw new Error(`the compose host could not compose the source: ${answer.error.code}`);
       }
       if (answer.value.kind === 'refused') {
-        return { kind: 'refused', reason: answer.value.reason, line: answer.value.line };
+        return {
+          kind: 'refused',
+          reason: answer.value.reason,
+          line: answer.value.line,
+          item: answer.value.item,
+        };
       }
+      return { kind: 'composed', pdf: await takeComposed(area, into, answer.value.bytes) };
+    },
 
-      const pdf = await areas.takeOutput(area, into);
-      if (pdf.length !== answer.value.bytes) {
-        throw new Error(
-          `the compose host reported ${String(answer.value.bytes)} bytes and ${String(pdf.length)} ` +
-            'were read back, so the composed document is not the one it wrote.',
+    // `compose`'s decisions over a list. Each picked file is read and written into the
+    // area one at a time, so `main` holds one picked image at once, and every file
+    // written goes whatever the call answered — named BEFORE its write, so a write that
+    // failed part way is removed too.
+    composeImages: async (images) => {
+      const built = await ensure();
+      const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+      const into = areas.mintName();
+      const written: string[] = [];
+
+      try {
+        const listed: { from: string; mediaType: 'image/jpeg' | 'image/png' }[] = [];
+        for (const image of images) {
+          const read = await image.read();
+          // THE FILE CHANGED SINCE ITS SIZE WAS TAKEN, or went: `readImage` bounds
+          // again at the read, and either answer is the person's file, not a fault.
+          if (read.kind !== 'read') return { kind: 'unreadable' };
+          const from = areas.mintName();
+          written.push(from);
+          await writeFile(join(area.snapshotDirectory, from), read.bytes);
+          listed.push({ from, mediaType: image.mediaType });
+        }
+
+        const answer = await built.client['engine/compose-images']({
+          session: built.session,
+          images: listed,
+          into,
+        });
+        if (!answer.ok) {
+          throw new Error(`the compose host could not compose the images: ${answer.error.code}`);
+        }
+        if (answer.value.kind === 'refused') {
+          return {
+            kind: 'refused',
+            reason: answer.value.reason,
+            line: answer.value.line,
+            item: answer.value.item,
+          };
+        }
+        return { kind: 'composed', pdf: await takeComposed(area, into, answer.value.bytes) };
+      } finally {
+        await Promise.all(
+          written.map((name) => rm(join(area.snapshotDirectory, name), { force: true })),
         );
       }
-      return { kind: 'composed', pdf };
     },
 
     close: async () => {

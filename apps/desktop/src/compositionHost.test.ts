@@ -1098,6 +1098,25 @@ function composePeer(): ComposePeerLog {
           writeFileSync(join(area.output, into), new Uint8Array(COMPOSED_BYTES));
           return { ok: true, value: { kind: 'composed', bytes: COMPOSED_BYTES.length } };
         }
+        // EVERY LISTED IMAGE, read at the call and recorded with its decoder, so a case
+        // can assert what was on disk, in which order, routed to which decoder.
+        case 'engine/compose-images': {
+          if (area === null) throw new Error(`${channel} arrived before engine/open`);
+          channels.push(channel);
+          const { images, into } = params as {
+            images: { from: string; mediaType: string }[];
+            into: string;
+          };
+          for (const image of images) {
+            const source = join(area.snapshot, image.from);
+            fromPaths.push(source);
+            sources.push(
+              `${image.mediaType}:${existsSync(source) ? readFileSync(source, 'utf8') : '(absent at the call)'}`,
+            );
+          }
+          writeFileSync(join(area.output, into), new Uint8Array(COMPOSED_BYTES));
+          return { ok: true, value: { kind: 'composed', bytes: COMPOSED_BYTES.length } };
+        }
         default:
           return null;
       }
@@ -1258,6 +1277,46 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect(compose.channels).toStrictEqual(['engine/compose-csv']);
     expect(compose.sources).toStrictEqual(['a,b\n']);
     expect([...readFileSync(destination)]).toStrictEqual(COMPOSED_BYTES);
+  }, 120_000);
+
+  it('an image import writes every picked file into the area IN NAME ORDER, and removes each', async () => {
+    // THE PICKER'S ORDER IS NOT NAME ORDER, so a binding that kept the dialog's order —
+    // or that sent one file's bytes for both — is visible in what the host read.
+    const mupdf = platformAnswering(serialisingEngine());
+    const compose = composePeer();
+    const third = platformAnswering(compose.peer);
+    const destination = join(scratch, 'from-images.pdf');
+    const suggested: string[] = [];
+    const tenth = join(scratch, 'page 10.png');
+    const second = join(scratch, 'page 2.jpg');
+
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickImages: () => Promise.resolve([tenth, second]),
+      sizeImage: () => Promise.resolve(16),
+      readImage: (path) =>
+        Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode(path) }),
+      pickDestination: (name) => {
+        suggested.push(name);
+        return Promise.resolve(destination);
+      },
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+
+    const answer = await handlers['document.newFromImages']({});
+    expect(answer.ok, JSON.stringify(answer)).toBe(true);
+    if (!answer.ok) throw new Error('unreachable');
+    expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
+
+    expect(compose.channels).toStrictEqual(['engine/compose-images']);
+    expect(compose.sources).toStrictEqual([`image/jpeg:${second}`, `image/png:${tenth}`]);
+    // EVERY COPY IS GONE, not only the last one written.
+    expect(compose.fromPaths.map((path) => existsSync(path))).toStrictEqual([false, false]);
+    expect([...readFileSync(destination)]).toStrictEqual(COMPOSED_BYTES);
+    // The suggested name is the FIRST PAGE's file, which is the first in name order.
+    expect(suggested).toStrictEqual(['page 2.pdf']);
   }, 120_000);
 
   it('CONTROL: with no compose platform the import is refused before any picker opens', async () => {

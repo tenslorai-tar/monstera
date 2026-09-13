@@ -131,6 +131,7 @@ import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.
 import {
   appendMarkdownCommand,
   newFromCsvCommand,
+  newFromImagesCommand,
   newFromMarkdownCommand,
 } from './commands/importMarkdown.js';
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
@@ -1486,6 +1487,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         newFromMarkdownCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's CSV ROW, the same callbacks: a composed table arrives as a tab.
         newFromCsvCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        // D9's IMAGES ROW, the same callbacks: the composed pages arrive as a tab.
+        newFromImagesCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({
           client,
           onApplied: applied,

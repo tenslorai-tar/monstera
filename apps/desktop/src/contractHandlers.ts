@@ -279,6 +279,7 @@ export function createContractHandlers(deps: {
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
+    'document.newFromImages': newFromImagesHandler(deps),
     'document.appendMarkdown': appendMarkdownHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
@@ -521,7 +522,12 @@ function composeRefusal(
     case 'unreadable':
       return { kind: 'unreadable' };
     case 'composition-refused':
-      return { kind: 'composition-refused', reason: outcome.reason, line: outcome.line };
+      return {
+        kind: 'composition-refused',
+        reason: outcome.reason,
+        line: outcome.line,
+        file: outcome.file,
+      };
     case 'destination-contested':
       return { kind: 'destination-contested', openElsewhere: outcome.openElsewhere };
     case 'write-failed':
@@ -546,6 +552,33 @@ function newFromImportHandler(
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
     try {
       const composed = await deps.commands.composeImportFile(format);
+      if (composed.kind !== 'written') return ok(composeRefusal(composed));
+      return ok((await openPath(deps, composed.destination)).outcome);
+    } catch (thrown) {
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Makes a PDF from picked images, and opens it.
+ *
+ * {@link newFromImportHandler}'s route exactly, with the two outcomes only a set of files
+ * has answered first and member by member, for `composeRefusal`'s reason.
+ */
+function newFromImagesHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.newFromImages'] {
+  return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromImages']>>> => {
+    try {
+      const composed = await deps.commands.composeImageFiles();
+      if (composed.kind === 'too-many-images') {
+        return ok({ kind: 'too-many-images', limit: composed.limit });
+      }
+      if (composed.kind === 'images-too-large') {
+        return ok({ kind: 'images-too-large', limitBytes: composed.limitBytes });
+      }
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       return ok((await openPath(deps, composed.destination)).outcome);
     } catch (thrown) {

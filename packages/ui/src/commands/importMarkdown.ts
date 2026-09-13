@@ -10,6 +10,7 @@ import {
   APPEND_MARKDOWN_COMMAND_TITLE,
   GROUP_CREATE,
   NEW_FROM_CSV_COMMAND_TITLE,
+  NEW_FROM_IMAGES_COMMAND_TITLE,
   NEW_FROM_MARKDOWN_COMMAND_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -45,7 +46,10 @@ export interface OpenedDocument {
 export function markdownImportProblem(
   // `document.newFromCsv` IS NOT A SECOND MEMBER HERE: it answers the contract's one
   // declared import-outcome union, so its result type is this first member exactly.
-  answer: ChannelResult<'document.newFromMarkdown'> | ChannelResult<'document.appendMarkdown'>,
+  answer:
+    | ChannelResult<'document.newFromMarkdown'>
+    | ChannelResult<'document.appendMarkdown'>
+    | ChannelResult<'document.newFromImages'>,
 ): MarkdownImportProblem | null {
   switch (answer.kind) {
     case 'unreadable':
@@ -53,7 +57,11 @@ export function markdownImportProblem(
     case 'too-large':
       return { reason: 'too-large', limitBytes: answer.limitBytes };
     case 'composition-refused':
-      return refusalProblem(answer.reason, answer.line);
+      return refusalProblem(answer.reason, answer.line, answer.file);
+    case 'too-many-images':
+      return { reason: 'too-many-images', limit: answer.limit };
+    case 'images-too-large':
+      return { reason: 'images-too-large', limitBytes: answer.limitBytes };
     case 'destination-contested':
       return { reason: 'destination-contested', openElsewhere: answer.openElsewhere };
     case 'write-failed':
@@ -82,8 +90,16 @@ export function markdownImportProblem(
  * function rather than a nested switch because `no-fallthrough` reads a nested
  * switch's returns as a fall-through out of the case around it.
  */
-function refusalProblem(reason: ComposeRefusal, line: number | null): MarkdownImportProblem {
+function refusalProblem(
+  reason: ComposeRefusal,
+  line: number | null,
+  file: string | null,
+): MarkdownImportProblem {
   switch (reason) {
+    case 'image-unreadable':
+      return { reason: 'image-unreadable', file };
+    case 'too-many-pixels':
+      return { reason: 'too-many-pixels', file };
     case 'unencodable-text':
       return { reason: 'unencodable-text', line };
     case 'malformed-csv':
@@ -159,6 +175,48 @@ export function newFromCsvCommand(deps: {
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromCsv']({});
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const result = answer.value;
+      if (result.kind === 'opened') {
+        deps.onOpened({
+          docId: result.docId,
+          version: result.version,
+          byteLength: result.byteLength,
+          name: result.name,
+        });
+        return;
+      }
+      if (result.kind === 'already-open') {
+        deps.onAlreadyOpen(result.docId);
+        return;
+      }
+      const problem = markdownImportProblem(result);
+      if (problem !== null) void deps.ask(MARKDOWN_IMPORT_PROBLEM_DIALOG_ID, problem);
+    },
+  };
+}
+
+/**
+ * A new PDF with one page per picked image, opened as a tab.
+ *
+ * {@link newFromCsvCommand}'s shape and callbacks exactly. The two outcomes only a set of
+ * files has — too many, or too large together — go to the same dialog, which states them.
+ */
+export function newFromImagesCommand(deps: {
+  readonly client: DocumentCommandDeps['client'];
+  readonly ask: DocumentCommandDeps['ask'];
+  readonly onOpened: (opened: OpenedDocument) => void;
+  readonly onAlreadyOpen: (docId: DocId) => void;
+}): UiCommand {
+  return {
+    id: 'document.new-from-images',
+    title: NEW_FROM_IMAGES_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 40 }],
+    run: async (): Promise<void> => {
+      const answer = await deps.client['document.newFromImages']({});
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

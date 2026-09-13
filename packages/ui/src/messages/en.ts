@@ -182,6 +182,7 @@ export const GROUP_CREATE = messageKey('surface.ribbon.group.create');
 export const NEW_FROM_MARKDOWN_COMMAND_TITLE = messageKey('command.new-from-markdown.title');
 export const APPEND_MARKDOWN_COMMAND_TITLE = messageKey('command.append-markdown.title');
 export const NEW_FROM_CSV_COMMAND_TITLE = messageKey('command.new-from-csv.title');
+export const NEW_FROM_IMAGES_COMMAND_TITLE = messageKey('command.new-from-images.title');
 export const MARKDOWN_IMPORT_PROBLEM_TITLE = messageKey('dialog.markdown-import-problem.title');
 export const MARKDOWN_IMPORT_UNREADABLE = messageKey('dialog.markdown-import-problem.unreadable');
 export const MARKDOWN_IMPORT_TOO_LARGE = messageKey('dialog.markdown-import-problem.too-large');
@@ -207,6 +208,24 @@ export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE = messageKey(
 export const MARKDOWN_IMPORT_WRITE_FAILED = messageKey('dialog.markdown-import-problem.write-failed');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
+export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
+  'dialog.markdown-import-problem.image-unreadable',
+);
+export const MARKDOWN_IMPORT_IMAGE_UNREADABLE_NO_FILE = messageKey(
+  'dialog.markdown-import-problem.image-unreadable-no-file',
+);
+export const MARKDOWN_IMPORT_TOO_MANY_PIXELS = messageKey(
+  'dialog.markdown-import-problem.too-many-pixels',
+);
+export const MARKDOWN_IMPORT_TOO_MANY_PIXELS_NO_FILE = messageKey(
+  'dialog.markdown-import-problem.too-many-pixels-no-file',
+);
+export const MARKDOWN_IMPORT_TOO_MANY_IMAGES = messageKey(
+  'dialog.markdown-import-problem.too-many-images',
+);
+export const MARKDOWN_IMPORT_IMAGES_TOO_LARGE = messageKey(
+  'dialog.markdown-import-problem.images-too-large',
+);
 export const GENERATE_TOC_COMMAND_TITLE = messageKey('command.generate-toc.title');
 export const GENERATE_TOC_PROBLEM_TITLE = messageKey('dialog.generate-toc-problem.title');
 export const GENERATE_TOC_NO_OUTLINE = messageKey('dialog.generate-toc-problem.no-outline');
@@ -1802,7 +1821,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [NEW_FROM_MARKDOWN_COMMAND_TITLE]: 'New PDF from Markdown…',
   [APPEND_MARKDOWN_COMMAND_TITLE]: 'Add pages from Markdown…',
   [NEW_FROM_CSV_COMMAND_TITLE]: 'New PDF table from CSV…',
-  [MARKDOWN_IMPORT_PROBLEM_TITLE]: 'That Markdown file could not be imported',
+  [NEW_FROM_IMAGES_COMMAND_TITLE]: 'New PDF from images…',
+  // NOT "THAT MARKDOWN FILE": three imports open this dialog, and a title naming one
+  // format told a person who picked a CSV or a folder of scans the wrong thing.
+  [MARKDOWN_IMPORT_PROBLEM_TITLE]: 'The import did not finish',
   [MARKDOWN_IMPORT_UNREADABLE]: 'The file you chose could not be read. Nothing was imported.',
   [MARKDOWN_IMPORT_TOO_LARGE]:
     'That file is larger than {megabytes} MB, which is the most this app will import. ' +
@@ -1832,6 +1854,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MARKDOWN_IMPORT_AT_CAPACITY]:
     'The PDF was saved, but there is not enough room to open it beside the documents already ' +
     'open. Close one, then open the PDF from where you saved it.',
+  [MARKDOWN_IMPORT_IMAGE_UNREADABLE]:
+    '{file} could not be read as a JPEG or PNG picture. Nothing was imported.',
+  [MARKDOWN_IMPORT_IMAGE_UNREADABLE_NO_FILE]:
+    'One of the pictures could not be read as a JPEG or PNG. Nothing was imported.',
+  // TWO BOUNDS, ONE SENTENCE: a PNG too large on its own and the one that takes the set
+  // past its total have the same remedy — fewer or smaller pictures.
+  [MARKDOWN_IMPORT_TOO_MANY_PIXELS]:
+    '{file} is too large a picture, or takes the pictures past the most one import holds. ' +
+    'Choose fewer or smaller pictures. Nothing was imported.',
+  [MARKDOWN_IMPORT_TOO_MANY_PIXELS_NO_FILE]:
+    'The pictures are larger than one import holds. Choose fewer or smaller pictures. ' +
+    'Nothing was imported.',
+  [MARKDOWN_IMPORT_TOO_MANY_IMAGES]:
+    'You chose more than {limit} pictures, which is the most one import takes. Nothing was imported.',
+  [MARKDOWN_IMPORT_IMAGES_TOO_LARGE]:
+    'The pictures you chose come to more than {megabytes} MB together, which is the most one ' +
+    'import takes. Nothing was imported.',
   [GENERATE_TOC_COMMAND_TITLE]: 'Table of contents',
   [GENERATE_TOC_PROBLEM_TITLE]: 'There is nothing to tabulate',
   // NAMES WHAT IS MISSING AND WHERE IT COMES FROM. "No bookmarks" alone reads

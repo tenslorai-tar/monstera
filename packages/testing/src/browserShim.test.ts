@@ -206,6 +206,7 @@ describe('browser shim', () => {
       'document.insertImage',
       'document.layers',
       'document.newFromCsv',
+      'document.newFromImages',
       'document.newFromMarkdown',
       'document.open',
       'document.openRecent',

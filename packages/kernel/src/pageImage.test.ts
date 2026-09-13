@@ -3,7 +3,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import type { CommandOfKind } from '@monstera/contract';
+import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract';
 
 import { applyInsertImagePage, captureInsertImagePage } from './pageImage.js';
 
@@ -175,6 +175,23 @@ describe('insertImagePage', () => {
     const sizes = await sizesOf(after);
 
     expect(sizes[3]).toStrictEqual({ width: IMAGE_WIDTH, height: IMAGE_HEIGHT });
+  });
+
+  it('scales an image past the format’s page limit down to it, keeping its shape', async () => {
+    // PDF 32000-1 Annex C.2 bounds a page side at 14,400 points, and one pixel is one
+    // point. So a PNG 14,401 pixels wide made a non-conforming page until 2026-09-13.
+    // One row of pixels keeps the fixture small; the height scales by the same factor.
+    const wide = MAX_PAGE_COORDINATE + 1;
+    const after = await applyInsertImagePage(await threePages(), {
+      kind: 'insertImagePage',
+      at: 0,
+      bytes: pngOf(wide, 2),
+      mediaType: 'image/png',
+    });
+    const [page] = await sizesOf(after);
+
+    expect(page?.width).toBe(MAX_PAGE_COORDINATE);
+    expect(page?.height).toBeCloseTo((2 * MAX_PAGE_COORDINATE) / wide, 6);
   });
 
   it('CLAMPS an index past the end rather than refusing it', async () => {

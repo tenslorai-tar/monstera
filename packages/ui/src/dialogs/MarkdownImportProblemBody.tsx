@@ -5,6 +5,12 @@ import {
   MARKDOWN_IMPORT_ABSENT,
   MARKDOWN_IMPORT_AT_CAPACITY,
   MARKDOWN_IMPORT_CONTESTED,
+  MARKDOWN_IMPORT_IMAGES_TOO_LARGE,
+  MARKDOWN_IMPORT_IMAGE_UNREADABLE,
+  MARKDOWN_IMPORT_IMAGE_UNREADABLE_NO_FILE,
+  MARKDOWN_IMPORT_TOO_MANY_IMAGES,
+  MARKDOWN_IMPORT_TOO_MANY_PIXELS,
+  MARKDOWN_IMPORT_TOO_MANY_PIXELS_NO_FILE,
   MARKDOWN_IMPORT_MALFORMED_CSV,
   MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE,
   MARKDOWN_IMPORT_TOO_MANY_COLUMNS,
@@ -71,6 +77,21 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
         return _(MARKDOWN_IMPORT_ABSENT);
       case 'at-capacity':
         return _(MARKDOWN_IMPORT_AT_CAPACITY);
+      // THE FILE IS NAMED WHERE THERE IS ONE, for the line's reason above.
+      case 'image-unreadable':
+        return props.file === null
+          ? _(MARKDOWN_IMPORT_IMAGE_UNREADABLE_NO_FILE)
+          : _(MARKDOWN_IMPORT_IMAGE_UNREADABLE, { file: props.file });
+      case 'too-many-pixels':
+        return props.file === null
+          ? _(MARKDOWN_IMPORT_TOO_MANY_PIXELS_NO_FILE)
+          : _(MARKDOWN_IMPORT_TOO_MANY_PIXELS, { file: props.file });
+      case 'too-many-images':
+        return _(MARKDOWN_IMPORT_TOO_MANY_IMAGES, { limit: props.limit });
+      case 'images-too-large':
+        return _(MARKDOWN_IMPORT_IMAGES_TOO_LARGE, {
+          megabytes: Math.floor(props.limitBytes / (1024 * 1024)),
+        });
     }
   }
 }

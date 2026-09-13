@@ -1,6 +1,7 @@
 import type { Handlers } from '@monstera/contract';
 
 import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
+import type { ImportImage } from '../imageCompose.js';
 import type { ComposeChannels } from './composeChannels.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
@@ -39,11 +40,17 @@ export interface ComposeHandlerParts {
   readonly composeMarkdown: SourceComposer;
   /** How this process composes a CSV source. */
   readonly composeCsv: SourceComposer;
+  /** How this process makes pages from a list of images. `composeImages` in the host. */
+  readonly composeImages: (images: readonly ImportImage[]) => Promise<Uint8Array>;
 }
+
+/** An image the snapshot directory does not hold, told apart from a decoder's refusal. */
+class SourceMissing extends Error {}
 
 export function createComposeHandlers({
   areas,
   composeCsv,
+  composeImages,
   composeMarkdown,
   files,
   probe,
@@ -84,7 +91,10 @@ export function createComposeHandlers({
         // build, and it propagates so the body reports `internal` rather than
         // dressing a fault up as a fact about the person's file.
         if (error instanceof ComposeRefused) {
-          return { ok: true, value: { kind: 'refused', reason: error.reason, line: error.line } };
+          return {
+            ok: true,
+            value: { kind: 'refused', reason: error.reason, line: error.line, item: error.item },
+          };
         }
         throw error;
       }
@@ -118,5 +128,38 @@ export function createComposeHandlers({
 
     'engine/compose-markdown': composeWith(composeMarkdown),
     'engine/compose-csv': composeWith(composeCsv),
+
+    // `composeWith`'s decisions over a list: a missing source is the transport's, a
+    // named refusal is an answer, and anything else propagates as a fault. Each image
+    // is read when the composer reaches it, so the host holds one picked file at once.
+    'engine/compose-images': async ({ session, images, into }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+
+      let pdf: Uint8Array;
+      try {
+        pdf = await composeImages(
+          images.map(({ from, mediaType }) => ({
+            mediaType,
+            read: () =>
+              files.readSnapshot(held.snapshotDirectory, from).catch((error: unknown) => {
+                throw new SourceMissing(`the image ${from} is not in the area`, { cause: error });
+              }),
+          })),
+        );
+      } catch (error) {
+        if (error instanceof SourceMissing) return { ok: false, error: { code: 'asset-missing' } };
+        if (error instanceof ComposeRefused) {
+          return {
+            ok: true,
+            value: { kind: 'refused', reason: error.reason, line: error.line, item: error.item },
+          };
+        }
+        throw error;
+      }
+
+      const bytes = await files.writeOutput(held.outputDirectory, into, pdf);
+      return { ok: true, value: { kind: 'composed', bytes } };
+    },
   };
 }

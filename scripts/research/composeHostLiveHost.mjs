@@ -59,6 +59,29 @@ const SOURCE_WORDS = 8;
 const CSV_SOURCE = 'name,qty\nApples,3\nPears,12\n';
 const CSV_WORDS = 6;
 
+/**
+ * A baseline JPEG's start-of-image, start-of-frame and end, built from its size.
+ *
+ * `embedJpg` reads the frame header for the size and carries the rest as the image's
+ * stream, so this is a real page of a stated size with no picture data to vet (B10).
+ *
+ * @param {number} width @param {number} height
+ */
+function jpegOf(width, height) {
+  return Uint8Array.of(
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08,
+    height >> 8, height & 0xff, width >> 8, width & 0xff,
+    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+    0xff, 0xd9,
+  );
+}
+
+/** The pictures the image import picks, each one page. */
+const IMAGES = [
+  { name: 'scan 1.jpg', bytes: jpegOf(300, 200) },
+  { name: 'scan 2.jpg', bytes: jpegOf(100, 400) },
+];
+
 /** How long the hosts have to exit once killed. `hostRecoveryHost.mjs`' bound. */
 const DEATH_BUDGET_MS = 5_000;
 const POLL_MS = 250;
@@ -163,6 +186,13 @@ async function main() {
       readMarkdown: () => Promise.resolve({ kind: 'read', bytes: next.bytes }),
       pickCsv: () => Promise.resolve(join(scratch, 'table.csv')),
       readCsv: () => Promise.resolve({ kind: 'read', bytes: next.bytes }),
+      pickImages: () => Promise.resolve(IMAGES.map((image) => join(scratch, image.name))),
+      sizeImage: (/** @type {string} */ path) =>
+        Promise.resolve(IMAGES.find((image) => path.endsWith(image.name))?.bytes.length ?? null),
+      readImage: (/** @type {string} */ path) => {
+        const image = IMAGES.find((candidate) => path.endsWith(candidate.name));
+        return Promise.resolve(image === undefined ? { kind: 'unreadable' } : { kind: 'read', bytes: image.bytes });
+      },
       pickDestination: () => Promise.resolve(next.destination),
       enginePlatform: platform,
       composePlatform,
@@ -196,6 +226,17 @@ async function main() {
       );
     }
 
+    // PICTURES THROUGH THE SAME HOST, on their own channel, counted by the MuPDF host.
+    next.destination = join(scratch, 'composed-images.pdf');
+    const imagesComposed = await observed(() => handlers['document.newFromImages']({}));
+    /** @type {any} */
+    let imagePages = null;
+    if (imagesComposed?.ok === true && imagesComposed.value?.kind === 'opened') {
+      imagePages = await observed(() =>
+        handlers['document.viewModel']({ docId: imagesComposed.value.docId, pages: [0] }),
+      );
+    }
+
     // THE CONTROL: bytes that are not UTF-8, which only the composer can refuse.
     next.bytes = new Uint8Array([0xff, 0xfe, 0xfd, 0x0a]);
     next.destination = join(scratch, 'never-written.pdf');
@@ -211,6 +252,9 @@ async function main() {
       csvComposed,
       csvWords,
       expectedCsvWords: CSV_WORDS,
+      imagesComposed,
+      imagePages,
+      expectedImagePages: IMAGES.length,
     };
     // THE REPORT FIRST, for `hostRecoveryHost.mjs`' reason: everything after it is
     // cleanup, and cleanup can fail.

@@ -8,6 +8,8 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
+  MAX_IMPORT_IMAGES,
+  MAX_IMPORT_IMAGE_BYTES,
   MAX_TEXT_LAYER_LINE,
   type ComposeRefusal,
   type RequestedSignatureMark,
@@ -357,7 +359,7 @@ export const COMPOSED_PAGE = { width: 612, height: 792 } as const;
  * file called `.pdf`, which Windows hides.
  */
 export function suggestedComposedName(source: string): string {
-  const name = source.slice(Math.max(source.lastIndexOf('/'), source.lastIndexOf('\\')) + 1);
+  const name = fileNameOf(source);
   const dot = name.lastIndexOf('.');
   return `${dot > 0 ? name.slice(0, dot) : name}.pdf`;
 }
@@ -624,6 +626,8 @@ export type ComposedImport =
       readonly reason: ComposeRefusal;
       /** The one-based source line the refusal is about, where there is one. */
       readonly line: number | null;
+      /** The one-based position of the image the refusal is about, for an image import. */
+      readonly item: number | null;
     };
 
 /**
@@ -655,9 +659,69 @@ export type ComposeImportOutcome =
       readonly kind: 'composition-refused';
       readonly reason: ComposeRefusal;
       readonly line: number | null;
+      /** The picked file's NAME, where the import took several — never its path. */
+      readonly file: string | null;
     }
   | { readonly kind: 'destination-contested'; readonly openElsewhere: number }
   | { readonly kind: 'write-failed' };
+
+/**
+ * Which images an import reads, or `null` for the person dismissing the dialog.
+ *
+ * {@link PickImportFile}'s shape with a list: one import makes one page per file.
+ */
+export type PickImportFiles = () => Promise<readonly string[] | null>;
+
+/**
+ * What importing several images needs from outside this module.
+ *
+ * `size` is asked of every file BEFORE any is read, so the set's byte bound is decided
+ * with nothing in memory; `read` is `ImageSource`'s bounded read, reached one file at a
+ * time when the composition takes that file.
+ */
+export interface ImageFilesSource {
+  readonly pick: PickImportFiles;
+  /** A file's size in bytes without reading it, or `null` where it cannot be stated. */
+  readonly size: (path: string) => Promise<number | null>;
+  readonly read: ImageSource['read'];
+}
+
+/** One picked image as the compose host binding takes it: its decoder, and its read. */
+export interface ComposeImageItem {
+  readonly mediaType: 'image/jpeg' | 'image/png';
+  readonly read: () => Promise<ImageRead>;
+}
+
+/**
+ * How picked images become a PDF, through the compose host — or `null` where no compose
+ * host can exist. {@link ComposeImport}'s shape; `unreadable` is a file whose bounded
+ * read failed when its turn came, which the binding meets and this module did not.
+ */
+export type ComposeImages =
+  | ((images: readonly ComposeImageItem[]) => Promise<ComposedImport | { readonly kind: 'unreadable' }>)
+  | null;
+
+/** What importing several images answers: an import's outcomes, and the set's two bounds. */
+export type ImageImportOutcome =
+  | ComposeImportOutcome
+  | { readonly kind: 'too-many-images'; readonly limit: number }
+  | { readonly kind: 'images-too-large'; readonly limitBytes: number };
+
+/**
+ * The order picked images become pages in: by file name, with digits compared as
+ * numbers, so `scan 2` comes before `scan 10`.
+ *
+ * A STATED ORDER rather than the dialog's, because the order an open dialog returns a
+ * multiple selection in is the platform's and is not the order the files are listed in,
+ * so it is not an order a person can predict. English collation, pinned, so the pages
+ * of one set of files come out the same on every machine.
+ */
+const IMAGE_PAGE_ORDER = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+/** A path's file name: what follows the last separator of either kind. */
+function fileNameOf(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+}
 
 /** What {@link ImageSource.read} answers. */
 export type ImageRead =
@@ -1378,6 +1442,10 @@ export interface DocumentCommandsParts {
    * caller reaches by saying nothing.
    */
   readonly compose: ComposeImport;
+  /** The image import's picker, sizes and bounded read. See {@link ImageFilesSource}. */
+  readonly imageFiles: ImageFilesSource;
+  /** The compose host's image composition, or `null` where none can exist — `compose`'s reason. */
+  readonly composeImages: ComposeImages;
   /** Where a signing certificate comes from. See {@link CertificateSource}. */
   readonly certificate: CertificateSource;
   /**
@@ -1416,6 +1484,8 @@ export class DocumentCommands {
   readonly #image: ImageSource;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
   readonly #compose: ComposeImport;
+  readonly #imageFiles: ImageFilesSource;
+  readonly #composeImages: ComposeImages;
   readonly #certificate: CertificateSource;
   readonly #docusign: DocusignSession;
   readonly #extract: DocumentExtractReader;
@@ -1447,6 +1517,8 @@ export class DocumentCommands {
     this.#image = parts.image;
     this.#imports = parts.imports;
     this.#compose = parts.compose;
+    this.#imageFiles = parts.imageFiles;
+    this.#composeImages = parts.composeImages;
     this.#certificate = parts.certificate;
     this.#docusign = parts.docusign;
     this.#extract = parts.extract;
@@ -2824,9 +2896,89 @@ export class DocumentCommands {
 
     const composed = await compose(format, read.bytes, COMPOSED_PAGE);
     if (composed.kind === 'refused') {
-      return { kind: 'composition-refused', reason: composed.reason, line: composed.line };
+      return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
+    }
+    return this.#writeComposed(composed.pdf, picked);
+  }
+
+  /**
+   * Makes a new PDF with one page per image the person picks, in the compose host, and
+   * writes it where they choose.
+   *
+   * {@link composeImportFile}'s shape and its reasons — refused before the picker where
+   * nothing can compose, a path answered and never crossing — over a list of files.
+   *
+   * ## Every bound this process can decide is decided before ANY file is read
+   *
+   * The count, each file's decoder, each file's size and the set's size are all known
+   * from the list and a `stat`, so a set that breaks one is refused with no picked byte
+   * in memory. What only the bytes can say — a PNG's pixel count, whether a decoder
+   * takes the file — is the compose host's, because reading it is parsing.
+   *
+   * ## A refusal names the FILE
+   *
+   * The host answers a position in the list it was sent; this method sent that list,
+   * so it is where a position becomes the name the person knows the file by.
+   */
+  async composeImageFiles(): Promise<ImageImportOutcome> {
+    const compose = this.#composeImages;
+    if (compose === null) throw new EngineUnavailableError('Importing images');
+
+    const picked = await this.#imageFiles.pick();
+    if (picked === null || picked.length === 0) return { kind: 'cancelled' };
+    if (picked.length > MAX_IMPORT_IMAGES) return { kind: 'too-many-images', limit: MAX_IMPORT_IMAGES };
+
+    const ordered = [...picked].sort((one, other) =>
+      IMAGE_PAGE_ORDER.compare(fileNameOf(one), fileNameOf(other)),
+    );
+
+    const items: ComposeImageItem[] = [];
+    let totalBytes = 0;
+    for (const path of ordered) {
+      // `insertImage`'s routing, decided before any read for its reason.
+      const mediaType = imageMediaType(path);
+      if (mediaType === null) {
+        return { kind: 'composition-refused', reason: 'image-unreadable', line: null, file: fileNameOf(path) };
+      }
+      const size = await this.#imageFiles.size(path);
+      if (size === null) return { kind: 'unreadable' };
+      if (size > MAX_IMAGE_BYTES) return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+      totalBytes += size;
+      if (totalBytes > MAX_IMPORT_IMAGE_BYTES) {
+        return { kind: 'images-too-large', limitBytes: MAX_IMPORT_IMAGE_BYTES };
+      }
+      items.push({ mediaType, read: () => this.#imageFiles.read(path) });
     }
 
+    const composed = await compose(items);
+    if (composed.kind === 'unreadable') return { kind: 'unreadable' };
+    if (composed.kind === 'refused') {
+      let file: string | null = null;
+      if (composed.item !== null) {
+        const named = ordered[composed.item - 1];
+        // A POSITION PAST THE LIST IS THE HOST CONTRADICTING WHAT IT WAS SENT, not a
+        // fact about a person's file, so it is thrown rather than told to them.
+        if (named === undefined) {
+          throw new Error(
+            `the compose host refused image ${String(composed.item)} of ${String(ordered.length)} sent`,
+          );
+        }
+        file = fileNameOf(named);
+      }
+      return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file };
+    }
+
+    // `ordered` is not empty: an empty pick answered `cancelled` above.
+    return this.#writeComposed(composed.pdf, ordered[0] ?? 'images');
+  }
+
+  /**
+   * Asks where a composed PDF goes and writes it there.
+   *
+   * One tail for every import, because where a composition is written and which
+   * destinations are refused are one decision whatever the source was.
+   */
+  async #writeComposed(pdf: Uint8Array, picked: string): Promise<ComposeImportOutcome> {
     const destination = await this.#copy.pick(suggestedComposedName(picked));
     if (destination === null) return { kind: 'cancelled' };
 
@@ -2836,7 +2988,7 @@ export class DocumentCommands {
     const written = await writeDocumentCopy(
       this.#save.deps,
       this.#copy.checkTarget,
-      () => Promise.resolve(composed.pdf),
+      () => Promise.resolve(pdf),
       destination,
     );
     if (written.kind === 'refused') {

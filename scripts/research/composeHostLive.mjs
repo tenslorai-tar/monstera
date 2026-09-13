@@ -49,12 +49,13 @@ const CASES = [
   'CONTROL: and the harness process itself exited CLEANLY',
   'the real compose host set a CSV file as a table and the file opened',
   'the real MuPDF host read the CSV table and found every field',
+  'the real compose host made one page per picked image, and the real MuPDF host counted them',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
-if (CASES.length !== 7) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 7`);
+const roster = createRoster(failures, { cases: 8 });
+if (CASES.length !== 8) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 8`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -169,6 +170,17 @@ if (!runnable) {
     seen.csvWords?.ok === true && seen.csvWords.value?.words === seen.expectedCsvWords,
     `document.pageWordCount answered ${JSON.stringify(seen.csvWords)} against ` +
       `${String(seen.expectedCsvWords)} fields in the source. Fewer is a table that dropped cells.`,
+  );
+
+  check(
+    CASES[7] ?? '',
+    seen.imagesComposed?.ok === true &&
+      seen.imagesComposed.value?.kind === 'opened' &&
+      seen.imagePages?.ok === true &&
+      seen.imagePages.value?.pageCount === seen.expectedImagePages,
+    `document.newFromImages answered ${JSON.stringify(seen.imagesComposed)} and document.viewModel ` +
+      `${JSON.stringify(seen.imagePages)}, against ${String(seen.expectedImagePages)} pictures. The ` +
+      'images reach the host on engine/compose-images; a count that differs is pages lost or added.',
   );
 
   check(

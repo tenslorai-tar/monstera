@@ -21,6 +21,7 @@ import {
   createCertificatePicker,
   createFormDataOpenPicker,
   createImagePicker,
+  createImagesPicker,
   createCsvPicker,
   createMarkdownPicker,
 } from './imagePicker.js';
@@ -124,6 +125,8 @@ startShell(() => {
     pickMarkdown: createMarkdownPicker(),
     // A CSV FILE TO IMPORT, beside the Markdown picker for its reason.
     pickCsv: createCsvPicker(),
+    // IMAGES TO MAKE A NEW PDF FROM, several at once, beside the other import pickers.
+    pickImages: createImagesPicker(),
     // THE SECOND SURFACE ADDED SINCE COMPOSITION BECAME AN OBJECT, and
     // `pickerProbe.ts` is absent from this commit too — which is the churn fix
     // holding rather than being claimed.
@@ -212,6 +215,16 @@ startShell(() => {
         return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
       } catch {
         return { kind: 'unreadable' as const };
+      }
+    },
+    // A SIZE AND NOTHING READ, so an image import's bounds are decided before any
+    // picked byte is in memory. `null` for a file that cannot be stated — `readImage`'s
+    // reason: gone and forbidden are one situation from where the person stands.
+    sizeImage: async (path: string) => {
+      try {
+        return (await stat(path)).size;
+      } catch {
+        return null;
       }
     },
     // `userData` and not `sessionData` or `temp`: settings outlive every

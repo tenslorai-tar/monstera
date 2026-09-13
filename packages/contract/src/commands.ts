@@ -3154,6 +3154,51 @@ export const MAX_MARKDOWN_BYTES = 4 * 1024 * 1024;
 export const MAX_CSV_BYTES = 1024 * 1024;
 
 /**
+ * The bounds on an image import, which composes one page per picked image in the
+ * compose host.
+ *
+ * **Four numbers because the cost has three axes, and none is the file size alone.**
+ * Measured 2026-09-13 with a scratch probe running pdf-lib's own embedding, one shape
+ * per process:
+ *
+ * | shape | time | peak |
+ * |---|---|---|
+ * | one flat PNG, 8,000 × 8,000, 203 KB | 7.2 s | 744 MiB |
+ * | one flat PNG, 12,000 × 12,000, 450 KB | 18.2 s | 1,583 MiB |
+ * | two / four flat 8,000 × 8,000 PNGs | 15.6 / 29.4 s | 929 / 1,294 MiB |
+ * | one noise JPEG, 8,000 × 8,000, 82 MB | 0.26 s | 228 MiB |
+ * | three of that JPEG | 1.0 s | 541 MiB |
+ * | 500 noise PNGs, 200 × 200 | 10.3 s | 163 MiB |
+ *
+ * `embedPng` decodes every pixel, about 10.5 bytes of working memory per pixel, which
+ * is released once the image is embedded; about 180 MiB of each 64-megapixel PNG stays
+ * until the document is saved. `embedJpg` reads only the header, so a JPEG costs its
+ * bytes, about twice over. So:
+ */
+
+/** The most images one import takes. 500 small images measured at 10.3 s. */
+export const MAX_IMPORT_IMAGES = 500;
+
+/**
+ * The most pixels one PNG may have: 100 megapixels, about 1.1 GiB of decode working
+ * memory by the slope above, inside the host's 3 GiB job limit with room to spare.
+ */
+export const MAX_IMPORT_IMAGE_PIXELS = 100_000_000;
+
+/**
+ * The most PNG pixels one import may have in total: 200 megapixels, about 22 s of
+ * decoding — inside the Markdown import's measured worst of 27.6 s.
+ */
+export const MAX_IMPORT_PNG_PIXELS = 200_000_000;
+
+/**
+ * The most bytes one import may read across every image: 256 MiB, which the three-JPEG
+ * reading puts at about half a gibibyte in the host. Each file is also bounded by
+ * {@link MAX_IMAGE_BYTES} before it is read.
+ */
+export const MAX_IMPORT_IMAGE_BYTES = 256 * 1024 * 1024;
+
+/**
  * Which encodings an IMPORT can read.
  *
  * It was `['json', 'fdf']` for one commit, because XFDF needed a reader this
