@@ -5,6 +5,10 @@ import {
   MARKDOWN_IMPORT_ABSENT,
   MARKDOWN_IMPORT_AT_CAPACITY,
   MARKDOWN_IMPORT_CONTESTED,
+  MARKDOWN_IMPORT_MALFORMED_CSV,
+  MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE,
+  MARKDOWN_IMPORT_TOO_MANY_COLUMNS,
+  MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE,
   MARKDOWN_IMPORT_NOTHING_TO_DRAW,
   MARKDOWN_IMPORT_NOT_UTF8,
   MARKDOWN_IMPORT_TOO_LARGE,
@@ -48,6 +52,17 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
           : _(MARKDOWN_IMPORT_UNENCODABLE_LINE, { line: props.line });
       case 'nothing-to-draw':
         return _(MARKDOWN_IMPORT_NOTHING_TO_DRAW);
+      // THE LINE IS NAMED WHERE THERE IS ONE, and a sentence without one where there
+      // is not. A Markdown table's line can be null, and substituting a number would
+      // send a person to a line that says nothing about their table.
+      case 'malformed-csv':
+        return props.line === null
+          ? _(MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE)
+          : _(MARKDOWN_IMPORT_MALFORMED_CSV, { line: props.line });
+      case 'too-many-columns':
+        return props.line === null
+          ? _(MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE)
+          : _(MARKDOWN_IMPORT_TOO_MANY_COLUMNS, { line: props.line });
       case 'destination-contested':
         return _(MARKDOWN_IMPORT_CONTESTED);
       case 'write-failed':

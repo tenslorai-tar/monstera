@@ -129,6 +129,7 @@ const handlers: ContractHandlers = {
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.appendMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>

@@ -96,6 +96,21 @@ describe('composeMarkdown', () => {
     expect(await pageCount(await composeMarkdown(bytesOf('x\n'), LETTER))).toBe(1);
   });
 
+  it('refuses a Markdown table too wide for the page, naming its line — CONTROL: a narrow one draws', async () => {
+    // THE SHARED LAYOUT'S RULE, reached through the Markdown composer too: a table
+    // that would be drawn one character per line is refused by name.
+    const wide = (cells: number): string => {
+      const header = `|${Array.from({ length: cells }, (_, at) => ` c${String(at)} `).join('|')}|`;
+      const rule = `|${Array.from({ length: cells }, () => '---').join('|')}|`;
+      return `${header}\n${rule}\n`;
+    };
+    await expect(composeMarkdown(bytesOf(`Intro.\n\n${wide(60)}`), LETTER)).rejects.toMatchObject({
+      reason: 'too-many-columns',
+      line: 3,
+    });
+    expect((await shownText(await composeMarkdown(bytesOf(wide(3)), LETTER)))[0]).toContain('c2');
+  });
+
   it('continues onto new pages, and the last paragraph is on the last page', async () => {
     const paragraphs = Array.from({ length: 120 }, (_, at) => `Paragraph number ${String(at)} of the report.`);
     const pdf = await composeMarkdown(bytesOf(paragraphs.join('\n\n')), LETTER);

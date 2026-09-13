@@ -340,6 +340,23 @@ function spacer(font: PDFFont, points: number): Run {
   return { text: ' '.repeat(count), font, size: BODY_SIZE };
 }
 
+/** The inset between a cell's edge and its text, either side. */
+const CELL_PADDING = 4;
+
+/**
+ * The most columns a table can have at an indent, from the face's own width.
+ *
+ * A cell narrower than three digits at body size holds almost nothing, and `wrap`
+ * would break its text one character per line, which reads as a page of noise. So
+ * the width of `000` in the body face, plus the padding either side, is the
+ * narrowest cell this layout sets — derived from the font, never a column count
+ * written down.
+ */
+export function maxTableColumns(writer: PageWriter, faces: Faces, indent: number): number {
+  const narrowest = faces.regular.widthOfTextAtSize('000', BODY_SIZE) + 2 * CELL_PADDING;
+  return Math.max(1, Math.floor(writer.room(indent) / narrowest));
+}
+
 /** One table row: whether it is a header, and each cell's runs. */
 export interface TableRow {
   readonly header: boolean;
@@ -357,6 +374,10 @@ export interface TableRow {
  * them.
  *
  * Nothing is drawn for a table with no columns.
+ *
+ * @throws ComposeRefused `too-many-columns`, naming the first row's line, for a table
+ *   wider than {@link maxTableColumns} — refused by name rather than drawn one
+ *   character per line, which is the rule every composed page follows.
  */
 export function drawTable(
   rows: readonly TableRow[],
@@ -366,8 +387,17 @@ export function drawTable(
 ): void {
   const columns = rows.reduce((most, row) => Math.max(most, row.cells.length), 0);
   if (columns === 0) return;
+  const limit = maxTableColumns(writer, faces, indent);
+  if (columns > limit) {
+    const line = rows[0]?.sourceLine ?? null;
+    throw new ComposeRefused(
+      'too-many-columns',
+      line,
+      `a table has ${String(columns)} columns, and a page has room for ${String(limit)}`,
+    );
+  }
   const cellWidth = writer.room(indent) / columns;
-  const padding = 4;
+  const padding = CELL_PADDING;
 
   for (const row of rows) {
     const cellLines = row.cells.map((cell) =>

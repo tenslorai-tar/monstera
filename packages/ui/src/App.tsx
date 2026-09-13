@@ -128,7 +128,11 @@ import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
-import { appendMarkdownCommand, newFromMarkdownCommand } from './commands/importMarkdown.js';
+import {
+  appendMarkdownCommand,
+  newFromCsvCommand,
+  newFromMarkdownCommand,
+} from './commands/importMarkdown.js';
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
 import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
@@ -1480,6 +1484,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         // callbacks; the append also adds a tab, then returns to the document it
         // changed (ADR-0060's correction).
         newFromMarkdownCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        // D9's CSV ROW, the same callbacks: a composed table arrives as a tab.
+        newFromCsvCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({
           client,
           onApplied: applied,

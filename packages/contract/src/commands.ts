@@ -3131,6 +3131,29 @@ export const MAX_FORM_DATA_BYTES = 8 * 1024 * 1024;
 export const MAX_MARKDOWN_BYTES = 4 * 1024 * 1024;
 
 /**
+ * The largest CSV file an import reads, checked before the read.
+ *
+ * **One mebibyte, a quarter of Markdown's, and TIME decided it, not memory.**
+ * Measured 2026-09-13 with a scratch probe, one shape per process, composing in the
+ * compose host's code on US Letter:
+ *
+ * | shape | 4 MiB | 1 MiB |
+ * |---|---|---|
+ * | one column per record | 118.2 s, 1,254 MiB | 18.0 s, 551 MiB |
+ * | six short columns | 17.0 s, 771 MiB | 4.1 s, 382 MiB |
+ * | eighteen columns | 18.6 s, 958 MiB | 4.7 s, 435 MiB |
+ * | three long wrapping cells | 13.4 s, 663 MiB | 4.2 s, 326 MiB |
+ *
+ * Every reading is under the host's 3 GiB job limit. What is not is the wait: cost
+ * follows the number of records, and four mebibytes of one-column rows is about
+ * 700,000 rows and two minutes. At one mebibyte the worst shape is 18 s, inside the
+ * Markdown import's measured worst of 27.6 s. **Cost grows faster than size** — four
+ * times the bytes took 6.6 times as long — so a bound scaled up from a small reading
+ * would be too generous.
+ */
+export const MAX_CSV_BYTES = 1024 * 1024;
+
+/**
  * Which encodings an IMPORT can read.
  *
  * It was `['json', 'fdf']` for one commit, because XFDF needed a reader this

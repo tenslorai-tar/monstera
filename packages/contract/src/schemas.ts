@@ -389,6 +389,16 @@ export const COMPOSE_REFUSALS = [
   'unencodable-text',
   /** The source holds no text, so a composed document would be blank. */
   'nothing-to-draw',
+  /**
+   * A CSV record breaks RFC 4180: a quoted field never closed, text after a closing
+   * quote, or a quote inside an unquoted field. The refusal names its line.
+   */
+  'malformed-csv',
+  /**
+   * A table has more columns than the page gives a cell room for three digits, so it
+   * would be drawn one character per line. The refusal names the table's line.
+   */
+  'too-many-columns',
 ] as const;
 
 /** One of {@link COMPOSE_REFUSALS}. */

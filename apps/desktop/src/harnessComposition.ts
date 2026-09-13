@@ -103,6 +103,12 @@ export function harnessSurfaces(
     readMarkdown: () => {
       throw new Error(`${harness} imports no Markdown, so nothing may read one`);
     },
+    pickCsv: () => {
+      throw new Error(`${harness} imports no CSV, so nothing may pick a file for it`);
+    },
+    readCsv: () => {
+      throw new Error(`${harness} imports no CSV, so nothing may read one`);
+    },
     readImage: () => {
       throw new Error(`${harness} inserts no image, so nothing may read one`);
     },

@@ -3,7 +3,7 @@ import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
-import { appendMarkdownCommand, newFromMarkdownCommand } from './importMarkdown.js';
+import { appendMarkdownCommand, newFromCsvCommand, newFromMarkdownCommand } from './importMarkdown.js';
 
 /**
  * The UI half of D9's Markdown row: which channel each control reaches, with what,
@@ -234,5 +234,57 @@ describe('appendMarkdownCommand', () => {
     expect(calls).toStrictEqual([
       { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason: 'at-capacity' } } },
     ]);
+  });
+});
+
+describe('newFromCsvCommand', () => {
+  it('SENDS NOTHING on its OWN channel and adds the composed table as a tab', async () => {
+    // THE CHANNEL IS THE DECISION: a CSV command that dispatched on
+    // `document.newFromMarkdown` would open a picker for the wrong format and every
+    // outcome below would still read correctly.
+    const { client, sent } = recording({
+      'document.newFromCsv': ok({
+        kind: 'opened',
+        docId: COMPOSED,
+        version: asDocVersion(1),
+        byteLength: 2048,
+        name: 'table.pdf',
+      }),
+    });
+    const { calls, record, ask } = callbacks();
+
+    await newFromCsvCommand({
+      client,
+      ask,
+      onOpened: record('opened'),
+      onAlreadyOpen: record('already-open'),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.newFromCsv', params: {} }]);
+    expect(calls).toStrictEqual([
+      { name: 'opened', value: { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' } },
+    ]);
+  });
+
+  it('NAMES THE LINE of a malformed record, and CONTROL: a too-wide table is its own reason', async () => {
+    // TWO REASONS added for CSV, each asserted, because the mapping this command
+    // shares used to send every reason it did not name to `nothing-to-draw`.
+    for (const reason of ['malformed-csv', 'too-many-columns'] as const) {
+      const { client } = recording({
+        'document.newFromCsv': ok({ kind: 'composition-refused', reason, line: 7 }),
+      });
+      const { calls, record, ask } = callbacks();
+
+      await newFromCsvCommand({
+        client,
+        ask,
+        onOpened: record('opened'),
+        onAlreadyOpen: record('already-open'),
+      }).run(CONTEXT);
+
+      expect(calls).toStrictEqual([
+        { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason, line: 7 } } },
+      ]);
+    }
   });
 });

@@ -55,6 +55,10 @@ const REPORT_PATH = process.argv[2] ?? '';
 const SOURCE = '# Compose host\n\nThe real host wrote this page.\n';
 const SOURCE_WORDS = 8;
 
+/** The CSV source, and its six fields, each one word on the composed table. */
+const CSV_SOURCE = 'name,qty\nApples,3\nPears,12\n';
+const CSV_WORDS = 6;
+
 /** How long the hosts have to exit once killed. `hostRecoveryHost.mjs`' bound. */
 const DEATH_BUDGET_MS = 5_000;
 const POLL_MS = 250;
@@ -157,6 +161,8 @@ async function main() {
       appInfo: { version: '0.0.0', installChannel: 'development' },
       pickMarkdown: () => Promise.resolve(join(scratch, 'notes.md')),
       readMarkdown: () => Promise.resolve({ kind: 'read', bytes: next.bytes }),
+      pickCsv: () => Promise.resolve(join(scratch, 'table.csv')),
+      readCsv: () => Promise.resolve({ kind: 'read', bytes: next.bytes }),
       pickDestination: () => Promise.resolve(next.destination),
       enginePlatform: platform,
       composePlatform,
@@ -178,6 +184,18 @@ async function main() {
       );
     }
 
+    // A CSV TABLE THROUGH THE SAME HOST, on its own channel, read back the same way.
+    next.bytes = new TextEncoder().encode(CSV_SOURCE);
+    next.destination = join(scratch, 'composed-table.pdf');
+    const csvComposed = await observed(() => handlers['document.newFromCsv']({}));
+    /** @type {any} */
+    let csvWords = null;
+    if (csvComposed?.ok === true && csvComposed.value?.kind === 'opened') {
+      csvWords = await observed(() =>
+        handlers['document.pageWordCount']({ docId: csvComposed.value.docId, page: 0 }),
+      );
+    }
+
     // THE CONTROL: bytes that are not UTF-8, which only the composer can refuse.
     next.bytes = new Uint8Array([0xff, 0xfe, 0xfd, 0x0a]);
     next.destination = join(scratch, 'never-written.pdf');
@@ -190,6 +208,9 @@ async function main() {
       refused,
       refusedWroteNothing: !existsSync(next.destination),
       expectedWords: SOURCE_WORDS,
+      csvComposed,
+      csvWords,
+      expectedCsvWords: CSV_WORDS,
     };
     // THE REPORT FIRST, for `hostRecoveryHost.mjs`' reason: everything after it is
     // cleanup, and cleanup can fail.

@@ -111,6 +111,7 @@ export {
   MAX_INK_POINTS,
   MAX_PAGE_COORDINATE,
   MAX_MARKDOWN_BYTES,
+  MAX_CSV_BYTES,
   addAnnotationSchema,
   addLinkSchema,
   annotationColourSchema,

@@ -24,8 +24,8 @@ import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js
  * readers.
  */
 
-/** How this process sets a Markdown source as PDF bytes. `composeMarkdown` in the host. */
-export type MarkdownComposer = (source: Uint8Array, page: ComposePageSize) => Promise<Uint8Array>;
+/** How this process sets a source as PDF bytes. `composeMarkdown` and `composeCsv` in the host. */
+export type SourceComposer = (source: Uint8Array, page: ComposePageSize) => Promise<Uint8Array>;
 
 /** What the compose host's handlers are built from. */
 export interface ComposeHandlerParts {
@@ -36,11 +36,14 @@ export interface ComposeHandlerParts {
   /** How this process attempts the two paths ADR-0023 §5's check names. */
   readonly probe: (paths: ContainmentProbePaths) => Promise<ContainmentReport>;
   /** How this process composes a Markdown source. */
-  readonly composeMarkdown: MarkdownComposer;
+  readonly composeMarkdown: SourceComposer;
+  /** How this process composes a CSV source. */
+  readonly composeCsv: SourceComposer;
 }
 
 export function createComposeHandlers({
   areas,
+  composeCsv,
   composeMarkdown,
   files,
   probe,
@@ -49,6 +52,46 @@ export function createComposeHandlers({
   // crossing this boundary becomes `internal` with its diagnostic withheld, and a
   // missing area is a code main can act on.
   const gone = { ok: false, error: { code: 'no-such-session' } } as const;
+
+  /**
+   * One compose handler, for whichever composer a channel names.
+   *
+   * ONE BODY, because what differs between formats is the parser and nothing else:
+   * the area lookup, the source read, which throw is an answer and which is a fault,
+   * and the write are the same decisions, and two copies of them would be two
+   * opinions about when a person's file is at fault.
+   */
+  const composeWith =
+    (composer: SourceComposer): Handlers<ComposeChannels>['engine/compose-markdown'] =>
+    async ({ session, from, into, page }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+
+      let source: Uint8Array;
+      try {
+        source = await files.readSnapshot(held.snapshotDirectory, from);
+      } catch {
+        // OURS, NOT THE FILE'S: main wrote the source and it went, or main did
+        // not write it. A person's file cannot produce this code.
+        return { ok: false, error: { code: 'asset-missing' } };
+      }
+
+      let pdf: Uint8Array;
+      try {
+        pdf = await composer(source, page);
+      } catch (error) {
+        // ONLY A NAMED REFUSAL IS AN ANSWER. Anything else is a defect in this
+        // build, and it propagates so the body reports `internal` rather than
+        // dressing a fault up as a fact about the person's file.
+        if (error instanceof ComposeRefused) {
+          return { ok: true, value: { kind: 'refused', reason: error.reason, line: error.line } };
+        }
+        throw error;
+      }
+
+      const bytes = await files.writeOutput(held.outputDirectory, into, pdf);
+      return { ok: true, value: { kind: 'composed', bytes } };
+    };
 
   return {
     // NO try/catch, for `pdfiumHandlers.ts`' reason: every outcome is already one
@@ -73,34 +116,7 @@ export function createComposeHandlers({
       return Promise.resolve({ ok: true, value: {} });
     },
 
-    'engine/compose-markdown': async ({ session, from, into, page }) => {
-      const held = areas.lookup(session);
-      if (held === undefined) return gone;
-
-      let source: Uint8Array;
-      try {
-        source = await files.readSnapshot(held.snapshotDirectory, from);
-      } catch {
-        // OURS, NOT THE FILE'S: main wrote the source and it went, or main did
-        // not write it. A person's Markdown cannot produce this code.
-        return { ok: false, error: { code: 'asset-missing' } };
-      }
-
-      let pdf: Uint8Array;
-      try {
-        pdf = await composeMarkdown(source, page);
-      } catch (error) {
-        // ONLY A NAMED REFUSAL IS AN ANSWER. Anything else is a defect in this
-        // build, and it propagates so the body reports `internal` rather than
-        // dressing a fault up as a fact about the person's file.
-        if (error instanceof ComposeRefused) {
-          return { ok: true, value: { kind: 'refused', reason: error.reason, line: error.line } };
-        }
-        throw error;
-      }
-
-      const bytes = await files.writeOutput(held.outputDirectory, into, pdf);
-      return { ok: true, value: { kind: 'composed', bytes } };
-    },
+    'engine/compose-markdown': composeWith(composeMarkdown),
+    'engine/compose-csv': composeWith(composeCsv),
   };
 }

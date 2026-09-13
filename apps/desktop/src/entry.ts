@@ -1,7 +1,12 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { MAX_FORM_DATA_BYTES, MAX_IMAGE_BYTES, MAX_MARKDOWN_BYTES } from '@monstera/contract';
+import {
+  MAX_CSV_BYTES,
+  MAX_FORM_DATA_BYTES,
+  MAX_IMAGE_BYTES,
+  MAX_MARKDOWN_BYTES,
+} from '@monstera/contract';
 import { app, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
@@ -16,6 +21,7 @@ import {
   createCertificatePicker,
   createFormDataOpenPicker,
   createImagePicker,
+  createCsvPicker,
   createMarkdownPicker,
 } from './imagePicker.js';
 import {
@@ -116,6 +122,8 @@ startShell(() => {
     // A MARKDOWN FILE TO IMPORT, beside the image picker because both open a file a
     // person chose so that main can make pages of it (ADR-0060).
     pickMarkdown: createMarkdownPicker(),
+    // A CSV FILE TO IMPORT, beside the Markdown picker for its reason.
+    pickCsv: createCsvPicker(),
     // THE SECOND SURFACE ADDED SINCE COMPOSITION BECAME AN OBJECT, and
     // `pickerProbe.ts` is absent from this commit too — which is the churn fix
     // holding rather than being claimed.
@@ -190,6 +198,17 @@ startShell(() => {
       try {
         const { size } = await stat(path);
         if (size > MAX_MARKDOWN_BYTES) return { kind: 'too-large' as const, byteLength: size };
+        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
+      } catch {
+        return { kind: 'unreadable' as const };
+      }
+    },
+    // THE SAME SHAPE AGAINST THE CSV BOUND, written out for `readFormData`'s reason:
+    // `MAX_CSV_BYTES` was measured on the CSV composer, not Markdown's.
+    readCsv: async (path: string) => {
+      try {
+        const { size } = await stat(path);
+        if (size > MAX_CSV_BYTES) return { kind: 'too-large' as const, byteLength: size };
         return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
       } catch {
         return { kind: 'unreadable' as const };

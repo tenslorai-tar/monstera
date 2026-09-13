@@ -205,6 +205,7 @@ describe('browser shim', () => {
       'document.importFormData',
       'document.insertImage',
       'document.layers',
+      'document.newFromCsv',
       'document.newFromMarkdown',
       'document.open',
       'document.openRecent',

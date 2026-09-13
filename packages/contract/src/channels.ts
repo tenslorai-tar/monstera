@@ -694,6 +694,37 @@ const openOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cancelled') }),
 ]);
 
+/**
+ * What an import that composes a new document answers — one union for every source
+ * format ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ *
+ * The composed file is opened exactly as a picked one is, so this answers everything
+ * `document.open` can. The rest are the file's: `too-large` and `unreadable` before
+ * anything is composed, `composition-refused` with the reason and the source line —
+ * its own name, because `refused` on `document.saveCopy` already means *another
+ * document holds the destination* — and the destination's two outcomes a copy has.
+ *
+ * **Declared once** because the Markdown and CSV imports answer the same outcomes,
+ * and two copies of this union would be two opinions about what an import can end in.
+ */
+const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
+  ...openOutcomeSchema.options,
+  /** Past the format's byte bound — refused before it is read into memory. */
+  z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+  /** The file could not be read. */
+  z.object({ kind: z.literal('unreadable') }),
+  z.object({
+    kind: z.literal('composition-refused'),
+    reason: z.enum(COMPOSE_REFUSALS),
+    /** The one-based source line the refusal is about, where there is one. */
+    line: z.number().int().positive().nullable(),
+  }),
+  /** Another open document reaches the chosen destination. Nothing was written. */
+  z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
+  /** The filesystem refused. Nothing at the destination was replaced. */
+  z.object({ kind: z.literal('write-failed') }),
+]);
+
 export const channels = {
   'app.info': channel(
     'Version and install channel of the running application.',
@@ -1596,33 +1627,27 @@ export const channels = {
    *
    * ## Every open outcome, and the import's own beside them
    *
-   * The composed file is opened exactly as a picked one is, so this answers
-   * everything `document.open` can. The rest are the file's: `too-large` and
-   * `unreadable` before anything is composed, `composition-refused` with the reason
-   * and the source line — its own name, because `refused` on `document.saveCopy`
-   * already means *another document holds the destination* — and the destination's
-   * two outcomes a copy has.
+   * {@link composedImportOutcomeSchema}, shared with `document.newFromCsv`.
    */
   'document.newFromMarkdown': channel(
     'Composes a Markdown file the user picks as a new PDF, saves it where they choose, and opens it.',
     z.object({}),
-    z.discriminatedUnion('kind', [
-      ...openOutcomeSchema.options,
-      /** Past {@link MAX_MARKDOWN_BYTES} — refused before it is read into memory. */
-      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
-      /** The file could not be read. */
-      z.object({ kind: z.literal('unreadable') }),
-      z.object({
-        kind: z.literal('composition-refused'),
-        reason: z.enum(COMPOSE_REFUSALS),
-        /** The one-based source line the refusal is about, where there is one. */
-        line: z.number().int().positive().nullable(),
-      }),
-      /** Another open document reaches the chosen destination. Nothing was written. */
-      z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
-      /** The filesystem refused. Nothing at the destination was replaced. */
-      z.object({ kind: z.literal('write-failed') }),
-    ]),
+    composedImportOutcomeSchema,
+    ['engine-unavailable'],
+  ),
+
+  /**
+   * Sets a CSV file the user picks as a table on new PDF pages, saves it where they
+   * choose, and opens it ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+   *
+   * `document.newFromMarkdown`'s shape and outcomes exactly: the ask carries nothing,
+   * main runs both pickers, the compose host reads the file with a strict RFC 4180
+   * reader, and what crosses is the open's outcome or the import's own.
+   */
+  'document.newFromCsv': channel(
+    'Sets a CSV file the user picks as a table in a new PDF, saves it where they choose, and opens it.',
+    z.object({}),
+    composedImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 

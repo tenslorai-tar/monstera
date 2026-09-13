@@ -81,9 +81,18 @@ const PDFIUM_FORBIDDEN = 'pdfiumFfi.js';
  */
 const COMPOSE_FORBIDDEN = 'markdownCompose.js';
 
+/**
+ * The CSV reader, from 2026-09-13 — the second parser of a picked file.
+ *
+ * Its own constant for `COMPOSE_FORBIDDEN`'s reason: the module is different and so
+ * is the message, and `csvRead.js` is the one that parses — `csvCompose.js` only
+ * reaches it — so the reader is what must stay off `main`'s graph.
+ */
+const CSV_FORBIDDEN = 'csvRead.js';
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 16 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -348,6 +357,48 @@ try {
     `${COMPOSE_FORBIDDEN} is PRESENT, so its four answers above are about reachability`,
     existsSync(join(DIST, COMPOSE_FORBIDDEN)),
     `${COMPOSE_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
+  );
+
+  // THE CSV READER, the same five questions. A barrel edge to it would put a parser
+  // of a picked file into `main`'s graph as surely as `markdown-it` would.
+  const csvFromEntry = reaches('compose.js', CSV_FORBIDDEN);
+  const csvFromIndex = reaches('index.js', CSV_FORBIDDEN);
+  const csvFromBus = reaches('commandBus.js', CSV_FORBIDDEN);
+  const csvFromService = reaches('documentService.js', CSV_FORBIDDEN);
+
+  check(
+    `CONTROL: ${CSV_FORBIDDEN} IS reachable from compose.js, so the walk can see it`,
+    csvFromEntry.reached,
+    `the walk could not reach ${CSV_FORBIDDEN} from compose.js, which exports the CSV composer ` +
+      `that imports it. The three cases below would then be satisfied by blindness.`,
+  );
+
+  check(
+    `importing the kernel's public surface does not load ${CSV_FORBIDDEN}`,
+    !csvFromIndex.reached,
+    `reachable via ${csvFromIndex.path.join(' -> ')}.\n` +
+      `      A CSV file picked for import is parsed in the compose host and never in \`main\` ` +
+      `(ADR-0060). Read the emit for the module named in the path above.`,
+  );
+
+  check(
+    `importing CommandBus does not load ${CSV_FORBIDDEN}`,
+    !csvFromBus.reached,
+    `reachable via ${csvFromBus.path.join(' -> ')}.\n` +
+      `      The bus routes commands and composes nothing.`,
+  );
+
+  check(
+    `importing DocumentService does not load ${CSV_FORBIDDEN}`,
+    !csvFromService.reached,
+    `reachable via ${csvFromService.path.join(' -> ')}.\n` +
+      `      The service holds bytes and never parses them (ARCHITECTURE §2).`,
+  );
+
+  check(
+    `${CSV_FORBIDDEN} is PRESENT, so its four answers above are about reachability`,
+    existsSync(join(DIST, CSV_FORBIDDEN)),
+    `${CSV_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
   );
 
   // WHAT THIS CASE USED TO SAY, and why it no longer does (finding KKKK-3).

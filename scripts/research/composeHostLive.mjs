@@ -47,12 +47,14 @@ const CASES = [
   'the real MuPDF host read the composed page and found every word',
   'CONTROL: a source that is not UTF-8 is refused by the real host, by name, and nothing is written',
   'CONTROL: and the harness process itself exited CLEANLY',
+  'the real compose host set a CSV file as a table and the file opened',
+  'the real MuPDF host read the CSV table and found every field',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 5 });
-if (CASES.length !== 5) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 5`);
+const roster = createRoster(failures, { cases: 7 });
+if (CASES.length !== 7) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 7`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -153,6 +155,20 @@ if (!runnable) {
     `a non-UTF-8 source answered ${JSON.stringify(seen.refused)}, and the destination was ` +
       `${seen.refusedWroteNothing === true ? 'not written' : 'WRITTEN'}. A refusal by name can ` +
       'only come from the composer in the host.',
+  );
+
+  check(
+    CASES[5] ?? '',
+    seen.csvComposed?.ok === true && seen.csvComposed.value?.kind === 'opened',
+    `document.newFromCsv answered ${JSON.stringify(seen.csvComposed)}. It reaches the host on ` +
+      'engine/compose-csv, so a refusal here with the Markdown import passing is that channel.',
+  );
+
+  check(
+    CASES[6] ?? '',
+    seen.csvWords?.ok === true && seen.csvWords.value?.words === seen.expectedCsvWords,
+    `document.pageWordCount answered ${JSON.stringify(seen.csvWords)} against ` +
+      `${String(seen.expectedCsvWords)} fields in the source. Fewer is a table that dropped cells.`,
   );
 
   check(

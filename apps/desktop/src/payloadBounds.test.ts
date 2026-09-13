@@ -289,6 +289,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // by `MAX_DOCUMENT_NAME_LENGTH` and numbers — whether the file held one line or
   // four megabytes.
   'document.newFromMarkdown': 'needs a compose host, an open dialog and a save dialog',
+  // `document.newFromMarkdown`'s answer to L11 exactly: the ask is nothing, the file
+  // is read in main and parsed in the compose host, and an open's outcome returns.
+  'document.newFromCsv': 'needs a compose host, an open dialog and a save dialog',
   'document.appendMarkdown': 'needs an engine session, a compose host and two dialogs',
   // THE IMAGE GOES THE OTHER WAY AND NEVER CROSSES THIS BOUNDARY, which is the
   // sentence to read before the page list. The renderer sends a page list and a

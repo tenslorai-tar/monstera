@@ -181,6 +181,7 @@ export const INSERT_IMAGE_TOO_LARGE = messageKey('dialog.insert-image-problem.to
 export const GROUP_CREATE = messageKey('surface.ribbon.group.create');
 export const NEW_FROM_MARKDOWN_COMMAND_TITLE = messageKey('command.new-from-markdown.title');
 export const APPEND_MARKDOWN_COMMAND_TITLE = messageKey('command.append-markdown.title');
+export const NEW_FROM_CSV_COMMAND_TITLE = messageKey('command.new-from-csv.title');
 export const MARKDOWN_IMPORT_PROBLEM_TITLE = messageKey('dialog.markdown-import-problem.title');
 export const MARKDOWN_IMPORT_UNREADABLE = messageKey('dialog.markdown-import-problem.unreadable');
 export const MARKDOWN_IMPORT_TOO_LARGE = messageKey('dialog.markdown-import-problem.too-large');
@@ -193,6 +194,16 @@ export const MARKDOWN_IMPORT_NOTHING_TO_DRAW = messageKey(
   'dialog.markdown-import-problem.nothing-to-draw',
 );
 export const MARKDOWN_IMPORT_CONTESTED = messageKey('dialog.markdown-import-problem.contested');
+export const MARKDOWN_IMPORT_MALFORMED_CSV = messageKey('dialog.markdown-import-problem.malformed-csv');
+export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS = messageKey(
+  'dialog.markdown-import-problem.too-many-columns',
+);
+export const MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE = messageKey(
+  'dialog.markdown-import-problem.malformed-csv-no-line',
+);
+export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE = messageKey(
+  'dialog.markdown-import-problem.too-many-columns-no-line',
+);
 export const MARKDOWN_IMPORT_WRITE_FAILED = messageKey('dialog.markdown-import-problem.write-failed');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
@@ -1790,6 +1801,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_CREATE]: 'Create',
   [NEW_FROM_MARKDOWN_COMMAND_TITLE]: 'New PDF from Markdown…',
   [APPEND_MARKDOWN_COMMAND_TITLE]: 'Add pages from Markdown…',
+  [NEW_FROM_CSV_COMMAND_TITLE]: 'New PDF table from CSV…',
   [MARKDOWN_IMPORT_PROBLEM_TITLE]: 'That Markdown file could not be imported',
   [MARKDOWN_IMPORT_UNREADABLE]: 'The file you chose could not be read. Nothing was imported.',
   [MARKDOWN_IMPORT_TOO_LARGE]:
@@ -1807,6 +1819,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MARKDOWN_IMPORT_CONTESTED]:
     'That file is open in this app, so nothing was written there. Close it, or choose another name.',
   [MARKDOWN_IMPORT_WRITE_FAILED]: 'The PDF could not be saved there. Nothing was imported.',
+  [MARKDOWN_IMPORT_MALFORMED_CSV]:
+    'Line {line} is not valid CSV — a quote is out of place or never closed. Nothing was imported.',
+  [MARKDOWN_IMPORT_TOO_MANY_COLUMNS]:
+    'The table that starts on line {line} has more columns than fit across a page. Nothing was imported.',
+  [MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE]:
+    'The file is not valid CSV — a quote is out of place or never closed. Nothing was imported.',
+  [MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE]:
+    'A table in the file has more columns than fit across a page. Nothing was imported.',
   [MARKDOWN_IMPORT_ABSENT]:
     'The PDF was saved, but the file was gone before it could be opened.',
   [MARKDOWN_IMPORT_AT_CAPACITY]:

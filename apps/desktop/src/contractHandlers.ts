@@ -25,7 +25,8 @@ import {
   type DocumentCommands,
   DocumentPoisonedError,
   EngineUnavailableError,
-  type ComposeMarkdownFileOutcome,
+  type ComposeImportOutcome,
+  type ImportFormat,
   InvalidSearchPatternError,
   MissingSessionError,
 } from './documentCommands.js';
@@ -276,7 +277,8 @@ export function createContractHandlers(deps: {
     'document.split': splitHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
-    'document.newFromMarkdown': newFromMarkdownHandler(deps),
+    'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
+    'document.newFromCsv': newFromImportHandler(deps, 'csv'),
     'document.appendMarkdown': appendMarkdownHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
@@ -498,7 +500,7 @@ function insertImageHandler(commands: DocumentCommands): ContractHandlers['docum
 /** The import's own outcomes, which both Markdown channels answer alike. */
 type ComposeRefusalAnswer = Extract<
   ChannelResult<'document.appendMarkdown'>,
-  { readonly kind: Exclude<ComposeMarkdownFileOutcome['kind'], 'written'> }
+  { readonly kind: Exclude<ComposeImportOutcome['kind'], 'written'> }
 >;
 
 /**
@@ -509,7 +511,7 @@ type ComposeRefusalAnswer = Extract<
  * on a wire that does not declare it.
  */
 function composeRefusal(
-  outcome: Exclude<ComposeMarkdownFileOutcome, { readonly kind: 'written' }>,
+  outcome: Exclude<ComposeImportOutcome, { readonly kind: 'written' }>,
 ): ComposeRefusalAnswer {
   switch (outcome.kind) {
     case 'cancelled':
@@ -535,12 +537,15 @@ function composeRefusal(
  * as a picked one is — the same handle, the same recent-list entry and the same
  * session — and the answer is that open's outcome.
  */
-function newFromMarkdownHandler(
+function newFromImportHandler(
   deps: OpenPathParts & { readonly commands: DocumentCommands },
+  format: ImportFormat,
 ): ContractHandlers['document.newFromMarkdown'] {
+  // ONE HANDLER FOR BOTH CHANNELS, which answer one declared union: a copy per format
+  // would be two opinions about how an import is opened and answered.
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
     try {
-      const composed = await deps.commands.composeMarkdownFile();
+      const composed = await deps.commands.composeImportFile(format);
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       return ok((await openPath(deps, composed.destination)).outcome);
     } catch (thrown) {
@@ -583,7 +588,7 @@ function appendMarkdownHandler(
     at,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.appendMarkdown']>>> => {
     try {
-      const composed = await deps.commands.composeMarkdownFile(docId);
+      const composed = await deps.commands.composeImportFile('markdown', docId);
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
 
       const { outcome, sessions } = await openPath(deps, composed.destination);

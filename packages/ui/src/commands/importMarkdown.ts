@@ -1,4 +1,4 @@
-import type { ChannelResult } from '@monstera/contract';
+import type { ChannelResult, ComposeRefusal } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
@@ -9,6 +9,7 @@ import {
 import {
   APPEND_MARKDOWN_COMMAND_TITLE,
   GROUP_CREATE,
+  NEW_FROM_CSV_COMMAND_TITLE,
   NEW_FROM_MARKDOWN_COMMAND_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -42,6 +43,8 @@ export interface OpenedDocument {
  * a second copy would be two opinions about what each sentence is for (B3a).
  */
 export function markdownImportProblem(
+  // `document.newFromCsv` IS NOT A SECOND MEMBER HERE: it answers the contract's one
+  // declared import-outcome union, so its result type is this first member exactly.
   answer: ChannelResult<'document.newFromMarkdown'> | ChannelResult<'document.appendMarkdown'>,
 ): MarkdownImportProblem | null {
   switch (answer.kind) {
@@ -50,11 +53,7 @@ export function markdownImportProblem(
     case 'too-large':
       return { reason: 'too-large', limitBytes: answer.limitBytes };
     case 'composition-refused':
-      if (answer.reason === 'unencodable-text') {
-        return { reason: 'unencodable-text', line: answer.line };
-      }
-      if (answer.reason === 'not-utf8') return { reason: 'not-utf8' };
-      return { reason: 'nothing-to-draw' };
+      return refusalProblem(answer.reason, answer.line);
     case 'destination-contested':
       return { reason: 'destination-contested', openElsewhere: answer.openElsewhere };
     case 'write-failed':
@@ -71,6 +70,30 @@ export function markdownImportProblem(
     case 'already-open':
     case 'appended':
       return null;
+  }
+}
+
+/**
+ * The sentence a composer's refusal gets, by reason.
+ *
+ * A SWITCH, and exhaustive, in a function of its own. It was an if/else whose last
+ * branch was `nothing-to-draw`, so a reason added to `COMPOSE_REFUSALS` fell into it
+ * in silence — `malformed-csv` would have told a person their file was empty. A
+ * function rather than a nested switch because `no-fallthrough` reads a nested
+ * switch's returns as a fall-through out of the case around it.
+ */
+function refusalProblem(reason: ComposeRefusal, line: number | null): MarkdownImportProblem {
+  switch (reason) {
+    case 'unencodable-text':
+      return { reason: 'unencodable-text', line };
+    case 'malformed-csv':
+      return { reason: 'malformed-csv', line };
+    case 'too-many-columns':
+      return { reason: 'too-many-columns', line };
+    case 'not-utf8':
+      return { reason: 'not-utf8' };
+    case 'nothing-to-draw':
+      return { reason: 'nothing-to-draw' };
   }
 }
 
@@ -93,6 +116,49 @@ export function newFromMarkdownCommand(deps: {
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 10 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromMarkdown']({});
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const result = answer.value;
+      if (result.kind === 'opened') {
+        deps.onOpened({
+          docId: result.docId,
+          version: result.version,
+          byteLength: result.byteLength,
+          name: result.name,
+        });
+        return;
+      }
+      if (result.kind === 'already-open') {
+        deps.onAlreadyOpen(result.docId);
+        return;
+      }
+      const problem = markdownImportProblem(result);
+      if (problem !== null) void deps.ask(MARKDOWN_IMPORT_PROBLEM_DIALOG_ID, problem);
+    },
+  };
+}
+
+/**
+ * A new PDF table from a CSV file, opened as a tab.
+ *
+ * {@link newFromMarkdownCommand}'s shape and callbacks exactly: it needs no document,
+ * the ask is nothing, and every answer is one the Markdown import also gives, so the
+ * same mapping and the same dialog tell the person what happened.
+ */
+export function newFromCsvCommand(deps: {
+  readonly client: DocumentCommandDeps['client'];
+  readonly ask: DocumentCommandDeps['ask'];
+  readonly onOpened: (opened: OpenedDocument) => void;
+  readonly onAlreadyOpen: (docId: DocId) => void;
+}): UiCommand {
+  return {
+    id: 'document.new-from-csv',
+    title: NEW_FROM_CSV_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30 }],
+    run: async (): Promise<void> => {
+      const answer = await deps.client['document.newFromCsv']({});
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

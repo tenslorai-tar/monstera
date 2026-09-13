@@ -1053,6 +1053,8 @@ interface ComposePeerLog {
   readonly sources: string[];
   /** Every `from` name, so a case can check the source is gone afterwards. */
   readonly fromPaths: string[];
+  /** Which compose channel each call arrived on, so a case can assert the route. */
+  readonly channels: string[];
 }
 
 /** The bytes the compose peer answers as its PDF. */
@@ -1070,10 +1072,12 @@ function composePeer(): ComposePeerLog {
   let area: { snapshot: string; output: string } | null = null;
   const sources: string[] = [];
   const fromPaths: string[] = [];
+  const channels: string[] = [];
 
   return {
     sources,
     fromPaths,
+    channels,
     peer: (channel, params) => {
       switch (channel) {
         case 'engine/probe-containment':
@@ -1083,8 +1087,10 @@ function composePeer(): ComposePeerLog {
           area = { snapshot: sent.snapshotDirectory, output: sent.outputDirectory };
           return { ok: true, value: { session: 'ef56' } };
         }
-        case 'engine/compose-markdown': {
-          if (area === null) throw new Error('engine/compose-markdown arrived before engine/open');
+        case 'engine/compose-markdown':
+        case 'engine/compose-csv': {
+          if (area === null) throw new Error(`${channel} arrived before engine/open`);
+          channels.push(channel);
           const { from, into } = params as { from: string; into: string };
           const source = join(area.snapshot, from);
           fromPaths.push(source);
@@ -1223,6 +1229,35 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect(apply).toBeGreaterThan(-1);
     expect(calls.indexOf('peer.request:engine/open', opensBefore)).toBeLessThan(apply);
     expect(lastOpen).toBeGreaterThan(-1);
+  }, 120_000);
+
+  it('a CSV import reaches the CSV channel, and never the Markdown one', async () => {
+    // THE ROUTE IS THE ASSERTION. Both channels answer `composed` with a count, so a
+    // binding that sent a CSV file down the Markdown channel would open a file and
+    // pass every other check here — with `markdown-it` reading a CSV.
+    const mupdf = platformAnswering(serialisingEngine());
+    const compose = composePeer();
+    const third = platformAnswering(compose.peer);
+    const destination = join(scratch, 'from-csv.pdf');
+
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickCsv: () => Promise.resolve(join(scratch, 'table.csv')),
+      readCsv: () => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode('a,b\n') }),
+      pickDestination: () => Promise.resolve(destination),
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+
+    const answer = await handlers['document.newFromCsv']({});
+    expect(answer.ok, JSON.stringify(answer)).toBe(true);
+    if (!answer.ok) throw new Error('unreachable');
+    expect(answer.value.kind, JSON.stringify(answer.value)).toBe('opened');
+
+    expect(compose.channels).toStrictEqual(['engine/compose-csv']);
+    expect(compose.sources).toStrictEqual(['a,b\n']);
+    expect([...readFileSync(destination)]).toStrictEqual(COMPOSED_BYTES);
   }, 120_000);
 
   it('CONTROL: with no compose platform the import is refused before any picker opens', async () => {

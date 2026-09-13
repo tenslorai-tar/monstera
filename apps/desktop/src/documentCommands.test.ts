@@ -12,6 +12,7 @@ import {
   wrapHandler,
   IncidentLog,
   MAX_MARKDOWN_BYTES,
+  MAX_CSV_BYTES,
 } from '@monstera/contract';
 import {
   CapabilityRegistry,
@@ -70,7 +71,7 @@ import {
   type CopySource,
   type CertificateSource,
   type ImageSource,
-  type MarkdownSource,
+  type ImportSource,
   type DocumentAnnotationsReader,
   type DocumentFlatFieldsReader,
   type DocumentTextLinesReader,
@@ -286,10 +287,10 @@ const noImages: ImageSource = {
   read: () => Promise.reject(new Error('this case does not read an image')),
 };
 
-/** A Markdown source neither member of which a case reaches unless it supplies its own. */
-const noMarkdown: MarkdownSource = {
-  pick: () => Promise.reject(new Error('this case does not import Markdown')),
-  read: () => Promise.reject(new Error('this case does not read a Markdown file')),
+/** An import source neither member of which a case reaches unless it supplies its own. */
+const noImportFile: ImportSource = {
+  pick: () => Promise.reject(new Error('this case does not import a file')),
+  read: () => Promise.reject(new Error('this case does not read an imported file')),
 };
 
 /** A certificate source neither member of which any case here reaches. */
@@ -532,7 +533,7 @@ const INERT = {
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
-  markdown: noMarkdown,
+  imports: { markdown: noImportFile, csv: noImportFile },
   // NO COMPOSE HOST, which is the state a build with no Win32 platform is in — so a
   // case that reached the import without meaning to is refused by name.
   compose: null,
@@ -1650,8 +1651,8 @@ describe('composeMarkdownFile: what an import answers before anything is written
   /** A source that records what was asked of it, answering from what the case gives. */
   function markdownFrom(
     picked: string | null,
-    read: Awaited<ReturnType<MarkdownSource['read']>>,
-  ): { readonly source: MarkdownSource; readonly calls: string[] } {
+    read: Awaited<ReturnType<ImportSource['read']>>,
+  ): { readonly source: ImportSource; readonly calls: string[] } {
     const calls: string[] = [];
     return {
       calls,
@@ -1680,11 +1681,11 @@ describe('composeMarkdownFile: what an import answers before anything is written
       documents: service,
       bus: bus(),
       engine: engine(),
-      markdown: markdown.source,
+      imports: { markdown: markdown.source, csv: noImportFile },
       compose: null,
     });
 
-    await expect(commands.composeMarkdownFile()).rejects.toBeInstanceOf(EngineUnavailableError);
+    await expect(commands.composeImportFile('markdown')).rejects.toBeInstanceOf(EngineUnavailableError);
     expect(markdown.calls).toStrictEqual([]);
   });
 
@@ -1695,11 +1696,11 @@ describe('composeMarkdownFile: what an import answers before anything is written
       documents: service,
       bus: bus(),
       engine: engine(),
-      markdown: markdown.source,
+      imports: { markdown: markdown.source, csv: noImportFile },
       compose: () => Promise.reject(new Error('this case composes nothing')),
     });
 
-    await expect(commands.composeMarkdownFile(asDocId('never-opened'))).rejects.toBeInstanceOf(
+    await expect(commands.composeImportFile('markdown', asDocId('never-opened'))).rejects.toBeInstanceOf(
       DocumentNotOpenError,
     );
     expect(markdown.calls).toStrictEqual([]);
@@ -1713,8 +1714,8 @@ describe('composeMarkdownFile: what an import answers before anything is written
       documents: service,
       bus: bus(),
       engine: engine(),
-      markdown: markdown.source,
-      compose: (source) => {
+      imports: { markdown: markdown.source, csv: noImportFile },
+      compose: (_format, source) => {
         composed.push(source.length);
         return Promise.reject(new Error('unreachable'));
       },
@@ -1722,7 +1723,7 @@ describe('composeMarkdownFile: what an import answers before anything is written
 
     // THE LIMIT IS MAIN'S CONSTANT, never the file's size: a sentence reading *larger
     // than 4.0000002 MB* would state the file rather than the rule.
-    expect(await commands.composeMarkdownFile()).toStrictEqual({
+    expect(await commands.composeImportFile('markdown')).toStrictEqual({
       kind: 'too-large',
       limitBytes: MAX_MARKDOWN_BYTES,
     });
@@ -1738,16 +1739,16 @@ describe('composeMarkdownFile: what an import answers before anything is written
       documents: service,
       bus: bus(),
       engine: engine(),
-      markdown: markdown.source,
+      imports: { markdown: markdown.source, csv: noImportFile },
       // `noCopying` rejects its picker, so a refusal that went on to ask for a
       // destination fails here rather than answering.
-      compose: (_source, page) => {
+      compose: (_format, _source, page) => {
         pages.push(page);
         return Promise.resolve({ kind: 'refused', reason: 'unencodable-text', line: 7 });
       },
     });
 
-    expect(await commands.composeMarkdownFile()).toStrictEqual({
+    expect(await commands.composeImportFile('markdown')).toStrictEqual({
       kind: 'composition-refused',
       reason: 'unencodable-text',
       line: 7,
@@ -1764,16 +1765,64 @@ describe('composeMarkdownFile: what an import answers before anything is written
       documents: service,
       bus: bus(),
       engine: engine(),
-      markdown: markdown.source,
-      compose: (source) => {
+      imports: { markdown: markdown.source, csv: noImportFile },
+      compose: (_format, source) => {
         composed.push(source.length);
         return Promise.reject(new Error('unreachable'));
       },
     });
 
-    expect(await commands.composeMarkdownFile()).toStrictEqual({ kind: 'cancelled' });
+    expect(await commands.composeImportFile('markdown')).toStrictEqual({ kind: 'cancelled' });
     expect(markdown.calls).toStrictEqual(['pick']);
     expect(composed).toStrictEqual([]);
+  });
+
+  it('A CSV IMPORT uses the CSV picker and the CSV bound, and asks the composer for CSV', async () => {
+    // THE FORMAT IS THE DECISION, three ways at once: which picker opened, which limit
+    // a refusal carries, and which format reached the composer. A command that used
+    // Markdown's source or bound for CSV would answer plausibly on every other case.
+    const markdown = markdownFrom('notes.md', TEXT);
+    const csv = markdownFrom('table.csv', { kind: 'too-large', byteLength: MAX_CSV_BYTES + 1 });
+    const formats: string[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      imports: { markdown: markdown.source, csv: csv.source },
+      compose: (format) => {
+        formats.push(format);
+        return Promise.reject(new Error('unreachable'));
+      },
+    });
+
+    expect(await commands.composeImportFile('csv')).toStrictEqual({
+      kind: 'too-large',
+      limitBytes: MAX_CSV_BYTES,
+    });
+    expect(csv.calls).toStrictEqual(['pick', 'read:table.csv']);
+    expect(markdown.calls).toStrictEqual([]);
+    expect(formats).toStrictEqual([]);
+
+    // AND A CSV SOURCE THAT READS reaches the composer as CSV.
+    const readable = markdownFrom('table.csv', { kind: 'read', bytes: new TextEncoder().encode('a,b\n') });
+    const second = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      imports: { markdown: markdown.source, csv: readable.source },
+      compose: (format) => {
+        formats.push(format);
+        return Promise.resolve({ kind: 'refused', reason: 'nothing-to-draw', line: null });
+      },
+    });
+    expect(await second.composeImportFile('csv')).toStrictEqual({
+      kind: 'composition-refused',
+      reason: 'nothing-to-draw',
+      line: null,
+    });
+    expect(formats).toStrictEqual(['csv']);
   });
 });
 

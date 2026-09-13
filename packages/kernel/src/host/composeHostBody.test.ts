@@ -127,6 +127,12 @@ function start(
       calls.push(`compose:${[...source].join(',')}:${String(page.width)}x${String(page.height)}`);
       return compose(source, page);
     },
+    // ITS OWN PREFIX, so a case can say WHICH composer a channel reached. Both answer
+    // the same shape, so the answer alone cannot tell them apart.
+    composeCsv: (source, page) => {
+      calls.push(`csv:${[...source].join(',')}:${String(page.width)}x${String(page.height)}`);
+      return compose(source, page);
+    },
   });
 
   startEngineHost(
@@ -197,8 +203,30 @@ describe('the compose host channel set', () => {
     // map agrees with any change to the map. A host that gained `engine/apply`
     // would be a process answering a writer's question with nothing behind it.
     expect(Object.keys(composeChannels).sort()).toStrictEqual(
-      ['engine/close', 'engine/compose-markdown', 'engine/open', 'engine/probe-containment'].sort(),
+      [
+        'engine/close',
+        'engine/compose-csv',
+        'engine/compose-markdown',
+        'engine/open',
+        'engine/probe-containment',
+      ].sort(),
     );
+  });
+
+  it('routes each compose channel to its own composer, and never to the other', async () => {
+    // THE DECISION IS WHICH PARSER RAN. Both composers answer `composed` with a count,
+    // so a handler that sent CSV to the Markdown composer would pass every case that
+    // reads the wire; only the call list can tell.
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([97, 44, 98]));
+
+    stream.feed(request('v1', 'engine/compose-csv', { session, from: IN, into: OUT, page: LETTER }));
+    await stream.whenSent(2);
+    stream.feed(request('m1', 'engine/compose-markdown', { session, from: IN, into: OUT, page: LETTER }));
+    await stream.whenSent(3);
+
+    expect(calls).toStrictEqual(['csv:97,44,98:612x792', 'compose:97,44,98:612x792']);
   });
 
   it('bounds the page by the format, and CONTROL: accepts the limit itself', () => {

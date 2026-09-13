@@ -102,8 +102,9 @@ import {
   type FormDataSource,
   type CertificateSource,
   type ImageSource,
-  type ComposedMarkdown,
-  type MarkdownSource,
+  type ComposedImport,
+  type ImportFormat,
+  type ImportSource,
   type PickDestination,
   type PickDirectory,
   type PickImage,
@@ -394,12 +395,16 @@ export interface ShellComposition {
    * Which Markdown file is imported. Electron's open dialog, narrowed — `pickImage`'s
    * shape, added through this object for that field's reason (ADR-0060).
    */
-  readonly pickMarkdown: MarkdownSource['pick'];
+  readonly pickMarkdown: ImportSource['pick'];
   /**
    * The Markdown file's bytes, bounded by `MAX_MARKDOWN_BYTES` before the read, for
    * `readImage`'s reason: a person can pick a large file by mistake.
    */
-  readonly readMarkdown: MarkdownSource['read'];
+  readonly readMarkdown: ImportSource['read'];
+  /** Which CSV file is imported. `pickMarkdown`'s shape, narrowed to CSV. */
+  readonly pickCsv: ImportSource['pick'];
+  /** The CSV file's bytes, bounded by `MAX_CSV_BYTES` before the read. */
+  readonly readCsv: ImportSource['read'];
   /**
    * Which certificate signs. Electron's open dialog, narrowed to `.p12`/`.pfx`.
    *
@@ -524,6 +529,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     readImage,
     pickMarkdown,
     readMarkdown,
+    pickCsv,
+    readCsv,
     pickCertificate,
     readCertificate,
     openInBrowser,
@@ -974,8 +981,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // IMPORTING MARKDOWN: the picker and the read are parameters for `image`'s reason,
     // and the composition is the compose host's — `null` where no host can exist, so
     // the import is refused by name and the source is never parsed here (ADR-0060).
-    markdown: { pick: pickMarkdown, read: readMarkdown },
-    compose: composeHost === null ? null : composeHost.composeMarkdown,
+    imports: {
+      markdown: { pick: pickMarkdown, read: readMarkdown },
+      csv: { pick: pickCsv, read: readCsv },
+    },
+    compose: composeHost === null ? null : composeHost.compose,
     // SIGNING, and both members are parameters for `image`'s reason exactly.
     certificate: { pick: pickCertificate, read: readCertificate },
     // THE SAME STORE the settings channels write the integration key into, so a
@@ -2222,10 +2232,11 @@ function composeHostBinding(
   platform: EngineHostPlatform,
   failures: ShellFailureSink,
 ): {
-  readonly composeMarkdown: (
+  readonly compose: (
+    format: ImportFormat,
     source: Uint8Array,
     page: { readonly width: number; readonly height: number },
-  ) => Promise<ComposedMarkdown>;
+  ) => Promise<ComposedImport>;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -2319,7 +2330,7 @@ function composeHostBinding(
     }));
 
   return {
-    composeMarkdown: async (source, page) => {
+    compose: async (format, source, page) => {
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
       const from = areas.mintName();
@@ -2329,12 +2340,19 @@ function composeHostBinding(
       // THE SOURCE GOES WHATEVER THE CALL ANSWERED. It is a copy of a file a person
       // picked, in a directory a contained process may read, and a refusal or a
       // fault is no reason to leave it there.
-      const answer = await built.client['engine/compose-markdown']({
+      const request = {
         session: built.session,
         from,
         into,
         page: { width: page.width, height: page.height },
-      }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
+      };
+      // THE CHANNEL NAMES THE PARSER. Each format has its own, so the host never has
+      // to trust a field in the request to decide which parser reads a picked file.
+      const answer = await (
+        format === 'csv'
+          ? built.client['engine/compose-csv'](request)
+          : built.client['engine/compose-markdown'](request)
+      ).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
 
       if (!answer.ok) {
         throw new Error(`the compose host could not compose the source: ${answer.error.code}`);

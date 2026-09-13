@@ -892,6 +892,76 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — CSV → PDF table: a strict reader, a shared table, and a bound set by time
+
+D9's second row. `c8f1006` moved the Markdown composer's layout into `composeLayout.ts`
+first, with no behaviour change, so the table composer takes the same page writer,
+wrapping, encodability refusal and table rows rather than a copy.
+
+### What was built
+
+- **`csvRead.ts`, a strict RFC 4180 reader.** A quote is legal only at a field's start;
+  a quote elsewhere, text after a closing quote, and an unclosed quoted field are
+  `malformed-csv` with the line. Records end at CRLF, LF or CR, and a line break
+  inside quotes is kept and still advances the line count. An empty line is no record.
+- **`csvCompose.ts`.** It decodes UTF-8 fatally and strips a BOM, refuses a file with no
+  filled field, and sets the first row bold. It draws through the shared `drawTable`.
+- **`drawTable` now refuses a table wider than a cell of three digits** —
+  `too-many-columns`, naming the table's line — instead of drawing one character per
+  line. **Markdown tables get the same refusal**, which is a behaviour change stated
+  here.
+- **One route, two formats.**
+  - Host: `engine/compose-csv` shares the compose request and result schemas, and one
+    handler body serves both channels.
+  - Contract: `document.newFromCsv` shares one declared outcome union with
+    `document.newFromMarkdown`.
+  - Desktop: `composeImportFile(format)` and one handler factory serve both imports.
+  - Barrel: `proof:kernelload` keeps `csvRead.js` off it, 21 cases.
+
+### Measurements, and why TIME set the bound
+
+A scratch probe, one shape per process, 2026-09-13. The probe first showed it could
+separate a composition from a refusal: an unclosed 4 MiB quote peaked at 320 MiB,
+against 663–1,254 MiB for compositions.
+
+| shape | 4 MiB | 1 MiB |
+|---|---|---|
+| one column per record | 118.2 s, 1,254 MiB | 18.0 s, 551 MiB |
+| six short columns | 17.0 s, 771 MiB | 4.1 s, 382 MiB |
+| eighteen columns | 18.6 s, 958 MiB | 4.7 s, 435 MiB |
+| three long wrapping cells | 13.4 s, 663 MiB | 4.2 s, 326 MiB |
+
+Every reading is under the host's 3 GiB limit. Cost follows the record count, and
+four times the bytes took 6.6 times as long. So **`MAX_CSV_BYTES` is 1 MiB**, whose
+worst shape — 18 s — sits inside Markdown's measured 27.6 s.
+
+### Found while building it, all fixed before commit
+
+- **The UI's refusal mapping was an if/else ending in `nothing-to-draw`.** Adding two
+  reasons to `COMPOSE_REFUSALS` would have told a person their malformed CSV was
+  empty. Typecheck cannot see an if/else; it is now an exhaustive switch in a function
+  of its own, because `no-fallthrough` reads a nested switch's returns as a
+  fall-through.
+- **My first dialog sentence for the two reasons substituted `line ?? 0`.** That
+  would print *Line 0* for a Markdown table with no line. A null line now reads as a
+  sentence without one.
+- **Lint caught `ChannelResult<'document.newFromCsv'>` duplicated in a union.** It is
+  one type with the Markdown channel's, because the union is declared once.
+
+### Two tooling faults met on the way, recorded and not queued
+
+- **`npm run typecheck` segfaulted three times**, at *"npm: line 65 … Segmentation
+  fault "$NODE_EXE" "$NPM_CLI_JS""*. One run passed alone and the next crashed alone,
+  so concurrency is not the mechanism. The compiler is not either: both halves run
+  directly — `tsc --build` and `tsc --project tsconfig.scripts.json` — exited 0 on the
+  same tree, and `npm run build` compiled it without error. The crash is npm's own
+  process; its mechanism is not established.
+- **The escape guard refused `node node_modules/typescript/bin/tsc --build --pretty
+  false`** as `node -e / --print`. `--pretty` and `-p tsconfig…` read as the print
+  flag. The long `--project` spelling without `--pretty` passed.
+
+---
+
 ## 2026-09-13 — Guards went red at `f8cab12` on a survival judged from one window
 
 Guards' `windows-latest` leg failed `checkLocal.proof.mjs` on two cases, read from the

@@ -7,6 +7,7 @@ import {
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
+  MAX_CSV_BYTES,
   MAX_TEXT_LAYER_LINE,
   type ComposeRefusal,
   type RequestedSignatureMark,
@@ -570,31 +571,43 @@ export type SignOutcome =
   // must be able to return.
   | { readonly kind: SignRefusal };
 
+/** The source formats an import composes into a new PDF (ADR-0060). */
+export type ImportFormat = 'markdown' | 'csv';
+
 /**
- * Which Markdown file becomes a PDF.
+ * Each import format's byte bound, checked before its read — the contract's
+ * constants, one per format, because each was measured on its own composer.
+ */
+export const IMPORT_BYTE_LIMITS: Readonly<Record<ImportFormat, number>> = {
+  markdown: MAX_MARKDOWN_BYTES,
+  csv: MAX_CSV_BYTES,
+};
+
+/**
+ * Which file an import reads.
  *
  * {@link PickImage}'s shape: nothing is suggested, and `null` is the user
  * dismissing the dialog.
  */
-export type PickMarkdown = () => Promise<string | null>;
+export type PickImportFile = () => Promise<string | null>;
 
-/** What {@link MarkdownSource.read} answers. {@link ImageRead}'s shape. */
-export type MarkdownRead =
+/** What {@link ImportSource.read} answers. {@link ImageRead}'s shape. */
+export type ImportRead =
   | { readonly kind: 'read'; readonly bytes: Uint8Array }
   | { readonly kind: 'too-large'; readonly byteLength: number }
   | { readonly kind: 'unreadable' };
 
 /**
- * What composing a Markdown file needs from outside this module.
+ * What importing one format needs from outside this module.
  *
  * {@link ImageSource}'s bundling, for its reason: the picker needs Electron and the
  * bounded read needs Node's filesystem, and neither may be imported here.
  */
-export interface MarkdownSource {
-  /** Runs the platform's open dialog, narrowed to Markdown. */
-  readonly pick: PickMarkdown;
-  /** The bytes at a path, bound-checked against `MAX_MARKDOWN_BYTES` before the read. */
-  readonly read: (path: string) => Promise<MarkdownRead>;
+export interface ImportSource {
+  /** Runs the platform's open dialog, narrowed to the format. */
+  readonly pick: PickImportFile;
+  /** The bytes at a path, bound-checked against the format's byte limit before the read. */
+  readonly read: (path: string) => Promise<ImportRead>;
 }
 
 /**
@@ -604,7 +617,7 @@ export interface MarkdownSource {
  * Declared here, where it is consumed, and the composition root's binding answers
  * this type rather than a second one beside it.
  */
-export type ComposedMarkdown =
+export type ComposedImport =
   | { readonly kind: 'composed'; readonly pdf: Uint8Array }
   | {
       readonly kind: 'refused';
@@ -618,18 +631,22 @@ export type ComposedMarkdown =
  * host can exist, which is refused as {@link EngineUnavailableError} rather than
  * composed in `main`.
  */
-export type ComposeMarkdown =
-  | ((source: Uint8Array, page: { readonly width: number; readonly height: number }) => Promise<ComposedMarkdown>)
+export type ComposeImport =
+  | ((
+      format: ImportFormat,
+      source: Uint8Array,
+      page: { readonly width: number; readonly height: number },
+    ) => Promise<ComposedImport>)
   | null;
 
 /**
- * What composing a picked Markdown file into a file on disk answers.
+ * What composing a picked file into a file on disk answers.
  *
  * `written` carries the destination, which is a **path** and never crosses to the
  * renderer: the handler opens it through the one route a document is opened by, and
  * what crosses is that open's outcome.
  */
-export type ComposeMarkdownFileOutcome =
+export type ComposeImportOutcome =
   | { readonly kind: 'written'; readonly destination: string }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'too-large'; readonly limitBytes: number }
@@ -1353,14 +1370,14 @@ export interface DocumentCommandsParts {
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
   readonly image: ImageSource;
-  /** Which Markdown file is imported, and its bounded read. See {@link MarkdownSource}. */
-  readonly markdown: MarkdownSource;
+  /** Each import format's picker and bounded read. See {@link ImportSource}. */
+  readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
    * The compose host, or `null` where none can exist. Required and undefaulted for
-   * `textLines`' reason: *this build cannot import Markdown* is a decided answer, not
-   * a state a caller reaches by saying nothing.
+   * `textLines`' reason: *this build cannot import* is a decided answer, not a state a
+   * caller reaches by saying nothing.
    */
-  readonly compose: ComposeMarkdown;
+  readonly compose: ComposeImport;
   /** Where a signing certificate comes from. See {@link CertificateSource}. */
   readonly certificate: CertificateSource;
   /**
@@ -1397,8 +1414,8 @@ export class DocumentCommands {
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
-  readonly #markdown: MarkdownSource;
-  readonly #compose: ComposeMarkdown;
+  readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
+  readonly #compose: ComposeImport;
   readonly #certificate: CertificateSource;
   readonly #docusign: DocusignSession;
   readonly #extract: DocumentExtractReader;
@@ -1428,7 +1445,7 @@ export class DocumentCommands {
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
-    this.#markdown = parts.markdown;
+    this.#imports = parts.imports;
     this.#compose = parts.compose;
     this.#certificate = parts.certificate;
     this.#docusign = parts.docusign;
@@ -2756,8 +2773,8 @@ export class DocumentCommands {
   }
 
   /**
-   * Composes a Markdown file the person picks as a new PDF, in the compose host, and
-   * writes it where they choose
+   * Composes a file the person picks — Markdown or CSV — as a new PDF, in the compose
+   * host, and writes it where they choose
    * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
    *
    * ## It answers a PATH, and the path does not cross
@@ -2786,21 +2803,26 @@ export class DocumentCommands {
    * there is no size of the target to set a composition at. A reader for sizes is a
    * row of its own; until then both routes compose at US Letter, and the row says so.
    */
-  async composeMarkdownFile(target?: DocId): Promise<ComposeMarkdownFileOutcome> {
+  async composeImportFile(format: ImportFormat, target?: DocId): Promise<ComposeImportOutcome> {
     if (target !== undefined && this.#documents.nameOf(target) === undefined) {
-      throw new DocumentNotOpenError(target, 'append Markdown');
+      throw new DocumentNotOpenError(target, `append an imported ${format} file`);
     }
     const compose = this.#compose;
-    if (compose === null) throw new EngineUnavailableError('Importing Markdown');
+    if (compose === null) {
+      throw new EngineUnavailableError(format === 'csv' ? 'Importing CSV' : 'Importing Markdown');
+    }
 
-    const picked = await this.#markdown.pick();
+    const source = this.#imports[format];
+    const picked = await source.pick();
     if (picked === null) return { kind: 'cancelled' };
 
-    const read = await this.#markdown.read(picked);
-    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_MARKDOWN_BYTES };
+    const read = await source.read(picked);
+    if (read.kind === 'too-large') {
+      return { kind: 'too-large', limitBytes: IMPORT_BYTE_LIMITS[format] };
+    }
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
-    const composed = await compose(read.bytes, COMPOSED_PAGE);
+    const composed = await compose(format, read.bytes, COMPOSED_PAGE);
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line };
     }

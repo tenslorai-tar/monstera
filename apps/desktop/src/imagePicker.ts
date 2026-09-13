@@ -6,7 +6,7 @@ import {
   FORM_DATA_FILES,
   type PickFormDataFile,
   type PickImage,
-  type PickMarkdown,
+  type PickImportFile,
 } from './documentCommands.js';
 
 /**
@@ -73,11 +73,29 @@ export function createImagePicker(): PickImage {
  * composer in the compose host — a source that is not UTF-8, or draws nothing — which
  * is where a file nobody has looked at belongs.
  */
-export function createMarkdownPicker(): PickMarkdown {
+export function createMarkdownPicker(): PickImportFile {
   return async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'dontAddToRecent'],
       filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}
+
+/**
+ * The open dialog for a CSV file to import.
+ *
+ * `createMarkdownPicker`'s shape and its sentence about the filter: a convenience,
+ * not a check. What refuses a file that is not CSV is the strict reader in the
+ * compose host, which names the line.
+ */
+export function createCsvPicker(): PickImportFile {
+  return async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: 'CSV', extensions: ['csv', 'txt'] }],
     });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;

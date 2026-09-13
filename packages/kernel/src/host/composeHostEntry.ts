@@ -1,5 +1,6 @@
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
+import { composeCsv } from '../csvCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
@@ -64,6 +65,7 @@ const handlers = createComposeHandlers({
   files: hostFilesystem,
   probe: probeContainment,
   composeMarkdown,
+  composeCsv,
 });
 
 startEngineHost(

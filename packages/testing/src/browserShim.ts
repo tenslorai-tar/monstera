@@ -519,6 +519,8 @@ export interface BrowserShimOptions {
    * changes nothing. An `opened` answer seeds the document as `document.open`'s does.
    */
   readonly markdownNews?: readonly ChannelResult<'document.newFromMarkdown'>[];
+  /** What `document.newFromCsv` answers, in order — `markdownNews`' queue and default. */
+  readonly csvNews?: readonly ChannelResult<'document.newFromCsv'>[];
   /**
    * What `document.appendMarkdown` answers, in order, with the same default.
    *
@@ -640,6 +642,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
   const queuedMarkdownNews = [...(options.markdownNews ?? [])];
+  const queuedCsvNews = [...(options.csvNews ?? [])];
   const queuedMarkdownAppends = [...(options.markdownAppends ?? [])];
   const queuedUnlocks: UnlockAnswer[] = [...(options.unlocks ?? [])];
   const queuedSignings: SignAnswer[] = [...(options.signings ?? [])];
@@ -760,6 +763,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // must be one the rest of the shim accepts commands against.
     'document.newFromMarkdown': () => {
       const answer = queuedMarkdownNews.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+
+    'document.newFromCsv': () => {
+      const answer = queuedCsvNews.shift() ?? { kind: 'cancelled' as const };
       if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
     },

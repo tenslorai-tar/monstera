@@ -27,56 +27,82 @@ import { byteImageWire, hostAreaChannels, outputNameSchema, sessionSchema } from
  * from *the read found nothing*. No path, no token tree and no document bytes
  * travel on the pipe.
  */
+/**
+ * What composing a source is asked with — one shape for every source format.
+ *
+ * ## The page is bounded by the format
+ *
+ * `MAX_PAGE_COORDINATE` is PDF 32000-1 Annex C.2's page limit, taken from the
+ * contract rather than written again: a composition asked for a page past it could
+ * not be a conforming document.
+ */
+const composeRequestSchema = z
+  .object({
+    session: sessionSchema,
+    /** The source file's name in the area's snapshot directory. */
+    from: outputNameSchema,
+    /** The composed PDF's name in the area's output directory. */
+    into: outputNameSchema,
+    /** The size every composed page is set at, in points. */
+    page: z
+      .object({
+        width: z.number().gt(0).max(MAX_PAGE_COORDINATE),
+        height: z.number().gt(0).max(MAX_PAGE_COORDINATE),
+      })
+      .strict(),
+  })
+  .strict();
+
+/**
+ * What composing a source answers — one shape for every source format.
+ *
+ * ## A refusal is an ANSWER, with its line
+ *
+ * A source that is not UTF-8, is malformed for its format, holds a character the
+ * standard fonts cannot draw, or draws nothing is a fact about the file a person
+ * picked, and the person is owed which one — and, where there is one, the line. So it
+ * rides in the result rather than as a failure code, which carries no line.
+ */
+const composeResultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('composed'), bytes: z.number().int().nonnegative() }).strict(),
+  z
+    .object({
+      kind: z.literal('refused'),
+      reason: z.enum(COMPOSE_REFUSALS),
+      /** The one-based source line the refusal is about, where there is one. */
+      line: z.number().int().positive().nullable(),
+    })
+    .strict(),
+]);
+
 export const composeChannels = {
   ...hostAreaChannels(byteImageWire),
 
   /**
    * Sets a Markdown source as a new PDF.
    *
-   * ## A refusal is an ANSWER, with its line
-   *
-   * A source that is not UTF-8, holds a character the standard fonts cannot draw,
-   * or draws nothing is a fact about the file a person picked, and the person is
-   * owed which one — and, for an unencodable character, where. So it rides in the
-   * result rather than as a failure code, which carries no line. The two failures
-   * are the transport's: an area this host does not hold, and a source file main
-   * did not write or that went.
-   *
-   * ## The page is bounded by the format
-   *
-   * `MAX_PAGE_COORDINATE` is PDF 32000-1 Annex C.2's page limit, taken from the
-   * contract rather than written again: a composition asked for a page past it
-   * could not be a conforming document.
+   * The two failures are the transport's: an area this host does not hold, and a
+   * source file main did not write or that went.
    */
   'engine/compose-markdown': channel(
     'Sets a Markdown source from the area as a new PDF, written into the area.',
-    z
-      .object({
-        session: sessionSchema,
-        /** The source file's name in the area's snapshot directory. */
-        from: outputNameSchema,
-        /** The composed PDF's name in the area's output directory. */
-        into: outputNameSchema,
-        /** The size every composed page is set at, in points. */
-        page: z
-          .object({
-            width: z.number().gt(0).max(MAX_PAGE_COORDINATE),
-            height: z.number().gt(0).max(MAX_PAGE_COORDINATE),
-          })
-          .strict(),
-      })
-      .strict(),
-    z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('composed'), bytes: z.number().int().nonnegative() }).strict(),
-      z
-        .object({
-          kind: z.literal('refused'),
-          reason: z.enum(COMPOSE_REFUSALS),
-          /** The one-based source line the refusal is about, where there is one. */
-          line: z.number().int().positive().nullable(),
-        })
-        .strict(),
-    ]),
+    composeRequestSchema,
+    composeResultSchema,
+    ['no-such-session', 'asset-missing'],
+  ),
+
+  /**
+   * Sets a CSV source as a table on new PDF pages.
+   *
+   * A channel of its own rather than a format field on the one above, because the
+   * handler it reaches runs a different parser, and a routing field is a string the
+   * host would have to trust to pick one. The request and result are the same
+   * schemas, declared once.
+   */
+  'engine/compose-csv': channel(
+    'Sets a CSV source from the area as a table on new PDF pages, written into the area.',
+    composeRequestSchema,
+    composeResultSchema,
     ['no-such-session', 'asset-missing'],
   ),
 };
