@@ -7,7 +7,7 @@ import {
   encodeFrame,
 } from '@monstera/contract';
 
-import { type ComposePageSize, MarkdownComposeRefused } from '../markdownCompose.js';
+import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
 import { createComposeHandlers } from './composeHandlers.js';
@@ -242,7 +242,7 @@ describe('the compose host body', () => {
   it('answers a composer REFUSAL as a refusal with its line, and writes nothing', async () => {
     const files = emptyFiles();
     const { session, calls } = await openArea(files, () =>
-      Promise.reject(new MarkdownComposeRefused('unencodable-text', 3, 'refused for the case')),
+      Promise.reject(new ComposeRefused('unencodable-text', 3, 'refused for the case')),
     );
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
 

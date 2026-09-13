@@ -8,7 +8,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
   MAX_TEXT_LAYER_LINE,
-  type MarkdownComposeRefusal,
+  type ComposeRefusal,
   type RequestedSignatureMark,
   type SignaturePlacement,
   type DocusignRefusalKind,
@@ -608,7 +608,7 @@ export type ComposedMarkdown =
   | { readonly kind: 'composed'; readonly pdf: Uint8Array }
   | {
       readonly kind: 'refused';
-      readonly reason: MarkdownComposeRefusal;
+      readonly reason: ComposeRefusal;
       /** The one-based source line the refusal is about, where there is one. */
       readonly line: number | null;
     };
@@ -636,7 +636,7 @@ export type ComposeMarkdownFileOutcome =
   | { readonly kind: 'unreadable' }
   | {
       readonly kind: 'composition-refused';
-      readonly reason: MarkdownComposeRefusal;
+      readonly reason: ComposeRefusal;
       readonly line: number | null;
     }
   | { readonly kind: 'destination-contested'; readonly openElsewhere: number }

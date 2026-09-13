@@ -1,6 +1,6 @@
 import type { Handlers } from '@monstera/contract';
 
-import { type ComposePageSize, MarkdownComposeRefused } from '../markdownCompose.js';
+import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import type { ComposeChannels } from './composeChannels.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
@@ -93,7 +93,7 @@ export function createComposeHandlers({
         // ONLY A NAMED REFUSAL IS AN ANSWER. Anything else is a defect in this
         // build, and it propagates so the body reports `internal` rather than
         // dressing a fault up as a fact about the person's file.
-        if (error instanceof MarkdownComposeRefused) {
+        if (error instanceof ComposeRefused) {
           return { ok: true, value: { kind: 'refused', reason: error.reason, line: error.line } };
         }
         throw error;

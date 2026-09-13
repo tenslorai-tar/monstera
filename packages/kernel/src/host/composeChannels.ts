@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { MARKDOWN_COMPOSE_REFUSALS, MAX_PAGE_COORDINATE, channel } from '@monstera/contract';
+import { COMPOSE_REFUSALS, MAX_PAGE_COORDINATE, channel } from '@monstera/contract';
 
 import { byteImageWire, hostAreaChannels, outputNameSchema, sessionSchema } from './engineChannels.js';
 
@@ -71,7 +71,7 @@ export const composeChannels = {
       z
         .object({
           kind: z.literal('refused'),
-          reason: z.enum(MARKDOWN_COMPOSE_REFUSALS),
+          reason: z.enum(COMPOSE_REFUSALS),
           /** The one-based source line the refusal is about, where there is one. */
           line: z.number().int().positive().nullable(),
         })

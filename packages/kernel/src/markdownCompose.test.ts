@@ -1,7 +1,8 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { MarkdownComposeRefused, composeMarkdown } from './markdownCompose.js';
+import { ComposeRefused } from './composeLayout.js';
+import { composeMarkdown } from './markdownCompose.js';
 import { shownOn } from './shownText.js';
 
 /** US Letter, the size a composed document is set at when nothing else decides it. */
@@ -72,7 +73,7 @@ describe('composeMarkdown', () => {
 
   it('refuses a source that is not UTF-8, by name', async () => {
     const refusal = composeMarkdown(Uint8Array.of(0x48, 0x69, 0xff, 0xfe, 0x21), LETTER);
-    await expect(refusal).rejects.toBeInstanceOf(MarkdownComposeRefused);
+    await expect(refusal).rejects.toBeInstanceOf(ComposeRefused);
     await expect(refusal).rejects.toMatchObject({ reason: 'not-utf8', line: null });
   });
 

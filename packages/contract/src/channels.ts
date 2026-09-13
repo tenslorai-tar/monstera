@@ -34,7 +34,7 @@ import {
   docIdSchema,
   docVersionSchema,
   fileHandleSchema,
-  MARKDOWN_COMPOSE_REFUSALS,
+  COMPOSE_REFUSALS,
 } from './schemas.js';
 
 /**
@@ -1614,7 +1614,7 @@ export const channels = {
       z.object({ kind: z.literal('unreadable') }),
       z.object({
         kind: z.literal('composition-refused'),
-        reason: z.enum(MARKDOWN_COMPOSE_REFUSALS),
+        reason: z.enum(COMPOSE_REFUSALS),
         /** The one-based source line the refusal is about, where there is one. */
         line: z.number().int().positive().nullable(),
       }),
@@ -1666,7 +1666,7 @@ export const channels = {
       z.object({ kind: z.literal('unreadable') }),
       z.object({
         kind: z.literal('composition-refused'),
-        reason: z.enum(MARKDOWN_COMPOSE_REFUSALS),
+        reason: z.enum(COMPOSE_REFUSALS),
         line: z.number().int().positive().nullable(),
       }),
       z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),

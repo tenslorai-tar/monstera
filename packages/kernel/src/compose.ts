@@ -1,4 +1,5 @@
-export { type ComposePageSize, MarkdownComposeRefused, composeMarkdown } from './markdownCompose.js';
+export { type ComposePageSize, ComposeRefused } from './composeLayout.js';
+export { composeMarkdown } from './markdownCompose.js';
 
 /**
  * `@monstera/kernel/compose` — everything whose import loads the **Markdown parser**
