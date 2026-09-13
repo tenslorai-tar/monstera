@@ -892,6 +892,37 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — The real compose host composed a page; the Markdown row is done
+
+The one run the row owed. `scripts/research/composeHostLive.mjs` spawns a child
+under the pinned Electron binary in Node mode, `hostRecovery.mjs`' shape. The child
+builds the shipped composition root with a real engine platform and the real compose
+platform. Nothing is faked but the two pickers and the source read.
+
+Run here on 2026-09-13, **5 compose-host cases passed**:
+- the real compose host composed the source, and the file opened;
+- the file at the chosen destination begins `%PDF-`;
+- **the real MuPDF host read the composed page and counted all 8 words.** A
+  composition that wrote a file which opened and drew nothing would count zero;
+- **the control:** a source that is not UTF-8 answered `composition-refused` with
+  `not-utf8`, and nothing was written. That answer can come only from the composer
+  inside the host — a shell that never reached one answers `engine-unavailable`;
+- the harness exited 0 after writing its report.
+
+It runs on CI's Windows job beside `hostRecovery.mjs`, with
+`--require-containment`, so *could not look* is a failure there. It takes
+`refuseStaleBuild` with its own `ARTEFACT_EDGES` entry, `COMPOSE_HOST_LIVE`.
+
+**Not mutation-tested, stated.** The positive cases and the control are shaped so
+that absence cannot pass: no host means no `opened`, and a blank page means zero
+words. No mutation of the composer was run to show the word case going red.
+
+> **Correction to the entry below, 2026-09-13.** Its *Not done* — *"Nothing has
+> started the real compose host"* — is closed by this run, and the FEATURES row
+> reads **done**.
+
+---
+
 ## 2026-09-13 — Markdown → PDF: wired end to end through the compose host, owing one real-host run
 
 Stage 8's first row. `0fe2f54` built the compose host's kernel half; this range

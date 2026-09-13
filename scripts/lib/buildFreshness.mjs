@@ -187,6 +187,24 @@ export const VERIFIED_DOWNLOAD = [
 ];
 
 /**
+ * The shell and the compose host `composeHostLive.mjs` runs for real: the
+ * composition root that builds the binding, the platform that derives the host's
+ * container, the host's entry, and the composer inside it.
+ *
+ * @type {BuildEdge[]}
+ */
+export const COMPOSE_HOST_LIVE = [
+  ['apps/desktop/src/composition.ts', 'apps/desktop/dist/composition.js', 'tsc'],
+  ['apps/desktop/src/engineHostPlatform.ts', 'apps/desktop/dist/engineHostPlatform.js', 'tsc'],
+  [
+    'packages/kernel/src/host/composeHostEntry.ts',
+    'packages/kernel/dist/host/composeHostEntry.js',
+    'tsc',
+  ],
+  ['packages/kernel/src/markdownCompose.ts', 'packages/kernel/dist/markdownCompose.js', 'tsc'],
+];
+
+/**
  * The handwriting recogniser and the manifest it reads its filenames from.
  *
  * **Two, and the manifest is the one that would go quiet.** The proof looks for
@@ -340,6 +358,8 @@ export const ARTEFACT_EDGES = {
   // So the importers case could not see it and the callers case had nothing to
   // require. A blind spot in a scan, named where the next reader meets it.
   'proof:verifieddownload': VERIFIED_DOWNLOAD,
+  // THE COMPOSE HOST, run for real against the built shell (D9's Markdown row).
+  'proof:composehost': COMPOSE_HOST_LIVE,
   // THE COMPILE-FAIL PROOF, whose probes `import type … from '@monstera/contract'`
   // and are compiled by a spawned `tsc`. That import resolves to the package's
   // built declarations, so this proof reads the same artefact every other entry

@@ -502,6 +502,21 @@ try {
       },
     ],
     [
+      'scripts/research/composeHostLiveHost.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads three built modules through file:// URLs — the composition root, ' +
+          'the engine host platform and the harness surfaces — so the scan sees a single ' +
+          'computed site rather than three. The whole subject is the SHIPPED import path: it ' +
+          'composes a Markdown file through the real compose host (ADR-0060), and a copy of any ' +
+          'of those modules would answer the question compositionHost.test.ts already answers ' +
+          'with a fake platform. Paths need Windows backslash conversion at run time. It runs ' +
+          'UNDER the Electron binary in Node mode rather than starting it — its driver does ' +
+          'that, through electronBinaryPath() — and it never imports the electron package.',
+      },
+    ],
+    [
       'scripts/lib/tokenContrast.mjs',
       {
         sites: 1,

@@ -1115,6 +1115,14 @@ jobs:
       - name: A killed engine host recovers, against a running process
         run: node scripts/ci/annotate.mjs scripts/research/hostRecovery.mjs --require-containment
 
+      # THE COMPOSE HOST, RUN FOR REAL. `compositionHost.test.ts` drives both import
+      # channels through a fake platform, so a third host created in its own
+      # AppContainer and composing through its pipe was asserted and executed nowhere
+      # (ADR-0060). This job, for `hostRecovery`'s reason: it can create a contained
+      # host, and `--require-containment` makes could-not-look a failure here.
+      - name: A Markdown import composes in the real compose host
+        run: node scripts/ci/annotate.mjs scripts/research/composeHostLive.mjs --require-containment
+
       # THE SWEEP, AGAINST A REAL LISTING. `sessionDirectories.test.ts` covers
       # every decision the sweep makes and supplies the listing to do it, so the
       # shipped `list` — the filter that keeps `rmSync(recursive)` off a FILE
