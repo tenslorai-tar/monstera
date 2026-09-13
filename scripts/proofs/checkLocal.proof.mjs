@@ -336,6 +336,19 @@ const SAMPLE_GAP_MS = 600;
 const CLEANUP_ADVANCE_BUDGET_MS = 2000;
 
 /**
+ * How long the probe watches a grandchild after its harness is killed before
+ * calling it stopped.
+ *
+ * The cleanup's budget and reason, one question earlier: *did the counter move
+ * within this long* rather than *did it move in the one window opened*. A separate
+ * name because it is a separate term in {@link PROBE_SPAN_MS}.
+ *
+ * DETERMINISTIC CONTROL: set to `0`, no reading is taken after the kill, so the
+ * win32 detached-survivor case and the cleanup differential go red on every run.
+ */
+const SURVIVAL_BUDGET_MS = 2000;
+
+/**
  * How many grandchildren the teardown block probes, and therefore the most that
  * can survive into the cleanup.
  *
@@ -368,8 +381,8 @@ const DETACHED_KEY = `deta${'ched'}`;
  * and a survivor that expired on its own is indistinguishable from one that
  * was torn down. So the quantity is not a budget, it is the SPAN:
  *
- *   two probes, each at most SETUP_BUDGET_MS of polling plus SETTLE_MS plus one
- *   SAMPLE_GAP_MS, then a cleanup which — PER SURVIVOR, and there can be
+ *   two probes, each at most SETUP_BUDGET_MS of polling plus SETTLE_MS plus up to
+ *   SURVIVAL_BUDGET_MS of watching after the kill, then a cleanup which — PER SURVIVOR, and there can be
  *   MAX_SURVIVORS of them — polls up to CLEANUP_ADVANCE_BUDGET_MS for the
  *   counter to move, kills, settles, and samples once more.
  *
@@ -404,7 +417,7 @@ const DETACHED_KEY = `deta${'ched'}`;
  * the run passing by absence.
  */
 const PROBE_SPAN_MS =
-  2 * (SETUP_BUDGET_MS + SETTLE_MS + SAMPLE_GAP_MS) +
+  2 * (SETUP_BUDGET_MS + SETTLE_MS + SURVIVAL_BUDGET_MS) +
   MAX_SURVIVORS * (CLEANUP_ADVANCE_BUDGET_MS + SETTLE_MS + SAMPLE_GAP_MS);
 const TEARDOWN_HEADROOM = 4;
 const TEARDOWN_FIXTURE_MS = PROBE_SPAN_MS * TEARDOWN_HEADROOM;
@@ -1186,7 +1199,13 @@ try {
       /** @returns {number | null} */
       const tick = () => {
         try {
-          const value = Number(readFileSync(marker, 'utf8').trim());
+          const text = readFileSync(marker, 'utf8').trim();
+          // AN EMPTY READ IS NO READING. `writeFileSync` truncates before it writes,
+          // so a read landing between the two returns '' — and `Number('')` is 0, a
+          // finite counter value, which reads a living grandchild as one whose
+          // counter went BACKWARDS to zero.
+          if (text === '') return null;
+          const value = Number(text);
           return Number.isFinite(value) ? value : null;
         } catch {
           return null;
@@ -1214,9 +1233,25 @@ try {
 
       child.kill('SIGKILL');
       sleepSync(SETTLE_MS);
-      const afterKill = tick();
-      sleepSync(SAMPLE_GAP_MS);
-      const later = tick();
+      // SURVIVAL IS POLLED, as the advance above and the cleanup below already are.
+      // It was one window — a read, SAMPLE_GAP_MS, a read — and on Guards'
+      // windows-latest at f8cab12 the detached grandchild read as dead in that
+      // window, which emptied the survivor list and reddened the cleanup control
+      // with it. AAAA-37 found this asymmetry in the cleanup and left it here. A
+      // stopped process never advances however long it is watched, so polling
+      // cannot turn a real teardown into survival; it only stops a slow tick or a
+      // torn read from turning survival into teardown.
+      let afterKill = tick();
+      let stillAdvancing = false;
+      let watched = 0;
+      while (watched < SURVIVAL_BUDGET_MS && !stillAdvancing) {
+        sleepSync(SETUP_POLL_MS);
+        watched += SETUP_POLL_MS;
+        const now = tick();
+        if (now === null) continue;
+        if (afterKill === null) afterKill = now;
+        else if (now > afterKill) stillAdvancing = true;
+      }
 
       /** @type {number | null} */
       let pid;
@@ -1227,7 +1262,7 @@ try {
       }
       return {
         sawAdvance,
-        stillAdvancing: afterKill !== null && later !== null && later > afterKill,
+        stillAdvancing,
         pid: Number.isFinite(pid) ? pid : null,
         tick,
       };

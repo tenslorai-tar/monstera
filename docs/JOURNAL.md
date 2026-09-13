@@ -892,6 +892,47 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Guards went red at `f8cab12` on a survival judged from one window
+
+Guards' `windows-latest` leg failed `checkLocal.proof.mjs` on two cases, read from the
+check-run annotations:
+- *win32 CONTROL: a DETACHED grandchild survives the same kill*;
+- *a survivor is seen ADVANCING, then killed, then seen still* — "Survivors: 0".
+
+The same leg passed at `966048e`, `b0699a3` and `4971b60`. `f8cab12` touched nothing
+this proof reads.
+
+### The mechanism
+
+`probeGrandchild` polls up to ten seconds to see the grandchild's counter advance
+before the kill. Then it decides survival from **one window**: a read 250 ms after the
+kill, another 600 ms later, and `later > afterKill`. A living grandchild that did not
+tick inside that window read as dead. That emptied the survivor list, so the cleanup
+control failed with it — one cause, two red cases.
+
+Two ways the window misses a live process, and the annotation cannot say which fired:
+- **a stall** longer than the window on a loaded runner, against a 100 ms tick;
+- **a torn read.** `writeFileSync` truncates before it writes, so a read between the
+  two returns `''`. `tick()` did `Number(text)`, and `Number('')` is `0`, a finite
+  counter value that reads as a counter that went back to zero.
+
+**AAAA-37 found this asymmetry in the cleanup** — a single window against a polled
+property — **and fixed it there only.** This is the same finding, one question
+earlier, in the same file.
+
+### The fix
+
+An empty read is no reading. Survival is polled for up to `SURVIVAL_BUDGET_MS`, the
+way the advance and the cleanup already are. A stopped process never advances however
+long it is watched, so polling cannot turn a teardown into a survival. The budget is a
+term in `PROBE_SPAN_MS`, AAAA-38's rule: a derivation missing a term is half of one.
+
+- **74 checkLocal cases passed** here after the fix.
+- **The control was executed:** with `SURVIVAL_BUDGET_MS` at `0` the proof reddened
+  exactly the two cases Guards reported, so the budget is what those cases stand on.
+
+---
+
 ## 2026-09-13 — The real compose host composed a page; the Markdown row is done
 
 The one run the row owed. `scripts/research/composeHostLive.mjs` spawns a child
