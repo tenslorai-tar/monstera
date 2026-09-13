@@ -453,6 +453,29 @@ export {
   readWithin,
   receivedByteMeter,
 } from './verifiedDownload.js';
+// ON THE MAIN BARREL: `node:crypto`, the contract's types and `readWithin` are all
+// it reaches, so nothing native enters the graph of the composition root that
+// imports this (ADR-0059).
+export {
+  authorizationUrl,
+  completedDocument,
+  defaultAccount,
+  DOCUSIGN_ACCOUNT_HOSTS,
+  DOCUSIGN_REST_DOMAIN,
+  DOCUSIGN_SCOPE,
+  type DocusignAccount,
+  type DocusignRefusal,
+  DocusignRefused,
+  type DocusignSigner,
+  type DocusignTokens,
+  envelopeStatus,
+  exchangeCode,
+  oauthState,
+  pkcePair,
+  type PkcePair,
+  refreshTokens,
+  sendEnvelope,
+} from './docusign.js';
 // ON THE BARREL AND THE ENGINE HALF IS NOT. This module is data and two pure
 // functions — the URLs, the digests and which tokenizer family each model needs
 // — and main is what reads it, because main downloads. `ocrHandwriting.ts`, which

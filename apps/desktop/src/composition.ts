@@ -145,6 +145,8 @@ import {
   sessionDirectoryPaths,
 } from './sessionDirectories.js';
 import type { RecentFiles } from './recentFiles.js';
+import { createDocusignSession } from './docusignSession.js';
+import type { OpenInBrowser } from './docusignSignIn.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
@@ -403,6 +405,14 @@ export interface ShellComposition {
    * expressed as a number nobody measured.
    */
   readonly readCertificate: CertificateSource['read'];
+  /**
+   * Opens a URL in the person's own browser — `shell.openExternal`, built in
+   * `entry.ts` because this file imports no Electron.
+   *
+   * Its one caller is a DocuSign sign-in, which sends the person to an authorization
+   * URL `main` built and waits for the redirect on loopback (ADR-0059).
+   */
+  readonly openInBrowser: OpenInBrowser;
   /** Where settings are stored. Required — see the note above. */
   readonly settings: SettingsSurface;
   /**
@@ -486,6 +496,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     readImage,
     pickCertificate,
     readCertificate,
+    openInBrowser,
     settings,
     secrets,
     recent,
@@ -622,6 +633,19 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // `mupdf` is named because it is the one adapter that exists, and it is
   // reached through the registry rather than around it: an unregistered writer
   // is refused by name here exactly as `CommandBus` refuses one.
+  // THE SECRET STORE, RESOLVED ONCE. The settings channels and the DocuSign session
+  // read and write the same store, and *what a graph composed with no store does* is
+  // one decision: answer `available: false`, read nothing, and refuse every write,
+  // because writing is the operation that must never quietly fall back to the plain
+  // settings file. Two inline copies of that fallback would be two opinions about it.
+  const secretStore: SecretStoreSurface = secrets ?? {
+    available: (): boolean => false,
+    read: (): Readonly<Record<string, string>> => ({}),
+    write: (): never => {
+      throw new Error('this graph was composed with no secret store, so nothing was written');
+    },
+  };
+
   const commands = new DocumentCommands({
     documents,
     bus,
@@ -913,6 +937,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     image: { pick: pickImage, read: readImage },
     // SIGNING, and both members are parameters for `image`'s reason exactly.
     certificate: { pick: pickCertificate, read: readCertificate },
+    // THE SAME STORE the settings channels write the integration key into, so a
+    // key saved in Settings is the key this session signs in with.
+    docusign: createDocusignSession({ settings, secrets: secretStore, openInBrowser }),
     // THE EXTRACT, composed like every reader above it: resolve the session,
     // then hand it to whichever host is live. What differs is that it produces
     // a SECOND document's bytes rather than answering a question about this
@@ -985,16 +1012,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       settings,
       // NO STORE IS A STATE, not a stub: `available: false` is what a machine
       // with no OS keyring answers, and a graph built without one is in the
-      // same position rather than in a broken one. `write` throws because
-      // writing is the operation that must never quietly fall back to the
-      // plain settings file — the whole reason these are two documents.
-      secrets: secrets ?? {
-        available: (): boolean => false,
-        read: (): Readonly<Record<string, string>> => ({}),
-        write: (): never => {
-          throw new Error('this graph was composed with no secret store, so nothing was written');
-        },
-      },
+      // same position rather than in a broken one. Resolved once, above.
+      secrets: secretStore,
       // `false` WITHOUT A LOG, which is the channel's declared state for
       // *there is nothing to show* rather than a stub standing in for one. The
       // shipped app always has a log; a graph built without one — every unit

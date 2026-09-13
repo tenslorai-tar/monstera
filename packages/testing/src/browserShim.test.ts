@@ -225,6 +225,8 @@ describe('browser shim', () => {
       'document.undo',
       'document.unlock',
       'document.viewModel',
+      'docusign.retrieve',
+      'docusign.send',
       'log.reveal',
       'settings.load',
       'settings.loadSecrets',

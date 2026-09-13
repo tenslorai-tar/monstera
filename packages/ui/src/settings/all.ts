@@ -1,6 +1,7 @@
 import type { SettingDefinition } from '../registries/settings.js';
 import { ACCENT_SETTING } from './accent.js';
 import { ANTHROPIC_KEY_SETTING } from './ai.js';
+import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
 import { THEME_SETTING } from './appearance.js';
 import {
   ANNOTATION_COLOUR_SETTING,
@@ -77,4 +78,6 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   AZURE_DI_ENDPOINT_SETTING,
   AZURE_DI_KEY_SETTING,
   ANTHROPIC_KEY_SETTING,
+  DOCUSIGN_INTEGRATION_KEY_SETTING,
+  DOCUSIGN_ENVIRONMENT_SETTING,
 ];

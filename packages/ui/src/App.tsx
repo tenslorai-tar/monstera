@@ -3,6 +3,7 @@ import {
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_KEY_SETTING_ID,
   type ContractClient,
+  DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type SecretSettingId,
   type FieldFill,
   type MeasureScale,
@@ -35,6 +36,8 @@ import {
   sanitizeDocumentCommand,
   signDocumentCommand,
   signaturesCommand,
+  docusignRetrieveCommand,
+  docusignSendCommand,
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
@@ -142,6 +145,8 @@ import { REDACT_MATCHES_DIALOG } from './dialogs/redactMatches.js';
 import { SANITIZE_DOCUMENT_DIALOG } from './dialogs/sanitizeDocument.js';
 import { SIGN_DOCUMENT_DIALOG } from './dialogs/signDocument.js';
 import { SIGN_PROBLEM_DIALOG } from './dialogs/signProblem.js';
+import { DOCUSIGN_NOTICE_DIALOG } from './dialogs/docusignNotice.js';
+import { DOCUSIGN_SEND_DIALOG } from './dialogs/docusignSend.js';
 import { SIGNATURES_DIALOG } from './dialogs/signatures.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
@@ -374,6 +379,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         SIGN_DOCUMENT_DIALOG,
         SIGN_PROBLEM_DIALOG,
         SIGNATURES_DIALOG,
+        DOCUSIGN_SEND_DIALOG,
+        DOCUSIGN_NOTICE_DIALOG,
         LINK_ADDRESS_DIALOG,
         LINK_PAGE_DIALOG,
         CALLOUT_DIALOG,
@@ -1116,6 +1123,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   const [storedSecrets, setStoredSecrets] = useState<readonly SecretSettingId[]>([]);
   const azureKeyStored = storedSecrets.includes(AZURE_KEY_SETTING_ID);
   const claudeKeyStored = storedSecrets.includes(ANTHROPIC_KEY_SETTING_ID);
+  const docusignKeyStored = storedSecrets.includes(DOCUSIGN_INTEGRATION_KEY_SETTING_ID);
 
   /**
    * Asks main which secrets are stored — `refreshHandwriting`'s one-shot
@@ -1428,6 +1436,18 @@ export function App({ client, settings }: AppProps): ReactElement {
         sanitizeDocumentCommand({ client, onApplied: applied, ask }),
         signDocumentCommand({ client, onApplied: applied, ask }),
         signaturesCommand({ client, onApplied: applied, ask }),
+        docusignSendCommand({
+          client,
+          onApplied: applied,
+          ask,
+          docusignReady: () => docusignKeyStored,
+        }),
+        docusignRetrieveCommand({
+          client,
+          onApplied: applied,
+          ask,
+          docusignReady: () => docusignKeyStored,
+        }),
         redactMatchesCommand({ client, onApplied: applied, ask }),
         applyRedactionsCommand({ client, onApplied: applied, ask }),
         watermarkPagesCommand({ client, onApplied: applied, ask }),
@@ -1536,6 +1556,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       azureEndpoint,
       azureKeyStored,
       claudeKeyStored,
+      docusignKeyStored,
       changeZoom,
       client,
       // THE PREDICATE'S OWN VALUE, and it has to be here for the same reason

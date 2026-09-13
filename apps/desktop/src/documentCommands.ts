@@ -9,6 +9,7 @@ import {
   MAX_TEXT_LAYER_LINE,
   type RequestedSignatureMark,
   type SignaturePlacement,
+  type DocusignRefusalKind,
   type SignRefusal,
   type TimestampAuthority,
   sourceIdsOf,
@@ -57,6 +58,7 @@ import {
   SignatureTooLargeError,
   TimestampRefusedError,
   TimestampUnreachableError,
+  type DocusignSigner,
   writeDocumentCopy,
   writeDocumentSplit,
 } from '@monstera/kernel';
@@ -72,6 +74,8 @@ import {
 // renderer, exactly as a destination does. What L2 forbids is a path in a
 // renderer-facing type.
 import { join } from 'node:path';
+
+import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 
 /**
  * The composition point (ADR-0009, 2026-08-19): the one place that owns
@@ -1250,6 +1254,12 @@ export interface DocumentCommandsParts {
   readonly image: ImageSource;
   /** Where a signing certificate comes from. See {@link CertificateSource}. */
   readonly certificate: CertificateSource;
+  /**
+   * DocuSign, as `main` holds it — the sign-in, its tokens and the envelopes this
+   * session sent ([ADR-0059](../../../docs/DECISIONS/0059-a-sign-in-redirect-returns-on-loopback-for-one-request.md)).
+   * The document's bytes reach it through the save's own flush, never a second read.
+   */
+  readonly docusign: DocusignSession;
   readonly extract: DocumentExtractReader;
   readonly snapshot: SnapshotSource;
   readonly formData: FormDataSource;
@@ -1279,6 +1289,7 @@ export class DocumentCommands {
   readonly #copy: CopySource;
   readonly #image: ImageSource;
   readonly #certificate: CertificateSource;
+  readonly #docusign: DocusignSession;
   readonly #extract: DocumentExtractReader;
   readonly #snapshot: SnapshotSource;
   readonly #formData: FormDataSource;
@@ -1307,6 +1318,7 @@ export class DocumentCommands {
     this.#copy = parts.copy;
     this.#image = parts.image;
     this.#certificate = parts.certificate;
+    this.#docusign = parts.docusign;
     this.#extract = parts.extract;
     this.#snapshot = parts.snapshot;
     this.#formData = parts.formData;
@@ -2194,6 +2206,105 @@ export class DocumentCommands {
       );
     });
 
+    return value;
+  }
+
+  /**
+   * Sends this document to DocuSign for signature, signing in first if needed
+   * ([ADR-0059](../../../docs/DECISIONS/0059-a-sign-in-redirect-returns-on-loopback-for-one-request.md)).
+   *
+   * ## The bytes are the SAVE'S flush, taken inside the lane
+   *
+   * So what DocuSign receives is exactly what a save would write now — the same flush
+   * `saveCopy` hands its destination (B3a) — and a document edited mid-send cannot
+   * be half of each.
+   *
+   * ## The send is OUTSIDE the lane, deliberately
+   *
+   * A sign-in waits for a person, and a person may take minutes. Holding this
+   * document's lane that long would refuse every edit to it meanwhile. The bytes are
+   * already taken, so nothing the send does touches the document.
+   */
+  async docusignSend(
+    docId: DocId,
+    request: { readonly emailSubject: string; readonly signers: readonly DocusignSigner[] },
+  ): Promise<{ readonly kind: 'sent'; readonly envelopeId: string } | { readonly kind: DocusignRefusalKind }> {
+    const documentName = this.#documents.nameOf(docId);
+    if (documentName === undefined) throw new DocumentNotOpenError(docId, 'send to DocuSign');
+
+    const { value: pdf } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return await this.#save.flush(docId, sessions);
+    });
+
+    try {
+      const envelopeId = await this.#docusign.send({
+        docId,
+        pdf,
+        documentName,
+        emailSubject: request.emailSubject,
+        signers: request.signers,
+      });
+      return { kind: 'sent', envelopeId };
+    } catch (error) {
+      // NAMED BY THE SESSION, where the knowledge is. Anything it did not name is not
+      // a person's situation and reaches the handler as a defect.
+      if (error instanceof DocusignOutcomeRefused) return { kind: error.kind };
+      throw error;
+    }
+  }
+
+  /**
+   * Saves the signed copy of the envelope this document was last sent as.
+   *
+   * ## No dialog opens until there is a signed copy to save
+   *
+   * An envelope not yet completed, or a document this session sent nothing for, is
+   * answered before the destination picker — a person asked where to save something
+   * that does not exist yet would pick a file for nothing.
+   *
+   * ## The write is `extract`'s
+   *
+   * `writeDocumentCopy`, handed a flush that answers DocuSign's combined document
+   * rather than this document's bytes: the same contested-destination check, the
+   * same temporary and backup naming, the same atomic write.
+   */
+  async docusignRetrieve(
+    docId: DocId,
+  ): Promise<
+    | CopyOutcome
+    | undefined
+    | { readonly kind: 'nothing-sent' }
+    | { readonly kind: 'not-completed'; readonly status: string }
+    | { readonly kind: DocusignRefusalKind }
+  > {
+    const documentName = this.#documents.nameOf(docId);
+    if (documentName === undefined) throw new DocumentNotOpenError(docId, 'retrieve from DocuSign');
+
+    let retrieved: Awaited<ReturnType<DocusignSession['retrieve']>>;
+    try {
+      retrieved = await this.#docusign.retrieve(docId);
+    } catch (error) {
+      if (error instanceof DocusignOutcomeRefused) return { kind: error.kind };
+      throw error;
+    }
+    if (retrieved.kind !== 'completed') return retrieved;
+    const signed = retrieved.bytes;
+
+    const destination = await this.#copy.pick(suggestedCopyName(documentName));
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () =>
+      writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => Promise.resolve(signed),
+        destination,
+      ),
+    );
     return value;
   }
 

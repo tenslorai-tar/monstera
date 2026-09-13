@@ -295,7 +295,96 @@ export const MAX_SNAPSHOT_SCALE = 8;
  * `secret: true` flags must equal this list, and `settings/all.test.ts` asserts
  * that in both directions — a second list that agreed today is B3a's shape.
  */
-export const SECRET_SETTING_IDS = [AZURE_KEY_SETTING_ID, ANTHROPIC_KEY_SETTING_ID] as const;
+/**
+ * DocuSign's integration key — the client id a person registers in DocuSign's Apps
+ * and Keys — as `BUILD-PROMPT.md` Part F files it: *Integrations (all secret)*.
+ *
+ * A public client's id is not a secret in OAuth's sense (RFC 8252 §8.4), and it is
+ * kept in the secret store all the same, because the founding record says so and
+ * nothing is lost by it.
+ */
+export const DOCUSIGN_INTEGRATION_KEY_SETTING_ID = 'integrations.docusign-integration-key';
+
+/** Which DocuSign environment a sign-in reaches — production, or the developer demo. */
+export const DOCUSIGN_ENVIRONMENT_SETTING_ID = 'integrations.docusign-environment';
+
+/** The environments, as the setting stores them. */
+export const DOCUSIGN_ENVIRONMENTS = ['production', 'demo'] as const;
+
+/** One of {@link DOCUSIGN_ENVIRONMENTS}. */
+export type DocusignEnvironment = (typeof DOCUSIGN_ENVIRONMENTS)[number];
+
+/**
+ * How long an envelope's email subject may be — DocuSign's eSignature OpenAPI v2.1,
+ * `envelopeDefinition.emailSubject`: *"The subject line is limited to 100
+ * characters, including any merged fields."* Read 2026-09-13.
+ */
+export const MAX_DOCUSIGN_SUBJECT = 100;
+
+/**
+ * How long a signer's name and email may each be — the same specification,
+ * `signer.email` and `signer.name`: *"Maximum length: 100 characters."*
+ */
+export const MAX_DOCUSIGN_RECIPIENT_FIELD = 100;
+
+/**
+ * How many signers one envelope names.
+ *
+ * **A bound, not a measurement and not DocuSign's limit**: every array that crosses
+ * from the renderer is bounded, and this one is set well past what a person types
+ * into a dialog. DocuSign's own limit, if lower, refuses by its own answer.
+ */
+export const MAX_DOCUSIGN_SIGNERS = 20;
+
+/**
+ * Every way sending to DocuSign, or retrieving from it, ends without its result —
+ * THE ONE LIST, for `SIGN_REFUSALS`' reason: the channels build their refusal member
+ * from it and the renderer's problem dialog takes its reasons from it.
+ */
+export const DOCUSIGN_REFUSALS = [
+  /** No integration key is stored. */
+  'no-integration-key',
+  /** This computer has no secure place to keep a token, so no sign-in is kept. */
+  'secrets-unavailable',
+  /** The person cancelled the sign-in, or closed the browser without finishing. */
+  'sign-in-cancelled',
+  /** The sign-in's redirect did not arrive in time. */
+  'sign-in-timed-out',
+  /** The person declined, or DocuSign refused the sign-in. */
+  'sign-in-denied',
+  /** The sign-in could not start: no browser would open, or no local port could be. */
+  'sign-in-unavailable',
+  /** DocuSign refused the stored sign-in, and a new one is needed. */
+  'unauthorised',
+  /** DocuSign answered with an error. */
+  'rejected',
+  /** DocuSign could not be reached. */
+  'unreachable',
+  /** DocuSign answered something this build does not read. */
+  'unexpected-answer',
+  /** The account has no default account to act in, or names a host outside DocuSign's. */
+  'no-account',
+] as const;
+
+/** One of {@link DOCUSIGN_REFUSALS}. */
+export type DocusignRefusalKind = (typeof DOCUSIGN_REFUSALS)[number];
+
+/**
+ * The secrets a person may store and the renderer may learn are STORED — never a
+ * value.
+ *
+ * **A DocuSign token is not here, deliberately.** This list is what the renderer
+ * may write through `settings.saveSecret` and learn about through
+ * `settings.loadSecrets`. Tokens are obtained by `main` from a sign-in and must
+ * never be writable from the renderer, so `main` keeps them in the secret store
+ * under an id outside this list ([ADR-0059](../../../docs/DECISIONS/0059-a-sign-in-redirect-returns-on-loopback-for-one-request.md)
+ * Decision 4).
+ */
+export const SECRET_SETTING_IDS = [
+  AZURE_KEY_SETTING_ID,
+  ANTHROPIC_KEY_SETTING_ID,
+  DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
+] as const;
 
 /** One of {@link SECRET_SETTING_IDS}. */
 export type SecretSettingId = (typeof SECRET_SETTING_IDS)[number];

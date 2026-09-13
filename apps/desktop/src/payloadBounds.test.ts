@@ -223,6 +223,15 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // `image` look carries no bytes. Nothing on this wire grows with a document.
   'document.sign':
     'takes bounded strings and a bounded drawing, answers a variant; no certificate or picture crosses',
+  // THE DOCUMENT GOES TO DOCUSIGN FROM MAIN and never across this boundary: the
+  // renderer sends a subject and at most `MAX_DOCUSIGN_SIGNERS` bounded signers, and
+  // the answer is an envelope id capped at 128 characters.
+  'docusign.send':
+    'takes a DocId, a bounded subject and a bounded signer list, answers a variant; no document bytes cross',
+  // THE SIGNED COPY IS WRITTEN BY MAIN: what crosses is a byte COUNT, a status capped
+  // at 64 characters, or a refusal's name.
+  'docusign.retrieve':
+    'takes a DocId, answers a variant carrying a count or a bounded status; the signed bytes never cross',
   // A `DocId` in; at most `MAX_SIGNATURES` rows of eight bounded fields out.
   // The answer is about the SIGNATURES rather than the certificates, which is
   // what keeps it the same size for a two-page document and a two-thousand-page

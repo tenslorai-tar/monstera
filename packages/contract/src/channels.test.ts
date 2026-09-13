@@ -108,6 +108,8 @@ const handlers: ContractHandlers = {
   // entry up: a byte count is the interesting answer, and a fixture that always
   // returns one cannot show that the dismissal path exists at all.
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'docusign.send': () => Promise.resolve(ok({ kind: 'no-integration-key' as const })),
+  'docusign.retrieve': () => Promise.resolve(ok({ kind: 'nothing-sent' as const })),
   'document.snapshotRegion': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

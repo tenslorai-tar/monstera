@@ -25,7 +25,10 @@ export type SettingCategory =
   // PART F'S AI GROUP, and a provider's key lives here rather than beside the
   // feature that first needed it: D6's Claude recogniser placed the Anthropic key,
   // and Stage 9's provider registry takes the same entry (ADR-0057 Decision 5).
-  | 'ai';
+  | 'ai'
+  // PART F'S INTEGRATIONS GROUP — *all secret* — where D7's DocuSign row places its
+  // integration key, and where Stage 9's cloud providers join it (ADR-0059).
+  | 'integrations';
 
 /**
  * One registered setting.

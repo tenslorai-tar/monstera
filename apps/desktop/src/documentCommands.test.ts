@@ -78,6 +78,7 @@ import {
   type SaveSource,
   type SnapshotSource,
 } from './documentCommands.js';
+import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import { EngineSessions } from './engineSessions.js';
 
 /**
@@ -487,6 +488,13 @@ type Varying = Pick<DocumentCommandsParts, 'documents' | 'bus' | 'engine'>;
  */
 const INERT = {
   save: noSaving,
+  // DOCUSIGN REFUSES BY NAME here, like every inert surface: a case that reached it
+  // without meaning to fails at the call rather than sending anything anywhere.
+  docusign: {
+    send: () => Promise.reject(new Error('INERT: no DocuSign session in this case')),
+    retrieve: () => Promise.reject(new Error('INERT: no DocuSign session in this case')),
+    hasSent: () => false,
+  },
   geometry: noGeometry,
   pageText: noPageText,
   pageLinks: noPageLinks,
@@ -1279,6 +1287,150 @@ describe('the form data export carries the format all the way to the file', () =
 
     expect(await commands.exportFormData(formDoc, 'fdf')).toBeUndefined();
     expect(existsSync(untouched)).toBe(false);
+  });
+});
+
+describe('DocuSign — main flushes, the session sends, and a refusal is named', () => {
+  beforeAll(openDocument);
+
+  /** The flushed image a send must carry, distinct from any fixture's own bytes. */
+  const FLUSHED = Uint8Array.of(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31);
+
+  /** A save source whose flush answers {@link FLUSHED} and refuses everything else. */
+  const flushing: SaveSource = { ...noSaving, flush: () => Promise.resolve(FLUSHED) };
+
+  /** A copy source that records whether its picker was opened, and cancels. */
+  function recordingCopy(): { readonly source: CopySource; readonly picked: string[] } {
+    const picked: string[] = [];
+    return {
+      picked,
+      source: {
+        pick: (suggested) => {
+          picked.push(suggested);
+          return Promise.resolve(null);
+        },
+        checkTarget: () => Promise.reject(new Error('a cancelled picker checks no target')),
+      },
+    };
+  }
+
+  /** A session that answers `retrieve` with `answer` and `send` with `send`. */
+  function session(parts: {
+    readonly send?: DocusignSession['send'];
+    readonly retrieve?: DocusignSession['retrieve'];
+  }): DocusignSession {
+    return {
+      send: parts.send ?? (() => Promise.reject(new Error('this case does not send'))),
+      retrieve: parts.retrieve ?? (() => Promise.reject(new Error('this case does not retrieve'))),
+      hasSent: () => false,
+    };
+  }
+
+  it('send hands the session the FLUSHED image, the document’s name and the dialog’s words', async () => {
+    const received: unknown[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      save: flushing,
+      docusign: session({
+        send: (request) => {
+          received.push(request);
+          return Promise.resolve('envelope-1');
+        },
+      }),
+    });
+    const signers = [{ name: 'Grace Hopper', email: 'grace@example.com' }];
+
+    expect(
+      await commands.docusignSend(docId, { emailSubject: 'Please sign', signers }),
+    ).toStrictEqual({ kind: 'sent', envelopeId: 'envelope-1' });
+    expect(received).toStrictEqual([
+      {
+        docId,
+        pdf: FLUSHED,
+        documentName: service.nameOf(docId),
+        emailSubject: 'Please sign',
+        signers,
+      },
+    ]);
+  });
+
+  it('a refusal the session NAMES is answered by kind, and CONTROL: an unnamed failure is thrown', async () => {
+    // THE CONTROL IS THE SECOND HALF: a command that mapped every failure to a
+    // refusal would pass the first and hide a defect as a person's situation.
+    const named = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      save: flushing,
+      docusign: session({ send: () => Promise.reject(new DocusignOutcomeRefused('sign-in-denied')) }),
+    });
+    const unnamed = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      save: flushing,
+      docusign: session({ send: () => Promise.reject(new Error('a defect, not a refusal')) }),
+    });
+    const request = { emailSubject: 'Please sign', signers: [{ name: 'A', email: 'a@example.com' }] };
+
+    expect(await named.docusignSend(docId, request)).toStrictEqual({ kind: 'sign-in-denied' });
+    await expect(unnamed.docusignSend(docId, request)).rejects.toThrow('a defect, not a refusal');
+  });
+
+  it('retrieve answers an unfinished envelope BEFORE any picker opens', async () => {
+    // THE DECISION IS THE ASSERTION: the picker was never asked. The outcome
+    // alone would also be the answer of a build that asked where to save first.
+    const copy = recordingCopy();
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      copy: copy.source,
+      docusign: session({
+        retrieve: () => Promise.resolve({ kind: 'not-completed', status: 'delivered' }),
+      }),
+    });
+
+    expect(await commands.docusignRetrieve(docId)).toStrictEqual({
+      kind: 'not-completed',
+      status: 'delivered',
+    });
+    expect(copy.picked).toStrictEqual([]);
+  });
+
+  it('CONTROL: a completed envelope does open the picker, and a cancel writes nothing', async () => {
+    const copy = recordingCopy();
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      copy: copy.source,
+      docusign: session({
+        retrieve: () => Promise.resolve({ kind: 'completed', bytes: FLUSHED }),
+      }),
+    });
+
+    expect(await commands.docusignRetrieve(docId)).toBeUndefined();
+    expect(copy.picked).toHaveLength(1);
+  });
+
+  it('a retrieve refusal is answered by kind', async () => {
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      docusign: session({ retrieve: () => Promise.reject(new DocusignOutcomeRefused('unreachable')) }),
+    });
+
+    expect(await commands.docusignRetrieve(docId)).toStrictEqual({ kind: 'unreachable' });
   });
 });
 

@@ -106,6 +106,9 @@ export function harnessSurfaces(
     readCertificate: () => {
       throw new Error(`${harness} signs nothing, so nothing may read a certificate`);
     },
+    openInBrowser: () => {
+      throw new Error(`${harness} signs in to nothing, so nothing may open a browser`);
+    },
     settings: createEphemeralSettings(),
     recent: createRecentFiles(createEphemeralSettings()),
     // NULL, which is the state every unit test and every non-Windows run is in:

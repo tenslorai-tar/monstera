@@ -269,6 +269,8 @@ export function createContractHandlers(deps: {
     'document.insertImage': insertImageHandler(deps.commands),
     'document.placeImage': placeImageHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
+    'docusign.send': docusignSendHandler(deps.commands),
+    'docusign.retrieve': docusignRetrieveHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
@@ -552,6 +554,54 @@ function signHandler(commands: DocumentCommands): ContractHandlers['document.sig
         byteLength: outcome.byteLength,
         historyDropped: outcome.historyDropped,
       } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * `docusign.send`'s handler.
+ *
+ * The subject and the signers are forwarded as the channel validated them, and the
+ * outcome crosses as the command answered it: `sent` with the envelope's id, or one
+ * of the contract's refusal kinds, each already named where the knowledge was. The
+ * document-state classes are answered by name, and anything else propagates.
+ */
+function docusignSendHandler(commands: DocumentCommands): ContractHandlers['docusign.send'] {
+  return async ({ docId, emailSubject, signers }) => {
+    try {
+      return ok(await commands.docusignSend(docId, { emailSubject, signers }));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * `docusign.retrieve`'s handler.
+ *
+ * The write's outcomes map exactly as `extractHandler` maps them — a dismissed picker
+ * is `cancelled`, a contested destination carries how many other documents reach it —
+ * and DocuSign's own outcomes cross unchanged.
+ */
+function docusignRetrieveHandler(commands: DocumentCommands): ContractHandlers['docusign.retrieve'] {
+  return async ({ docId }) => {
+    try {
+      const outcome = await commands.docusignRetrieve(docId);
+      if (outcome === undefined) return ok({ kind: 'cancelled' as const });
+      if (outcome.kind === 'copied') return ok({ kind: 'copied' as const, bytes: outcome.bytes });
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' as const });
+      if (outcome.kind === 'refused') {
+        return ok({ kind: 'refused' as const, openElsewhere: outcome.others.length });
+      }
+      return ok(outcome);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

@@ -892,6 +892,50 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — DocuSign: built through sign-in, send and retrieve, owing one run against DocuSign
+
+Stage 7's last row. ADR-0059 went first, in its own commit, because a sign-in
+redirect that returns to this machine is a new kind of listener in `main`. The row
+is built end to end and **is not done**: nothing here has spoken to DocuSign, and
+three premises only DocuSign can answer.
+
+### What was built
+
+- **Kernel, `docusign.ts`:** PKCE, the authorisation URL, the code exchange and
+  refresh, the default account, envelope send, status and the combined document.
+  Every response is read through `readWithin`, and fetch refuses redirects.
+- **Desktop:** `docusignSignIn.ts` listens on `127.0.0.1:0` for one request on
+  `/docusign` for at most five minutes. `docusignSession.ts` keeps the tokens in the
+  secret store under an id outside `SECRET_SETTING_IDS`, so `loadSecrets` can never
+  hand them to the renderer. `DocumentCommands` flushes inside the lane and sends
+  outside it. The browser opens through `shell.openExternal`, HTTPS only.
+- **Renderer:** two commands in Protect › Signatures, hidden until a key is stored;
+  a send dialog whose Send button is enabled by the answer's own schema; a notice
+  whose reasons are the contract's refusal list plus three non-refusals.
+
+### Facts sourced, not recalled
+
+The hosts and endpoints, the token body, userinfo's `accounts[]` with `is_default`
+as the **string** `"true"`, `base_uri` plus `/restapi`, the envelope paths and the
+100-character limits were read from DocuSign's published documentation and its
+OpenAPI v2.1 document. The `is_default` case has a boolean control: a reader that
+compared with `true` passes the boolean and fails DocuSign's real shape.
+
+### Premises only a live run can settle
+
+The trigger for each is the owner's integration key, registered with a
+`http://127.0.0.1/docusign` redirect.
+
+- whether a varying loopback port is accepted;
+- whether a public client with no secret is accepted, when the discovery document
+  advertises only secret-based client authentication;
+- whether an envelope whose signers have no tabs is sent as free-form signing.
+
+A packaged full-trust build reaching loopback is Stage 10's, with the Store
+package.
+
+---
+
 ## 2026-09-13 — The live timestamp run refused both authorities it asked, and was right to about one
 
 The TSA row's trigger — one run against a real authority — is met, and it was not

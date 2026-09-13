@@ -115,6 +115,18 @@ startShell(() => {
     // SIGNING'S CERTIFICATE, and the surface is added through this object for
     // the reason the two above record — `pickerProbe.ts` is untouched again.
     pickCertificate: createCertificatePicker(),
+    // THE PERSON'S OWN BROWSER, for a sign-in (ADR-0059 Decision 3) — the one route
+    // by which this application opens a URL outside itself, and it is `main`'s: the
+    // renderer's window policy denies `shell.openExternal` with no allowlist, and
+    // this is not that. The only caller passes an authorization URL `main` built;
+    // anything but HTTPS is refused all the same, so a mistake here cannot hand the
+    // operating system a `file:` or a custom scheme.
+    openInBrowser: async (url: string) => {
+      if (new URL(url).protocol !== 'https:') {
+        throw new Error('only an HTTPS URL may be opened in the browser');
+      }
+      await shell.openExternal(url);
+    },
     // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
     // function here rather than a `readFile` at the call site: `stat` costs
     // nothing and a 4 GB file a user picked by mistake is refused as a decided

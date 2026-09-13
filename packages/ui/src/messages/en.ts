@@ -612,6 +612,48 @@ export const SETTINGS_CATEGORY_AI = messageKey('dialog.settings.category.ai');
 export const AI_ANTHROPIC_KEY_TITLE = messageKey('setting.ai.anthropic-key.title');
 export const CLAUDE_REGION_TOOL_TITLE = messageKey('command.annotate.claude-region');
 /** Each registered category's heading in the Settings dialog. */
+export const SETTINGS_CATEGORY_INTEGRATIONS = messageKey('dialog.settings.category.integrations');
+export const INTEGRATIONS_DOCUSIGN_KEY_TITLE = messageKey('setting.integrations.docusign-key.title');
+export const DOCUSIGN_SEND_COMMAND_TITLE = messageKey('command.docusign-send.title');
+export const DOCUSIGN_RETRIEVE_COMMAND_TITLE = messageKey('command.docusign-retrieve.title');
+export const DOCUSIGN_SEND_TITLE = messageKey('dialog.docusign-send.title');
+export const DOCUSIGN_SEND_SUBJECT = messageKey('dialog.docusign-send.subject');
+export const DOCUSIGN_SEND_SIGNER_NAME = messageKey('dialog.docusign-send.signer-name');
+export const DOCUSIGN_SEND_SIGNER_EMAIL = messageKey('dialog.docusign-send.signer-email');
+export const DOCUSIGN_SEND_ADD_SIGNER = messageKey('dialog.docusign-send.add-signer');
+export const DOCUSIGN_SEND_REMOVE_SIGNER = messageKey('dialog.docusign-send.remove-signer');
+export const DOCUSIGN_SEND_NOTE = messageKey('dialog.docusign-send.note');
+export const DOCUSIGN_SEND_APPLY = messageKey('dialog.docusign-send.apply');
+export const DOCUSIGN_NOTICE_TITLE = messageKey('dialog.docusign-notice.title');
+export const DOCUSIGN_NOTICE_NO_INTEGRATION_KEY = messageKey('dialog.docusign-notice.no-integration-key');
+export const DOCUSIGN_NOTICE_SECRETS_UNAVAILABLE = messageKey('dialog.docusign-notice.secrets-unavailable');
+export const DOCUSIGN_NOTICE_SIGN_IN_CANCELLED = messageKey('dialog.docusign-notice.sign-in-cancelled');
+export const DOCUSIGN_NOTICE_SIGN_IN_TIMED_OUT = messageKey('dialog.docusign-notice.sign-in-timed-out');
+export const DOCUSIGN_NOTICE_SIGN_IN_DENIED = messageKey('dialog.docusign-notice.sign-in-denied');
+export const DOCUSIGN_NOTICE_SIGN_IN_UNAVAILABLE = messageKey('dialog.docusign-notice.sign-in-unavailable');
+export const DOCUSIGN_NOTICE_UNAUTHORISED = messageKey('dialog.docusign-notice.unauthorised');
+export const DOCUSIGN_NOTICE_REJECTED = messageKey('dialog.docusign-notice.rejected');
+export const DOCUSIGN_NOTICE_UNREACHABLE = messageKey('dialog.docusign-notice.unreachable');
+export const DOCUSIGN_NOTICE_UNEXPECTED_ANSWER = messageKey('dialog.docusign-notice.unexpected-answer');
+export const DOCUSIGN_NOTICE_NO_ACCOUNT = messageKey('dialog.docusign-notice.no-account');
+export const DOCUSIGN_NOTICE_SENT = messageKey('dialog.docusign-notice.sent');
+export const DOCUSIGN_NOTICE_NOTHING_SENT = messageKey('dialog.docusign-notice.nothing-sent');
+export const DOCUSIGN_NOTICE_NOT_COMPLETED = messageKey('dialog.docusign-notice.not-completed');
+export const INTEGRATIONS_DOCUSIGN_ENVIRONMENT_TITLE = messageKey(
+  'setting.integrations.docusign-environment.title',
+);
+export const DOCUSIGN_ENVIRONMENT_PRODUCTION_TITLE = messageKey(
+  'setting.integrations.docusign-environment.production',
+);
+export const DOCUSIGN_ENVIRONMENT_DEMO_TITLE = messageKey(
+  'setting.integrations.docusign-environment.demo',
+);
+/** Each DocuSign environment's title, keyed on the contract's list. */
+export const DOCUSIGN_ENVIRONMENT_TITLES = {
+  production: DOCUSIGN_ENVIRONMENT_PRODUCTION_TITLE,
+  demo: DOCUSIGN_ENVIRONMENT_DEMO_TITLE,
+} as const;
+
 export const SETTINGS_CATEGORY_TITLES = {
   general: SETTINGS_CATEGORY_GENERAL,
   appearance: SETTINGS_CATEGORY_APPEARANCE,
@@ -620,6 +662,7 @@ export const SETTINGS_CATEGORY_TITLES = {
   privacy: SETTINGS_CATEGORY_PRIVACY,
   advanced: SETTINGS_CATEGORY_ADVANCED,
   ai: SETTINGS_CATEGORY_AI,
+  integrations: SETTINGS_CATEGORY_INTEGRATIONS,
 } as const;
 /** `appearance.theme`'s members, by the word a person reads (ADR-0056). */
 export const THEME_OPTION_TITLES = {
@@ -1531,6 +1574,49 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TROCR_SIZE_TITLES.base]: 'Base',
   [SETTINGS_CATEGORY_AI]: 'AI',
   [AI_ANTHROPIC_KEY_TITLE]: 'Anthropic API key',
+  [SETTINGS_CATEGORY_INTEGRATIONS]: 'Integrations',
+  [INTEGRATIONS_DOCUSIGN_KEY_TITLE]: 'DocuSign integration key',
+  [DOCUSIGN_SEND_COMMAND_TITLE]: 'Send to DocuSign',
+  [DOCUSIGN_RETRIEVE_COMMAND_TITLE]: 'Save signed copy from DocuSign',
+  [DOCUSIGN_SEND_TITLE]: 'Send to DocuSign',
+  [DOCUSIGN_SEND_SUBJECT]: 'Email subject',
+  [DOCUSIGN_SEND_SIGNER_NAME]: 'Signer name',
+  [DOCUSIGN_SEND_SIGNER_EMAIL]: 'Signer email',
+  [DOCUSIGN_SEND_ADD_SIGNER]: 'Add signer',
+  [DOCUSIGN_SEND_REMOVE_SIGNER]: 'Remove signer',
+  // SAYS WHAT LEAVES THE MACHINE, beside the button that sends it.
+  [DOCUSIGN_SEND_NOTE]:
+    'Sending uploads this document to DocuSign, and DocuSign emails each signer. You sign in to DocuSign in your web browser.',
+  [DOCUSIGN_SEND_APPLY]: 'Send',
+  [DOCUSIGN_NOTICE_TITLE]: 'DocuSign',
+  [DOCUSIGN_NOTICE_NO_INTEGRATION_KEY]:
+    'No DocuSign integration key is saved. Add one in Settings, under Integrations.',
+  [DOCUSIGN_NOTICE_SECRETS_UNAVAILABLE]:
+    'This computer has no secure place to keep a DocuSign sign-in, so nothing was sent.',
+  [DOCUSIGN_NOTICE_SIGN_IN_CANCELLED]: 'The DocuSign sign-in was cancelled, so nothing was sent.',
+  [DOCUSIGN_NOTICE_SIGN_IN_TIMED_OUT]:
+    'The DocuSign sign-in was not finished within five minutes, so nothing was sent. Try again.',
+  [DOCUSIGN_NOTICE_SIGN_IN_DENIED]:
+    'DocuSign did not allow this application to sign in. Check the integration key and that its redirect address is registered.',
+  [DOCUSIGN_NOTICE_SIGN_IN_UNAVAILABLE]:
+    'The DocuSign sign-in could not be started on this computer, so nothing was sent.',
+  [DOCUSIGN_NOTICE_UNAUTHORISED]:
+    'DocuSign refused the sign-in. Try again, and you will be asked to sign in afresh.',
+  [DOCUSIGN_NOTICE_REJECTED]: 'DocuSign refused the request, so nothing was sent.',
+  [DOCUSIGN_NOTICE_UNREACHABLE]:
+    'DocuSign could not be reached. Check your internet connection and try again.',
+  [DOCUSIGN_NOTICE_UNEXPECTED_ANSWER]:
+    'DocuSign answered in a way this application does not understand, so the answer was not used.',
+  [DOCUSIGN_NOTICE_NO_ACCOUNT]:
+    'Your DocuSign sign-in has no account this application can send from.',
+  [DOCUSIGN_NOTICE_SENT]: 'Sent. DocuSign is emailing each signer now.',
+  [DOCUSIGN_NOTICE_NOTHING_SENT]:
+    'This document has not been sent to DocuSign since the application started, so there is no signed copy to save.',
+  [DOCUSIGN_NOTICE_NOT_COMPLETED]:
+    'DocuSign has not finished this document yet. Its status is: {status}.',
+  [INTEGRATIONS_DOCUSIGN_ENVIRONMENT_TITLE]: 'DocuSign environment',
+  [DOCUSIGN_ENVIRONMENT_PRODUCTION_TITLE]: 'Production',
+  [DOCUSIGN_ENVIRONMENT_DEMO_TITLE]: 'Developer demo',
   [CLAUDE_REGION_TOOL_TITLE]: 'Send a box to Claude to recognise',
   [FIND_LABEL]: 'Find on this page',
   // NOT 'Find', which is the toolbar command's title: two controls sharing an

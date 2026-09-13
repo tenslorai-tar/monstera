@@ -1052,6 +1052,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
+    // DOCUSIGN, answered as the case needs to see a control REACH it. What a
+    // browser-shim case can assert about sending is which channel the command called
+    // and with what subject and signers; whether DocuSign accepts them is
+    // `docusign.test.ts`' and `docusignSession.test.ts`' case, and whether it accepts
+    // them for the owner's key is the row's live trigger.
+    'docusign.send': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ kind: 'sent' as const, envelopeId: 'shim-envelope' }));
+    },
+    'docusign.retrieve': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ kind: 'nothing-sent' as const }));
+    },
     // THE SAME OPTION A THIRD TIME, and the region is ignored for the reason the
     // pages are: what a browser-shim case can assert about a snapshot is which
     // channel the tool reached and with what rectangle, and whether those

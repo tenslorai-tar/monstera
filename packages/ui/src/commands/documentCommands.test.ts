@@ -39,6 +39,8 @@ import {
   signDocument,
   signDocumentCommand,
   signaturesCommand,
+  docusignRetrieveCommand,
+  docusignSendCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -2670,6 +2672,147 @@ describe('protectDocumentCommand', () => {
         expect(shown[1]).toStrictEqual({ id: 'dialog.sign-problem', props: { reason } });
       },
     );
+  });
+
+  describe('DocuSign commands', () => {
+    /** A client answering every channel with `answer`, recording what it was sent. */
+    function docusignClient(answer: unknown): {
+      readonly client: ContractClient;
+      readonly sent: { id: string; params: unknown }[];
+    } {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        return Promise.resolve(ok(answer));
+      });
+      return { client, sent };
+    }
+
+    it('are hidden with no integration key, and CONTROL: shown with one', () => {
+      // BOTH HALVES OF THE PREDICATE, each with its own control: a key and no
+      // document hides them, and a document with a key shows them.
+      const { client } = docusignClient({ kind: 'nothing-sent' });
+      for (const factory of [docusignSendCommand, docusignRetrieveCommand]) {
+        const without = factory({
+          client,
+          onApplied: () => undefined,
+          ask: () => Promise.resolve(undefined),
+          docusignReady: () => false,
+        });
+        const withKey = factory({
+          client,
+          onApplied: () => undefined,
+          ask: () => Promise.resolve(undefined),
+          docusignReady: () => true,
+        });
+        expect(without.when?.(CONTEXT)).toBe(false);
+        expect(withKey.when?.(NO_DOCUMENT)).toBe(false);
+        expect(withKey.when?.(CONTEXT)).toBe(true);
+      }
+    });
+
+    it('send calls docusign.send with the dialog’s answer and TELLS the person it was sent', async () => {
+      const { client, sent } = docusignClient({ kind: 'sent', envelopeId: 'env-1' });
+      const shown: { id: string; props: unknown }[] = [];
+      const signers = [{ name: 'Grace Hopper', email: 'grace@example.com' }];
+
+      await docusignSendCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          shown.push({ id, props });
+          return Promise.resolve(
+            id === 'dialog.docusign-send' ? { emailSubject: 'Please sign', signers } : undefined,
+          );
+        },
+        docusignReady: () => true,
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([
+        { id: 'docusign.send', params: { docId: DOC, emailSubject: 'Please sign', signers } },
+      ]);
+      expect(shown.map((entry) => entry.id)).toStrictEqual([
+        'dialog.docusign-send',
+        'dialog.docusign-notice',
+      ]);
+      expect(shown[1]?.props).toStrictEqual({ reason: 'sent' });
+    });
+
+    it('a dismissed send dialog calls no channel — CONTROL for the case above', async () => {
+      const { client, sent } = docusignClient({ kind: 'sent', envelopeId: 'env-1' });
+
+      await docusignSendCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+        docusignReady: () => true,
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([]);
+    });
+
+    it('a send refusal reaches the notice by its OWN name', async () => {
+      const { client } = docusignClient({ kind: 'sign-in-denied' });
+      const shown: { id: string; props: unknown }[] = [];
+
+      await docusignSendCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          shown.push({ id, props });
+          return Promise.resolve(
+            id === 'dialog.docusign-send'
+              ? { emailSubject: 'Please sign', signers: [{ name: 'A', email: 'a@example.com' }] }
+              : undefined,
+          );
+        },
+        docusignReady: () => true,
+      }).run(CONTEXT);
+
+      expect(shown.at(-1)).toStrictEqual({
+        id: 'dialog.docusign-notice',
+        props: { reason: 'sign-in-denied' },
+      });
+    });
+
+    it('retrieve routes each outcome: status told, write failure to the save dialog, a copy silent', async () => {
+      // THREE OUTCOMES, THREE DESTINATIONS — a command that sent everything to
+      // one dialog passes none of the rows below but its own.
+      const rows: readonly { answer: unknown; shown: unknown[] }[] = [
+        {
+          answer: { kind: 'not-completed', status: 'sent' },
+          shown: [{ id: 'dialog.docusign-notice', props: { reason: 'not-completed', status: 'sent' } }],
+        },
+        {
+          answer: { kind: 'write-failed' },
+          shown: [{ id: 'dialog.save-problem', props: { outcome: 'write-failed' } }],
+        },
+        {
+          answer: { kind: 'refused', openElsewhere: 1 },
+          shown: [{ id: 'dialog.save-problem', props: { outcome: 'contested' } }],
+        },
+        {
+          answer: { kind: 'nothing-sent' },
+          shown: [{ id: 'dialog.docusign-notice', props: { reason: 'nothing-sent' } }],
+        },
+        { answer: { kind: 'copied', bytes: 4096 }, shown: [] },
+      ];
+      for (const row of rows) {
+        const { client, sent } = docusignClient(row.answer);
+        const shown: unknown[] = [];
+        await docusignRetrieveCommand({
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            shown.push({ id, props });
+            return Promise.resolve(undefined);
+          },
+          docusignReady: () => true,
+        }).run(CONTEXT);
+        expect(sent).toStrictEqual([{ id: 'docusign.retrieve', params: { docId: DOC } }]);
+        expect(shown).toStrictEqual(row.shown);
+      }
+    });
   });
 
   describe('signaturesCommand', () => {

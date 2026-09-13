@@ -23,6 +23,10 @@ import {
 import {
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
+  DOCUSIGN_REFUSALS,
+  MAX_DOCUSIGN_RECIPIENT_FIELD,
+  MAX_DOCUSIGN_SIGNERS,
+  MAX_DOCUSIGN_SUBJECT,
   OCR_ENGINES,
   OCR_LANGUAGES,
   SECRET_SETTING_IDS,
@@ -1724,6 +1728,72 @@ export const channels = {
        * list. What each means is written beside it in `SIGN_REFUSALS`.
        */
       z.object({ kind: z.enum(SIGN_REFUSALS) }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Sends an open document to DocuSign for signature, signing in first if needed
+   * ([ADR-0059](../../../docs/DECISIONS/0059-a-sign-in-redirect-returns-on-loopback-for-one-request.md)).
+   *
+   * ## What crosses, and what does not
+   *
+   * The renderer names the document, the subject and the signers — words a person
+   * typed, each bounded by DocuSign's own published limits. The document's bytes,
+   * the integration key and every token stay in `main`, which flushes the document,
+   * signs in through the person's own browser when no valid sign-in is held, and
+   * sends. What comes back is the envelope's id, or why not.
+   */
+  'docusign.send': channel(
+    'Sends an open document to DocuSign for signature, signing in first if needed.',
+    z.object({
+      docId: docIdSchema,
+      emailSubject: z.string().trim().min(1).max(MAX_DOCUSIGN_SUBJECT),
+      signers: z
+        .array(
+          z
+            .object({
+              name: z.string().trim().min(1).max(MAX_DOCUSIGN_RECIPIENT_FIELD),
+              email: z.email().max(MAX_DOCUSIGN_RECIPIENT_FIELD),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_DOCUSIGN_SIGNERS),
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('sent'), envelopeId: z.string().min(1).max(128) }),
+      /** One member over the contract's list, for `document.sign`'s reason. */
+      z.object({ kind: z.enum(DOCUSIGN_REFUSALS) }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Saves the signed copy of the envelope this document was last sent as, to a
+   * destination the person picks.
+   *
+   * ## The destination half is `document.extract`'s write
+   *
+   * The same picker, the same contested-destination check and the same atomic write
+   * — handed a flush that answers DocuSign's combined document rather than this
+   * document's bytes. So its outcomes are that write's, plus the two that belong to
+   * DocuSign: an envelope not yet completed, which names DocuSign's own status, and a
+   * document this session has sent nothing for.
+   */
+  'docusign.retrieve': channel(
+    'Saves the signed copy of the envelope this document was last sent as.',
+    z.object({ docId: docIdSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      /** DocuSign's status for the envelope, which is not yet `completed`. */
+      z.object({ kind: z.literal('not-completed'), status: z.string().min(1).max(64) }),
+      /** No envelope has been sent from this document in this session. */
+      z.object({ kind: z.literal('nothing-sent') }),
+      z.object({ kind: z.enum(DOCUSIGN_REFUSALS) }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

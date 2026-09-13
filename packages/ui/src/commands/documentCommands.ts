@@ -25,6 +25,9 @@ import type { SanitizeDocumentAnswer } from '../dialogs/sanitizeDocument.js';
 import { SIGN_DOCUMENT_DIALOG_ID } from '../dialogs/signDocument.js';
 import type { SignDocumentAnswer } from '../dialogs/signDocument.js';
 import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
+import { DOCUSIGN_NOTICE_DIALOG_ID } from '../dialogs/docusignNotice.js';
+import { DOCUSIGN_SEND_DIALOG_ID } from '../dialogs/docusignSend.js';
+import type { DocusignSendAnswer } from '../dialogs/docusignSend.js';
 import { SIGNATURES_DIALOG_ID } from '../dialogs/signatures.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
@@ -86,6 +89,8 @@ import {
   SANITIZE_DOCUMENT_COMMAND_TITLE,
   SIGN_DOCUMENT_COMMAND_TITLE,
   SIGNATURES_COMMAND_TITLE,
+  DOCUSIGN_RETRIEVE_COMMAND_TITLE,
+  DOCUSIGN_SEND_COMMAND_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
@@ -2277,6 +2282,109 @@ export async function signDocument(
   // VOIDED for `reportProblem`'s reason: this dialog declares no result, so
   // awaiting it would hold the command open until a person closed a message.
   void deps.ask(SIGN_PROBLEM_DIALOG_ID, { reason: signed.value.kind });
+}
+
+/**
+ * Whether a DocuSign integration key is stored — the one input DocuSign's
+ * commands cannot run without (ADR-0059).
+ *
+ * **Required, not optional with a default.** A default of *ready* would mount two
+ * controls that can only refuse on every machine that has no key, which is the
+ * wired-tools rule's defect with a sign-in page behind it.
+ */
+export interface DocusignReadiness {
+  readonly docusignReady: () => boolean;
+}
+
+/**
+ * PROTECT › Signatures — send the document to DocuSign for signature.
+ *
+ * ## The outcome is TOLD, including success
+ *
+ * Sending uploads the document to a third party and emails people. A command
+ * that returned quietly after that would leave a person unsure whether it
+ * happened, so `sent` opens the notice as every refusal does. A dismissed dialog
+ * sends nothing and says nothing, because the person did that on purpose.
+ */
+export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadiness): UiCommand {
+  return {
+    id: 'document.docusign-send',
+    title: DOCUSIGN_SEND_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 30 }],
+    when: (context) => hasDocument(context) && deps.docusignReady(),
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = (await deps.ask(DOCUSIGN_SEND_DIALOG_ID, {})) as DocusignSendAnswer | undefined;
+      if (answer === undefined) return;
+      const sent = await deps.client['docusign.send']({
+        docId: context.docId,
+        emailSubject: answer.emailSubject,
+        signers: answer.signers,
+      });
+      if (!sent.ok) {
+        reportProblem(deps, sent.error);
+        return;
+      }
+      void deps.ask(DOCUSIGN_NOTICE_DIALOG_ID, { reason: sent.value.kind });
+    },
+  };
+}
+
+/**
+ * PROTECT › Signatures — save the signed copy DocuSign holds, as a new file.
+ *
+ * ## A COPY, and its write outcomes are a copy's
+ *
+ * `main` picks the destination and writes it, so a failed write and a contested
+ * destination reach the save-problem dialog exactly as `snapshotRegion`'s do —
+ * two sentences for the same outcome would be a second opinion about it (B3a).
+ * A copy that appears where the person asked is its own confirmation.
+ */
+export function docusignRetrieveCommand(
+  deps: DocumentCommandDeps & DocusignReadiness,
+): UiCommand {
+  return {
+    id: 'document.docusign-retrieve',
+    title: DOCUSIGN_RETRIEVE_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 31 }],
+    when: (context) => hasDocument(context) && deps.docusignReady(),
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = await deps.client['docusign.retrieve']({ docId: context.docId });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const outcome = answer.value;
+      switch (outcome.kind) {
+        case 'copied':
+        case 'cancelled':
+          return;
+        case 'write-failed':
+        case 'refused':
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+            outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested',
+          });
+          return;
+        case 'not-completed':
+          void deps.ask(DOCUSIGN_NOTICE_DIALOG_ID, { reason: outcome.kind, status: outcome.status });
+          return;
+        case 'nothing-sent':
+        case 'no-integration-key':
+        case 'secrets-unavailable':
+        case 'sign-in-cancelled':
+        case 'sign-in-timed-out':
+        case 'sign-in-denied':
+        case 'sign-in-unavailable':
+        case 'unauthorised':
+        case 'rejected':
+        case 'unreachable':
+        case 'unexpected-answer':
+        case 'no-account':
+          void deps.ask(DOCUSIGN_NOTICE_DIALOG_ID, { reason: outcome.kind });
+      }
+    },
+  };
 }
 
 /**
