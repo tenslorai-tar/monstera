@@ -170,3 +170,72 @@ put it.
 - The feature commit owes: `entry.ts`' launcher, the watch, the three channels, the
   command, and the pair of tests — with the watch driven by a real directory, a real file
   and every save pattern in the table above.
+
+## Correction, 2026-09-14 — the version check is the bus's, so `replacePage` names a version
+
+Decision 5 says a reimport is refused as `document-changed` when the target document's
+version moved since the page was sent out. **It did not say where that comparison happens,
+and the only place it can happen correctly is inside the command.**
+
+### Why a check outside the command is not the check
+
+`main` could compare the version it recorded at send-out with the document's version, and
+then dispatch `replacePage`. Between the comparison and the apply, another command can land
+in the document's lane: a page inserted, deleted or moved. The index then names a different
+page, and the replace destroys it — the outcome Decision 5 exists to refuse. A
+check-then-act across the lane is a race, however short.
+
+`DocumentService` has no `versionOf`, **deliberately**: `documentService.ts` records that the
+accessor existed and was removed, because anything that reads a version after an await and
+stamps it onto a result is stale by construction — this race, in general form.
+`run(docId, work)` gives the work a `DocumentContext.version`, *"the version the document is
+at now"*, read inside the lane.
+
+The bus already makes the comparison atomic. `execute`'s first line is `#refuseIfStale`,
+inside the lane, before the capture and the apply. It refuses by the command's **declared**
+`targets` and by the version the contract's `targetVersionOf` reads from the payload, and it
+throws `StaleTargetError`. Nine kinds take that route today: the annotation, form-field and
+text-object commands.
+
+### What changes, and why it is B4
+
+`replacePage` declares `targets: 'none'`, with the reason *"nothing in its payload points into
+an answer this document gave"*. That sentence is false about `at`. A page index is a position
+in the page tree **read at a version**, and it is the one kind of answer a replace can destroy
+the wrong thing through.
+
+1. **`CommandTargets` gains `'page'`**: the payload's page index points into the page tree
+   read at the version it carries. It is a fourth member, not a widening of one of the three,
+   for the reason `commandDeclarations.test.ts` gives about the others: a page index, an
+   annotation index, a widget index and a PDFium page-object index are four index spaces.
+2. **`replacePageSchema` gains `version: docVersionSchema`**, `targetVersionOf` answers it, and
+   the contract gains `NamesAPage` (`'replacePage'`), joined to both lines of that test's tie.
+3. **`replacePage` declares `targets: 'page'`.**
+
+This changes an existing command's payload, and `replacePage` is renderable, so it is an
+amendment rather than a registration: its own commit, before the feature.
+
+### Who sends which version
+
+- **The replace-page control** sends `context.version`. The page it replaces is `context.page`,
+  read from the tab the person is looking at, at that version.
+- **The reimport** sends the version `main` recorded when the page was sent out. The bus
+  refuses a moved document with `StaleTargetError`, and the reimport channel answers that as
+  `document-changed`. Nothing else compares anything.
+
+### A sentence the renderer owes
+
+`document.execute` already answers `StaleTargetError` as `stale-target`, and the command
+problem dialog says *"That list was out of date … The list has been refreshed — have another
+look"*. That sentence was written for the annotation and field lists. A refused page replace
+has no list, so the feature commit owes the dialog a sentence that fits a page.
+
+### Rejected
+
+- **Comparing versions in `main` before dispatch.** The race above.
+- **Holding the lane across the compare and the dispatch by hand.** That is a second
+  implementation of `#refuseIfStale` in a handler — B3a's second opinion about staleness — and
+  it is the one a later reimport path would forget.
+- **A new `reimportPage` command.** It would do exactly what `replacePage` does, with a version.
+  Two commands for one tree operation is what the page-tree row's single writer exists to
+  prevent.
