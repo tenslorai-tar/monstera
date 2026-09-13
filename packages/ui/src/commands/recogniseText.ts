@@ -6,6 +6,7 @@ import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
 import { OCR_RESULT } from '../dialogs/ocrResult.js';
 import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
+import { SCAN_OUTCOME_DIALOG_ID } from '../dialogs/scanOutcome.js';
 import {
   ENHANCE_COMMAND_TITLE,
   ENHANCE_PROGRESS,
@@ -13,6 +14,7 @@ import {
   OCR_COMMAND_TITLE,
   OCR_EXPORT_COMMAND_TITLE,
   OCR_PROGRESS,
+  SCAN_COMMAND_TITLE,
 } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
@@ -153,27 +155,8 @@ export function enhanceScansCommand(
       const { docId, pageCount } = context;
       if (docId === undefined || pageCount === undefined) return;
 
-      // THE READ IS TRACKED TOO, and it is the only part of this command that takes
-      // time per page: the write is one command. A four-hundred-page document is
-      // four hundred reads before anything happens, which is what the status bar is
-      // for.
-      const task = deps.track(ENHANCE_PROGRESS, pageCount);
-      const scanned: number[] = [];
-      try {
-        for (let page = 0; page < pageCount; page += 1) {
-          if (task.signal.aborted) return;
-          const layer = await deps.client['document.pageTextLayer']({
-            docId,
-            page,
-            limit: MAX_TEXT_LAYER_LINES,
-          });
-          if (!layer.ok) break;
-          if (layer.value.kind === 'image-only') scanned.push(page);
-          task.step(page + 1);
-        }
-      } finally {
-        task.end();
-      }
+      const scanned = await imageOnlyPages(deps, docId, pageCount);
+      if (scanned === null) return;
 
       if (scanned.length === 0) {
         void deps.ask(ENHANCE_OUTCOME_DIALOG_ID, { pages: 0 });
@@ -188,6 +171,77 @@ export function enhanceScansCommand(
       // and a byte length rather than what the command found, and the dialog's own
       // note records where that count does live.
       void deps.ask(ENHANCE_OUTCOME_DIALOG_ID, { pages: scanned.length });
+    },
+  };
+}
+
+/**
+ * The image-only pages of a document, read one page at a time with progress and a cancel.
+ *
+ * ONE WALK FOR EVERY COMMAND THAT ACTS ON SCANS — levelling them and straightening them —
+ * so the two cannot disagree about which pages are scans (B3a). THE READ IS TRACKED, and
+ * it is the only part of either command that takes time per page: the write is one
+ * command. A four-hundred-page document is four hundred reads before anything happens,
+ * which is what the status bar is for.
+ *
+ * @returns the pages in order, or `null` when the person cancelled the walk
+ */
+async function imageOnlyPages(
+  deps: DocumentCommandDeps & { readonly track: TrackTask },
+  docId: DocId,
+  pageCount: number,
+): Promise<number[] | null> {
+  const task = deps.track(ENHANCE_PROGRESS, pageCount);
+  const scanned: number[] = [];
+  try {
+    for (let page = 0; page < pageCount; page += 1) {
+      if (task.signal.aborted) return null;
+      const layer = await deps.client['document.pageTextLayer']({
+        docId,
+        page,
+        limit: MAX_TEXT_LAYER_LINES,
+      });
+      if (!layer.ok) break;
+      if (layer.value.kind === 'image-only') scanned.push(page);
+      task.step(page + 1);
+    }
+  } finally {
+    task.end();
+  }
+  return scanned;
+}
+
+/**
+ * Finds the sheet of paper in each scanned page's photograph and straightens it into the
+ * page — D9's *Document scan (edge detection)*.
+ *
+ * `enhanceScansCommand`'s shape exactly: nothing to choose, so no dialog; the image-only
+ * pages as one command, so one undo; and an outcome dialog, because a document with no
+ * photographed sheet in it changes nothing and a silent command would read as broken.
+ * Which pages actually held a sheet is answered in the kernel, and `document.execute`
+ * does not carry it back — `enhanceOutcome.ts`' note, for the same reason.
+ */
+export function straightenScansCommand(
+  deps: DocumentCommandDeps & { readonly track: TrackTask },
+): UiCommand {
+  return {
+    id: 'document.straighten-scans',
+    title: SCAN_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 40 }],
+    when: hasDocument,
+    run: async (context: CommandContext): Promise<void> => {
+      const { docId, pageCount } = context;
+      if (docId === undefined || pageCount === undefined) return;
+
+      const scanned = await imageOnlyPages(deps, docId, pageCount);
+      if (scanned === null) return;
+      if (scanned.length === 0) {
+        void deps.ask(SCAN_OUTCOME_DIALOG_ID, { pages: 0 });
+        return;
+      }
+      const applied = await applyDocumentCommand(deps, docId, { kind: 'straightenScans', pages: scanned });
+      if (!applied) return;
+      void deps.ask(SCAN_OUTCOME_DIALOG_ID, { pages: scanned.length });
     },
   };
 }

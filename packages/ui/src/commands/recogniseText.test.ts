@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest';
 import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
 import { OCR_DIALOG_ID } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG_ID } from '../dialogs/ocrOutcome.js';
+import { SCAN_OUTCOME_DIALOG_ID } from '../dialogs/scanOutcome.js';
 import type { CommandContext } from '../registries/commands.js';
 import { type TrackTask, UNTRACKED } from '../runningTask.js';
 import {
   enhanceScansCommand,
   exportSearchableCommand,
   recogniseTextCommand,
+  straightenScansCommand,
 } from './recogniseText.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fe');
@@ -401,6 +403,49 @@ describe('the recognise-text command', () => {
     // turns into a sentence rather than a count.
     expect(dispatched).toStrictEqual([]);
     expect(opened).toStrictEqual([{ id: ENHANCE_OUTCOME_DIALOG_ID, props: { pages: 0 } }]);
+  });
+
+  it('STRAIGHTEN: sends ONE command naming the scanned pages, then its own outcome', async () => {
+    // THE SAME WALK AS ENHANCE, and asserted separately: a straighten command that sent
+    // `enhancePages`, or opened enhance's outcome, would read correctly everywhere else.
+    const { client, dispatched, read } = clientOver(['text', 'image-only', 'empty', 'image-only']);
+    const { ask, opened } = recordingAsk(undefined);
+
+    await straightenScansCommand({ client, onApplied: () => undefined, ask, track: UNTRACKED }).run(
+      contextWith(4),
+    );
+
+    expect(read).toStrictEqual([0, 1, 2, 3]);
+    expect(dispatched).toStrictEqual([{ kind: 'straightenScans', pages: [1, 3] }]);
+    expect(opened).toStrictEqual([{ id: SCAN_OUTCOME_DIALOG_ID, props: { pages: 2 } }]);
+  });
+
+  it('STRAIGHTEN: says so when there is nothing to straighten, and a cancelled walk sends and says nothing', async () => {
+    const empty = clientOver(['text']);
+    const told = recordingAsk(undefined);
+    await straightenScansCommand({ client: empty.client, onApplied: () => undefined, ask: told.ask, track: UNTRACKED }).run(
+      contextWith(1),
+    );
+    expect(empty.dispatched).toStrictEqual([]);
+    expect(told.opened).toStrictEqual([{ id: SCAN_OUTCOME_DIALOG_ID, props: { pages: 0 } }]);
+
+    // CANCELLED AFTER THE FIRST PAGE: the walk's `null`, not an empty list, so no outcome
+    // dialog claims there were no scans in a document the person stopped reading.
+    const cancelled = clientOver(['image-only', 'image-only']);
+    const quiet = recordingAsk(undefined);
+    const controller = new AbortController();
+    const track: TrackTask = () => ({
+      signal: controller.signal,
+      step: () => {
+        controller.abort();
+      },
+      end: () => undefined,
+    });
+    await straightenScansCommand({ client: cancelled.client, onApplied: () => undefined, ask: quiet.ask, track }).run(
+      contextWith(2),
+    );
+    expect(cancelled.dispatched).toStrictEqual([]);
+    expect(quiet.opened).toStrictEqual([]);
   });
 
   it('stops when a page’s kind cannot be read', async () => {

@@ -315,6 +315,11 @@ export interface CommandPrior {
    */
   readonly enhancePages: never;
   /**
+   * **`never`**, for `enhancePages`' reason: the prior state includes the image stream
+   * the command replaced, which is document-scaled — and the boxes and content besides.
+   */
+  readonly straightenScans: never;
+  /**
    * **`never`**, and this is the first entry whose reason involves a second
    * document — which changes nothing, and saying why is the point.
    *

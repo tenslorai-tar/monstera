@@ -750,6 +750,26 @@ const PROMOTE_SPEC = `  promoteFormObjects: {
   },`;
 
 /**
+ * The newest kind, and the one the `missing a command kind` case now omits.
+ *
+ * `enhancePages`' shape exactly — MuPDF, terminal, reapply-intent — because it rewrites a
+ * page's image through the same write, and then the page's boxes and content besides.
+ */
+const SCAN_SPEC = `  straightenScans: {
+    kind: 'straightenScans',
+    writer: 'mupdf',
+    apply: applyStraightenScans,
+    capture: captureStraightenScans,
+    invert: invertStraightenScans,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
  * The first spec whose command declares `purpose: 'removal'`.
  *
  * That axis is not spelt in these fixtures for the reason none of the others is
@@ -954,6 +974,9 @@ const SPEC_IMPORTS = `import {
   applyEnhancePages,
   captureEnhancePages,
   invertEnhancePages,
+  applyStraightenScans,
+  captureStraightenScans,
+  invertStraightenScans,
   applyOcrPage,
   captureOcrPage,
   invertOcrPage,
@@ -1615,6 +1638,7 @@ ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
+${SCAN_SPEC}
 };
 `,
   },
@@ -1632,8 +1656,8 @@ ${PROMOTE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `promoteFormObjects` and `replaceAllText` on
-    // 2026-09-10, and
+    // table has to grow. `straightenScans` on 2026-09-13; `promoteFormObjects`
+    // and `replaceAllText` on 2026-09-10, and
     // `deletePageObjects` with `placePageObject` and `recolorPageObjects` the
     // same day; `replaceTextObject` on 2026-09-09;
     // `importFormData` and `createFormField` on 2026-09-08;
@@ -1654,7 +1678,7 @@ ${PROMOTE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'promoteFormObjects' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'straightenScans' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1716,6 +1740,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${PROMOTE_SPEC}
 };
 `,
   },
@@ -1847,6 +1872,7 @@ ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
+${SCAN_SPEC}
 };
 `,
   },
@@ -1913,6 +1939,7 @@ ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
+${SCAN_SPEC}
 };
 `,
   },
@@ -1988,6 +2015,7 @@ ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
+${SCAN_SPEC}
 };
 `,
   },
@@ -2059,6 +2087,7 @@ ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
+${SCAN_SPEC}
 };
 `,
   },
@@ -2927,7 +2956,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // `deskewPages` (2026-09-10), 31 since `ocrPage` and 32 since `enhancePages`
     // (both 2026-09-11), and 38 through 42 since `setDocumentProtection`,
     // `applyRedactions`, `markMatchesForRedaction`, `sanitizeDocument` and
-    // `signDocument` (all 2026-09-12).
+    // `signDocument` (all 2026-09-12), and 43 since `straightenScans` (2026-09-13).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2945,7 +2974,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 38 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 39 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

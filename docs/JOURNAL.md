@@ -892,6 +892,114 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — CI red at `dc7c2af`: a tamper that tampered with nothing, one run in 256
+
+The webcam commit's CI run failed on the Ubuntu leg only, in the unit tests, at
+`timestampToken.test.ts`' check 5: *"refuses a TSTInfo changed after its digest was
+attested"*, failing with *"the reply was accepted"*. Windows, Guards and every other job
+passed. The webcam commit did not touch either the test or `timestampToken.ts`.
+
+### The mechanism
+
+The fixture "tampered" with the signed TSTInfo by replacing its last DER byte with a fixed
+`\x7f`. The TSTInfo's last field is the nonce, and the case's query asks `timestampQuery`
+for a random one, so the TSTInfo's last byte is the nonce's last random byte. Whenever that
+byte already was `0x7f` — one run in 256 — the replacement changed nothing, the case
+submitted an untampered token, and the verifier correctly accepted it.
+
+**So the verifier was right, and the case was wrong one time in 256.** It is the shape
+recorded on 2026-09-12 — *a valid signature could read as unreadable, one in 256* — arriving
+in a different fixture: a mutation that can equal the value it replaces.
+
+### The fix, and its control
+
+- The tamper flips one bit of the last byte, which differs from every byte, so it is always
+  a tamper.
+- A new case builds exactly what CI met: a query whose nonce ends in `0x7f`, asserting that
+  it does, and asserting check 5 still refuses.
+- **Control, run and restored:** with the old fixed-byte tamper back, that new case failed
+  with CI's own message, *"the reply was accepted"*, and the other 19 stayed green.
+
+No other test in `packages` or `apps` tampers by writing a fixed byte. The fix is a test
+change only; it went in its own commit ahead of the scan row.
+
+---
+
+## 2026-09-13 — Document scan: a sheet found in a photograph, and a line that cut it into strips
+
+D9's sixth row. Tools › OCR gains *Straighten photographed pages*.
+
+### Why a page command, and no new engine
+
+The law names nothing for this row beyond its catalog line. `pageDeskew.ts` and
+`pageEnhance.ts` already decode, rewrite and re-encode a page's image inside the contained
+MuPDF host, and a camera picture is an image-only page by the time it is in a document. So
+`straightenScans` is `enhancePages`' shape with geometry added: MuPDF, terminal,
+reapply-intent, and a page list the surface reads from page kinds. Decoding stranger images
+in the compose host instead would have put MuPDF in a host whose threat-model row names
+only `markdown-it` and pdf-lib — a B4 for no gain.
+
+### What `pageScan.ts` decides
+
+1. **The sheet**, on a copy reduced to 640 px on its longer side. It is the light class of
+   Otsu's split (`pageSkew.ts`' own), **closed** at 1% of that side, and then the largest
+   four-connected region.
+2. **Its corners**: the extremes of *x + y* and *x − y*.
+3. **Whether it is a sheet**: a convex quadrilateral covering 20–97% of the image. Below
+   that, what was found is not a page; above it, the photograph already is the page.
+4. **The straightening**: the homography solved exactly from the four corners, and a
+   bilinear grey warp at full resolution, never with more pixels than the photograph had.
+5. **The page**: its boxes take the sheet's shape, keeping the longer side, and its content
+   draws the one image to fill it.
+
+`pageEnhance.ts` now exports `imagesOf`, `roundTrippable` and `writeGreyJpeg`, so both
+commands that rewrite a page's image make one decision about what its dictionary says.
+The UI's image-only-pages walk is one function both commands call.
+
+### The closing, which a red run forced
+
+**The first detector found no sheet on its own fixture.** The fixture's ink bands run edge
+to edge across the sheet, and a 4-connected light region cannot cross a dark band. So the
+paper fell into strips; the largest was about 27 rows by 280 px, a twentieth of the image
+and under the 20% floor. Ruled lines, table borders and full-width headings do the same on
+real pages. Closing the light mask before labelling fills a dark gap narrower than its
+window and leaves a convex outline where it was.
+
+**Mutation, run and restored:** labelling the unclosed mask reddened exactly the three
+cases that need a sheet found — detection, straightening and the apply — and left the six
+that do not green.
+
+### Executed, and not
+
+- **Typecheck:** both halves, exit 0.
+- **Tests:** the full suite, 197 files and 2,723 cases, after the mutation was restored and
+  lint's findings rewritten without a cast or an assertion. Before it, `pageScan.test.ts`,
+  9 cases.
+  - It finds a turned sheet in perspective within 1.5 px of each corner.
+  - The homography lands each output corner on the sheet's.
+  - A straightened page, read from the saved bytes, has paper in every corner where the
+    photograph had desk, and the sheet's aspect.
+  - Controls: a uniform image and an already-cropped photograph are `no-sheet` and left
+    alone; two images are `not-one-image`; an out-of-range page writes nothing.
+  - `recogniseText.test.ts`, 15 cases: enhance's unchanged through the shared walk, and the
+    scan command's dispatch, zero outcome and cancel.
+- **`proof:contract`:** 49. The spec tables gained `straightenScans`, the missing-kind case
+  now omits it, and the union count moved to 44 members.
+- **Not executed:** a photograph from a real camera. Every sheet here is drawn by the test.
+
+### Found while building it, all fixed before commit
+
+- **The fixture put an ink band on the sheet's top-left corner.** A band between paper and
+  desk is not a gap to close, and the detector rightly reported the corner three rows in.
+  The bands moved to rows 15–17 of each thirty.
+- **One corner assertion read a single pixel**, which landed on ink (73) at a corner of the
+  straightened sheet. It reads the brightest sample in a 7×7 window now, and the same
+  window on the photograph still reads desk, so it separates as before.
+- **`proof:contract` compiles its own spec tables and counts the command union**, and
+  reddened on both until they grew. That is the proof working as its comment says.
+
+---
+
 ## 2026-09-13 — Webcam capture: the first picture the renderer sends, and why it needed no B4
 
 D9's fifth row. Tools › Create gains *New PDF from camera*.

@@ -802,6 +802,26 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  straightenScans: {
+    kind: 'straightenScans',
+    // `enhancePages`' writer, for its reason and one more: it replaces the image
+    // stream AND the page's boxes and content, which is page surgery in the session.
+    writer: 'mupdf',
+    // The prior state is the image stream, the boxes and the content that drew it —
+    // the image is document-scaled, so §4's reserved list again.
+    invertible: false,
+    undo: 'checkpoint',
+    // FOUND FROM THE IMAGE'S OWN PIXELS: Otsu's split, the largest light region, its
+    // extreme corners and the homography they determine. Nothing is read from a clock
+    // and nothing is minted, so the same document straightens to the same bytes.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   ocrPage: {
     kind: 'ocrPage',
     // §3's matrix puts content composition on `@cantoo/pdf-lib`, and a text layer

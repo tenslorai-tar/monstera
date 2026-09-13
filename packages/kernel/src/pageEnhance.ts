@@ -85,7 +85,7 @@ export interface EnhancedPage {
  * pages tree has images, and a reader that only looked at the page's own
  * dictionary would report it as having none.
  */
-function imagesOf(page: PDFObject): readonly { readonly key: string; readonly object: PDFObject }[] {
+export function imagesOf(page: PDFObject): readonly { readonly key: string; readonly object: PDFObject }[] {
   const resources = page.getInheritable('Resources');
   if (!resources.isDictionary()) return [];
   const xobjects = resources.get('XObject');
@@ -106,7 +106,7 @@ function imagesOf(page: PDFObject): readonly { readonly key: string; readonly ob
  * no greys to level, and an image with a soft mask carries its transparency in a
  * second stream that a replaced base would no longer agree with.
  */
-function roundTrippable(object: PDFObject): boolean {
+export function roundTrippable(object: PDFObject): boolean {
   if (object.get('ImageMask').asBoolean()) return false;
   if (!object.get('SMask').isNull()) return false;
   return !object.get('Mask').isNull() ? false : true;
@@ -154,24 +154,35 @@ function level(object: PDFObject): boolean {
       samples[index] = value < 0 ? 0 : value > 255 ? 255 : Math.round(value);
     }
 
-    const encoded = new Uint8Array(grey.asJPEG(JPEG_QUALITY, false));
-    object.writeRawStream(encoded);
-    // THE DICTIONARY HAS TO AGREE WITH THE BYTES. The stream is now one-component
-    // DCT data whatever it was before, so the colour space, the component depth and
-    // the filter are restated and `/DecodeParms` — which described the old filter's
-    // parameters — is removed. A left-behind `/DecodeParms` is how a correct stream
-    // renders as noise.
-    object.put('Filter', 'DCTDecode');
-    object.put('ColorSpace', 'DeviceGray');
-    object.put('BitsPerComponent', 8);
-    object.put('Width', grey.getWidth());
-    object.put('Height', grey.getHeight());
-    object.delete('DecodeParms');
-    object.delete('Decode');
+    writeGreyJpeg(object, grey);
     return true;
   } finally {
     pixmap.destroy();
   }
+}
+
+/**
+ * Replaces an image XObject's stream with a grey pixmap as JPEG, and makes its dictionary
+ * agree.
+ *
+ * **One write for every command that re-encodes a page's image** — levelling here and
+ * straightening in `pageScan.ts` — so the two cannot disagree about what a rewritten
+ * image's dictionary must say (B3a).
+ *
+ * THE DICTIONARY HAS TO AGREE WITH THE BYTES. The stream is now one-component DCT data
+ * whatever it was before, so the colour space, the component depth, the size and the
+ * filter are restated, and `/DecodeParms` — which described the old filter's parameters —
+ * is removed. A left-behind `/DecodeParms` is how a correct stream renders as noise.
+ */
+export function writeGreyJpeg(object: PDFObject, grey: mupdf.Pixmap): void {
+  object.writeRawStream(new Uint8Array(grey.asJPEG(JPEG_QUALITY, false)));
+  object.put('Filter', 'DCTDecode');
+  object.put('ColorSpace', 'DeviceGray');
+  object.put('BitsPerComponent', 8);
+  object.put('Width', grey.getWidth());
+  object.put('Height', grey.getHeight());
+  object.delete('DecodeParms');
+  object.delete('Decode');
 }
 
 /**

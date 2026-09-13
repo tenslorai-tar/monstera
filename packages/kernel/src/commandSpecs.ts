@@ -105,6 +105,7 @@ import {
 } from './pageMerge.js';
 import { applyDeskewPages, captureDeskewPages, invertDeskewPages } from './pageDeskew.js';
 import { applyEnhancePages, captureEnhancePages, invertEnhancePages } from './pageEnhance.js';
+import { applyStraightenScans, captureStraightenScans, invertStraightenScans } from './pageScan.js';
 import { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 import {
   applySetPageTransition,
@@ -326,6 +327,14 @@ const declared = {
     apply: applyEnhancePages,
     capture: captureEnhancePages,
     invert: invertEnhancePages,
+  },
+  // THE SECOND COMMAND THAT REWRITES AN IMAGE, and it takes the first one's write:
+  // `pageScan.ts` re-encodes through `pageEnhance.ts`' `writeGreyJpeg`.
+  straightenScans: {
+    ...declaredCommands.straightenScans,
+    apply: applyStraightenScans,
+    capture: captureStraightenScans,
+    invert: invertStraightenScans,
   },
   // THE FIRST `sources: 'one'` ENTRY. The spread carries that axis in, and
   // `WriterBinding`'s cross product is what makes `apply` here obliged to be

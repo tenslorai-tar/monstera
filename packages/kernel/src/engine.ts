@@ -72,6 +72,13 @@ export {
   enhancedPages,
   invertEnhancePages,
 } from './pageEnhance.js';
+// `pageEnhance.ts`' neighbour and its reason: MuPDF decodes and rewrites the image.
+export {
+  applyStraightenScans,
+  captureStraightenScans,
+  invertStraightenScans,
+  straightenedPages,
+} from './pageScan.js';
 // ON THIS SUBPATH RATHER THAN THE BARREL, and the reason is the opposite of the
 // one the note below gives for its neighbours: `ocrTextLayer.ts` reaches only
 // `@cantoo/pdf-lib`, so nothing about the module binds a native library — but

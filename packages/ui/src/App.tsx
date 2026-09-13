@@ -99,6 +99,7 @@ import { checkSpellingCommand } from './commands/checkSpelling.js';
 import {
   enhanceScansCommand,
   exportSearchableCommand,
+  straightenScansCommand,
   recogniseTextCommand,
 } from './commands/recogniseText.js';
 import { handwritingModelCommands } from './commands/handwritingModel.js';
@@ -114,6 +115,7 @@ import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
 import { OCR_DIALOG } from './dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
 import { ENHANCE_OUTCOME_DIALOG } from './dialogs/enhanceOutcome.js';
+import { SCAN_OUTCOME_DIALOG } from './dialogs/scanOutcome.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
@@ -377,6 +379,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         OCR_DIALOG,
         OCR_OUTCOME_DIALOG,
         ENHANCE_OUTCOME_DIALOG,
+        SCAN_OUTCOME_DIALOG,
         SAVE_PROBLEM_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
@@ -1488,6 +1491,9 @@ export function App({ client, settings }: AppProps): ReactElement {
         // page kinds for the same reason the OCR commands do: levelling is only
         // meaningful where the page's content is a raster.
         enhanceScansCommand({ client, onApplied: applied, ask, track }),
+        // D9's DOCUMENT SCAN ROW, enhance's shape and its walk: the image-only pages,
+        // one command, one undo.
+        straightenScansCommand({ client, onApplied: applied, ask, track }),
         insertImageCommand({ client, onApplied: applied, ask }),
         // D9's MARKDOWN ROW. The new document arrives as a tab by `openCommand`'s
         // callbacks; the append also adds a tab, then returns to the document it

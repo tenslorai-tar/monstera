@@ -219,6 +219,7 @@ export {
   sourceIdsOf,
   deskewPagesSchema,
   enhancePagesSchema,
+  straightenScansSchema,
   ocrPageSchema,
   resizePagesSchema,
   rotatePagesSchema,

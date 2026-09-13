@@ -323,6 +323,10 @@ export const ENHANCE_COMMAND_TITLE = messageKey('command.enhance-scans.title');
 export const ENHANCE_OUTCOME_TITLE = messageKey('dialog.enhance-outcome.title');
 export const ENHANCE_OUTCOME_PAGES = messageKey('dialog.enhance-outcome.pages');
 export const ENHANCE_OUTCOME_NONE = messageKey('dialog.enhance-outcome.none');
+export const SCAN_COMMAND_TITLE = messageKey('command.straighten-scans.title');
+export const SCAN_OUTCOME_TITLE = messageKey('dialog.scan-outcome.title');
+export const SCAN_OUTCOME_PAGES = messageKey('dialog.scan-outcome.pages');
+export const SCAN_OUTCOME_NONE = messageKey('dialog.scan-outcome.none');
 export const OCR_TITLE = messageKey('dialog.ocr.title');
 export const OCR_UNAVAILABLE = messageKey('dialog.ocr.unavailable');
 export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
@@ -1127,6 +1131,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     '{count, plural, one {Cleaned up one scanned page} other {Cleaned up # scanned pages}}.',
   // THE EMPTY ANSWER SAID OUT LOUD, and it names the reason rather than the count.
   [ENHANCE_OUTCOME_NONE]: 'No scanned pages here — every page already carries text.',
+  [SCAN_COMMAND_TITLE]: 'Straighten photographed pages',
+  [SCAN_OUTCOME_TITLE]: 'Straighten',
+  // WHERE, NOT WHICH: the dialog is told how many scanned pages were looked at, not
+  // which of them held a sheet of paper, so the sentence says what happened to those.
+  [SCAN_OUTCOME_PAGES]:
+    '{count, plural, one {Looked for a sheet of paper on one scanned page} other {Looked for a sheet of paper on # scanned pages}}. Where one was found, the page is now just the sheet.',
+  [SCAN_OUTCOME_NONE]: 'No scanned pages here — every page already carries text.',
   [OCR_TITLE]: 'Recognise text',
   // SAYS WHAT IS MISSING AND WHAT IT IS FOR, which is §10.5's no-binary state: a
   // dialog reading "unavailable" tells a reader nothing they can act on.

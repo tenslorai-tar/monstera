@@ -644,6 +644,26 @@ export const enhancePagesSchema = z.object({
 });
 
 /**
+ * Find the sheet of paper in each named page's photograph and straighten it into the page.
+ *
+ * D9's *Document scan (edge detection)*. A picture of a document taken with a camera is a
+ * sheet at an angle on a background; this finds the sheet's four corners in the page's own
+ * image, corrects the perspective so the sheet is a rectangle, and makes the page the
+ * sheet's shape.
+ *
+ * ## A PAGE LIST, and no corners, for `enhancePages`' reasons
+ *
+ * The surface names the image-only pages, and the corners are found inside the engine from
+ * the page's own pixels. A payload carrying corners would be a second opinion about where
+ * the sheet is, taken from a raster the renderer drew rather than the image itself.
+ */
+export const straightenScansSchema = z.object({
+  kind: z.literal('straightenScans'),
+  /** Which pages, as a list. Zero-based, at least one. */
+  pages: z.array(z.number().int().nonnegative()).min(1),
+});
+
+/**
  * The largest image this build will make a page from.
  *
  * Sixty-four megabytes, which is far past any scan or photograph and far short
@@ -3874,6 +3894,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   resizePagesSchema,
   deskewPagesSchema,
   enhancePagesSchema,
+  straightenScansSchema,
   ocrPageSchema,
   insertImagePageSchema,
   generateTocSchema,
@@ -3950,6 +3971,9 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // and nothing else. The image data it rewrites is read and written inside the
   // engine — the renderer could not express a bitmap here if it wanted to.
   enhancePagesSchema,
+  // RENDERABLE, for the line above's reason: the corners are found in the engine from
+  // the page's own image, so the intent is a page list and nothing else.
+  straightenScansSchema,
   // RENDERABLE, and it is the sharpest case in this union: the page's recognised
   // text is what the command produces and none of it is in the payload. A page
   // index and a language name the intent, the recognition is read inside the
