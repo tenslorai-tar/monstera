@@ -1331,8 +1331,39 @@ reconciled.
   The widely used authorities publish HTTP endpoints only, and a token does not
   need the transport for its integrity. It is verified before it is embedded:
   the authority's signature, the imprint, the nonce and the timestamping key
-  usage. The request carries a hash of a signature value and nothing else. No
-  authority a person types exists until the SSRF guard above does.
+  usage. The request carries a hash of a signature value and nothing else. **No
+  authority a person types exists.** The guard below is decided and is built with D9's
+  *Open from URL* row. Even then, a typed authority would need a plain-HTTP request to a
+  host nobody declared, which is ADR-0058's decision to reopen and is not built.
+
+  **The SSRF guard, 2026-09-13
+  ([ADR-0061](DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).**
+  `packages/kernel/src/guardedFetch.ts` is the one route by which a URL a person or a
+  document chose is fetched. It has four parts:
+
+  - **Every hop is checked.** Redirects are followed by hand, at most five, and every
+    hop must be `https:` with no user information in it.
+  - **The pin.** Each hop connects through `node:https` with no pooled agent and a
+    `lookup` that takes every address the system resolver answers. If any address is
+    blocked, the whole answer is refused; otherwise the socket gets exactly the
+    addresses that were checked. So the address connected to was checked in that same
+    resolution, on every hop. A host written as an IP address never reaches `lookup`
+    (measured under Node 24.12.0 and Electron 43.4.1's Node 24.18.1), so it is checked
+    before the request is made.
+  - **The blocklist.**
+    - Every block IANA's IPv4 and IPv6 special-purpose registries mark *not globally
+      reachable*.
+    - Both multicast blocks.
+    - 6to4 and Teredo, whole.
+    - NAT64's `64:ff9b::/96` and IPv4-mapped addresses, judged by the IPv4 address
+      they carry.
+  - **The body is never held whole in `main`.** It is counted by `receivedByteMeter`
+    and streamed into the save pipeline's temporary file, so the save pipeline stays
+    the one writer of a destination. A body that does not begin with `%PDF-` within
+    its first 1,024 bytes is refused before the rename.
+
+  **Stated limit: the system proxy is not used.** A machine that reaches the internet
+  only through a proxy cannot open a URL.
 
 - **Distribution is the Microsoft Store, and only the Store.** The website
   carries information and its download button links to the Store listing. **No
@@ -2304,6 +2335,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-13 | **A URL a person chose is fetched through one guard that pins every resolution** (§8's network rule; threat model §1.10). D9's *Open from URL* is the first fetch of an address this application did not write, and the SSRF guard the law names had no module and no seam. `guardedFetch.ts` connects every hop through a `lookup` that checks every address the resolver answered and hands the socket exactly those, so the address connected to is the address checked; a literal host, which never reaches `lookup` (measured), is checked before the request. The blocklist is IANA's registries, read and dated in the ADR. The body streams into the save pipeline's temporary file rather than being held in `main`, so `atomicWrite`'s first stage takes a writer; a body without `%PDF-` in its first 1,024 bytes is refused before the rename. The system proxy is not used, stated. | Nothing in the founding record: Part C8's SSRF clause (`BUILD-PROMPT.md`:405) is built, not superseded. Within this document, §8's timestamp sentence *"No authority a person types exists until the SSRF guard above does"*, whose condition this makes true while the feature stays unbuilt; and `atomicWrite`'s byte-array temporary stage | [0061](DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md) |
 | 2026-09-13 | **A file picked for import is parsed and composed in a third contained host, which holds no document** (§3, content composition and the one host body; threat model §1.9 and §2). D9's Markdown → PDF met threat model §2's *document parsing of any kind* outside `main`, and the placement was measured before it was decided: `marked` 18.0.13 exhausted its heap on 2,000 levels of nested list and Node aborted, and `micromark` 4.0.2 ran past 90 s on two of eight inputs, while `markdown-it` 15.0.2 bounded all eight. The compose host is a third entry through the one body — its own container moniker, entry and containment verdict, built at the first import, and an ending that affects no open document. It owes `engine/probe-containment`, a granted area's `engine/open` and `engine/close`, and its own channels, and none of `apply`, `capture` or `invert`, which carry a writer's command union. What crosses is names and byte counts. ADR-0039's *a JavaScript throw is catchable* is recorded as not covering heap exhaustion, and the writers it placed in `main` are not moved. | `BUILD-PROMPT.md`:258's content-composition row, which named `pdf-lib` for new-document generation from Markdown, CSV and images and no process for reading the source | [0060](DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md) |
 | 2026-09-13 | **A sign-in is Authorization Code with PKCE as a public client, and its redirect returns on loopback for one request** (§9, security and network). D7's DocuSign row is the first OAuth sign-in and nothing in the law covered a browser's redirect reaching `main`; Stage 9's cloud providers take the same route, so it is decided once. The redirect is `http://127.0.0.1:{port}`, opened for one sign-in and closed when it arrives, loopback-bound by IP literal, one path and one `state` (RFC 8252 §7.3, §8.3); the sign-in runs in the person's own browser; tokens are secrets in `secretStore`; each provider's hosts are declared and the network rule is unchanged. A private-use scheme is rejected: a Store package needs a manifest declaration, and another app can register the same scheme. Two premises are unconfirmed and carry triggers in the ADR. | `BUILD-PROMPT.md` Part F's *DocuSign key/account/basePath* and D11's cloud-storage tokens, which named secrets and no sign-in route | [0059](DECISIONS/0059-a-sign-in-redirect-returns-on-loopback-for-one-request.md) |
 | 2026-09-13 | **An RFC 3161 timestamp request may be plain HTTP, to a declared authority, and the token is verified before it is embedded** (§9's network rule; §3's digital signatures row). D7's TSA row found that the widely used authorities publish HTTP endpoints only and that no SSRF guard exists, so a timestamp server a person types is not buildable. The network rule gains **one** exception, for a timestamp request to a host in the contract's authority list: integrity comes from verifying the token — status, content type, imprint, nonce, signer, key usage, and the signing-certificate identifier RFC 3161 §2.2 requires (added by the ADR's same-day correction) — through `signedDataCheck.ts`, the one RFC 5652 verifier. The network reaches the kernel through a port the composition supplies, and a failed timestamp refuses the signing rather than signing without one. Sources read and dated in the ADR. | `BUILD-PROMPT.md`'s *Network: HTTPS only, host-locked per purpose* (line 405) and §9's restatement of it, for a timestamp request only; `BUILD-PROMPT.md` D7's TSA clause, which named no transport. Invariant 9 is not loosened: it governs pinned artefacts, and a reply that is new on every request cannot be one | [0058](DECISIONS/0058-a-timestamp-authority-is-verified-not-trusted-and-its-request-may-be-plain-http.md) |

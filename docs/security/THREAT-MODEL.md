@@ -98,6 +98,21 @@ seconds on two inputs. So a file picked for import is parsed in the compose host
 (§2, [ADR-0060](../DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)),
 where an abort ends a process that holds no open document.
 
+### 1.10 URLs a person types
+
+D9's *Open from URL* fetches whatever address a person pastes, and that address is
+chosen by whoever sent them the link. What arrives is §1.1 again. The distinctive
+threat is **where the request goes**: a link to `127.0.0.1`, to a router's admin page,
+to a cloud metadata address, or to a public name whose DNS answer turns into one of
+those between a check and the connection. Any of them makes this application reach
+into the network it runs on, from the person's own network position, and tell the
+sender whether it answered.
+
+Part C8 names the mechanism — a private-range blocklist and a pin re-validated on every
+resolution — and [ADR-0061](../DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)
+decides it, and D9's *Open from URL* row builds it. The address a socket connects to is
+always one checked in the same resolution, on every redirect hop.
+
 ---
 
 ## 2. What each process can reach
