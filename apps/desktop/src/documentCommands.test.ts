@@ -22,6 +22,8 @@ import {
   CommandBus,
   DocumentNotOpenError,
   DocumentService,
+  EngineCallFailed,
+  EngineSessionGone,
   type MupdfSession,
   nodeFileSurface,
   type RegisteredWriter,
@@ -753,6 +755,30 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
     const commands = new DocumentCommands({ ...LOCAL_READS, documents: service, bus: bus(), engine: noSessions() });
 
     await expect(commands.viewModel(docId, ALL_PAGES)).rejects.toThrow(MissingSessionError);
+  });
+});
+
+describe('signatures: only a signature that could not be read answers unreadable (GGGGGG-1)', () => {
+  function reading(signatures: () => Promise<never>): DocumentCommands {
+    return new DocumentCommands({ ...LOCAL_READS, signatures, documents: service, bus: bus(), engine: engine() });
+  }
+
+  it('answers UNREADABLE for the host’s signatures-unreadable refusal', async () => {
+    const commands = reading(() =>
+      Promise.reject(new EngineCallFailed('engine/signatures', 'signatures-unreadable')),
+    );
+    await expect(commands.signatures(docId)).resolves.toStrictEqual({ signatures: [], unreadable: true });
+  });
+
+  // THE DECISION IS THE ASSERTION: each of these used to resolve to the answer
+  // above, which is a sentence about the document. They must reject instead.
+  it.each([
+    ['another refusal from the host', new EngineCallFailed('engine/signatures', 'signatures-failed')],
+    ['a lost session', new EngineSessionGone('engine/signatures')],
+    ['a plain throw', new Error('the host went away')],
+  ])('PROPAGATES %s rather than calling it an unreadable signature', async (_name, thrown) => {
+    const commands = reading(() => Promise.reject(thrown));
+    await expect(commands.signatures(docId)).rejects.toBe(thrown);
   });
 });
 

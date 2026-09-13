@@ -485,6 +485,9 @@ function insertImageHandler(commands: DocumentCommands): ContractHandlers['docum
       if (outcome.kind === 'too-large') {
         return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
       }
+      if (outcome.kind === 'too-many-pixels') {
+        return ok({ kind: 'too-many-pixels', limitPixels: outcome.limitPixels } as const);
+      }
       return ok({
         kind: 'inserted',
         version: outcome.version,

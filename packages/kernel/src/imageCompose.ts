@@ -1,9 +1,9 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 
-import { MAX_IMPORT_IMAGE_PIXELS, MAX_IMPORT_PNG_PIXELS } from '@monstera/contract';
+import { MAX_IMPORT_PNG_PIXELS } from '@monstera/contract';
 
 import { ComposeRefused } from './composeLayout.js';
-import { pngPixelSize } from './imageDimensions.js';
+import { type PixelSize, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 import { type EmbeddableImageType, addImagePage } from './pageImage.js';
 
 /**
@@ -59,13 +59,22 @@ export async function composeImages(images: readonly ImportImage[]): Promise<Uin
     const item = index + 1;
     // A READ THAT FAILS IS NOT CAUGHT HERE, in either pass: the bytes not arriving is
     // the transport's fault, not the picture's, and the handler answers it as one.
-    const size = pngPixelSize(await image.read());
-    if (size === null) {
-      throw new ComposeRefused('image-unreadable', null, `image ${String(item)} has no readable PNG header`, item);
+    let size: PixelSize;
+    try {
+      // THE PER-IMAGE RULE IS `checkPngPixels`', the one Insert image calls too.
+      size = checkPngPixels(await image.read());
+    } catch (error) {
+      if (!(error instanceof PngPixelsRefused)) throw error;
+      throw new ComposeRefused(
+        error.reason === 'no-header' ? 'image-unreadable' : 'too-many-pixels',
+        null,
+        `image ${String(item)}: ${error.message}`,
+        item,
+      );
     }
-    const pixels = size.width * size.height;
-    pngPixels += pixels;
-    if (pixels > MAX_IMPORT_IMAGE_PIXELS || pngPixels > MAX_IMPORT_PNG_PIXELS) {
+    pngPixels += size.width * size.height;
+    // THE SET'S TOTAL is this import's own bound, and no other route has a set.
+    if (pngPixels > MAX_IMPORT_PNG_PIXELS) {
       throw new ComposeRefused(
         'too-many-pixels',
         null,

@@ -425,6 +425,9 @@ export {
   captureInsertImagePage,
   invertInsertImagePage,
 } from './pageImage.js';
+// THE PIXEL RULE ON THE BARREL, so `main` can answer Insert image's refusal by its
+// class. `imageDimensions.ts` imports only the contract.
+export { PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 // ON THE BARREL for `insertImagePage`'s reason two lines up, and the import
 // check it names holds: `pageToc.ts` imports `@cantoo/pdf-lib` and the contract,
 // and nothing on that path reaches MuPDF or PDFium.

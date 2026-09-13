@@ -51,9 +51,16 @@ export class EngineSessionGone extends Error {
 /** A call the host refused for a reason this side did not declare. */
 export class EngineCallFailed extends Error {
   override readonly name = 'EngineCallFailed';
+  /**
+   * The refusal the host named, as a field rather than only inside the message:
+   * a caller that must answer one refusal and let every other one through reads
+   * this, never a substring.
+   */
+  readonly code: string;
 
   constructor(channel: string, code: string) {
     super(`The engine host refused ${channel}: ${code}`);
+    this.code = code;
   }
 }
 

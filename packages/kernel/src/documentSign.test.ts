@@ -13,12 +13,14 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { applySignDocument, withSignaturePlaceholder } from './documentSign.js';
 import type { ByteImage } from './engineSeam.js';
+import { PngPixelsRefused } from './imageDimensions.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import {
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
 } from './signingRefusals.js';
-import { pkcs7Asn1, readSignatures } from './signatureRead.js';
+import { pkcs7Asn1, rangeCoversWholeFile, readSignatures } from './signatureRead.js';
+import type { ReadSignature } from './signatureRead.js';
 
 /**
  * Signing — Stage 7's PKCS#7 row, paying ADR-0054's gate.
@@ -410,6 +412,162 @@ describe('readSignatures', () => {
       await mupdfWriter.close(session);
     }
   }, 60_000);
+
+  describe('WHERE A SIGNATURE IS FOUND (GGGGGG-4)', () => {
+    it('reports ONE signature for a field reached by both the form tree and its page widget', async () => {
+      // THE DE-DUPLICATION'S CASE: this build's own signature sits in `/Fields`
+      // AND on page 1's `/Annots`, so both walks reach it.
+      const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+      const session = await mupdfWriter.open(signed);
+      try {
+        expect(await readSignatures(session, signed)).toHaveLength(1);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }, 60_000);
+
+    it('finds a signature whose widget is on NO page, through /AcroForm /Fields', async () => {
+      const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+      const edited = mupdf.PDFDocument.openDocument(signed, 'application/pdf');
+      let removed = 0;
+      try {
+        if (!(edited instanceof mupdf.PDFDocument)) throw new Error('the signed file is not a PDF');
+        for (let index = 0; index < edited.countPages(); index += 1) {
+          const annots = edited.findPage(index).get('Annots');
+          if (!annots.isArray()) continue;
+          for (let at = annots.length - 1; at >= 0; at -= 1) {
+            if (String(annots.get(at).get('FT')) === '/Sig') {
+              annots.delete(at);
+              removed += 1;
+            }
+          }
+        }
+        const orphaned = Uint8Array.from(edited.saveToBuffer('').asUint8Array());
+        // THE FIXTURE TOOK: a widget was removed, and no page now carries one, so
+        // a page-widget walk has nothing to find.
+        expect(removed).toBe(1);
+        const session = await mupdfWriter.open(orphaned);
+        try {
+          const pages = mupdf.PDFDocument.openDocument(orphaned, 'application/pdf');
+          const widgets = Array.from({ length: pages.countPages() }, (_unused, index) =>
+            pages.loadPage(index),
+          ).flatMap((page) => (page instanceof mupdf.PDFPage ? page.getWidgets() : []));
+          expect(widgets).toHaveLength(0);
+
+          const found = await readSignatures(session, orphaned);
+          expect(found).toHaveLength(1);
+          expect(found[0]?.signer).toBe('Grace Hopper');
+        } finally {
+          await mupdfWriter.close(session);
+        }
+      } finally {
+        edited.destroy();
+      }
+    }, 60_000);
+  });
+
+  describe('THE FORGED RANGE (GGGGGG-3): a /ByteRange that leaves document bytes unsigned', () => {
+    /**
+     * `signed` with its `/ByteRange` array rewritten to `next`, in the same number
+     * of bytes so every offset in the file still holds.
+     *
+     * A FORGED RANGE, never a forged digest: the forgery case above rewrites an
+     * attestation and leaves the range alone, which is why it could not see a
+     * whole-file check that held only `c + d`.
+     */
+    function withRange(
+      signed: Uint8Array,
+      next: (range: readonly [number, number, number, number]) => readonly number[],
+    ): { readonly bytes: Uint8Array; readonly range: readonly [number, number, number, number] } {
+      const text = Buffer.from(signed).toString('latin1');
+      const found = /\/ByteRange (\[(\d+) (\d+) (\d+) (\d+)\])/u.exec(text);
+      if (found?.[1] === undefined) throw new Error('the signed file carries no resolved byte range');
+      const range: [number, number, number, number] = [
+        Number(found[2]),
+        Number(found[3]),
+        Number(found[4]),
+        Number(found[5]),
+      ];
+      const original = found[1];
+      const written = `[${next(range).join(' ')}`;
+      expect(written.length, 'the rewritten range fits the bytes the original held').toBeLessThan(
+        original.length,
+      );
+      const replacement = `${written.padEnd(original.length - 1)}]`;
+      const at = found.index + '/ByteRange '.length;
+      const bytes = Uint8Array.from(signed);
+      bytes.set(Buffer.from(replacement, 'latin1'), at);
+      return { bytes, range };
+    }
+
+    async function readBack(bytes: Uint8Array): Promise<ReadSignature | undefined> {
+      const session = await mupdfWriter.open(bytes);
+      try {
+        const [read] = await readSignatures(session, bytes);
+        return read;
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+
+    it('CONTROL: the same numbers written back the same way still cover the whole file', async () => {
+      // Without this, a rewrite that broke the file would make every case below
+      // pass for the wrong reason.
+      const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+      const { bytes } = withRange(signed, (range) => range);
+      const read = await readBack(bytes);
+      expect(read, 'the rewritten file still reads its signature').toBeDefined();
+      expect(read?.coversWholeFile).toBe(true);
+    }, 60_000);
+
+    it('a range that starts past byte 0 does NOT cover the whole file, though c + d is still its length', async () => {
+      const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+      const { bytes, range } = withRange(signed, ([a, b, c, d]) => [a + 1, b - 1, c, d]);
+      const [, , c, d] = range;
+      // THE FIXTURE THE OLD CHECK PASSED: the second span still ends at the file's end.
+      expect(c + d).toBe(bytes.byteLength);
+      const read = await readBack(bytes);
+      expect(read, 'the forged signature still parses').toBeDefined();
+      expect(read?.coversWholeFile).toBe(false);
+    }, 60_000);
+
+    it('a gap slid off /Contents onto document bytes does NOT cover the whole file', async () => {
+      const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+      const { bytes } = withRange(signed, ([a, b, c, d]) => [a, b - 8, c - 8, d + 8]);
+      const read = await readBack(bytes);
+      expect(read, 'the forged signature still parses').toBeDefined();
+      expect(read?.coversWholeFile).toBe(false);
+    }, 60_000);
+  });
+});
+
+describe('rangeCoversWholeFile, on constructed bytes', () => {
+  const file = Uint8Array.from(Buffer.from('AAAA<0a0B>BBBB', 'latin1'));
+  const contents = Uint8Array.of(0x0a, 0x0b);
+
+  it('holds a range that signs everything but the /Contents string', () => {
+    expect(rangeCoversWholeFile([0, 4, 10, 4], contents, file)).toBe(true);
+  });
+
+  it.each([
+    ['a prefix left out', [1, 3, 10, 4]],
+    ['a suffix left out', [0, 4, 10, 3]],
+    ['a gap one byte wider than the string', [0, 3, 10, 4]],
+    ['a gap one byte narrower than the string', [0, 4, 9, 5]],
+    ['a negative number', [0, 4, 10, -1]],
+    ['a fraction', [0, 4, 10, 4.5]],
+  ] as const)('refuses %s', (_name, range) => {
+    expect(rangeCoversWholeFile(range, contents, file)).toBe(false);
+  });
+
+  it('refuses a gap whose hex is not this signature’s value', () => {
+    expect(rangeCoversWholeFile([0, 4, 10, 4], Uint8Array.of(0x0a, 0x0c), file)).toBe(false);
+  });
+
+  it('refuses a gap the same width that is not a hex string', () => {
+    const other = Uint8Array.from(Buffer.from('AAAAX0a0BXBBBB', 'latin1'));
+    expect(rangeCoversWholeFile([0, 4, 10, 4], contents, other)).toBe(false);
+  });
 });
 
 describe('a VISIBLE signature', () => {
@@ -647,6 +805,23 @@ describe('a VISIBLE signature', () => {
       await expect(refused).rejects.toMatchObject({ reason: 'unreadable-image' });
     },
   );
+
+  it('REFUSES a signature PNG past the PIXEL bound before its decoder runs, and not as unreadable', async () => {
+    // A HEADER CLAIMING 12,000 × 12,000 and no image data. The decoder would refuse
+    // these bytes too, as unreadable — so only the pixel check answers with this class
+    // and reason, and a build without it fails here.
+    const header = new Uint8Array(29);
+    header.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(header.buffer).setUint32(16, 12_000);
+    new DataView(header.buffer).setUint32(20, 12_000);
+    const refused = applySignDocument(unsigned, {
+      ...command,
+      bytes: certificate,
+      appearance: { page: 0, rect: RECT, mark: { kind: 'image', bytes: header, mediaType: 'image/png' } },
+    });
+    await expect(refused).rejects.toBeInstanceOf(PngPixelsRefused);
+    await expect(refused).rejects.toMatchObject({ reason: 'too-many-pixels' });
+  });
 
   it('REFUSES a page the document does not have, and a rectangle with no area', async () => {
     const typed = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;

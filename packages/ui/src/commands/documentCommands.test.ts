@@ -1612,6 +1612,29 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
+  it('REPORTS a picture past the PIXEL bound, carrying main’s limit', async () => {
+    const { client } = recording({
+      'document.insertImage': { kind: 'too-many-pixels', limitPixels: 100_000_000 },
+    });
+    const opened: unknown[] = [];
+
+    await insertImageCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.insert-image-problem',
+        props: { reason: 'too-many-pixels', limitPixels: 100_000_000 },
+      },
+    ]);
+  });
+
   it('PLACES ON THE ONE PAGE by default, which is the safe half of an asymmetry', () => {
     // Placing on one page when you meant all is one more drag. Placing on all
     // when you meant one is a mark on every page of a long document, removed

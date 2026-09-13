@@ -892,6 +892,148 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Five queued defects fixed: a forged range, three signature reads, a redaction, and a decode bomb in `main`
+
+Owner's rule: errors in the real app are reported and fixed. These were queued at the
+`4971b60` audit (GGGGGG-1, -3, -4 and -12) plus Insert image's PNG decode, all in rows
+marked done. Each is fixed from the mechanism, and each case below was mutated back to
+the old behaviour and went red.
+
+### GGGGGG-3 — a `/ByteRange` that skipped a prefix read as covering the whole file (security)
+
+**Mechanism:** `coversWholeFile` was `b + d + (c − b) === length`, which reduces to
+`c + d === length`. Nothing held `a` to 0, and nothing held the gap to be the signature.
+
+**Fix:** `rangeCoversWholeFile` holds all four numbers:
+
+- `a` is 0;
+- `c + d` is the file's length;
+- bytes `b` to `c` are exactly `<`, the hex of the `/Contents` value the object model
+  decoded, and `>`.
+
+A signature cannot cover its own value, so that is the one span it may leave out.
+
+**Cases:** two FORGED RANGES on a real signed file: `[a+1, b−1, c, d]`, and a gap slid
+eight bytes off `/Contents`. Both are written back in the same number of bytes. Beside
+them sit a rewrite control and six cases on constructed bytes.
+
+**Control:** with the old formula restored, both forged ranges and five constructed cases
+went red, and the rewrite control stayed green. The earlier forgery case rewrote a digest
+and left the range alone, which is why it could never see this.
+
+**The Signature verification row claimed more than was verified.** It said
+`coversWholeFile` meant *nothing was appended*, while nothing tested a prefix or a gap. It
+also said the signer's signature was verified without saying that holds only for RSA
+PKCS#1 v1.5 (GGGGGG-2) and only for signatures reached through a page widget. Its body now
+states what is verified.
+
+### GGGGGG-1 — every signatures failure read as *a signature could not be read*
+
+**Mechanism:** two catch-alls.
+
+- The host answered `signatures-unreadable` for any throw, a failed serialise included.
+- Main answered `{ signatures: [], unreadable: true }` for anything at all.
+
+**Fix, host:** the serialise moves outside the catch, so an engine that cannot serialise
+surfaces as `internal`. Inside the catch, `SignaturesUnreadable` (matched by name) answers
+`signatures-unreadable`, and any other throw answers the new `signatures-failed`.
+
+**Fix, main:** only an `EngineCallFailed` whose `code` is `signatures-unreadable` answers
+`unreadable`; everything else propagates. `EngineCallFailed` now carries `code` as a
+field, so the decision reads a value rather than a message.
+
+**Cases:** `signaturesChannel.test.ts` over the real JSON round trip, and three
+propagation cases in `apps/desktop/src/documentCommands.test.ts`.
+
+**Control:** with each catch widened back, the host's control and all three of main's
+cases went red.
+
+### GGGGGG-4 — a signature whose widget is on no page was never reported
+
+**Mechanism:** `readSignatures` walked page widgets only. A `/Sig` field in
+`/AcroForm /Fields` whose widget sits on no page's `/Annots` is legal, and was never
+found.
+
+**Fix:** the form tree is walked first, following `/Kids` with `/FT` inherited, to a depth
+of 32. Page widgets are still walked. A signature reached both ways is read once, keyed by
+its `/V` object number.
+
+**Cases:**
+
+- A signed file with its widget taken off `/Annots` still has its signature found by
+  signer. The case also asserts that no page carries a widget any more.
+- A freshly signed file reports exactly one signature.
+
+**Control:** with the tree walk disabled, the orphan case went red. With the
+de-duplication disabled, the one-signature case read two.
+
+### GGGGGG-12 — a refused find-and-redact left earlier pages marked
+
+**Mechanism:** marking was page by page, with the match-limit refusal inside the loop. A
+refusal on page 7 left pages 0–6 marked while its message said *nothing was marked*, and
+the apply has no rollback.
+
+**Fix:** every page in scope is searched first, the refusal is decided over all of them,
+and only then is anything marked.
+
+**Case:** a two-page file whose second page carries the term 4,500 times. The command
+refuses, and page 0 carries no `/Redact` afterwards. A control shows the term does mark
+page 0 when page 0 alone is asked for.
+
+**Control:** with the old per-page refusal restored after marking, the case went red.
+
+### Insert image — a PNG decoded in `main` behind a byte bound only
+
+**Mechanism:** Insert image's pdf-lib writer runs `embedPng` in `main`, and `embedPng`
+decodes every pixel. The measurement in `imageDimensions.ts` is a 450 KB PNG peaking at
+1,583 MiB. So the 64 MiB byte bound bounds nothing, against a 1.5 GB budget for `main`.
+
+**Fix (B3a):** the per-image rule is now one function, `checkPngPixels`, which throws
+`PngPixelsRefused` (`no-header` or `too-many-pixels`). It is called by:
+
+- `addImagePage`, which Insert image and Image(s) → PDF both use;
+- the image import's header pass, which keeps its own bound on a set's total;
+- the signature picture's decode in `documentSign.ts`, which is the same decoder in `main`
+  with the same gap — the class, not the instance.
+
+`main` answers Insert image's refusal as a new `too-many-pixels` outcome carrying the
+limit, and the dialog says it in megapixels. A signature picture's refusal is
+`image-too-large`, the sentence a picture past the byte bound already gets.
+
+**Cases:**
+
+- a 12,000 × 12,000 header with no data is refused as `too-many-pixels`, with a control
+  that a small header with no data is refused by the decoder instead;
+- the bound is inclusive at exactly 100 MP, and one row more is refused;
+- the signature picture's equivalent;
+- the UI dialog's dispatch.
+
+**Control:** with the check removed from `addImagePage`, the 12,000 × 12,000 case went red.
+
+**Not measured:** a 100 MP decode inside `main`'s 1.5 GB budget. The bound was measured
+against the compose host's 3 GiB job limit, at about 1.1 GiB of decode, and `main` carries
+its own baseline. Whether `main` needs a lower bound is open and owes a reading.
+
+### GGGGGG-2 — not in this commit, and the design is measured
+
+`signedDataCheck.ts` verifies RSA PKCS#1 v1.5 only. A scratch probe, run 2026-09-13,
+built a real certificate and a detached CMS SignedData for ECDSA P-256, RSA-PSS and RSA
+PKCS#1 v1.5 in-process, then checked each one:
+
+- **node-forge today:** it throws *Cannot read public key. OID is not RSA.* on the ECDSA
+  certificate, which is inside `messageFromAsn1`. It parses the RSA-PSS signature, and
+  the RSA-only check then answers unverified.
+- **The design:** node-forge's `signedDataValidator` capture, with no certificate
+  conversion. The signer's key comes from `X509Certificate`, and the signature is checked
+  by `crypto.verify`. All three verified. A changed content byte and a changed signature
+  byte each failed, for every scheme.
+- **Independent reading:** `openssl cms -verify` (OpenSSL 3.5.4) accepted all three
+  signatures, and refused the ECDSA signature against another scheme's content.
+
+It is the next defect worked.
+
+---
+
 ## 2026-09-13 — Live runs: Claude and Open from URL pass, Azure refuses at its gateway, the camera is still owed
 
 The owner approved all four live runs and corrected the Anthropic key. All three variables

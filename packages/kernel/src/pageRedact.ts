@@ -158,21 +158,30 @@ export const applyMarkMatchesForRedaction: Apply<'mupdf', 'markMatchesForRedacti
   command,
 ) =>
   withDocument(session, (document) => {
-    for (const index of scopedPages(document, command.pages)) {
+    // EVERY PAGE IS SEARCHED BEFORE ANY PAGE IS MARKED (GGGGGG-12). This marked
+    // page by page until 2026-09-13, so a refusal on page 7 left pages 0–6 marked
+    // while its message said *nothing was marked* — true of the page that threw,
+    // false of the document, and the apply has no rollback. Two passes make the
+    // sentence true of the whole command.
+    const searched = scopedPages(document, command.pages).map((index) => {
       const page = document.loadPage(index);
-      const hits = page.search(command.query, MAX_REDACT_MATCHES_PER_PAGE);
+      return { index, page, hits: page.search(command.query, MAX_REDACT_MATCHES_PER_PAGE) };
+    });
+    for (const { index, hits } of searched) {
       if (hits.length >= MAX_REDACT_MATCHES_PER_PAGE) {
-        // REFUSED, NOT TRUNCATED, and nothing is marked on this page. MuPDF
-        // answers up to `max_hits` and says nothing about whether it stopped,
-        // so a full result and a capped one are the same value — and for a
-        // redaction, *some matches were not marked* is the failure the feature
-        // exists to prevent. Marking a prefix would report success.
+        // REFUSED, NOT TRUNCATED. MuPDF answers up to `max_hits` and says nothing
+        // about whether it stopped, so a full result and a capped one are the
+        // same value — and for a redaction, *some matches were not marked* is
+        // the failure the feature exists to prevent. Marking a prefix would
+        // report success.
         throw new Error(
           `page ${String(index)} carries at least ${String(MAX_REDACT_MATCHES_PER_PAGE)} ` +
             `matches for this term, which is the point past which this build cannot tell a ` +
             `complete result from a truncated one. Nothing was marked.`,
         );
       }
+    }
+    for (const { page, hits } of searched) {
       for (const hit of hits) {
         for (const quad of hit) {
           const annotation = page.createAnnotation('Redact');

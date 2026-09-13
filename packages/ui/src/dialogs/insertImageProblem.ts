@@ -42,6 +42,7 @@ export const INSERT_IMAGE_PROBLEM_DIALOG = declareDialog({
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
     z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    z.object({ reason: z.literal('too-many-pixels'), limitPixels: z.number().int().positive() }),
   ]),
   component: lazy(() => import('./InsertImageProblemBody.js')),
 });

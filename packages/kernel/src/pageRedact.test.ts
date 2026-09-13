@@ -285,6 +285,63 @@ describe('applyRedactions', () => {
     }
   });
 
+  describe('A REFUSAL MARKS NOTHING ON ANY PAGE (GGGGGG-12)', () => {
+    const TERM = 'qz';
+    let crowded: ByteImage;
+
+    beforeAll(async () => {
+      // PAGE 0 carries the term once; PAGE 1 carries it past the limit. The
+      // crowded page is the SECOND, so a command that marked page by page would
+      // already have marked page 0 when it reached the refusal.
+      const document = await PDFDocument.create();
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      document.addPage([612, 792]).drawText(`one ${TERM} here`, { font, size: 18, x: 72, y: 700 });
+      const second = document.addPage([612, 792]);
+      const line = Array.from({ length: 90 }, () => TERM).join(' ');
+      for (let row = 0; row < 50; row += 1) {
+        second.drawText(line, { font, size: 4, x: 10, y: 780 - row * 5 });
+      }
+      crowded = await document.save();
+    });
+
+    /** How many `/Redact` marks a page of the session carries. */
+    async function marksOn(session: MupdfSession, page: number): Promise<number> {
+      const bytes = await mupdfWriter.serialise(session);
+      const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+      if (!(document instanceof mupdf.PDFDocument)) throw new Error('the output is not a PDF');
+      try {
+        return document
+          .loadPage(page)
+          .getAnnotations()
+          .filter((annotation) => annotation.getType() === 'Redact').length;
+      } finally {
+        document.destroy();
+      }
+    }
+
+    it('CONTROL: the term DOES match on page 0, so a zero below is a decision', async () => {
+      const session = await mupdfWriter.open(crowded);
+      try {
+        await applyMarkMatchesForRedaction(session, { kind: 'markMatchesForRedaction', query: TERM, pages: [0] });
+        expect(await marksOn(session, 0)).toBe(1);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('refuses a crowded later page and leaves the EARLIER page unmarked', async () => {
+      const session = await mupdfWriter.open(crowded);
+      try {
+        await expect(
+          applyMarkMatchesForRedaction(session, { kind: 'markMatchesForRedaction', query: TERM, pages: 'all' }),
+        ).rejects.toThrow(/page 1 carries at least/u);
+        expect(await marksOn(session, 0)).toBe(0);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+  });
+
   it('refuses to record prior state, because the prior state is what was removed', async () => {
     const session = await mupdfWriter.open(written);
     try {

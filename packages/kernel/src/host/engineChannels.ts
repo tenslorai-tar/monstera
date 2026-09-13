@@ -2152,7 +2152,7 @@ export const engineChannels = {
     z
       .object({ signatures: z.array(engineSignatureSchema).max(ENGINE_SIGNATURES_MAX) })
       .strict(),
-    ['no-such-session', 'signatures-unreadable'],
+    ['no-such-session', 'signatures-unreadable', 'signatures-failed'],
   ),
 
   'engine/annotations': channel(

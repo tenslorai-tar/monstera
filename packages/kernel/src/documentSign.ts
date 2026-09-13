@@ -32,6 +32,7 @@ import { snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage } from './engineSeam.js';
+import { PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 import { openForWriting } from './pdfLibSession.js';
 import {
   SignatureAppearanceRefusedError,
@@ -365,6 +366,24 @@ async function imageDrawing(
   width: number,
   height: number,
 ): Promise<Drawing> {
+  // THE PIXEL RULE BEFORE THE DECODER. `embedPng` decodes every pixel, and this decode
+  // runs in `main`. Bytes with no PNG header ARE an unreadable picture, and are named
+  // so; a picture with too many pixels is a valid picture, so that refusal propagates
+  // for main to answer as one — naming it unreadable would blame the file.
+  if (mark.mediaType === 'image/png') {
+    try {
+      checkPngPixels(mark.bytes);
+    } catch (error) {
+      if (error instanceof PngPixelsRefused && error.reason === 'no-header') {
+        throw new SignatureAppearanceRefusedError(
+          'unreadable-image',
+          'the signature picture has no PNG header this build can read',
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
   let embedded;
   try {
     embedded =

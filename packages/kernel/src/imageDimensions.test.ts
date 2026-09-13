@@ -1,7 +1,9 @@
 import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 
-import { pngPixelSize } from './imageDimensions.js';
+import { MAX_IMPORT_IMAGE_PIXELS } from '@monstera/contract';
+
+import { PngPixelsRefused, checkPngPixels, pngPixelSize } from './imageDimensions.js';
 
 /** A real PNG, encoded by MuPDF, so the reader is held to an encoder it did not write. */
 function png(width: number, height: number): Uint8Array {
@@ -49,5 +51,38 @@ describe('pngPixelSize', () => {
     const outer = new Uint8Array(inner.length + 16);
     outer.set(inner, 16);
     expect(pngPixelSize(outer.subarray(16))).toStrictEqual({ width: 9, height: 4 });
+  });
+});
+
+describe('checkPngPixels — the one per-image rule', () => {
+  /** A header claiming `width × height`, with no image data. */
+  function header(width: number, height: number): Uint8Array {
+    const bytes = new Uint8Array(29);
+    bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(16, width);
+    view.setUint32(20, height);
+    return bytes;
+  }
+
+  it('passes a PNG of EXACTLY the bound, which is inclusive', () => {
+    expect(MAX_IMPORT_IMAGE_PIXELS).toBe(10_000 * 10_000);
+    expect(checkPngPixels(header(10_000, 10_000))).toStrictEqual({ width: 10_000, height: 10_000 });
+  });
+
+  it('refuses one row past the bound as too-many-pixels, naming the size', () => {
+    expect(() => checkPngPixels(header(10_000, 10_001))).toThrow(
+      expect.objectContaining({ reason: 'too-many-pixels', size: { width: 10_000, height: 10_001 } }),
+    );
+  });
+
+  it('refuses bytes with no readable header as no-header, not as too many pixels', () => {
+    expect(() => checkPngPixels(Uint8Array.of(0xff, 0xd8, 0xff))).toThrow(
+      expect.objectContaining({ reason: 'no-header', size: null }),
+    );
+  });
+
+  it('throws its own class, so a caller can answer it by class', () => {
+    expect(() => checkPngPixels(header(60_000, 60_000))).toThrow(PngPixelsRefused);
   });
 });

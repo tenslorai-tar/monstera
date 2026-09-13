@@ -10,6 +10,7 @@ import {
   MAX_CSV_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
+  MAX_IMPORT_IMAGE_PIXELS,
   MAX_TEXT_LAYER_LINE,
   type ComposeRefusal,
   type UrlFetchRefusal,
@@ -65,11 +66,13 @@ import {
   TimestampRefusedError,
   TimestampUnreachableError,
   type DocusignSigner,
+  EngineCallFailed,
   writeDocumentCopy,
   writeDocumentSplit,
   writeStreamedDocument,
   UrlFetchRefused,
   checkedUrl,
+  PngPixelsRefused,
 } from '@monstera/kernel';
 import {
   type DocId,
@@ -493,7 +496,8 @@ export type InsertImageOutcome =
   | ({ readonly kind: 'inserted' } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
-  | { readonly kind: 'too-large'; readonly limitBytes: number };
+  | { readonly kind: 'too-large'; readonly limitBytes: number }
+  | { readonly kind: 'too-many-pixels'; readonly limitPixels: number };
 
 /**
  * What {@link DocumentCommands.placeImage} answers.
@@ -1866,13 +1870,22 @@ export class DocumentCommands {
 
       try {
         return { signatures: await this.#signatures(session), unreadable: false };
-      } catch {
+      } catch (error) {
         // A SIGNATURE THIS BUILD CANNOT PARSE is an outcome rather than a
         // defect: the document is a stranger's and its PKCS#7 may be anything.
         // Reported as a flag beside an empty list, because *no signatures* and
         // *a signature nobody could read* are different sentences and only one
         // of them is reassuring.
-        return { signatures: [], unreadable: true };
+        //
+        // THAT ONE REFUSAL AND NO OTHER (GGGGGG-1). This caught everything until
+        // 2026-09-13, so a dead host, a lost session or a failed serialise all
+        // told a reader *a signature could not be read* — a sentence about the
+        // document, answering a fault in the engine. Everything else propagates
+        // and is reported as the failure it is.
+        if (error instanceof EngineCallFailed && error.code === 'signatures-unreadable') {
+          return { signatures: [], unreadable: true };
+        }
+        throw error;
       }
     }).then(({ value }) => value);
   }
@@ -2888,6 +2901,12 @@ export class DocumentCommands {
         throw error;
       }
       if (error instanceof DocumentNotOpenError) throw error;
+      // A PNG PAST THE PIXEL BOUND is its own outcome, and refused before `embedPng`
+      // runs in this process: *too many pixels* names a thing a person can change,
+      // where *unreadable* would blame a picture that is perfectly valid.
+      if (error instanceof PngPixelsRefused && error.reason === 'too-many-pixels') {
+        return { kind: 'too-many-pixels', limitPixels: MAX_IMPORT_IMAGE_PIXELS };
+      }
       return { kind: 'unreadable' };
     }
   }
@@ -3257,6 +3276,12 @@ export class DocumentCommands {
         return {
           kind: error.reason === 'unencodable-text' ? 'unencodable-text' : 'image-unreadable',
         };
+      }
+      // A SIGNATURE PICTURE PAST THE PIXEL BOUND, refused before `embedPng` decodes it
+      // in this process. `image-too-large` is the sentence a picture past the byte
+      // bound already gets, and both mean *choose a smaller picture*.
+      if (error instanceof PngPixelsRefused && error.reason === 'too-many-pixels') {
+        return { kind: 'image-too-large' };
       }
       if (error instanceof SignatureCredentialRefusedError) return { kind: 'wrong-passphrase' };
       if (error instanceof SignatureTooLargeError) return { kind: 'signature-too-large' };

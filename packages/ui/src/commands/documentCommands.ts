@@ -1102,6 +1102,13 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
         });
         return;
       }
+      if (answer.value.kind === 'too-many-pixels') {
+        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, {
+          reason: 'too-many-pixels' as const,
+          limitPixels: answer.value.limitPixels,
+        });
+        return;
+      }
 
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
 

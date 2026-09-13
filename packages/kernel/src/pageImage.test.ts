@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract';
 
+import { PngPixelsRefused } from './imageDimensions.js';
 import { applyInsertImagePage, captureInsertImagePage } from './pageImage.js';
 
 /**
@@ -252,6 +253,44 @@ describe('insertImagePage', () => {
     const document = await PDFDocument.load(built, { updateMetadata: false });
     const info = document.context.lookup(document.context.trailerInfo.Info, PDFDict);
     expect(String(info.get(PDFName.of('ModDate')))).toBe('(D:20010102030405Z)');
+  });
+});
+
+describe('THE PIXEL BOUND, held before the decoder runs in main', () => {
+  /** A PNG header claiming `width × height`, with no image data at all. */
+  function headerOnly(width: number, height: number): Uint8Array {
+    const bytes = new Uint8Array(33);
+    bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(16, width);
+    view.setUint32(20, height);
+    bytes.set([8, 2, 0, 0, 0], 24);
+    return bytes;
+  }
+
+  it('refuses a PNG whose header claims 12,000 × 12,000 as TOO-MANY-PIXELS, not as unreadable', async () => {
+    // THE DECISION IS THE ASSERTION. With no image data, `embedPng` would refuse these
+    // bytes too — as a decode error. Only the pixel check answers `PngPixelsRefused`
+    // with this reason, so a build without it fails here.
+    const refusal = applyInsertImagePage(await threePages(), {
+      kind: 'insertImagePage',
+      at: 0,
+      bytes: headerOnly(12_000, 12_000),
+      mediaType: 'image/png',
+    });
+    await expect(refusal).rejects.toBeInstanceOf(PngPixelsRefused);
+    await expect(refusal).rejects.toMatchObject({ reason: 'too-many-pixels' });
+  });
+
+  it('CONTROL: a small header with no data is refused by the DECODER, not the pixel check', async () => {
+    const refusal = applyInsertImagePage(await threePages(), {
+      kind: 'insertImagePage',
+      at: 0,
+      bytes: headerOnly(IMAGE_WIDTH, IMAGE_HEIGHT),
+      mediaType: 'image/png',
+    });
+    await expect(refusal).rejects.toThrow();
+    await expect(refusal).rejects.not.toBeInstanceOf(PngPixelsRefused);
   });
 });
 

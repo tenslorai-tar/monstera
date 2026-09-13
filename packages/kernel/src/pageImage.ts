@@ -4,6 +4,7 @@ import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import { checkPngPixels } from './imageDimensions.js';
 import { openForWriting } from './pdfLibSession.js';
 
 /**
@@ -80,6 +81,10 @@ export async function addImagePage(
   mediaType: EmbeddableImageType,
   at: number,
 ): Promise<void> {
+  // A PNG'S PIXELS ARE HELD BEFORE ITS DECODER RUNS, on every route: `embedPng`
+  // decodes every pixel, and for Insert image that decode is in `main`. A JPEG is not
+  // decoded by `embedJpg`, which reads its header and carries the bytes.
+  if (mediaType === 'image/png') checkPngPixels(bytes);
   const embedded =
     mediaType === 'image/png' ? await document.embedPng(bytes) : await document.embedJpg(bytes);
 

@@ -1710,6 +1710,8 @@ export const channels = {
       z.object({ kind: z.literal('unreadable') }),
       /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+      /** A PNG whose header states more pixels than may be decoded — refused before the decode. */
+      z.object({ kind: z.literal('too-many-pixels'), limitPixels: z.number().int().positive() }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

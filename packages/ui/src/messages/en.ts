@@ -177,6 +177,7 @@ export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
 export const INSERT_IMAGE_TOO_LARGE = messageKey('dialog.insert-image-problem.too-large');
+export const INSERT_IMAGE_TOO_MANY_PIXELS = messageKey('dialog.insert-image-problem.too-many-pixels');
 /** TOOLS › Create, where D9's import rows land. */
 export const GROUP_CREATE = messageKey('surface.ribbon.group.create');
 export const NEW_FROM_MARKDOWN_COMMAND_TITLE = messageKey('command.new-from-markdown.title');
@@ -1860,6 +1861,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_IMAGE_TOO_LARGE]:
     'That image is larger than {megabytes} MB, which is the most this app will make a page from. ' +
     'Your document has not changed.',
+  [INSERT_IMAGE_TOO_MANY_PIXELS]:
+    'That picture has more than {megapixels} megapixels, which is the most this app will make a ' +
+    'page from. Try a smaller copy of it. Your document has not changed.',
   [GROUP_CREATE]: 'Create',
   [NEW_FROM_MARKDOWN_COMMAND_TITLE]: 'New PDF from Markdown…',
   [APPEND_MARKDOWN_COMMAND_TITLE]: 'Add pages from Markdown…',

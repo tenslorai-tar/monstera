@@ -747,17 +747,25 @@ export function createEngineHandlers({
     'engine/signatures': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
+      // SERIALISED HERE, because a `/ByteRange` indexes into a file and the host
+      // is the side that can make one without the document crossing the pipe in
+      // the direction §9.17's budget exists to prevent. OUTSIDE the catch below:
+      // a session that cannot serialise is the engine failing, not a signature
+      // that could not be read, and it must not reach a reader as one (GGGGGG-1).
+      const bytes = await writer.serialise(held.session);
       try {
-        // SERIALISED HERE, because a `/ByteRange` indexes into a file and the
-        // host is the side that can make one without the document crossing the
-        // pipe in the direction §9.17's budget exists to prevent.
-        const bytes = await writer.serialise(held.session);
         return { ok: true, value: { signatures: [...(await signatures(held.session, bytes))] } };
       } catch (error) {
-        // A DOCUMENT'S FAULT rather than the host's, like `extract-failed`
-        // above: a PKCS#7 this build cannot parse is a distinguishable outcome
-        // and must not be counted as a host death.
-        return failed('signatures-unreadable', error);
+        // TWO CODES, because they are two sentences. A PKCS#7 this build cannot
+        // parse is `signatures-unreadable`, which the panel says as *a signature
+        // could not be read*; anything else went wrong while reading and is not
+        // evidence about any signature. Matched by NAME, `exportFormData`'s reason:
+        // the error may come from another realm. Both are the document's fault
+        // rather than the host's, so neither is counted as a host death.
+        if (error instanceof Error && error.name === 'SignaturesUnreadable') {
+          return failed('signatures-unreadable', error);
+        }
+        return failed('signatures-failed', error);
       }
     },
 
