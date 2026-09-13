@@ -4,7 +4,10 @@ import { z } from 'zod';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import {
   MAX_ANNOTATION_BORDER,
+  MAX_IMAGE_BYTES,
   MAX_IMAGE_PAGES,
+  MAX_IMPORT_IMAGES,
+  MAX_IMPORT_IMAGE_BYTES,
   MAX_LINK_URI,
   MAX_REPLACED_TEXT,
   annotationKindNameSchema,
@@ -735,6 +738,44 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
   /** The filesystem refused. Nothing at the destination was replaced. */
   z.object({ kind: z.literal('write-failed') }),
 ]);
+
+/**
+ * Pictures taken with the camera, as they cross from the renderer.
+ *
+ * ## The one channel whose params carry picture bytes, and why that is lawful
+ *
+ * Every other image path keeps the picture out of the renderer, because `main` can pick
+ * the file itself. A camera frame cannot be picked: it exists first in the renderer, where
+ * the one permission this application is granted — `media` (§2) — is exercised. Invariant
+ * 2 forbids a path and document bytes; a photograph just taken is neither.
+ *
+ * ## What a compromised renderer can do with it, and why that is bounded
+ *
+ * Each frame must begin with JPEG's `FF D8` signature and is never decoded in `main`:
+ * `main` writes it into the compose host's area, where `embedJpg` reads its header in a
+ * contained process (ADR-0060). The set is bounded exactly as a picked set of images is,
+ * by count and by total bytes, so the payload scales with the camera, never the document.
+ *
+ * **Declared ONCE** and taken by the capture dialog's own result schema, so the dialog
+ * cannot answer what the channel refuses.
+ */
+export const capturedFramesSchema = z
+  .array(
+    z.custom<Uint8Array>(
+      (value) =>
+        value instanceof Uint8Array &&
+        value.byteLength >= 3 &&
+        value.byteLength <= MAX_IMAGE_BYTES &&
+        value[0] === 0xff &&
+        value[1] === 0xd8,
+      { message: `not a JPEG of at most ${String(MAX_IMAGE_BYTES)} bytes` },
+    ),
+  )
+  .min(1)
+  .max(MAX_IMPORT_IMAGES)
+  .refine((frames) => frames.reduce((total, frame) => total + frame.byteLength, 0) <= MAX_IMPORT_IMAGE_BYTES, {
+    message: `pictures totalling more than ${String(MAX_IMPORT_IMAGE_BYTES)} bytes`,
+  });
 
 /**
  * What an import of several images answers: every single-file import outcome, and the
@@ -1722,6 +1763,21 @@ export const channels = {
     'Makes a new PDF with one page per image the user picks, saves it where they choose, and opens it.',
     z.object({}),
     imageImportOutcomeSchema,
+    ['engine-unavailable'],
+  ),
+
+  /**
+   * Makes a new PDF with one page per picture taken with the camera, saves it where the
+   * user chooses, and opens it.
+   *
+   * The frames are {@link capturedFramesSchema}'s, composed in the compose host exactly as
+   * picked JPEGs are. The set's bounds are the schema's, so the two outcomes only a picked
+   * set can meet are not members here; the shared import union is the answer.
+   */
+  'document.newFromCapture': channel(
+    'Makes a new PDF from pictures taken with the camera, saves it where the user chooses, and opens it.',
+    z.object({ frames: capturedFramesSchema }),
+    composedImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 

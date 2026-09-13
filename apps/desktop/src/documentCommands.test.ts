@@ -2001,6 +2001,52 @@ describe('DocumentCommands.composeImageFiles', () => {
   });
 });
 
+describe('DocumentCommands.composeCapturedFrames', () => {
+  beforeAll(openDocument);
+
+  const FRAME = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 0x01);
+
+  it('REFUSES BEFORE COMPOSING where no compose host can exist', async () => {
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      composeImages: null,
+    });
+    await expect(commands.composeCapturedFrames([FRAME])).rejects.toBeInstanceOf(EngineUnavailableError);
+  });
+
+  it('composes every frame AS JPEG, in order, and a refusal names no file and asks for no destination', async () => {
+    // TWO FRAMES THAT DIFFER, so a binding that sent one frame twice is visible. `noCopying`
+    // rejects its picker, so a refusal that went on to ask for a destination fails here.
+    const second = Uint8Array.of(0xff, 0xd8, 0xff, 0xdb, 0x02);
+    const sent: string[] = [];
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      composeImages: async (items) => {
+        for (const item of items) {
+          const read = await item.read();
+          if (read.kind !== 'read') throw new Error('a frame always reads');
+          sent.push(`${item.mediaType}:${[...read.bytes].join(',')}`);
+        }
+        return { kind: 'refused', reason: 'image-unreadable', line: null, item: 2 };
+      },
+    });
+
+    expect(await commands.composeCapturedFrames([FRAME, second])).toStrictEqual({
+      kind: 'composition-refused',
+      reason: 'image-unreadable',
+      line: null,
+      file: null,
+    });
+    expect(sent).toStrictEqual(['image/jpeg:255,216,255,224,1', 'image/jpeg:255,216,255,219,2']);
+  });
+});
+
 describe('DocumentCommands.openFromUrl', () => {
   beforeAll(openDocument);
 

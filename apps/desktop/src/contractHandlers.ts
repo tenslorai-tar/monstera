@@ -281,6 +281,7 @@ export function createContractHandlers(deps: {
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
     'document.newFromImages': newFromImagesHandler(deps),
+    'document.newFromCapture': newFromCaptureHandler(deps),
     'document.appendMarkdown': appendMarkdownHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
@@ -553,6 +554,27 @@ function newFromImportHandler(
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.newFromMarkdown']>>> => {
     try {
       const composed = await deps.commands.composeImportFile(format);
+      if (composed.kind !== 'written') return ok(composeRefusal(composed));
+      return ok((await openPath(deps, composed.destination)).outcome);
+    } catch (thrown) {
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Makes a PDF from pictures taken with the camera, and opens it.
+ *
+ * {@link newFromImportHandler}'s route: the composed file opens through {@link openPath},
+ * and everything before the open is the shared import union.
+ */
+function newFromCaptureHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.newFromCapture'] {
+  return async ({ frames }): Promise<Awaited<ReturnType<ContractHandlers['document.newFromCapture']>>> => {
+    try {
+      const composed = await deps.commands.composeCapturedFrames(frames);
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
       return ok((await openPath(deps, composed.destination)).outcome);
     } catch (thrown) {

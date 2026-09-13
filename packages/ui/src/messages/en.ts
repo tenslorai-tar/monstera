@@ -184,6 +184,17 @@ export const APPEND_MARKDOWN_COMMAND_TITLE = messageKey('command.append-markdown
 export const NEW_FROM_CSV_COMMAND_TITLE = messageKey('command.new-from-csv.title');
 export const NEW_FROM_IMAGES_COMMAND_TITLE = messageKey('command.new-from-images.title');
 export const OPEN_FROM_URL_COMMAND_TITLE = messageKey('command.open-from-url.title');
+export const NEW_FROM_CAMERA_COMMAND_TITLE = messageKey('command.new-from-camera.title');
+export const CAMERA_CAPTURE_TITLE = messageKey('dialog.camera-capture.title');
+export const CAMERA_CAPTURE_TAKE = messageKey('dialog.camera-capture.take');
+export const CAMERA_CAPTURE_DONE = messageKey('dialog.camera-capture.done');
+export const CAMERA_CAPTURE_COUNT = messageKey('dialog.camera-capture.count');
+export const CAMERA_CAPTURE_PREVIEW = messageKey('dialog.camera-capture.preview');
+export const CAMERA_CAPTURE_STARTING = messageKey('dialog.camera-capture.starting');
+export const CAMERA_CAPTURE_DENIED = messageKey('dialog.camera-capture.denied');
+export const CAMERA_CAPTURE_ABSENT = messageKey('dialog.camera-capture.absent');
+export const CAMERA_CAPTURE_FAILED = messageKey('dialog.camera-capture.failed');
+export const CAMERA_CAPTURE_FULL = messageKey('dialog.camera-capture.full');
 export const OPEN_FROM_URL_TITLE = messageKey('dialog.open-from-url.title');
 export const OPEN_FROM_URL_LABEL = messageKey('dialog.open-from-url.label');
 export const OPEN_FROM_URL_APPLY = messageKey('dialog.open-from-url.apply');
@@ -1844,6 +1855,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [NEW_FROM_CSV_COMMAND_TITLE]: 'New PDF table from CSV…',
   [NEW_FROM_IMAGES_COMMAND_TITLE]: 'New PDF from images…',
   [OPEN_FROM_URL_COMMAND_TITLE]: 'Open from web address…',
+  [NEW_FROM_CAMERA_COMMAND_TITLE]: 'New PDF from camera…',
+  [CAMERA_CAPTURE_TITLE]: 'Take pictures',
+  [CAMERA_CAPTURE_TAKE]: 'Take picture',
+  [CAMERA_CAPTURE_DONE]: 'Make PDF',
+  [CAMERA_CAPTURE_COUNT]: 'Pictures taken: {count}',
+  [CAMERA_CAPTURE_PREVIEW]: 'What the camera sees',
+  [CAMERA_CAPTURE_STARTING]: 'Starting the camera…',
+  // THE REMEDY IS WINDOWS', not this app's: the camera is refused at the operating system
+  // or by the person, and this app cannot grant itself one.
+  [CAMERA_CAPTURE_DENIED]:
+    'This app is not allowed to use the camera. Allow it in Windows camera privacy settings, then try again.',
+  [CAMERA_CAPTURE_ABSENT]: 'No camera was found.',
+  [CAMERA_CAPTURE_FAILED]: 'The camera could not be started. Another app may be using it.',
+  [CAMERA_CAPTURE_FULL]: 'That is as many pictures as one PDF can take. Make the PDF, then start another.',
   [OPEN_FROM_URL_TITLE]: 'Open a PDF from a web address',
   [OPEN_FROM_URL_LABEL]: 'Address',
   [OPEN_FROM_URL_APPLY]: 'Open',

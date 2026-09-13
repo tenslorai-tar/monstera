@@ -296,6 +296,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // one at a time and decoded in the compose host, and an open's outcome returns — or a
   // file NAME bounded by `MAX_DOCUMENT_NAME_LENGTH`, never a path or a byte of a picture.
   'document.newFromImages': 'needs a compose host, a multi-file open dialog and a save dialog',
+  // THE ONE CHANNEL WHOSE PARAMS CARRY PICTURE BYTES, and they scale with the CAMERA, never
+  // the document: `capturedFramesSchema` bounds the count and the total exactly as a picked
+  // set of images is bounded, and the answer is an open's outcome.
+  'document.newFromCapture': 'needs a compose host, a camera and a save dialog',
   // THE ASK IS AN ADDRESS BOUNDED BY `MAX_LINK_URI`, and the answer is an open's outcome
   // or a reason from a closed list. The document itself streams from the network into a
   // file main writes, and no byte of it is on this wire (ADR-0061).

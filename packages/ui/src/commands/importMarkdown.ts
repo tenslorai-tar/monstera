@@ -1,6 +1,7 @@
 import type { ChannelResult, ComposeRefusal } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
+import { CAMERA_CAPTURE_DIALOG_ID, CAMERA_CAPTURE_RESULT } from '../dialogs/cameraCapture.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import {
   MARKDOWN_IMPORT_PROBLEM_DIALOG_ID,
@@ -9,6 +10,7 @@ import {
 import {
   APPEND_MARKDOWN_COMMAND_TITLE,
   GROUP_CREATE,
+  NEW_FROM_CAMERA_COMMAND_TITLE,
   NEW_FROM_CSV_COMMAND_TITLE,
   NEW_FROM_IMAGES_COMMAND_TITLE,
   NEW_FROM_MARKDOWN_COMMAND_TITLE,
@@ -217,6 +219,52 @@ export function newFromImagesCommand(deps: {
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 40 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromImages']({});
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const result = answer.value;
+      if (result.kind === 'opened') {
+        deps.onOpened({
+          docId: result.docId,
+          version: result.version,
+          byteLength: result.byteLength,
+          name: result.name,
+        });
+        return;
+      }
+      if (result.kind === 'already-open') {
+        deps.onAlreadyOpen(result.docId);
+        return;
+      }
+      const problem = markdownImportProblem(result);
+      if (problem !== null) void deps.ask(MARKDOWN_IMPORT_PROBLEM_DIALOG_ID, problem);
+    },
+  };
+}
+
+/**
+ * A new PDF from pictures taken with the camera, opened as a tab.
+ *
+ * {@link newFromImagesCommand}'s callbacks, with one step before the channel: the capture
+ * dialog, whose answer is the channel's own frame schema. A dismissal answers nothing that
+ * schema accepts, so it sends nothing (ADR-0038).
+ */
+export function newFromCaptureCommand(deps: {
+  readonly client: DocumentCommandDeps['client'];
+  readonly ask: DocumentCommandDeps['ask'];
+  readonly onOpened: (opened: OpenedDocument) => void;
+  readonly onAlreadyOpen: (docId: DocId) => void;
+}): UiCommand {
+  return {
+    id: 'document.new-from-camera',
+    title: NEW_FROM_CAMERA_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 60 }],
+    run: async (): Promise<void> => {
+      const taken = CAMERA_CAPTURE_RESULT.safeParse(await deps.ask(CAMERA_CAPTURE_DIALOG_ID, {}));
+      if (!taken.success) return;
+
+      const answer = await deps.client['document.newFromCapture']({ frames: taken.data.frames });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

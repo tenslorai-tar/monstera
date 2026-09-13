@@ -892,6 +892,77 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Webcam capture: the first picture the renderer sends, and why it needed no B4
+
+D9's fifth row. Tools › Create gains *New PDF from camera*.
+
+### Registered, not amended — the reading that decided it
+
+A camera frame exists first in the renderer, and every image path until now kept picture
+bytes out of it. So the question was asked of the law before any code, not assumed:
+
+- **§2** grants the renderer exactly one permission, `media`; `windowPolicy.ts` enforces it
+  and a case pins the set to that one member.
+- **Invariant 2** reads *"The renderer never holds a filesystem path or document bytes it
+  can mutate."* A photograph just taken is neither.
+- **The two "the renderer never holds it" sentences** in `commands.ts` are per-feature
+  choices, made because `main` could pick those files itself.
+- **L11** is about payloads that scale with the document. A frame scales with the camera.
+
+No clause forbids it, so the row registers into existing seams:
+
+- **The channel:** `document.newFromCapture`, whose params are `capturedFramesSchema` —
+  each frame a JPEG by its `FF D8` signature within `MAX_IMAGE_BYTES`, at most
+  `MAX_IMPORT_IMAGES`, within `MAX_IMPORT_IMAGE_BYTES` together. The capture dialog's
+  result takes the same schema.
+- **`main`:** never decodes a frame. `composeCapturedFrames` hands the frames to the image
+  import's compose binding as `image/jpeg`, so a crafted frame reaches only pdf-lib's
+  header read inside the contained host.
+
+### The body
+
+The camera opens when the dialog mounts and every track stops when it unmounts — including
+a stream that arrives after the person closed the dialog. A refused, missing and busy
+camera are told apart by the `DOMException` name the Media Capture specification defines.
+A picture that would take the set past either bound is not added, and the person is told.
+
+### Executed, and not
+
+- **Typecheck:** both halves, exit 0. **Lint:** tree-wide, exit 0.
+- **Tests:** the full suite, 196 files and 2,712 cases; before it, the changed files, 112
+  cases, then the camera body's four again after its fixes. The desktop case asserts every frame is composed as JPEG, in order, and that a
+  refusal asks for no destination. The UI case asserts the dispatch, and that a dismissal
+  and a non-JPEG answer send nothing. The body cases assert the three refusal sentences
+  and both stops.
+- **Not executed:**
+  - Taking a picture. happy-dom has no camera and no 2D canvas, so the JPEG encode runs
+    in no test.
+  - A frame crossing Electron's IPC. That a `Uint8Array` arrives as one is asserted from
+    the structured-clone algorithm that already carries `document.readRange` the other
+    way. No run has shown this direction.
+- **Owed:** one live capture on a machine with a camera. No packaging manifest exists yet,
+  so the Store's webcam capability is Stage 10's.
+
+### Found while building it, all fixed before commit
+
+- **My first body carried `eslint-disable-next-line react-hooks/exhaustive-deps`.** That
+  is the banned reflex, and it was not needed. The effect read `state` only to decide
+  whether to open the camera, and now asks the platform instead, with no dependency. It
+  was removed before any run.
+- **My test queried `getByRole('status')`** on a body with two status regions. It would
+  have thrown for a reason unrelated to the camera. It now reads the camera's own line.
+- **My fixture's stream was an object shaped like a `MediaStream`.** happy-dom's
+  `srcObject` setter refuses anything that is not an instance, as a browser does. So the
+  case failed at the setter, with an unhandled rejection, and was about the fixture. It
+  now uses the window's own `new MediaStream()`, with only `getTracks` replaced.
+- **Lint flagged `navigator.mediaDevices?.`** as unnecessary, because the DOM library
+  types it always present. It is not: the specification exposes it only in a secure
+  context, and happy-dom omits it, which the body's no-camera case runs against. The real
+  type is stated once, in a helper, rather than the chain being deleted or the rule
+  disabled.
+
+---
+
 ## 2026-09-13 — Open from URL: the SSRF guard is built, and it owes one fetch from a real server
 
 D9's fourth row, after its B4 (`7aff532`, ADR-0061). Office import stays blocked on the

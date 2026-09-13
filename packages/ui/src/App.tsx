@@ -129,10 +129,12 @@ import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
 import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
+import { CAMERA_CAPTURE_DIALOG } from './dialogs/cameraCapture.js';
 import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
 import { openFromUrlCommand } from './commands/openFromUrl.js';
 import {
   appendMarkdownCommand,
+  newFromCaptureCommand,
   newFromCsvCommand,
   newFromImagesCommand,
   newFromMarkdownCommand,
@@ -409,6 +411,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         MARKDOWN_IMPORT_PROBLEM_DIALOG,
         OPEN_FROM_URL_DIALOG,
         URL_OPEN_PROBLEM_DIALOG,
+        CAMERA_CAPTURE_DIALOG,
         GENERATE_TOC_PROBLEM_DIALOG,
         MERGE_DOCUMENT_DIALOG,
         MERGE_DOCUMENT_NONE_DIALOG,
@@ -1496,6 +1499,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         newFromImagesCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.
         openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
+        newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({
           client,
           onApplied: applied,

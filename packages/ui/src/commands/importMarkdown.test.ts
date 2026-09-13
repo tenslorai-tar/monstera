@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { CommandContext } from '../registries/commands.js';
 import {
   appendMarkdownCommand,
+  newFromCaptureCommand,
   newFromCsvCommand,
   newFromImagesCommand,
   newFromMarkdownCommand,
@@ -354,6 +355,66 @@ describe('newFromImagesCommand', () => {
       }).run(CONTEXT);
 
       expect(calls).toStrictEqual([{ name: 'ask', value: { id: 'dialog.markdown-import-problem', props } }]);
+    }
+  });
+});
+
+describe('newFromCaptureCommand', () => {
+  const FRAME = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0);
+
+  /** An `ask` answering the capture dialog with `taken`, and recording every ask. */
+  function asking(taken: unknown): {
+    readonly asked: { id: string; props: unknown }[];
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  } {
+    const asked: { id: string; props: unknown }[] = [];
+    return {
+      asked,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(id === 'dialog.camera-capture' ? taken : undefined);
+      },
+    };
+  }
+
+  it('SENDS THE FRAMES the capture dialog answered, on its own channel, and adds the tab', async () => {
+    const { client, sent } = recording({
+      'document.newFromCapture': ok({
+        kind: 'opened',
+        docId: COMPOSED,
+        version: asDocVersion(1),
+        byteLength: 1024,
+        name: 'camera.pdf',
+      }),
+    });
+    const { asked, ask } = asking({ frames: [FRAME] });
+    const opened: unknown[] = [];
+
+    await newFromCaptureCommand({
+      client,
+      ask,
+      onOpened: (document) => {
+        opened.push(document);
+      },
+      onAlreadyOpen: () => undefined,
+    }).run(CONTEXT);
+
+    expect(asked).toStrictEqual([{ id: 'dialog.camera-capture', props: {} }]);
+    expect(sent).toStrictEqual([{ id: 'document.newFromCapture', params: { frames: [FRAME] } }]);
+    expect(opened).toStrictEqual([{ docId: COMPOSED, version: 1, byteLength: 1024, name: 'camera.pdf' }]);
+  });
+
+  it('CONTROL: a dismissed capture dialog, or an answer that is not JPEG, sends NOTHING', async () => {
+    // THE SECOND ANSWER IS ONE A LOOSER SCHEMA WOULD SEND: bytes, but not a JPEG's.
+    for (const taken of [undefined, { frames: [Uint8Array.of(0x89, 0x50, 0x4e, 0x47)] }]) {
+      const { client, sent } = recording({});
+      await newFromCaptureCommand({
+        client,
+        ask: asking(taken).ask,
+        onOpened: () => undefined,
+        onAlreadyOpen: () => undefined,
+      }).run(CONTEXT);
+      expect(sent).toStrictEqual([]);
     }
   });
 });

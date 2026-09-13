@@ -3021,6 +3021,32 @@ export class DocumentCommands {
   }
 
   /**
+   * Makes a new PDF from pictures taken with the camera, in the compose host, and writes
+   * it where the person chooses.
+   *
+   * {@link composeImageFiles}' route from the composition on: the frames go to the same
+   * binding as picked JPEGs, so `main` writes them into the area and never decodes one.
+   * Their bounds were the channel's schema, so nothing is counted here. A refusal names
+   * no file, because a frame has no name the person knows it by.
+   */
+  async composeCapturedFrames(frames: readonly Uint8Array[]): Promise<ComposeImportOutcome> {
+    const compose = this.#composeImages;
+    if (compose === null) throw new EngineUnavailableError('Making a PDF from the camera');
+
+    const composed = await compose(
+      frames.map((bytes) => ({
+        mediaType: 'image/jpeg' as const,
+        read: () => Promise.resolve({ kind: 'read' as const, bytes }),
+      })),
+    );
+    if (composed.kind === 'unreadable') return { kind: 'unreadable' };
+    if (composed.kind === 'refused') {
+      return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
+    }
+    return this.#writeComposed(composed.pdf, 'camera.jpg');
+  }
+
+  /**
    * Fetches a PDF from a URL a person gave, through the SSRF guard, and writes it where
    * they choose ([ADR-0061](../../../docs/DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md)).
    *

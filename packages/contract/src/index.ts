@@ -58,6 +58,9 @@ export {
   spellingLanguageSchema,
   channelIds,
   channels,
+  // THE CAMERA'S FRAMES, exported because the capture dialog's result takes the same
+  // schema the channel does, so the two cannot disagree about what may be sent.
+  capturedFramesSchema,
 } from './channels.js';
 export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
