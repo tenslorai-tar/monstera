@@ -1344,65 +1344,38 @@ export const byteImageWire = {
 >;
 
 /**
- * The **six** channels a contained host owes whatever engine it holds
- * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
- * as corrected the same day).
+ * The three channels EVERY contained host owes: the containment probe, and a
+ * granted area's open and close
+ * ([ADR-0060](../../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)
+ * Decision 3).
  *
- * ## It was SEVEN, and `engine/serialise` is the one that left
+ * ## Why these three are not only {@link coreEngineChannels}' any more
  *
- * That channel means *write the session's current bytes into the output
- * directory*, and a byte-image host's session has no current bytes — it holds a
- * granted area and no parse. A host declaring it would answer by copying its
- * input to its output, which is that ADR's own *process answering questions
- * with nothing behind it* wearing a working channel's shape.
+ * They were built inside it, beside `apply`, `capture` and `invert`, while every
+ * host was a writer. The compose host is not: it changes no open document, so it
+ * is asked none of the three that carry a command union — and it still owes the
+ * probe, because its verdict is about its own token, and the area, because a host
+ * that took its directories per call is the shape §3 refuses for the redirection
+ * reason `engine/open`'s comment gives.
  *
- * It lives in {@link liveSessionChannels} instead, and the rule the correction
- * states is the transferable part: **a channel is engine-agnostic when its
- * ANSWER means the same thing, not when every engine can be asked it.**
- *
- * ## Why a factory and not a constant
- *
- * Three of the six are engine-agnostic outright: a probe, an open and a close
- * say nothing about which library is behind them. Three carry the engine's
- * command union, and **that union is derived per writer** from the routing
- * table — so a constant would have to name one engine's, which is the thing
- * §3's amendment forbids a second host from copying. Those same three also
- * carry {@link CoreChannelSchemas.read} and {@link CoreChannelSchemas.write},
- * which is where the two writer shapes differ on the wire.
- *
- * ## It infers with no cast, which is what made this shape available
- *
- * `channel()` is generic in its params, result and failure tuple, and this
- * function's three type parameters flow straight into it. Nothing here needs an
- * assertion, and that matters: a factory that needed one would be a place where
- * the schemas and the types could disagree, inside the boundary discipline
- * every other channel in the repository takes from `packages/contract`.
- *
- * **The document-model reads are NOT here**, and that is Decision 1: they
- * are MuPDF's model, answered by MuPDF's host. A second engine owes none of
- * them, and a host that declared them and stubbed them would be a process
- * answering questions with nothing behind it.
+ * Nothing here reads a command schema. The probe's schemas are module-level, and
+ * `open` and `close` take only the wire's open fields — so the writer factory
+ * spreads this in, and a host that writes nothing calls it with
+ * {@link byteImageWire}. One definition of each channel, whichever host asks.
  */
-export function coreEngineChannels<
-  TCommand extends z.ZodType,
-  TCapture extends z.ZodType,
-  TInverse extends z.ZodType,
+export function hostAreaChannels<
   TOpen extends z.ZodRawShape,
   const TOpenFailure extends readonly string[],
   TOpened extends z.ZodRawShape,
-  TRead extends z.ZodRawShape,
-  TWrite extends z.ZodRawShape,
-  TWrote extends z.ZodType,
-  const TTransferFailure extends readonly string[],
 >(
-  schemas: CoreChannelSchemas<
-    TCommand,
-    TCapture,
-    TInverse,
-    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure>
+  // THE WIRE'S OWN TYPE, narrowed to the open fields, rather than a hand-written
+  // object: the failure tuple has to stay a literal so each host's `engine/open`
+  // declares its own codes, and `WireShape` is where that tuple is already typed.
+  wire: Pick<
+    WireShape<TOpen, TOpenFailure, TOpened, z.ZodRawShape, z.ZodRawShape, z.ZodType, readonly string[]>,
+    'open' | 'openFailures' | 'opened'
   >,
 ) {
-  const wire = schemas.wire;
   return {
     /**
      * ADR-0023 §5's startup check, and the ONE channel whose answer decides
@@ -1502,6 +1475,74 @@ export function coreEngineChannels<
       z.object({}).strict(),
       ['no-such-session'],
     ),
+  };
+}
+
+/**
+ * The **six** channels a contained host owes whatever engine it holds
+ * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
+ * as corrected the same day).
+ *
+ * ## It was SEVEN, and `engine/serialise` is the one that left
+ *
+ * That channel means *write the session's current bytes into the output
+ * directory*, and a byte-image host's session has no current bytes — it holds a
+ * granted area and no parse. A host declaring it would answer by copying its
+ * input to its output, which is that ADR's own *process answering questions
+ * with nothing behind it* wearing a working channel's shape.
+ *
+ * It lives in {@link liveSessionChannels} instead, and the rule the correction
+ * states is the transferable part: **a channel is engine-agnostic when its
+ * ANSWER means the same thing, not when every engine can be asked it.**
+ *
+ * ## Why a factory and not a constant
+ *
+ * Three of the six are engine-agnostic outright: a probe, an open and a close
+ * say nothing about which library is behind them. Three carry the engine's
+ * command union, and **that union is derived per writer** from the routing
+ * table — so a constant would have to name one engine's, which is the thing
+ * §3's amendment forbids a second host from copying. Those same three also
+ * carry {@link CoreChannelSchemas.read} and {@link CoreChannelSchemas.write},
+ * which is where the two writer shapes differ on the wire.
+ *
+ * ## It infers with no cast, which is what made this shape available
+ *
+ * `channel()` is generic in its params, result and failure tuple, and this
+ * function's three type parameters flow straight into it. Nothing here needs an
+ * assertion, and that matters: a factory that needed one would be a place where
+ * the schemas and the types could disagree, inside the boundary discipline
+ * every other channel in the repository takes from `packages/contract`.
+ *
+ * **The document-model reads are NOT here**, and that is Decision 1: they
+ * are MuPDF's model, answered by MuPDF's host. A second engine owes none of
+ * them, and a host that declared them and stubbed them would be a process
+ * answering questions with nothing behind it.
+ */
+export function coreEngineChannels<
+  TCommand extends z.ZodType,
+  TCapture extends z.ZodType,
+  TInverse extends z.ZodType,
+  TOpen extends z.ZodRawShape,
+  const TOpenFailure extends readonly string[],
+  TOpened extends z.ZodRawShape,
+  TRead extends z.ZodRawShape,
+  TWrite extends z.ZodRawShape,
+  TWrote extends z.ZodType,
+  const TTransferFailure extends readonly string[],
+>(
+  schemas: CoreChannelSchemas<
+    TCommand,
+    TCapture,
+    TInverse,
+    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure>
+  >,
+) {
+  const wire = schemas.wire;
+  return {
+    // THE PROBE AND THE AREA, defined once for every host, writer or not
+    // (ADR-0060 Decision 3). Spread rather than restated, so this factory's key
+    // set is still the six `coreChannels.test.ts` names.
+    ...hostAreaChannels(wire),
 
     'engine/apply': channel(
       'Applies one command routed to this host’s engine to a session it holds.',

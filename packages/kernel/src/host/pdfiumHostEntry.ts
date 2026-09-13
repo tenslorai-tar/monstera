@@ -1,7 +1,3 @@
-import { connect } from 'node:net';
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
 import {
@@ -16,7 +12,8 @@ import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
 import { createHostSessions } from './hostSessions.js';
-import { type HostByteStream, startEngineHost } from './hostBody.js';
+import { startEngineHost } from './hostBody.js';
+import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
 import { ENGINE_TEXT_OBJECTS_MAX } from './pdfiumChannels.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
 import { createPdfiumHandlers } from './pdfiumHandlers.js';
@@ -33,13 +30,12 @@ import { createPdfiumHandlers } from './pdfiumHandlers.js';
  * and handlers, then start the body on the pipe named on the command line — and
  * everything engine-specific is in the composition.
  *
- * **The pipe plumbing IS duplicated between the two entries, and that is
- * deliberate rather than overlooked.** It is fifteen lines of `node:net` with
- * two documented decisions in it (Nagle off; both `error` and `close`), and
- * sharing it would put a module between two entry points whose whole purpose is
- * to be two statements each. If a third host arrives it will be the third
- * caller, which is the point at which a shared surface abstracts something real
- * (B7).
+ * **The pipe and the filesystem are `hostNodeSurfaces.ts`'.** They were written
+ * twice while there were two entries, because sharing fifteen lines between two
+ * statements each would have been an abstraction with a copy on either side of
+ * it. The compose host is the third caller
+ * ([ADR-0060](../../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)),
+ * which is the point this paragraph named for sharing them.
  *
  * ## Node mode, and the placement follows from that
  *
@@ -57,47 +53,6 @@ import { createPdfiumHandlers } from './pdfiumHandlers.js';
  * wrong path is then one loud failure rather than a quiet disagreement between
  * two resolvers.
  */
-
-/**
- * The host's end of the pipe, as {@link HostByteStream}.
- *
- * `hostEntry.ts`'s function, with its two decisions unchanged. See this file's
- * header for why it is written twice rather than shared.
- */
-function pipeStream(pipeName: string): HostByteStream {
-  const socket = connect({ path: pipeName });
-  // NAGLE OFF. Frames here are small and request/response — a delayed ACK
-  // waiting for a second frame that only arrives after this one is answered is
-  // latency added to every call, and it would look like a slow engine.
-  socket.setNoDelay(true);
-
-  return {
-    write: (bytes) => {
-      socket.write(bytes);
-    },
-    onData: (sink) => {
-      socket.on('data', (chunk: Buffer) => {
-        sink(new Uint8Array(chunk));
-      });
-    },
-    onEnd: (sink) => {
-      // BOTH, and once. A pipe that closes cleanly emits `close` with no
-      // `error`; one that breaks emits `error` then `close`. Listening to only
-      // the first would hang this process on the ordinary ending, and to only
-      // the second would lose the reason on the broken one.
-      let reason = 'the pipe closed';
-      socket.on('error', (error: NodeJS.ErrnoException) => {
-        reason = `the pipe failed: ${error.code ?? error.message}`;
-      });
-      socket.once('close', () => {
-        sink(reason);
-      });
-    },
-    close: () => {
-      socket.destroy();
-    },
-  };
-}
 
 /**
  * The pipe name and the library path, from the command line the factory built.
@@ -150,13 +105,7 @@ const handlers = createPdfiumHandlers({
   // confused main could redirect the document's bytes on every save.
   areas: createHostSessions<HostArea>(cryptoBytes),
   execution: localPdfiumExecution,
-  files: {
-    readSnapshot: async (directory, name) => new Uint8Array(await readFile(join(directory, name))),
-    writeOutput: async (directory, name, bytes) => {
-      await writeFile(join(directory, name), bytes);
-      return bytes.length;
-    },
-  },
+  files: hostFilesystem,
   probe: probeContainment,
   // NO PARSE PROBE. `engine/open` registers an area and nothing else
   // (ADR-0048's withdrawn Decision 3), so a document PDFium cannot read is
@@ -209,7 +158,7 @@ const handlers = createPdfiumHandlers({
 });
 
 startEngineHost(
-  pipeStream(pipeName),
+  hostPipeStream(pipeName),
   {
     channels: pdfiumChannels,
     handlers,

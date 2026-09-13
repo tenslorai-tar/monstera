@@ -234,6 +234,8 @@ export {
   type DocusignEnvironment,
   DOCUSIGN_REFUSALS,
   type DocusignRefusalKind,
+  MARKDOWN_COMPOSE_REFUSALS,
+  type MarkdownComposeRefusal,
   MAX_DOCUSIGN_RECIPIENT_FIELD,
   MAX_DOCUSIGN_SIGNERS,
   MAX_DOCUSIGN_SUBJECT,

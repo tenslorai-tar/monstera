@@ -370,6 +370,27 @@ export const DOCUSIGN_REFUSALS = [
 export type DocusignRefusalKind = (typeof DOCUSIGN_REFUSALS)[number];
 
 /**
+ * Why a Markdown source was refused rather than composed into a PDF
+ * ([ADR-0060](../../../docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)).
+ *
+ * **Declared here and not in the kernel**, because two wires carry it: the compose
+ * host's channel and the renderer's. The contract is the one package both sides
+ * import, so a reason added in one place is a compile error in every place that
+ * says what it means.
+ */
+export const MARKDOWN_COMPOSE_REFUSALS = [
+  /** The file's bytes are not UTF-8 text. */
+  'not-utf8',
+  /** A character the standard fonts cannot draw; the refusal names its line. */
+  'unencodable-text',
+  /** The source holds no text, so a composed document would be blank. */
+  'nothing-to-draw',
+] as const;
+
+/** One of {@link MARKDOWN_COMPOSE_REFUSALS}. */
+export type MarkdownComposeRefusal = (typeof MARKDOWN_COMPOSE_REFUSALS)[number];
+
+/**
  * The secrets a person may store and the renderer may learn are STORED — never a
  * value.
  *

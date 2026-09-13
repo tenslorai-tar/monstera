@@ -71,9 +71,19 @@ const FORBIDDEN = 'mupdfWriter.js';
  */
 const PDFIUM_FORBIDDEN = 'pdfiumFfi.js';
 
+/**
+ * The Markdown composer, from 2026-09-13 (ADR-0060).
+ *
+ * Its own constant for `PDFIUM_FORBIDDEN`'s reason: the remedy differs. It is not
+ * a native library — it loads `markdown-it`, a parser of files a person picked,
+ * which threat model §2 keeps out of `main` — and `@monstera/kernel/compose` is the
+ * discipline that keeps it off the barrel.
+ */
+const COMPOSE_FORBIDDEN = 'markdownCompose.js';
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 16 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -283,6 +293,63 @@ try {
     existsSync(join(DIST, PDFIUM_FORBIDDEN)),
     `${PDFIUM_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
   );
+  // THE MARKDOWN PARSER, added 2026-09-13 with the compose host (ADR-0060).
+  //
+  // Not a native library, and the class still reaches it: this proof guards
+  // what `main`'s module graph loads, and threat model §2 keeps document parsing
+  // of any kind out of `main`. A file picked for import is parsed in the compose
+  // host, so a barrel edge to `markdownCompose.js` would put `markdown-it` in the
+  // process that holds every open document with nothing about the import looking
+  // wrong.
+  //
+  // The control is the same shape, anchored on `compose.js`, which exists to
+  // export the composer — so a walk that cannot see it is blind rather than
+  // reassuring.
+  const composeFromEntry = reaches('compose.js', COMPOSE_FORBIDDEN);
+  const composeFromIndex = reaches('index.js', COMPOSE_FORBIDDEN);
+  const composeFromBus = reaches('commandBus.js', COMPOSE_FORBIDDEN);
+  const composeFromService = reaches('documentService.js', COMPOSE_FORBIDDEN);
+
+  check(
+    `CONTROL: ${COMPOSE_FORBIDDEN} IS reachable from compose.js, so the walk can see it`,
+    composeFromEntry.reached,
+    `the walk could not reach ${COMPOSE_FORBIDDEN} from compose.js, which exists to export the ` +
+      `composer. So it cannot see the module the cases below claim something avoids, and each of ` +
+      `them is satisfied by blindness.`,
+  );
+
+  check(
+    `importing the kernel's public surface does not load ${COMPOSE_FORBIDDEN}`,
+    !composeFromIndex.reached,
+    `reachable via ${composeFromIndex.path.join(' -> ')}.\n` +
+      `      ADR-0060: a file picked for import is parsed in the compose host and never in ` +
+      `\`main\`, and \`@monstera/kernel/compose\` exists to keep \`markdown-it\` out of the barrel. ` +
+      `Read the emit for the module named in the path above — the cause is almost always ` +
+      `\`import { type X } from\`, which keeps the specifier and RUNS.`,
+  );
+
+  check(
+    `importing CommandBus does not load ${COMPOSE_FORBIDDEN}`,
+    !composeFromBus.reached,
+    `reachable via ${composeFromBus.path.join(' -> ')}.\n` +
+      `      The bus routes commands to writers and composes nothing; an edge to the composer ` +
+      `would load a parser of hostile input into every process that routes a command.`,
+  );
+
+  check(
+    `importing DocumentService does not load ${COMPOSE_FORBIDDEN}`,
+    !composeFromService.reached,
+    `reachable via ${composeFromService.path.join(' -> ')}.\n` +
+      `      The module whose entire argument is that it holds bytes and never parses them ` +
+      `(ARCHITECTURE §2) must not reach a Markdown parser either.`,
+  );
+
+  check(
+    `${COMPOSE_FORBIDDEN} is PRESENT, so its four answers above are about reachability`,
+    existsSync(join(DIST, COMPOSE_FORBIDDEN)),
+    `${COMPOSE_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
+  );
+
   // WHAT THIS CASE USED TO SAY, and why it no longer does (finding KKKK-3).
   //
   // Its title was *"the emit still names the module it type-imports"* and it

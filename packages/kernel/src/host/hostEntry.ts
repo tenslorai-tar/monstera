@@ -1,7 +1,3 @@
-import { connect } from 'node:net';
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
@@ -26,7 +22,8 @@ import { probeContainment } from './containment.js';
 import { engineChannels } from './engineChannels.js';
 import { createEngineHandlers } from './engineHandlers.js';
 import { createHostSessions } from './hostSessions.js';
-import { type HostByteStream, startEngineHost } from './hostBody.js';
+import { startEngineHost } from './hostBody.js';
+import { hostFilesystem, hostPipeStream } from './hostNodeSurfaces.js';
 
 /**
  * The engine host's entry point: the program `createContainedHost` starts.
@@ -54,7 +51,8 @@ import { type HostByteStream, startEngineHost } from './hostBody.js';
  * fd from `_open_osfhandle` is `EBADF` to node's statically linked CRT. That is
  * about **adopting** a handle Win32 created. This end is libuv issuing its own
  * `CreateFileW`, which is a different call, and it connects and carries bytes
- * (ADR-0023, addition of 2026-08-27, with both controls).
+ * (ADR-0023, addition of 2026-08-27, with both controls). The stream itself is
+ * `hostNodeSurfaces.ts`', which every host entry takes.
  *
  * ## Nothing here decides anything
  *
@@ -64,42 +62,6 @@ import { type HostByteStream, startEngineHost } from './hostBody.js';
  * decides is when to **stop**, and the answer is always: as soon as the body
  * says it has stopped serving.
  */
-
-/** The host's end of the pipe, as {@link HostByteStream}. */
-function pipeStream(pipeName: string): HostByteStream {
-  const socket = connect({ path: pipeName });
-  // NAGLE OFF. Frames here are small and request/response — a delayed ACK
-  // waiting for a second frame that only arrives after this one is answered is
-  // latency added to every call, and it would look like a slow engine.
-  socket.setNoDelay(true);
-
-  return {
-    write: (bytes) => {
-      socket.write(bytes);
-    },
-    onData: (sink) => {
-      socket.on('data', (chunk: Buffer) => {
-        sink(new Uint8Array(chunk));
-      });
-    },
-    onEnd: (sink) => {
-      // BOTH, and once. A pipe that closes cleanly emits `close` with no
-      // `error`; one that breaks emits `error` then `close`. Listening to only
-      // the first would hang this process on the ordinary ending, and to only
-      // the second would lose the reason on the broken one.
-      let reason = 'the pipe closed';
-      socket.on('error', (error: NodeJS.ErrnoException) => {
-        reason = `the pipe failed: ${error.code ?? error.message}`;
-      });
-      socket.once('close', () => {
-        sink(reason);
-      });
-    },
-    close: () => {
-      socket.destroy();
-    },
-  };
-}
 
 /**
  * The pipe name, from the command line the factory built.
@@ -139,13 +101,7 @@ const engineHandlers = createEngineHandlers({
   writer: mupdfWriter,
   access: accessFor,
   signatures: readSignatures,
-  files: {
-    readSnapshot: async (directory, name) => new Uint8Array(await readFile(join(directory, name))),
-    writeOutput: async (directory, name, bytes) => {
-      await writeFile(join(directory, name), bytes);
-      return bytes.length;
-    },
-  },
+  files: hostFilesystem,
   probe: probeContainment,
   geometry: readPageGeometry,
   // THE JSON, not a parsed page: `parsePageText` is the one reader of MuPDF's
@@ -190,7 +146,7 @@ const engineHandlers = createEngineHandlers({
 });
 
 startEngineHost(
-  pipeStream(pipeName),
+  hostPipeStream(pipeName),
   {
     channels: engineChannels,
     handlers: engineHandlers,
