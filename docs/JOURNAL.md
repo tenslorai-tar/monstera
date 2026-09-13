@@ -892,6 +892,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — A forged document read as unchanged since it was signed
+
+**A shipped defect in D7's verification row, found while preparing TSA
+timestamping and fixed before it.** The signatures panel could tell a person
+that a document was *unchanged since it was signed* when it had been edited.
+
+### The mechanism
+
+`signatureRead.ts` compared the signature's `messageDigest` attribute with
+SHA-256 of the covered byte ranges, and stopped there. It never checked the
+signer's signature over that attribute. The attribute is inside `/Contents`,
+and `/Contents` is the one span the byte ranges do not cover. So anyone who
+edited the document could rewrite the attribute to match, and the reader
+compared the document with a number the same person had just written.
+
+The row's own control could not see this. It changed one covered byte and left
+the attestation alone, and a digest comparison catches that. The forger's case
+is the one that separates a verifier from a digest comparison, and it had no
+case.
+
+### The demonstration, before the fix
+
+`documentSign.test.ts` gained **THE FORGERY**: sign, change one byte of
+`/Reason`, then find the attested digest in the hole by its value — it must
+occur exactly once — and overwrite it with the digest of the changed bytes. The
+case asserts the rewrite landed before it asserts anything about the reader, so
+it cannot pass by missing. Against the shipped reader it failed with *expected
+true to be false*: the forged document read as intact.
+
+### The fix, and why it is a new module
+
+`signedDataCheck.ts` answers *did this signer sign this content*, per RFC 5652:
+
+- the certificate is the one the SignerInfo names by **issuer and serial**,
+  never the first in the bag — both values computed the way node-forge
+  computes a certificate's own;
+- **exactly one signer**, because node-forge captures SignerInfo fields into one
+  flat object and a second signer would overwrite the first's;
+- the digest algorithm is **the signer's**, not a hard-coded SHA-256, and the
+  attested digest is read from the attribute's structure rather than as the
+  DER's last 32 bytes;
+- exactly one `contentType` attribute, equal to the SignedData's `eContentType`
+  (§5.6);
+- the RSA PKCS#1 v1.5 signature over the signed attributes **re-tagged as a
+  UNIVERSAL SET OF** (§5.4) — they are carried IMPLICIT [0], and hashing them as
+  they sit in the file would fail every genuine signature. A PSS or ECDSA signer
+  is answered unverified rather than guessed at.
+
+It is a module rather than a function in `signatureRead.ts` because TSA
+timestamping needs the same answer: a timestamp token is a SignedData whose
+content is the TSTInfo. Two copies of *verify a signer* would be B3a's second
+opinion about RFC 5652.
+
+### Proven
+
+- THE FORGERY passes with the fix, and the fresh-signature and changed-byte
+  cases still pass — 41 cases across the signing, padding and host files.
+- **Mutation**: `verify` forced to answer `true` turns THE FORGERY red with the
+  same message, so the signature check is what catches it, not the content-type
+  or digest checks beside it.
+
+### What `coversDocument` now means
+
+`true` needs both halves: the attested digest matches the covered bytes, and the
+signer's signature over that attestation verifies. `false` covers a changed
+document, an altered attestation, and a signature this build cannot check. The
+panel's sentence for `false` still reads as *changed*; a signature in an
+algorithm this build does not verify would show that sentence too. That is
+stated here as a limit rather than fixed silently, because no document this
+build writes is in that class.
+
+Trust is still not checked — chain, revocation and anchors — and the panel
+still says so.
+
+---
+
 ## 2026-09-13 — Claude reads a region, and a ternary would have read it as handwriting
 
 D6's Claude row, added by the owner on 2026-09-12 after Stage 6 closed, built

@@ -3,6 +3,8 @@ import forge from 'node-forge';
 
 import { withDocument } from './mupdfWriter.js';
 import type { MupdfSession } from './engineSeam.js';
+import { checkSigner } from './signedDataCheck.js';
+import type { ForgeCertificate, ForgeMessage } from './signedDataCheck.js';
 
 /**
  * Reading the signatures a document already carries — Stage 7's verification
@@ -32,6 +34,14 @@ import type { MupdfSession } from './engineSeam.js';
  * `/ByteRange` appears twice, which is what an incrementally-signed document
  * looks like. `getWidgets()` walks `/AcroForm`, and each signature's `/V` is
  * its dictionary.
+ *
+ * ## WHETHER THE SIGNER SIGNED is `signedDataCheck.ts`'s answer, not this file's
+ *
+ * This module compared the `messageDigest` attribute with a digest of the
+ * covered bytes and stopped there until 2026-09-13. That attribute lives in
+ * `/Contents`, the one span the ranges do not cover, so a document edited and
+ * given a rewritten attribute read as unchanged since it was signed —
+ * `documentSign.test.ts`' forgery case, which failed against that reader.
  */
 
 /** What one signature in a document says about itself. */
@@ -48,11 +58,14 @@ export interface ReadSignature {
   readonly notBefore: string;
   readonly notAfter: string;
   /**
-   * Whether the signature's own digest matches the bytes it covers.
+   * Whether the signer's signature verifies over bytes identical to these.
    *
    * **This is the question**, and it is the one a reader most often answers
-   * with a green tick it did not earn. `false` means the document changed
-   * after it was signed, or was never signed over these bytes.
+   * with a green tick it did not earn. `true` needs both halves: the attested
+   * digest matches the covered bytes, AND the signer's signature over that
+   * attestation verifies with the certificate the signature names. `false` means
+   * the document changed after it was signed, the attestation was altered, or it
+   * was signed in a way this build cannot check.
    */
   readonly coversDocument: boolean;
   /**
@@ -126,14 +139,12 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
   // 16, 24, or 32 bits supported*, which names a bit width and not the
   // encoding that produced it.
   //
-  //
   // THE PADDING IS NOT TRIMMED HERE. `/Contents` is a fixed-size hole — the
   // signature plus zero bytes out to the reserved length — and stripping trailing
   // zeros also strips a DER encoding's own final zero byte, about one signature
   // in 256. `pkcs7Asn1` reads the element to the length its header declares.
-  const verified = verify(contents.asByteString(), bytes, [a, b, c, d]);
-  const subject = verified.certificate?.subject;
-  const digestMatches = verified.digestMatches;
+  const checked = verify(contents.asByteString(), bytes, [a, b, c, d]);
+  const subject = checked.certificate?.subject;
   // `/Name` FIRST, then the certificate's CN. A signature dictionary's own
   // name is what the signer chose to display; the CN is what their certificate
   // says they are, and the second is the fallback rather than the answer.
@@ -143,9 +154,9 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
     organisation: subject?.getField('O')?.value ?? '',
     reason: signature.get('Reason').asString(),
     location: signature.get('Location').asString(),
-    notBefore: verified.certificate?.validity.notBefore.toISOString() ?? '',
-    notAfter: verified.certificate?.validity.notAfter.toISOString() ?? '',
-    coversDocument: digestMatches,
+    notBefore: checked.certificate?.validity.notBefore.toISOString() ?? '',
+    notAfter: checked.certificate?.validity.notAfter.toISOString() ?? '',
+    coversDocument: checked.verified,
     // THE WHOLE FILE, asserted separately: `b + d` plus the hole is the file
     // when nothing was appended after the signature.
     coversWholeFile: b + d + (c - b) === bytes.byteLength,
@@ -153,55 +164,29 @@ function readOne(signature: mupdf.PDFObject, bytes: Uint8Array): ReadSignature |
 }
 
 /**
- * Parses one PKCS#7 blob and checks it against the bytes its ranges name.
+ * Parses one PKCS#7 blob and checks its signer against the bytes its ranges name.
  *
- * Split out of {@link readOne} so the two `let`s it needed become returns —
- * a value assigned in a `try` and read after it is a value whose initialiser
- * the compiler reports as unused, and the honest shape is a function that
- * answers both halves at once.
+ * Split out of {@link readOne} so the parse's refusal has one place to become
+ * {@link SignaturesUnreadable}, and the check itself stays `signedDataCheck.ts`'s.
  */
 function verify(
   contents: Uint8Array,
   bytes: Uint8Array,
   [a, b, c, d]: readonly [number, number, number, number],
-): { readonly certificate: ForgeCertificate | null; readonly digestMatches: boolean } {
+): { readonly certificate: ForgeCertificate | null; readonly verified: boolean } {
+  let message: ForgeMessage;
   try {
-    // TWO CASTS IN THIS MODULE, each to a typed adapter rather than to `any`:
-    // this one, and `pkcs7Asn1`'s DER reader. `@types/node-forge` types
-    // `messageFromAsn1` as a union whose PKCS#7 half carries neither
+    // ONE CAST, to a typed adapter rather than to `any`: `@types/node-forge`
+    // types `messageFromAsn1` as a union whose PKCS#7 half carries neither
     // `certificates` nor `rawCapture`, and both are what a verification reads.
-    const message = forge.pkcs7.messageFromAsn1(pkcs7Asn1(contents)) as unknown as ForgeMessage;
-    const covered = latin1(bytes.subarray(a, a + b)) + latin1(bytes.subarray(c, c + d));
-    const digest = forge.md.sha256.create();
-    digest.update(covered);
-
-    // THE ATTESTED DIGEST, out of the signature's own authenticated attributes.
-    // Comparing against anything this module computed twice would be comparing
-    // a value with itself.
-    const attested = attestedDigest(message);
-    return {
-      certificate: message.certificates[0] ?? null,
-      digestMatches: attested !== null && attested === digest.digest().getBytes(),
-    };
+    message = forge.pkcs7.messageFromAsn1(pkcs7Asn1(contents)) as unknown as ForgeMessage;
   } catch (error) {
     throw new SignaturesUnreadable(
       `a signature in this document is not a PKCS#7 this build can read: ${String(error)}`,
     );
   }
-}
-
-/** The `messageDigest` attribute's value, or `null` if there is none. */
-function attestedDigest(message: ForgeMessage): string | null {
-  const oid = forge.asn1.oidToDer(forge.pki.oids['messageDigest'] ?? '').getBytes();
-  for (const attribute of message.rawCapture.authenticatedAttributes) {
-    const der = forge.asn1.toDer(attribute).getBytes();
-    if (!der.includes(oid)) continue;
-    // THE LAST 32 BYTES of a SHA-256 attribute's DER are the digest itself.
-    // Read by length rather than by walking the structure, because the walk
-    // would be a third opinion about ASN.1 in a module that already has two.
-    return der.slice(-32);
-  }
-  return null;
+  const covered = latin1(bytes.subarray(a, a + b)) + latin1(bytes.subarray(c, c + d));
+  return checkSigner(message, covered);
 }
 
 /**
@@ -241,21 +226,8 @@ export function pkcs7Asn1(contents: Uint8Array): forge.asn1.Asn1 {
   });
 }
 
-/** `Uint8Array` as latin-1, which is how node-forge spells raw bytes. */
-function latin1(bytes: Uint8Array): string {
-  let out = '';
-  for (const byte of bytes) out += String.fromCharCode(byte);
-  return out;
-}
-
 /**
- * The two shapes `@types/node-forge` does not describe.
- *
- * `pkcs7.messageFromAsn1` is typed as returning a union whose PKCS#7 half
- * carries neither `certificates` nor `rawCapture`, and both are what a
- * verification reads. These two aliases are this module's confined widening —
- * B7's *one typed adapter module per boundary* applied to a typings gap rather
- * than to a native library, and narrower than a file-level disable.
+ * `Uint8Array` as latin-1, which is how node-forge spells raw bytes.
  *
  * **`import forge from 'node-forge'` is STATIC**, not dynamic, and that is
  * `withDocument`'s shape rather than a size decision: the callback it runs is
@@ -264,19 +236,8 @@ function latin1(bytes: Uint8Array): string {
  * reference. This module is imported only by the contained host's handler
  * wiring, which already carries MuPDF's WASM — `main` never loads it.
  */
-/** A distinguished-name field, as node-forge answers one. */
-interface ForgeSubject {
-  getField: (name: string) => { readonly value: string } | null | undefined;
-}
-
-/** The half of an X.509 certificate this row reads. */
-interface ForgeCertificate {
-  readonly subject: ForgeSubject;
-  readonly validity: { readonly notBefore: Date; readonly notAfter: Date };
-}
-
-/** The half of a PKCS#7 message this row reads. */
-interface ForgeMessage {
-  readonly certificates: readonly ForgeCertificate[];
-  readonly rawCapture: { readonly authenticatedAttributes: readonly forge.asn1.Asn1[] };
+function latin1(bytes: Uint8Array): string {
+  let out = '';
+  for (const byte of bytes) out += String.fromCharCode(byte);
+  return out;
 }

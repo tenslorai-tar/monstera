@@ -348,6 +348,68 @@ describe('readSignatures', () => {
       await mupdfWriter.close(session);
     }
   }, 60_000);
+
+  it('THE FORGERY: a changed document whose ATTESTED digest was rewritten to match reports coversDocument FALSE', async () => {
+    // The case above changes a byte and leaves the attestation alone, so a
+    // verifier that only compares digests passes it. A forger also rewrites
+    // the `messageDigest` attribute — and that attribute lives in `/Contents`,
+    // which is the one span the byte ranges do NOT cover. Nothing but the
+    // signer's signature over the signed attributes can see the rewrite, so
+    // this is the case that separates a verifier from a digest comparison.
+    const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const text = Buffer.from(signed).toString('latin1');
+    const ranges = /\/ByteRange \[(\d+) (\d+) (\d+) (\d+)\]/u.exec(text);
+    expect(ranges, 'the signed file carries a resolved byte range').not.toBeNull();
+    if (ranges === null) return;
+    const [a, b, c, d] = [1, 2, 3, 4].map((group) => Number(ranges[group]));
+    if (a === undefined || b === undefined || c === undefined || d === undefined) return;
+
+    /** SHA-256 of exactly the two covered spans of `bytes`, as lower-case hex. */
+    const coveredDigest = (bytes: Uint8Array): string => {
+      const digest = forge.md.sha256.create();
+      digest.update(
+        Buffer.concat([
+          Buffer.from(bytes.subarray(a, a + b)),
+          Buffer.from(bytes.subarray(c, c + d)),
+        ]).toString('latin1'),
+      );
+      return digest.digest().toHex();
+    };
+
+    const forged = Uint8Array.from(signed);
+    const at = Buffer.from(signed).indexOf('I approve this document');
+    expect(at, 'the reason string is in the signed bytes').toBeGreaterThan(-1);
+    forged[at] = 'X'.charCodeAt(0);
+
+    // THE HOLE IS BYTES a+b TO c, and the attested digest is in it as hex. It
+    // is located by its value — SHA-256 of the original covered bytes — and
+    // must occur exactly once, so the rewrite lands on the attestation and
+    // nowhere else.
+    const hole = text.slice(a + b, c).toLowerCase();
+    const original = coveredDigest(signed);
+    const offset = hole.indexOf(original);
+    expect(offset, 'the attested digest is in the hole').toBeGreaterThan(-1);
+    expect(hole.lastIndexOf(original)).toBe(offset);
+    const replacement = coveredDigest(forged);
+    forged.set(Buffer.from(replacement, 'latin1'), a + b + offset);
+
+    // THE FORGERY TOOK: the attestation now equals the digest of the changed
+    // bytes. Without this the case could pass because the rewrite missed, which
+    // is exactly the case above again.
+    expect(Buffer.from(forged).toString('latin1').slice(a + b, c).toLowerCase()).toContain(
+      replacement,
+    );
+    expect(replacement).not.toBe(original);
+
+    const session = await mupdfWriter.open(forged);
+    try {
+      const [read] = await readSignatures(session, forged);
+      expect(read, 'the forged signature still parses').toBeDefined();
+      expect(read?.coversDocument).toBe(false);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
 });
 
 describe('a VISIBLE signature', () => {
