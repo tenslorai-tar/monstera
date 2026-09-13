@@ -173,3 +173,68 @@ parses the structure; a second reader would be a second opinion about DER.
 - **Trust in the authority's certificate chain.** As with document signatures, the
   panel says trust is not checked.
 - **A custom authority**, which waits for the SSRF guard (Decision 2).
+
+## Correction, 2026-09-13 — Decision 3 omitted the certificate identifier RFC 3161 requires
+
+Found the same day, before anything was built on this decision, by reading the
+RFC's requester obligations rather than recalling them.
+
+### What was missing
+
+RFC 3161 §2.2: *"The requester SHALL verify that the TimeStampToken contains the
+correct certificate identifier of the TSA, the correct data imprint and the
+correct hash algorithm OID."* Decision 3 checked the imprint and the algorithm
+and not the identifier.
+
+The identifier is an attribute on the token's SignerInfo. RFC 3161 §2.4.2: *"The
+certificate identifier (ESSCertID) of the TSA certificate MUST be included as a
+signerInfo attribute inside a SigningCertificate attribute."* RFC 5816 §2.2.1
+(March 2010) permits *"either ESSCertID [ESS] or ESSCertIDv2 [ESSV2]"*.
+
+Without it, the certificate that verifies the token is simply whichever one the
+SignerInfo's issuer and serial name. That is exactly what an attacker who can
+place a certificate in the token controls; the identifier binds the signed
+attributes to one certificate by its hash.
+
+### The structures, as the RFCs write them
+
+- RFC 2634 (June 1999): `SigningCertificate ::= SEQUENCE { certs SEQUENCE OF
+  ESSCertID, policies SEQUENCE OF PolicyInformation OPTIONAL }`, OID
+  `id-aa-signingCertificate` = 1.2.840.113549.1.9.16.2.12. `ESSCertID ::=
+  SEQUENCE { certHash Hash, issuerSerial IssuerSerial OPTIONAL }`, with `Hash ::=
+  OCTET STRING -- SHA1 hash of entire certificate`, *"computed over the entire
+  DER encoded certificate including the signature"*.
+- RFC 5035 (August 2007): `SigningCertificateV2`, OID
+  `id-aa-signingCertificateV2` = 1.2.840.113549.1.9.16.2.47. `ESSCertIDv2 ::=
+  SEQUENCE { hashAlgorithm AlgorithmIdentifier DEFAULT {algorithm id-sha256},
+  certHash Hash, issuerSerial IssuerSerial OPTIONAL }`.
+- **RFC 5035 contradicts itself, and a verified erratum settles it.** Its
+  definition of `certHash` for ESSCertIDv2 says *"using the SHA-1 algorithm"*,
+  while `hashAlgorithm` *"contains the identifier of the algorithm used in
+  computing certHash"*. Erratum 2364 (reported 2007-09-09, verified 2010-07-29)
+  corrects the sentence to *"using the algorithm specified by hashAlgorithm"*.
+  This build follows the erratum.
+
+### Decision 3, as corrected
+
+Two checks are added to the six:
+
+7. **The token's SignerInfo carries exactly one SigningCertificate or
+   SigningCertificateV2 attribute, among its SIGNED attributes**, and its first
+   `ESSCertID` or `ESSCertIDv2` hashes — SHA-1 for the first, the attribute's own
+   `hashAlgorithm` for the second, SHA-256 when absent — to the **exact DER of the
+   certificate that verifies the token**. Where `issuerSerial` is present, its
+   serial equals that certificate's.
+8. **The request sets `certReq` TRUE.** RFC 3161 §2.4.1: *"If the certReq field is
+   present and set to true, the TSA's public key certificate that is referenced by
+   the ESSCertID identifier inside a SigningCertificate attribute in the response
+   MUST be provided by the TSA in the certificates field."* So the certificate is
+   in the token, and verification needs no second request.
+
+Check 6's key usage and check 7's identifier are made against the same
+certificate, which is the one `signedDataCheck.ts` answers.
+
+**Still not decided, and stated**: when `issuerSerial` is present its `issuer`
+names are not compared, only the serial and the hash. A certificate whose hash
+matches is the certificate, so the name adds nothing a hash has not already
+fixed.
