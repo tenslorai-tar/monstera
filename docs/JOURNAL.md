@@ -14,7 +14,7 @@ the fact is not a baseline, it is a rationalisation.
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
 | 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 38 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done; D6 row 8 ships complete and carries one trigger only its owner can clear** | **1.50× — continue** |
-| 7 — security and signatures | **2 working days** (owner, 2026-09-12) | **in progress** — opened 2026-09-12 at the commit after Stage 6 closed. Fifteen rows; the `@signpdf` gate is done | — |
+| 7 — security and signatures | **2 working days** (owner, 2026-09-12) | **2 days worked** (2026-09-12 → 2026-09-13), 33 commits — began at `fd7d12e`, the commit after Stage 6 closed. **Fourteen of fifteen rows done; DocuSign is built and carries one trigger only its owner can clear.** Two OCR rows were built inside the window and are counted here | **1.00× — continue** |
 | 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | — | — |
 | 9 — AI and cloud | **2 working days** (owner, 2026-09-12) | — | — |
 | 10 — ship | **2 working days** (owner, 2026-09-12) | — | — |
@@ -889,6 +889,56 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-13 — Stage 7 closes: 14 of 15, 1.00×, continue
+
+### The trajectory gate
+
+**2 days worked against a 2-day baseline — 1.00×, trigger 6 days. Not armed;
+the verdict is continue.** Counted the way every earlier stage was:
+
+```
+git log --format=%ad --date=short fd7d12e~1..HEAD | sort -u
+```
+
+returns **2026-09-12** and **2026-09-13**. `fd7d12e`, the @signpdf gate, is the
+first Stage 7 commit, and the commit after Stage 6 closed. **33 commits**, this
+closing one included. The baseline is the owner's from 2026-09-12 and is not
+revised.
+
+### Fourteen of fifteen, and the fifteenth is not rounded up
+
+D7's fourteen rows plus D3 row 131's burn-in. Fourteen are done. **DocuSign is
+built end to end and is not counted done**: nothing has spoken to DocuSign, and
+three premises only a run with the owner's integration key can settle. Closing at
+fifteen would put a wrong number where this project measures itself — Stage 6's
+reason for not counting Azure, exactly.
+
+### Two OCR rows were built inside this window
+
+Both were built inside Stage 7's dates, and their commits are in the 33:
+
+- **The Azure key's Settings screen and its live-run harness** — the secret-setting
+  wire fix, the Settings amendment and dialog, and `npm run probe:azure`.
+- **The Claude recogniser**, added by the owner after Stage 6 closed, with its
+  own amendment.
+
+Neither is D7's and neither is done, since both wait on the owner's key. Counted
+in, they make the figure **generous to D7**: the security and signature rows alone
+took no more than these two days. The direction is stated because a day count
+that silently includes another stage's work flatters whichever stage holds it.
+
+### What the days bought
+
+Five amendments ahead of rows — counted from the range's subjects: the encrypted
+row, TSA, DocuSign, and the Settings dialog and second recogniser on the OCR side —
+and five shipped defects found and fixed. Three are in signing, and that is the
+finding worth keeping: **every signing test passed while the application could not
+sign**, because every signing test built its own bus and none routed a signature
+through the map the product builds. `e4fe5c9` made every declared writer but PDFium
+required by the type.
 
 ---
 
