@@ -8,6 +8,8 @@ import {
   applySignDocument,
   captureSignDocument,
   invertSignDocument,
+  type RequestTimestamp,
+  signDocumentWith,
 } from './documentSign.js';
 
 /**
@@ -100,8 +102,36 @@ export const localSignpdfExecution: CommandExecution<'signpdf'> = {
   },
 };
 
-/** The signpdf writer as the bus registers it. */
+/**
+ * The signpdf writer with NO timestamp transport.
+ *
+ * What a unit case registers. A command that asks for a timestamp through it is
+ * refused as unreachable rather than signed without one (`documentSign.ts`'
+ * `NO_TIMESTAMPS`).
+ */
 export const localSignpdfWriter: RegisteredWriter<'signpdf'> = {
   ...signpdfWriter,
   ...localSignpdfExecution,
 };
+
+/**
+ * The signpdf writer as the composition root registers it: over a timestamp port
+ * the root builds from the contract's authority list (ADR-0058 Decision 4).
+ *
+ * **Only `apply` differs from {@link localSignpdfWriter}**, and it differs by the
+ * port alone — `signDocumentWith` is the one signing body, and the spec table's
+ * apply is the same function with no port. `specFor` still runs first, so a kind
+ * routed here by mistake is refused by name exactly as the local writer refuses it.
+ */
+export function signpdfWriterWith(requestTimestamp: RequestTimestamp): RegisteredWriter<'signpdf'> {
+  const signDocument = signDocumentWith(requestTimestamp);
+  return {
+    ...localSignpdfWriter,
+    apply<K extends CommandKind>(image: ByteImage, command: CommandOfKind<K>): Promise<ByteImage> {
+      specFor(command);
+      // SOUND BY `routedHere`: `signDocument` is the one kind routed to this
+      // writer, so a command that passed `specFor` is one.
+      return (signDocument as Apply<'signpdf', K>)(image, command);
+    },
+  };
+}

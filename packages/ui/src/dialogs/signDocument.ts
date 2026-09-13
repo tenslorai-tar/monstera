@@ -2,6 +2,7 @@ import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_SIGNATURE_FIELD,
   requestedSignatureMarkSchema,
+  TIMESTAMP_AUTHORITY_IDS,
 } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
@@ -55,6 +56,12 @@ export const SIGN_DOCUMENT_RESULT = z
      * which of two acts they are performing before they have seen either.
      */
     certify: z.enum(['no-changes', 'form-fill', 'form-fill-and-annotate']).optional(),
+    /**
+     * The timestamp authority, by the contract's id. Absent signs without a
+     * timestamp — an absent field, never a `none` member, for `certify`'s reason:
+     * the payload's enum names only authorities.
+     */
+    timestamp: z.enum(TIMESTAMP_AUTHORITY_IDS).optional(),
     /**
      * How a VISIBLE signature looks — present exactly when the dialog was
      * opened for a placement.

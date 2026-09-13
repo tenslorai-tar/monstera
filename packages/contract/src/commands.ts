@@ -2552,6 +2552,71 @@ export const MAX_SIGNATURE_FIELD = 256;
  */
 export const SIGNATURE_FONTS = ['helvetica', 'times-roman', 'times-italic', 'courier'] as const;
 
+/**
+ * The RFC 3161 timestamp authorities a signature may ask, each with its one URL
+ * ([ADR-0058](../../../docs/DECISIONS/0058-a-timestamp-authority-is-verified-not-trusted-and-its-request-may-be-plain-http.md)).
+ *
+ * **A closed list, named by id.** The signing payload carries the id and never a
+ * URL, so a renderer cannot send a request anywhere; and no authority a person
+ * types exists until the SSRF guard §9 requires for user-supplied URLs does.
+ *
+ * **Plain HTTP is ADR-0058's one exception to the network rule** and it applies
+ * to these entries only. The widely used authorities publish HTTP endpoints; a
+ * token's integrity comes from verifying it, which the kernel does before one is
+ * embedded. Each URL is the authority's own published endpoint, with the date it
+ * was read and where — a URL that moves is a row that fails its request, never one
+ * that silently asks somebody else.
+ */
+export const TIMESTAMP_AUTHORITIES = {
+  /** DigiCert's knowledge base, *RFC3161 compliant Time Stamp Authority server*, last modified 04/23/2026; read 2026-09-13. */
+  digicert: { url: 'http://timestamp.digicert.com' },
+  /** GlobalSign support, *Code Signing for Windows 7, 8 and 10*, dated Jan 6, 2026; read 2026-09-13. */
+  globalsign: { url: 'http://timestamp.globalsign.com/tsa/r45standard' },
+  /**
+   * Sectigo's resource library, *Time Stamping Server*, dated October 3, 2018;
+   * read 2026-09-13. The page asks scripted callers to wait 15 seconds between
+   * requests, which one person signing one document does not approach.
+   */
+  sectigo: { url: 'http://timestamp.sectigo.com' },
+  /** FreeTSA, `freetsa.org/index_en.php`, no date shown; read 2026-09-13. The one HTTPS endpoint found. */
+  freetsa: { url: 'https://freetsa.org/tsr' },
+} as const satisfies Readonly<Record<string, { readonly url: string }>>;
+
+/** An authority's id, as the signing payload names it. */
+export type TimestampAuthority = keyof typeof TIMESTAMP_AUTHORITIES;
+
+/** Every authority id, in the order a person is offered them. */
+export const TIMESTAMP_AUTHORITY_IDS = ['digicert', 'globalsign', 'sectigo', 'freetsa'] as const satisfies readonly TimestampAuthority[];
+
+/**
+ * Every way `document.sign` ends without a signature that is not a person's
+ * own cancel — THE ONE LIST.
+ *
+ * The channel builds its refusal members from it and the renderer's problem
+ * dialog takes its reasons from it. Until 2026-09-13 the dialog kept a copy
+ * beside a comment saying the two were *the same words*; nothing compared them,
+ * and the renderer's `ask` takes `unknown` props, so a refusal the channel
+ * gained and the copy lacked would compile and fail only when a person met it.
+ */
+export const SIGN_REFUSALS = [
+  'wrong-passphrase',
+  'unreadable',
+  'unencodable-text',
+  'image-unreadable',
+  'image-too-large',
+  /** The signature and its timestamp do not fit the space the placeholder reserves. */
+  'signature-too-large',
+  /** The authority could not be reached, or answered with an HTTP error. */
+  'timestamp-unreachable',
+  /** The authority answered, and refused: a status other than granted. */
+  'timestamp-refused',
+  /** The authority answered with a token that failed verification (ADR-0058 Decision 3). */
+  'timestamp-unverifiable',
+] as const;
+
+/** One of {@link SIGN_REFUSALS}. */
+export type SignRefusal = (typeof SIGN_REFUSALS)[number];
+
 /** How many strokes a drawn signature may carry. */
 export const MAX_SIGNATURE_STROKES = 64;
 
@@ -2698,6 +2763,16 @@ export const signDocumentSchema = z.object({
   location: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
   /** `/ContactInfo` — how to reach the signer. */
   contactInfo: z.string().min(1).max(MAX_SIGNATURE_FIELD).optional(),
+  /**
+   * The authority to timestamp the signature with, by id — absent signs without
+   * a timestamp.
+   *
+   * An id and never a URL: the list is the contract's, and a payload that could
+   * name an address could send a request anywhere. Present, the signature is
+   * refused rather than written without one if the authority fails or its token
+   * does not verify (ADR-0058 Decision 3).
+   */
+  timestamp: z.enum(TIMESTAMP_AUTHORITY_IDS).optional(),
   /**
    * What a reader may still change, for a CERTIFYING signature.
    *

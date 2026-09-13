@@ -27,7 +27,7 @@ import {
   stroke,
 } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFOperator, PDFPage, PDFRef } from '@cantoo/pdf-lib';
-import type { AnnotationRect, CommandOfKind } from '@monstera/contract';
+import type { AnnotationRect, CommandOfKind, TimestampAuthority } from '@monstera/contract';
 import { snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
@@ -36,6 +36,8 @@ import { openForWriting } from './pdfLibSession.js';
 import {
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureTooLargeError,
+  TimestampUnreachableError,
 } from './signingRefusals.js';
 
 /**
@@ -80,6 +82,105 @@ const BYTE_RANGE_SLOT = '*'.repeat(10);
  * costs padding.
  */
 const SIGNATURE_BYTES = 8192;
+
+/**
+ * How many bytes the placeholder reserves when a timestamp is asked for.
+ *
+ * **A bound, not a measurement**, and chosen from the one direction that matters:
+ * a token carries the authority's certificate — RFC 3161 §2.4.1 obliges it when
+ * `certReq` is set, which this build sets — and often its chain, so the 8,192
+ * above is not a ceiling a timestamped signature can be held to. Too large costs
+ * zero padding and nothing else; too small refuses a signature by name
+ * (`SignatureTooLargeError`), which is how a figure that proves wrong announces
+ * itself.
+ */
+const TIMESTAMPED_SIGNATURE_BYTES = 32_768;
+
+/** The space the placeholder reserves for this command's signature. */
+function reservedSignatureBytes(command: CommandOfKind<'signDocument'>): number {
+  return command.timestamp === undefined ? SIGNATURE_BYTES : TIMESTAMPED_SIGNATURE_BYTES;
+}
+
+/**
+ * The PKCS#7 `P12Signer` produced, with an accepted timestamp token added to its
+ * one SignerInfo as the unsigned attribute `id-aa-timeStampToken` (RFC 3161
+ * Appendix A).
+ *
+ * **The imprint hashes the SignerInfo's `signature` value** — Appendix A's rule,
+ * which is what makes the token a timestamp of THIS signature rather than of the
+ * document. The reply is judged by `acceptTimestampReply` and nothing else; a
+ * transport failure is named unreachable, and a reply that fails a check is named
+ * by that module.
+ *
+ * node-forge and the token module load here, dynamically, for `applySignDocument`'s
+ * reason: main pays for them only when somebody asks for a timestamp.
+ */
+async function timestamped(
+  raw: Buffer,
+  authority: TimestampAuthority,
+  requestTimestamp: RequestTimestamp,
+): Promise<Buffer> {
+  const [{ default: forge }, { acceptTimestampReply, TIMESTAMP_TOKEN_ATTRIBUTE_OID, timestampQuery }] =
+    await Promise.all([import('node-forge'), import('./timestampToken.js')]);
+  const { asn1 } = forge;
+
+  const contentInfo = asn1.fromDer(raw.toString('binary'));
+  // ContentInfo → [0] → SignedData, whose LAST element is `signerInfos`.
+  const signedData = Array.isArray(contentInfo.value) ? contentInfo.value[1] : undefined;
+  const signedFields = Array.isArray(signedData?.value) ? signedData.value[0]?.value : undefined;
+  const signerInfos = Array.isArray(signedFields) ? signedFields.at(-1)?.value : undefined;
+  const signerInfo = Array.isArray(signerInfos) && signerInfos.length === 1 ? signerInfos[0] : undefined;
+  const fields = Array.isArray(signerInfo?.value) ? signerInfo.value : undefined;
+  if (signerInfo === undefined || fields === undefined) {
+    throw new Error('the signer produced a PKCS#7 without exactly one SignerInfo');
+  }
+  // A DEFECT, not a refusal: `P12Signer` writes no unsigned attributes, so one
+  // already present means the signer changed underneath this code.
+  // `[1]` IS TAG NUMBER 1 IN THE CONTEXT CLASS. `@types/node-forge` types every
+  // node's tag as `asn1.Type`, whose members name the UNIVERSAL types, so the
+  // number is given the field's own type at the comparison. The enum member that
+  // is also 1 is `BOOLEAN`, and writing it here would describe a context tag as a
+  // boolean.
+  if (
+    fields.some(
+      (field) =>
+        field.tagClass === asn1.Class.CONTEXT_SPECIFIC && field.type === (1 as typeof field.type),
+    )
+  ) {
+    throw new Error('the SignerInfo already carries unsigned attributes');
+  }
+  const signature = fields.find(
+    (field) => field.tagClass === asn1.Class.UNIVERSAL && field.type === asn1.Type.OCTETSTRING,
+  );
+  if (signature === undefined || typeof signature.value !== 'string') {
+    throw new Error('the SignerInfo carries no signature value');
+  }
+
+  const query = timestampQuery(signature.value);
+  let reply: Uint8Array;
+  try {
+    reply = await requestTimestamp(authority, query.der);
+  } catch (cause) {
+    throw new TimestampUnreachableError({ cause });
+  }
+  const accepted = acceptTimestampReply(reply, query);
+
+  fields.push(
+    // [1] IMPLICIT UnsignedAttributes — a SET OF Attribute, tagged in place.
+    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 1, true, [
+      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
+        asn1.create(
+          asn1.Class.UNIVERSAL,
+          asn1.Type.OID,
+          false,
+          asn1.oidToDer(TIMESTAMP_TOKEN_ATTRIBUTE_OID).getBytes(),
+        ),
+        asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [accepted.token]),
+      ]),
+    ]),
+  );
+  return Buffer.from(asn1.toDer(contentInfo).getBytes(), 'binary');
+}
 
 /**
  * `/DocMDP`'s `/P`, by the word the payload carries.
@@ -373,7 +474,7 @@ function placeSignature(
   // THE HOLE, as a hex string of `SIGNATURE_BYTES` zero bytes. `@signpdf`
   // locates it by its length in the raw file and overwrites it in place, which
   // is why the placeholder's size is the signature's ceiling.
-  const contents = PDFHexString.of('0'.repeat(SIGNATURE_BYTES * 2));
+  const contents = PDFHexString.of('0'.repeat(reservedSignatureBytes(command) * 2));
 
   const signature = context.obj({
     Type: PDFName.of('Sig'),
@@ -516,49 +617,105 @@ export async function withSignaturePlaceholder(
  * The import is dynamic so main pays for `node-forge` only when somebody signs
  * something — the same reason `nspell` is behind one.
  */
-export const applySignDocument: Apply<'signpdf', 'signDocument'> = async (image, command) => {
-  const placed = await withSignaturePlaceholder(image, command);
+export const applySignDocument: Apply<'signpdf', 'signDocument'> = (image, command) =>
+  signDocumentWith(NO_TIMESTAMPS)(image, command);
 
-  const [{ SignPdf }, { P12Signer }] = await Promise.all([
-    import('@signpdf/signpdf'),
-    import('@signpdf/signer-p12'),
-  ]);
+/**
+ * Asks a timestamp authority, by id, with a DER TimeStampReq, and answers the
+ * reply's body — already bounded by the transport.
+ *
+ * **A port, supplied by the composition root** (ADR-0058 Decision 4): the kernel
+ * holds no network code, and its cases drive the whole flow with an authority
+ * minted in memory. Anything it throws is the authority being unreachable; what
+ * it answers is judged by `acceptTimestampReply` alone.
+ */
+export type RequestTimestamp = (authority: TimestampAuthority, query: Uint8Array) => Promise<Uint8Array>;
 
-  // THE PASSPHRASE REACHES ONE CALL. Nothing here records it, and the error
-  // below carries none of it.
-  //
-  // THE SIGNER'S REFUSAL IS NAMED HERE, because this is the one place that
-  // knows a failure is the credential's. Main used to infer it by elimination —
-  // anything not a document-state class was *a wrong password* — which would
-  // have told a person their password was wrong when a flush failed. The
-  // placeholder above runs outside this block, so its own refusals keep their
-  // names, and the length check below is a defect rather than a credential.
-  let signed: Buffer;
-  try {
-    const signer = new P12Signer(command.bytes, { passphrase: command.passphrase });
-    signed = await new SignPdf().sign(Buffer.from(placed), signer);
-  } catch (cause) {
-    throw new SignatureCredentialRefusedError({ cause });
-  }
+/**
+ * The port for a writer built without one — unit cases, and the spec table's own
+ * apply. A command that asks for a timestamp through it is refused as unreachable
+ * rather than signed without one, which is the decorative defect ADR-0058 exists
+ * to rule out.
+ */
+const NO_TIMESTAMPS: RequestTimestamp = () =>
+  Promise.reject(new Error('no timestamp transport is registered with this writer'));
 
-  // THE LENGTH IS THE PROPERTY THE WHOLE SCHEME RESTS ON, asserted rather than
-  // assumed: `@signpdf` overwrites the hole in place and rewrites the ranges to
-  // describe the file they are in, so a signed document is byte-for-byte as
-  // long as its placeholder. A length that moved means the ranges describe
-  // something else, and every reader would report the signature as invalid over
-  // bytes that are in fact intact.
-  if (signed.byteLength !== placed.byteLength) {
-    throw new Error(
-      `the signed document is ${String(signed.byteLength)} bytes where its placeholder was ` +
-        `${String(placed.byteLength)}: the byte ranges no longer describe the file they are in`,
-    );
-  }
-  // COPIED INTO AN ARRAY THAT OWNS ITS BUFFER. `Buffer` is a view onto a pooled
-  // allocation, so `new Uint8Array(buffer)` would share it — the same hazard
-  // `mupdfWriter.ts` records for `asUint8Array()`, from a different allocator.
-  // `ByteImage` is what the service holds across commands.
-  return Uint8Array.from(signed);
-};
+/**
+ * The signing apply, over a timestamp port.
+ *
+ * `applySignDocument` is this with {@link NO_TIMESTAMPS}, so the spec table keeps
+ * one apply per kind and the writer the composition registers passes the real
+ * port — one function, parameterised, rather than two bodies that could drift.
+ */
+export function signDocumentWith(
+  requestTimestamp: RequestTimestamp,
+): Apply<'signpdf', 'signDocument'> {
+  return async (image, command) => {
+    const placed = await withSignaturePlaceholder(image, command);
+    const reserved = reservedSignatureBytes(command);
+
+    const [{ SignPdf }, { P12Signer }, { Signer }] = await Promise.all([
+      import('@signpdf/signpdf'),
+      import('@signpdf/signer-p12'),
+      import('@signpdf/utils'),
+    ]);
+
+    /**
+     * `P12Signer`, then the timestamp, then the length — inside the signer, so
+     * each failure is named WHERE it happens.
+     *
+     * The credential's refusal is only what `P12Signer` itself throws. This apply
+     * used to wrap all of `SignPdf.sign` in that name, so a signature too large for
+     * its hole — `@signpdf` refuses one with a `SignPdfError` of `TYPE_INPUT`, the
+     * same type as its other input refusals — would have been reported to a person
+     * as a wrong password. The type cannot separate them; the call site can.
+     */
+    class TimestampingSigner extends Signer {
+      override async sign(pdfBuffer: Buffer, signingTime?: Date): Promise<Buffer> {
+        let raw: Buffer;
+        try {
+          // THE PASSPHRASE REACHES ONE CALL. Nothing here records it, and the
+          // error carries none of it.
+          raw = await new P12Signer(command.bytes, { passphrase: command.passphrase }).sign(
+            pdfBuffer,
+            signingTime,
+          );
+        } catch (cause) {
+          throw new SignatureCredentialRefusedError({ cause });
+        }
+        const withToken =
+          command.timestamp === undefined ? raw : await timestamped(raw, command.timestamp, requestTimestamp);
+        if (withToken.byteLength > reserved) {
+          throw new SignatureTooLargeError(withToken.byteLength, reserved);
+        }
+        return withToken;
+      }
+    }
+
+    // NOTHING HERE IS RE-NAMED. The signer names its own refusals, and anything
+    // else `SignPdf` throws — a placeholder it cannot find — is a defect, which
+    // propagates and is reported as one.
+    const signed = await new SignPdf().sign(Buffer.from(placed), new TimestampingSigner());
+
+    // THE LENGTH IS THE PROPERTY THE WHOLE SCHEME RESTS ON, asserted rather than
+    // assumed: `@signpdf` overwrites the hole in place and rewrites the ranges to
+    // describe the file they are in, so a signed document is byte-for-byte as
+    // long as its placeholder. A length that moved means the ranges describe
+    // something else, and every reader would report the signature as invalid over
+    // bytes that are in fact intact.
+    if (signed.byteLength !== placed.byteLength) {
+      throw new Error(
+        `the signed document is ${String(signed.byteLength)} bytes where its placeholder was ` +
+          `${String(placed.byteLength)}: the byte ranges no longer describe the file they are in`,
+      );
+    }
+    // COPIED INTO AN ARRAY THAT OWNS ITS BUFFER. `Buffer` is a view onto a pooled
+    // allocation, so `new Uint8Array(buffer)` would share it — the same hazard
+    // `mupdfWriter.ts` records for `asUint8Array()`, from a different allocator.
+    // `ByteImage` is what the service holds across commands.
+    return Uint8Array.from(signed);
+  };
+}
 
 /**
  * Reports that a signature's prior state is not recorded.

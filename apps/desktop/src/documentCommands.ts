@@ -9,6 +9,8 @@ import {
   MAX_TEXT_LAYER_LINE,
   type RequestedSignatureMark,
   type SignaturePlacement,
+  type SignRefusal,
+  type TimestampAuthority,
   sourceIdsOf,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
@@ -52,6 +54,9 @@ import {
   type ReadSignature,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureTooLargeError,
+  TimestampRefusedError,
+  TimestampUnreachableError,
   writeDocumentCopy,
   writeDocumentSplit,
 } from '@monstera/kernel';
@@ -532,11 +537,10 @@ export type SignOutcome =
       readonly historyDropped: number;
     }
   | { readonly kind: 'cancelled' }
-  | { readonly kind: 'wrong-passphrase' }
-  | { readonly kind: 'unreadable' }
-  | { readonly kind: 'unencodable-text' }
-  | { readonly kind: 'image-unreadable' }
-  | { readonly kind: 'image-too-large' };
+  // THE CONTRACT'S LIST, not five literals beside it: main answers the channel's
+  // refusals and nothing else, and a kind added to `SIGN_REFUSALS` is one main
+  // must be able to return.
+  | { readonly kind: SignRefusal };
 
 /** What {@link ImageSource.read} answers. */
 export type ImageRead =
@@ -2615,6 +2619,8 @@ export class DocumentCommands {
       readonly contactInfo?: string;
       readonly certify?: 'no-changes' | 'form-fill' | 'form-fill-and-annotate';
       readonly appearance?: SignaturePlacement & { readonly mark: RequestedSignatureMark };
+      /** The timestamp authority, by id; absent signs without a timestamp (ADR-0058). */
+      readonly timestamp?: TimestampAuthority;
     },
   ): Promise<SignOutcome> {
     if (this.#documents.nameOf(docId) === undefined) {
@@ -2645,6 +2651,7 @@ export class DocumentCommands {
         ...(options.contactInfo === undefined ? {} : { contactInfo: options.contactInfo }),
         ...(options.certify === undefined ? {} : { certify: options.certify }),
         ...(appearance.value === undefined ? {} : { appearance: appearance.value }),
+        ...(options.timestamp === undefined ? {} : { timestamp: options.timestamp }),
       });
       return { kind: 'signed', ...applied };
     } catch (error) {
@@ -2662,6 +2669,17 @@ export class DocumentCommands {
         };
       }
       if (error instanceof SignatureCredentialRefusedError) return { kind: 'wrong-passphrase' };
+      if (error instanceof SignatureTooLargeError) return { kind: 'signature-too-large' };
+      // THE AUTHORITY'S FAILURES, three sentences rather than one: unreachable is
+      // *try again or choose another*, refused is *that service will not do this*,
+      // and unverifiable is *it answered with something this build would not
+      // embed*. Folding them would tell a person to retry a service that refused.
+      if (error instanceof TimestampUnreachableError) return { kind: 'timestamp-unreachable' };
+      if (error instanceof TimestampRefusedError) {
+        return {
+          kind: error.reason === 'refused' ? 'timestamp-refused' : 'timestamp-unverifiable',
+        };
+      }
       throw error;
     }
   }

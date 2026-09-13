@@ -781,12 +781,31 @@ export const SIGN_DOCUMENT_CERTIFY_NONE = messageKey('dialog.sign-document.certi
 export const SIGN_DOCUMENT_CERTIFY_LOCKED = messageKey('dialog.sign-document.certify-locked');
 export const SIGN_DOCUMENT_CERTIFY_FORMS = messageKey('dialog.sign-document.certify-forms');
 export const SIGN_DOCUMENT_CERTIFY_COMMENTS = messageKey('dialog.sign-document.certify-comments');
+export const SIGN_DOCUMENT_TIMESTAMP = messageKey('dialog.sign-document.timestamp');
+export const SIGN_DOCUMENT_TIMESTAMP_NONE = messageKey('dialog.sign-document.timestamp-none');
+export const SIGN_DOCUMENT_TIMESTAMP_DIGICERT = messageKey(
+  'dialog.sign-document.timestamp-digicert',
+);
+export const SIGN_DOCUMENT_TIMESTAMP_GLOBALSIGN = messageKey(
+  'dialog.sign-document.timestamp-globalsign',
+);
+export const SIGN_DOCUMENT_TIMESTAMP_SECTIGO = messageKey('dialog.sign-document.timestamp-sectigo');
+export const SIGN_DOCUMENT_TIMESTAMP_FREETSA = messageKey('dialog.sign-document.timestamp-freetsa');
+export const SIGN_DOCUMENT_TIMESTAMP_NOTE = messageKey('dialog.sign-document.timestamp-note');
 export const SIGN_PROBLEM_TITLE = messageKey('dialog.sign-problem.title');
 export const SIGN_PROBLEM_WRONG_PASSPHRASE = messageKey('dialog.sign-problem.wrong-passphrase');
 export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadable');
 export const SIGN_PROBLEM_UNENCODABLE_TEXT = messageKey('dialog.sign-problem.unencodable-text');
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
+export const SIGN_PROBLEM_SIGNATURE_TOO_LARGE = messageKey('dialog.sign-problem.signature-too-large');
+export const SIGN_PROBLEM_TIMESTAMP_UNREACHABLE = messageKey(
+  'dialog.sign-problem.timestamp-unreachable',
+);
+export const SIGN_PROBLEM_TIMESTAMP_REFUSED = messageKey('dialog.sign-problem.timestamp-refused');
+export const SIGN_PROBLEM_TIMESTAMP_UNVERIFIABLE = messageKey(
+  'dialog.sign-problem.timestamp-unverifiable',
+);
 export const SIGN_DOCUMENT_LOOK = messageKey('dialog.sign-document.look');
 export const SIGN_DOCUMENT_LOOK_TYPED = messageKey('dialog.sign-document.look-typed');
 export const SIGN_DOCUMENT_LOOK_DRAWN = messageKey('dialog.sign-document.look-drawn');
@@ -1771,6 +1790,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_CERTIFY_FORMS]: 'I am the author — forms may be filled in',
   [SIGN_DOCUMENT_CERTIFY_COMMENTS]:
     'I am the author — forms may be filled in and comments added',
+  [SIGN_DOCUMENT_TIMESTAMP]: 'Timestamp',
+  [SIGN_DOCUMENT_TIMESTAMP_NONE]: 'No timestamp',
+  [SIGN_DOCUMENT_TIMESTAMP_DIGICERT]: 'DigiCert',
+  [SIGN_DOCUMENT_TIMESTAMP_GLOBALSIGN]: 'GlobalSign',
+  [SIGN_DOCUMENT_TIMESTAMP_SECTIGO]: 'Sectigo',
+  [SIGN_DOCUMENT_TIMESTAMP_FREETSA]: 'FreeTSA',
+  [SIGN_DOCUMENT_TIMESTAMP_NOTE]:
+    'A timestamp proves when the document was signed. Only a fingerprint of the signature is sent to the service, never the document. Most services are reached without encryption, so someone watching the network could see that a timestamp was requested.',
   [SIGN_PROBLEM_TITLE]: 'The document was not signed',
   [SIGN_PROBLEM_WRONG_PASSPHRASE]:
     'That password did not open the certificate. Nothing has been changed.',
@@ -1781,6 +1808,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_PROBLEM_IMAGE_UNREADABLE]:
     'That picture could not be read. Choose a PNG or JPEG file. Nothing has been changed.',
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
+  [SIGN_PROBLEM_SIGNATURE_TOO_LARGE]:
+    'The signature is too large to fit in the document. A certificate with a long chain can cause this. Nothing has been changed.',
+  [SIGN_PROBLEM_TIMESTAMP_UNREACHABLE]:
+    'The timestamp service could not be reached, so the document was not signed. Try again, choose another service, or sign without a timestamp. Nothing has been changed.',
+  [SIGN_PROBLEM_TIMESTAMP_REFUSED]:
+    'The timestamp service refused the request, so the document was not signed. Choose another service or sign without a timestamp. Nothing has been changed.',
+  [SIGN_PROBLEM_TIMESTAMP_UNVERIFIABLE]:
+    'The timestamp service answered with a timestamp this application could not verify, so it was not used and the document was not signed. Nothing has been changed.',
   [SIGN_DOCUMENT_LOOK]: 'How the signature looks',
   [SIGN_DOCUMENT_LOOK_TYPED]: 'Type it',
   [SIGN_DOCUMENT_LOOK_DRAWN]: 'Draw it',

@@ -41,6 +41,19 @@ export interface ForgeCertificate {
   readonly serialNumber: string;
   readonly validity: { readonly notBefore: Date; readonly notAfter: Date };
   readonly publicKey: { verify: (digest: string, signature: string) => boolean };
+  /**
+   * An extension by name, as node-forge parses one: `id`, `critical`, `value`,
+   * `name`, and for `extKeyUsage` one `true` member per purpose — named where
+   * node-forge knows the OID, keyed by the OID where it does not (node-forge
+   * 1.4.0, `lib/x509.js`).
+   *
+   * **`null` when the certificate has no such extension, NOT `undefined`** —
+   * `var rval = null`, returned unchanged when nothing matches (`lib/x509.js`
+   * 1109 and 1119). This read `| undefined` for its first hour, and a certificate
+   * with no extended key usage then threw a `TypeError` inside the timestamp check
+   * instead of being refused by name: `timestampToken.test.ts`' no-usage case.
+   */
+  getExtension: (name: string) => Readonly<Record<string, unknown>> | null;
 }
 
 /**
@@ -214,3 +227,8 @@ export function checkSigner(message: ForgeMessage, content: string): SignerCheck
   }
   return { certificate, verified };
 }
+
+// EXPORTED FOR THE TIMESTAMP TOKEN, which reads the same attributes, the same
+// digests and the same primitive values from a SignedData this module verifies.
+// A second attribute walk there would be a second opinion about RFC 5652 (B3a).
+export { attributeValues, bytesOf, DIGESTS };

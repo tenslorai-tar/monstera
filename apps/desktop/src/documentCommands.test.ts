@@ -15,6 +15,9 @@ import {
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureTooLargeError,
+  TimestampRefusedError,
+  TimestampUnreachableError,
   siblingNames,
 } from '@monstera/kernel';
 // See the note in `engineSessions.test.ts`: a local engine in main's process is
@@ -1442,6 +1445,24 @@ describe('sign — a visible signature', () => {
     expect(await signing(new SignatureCredentialRefusedError())).toStrictEqual({
       kind: 'wrong-passphrase',
     });
+    // TOO LARGE IS NOT A WRONG PASSWORD, which is what this catch's predecessor
+    // would have said for it: `@signpdf` refuses an oversized signature with the
+    // same error type as its other input refusals.
+    expect(await signing(new SignatureTooLargeError(40_000, 32_768))).toStrictEqual({
+      kind: 'signature-too-large',
+    });
+    // THE AUTHORITY'S THREE FAILURES, three answers — and the refused/unverifiable
+    // pair is split by the error's REASON, so a mapping that read only the class
+    // would answer one of them for both and fail here.
+    expect(await signing(new TimestampUnreachableError())).toStrictEqual({
+      kind: 'timestamp-unreachable',
+    });
+    expect(await signing(new TimestampRefusedError('refused', 'refused by the case'))).toStrictEqual({
+      kind: 'timestamp-refused',
+    });
+    expect(
+      await signing(new TimestampRefusedError('unverifiable', 'refused by the case')),
+    ).toStrictEqual({ kind: 'timestamp-unverifiable' });
     // THE CONTROL, and it is the one the old catch fails: a failure nobody named
     // is not a person's mistake, so it propagates to the handler — which turns
     // it into `internal` — instead of telling them their password was wrong.

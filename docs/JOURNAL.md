@@ -892,6 +892,112 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — TSA timestamping: built and verified end to end, owing one run against a real authority
+
+D7's TSA row, whose founding clause is *implemented correctly or not offered*. It
+is built. It is **not counted done**: every token it has accepted was built in this
+repository, and none has come from an authority.
+
+### The law moved before the code
+
+Two findings came before any code, and both are in ADR-0058.
+
+- **The network rule said HTTPS only**, and the widely used authorities publish
+  plain-HTTP endpoints only. DigiCert, Sectigo and GlobalSign were each read and
+  dated; FreeTSA is the one HTTPS service found.
+- **No SSRF guard exists**, so a timestamp server a person types is not
+  buildable.
+
+So the rule gained one exception. An RFC 3161 request may be plain HTTP, to a host
+in the contract's closed list, because a token's integrity comes from verifying it
+rather than from the transport.
+
+**The ADR was corrected the same day, before anything was built on it.** Reading
+RFC 3161's requester obligations rather than recalling them found a SHALL the
+decision had omitted: §2.2's *correct certificate identifier of the TSA*. RFC 5035
+contradicts itself on how ESSCertIDv2's hash is computed; verified erratum 2364
+settles it.
+
+### What accepting a reply means
+
+`timestampToken.ts` is the one place a reply becomes a token. It accepts one only
+when all of these hold:
+
+- a granted status;
+- a SignedData carrying a TSTInfo;
+- this signature value's SHA-256 imprint;
+- the request's nonce;
+- a signer that verifies, through `signedDataCheck.ts`, the same verifier as a
+  document signature;
+- a critical, timestamping-only key usage;
+- exactly one signed signing-certificate attribute whose hash matches that
+  certificate's DER.
+
+node-forge's PKCS#7 reader refuses TSTInfo content, so the token is read with that
+library's own `signedDataValidator`, called directly.
+
+**A person who asks for a timestamp never gets a signature without one.** An
+unreachable authority, one that refuses, and a token that fails a check are three
+named refusals, with three sentences. The spec table's writer has no transport and
+refuses a timestamp through it rather than signing without one.
+
+### Defects found while building it
+
+Three, each shipped, each fixed and demonstrated before its fix:
+
+- **Verification never checked the signer's signature.** Journal entry below.
+- **The application registered no signer.** Journal entry below; closed by type.
+- **An oversized signature would have been reported as a wrong password.**
+  `@signpdf` refuses one with the same error type as its other input refusals, and
+  the apply wrapped every signer failure in the credential's name. The signer
+  wrapper now names a credential refusal only where `P12Signer` throws, and
+  measures the signature against the space reserved before `@signpdf` sees it.
+
+Two more, smaller, were found by the new tests:
+
+- **A certificate with no extended key usage threw a `TypeError`** inside the check
+  rather than being refused. node-forge's `getExtension` answers `null`, not
+  `undefined` (`lib/x509.js` 1109, 1119), and the adapter said `undefined`.
+- **The renderer's sign-problem list was a copy of the channel's refusals** beside a
+  comment saying they were the same words. `ask` takes `unknown` props, so a
+  refusal the channel gained would have compiled and failed only when a person met
+  it. Both now take `SIGN_REFUSALS` from the contract, and main's `SignOutcome`
+  does too.
+
+### Proven
+
+- **`timestampToken.test.ts`, 15 cases.** An authority is minted in memory and its
+  tokens are built by hand, because node-forge cannot write a signing-certificate
+  attribute as a signed one.
+  - One unmodified token is accepted.
+  - Each refusal changes one field of that token.
+  - Signing end to end embeds one `id-aa-timeStampToken`, re-accepted against the
+    signature value the file actually carries, and the signature still covers the
+    document.
+  - Unreachable, unverifiable and no-transport each refuse.
+- **Mutation**: with the attribute's `push` replaced by a push onto a throwaway
+  array, the end-to-end claim fails with *the SignerInfo carries unsigned
+  attributes: expected undefined to be defined*, while its control passes. The
+  first attempt at this mutation did not compile — a trailing comma — and reported
+  *no tests*, which was not counted.
+- **`timestampTransport.test.ts`, 5 cases.** The contract's URL per authority,
+  POST, the query content type, redirects refused, a timeout signal, an HTTP error
+  thrown, and a reply past the ceiling refused by bytes received, not by
+  `Content-Length`.
+- **The received-byte ceiling is one function**, `receivedByteMeter`, which the
+  download and the timestamp reply both take; `proof:verifieddownload` passes all
+  24 cases after the move.
+- The desktop mapping of each refusal by class and reason, the dialog answering an
+  authority by id with its note on screen, and the command forwarding it.
+
+### The trigger
+
+**One run against a real authority.** A real token may carry an ESSCertID v1
+attribute, a certificate chain, or an encoding the hand-built one does not. Until
+that run, the row is built and not done.
+
+---
+
 ## 2026-09-13 — The application could not sign anything, and every signing test passed
 
 **A shipped defect across three D7 rows marked done: digital signing, certify

@@ -51,3 +51,66 @@ export class SignatureCredentialRefusedError extends Error {
     this.name = 'SignatureCredentialRefusedError';
   }
 }
+
+/**
+ * The signature — with its timestamp token, when one was asked for — does not fit
+ * the space the placeholder reserved.
+ *
+ * **Named, because `@signpdf` would otherwise refuse it for us** with a
+ * `SignPdfError` of `TYPE_INPUT`, the same type as its other input refusals, and
+ * this apply used to report every signer failure as a wrong password. A certificate
+ * with a long chain can produce it; the check is made where the length is known,
+ * before the bytes reach `@signpdf`.
+ */
+export class SignatureTooLargeError extends Error {
+  readonly byteLength: number;
+  readonly reserved: number;
+
+  constructor(byteLength: number, reserved: number) {
+    super(
+      `the signature is ${String(byteLength)} bytes and the placeholder reserves ${String(reserved)}`,
+    );
+    this.name = 'SignatureTooLargeError';
+    this.byteLength = byteLength;
+    this.reserved = reserved;
+  }
+}
+
+/**
+ * The timestamp authority could not be asked: the transport threw, or answered
+ * an HTTP error.
+ *
+ * Distinct from {@link TimestampRefusedError}, which is an authority that answered.
+ * *Try again or choose another* is the sentence for this one; *that service will
+ * not do this* is the sentence for the other.
+ */
+export class TimestampUnreachableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('the timestamp authority could not be reached', options);
+    this.name = 'TimestampUnreachableError';
+  }
+}
+
+/** Why an authority's reply was not accepted as a token. */
+export type TimestampRefusal =
+  /** The authority answered with a status other than granted. */
+  | 'refused'
+  /** The authority answered, and what it sent failed a check (ADR-0058 Decision 3). */
+  | 'unverifiable';
+
+/**
+ * A reply that did not become a token, carrying which kind of failure it was.
+ *
+ * Here rather than in `timestampToken.ts`, for this module's own reason: that
+ * module loads node-forge, and main's barrel must be able to name the class a
+ * handler matches on without loading it.
+ */
+export class TimestampRefusedError extends Error {
+  readonly reason: TimestampRefusal;
+
+  constructor(reason: TimestampRefusal, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'TimestampRefusedError';
+    this.reason = reason;
+  }
+}

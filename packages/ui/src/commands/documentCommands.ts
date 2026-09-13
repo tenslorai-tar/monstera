@@ -2254,6 +2254,7 @@ export async function signDocument(
     ...(answer.location === undefined ? {} : { location: answer.location }),
     ...(answer.contactInfo === undefined ? {} : { contactInfo: answer.contactInfo }),
     ...(answer.certify === undefined ? {} : { certify: answer.certify }),
+    ...(answer.timestamp === undefined ? {} : { timestamp: answer.timestamp }),
     ...(placement === undefined || answer.mark === undefined
       ? {}
       : { appearance: { page: placement.page, rect: placement.rect, mark: answer.mark } }),

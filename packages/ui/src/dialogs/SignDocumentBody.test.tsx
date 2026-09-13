@@ -78,6 +78,20 @@ describe('SignDocumentBody', () => {
     expect(answers).toStrictEqual([{ passphrase: '' }]);
   });
 
+  it('a chosen timestamp authority is answered by its id, beside the sentence saying what is sent', () => {
+    // THE CASE ABOVE IS THIS ONE'S CONTROL: untouched, the control answers no
+    // `timestamp` at all — an absent field, never a `none` the wire would refuse.
+    const { answers } = opened(false);
+
+    choose('[data-sign-timestamp]', 'freetsa');
+    fireEvent.click(SIGN());
+
+    expect(answers).toStrictEqual([{ passphrase: '', timestamp: 'freetsa' }]);
+    // THE NOTE IS ON SCREEN, which is where ADR-0058 Decision 1 put the promise:
+    // the person choosing is the one who needs to know what leaves the machine.
+    expect(screen.getByText(/Only a fingerprint of the signature is sent/u)).not.toBeNull();
+  });
+
   it('PLACED and typed: Sign waits for text, then answers it trimmed in the chosen face', () => {
     const { answers } = opened(true);
     expect(SIGN()).toHaveProperty('disabled', true);

@@ -255,6 +255,10 @@ export {
   type SignatureAppearanceRefusal,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureTooLargeError,
+  type TimestampRefusal,
+  TimestampRefusedError,
+  TimestampUnreachableError,
 } from './signingRefusals.js';
 export {
   DocumentBusyError,
@@ -383,7 +387,8 @@ export { localPdfLibWriter, pdfLibWriter } from './pdfLibWriter.js';
 // reach, and the root registered no signer — so signing, certifying and visible
 // signatures were refused as an unregistered writer in the running application
 // while every test that built its own bus passed.
-export { localSignpdfWriter } from './signpdfWriter.js';
+export { localSignpdfWriter, signpdfWriterWith } from './signpdfWriter.js';
+export type { RequestTimestamp } from './documentSign.js';
 export {
   applyWatermarkPages,
   captureWatermarkPages,
@@ -445,6 +450,8 @@ export {
   type DownloadRefusal,
   type VerifiedDownload,
   downloadVerified,
+  readWithin,
+  receivedByteMeter,
 } from './verifiedDownload.js';
 // ON THE BARREL AND THE ENGINE HALF IS NOT. This module is data and two pure
 // functions — the URLs, the digests and which tokenizer family each model needs

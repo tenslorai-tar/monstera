@@ -1,3 +1,4 @@
+import { SIGN_REFUSALS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -11,18 +12,14 @@ export const SIGN_PROBLEM_DIALOG_ID = 'dialog.sign-problem';
  * Every way a signing attempt ends without a signature that is not a person's
  * own cancel.
  *
- * The same words `document.sign` answers with, so the command forwards the
- * outcome's kind without translating it — a table between two enums that must
- * agree would be a second opinion about what the wire's member names already
- * settle.
+ * **THE CONTRACT'S LIST, not a copy of it.** The command forwards the outcome's
+ * kind without translating it, so the dialog's reasons must be exactly the
+ * channel's refusals. This was a literal array under a comment saying the two
+ * were *the same words*, and nothing compared them: `ask` takes `unknown` props,
+ * so a refusal the channel gained and this copy lacked compiled cleanly and
+ * failed its parse only when a person met it.
  */
-export const SIGN_PROBLEMS = [
-  'wrong-passphrase',
-  'unreadable',
-  'unencodable-text',
-  'image-unreadable',
-  'image-too-large',
-] as const;
+export const SIGN_PROBLEMS = SIGN_REFUSALS;
 
 /**
  * Why the document was not signed.

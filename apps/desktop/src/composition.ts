@@ -64,8 +64,8 @@ import {
   engineChannels,
   groupIntoLines,
   localPdfLibWriter,
-  localSignpdfWriter,
   nodeFileSurface,
+  signpdfWriterWith,
   parsePageText,
   pdfiumChannels,
   remotePdfiumPageObjects,
@@ -108,6 +108,7 @@ import {
   EngineUnavailableError,
   MissingSessionError,
 } from './documentCommands.js';
+import { timestampTransport } from './timestampTransport.js';
 
 /**
  * How the host answers a duplicate-page read.
@@ -1233,7 +1234,10 @@ function engineSessionOpener(
     // was absent until 2026-09-13, and `compositionHost.test.ts`' signing case is
     // the one that routes a signature through this map rather than a bus of its
     // own — which is the only kind of case that could have seen it.
-    signpdf: localSignpdfWriter,
+    // AND ITS TIMESTAMP PORT, built here because this is the one module that may
+    // decide a request leaves the machine (ADR-0058 Decision 4). The kernel's own
+    // `localSignpdfWriter` has no transport, and refuses a timestamp through it.
+    signpdf: signpdfWriterWith(timestampTransport()),
   };
 
   /**

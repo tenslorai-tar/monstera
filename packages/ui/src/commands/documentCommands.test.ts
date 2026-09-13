@@ -2484,6 +2484,50 @@ describe('protectDocumentCommand', () => {
       expect(applied).toStrictEqual([{ version: asDocVersion(2), byteLength: 4096 }]);
     });
 
+    it('forwards the chosen timestamp authority by id, and CONTROL: the case above sends none', async () => {
+      // THE CASE ABOVE IS THIS ONE'S CONTROL: its answer names no authority and
+      // its params carry no `timestamp`, so a command that always sent one — or
+      // never did — fails one of the two.
+      const { client, sent } = signingClient({
+        kind: 'signed',
+        version: asDocVersion(2),
+        byteLength: 4096,
+        historyDropped: 0,
+      });
+
+      await signDocumentCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve({ passphrase: 'secret', timestamp: 'digicert' }),
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([
+        { id: 'document.sign', params: { docId: DOC, passphrase: 'secret', timestamp: 'digicert' } },
+      ]);
+    });
+
+    it('a timestamp refusal reaches the problem dialog by its OWN name', async () => {
+      // THE KIND IS FORWARDED UNTRANSLATED, and the dialog's reasons are the
+      // contract's list — so a refusal the channel gained reaches a person with
+      // its own sentence rather than failing the dialog's props parse.
+      const { client } = signingClient({ kind: 'timestamp-unverifiable' });
+      const shown: { id: string; props: unknown }[] = [];
+
+      await signDocumentCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          shown.push({ id, props });
+          return Promise.resolve(id === 'dialog.sign-document' ? { passphrase: '' } : undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(shown.at(-1)).toStrictEqual({
+        id: 'dialog.sign-problem',
+        props: { reason: 'timestamp-unverifiable' },
+      });
+    });
+
     it('SHOWS a wrong passphrase rather than returning quietly', async () => {
       // A person chose a certificate and got no signature. Returning quietly is
       // the display-only failure — a control that ran and appeared to do

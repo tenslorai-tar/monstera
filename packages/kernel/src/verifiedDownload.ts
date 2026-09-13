@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { Transform } from 'node:stream';
+import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 /**
@@ -73,6 +73,60 @@ export class DownloadRefused extends Error {
 
 /** How many hops a download may take before it is a loop. */
 const MAX_REDIRECTS = 5;
+
+/**
+ * GUARANTEE 3 as a stream stage: count what arrived, and refuse past the ceiling.
+ *
+ * **The one implementation of the received-byte rule in the application.** A
+ * download pins its bytes by digest and a timestamp reply cannot be pinned, but
+ * both are bounded the same way — by bytes that ARRIVED, never by a
+ * `Content-Length` the sender wrote — so both take this stage rather than each
+ * writing a counter (B3a).
+ *
+ * @param maxBytes the ceiling, compared against bytes received.
+ * @param refuse builds the caller's own refusal from the count at which it stopped,
+ *   so a download refuses as `DownloadRefused` and a timestamp reply as what its
+ *   caller names.
+ */
+export function receivedByteMeter(maxBytes: number, refuse: (received: number) => Error): Transform {
+  let received = 0;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      received += chunk.length;
+      if (received > maxBytes) {
+        callback(refuse(received));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+}
+
+/**
+ * A response body read whole, through {@link receivedByteMeter}.
+ *
+ * For a reply that is parsed in memory rather than written to disk — a timestamp
+ * token. What stops it is the count of bytes that arrived, so a body that lies
+ * about its length, omits it, or is chunked is bounded all the same.
+ */
+export async function readWithin(
+  body: ReadableStream<Uint8Array>,
+  maxBytes: number,
+  refuse: (received: number) => Error,
+): Promise<Uint8Array> {
+  const chunks: Buffer[] = [];
+  await pipeline(
+    body,
+    receivedByteMeter(maxBytes, refuse),
+    new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        chunks.push(chunk);
+        callback();
+      },
+    }),
+  );
+  return Uint8Array.from(Buffer.concat(chunks));
+}
 
 /**
  * Whether one host is on the list, where an entry may be `*.example.com`.
@@ -243,32 +297,32 @@ export async function downloadVerified({
 
   const body = await fetchChecked(url, allowedHosts, fetchImpl);
   const hash = createHash('sha256');
-  let received = 0;
 
   // GUARANTEE 3, and it is a meter rather than a header read. `Content-Length`
   // is a claim by the sender: a response that lies about its size, or omits the
   // header, or is chunked, would pass a check against it while delivering
-  // anything at all. What is counted is what arrived.
-  const meter = new Transform({
+  // anything at all. What is counted is what arrived — by `receivedByteMeter`,
+  // the one implementation of that rule, which a timestamp reply is bounded by too.
+  const meter = receivedByteMeter(
+    maxBytes,
+    (received) =>
+      new DownloadRefused(
+        'too-large',
+        `Download exceeded its ${String(maxBytes)} byte ceiling at ${String(received)} ` +
+          `bytes (${url}). Content-Length is deliberately not trusted for this check.`,
+      ),
+  );
+  // THE DIGEST IS ITS OWN STAGE, after the meter: a chunk past the ceiling is
+  // refused before it is hashed, exactly as it was when one stage did both.
+  const hasher = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
-      received += chunk.length;
-      if (received > maxBytes) {
-        callback(
-          new DownloadRefused(
-            'too-large',
-            `Download exceeded its ${String(maxBytes)} byte ceiling at ${String(received)} ` +
-              `bytes (${url}). Content-Length is deliberately not trusted for this check.`,
-          ),
-        );
-        return;
-      }
       hash.update(chunk);
       callback(null, chunk);
     },
   });
 
   try {
-    await pipeline(body, meter, createWriteStream(quarantine));
+    await pipeline(body, meter, hasher, createWriteStream(quarantine));
   } catch (cause) {
     await rm(quarantine, { force: true });
     // The ceiling arrives through the same rejection as a dead socket and must

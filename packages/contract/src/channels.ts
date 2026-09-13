@@ -16,7 +16,9 @@ import {
 import {
   MAX_SIGNATURE_FIELD,
   requestedSignatureMarkSchema,
+  SIGN_REFUSALS,
   signaturePlacementSchema,
+  TIMESTAMP_AUTHORITY_IDS,
 } from './commands.js';
 import {
   DOCUMENT_ACCESS_VALUES,
@@ -1701,6 +1703,11 @@ export const channels = {
         .extend({ mark: requestedSignatureMarkSchema })
         .strict()
         .optional(),
+      /**
+       * The timestamp authority, by id. Absent signs without a timestamp;
+       * present, a signature is never written without one (ADR-0058).
+       */
+      timestamp: z.enum(TIMESTAMP_AUTHORITY_IDS).optional(),
     }),
     z.discriminatedUnion('kind', [
       z.object({
@@ -1710,16 +1717,13 @@ export const channels = {
         historyDropped: z.number().int().nonnegative(),
       }),
       z.object({ kind: z.literal('cancelled') }),
-      /** The passphrase did not open the certificate. */
-      z.object({ kind: z.literal('wrong-passphrase') }),
-      /** The file was picked and is not a PKCS#12 this build can read. */
-      z.object({ kind: z.literal('unreadable') }),
-      /** The typed text holds a character the chosen font cannot draw. */
-      z.object({ kind: z.literal('unencodable-text') }),
-      /** The picture could not be read or decoded as a PNG or JPEG. */
-      z.object({ kind: z.literal('image-unreadable') }),
-      /** The picture is larger than `MAX_IMAGE_BYTES`. */
-      z.object({ kind: z.literal('image-too-large') }),
+      /**
+       * Every refusal, as ONE member over the contract's list — never five
+       * literals beside it. A refusal carries no fields, so its kind is the whole
+       * answer, and the renderer's problem dialog takes its reasons from the same
+       * list. What each means is written beside it in `SIGN_REFUSALS`.
+       */
+      z.object({ kind: z.enum(SIGN_REFUSALS) }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

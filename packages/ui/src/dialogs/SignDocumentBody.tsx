@@ -4,6 +4,7 @@ import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_SIGNATURE_FIELD,
   SIGNATURE_FONTS,
+  TIMESTAMP_AUTHORITY_IDS,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
@@ -16,6 +17,13 @@ import {
   SIGN_DOCUMENT_CERTIFY_FORMS,
   SIGN_DOCUMENT_CERTIFY_LOCKED,
   SIGN_DOCUMENT_CERTIFY_NONE,
+  SIGN_DOCUMENT_TIMESTAMP,
+  SIGN_DOCUMENT_TIMESTAMP_DIGICERT,
+  SIGN_DOCUMENT_TIMESTAMP_FREETSA,
+  SIGN_DOCUMENT_TIMESTAMP_GLOBALSIGN,
+  SIGN_DOCUMENT_TIMESTAMP_NONE,
+  SIGN_DOCUMENT_TIMESTAMP_NOTE,
+  SIGN_DOCUMENT_TIMESTAMP_SECTIGO,
   SIGN_DOCUMENT_CLEAR,
   SIGN_DOCUMENT_CONTACT,
   SIGN_DOCUMENT_EXPLAINS,
@@ -72,6 +80,27 @@ const CERTIFY_TITLES: Readonly<Record<CertifyChoice, MessageKey>> = {
 };
 
 /**
+ * What the timestamp control offers: no timestamp, then the contract's authorities
+ * in the contract's order.
+ *
+ * `none` is the dialog's own member and never reaches the wire — it becomes an
+ * absent field, for `approve`'s reason above.
+ */
+const TIMESTAMP_CHOICES = ['none', ...TIMESTAMP_AUTHORITY_IDS] as const;
+
+/** One of {@link TIMESTAMP_CHOICES}. */
+type TimestampChoice = (typeof TIMESTAMP_CHOICES)[number];
+
+/** Each choice's title, keyed on the contract's ids so an authority added there needs one here. */
+const TIMESTAMP_TITLES: Readonly<Record<TimestampChoice, MessageKey>> = {
+  none: SIGN_DOCUMENT_TIMESTAMP_NONE,
+  digicert: SIGN_DOCUMENT_TIMESTAMP_DIGICERT,
+  globalsign: SIGN_DOCUMENT_TIMESTAMP_GLOBALSIGN,
+  sectigo: SIGN_DOCUMENT_TIMESTAMP_SECTIGO,
+  freetsa: SIGN_DOCUMENT_TIMESTAMP_FREETSA,
+};
+
+/**
  * The three looks a visible signature can take, in the order offered.
  *
  * **Typed first**, because it is the one a person can complete from the
@@ -125,6 +154,11 @@ export default function SignDocumentBody({
   const lookId = useId();
   const fontId = useId();
   const [certify, setCertify] = useState<CertifyChoice>('approve');
+  const timestampId = useId();
+  // NO TIMESTAMP TO BEGIN WITH, and that is a decision rather than a default: a
+  // timestamp sends a fingerprint of the signature to a third party, which is a
+  // person's choice to make with the note beside the control in front of them.
+  const [timestamp, setTimestamp] = useState<TimestampChoice>('none');
   const [passphrase, setPassphrase] = useState('');
   const [name, setName] = useState('');
   const [reason, setReason] = useState('');
@@ -255,6 +289,28 @@ export default function SignDocumentBody({
         </select>
       </label>
 
+      <label className="m-document-choice" htmlFor={timestampId}>
+        {_(SIGN_DOCUMENT_TIMESTAMP)}
+        {/* A NATIVE `<select>`, for the certify control's reason above. */}
+        <select
+          id={timestampId}
+          data-sign-timestamp=""
+          onChange={(event) => {
+            setTimestamp(event.target.value as TimestampChoice);
+          }}
+          value={timestamp}
+        >
+          {TIMESTAMP_CHOICES.map((choice) => (
+            <option key={choice} value={choice}>
+              {_(TIMESTAMP_TITLES[choice])}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* THE SENTENCE ADR-0058 Decision 1 PROMISED, on screen beside the choice:
+          what leaves the machine, and what an observer on the network learns. */}
+      <p className="m-sign-document__note">{_(SIGN_DOCUMENT_TIMESTAMP_NOTE)}</p>
+
       <p className="m-sign-document__problem" role="status">
         {over ? _(SIGN_DOCUMENT_TOO_LONG) : missing ? _(SIGN_DOCUMENT_MARK_MISSING) : ''}
       </p>
@@ -280,6 +336,9 @@ export default function SignDocumentBody({
             // means by *not a certification*. Sending the word would put a
             // fourth member in a schema whose three are all `/DocMDP` levels.
             ...(certify === 'approve' ? {} : { certify }),
+            // `none` BECOMES AN ABSENT FIELD, for `approve`'s reason: the payload's
+            // enum names only authorities.
+            ...(timestamp === 'none' ? {} : { timestamp }),
             // A MARK ONLY FOR A PLACEMENT. The ribbon's invisible signature has
             // nowhere to draw one, and answering the default look anyway would
             // hand the command a field it has no rectangle for.

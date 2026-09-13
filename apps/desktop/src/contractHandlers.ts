@@ -540,6 +540,7 @@ function signHandler(commands: DocumentCommands): ContractHandlers['document.sig
         ...(params.contactInfo === undefined ? {} : { contactInfo: params.contactInfo }),
         ...(params.certify === undefined ? {} : { certify: params.certify }),
         ...(params.appearance === undefined ? {} : { appearance: params.appearance }),
+        ...(params.timestamp === undefined ? {} : { timestamp: params.timestamp }),
       });
       // EVERY REFUSAL IS A KIND WITH NO FIELDS, so each is answered by its own
       // name. A refusal that grew a field would be a compile error on this line,
