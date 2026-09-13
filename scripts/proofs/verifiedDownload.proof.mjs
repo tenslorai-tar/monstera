@@ -84,7 +84,7 @@ refuseStaleBuild(repoRoot(), VERIFIED_DOWNLOAD, 1);
 const failures = [];
 
 /**
- * A LITERAL — eight guarantee cases against each of two forms.
+ * A LITERAL — twelve guarantee cases against each of two forms.
  *
  * Not `CASES.length * FORMS.length`, which is audit item 4c's own example: the
  * failure to fear here makes the set SMALLER, and a count computed from the
@@ -401,7 +401,7 @@ for (const form of FORMS) {
 // ---------------------------------------------------------------------------
 // A control on this file's own reach, because every claim above is worth what
 // the table covered. Two forms, twelve cases each: an implementation silently
-// dropping out of `FORMS` would take eight assertions with it and the roster
+// dropping out of `FORMS` would take twelve assertions with it and the roster
 // would simply be smaller — which is why DECLARED_CASES is a literal and why
 // this states the arithmetic rather than deriving it.
 // ---------------------------------------------------------------------------

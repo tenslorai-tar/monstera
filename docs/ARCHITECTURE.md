@@ -270,14 +270,16 @@ one engine:
 built without either** ([ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
 2026-09-09).
 
-**A host's reader set is its own engine's.** The twenty channels split
+**A host's reader set is its own engine's.** The twenty-one channels split
 **six engine-agnostic** — `probe-containment`, `open`, `close`, `apply`,
 `capture`, `invert` — one that belongs to the **live-session shape**,
-`serialise`, and **thirteen MuPDF document-model reads**:
+`serialise`, and **fourteen MuPDF document-model reads**:
 `page-geometry`, `page-text`, `page-links`, `destinations`, `layers`,
 `annotations`, `form-fields`, `exportFormData`, `flat-fields`,
-`duplicate-pages`, `extract`, `snapshotRegion`, `ocr-page`. **A second engine
-owes none of the thirteen.**
+`duplicate-pages`, `extract`, `snapshotRegion`, `ocr-page`, `signatures`. **A
+second engine owes none of the fourteen.** `signatures` joined on 2026-09-12 with
+D7's verification row, and this paragraph said *twenty* and *thirteen* until the
+audit of `622f794..4971b60` — the count `coreChannels.test.ts` holds as a literal.
 
 **`ocr-page` is the thirteenth, added 2026-09-11 with D6 row 2, and it arrived
 while this paragraph said twelve** — the count and the list were both written
@@ -595,7 +597,7 @@ reached natively, as a shared
 library built from source and bound with koffi behind a thin flat-C shim —
 never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
 bare specifier `mupdf`, which resolves to the npm package's
-`dist/mupdf-wasm.wasm`; **twenty-four non-test modules do so, and a search for
+`dist/mupdf-wasm.wasm`; **twenty-eight non-test modules do so (2026-09-13), and a search for
 `monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
 built, is scanned by four security proofs, and is loaded by nothing the product
 runs.
@@ -622,16 +624,16 @@ Until that lands, the engine the product *reaches* is still the npm package —
 which is what the measurement above says and what a reader must not infer their
 way past.
 
-**AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09 and re-measured
-2026-09-11** (ADR-0010's correction of the first date; `npm run
-proof:enginesurface`). The twenty-four modules call **125 distinct MuPDF
-members**, of which `PDFAnnotation` declares 41, `PDFObject` 22, `PDFDocument` 20
+**AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09, re-measured
+2026-09-11 and again 2026-09-13** (ADR-0010's correction of the first date; `npm run
+proof:enginesurface`). The twenty-eight modules call **132 distinct MuPDF
+members**, of which `PDFAnnotation` declares 41, `PDFObject` 23, `PDFDocument` 20
 and `PDFWidget` 15 — an object model. The shim exports **24** C functions and
-hands back an opaque handle by design, so most of the 125 have nothing to move
-onto and must be written behind an ABI that does not exist yet. Only **seven** of
-the twenty-four load an engine at all; the other seventeen spell `import type`,
-are erased by the compiler, and operate on handles those seven opened. So
-changing the engine changes every one of the twenty-four **bodies** and not one of
+hands back an opaque handle by design, so most of the 132 have nothing to move
+onto and must be written behind an ABI that does not exist yet. Only **eight** of
+the twenty-eight load an engine at all; the other twenty spell `import type`,
+are erased by the compiler, and operate on handles those eight opened. So
+changing the engine changes every one of the twenty-eight **bodies** and not one of
 their first lines — the count that reads like the work is a count of the thing
 that does not have to change.
 

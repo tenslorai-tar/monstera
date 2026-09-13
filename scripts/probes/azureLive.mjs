@@ -68,8 +68,17 @@ const DRAWN_X = 40;
 const DRAWN_BASELINE = 230;
 const DRAWN_SIZE = 28;
 
-/** The region sent: the line the word is on, with room either side. */
-const REGION = { x0: 20, y0: 200, x1: 380, y1: 270 };
+/**
+ * The region sent: the line the word is on, with room either side.
+ *
+ * NOT CENTRED ON THE WORD VERTICALLY. It was y 200–270 with the glyphs at about
+ * 230–250, so a box flipped top-to-bottom inside the region landed at about
+ * 220–240 and passed both position checks — the conversion this probe exists to
+ * prove could be wrong in y and still print PASSED (audit of `622f794..4971b60`).
+ * With the word near the region's top, a flip inside it lands below the drawn
+ * baseline, which the check below refuses.
+ */
+const REGION = { x0: 20, y0: 150, x1: 380, y1: 290 };
 
 /** How far outside a box may fall and still be the same box, in points. */
 const SLACK = 2;
@@ -172,6 +181,11 @@ if (found === undefined) {
   // check above and not this one.
   if (x0 > DRAWN_X + DRAWN_SIZE || y1 < DRAWN_BASELINE || y0 > DRAWN_BASELINE + DRAWN_SIZE) {
     failures.push(`the word's box ${box} does not sit over where the word was drawn`);
+  }
+  // A WORD'S HEIGHT, not the region's: a box equal to the whole region passes both
+  // checks above, and it is what a conversion that returned the crop would answer.
+  if (y1 - y0 > 2 * DRAWN_SIZE) {
+    failures.push(`the word's box ${box} is taller than the drawn word could be`);
   }
 }
 

@@ -892,6 +892,272 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — Stage audit of `622f794..4971b60`: a verifier that says "changed" when it cannot check, and a residue narrowed by the rewrite that made it per kind
+
+Fifty-five commits and 198 files: Stage 6's close-out, all of Stage 7, the Claude
+recogniser, the Azure Settings screen, ADR-0060 with the compose host's kernel half,
+and today's red-board fix. **The gate fired on the Markdown unit's commit** at 205
+files against a batch of 200, where it fires by design.
+
+Read by four read-only reviews in parallel — the modified proofs, the instruments,
+the fix-shaped source commits, and documents against code. **Every finding below
+was verified in this session before it was recorded**; three reported items did not
+survive that and are not listed.
+
+Findings **GGGGGG-1** to **GGGGGG-14**:
+- five are shipped-application defects, queued by the owner's rule and not fixed
+  here;
+- two are a proof and two probes whose checks could not fail the way they claimed;
+- five are documents a commit falsified without opening them.
+
+### 1. Root cause, or workaround?
+
+**GGGGGG-1 — the signatures read turns every failure into "unreadable" (shipped;
+queued).**
+- Main wraps `this.#signatures(session)` in a bare `catch {}` and answers
+  `{ signatures: [], unreadable: true }` (`documentCommands.ts`, added in
+  `c9aea22`).
+- The host's `engine/signatures` catches everything, including a failed
+  `writer.serialise`, as `signatures-unreadable`.
+- So a dead host, a stale session or a verifier bug tells the person their
+  signature could not be read.
+- This is the shape `e24e061` fixed in `sign()`: *a catch that called every failure
+  a wrong password*. The class was not swept, and this is its third instance after
+  the already-queued `insertImage`/`placeImage`.
+- Root fix: throw `SignaturesUnreadable` only from the parse, and match on that
+  class at both catches.
+
+The fix commits in the range each state a mechanism and are root-cause:
+- `5c32bf6` — `/Rotate` as a third frame;
+- `aef38f6` — a hex trim that ate half a byte;
+- `171a6b8` — a trailing zero that was the DER's own;
+- `71ff4ae` — a secret refused on the plaintext wire;
+- `1d66b89` — verification checked a rewritable attribute;
+- `467fd26` and `e4fe5c9` — no signer registered, then the writer map typed
+  `Required`;
+- `0d9991b` — the TSA certificate identifier;
+- `4971b60` — a ceiling judged against a second measurement.
+
+`1c68c3f` loosened two TSA checks against a live DigiCert token, and both still check
+every attribute present. Its one untested edge — a same-serial certificate from
+another issuer — costs a misleading message, not an acceptance.
+
+### 2. Verified against the easy shape only?
+
+**GGGGGG-2 — a valid ECDSA or RSA-PSS signature reads as "the document has changed"
+(shipped; queued).**
+- `signedDataCheck.ts` answers `verified: false` for anything but RSA PKCS#1 v1.5.
+- `signatureRead.ts` turns that into `coversDocument: false`, and the panel shows
+  `SIGNATURES_CHANGED`.
+- `1d66b89` argued *no document this build writes is in that class*. But the panel
+  reads other people's documents, and `1c68c3f` measured a live authority signing
+  with ECDSA.
+- *Cannot check* and *changed* are two sentences, and this build prints the second
+  for the first.
+
+**GGGGGG-3 — `coversWholeFile` is `c + d === length` (shipped; queued; security).**
+`b + d + (c − b)` reduces to `c + d`. So `a` is never held to 0, and the gap is never
+held to be the `/Contents` string. A crafted `/ByteRange` that leaves a prefix
+unsigned reads as covering the whole file. The forgery case in `1d66b89` rewrites a
+digest, not a range.
+
+**GGGGGG-4 — signatures are found through page widgets only (plausible; queued).** A
+`/Sig` field in `AcroForm /Fields` whose widget is on no page's `/Annots` is never
+reported, and the panel says there are none.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+**GGGGGG-5 — the flatten residue was narrowed by the rewrite that made it per kind
+(fixed in this commit).**
+- **Before:** `removalCollects.test.ts` asserted `after.widgets === 0` and
+  `after.fields === 0`.
+- **After `60a1f1e`:** flatten's residue became `.widgets` alone. A flatten that
+  wrote a field dictionary back out passed — a radio group's parent carries `/FT`
+  and no `/Subtype /Widget`.
+- The commit's own reason was that a shared assertion hides a kind, and the rewrite
+  narrowed the one kind that already had two assertions.
+- Now `widgets + fields`, `before: 17`. All six cases pass, and the fixture's own
+  count is asserted before the command runs.
+
+`App.test.tsx`'s `commandCalls` also filters `settings.loadSecrets` since `2256bb2`,
+so no exact-call case can see it. That is a loosening with its reason written beside
+it (ADR-0056): a surface load, never a reader's action. It stands.
+
+### 3. Would CI have caught it?
+
+Answered from the Actions API, per commit in the range. Everything is green except
+five runs:
+- **Guards at `4ec11b0` and `b431a3d`:** one mechanism, recorded under *The stage's
+  last red board*. `proof:ocrhandwriting` was registered with no `ARTEFACT_EDGES`
+  entry.
+- **CI at `aef38f6`:** recorded in that commit and the entry of 2026-09-12. A per-run
+  P12 turned a hex trim into a flake.
+- **CI at `0fe2f54`:** today's red board, recorded above.
+- **CI at `1cedac6`, on the `ubuntu-latest` leg (GGGGGG-6, not recorded until now):**
+  `proof:canvaspixels` reported 0 painted pixels, settled by *bound* after 60,089 ms.
+  The next commit, `c9aea22`, was green and touched no rendering code. The proof's own
+  message says *bound* on Linux without a display *is what a working renderer also
+  produces*. So that leg asserts an outcome it has written down it cannot separate
+  from success. An intermittent red with no fix is the state it is in.
+
+None of the five queued shipped defects would have reddened CI: each is a path no
+case constructs.
+
+### 4. Are the proofs non-vacuous?
+
+- **GGGGGG-7 — `perfBudget.proof.mjs`'s comment claimed a control it does not have
+  (fixed).** The case builds its ceiling below the peak, so
+  `peakBytes > absoluteLimit` is true by construction. It catches a gate that
+  misreports its own numbers, and the always-refusing gate is ruled out by the
+  positive case. The comment now says so. **The mutation control
+  (`withinAbsolute` forced true) is still NOT executed** — refused by this session's
+  permission check.
+- **GGGGGG-5**, above.
+- **GGGGGG-8 — `verifiedDownload.proof.mjs` said eight cases per form, and the code
+  has twelve (fixed).** `DECLARED_CASES = 24` was right. Two comments were not.
+
+### 4a. Resolution tests
+
+**GGGGGG-9 — both live recognition probes passed a box flipped within the region
+(fixed; not re-run).**
+- The region was y 200–270 with the glyphs at about 230–250, so a top-to-bottom flip
+  inside the region landed at about 220–240. That passed both *inside the region*
+  and *over the drawing*, and so did a box the size of the whole region.
+- The probes exist to separate a right coordinate conversion from one right about
+  the text alone. In y they could not — two flips that cancel.
+- The region is now y 150–290, so a flip inside it lands below the drawn baseline,
+  which the existing check refuses. A new check refuses a box taller than twice the
+  type size.
+- Verified by arithmetic only: both live runs answer 401 (entry below).
+
+**GGGGGG-10 — the machine witness labels "had company" from one reading (tooling;
+recorded).** `machineWitness.mjs` calls anything busier than 1.5 cores company. The
+timed step's own children count, and the file's header says company needs a
+comparison. The label is printed where someone decides whether to raise a timeout.
+
+### 4b. Positive controls on the searches
+
+**GGGGGG-11 — the stale-build scan cannot see a bare `@monstera/*` import (tooling;
+recorded).**
+- `IMPORTS_A_BUILD` matches `/dist/` only. `464af76` fixed one importer and recorded
+  the gap as a comment.
+- One is live: `scripts/perf/byteImageCost.mjs` imports `@monstera/kernel` and calls
+  no `refuseStaleBuild`.
+- Tooling is suspended by the owner, so this is recorded rather than fixed.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+- **`ocrRecognise.proof.mjs`:** moved from `cases: CASES.length` to a literal, with
+  the labels held to it — the right direction.
+- **`auditWatermark.mjs`'s `BATCH`:** raised to 100/200 in `4164e5d` inside the range
+  it governs. It is recorded as the owner's, and the code agrees with that record.
+- **`kernelLoad.proof.mjs`:** gained five cases against a literal count of 16.
+
+Nothing derives a count from the set it polices.
+
+### 5. Executed, or asserted?
+
+- **Never run live:**
+  - DocuSign — deferred to Stage 10;
+  - the Claude recogniser and Azure — both run today, both refused at authentication;
+  - the real compose host.
+- **GGGGGG-12 — find-and-redact may leave earlier pages marked when a later page is
+  refused (plausible; queued).** `pageRedact.ts` marks page by page and throws at
+  `MAX_REDACT_MATCHES_PER_PAGE` saying *nothing was marked*. That is true of the page
+  that threw, and the apply is live-session with no rollback. Whether the service
+  recycles the session after a failed apply was not checked.
+- **A stray local request can cancel a DocuSign sign-in in progress.**
+  `docusignSignIn.ts` rejects the whole sign-in on a wrong `state`. It fails closed,
+  so it is recorded, not queued.
+
+### 6. Did architecture change before the feature?
+
+Yes, for every new host, channel family and trust boundary: `f655762`/`7c9b5d6` →
+`c4905ba`, `2bf5bd2` → `b431a3d`, `207edc4` → `379806f`, `4728992` → `2256bb2`,
+`1586ffd` → `0e95051`, `2e9c9b3` → `976512d`, `0a5ad60` → `c86869e`, `9b212cb` →
+`0fe2f54`.
+
+**GGGGGG-13 — one law clause rode inside a feature commit.** `c4905ba` added to
+`docs/ARCHITECTURE.md` that an allowlist entry may be `*.example.com`, admitting a
+whole subdomain space, because HuggingFace redirects LFS to a regional host. That is
+a widening of the download rule, and B4 puts an amendment in its own commit. It
+cannot be split after publication. It is recorded here, and the clause states what
+it gives up.
+
+### 7. Do the documents still match the code?
+
+**GGGGGG-14, five documents a commit falsified without opening them — all edited
+true in this commit:**
+- **The MuPDF migration's size.** CLAUDE.md and ARCHITECTURE said 24 modules, 7
+  loading, 17 type-only, 125 members. `npm run proof:enginesurface`, 2026-09-13, says
+  **28, 8, 20 and 132**, with `PDFObject` 22 → 23. FFFFFF-4's shape a second time:
+  `ocrHandwriting`, `documentSanitize`, `pageRedact` and `signatureRead` arrived and
+  no commit reopened the figure.
+- **The host channel split.** ARCHITECTURE said twenty channels and thirteen MuPDF
+  reads. `engine/signatures` made it **twenty-one and fourteen** in `c9aea22`, a day
+  after FFFFFF-3 corrected the same sentence. `coreChannels.test.ts`' header still
+  said *twelve*.
+- **The OCR-region row** said `ocrRegionTool.test.ts` has eight cases. It has
+  **fifteen**.
+- **The Azure row** put the endpoint and key in the AI group. Their `category` is
+  `editing`.
+- **The threat model's process table** labelled all three hosts *(utility)*, which
+  ADR-0022 withdrew. Only the compose row is from this range.
+- **The ADR index row for 0059** still named the owner's key as the DocuSign trigger
+  after the ADR's own correction. That miss was mine, today.
+
+### What this range says about itself
+
+**The class that recurred is the catch that names one cause for every failure.**
+`e24e061` found it in signing, fixed the instance and queued two siblings. The
+signature read, written six commits earlier in `c9aea22`, is the same shape and was
+not on that list. A sweep for `catch {` across the D7 range when the first one was
+found would have named it.
+
+**Queued shipped defects, by the owner's rule** — GGGGGG-1, -2, -3, -4 and -12, with
+`insertImage`/`placeImage`'s unnamed-failure mapping already queued. GGGGGG-3 is the
+one to take first: it is a verification claim a crafted file can make false.
+
+Watermark advances to `4971b60`.
+
+---
+
+## 2026-09-13 — Both live recognition runs were refused at authentication; neither row closes
+
+The owner set `MONSTERA_AZURE_DI_ENDPOINT`, `MONSTERA_AZURE_DI_KEY` and
+`MONSTERA_ANTHROPIC_KEY` as Windows user variables, and this session read all three
+as present. No value was printed, logged or written anywhere.
+
+- `npm run probe:azure -- --require-azure`: *FAILED — the service refused the
+  request: unauthorised*.
+- `npm run probe:claude -- --require-claude`: *FAILED — the API refused or could not
+  be read: unauthorised*.
+
+### Which refusal, since both recognisers fold 401 and 403 together
+
+A one-off scratchpad script, not in this repository, sent the same two requests and
+printed only the status and the service's error token: **Azure 401 with error code
+`401`; Anthropic 401 with error type `authentication_error`.** Both services parsed
+the request and rejected the credential. A shape the service did not accept answers
+400, not an authentication error. A check on shape alone, printed as yes/no, found no
+surrounding whitespace and no quote characters in any of the three. It did find that
+the Anthropic variable does not begin with `sk-ant-`, the prefix Anthropic API keys
+are expected to carry.
+
+**So the mechanism is the credentials, not this build**, and there is nothing to fix
+from the code side. Azure's 401 is its answer to a key that does not belong to the
+endpoint it was sent to, as well as to a wrong key. The owner's next step is to check
+that the Azure key and endpoint are from one resource, and that the Anthropic value
+is an API key. **D6's Azure row and the Claude row stay not done**, and Stage 6's
+count does not move.
+
+**A tooling fault seen on the way, fixed nowhere and queued nowhere:** the Claude
+probe ended with libuv's `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`
+after printing its verdict. It exits through `process.exit` with `fetch`'s socket
+still closing. The application never calls `process.exit` on that path.
+
+---
+
 ## 2026-09-13 — `main` was red on a proof case judged against a second measurement; the host had not moved
 
 CI at `0fe2f54` failed one step, *Prove the performance gate follows the declared

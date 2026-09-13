@@ -618,8 +618,11 @@ const thrown = guarded(() => {
         `${measured.role}: an absolute ceiling below its peak turns the gate red, with the multiplier generous`,
         role?.withinAbsolute === false &&
           // SELF-CONSISTENT: the refusal follows from the two numbers the gate
-          // itself holds. `withinAbsolute === false` alone is satisfied by a
-          // gate that always refuses.
+          // itself holds. This clause is true by construction of the ceiling, so
+          // what it catches is a gate that misreports its own reading or limit —
+          // NOT a gate that always refuses. That one is ruled out by the positive
+          // case above, *the gate passes against the budgets the invariant
+          // actually declares*, which requires `withinAbsolute` to be true.
           role.peakBytes > role.absoluteLimit &&
           // And the absolute is what failed: a base the gate refused would make
           // this case pass for a gate that never read the absolute term.

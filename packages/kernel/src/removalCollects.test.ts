@@ -273,8 +273,18 @@ const REMOVAL_CASES: Readonly<Record<string, RemovalCase>> = {
   flattenFormFields: {
     fixture: form,
     payload: { kind: 'flattenFormFields' },
-    residue: async (bytes) => (await residue(bytes)).widgets,
-    before: 9,
+    // WIDGETS AND FIELDS, both. This was `.widgets` alone for one range (audit of
+    // `622f794..4971b60`), narrowed when the table became per kind — while the case
+    // it replaced asserted both counts were zero. A flatten that collected every
+    // widget and wrote a field dictionary back out, such as a radio group's parent,
+    // which carries `/FT` and no `/Subtype /Widget`, passed. A merged
+    // field-and-widget dictionary counts in both, so the sum is a count of
+    // dictionaries to be gone, not of objects.
+    residue: async (bytes) => {
+      const found = await residue(bytes);
+      return found.widgets + found.fields;
+    },
+    before: 17,
   },
   applyRedactions: {
     fixture: marked,

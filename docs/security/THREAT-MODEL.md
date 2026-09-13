@@ -107,9 +107,9 @@ Windows-only, Microsoft Store distribution ([ADR-0001](../DECISIONS/0001-agpl-on
 | Process | Runs | May reach | Must not reach |
 |---|---|---|---|
 | **Main** | Electron main, `DocumentService`, `CommandBus`, `CapabilityRegistry` | Filesystem via `FileHandle`s it minted; child process lifecycle; settings; keychain | Native engine code (invariant 20). Document parsing of any kind |
-| **mupdf-host** (utility) | The MuPDF shim, all native parsing | The document bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Other documents |
-| **pdfium-host** (utility) | PDFium rendering | Same as mupdf-host | Same as mupdf-host |
-| **compose-host** (utility) | `markdown-it` and `@cantoo/pdf-lib`, composing a new PDF from a file picked for import ([ADR-0060](../DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)) | The source bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Every open document |
+| **mupdf-host** (AppContainer process we create, [ADR-0022](../DECISIONS/0022-the-engine-host-is-a-process-we-create.md)) | The MuPDF shim, all native parsing | The document bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Other documents |
+| **pdfium-host** (AppContainer process we create) | PDFium rendering | Same as mupdf-host | Same as mupdf-host |
+| **compose-host** (AppContainer process we create) | `markdown-it` and `@cantoo/pdf-lib`, composing a new PDF from a file picked for import ([ADR-0060](../DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)) | The source bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Every open document |
 | **Renderer** | React UI, PDF.js | Only the contract's IPC channels | Node. Filesystem paths (invariant 2). Any absolute path at all |
 
 **The renderer holds an opaque `DocId` and a `DocVersion`, never a path and never

@@ -62,7 +62,9 @@ const PAGE_HEIGHT = 300;
 const DRAWN_X = 40;
 const DRAWN_BASELINE = 230;
 const DRAWN_SIZE = 28;
-const REGION = { x0: 20, y0: 200, x1: 380, y1: 270 };
+// NOT CENTRED ON THE WORD VERTICALLY, for `azureLive.mjs`' reason: centred, a box
+// flipped inside the region passed both position checks.
+const REGION = { x0: 20, y0: 150, x1: 380, y1: 290 };
 const SLACK = 2;
 
 const ROOT = repoRoot();
@@ -169,6 +171,10 @@ if (found === undefined) {
   }
   if (x0 > DRAWN_X + DRAWN_SIZE || y1 < DRAWN_BASELINE || y0 > DRAWN_BASELINE + DRAWN_SIZE) {
     failures.push(`the word's box ${box} does not sit over where the word was drawn`);
+  }
+  // A WORD'S HEIGHT, not the region's, for `azureLive.mjs`' reason.
+  if (y1 - y0 > 2 * DRAWN_SIZE) {
+    failures.push(`the word's box ${box} is taller than the drawn word could be`);
   }
 }
 
