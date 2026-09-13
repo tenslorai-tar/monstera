@@ -25,8 +25,9 @@ import { TimestampRefusedError } from './signingRefusals.js';
  * 5. The token's signer verifies over the TSTInfo — by `signedDataCheck.ts`, the
  *    same module that verifies a document signature (B3a).
  * 6. That certificate's only extended key usage is `id-kp-timeStamping`, critical.
- * 7. Exactly one signed SigningCertificate or SigningCertificateV2 attribute, whose
- *    first identifier hashes to that certificate's exact DER.
+ * 7. At least one signed SigningCertificate or SigningCertificateV2 attribute, and
+ *    every one present has a first identifier hashing to that certificate's exact
+ *    DER — a live token carried both.
  *
  * The request sets `certReq`, so RFC 3161 §2.4.1 obliges the authority to put the
  * certificate in the token and nothing here fetches a second thing.
@@ -232,25 +233,51 @@ export function acceptTimestampReply(reply: Uint8Array, query: TimestampQuery): 
   }
   const tstInfoDer = eContent.value;
 
-  // THE CERTIFICATES, parsed and kept beside the nodes they came from: check 7
-  // hashes the certificate's own DER, and a re-encoding of a parsed certificate is
-  // a different question.
+  // THE CERTIFICATES THIS BUILD CAN READ, each kept beside the node it came from:
+  // check 7 hashes the certificate's own DER.
+  //
+  // A CERTIFICATE node-forge CANNOT PARSE IS SKIPPED, NOT REFUSED, and the reason
+  // is measured. node-forge reads RSA keys only — *Cannot read public key. OID is
+  // not RSA.* This first parsed every certificate in the token and refused on any
+  // failure, so a chain certificate the signer check never needs would refuse a
+  // token whose signer this build can verify. Only the SIGNER'S certificate must
+  // be readable, and when it is not, the refusal says so by name.
   const certificateNodes = childrenOf(
     capture['certificates'] as forge.asn1.Asn1 | undefined,
     'the certificates field',
   );
-  let certificates: ForgeCertificate[];
-  try {
-    certificates = certificateNodes.map(
-      (node) => forge.pki.certificateFromAsn1(node) as unknown as ForgeCertificate,
-    );
-  } catch (cause) {
-    unverifiable('a certificate in the token could not be read', cause);
+  const readable: { readonly node: forge.asn1.Asn1; readonly certificate: ForgeCertificate }[] = [];
+  const unreadableSerials: string[] = [];
+  for (const node of certificateNodes) {
+    try {
+      readable.push({
+        node,
+        certificate: forge.pki.certificateFromAsn1(node) as unknown as ForgeCertificate,
+      });
+    } catch {
+      // node-forge's refusal IS the answer — this certificate is not one it reads —
+      // and what is kept is the serial, so an unreadable SIGNER can be named below.
+      const tbs = Array.isArray(node.value) ? node.value[0]?.value : undefined;
+      if (Array.isArray(tbs)) {
+        const versioned = tbs[0]?.tagClass === asn1.Class.CONTEXT_SPECIFIC;
+        const serial = bytesOf(tbs[versioned ? 1 : 0]);
+        if (serial !== null) unreadableSerials.push(forge.util.createBuffer(serial).toHex());
+      }
+    }
+  }
+
+  // THE SIGNER'S KEY IS ONE THIS BUILD DOES NOT VERIFY. Measured 2026-09-13: a live
+  // authority's token was signed with ECDSA over an EC key, and node-forge verifies
+  // RSA only. That is not a malformed token, and *does not verify* would say it was.
+  const signerSerial =
+    typeof capture['serial'] === 'string' ? forge.util.createBuffer(capture['serial']).toHex() : null;
+  if (signerSerial !== null && unreadableSerials.includes(signerSerial)) {
+    unverifiable('the token is signed with a key type this build does not verify (RSA only)');
   }
 
   // 5 — THE SIGNER, by the one verifier.
   const message: ForgeMessage = {
-    certificates,
+    certificates: readable.map((entry) => entry.certificate),
     rawCapture: capture,
   };
   const signer = checkSigner(message, tstInfoDer);
@@ -258,7 +285,7 @@ export function acceptTimestampReply(reply: Uint8Array, query: TimestampQuery): 
     unverifiable('the token’s signature does not verify');
   }
   const certificate = signer.certificate;
-  const certificateNode = certificateNodes[certificates.indexOf(certificate)];
+  const certificateNode = readable.find((entry) => entry.certificate === certificate)?.node;
   if (certificateNode === undefined) unverifiable('the verifying certificate has no node');
 
   // 6 — ONE PURPOSE, TIMESTAMPING, CRITICAL.
@@ -310,8 +337,15 @@ export function acceptTimestampReply(reply: Uint8Array, query: TimestampQuery): 
 }
 
 /**
- * Check 7: exactly one SigningCertificate or SigningCertificateV2 attribute among
- * the SIGNED attributes, whose first identifier matches the verifying certificate.
+ * Check 7: at least one SigningCertificate or SigningCertificateV2 attribute among
+ * the SIGNED attributes, and EVERY one present identifies the verifying certificate
+ * by its first identifier.
+ *
+ * **At least one, not exactly one, and the reason is a live token.** RFC 5816 §2.2.1
+ * permits either form; measured 2026-09-13, a live authority's token carried BOTH,
+ * signed. This first required exactly one and refused a correct token. Each present
+ * attribute is still checked, because a token whose v1 names one certificate and
+ * whose v2 names another is not a token that identifies its signer.
  *
  * ESSCertID hashes with SHA-1 (RFC 2634). ESSCertIDv2 hashes with its own
  * `hashAlgorithm`, SHA-256 when absent — RFC 5035's text says SHA-1 and its
@@ -324,38 +358,42 @@ function acceptCertificateIdentifier(
   certificateDer: string,
 ): void {
   if (attributes === undefined) unverifiable('the token carries no signed attributes');
-  const v1 = attributeValues(attributes, OIDS.signingCertificate);
-  const v2 = attributeValues(attributes, OIDS.signingCertificateV2);
-  if (v1.length + v2.length !== 1) {
-    unverifiable('the token does not carry exactly one signing-certificate attribute');
-  }
-  const isV2 = v2.length === 1;
-  const certs = childrenOf(childrenOf(isV2 ? v2[0] : v1[0], 'the signing-certificate attribute')[0], 'its certs');
-  const first = childrenOf(certs[0], 'the first certificate identifier');
+  const identifiers = [
+    ...attributeValues(attributes, OIDS.signingCertificate).map((value) => ({ v2: false, value })),
+    ...attributeValues(attributes, OIDS.signingCertificateV2).map((value) => ({ v2: true, value })),
+  ];
+  if (identifiers.length === 0) unverifiable('the token carries no signing-certificate attribute');
 
-  let makeDigest: (() => forge.md.MessageDigest) | undefined = () => forge.md.sha1.create();
-  let rest = first;
-  if (isV2) {
-    makeDigest = DIGESTS[known('sha256')];
-    const head = first[0];
-    if (head?.type === asn1.Type.SEQUENCE) {
-      const oid = bytesOf(childrenOf(head, 'the identifier’s hash algorithm')[0]);
-      makeDigest = oid === null ? undefined : DIGESTS[asn1.derToOid(oid)];
-      rest = first.slice(1);
+  for (const { v2, value } of identifiers) {
+    const certs = childrenOf(childrenOf(value, 'the signing-certificate attribute')[0], 'its certs');
+    const first = childrenOf(certs[0], 'the first certificate identifier');
+
+    let makeDigest: (() => forge.md.MessageDigest) | undefined = () => forge.md.sha1.create();
+    let rest = first;
+    if (v2) {
+      makeDigest = DIGESTS[known('sha256')];
+      const head = first[0];
+      if (head?.type === asn1.Type.SEQUENCE) {
+        const oid = bytesOf(childrenOf(head, 'the identifier’s hash algorithm')[0]);
+        makeDigest = oid === null ? undefined : DIGESTS[asn1.derToOid(oid)];
+        rest = first.slice(1);
+      }
     }
-  }
-  if (makeDigest === undefined) unverifiable('the identifier names a hash this build does not verify');
+    if (makeDigest === undefined) {
+      unverifiable('the identifier names a hash this build does not verify');
+    }
 
-  const [certHash, issuerSerial] = rest;
-  const digest = makeDigest();
-  digest.update(certificateDer);
-  if (bytesOf(certHash) !== digest.digest().getBytes()) {
-    unverifiable('the signing-certificate identifier does not match the certificate that signed');
-  }
-  if (issuerSerial !== undefined) {
-    const serial = bytesOf(childrenOf(issuerSerial, 'the issuerSerial')[1]);
-    if (serial === null || forge.util.createBuffer(serial).toHex() !== certificate.serialNumber) {
-      unverifiable('the identifier’s serial is not the certificate’s');
+    const [certHash, issuerSerial] = rest;
+    const digest = makeDigest();
+    digest.update(certificateDer);
+    if (bytesOf(certHash) !== digest.digest().getBytes()) {
+      unverifiable('the signing-certificate identifier does not match the certificate that signed');
+    }
+    if (issuerSerial !== undefined) {
+      const serial = bytesOf(childrenOf(issuerSerial, 'the issuerSerial')[1]);
+      if (serial === null || forge.util.createBuffer(serial).toHex() !== certificate.serialNumber) {
+        unverifiable('the identifier’s serial is not the certificate’s');
+      }
     }
   }
 }

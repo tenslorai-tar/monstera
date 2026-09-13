@@ -238,3 +238,54 @@ certificate, which is the one `signedDataCheck.ts` answers.
 names are not compared, only the serial and the hash. A certificate whose hash
 matches is the certificate, so the name adds nothing a hash has not already
 fixed.
+
+## Correction, 2026-09-13 — the live run: one authority withdrawn, and check 7 was too strict
+
+The row's trigger was one run against a real authority, because every token the
+checks had accepted was built in this repository. `npm run probe:tsa` signs
+through the shipped signer and transport and reads the signature back. Its first
+runs refused both authorities it asked, for different reasons. A scratch
+diagnostic read the two real tokens' structure: serials, OIDs, and node-forge's
+own error text.
+
+### FreeTSA is withdrawn: its tokens cannot be verified here
+
+FreeTSA's signing certificate carries an EC key (`1.2.840.10045.2.1`) and its token
+is signed with ECDSA-SHA512 (`1.2.840.10045.4.3.4`). node-forge reads and verifies
+RSA only — *Cannot read public key. OID is not RSA.* An authority whose every token
+would be refused is not one to offer, so it leaves the contract's list under the
+founding rule, *implemented correctly or not offered*. **Every listed authority is
+now plain HTTP**, which Decision 1 already permits.
+
+**It returns when ECDSA verification does.** That changes §3's verifier line, which
+names node-forge, so it is an amendment first.
+
+### Check 7 required exactly one identifier, and a correct token carried two
+
+DigiCert's token carries **both** SigningCertificate (`…16.2.12`) and
+SigningCertificateV2 (`…16.2.47`) among its signed attributes. RFC 5816 §2.2.1
+permits either; requiring exactly one refused a correct token. Check 7 now reads:
+**at least one, and every one present identifies the verifying certificate** — a v1
+naming one certificate and a v2 naming another is still refused.
+
+### An unreadable certificate refused the whole token
+
+The checks parsed every certificate in the token and refused if any failed. Only
+the signer's certificate is needed. So an unreadable certificate is now skipped,
+and an unreadable SIGNER is refused by that name — *signed with a key type this
+build does not verify* — rather than as *a certificate could not be read*, which
+named a symptom.
+
+### After the corrections
+
+All three listed authorities pass, each through the shipped route, on 2026-09-13:
+
+- DigiCert, genTime `06:35:35Z`;
+- GlobalSign, `06:35:40Z`;
+- Sectigo, `06:35:45Z`.
+
+For each: the token was accepted, embedded once, re-accepted against the signature
+value the file carries, and the signature still covers the document.
+
+`timestampToken.test.ts` carries the three shapes as cases built by hand: both
+identifier attributes, an unreadable chain certificate, and an unreadable signer.

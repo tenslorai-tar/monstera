@@ -60,6 +60,7 @@
     "probe:picker": "node scripts/probes/recordPickerProbe.mjs",
     "probe:azure": "node scripts/probes/azureLive.mjs",
     "probe:claude": "node scripts/probes/claudeLive.mjs",
+    "probe:tsa": "node scripts/probes/tsaLive.mjs",
     "proof:pickerprobe": "node scripts/proofs/pickerProbe.proof.mjs",
     "proof:buildfreshness": "node scripts/proofs/buildFreshness.proof.mjs",
     "proof:canary": "node scripts/lib/scannerCanary.proof.mjs",

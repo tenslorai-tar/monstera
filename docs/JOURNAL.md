@@ -892,6 +892,66 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — The live timestamp run refused both authorities it asked, and was right to about one
+
+The TSA row's trigger — one run against a real authority — is met, and it was not
+a formality. `npm run probe:tsa` signs through the shipped signer and the shipped
+transport and reads the signature back. **Its first runs refused FreeTSA and
+DigiCert, for two different reasons.** Every token the checks had ever accepted was
+one this repository built from the RFCs, and real tokens differed in both places.
+
+### What the real tokens were
+
+A scratch diagnostic, never committed, asked each authority once. It printed the
+tokens' structure, serials, OIDs and node-forge's own error text, and no reply
+bytes.
+
+- **FreeTSA:** the signer's certificate has an EC key and the token is ECDSA-SHA512.
+  node-forge refuses it — *Cannot read public key. OID is not RSA.* The refusal was
+  correct. Its message, *a certificate in the token could not be read*, named a
+  symptom.
+- **DigiCert:** the token carries **both** SigningCertificate and
+  SigningCertificateV2, signed. RFC 5816 permits either. The rule required exactly
+  one, so a correct token was refused.
+
+### What changed
+
+- **FreeTSA leaves the authority list.** This build cannot verify its tokens, and
+  the row's rule is *implemented correctly or not offered*. Every listed authority
+  is now plain HTTP, which ADR-0058 already allows. ECDSA verification would change
+  §3's verifier line, so it is an amendment first, and FreeTSA returns with it.
+- **Check 7 is *at least one, every one matching*.** A v1 and a v2 naming different
+  certificates is still refused.
+- **Only the signer's certificate must be readable.** An unreadable chain
+  certificate is skipped. An unreadable signer is refused as *signed with a key type
+  this build does not verify*.
+
+Each shape is now a case built by hand in `timestampToken.test.ts`, 19 cases in
+all.
+
+### After
+
+DigiCert, GlobalSign and Sectigo each **passed** on 2026-09-13, at 06:35:35Z,
+06:35:40Z and 06:35:45Z. For each, the token was accepted, embedded once,
+re-accepted against the signature value the file carries, and the signature still
+covers the document. The row is done. ADR-0058 carries this as its second dated
+correction.
+
+### Two things the probe taught about itself
+
+- **It aborted Node on exit.** It called `process.exit()` while the request's
+  timeout handles were still closing, and Windows answered *Assertion failed:
+  !(handle->flags & UV_HANDLE_CLOSING)*, which replaced its exit code with 127. It
+  now sets `process.exitCode` and ends.
+- **The stale-build guard refused it three times, correctly.** A test-file edit made
+  the kernel project stale. `tsc --build apps/desktop` then exited 0 without
+  rewriting `documentSign.js`, because its content had not changed. The guard asked
+  tsc and was told a build was still owed. `npm run build` — the project's command,
+  which the refusal names — cleared it. A PASSED line from a stale build would have
+  described code nobody built.
+
+---
+
 ## 2026-09-13 — TSA timestamping: built and verified end to end, owing one run against a real authority
 
 D7's TSA row, whose founding clause is *implemented correctly or not offered*. It

@@ -96,16 +96,53 @@ interface Twist {
   readonly nonce?: string;
   readonly imprint?: string;
   readonly certificate?: forge.pki.Certificate;
-  /** The certificate the signing-certificate attribute identifies; `null` omits the attribute. */
+  /** The certificate the v2 signing-certificate attribute identifies; `null` omits it. */
   readonly identified?: forge.pki.Certificate | null;
+  /**
+   * ALSO a v1 SigningCertificate (SHA-1), identifying this certificate — the shape a
+   * live authority's token had, measured 2026-09-13: both attributes, signed.
+   */
+  readonly alsoIdentifiedV1?: forge.pki.Certificate;
+  /**
+   * A chain certificate node-forge cannot read beside the readable signer — a key
+   * algorithm it refuses. Only the signer's certificate must be readable.
+   */
+  readonly unreadableChainCertificate?: boolean;
+  /**
+   * The SIGNER'S certificate carries a key algorithm node-forge refuses — the shape a
+   * live authority's ECDSA token had, measured 2026-09-13.
+   */
+  readonly unreadableSigner?: boolean;
   /** Alter the TSTInfo AFTER its digest is attested. */
   readonly tamperAfterSigning?: boolean;
+}
+
+/**
+ * A certificate node with its key algorithm changed to `id-ecPublicKey`.
+ *
+ * node-forge refuses any key but RSA — *Cannot read public key. OID is not RSA.* —
+ * so this makes a certificate it cannot read without needing an EC key or any
+ * library beyond it. The clone is by DER round trip, so the original is untouched.
+ */
+function withEcKeyAlgorithm(node: forge.asn1.Asn1): forge.asn1.Asn1 {
+  const clone = asn1.fromDer(der(node));
+  const tbs = (clone.value as forge.asn1.Asn1[])[0]?.value as forge.asn1.Asn1[];
+  const versioned = tbs[0]?.tagClass === asn1.Class.CONTEXT_SPECIFIC;
+  const spki = tbs[versioned ? 6 : 5]?.value as forge.asn1.Asn1[];
+  const algorithm = spki[0]?.value as forge.asn1.Asn1[];
+  algorithm[0] = oidNode('1.2.840.10045.2.1');
+  return clone;
 }
 
 /** The reply an authority would send for `query`, changed by `twist`. */
 function reply(query: TimestampQuery, twist: Twist = {}): Uint8Array {
   const certificate = twist.certificate ?? timestamping;
-  const certificateNode = forge.pki.certificateToAsn1(certificate);
+  const readableNode = forge.pki.certificateToAsn1(certificate);
+  const certificateNode = twist.unreadableSigner === true ? withEcKeyAlgorithm(readableNode) : readableNode;
+  const certificateNodes =
+    twist.unreadableChainCertificate === true
+      ? [certificateNode, withEcKeyAlgorithm(forge.pki.certificateToAsn1(noUsage))]
+      : [certificateNode];
 
   const tstInfo = seq([
     integer(asn1.integerToDer(1).getBytes()),
@@ -141,6 +178,17 @@ function reply(query: TimestampQuery, twist: Twist = {}): Uint8Array {
       ]),
     );
   }
+  if (twist.alsoIdentifiedV1 !== undefined) {
+    const certHash = forge.md.sha1.create();
+    certHash.update(der(forge.pki.certificateToAsn1(twist.alsoIdentifiedV1)));
+    // SigningCertificate { certs SEQUENCE OF ESSCertID { certHash } } — SHA-1, RFC 2634.
+    attributes.push(
+      seq([
+        oidNode(OID.signingCertificate),
+        set([seq([seq([seq([octets(certHash.digest().getBytes())])])])]),
+      ]),
+    );
+  }
   const signed = forge.md.sha256.create();
   signed.update(der(set(attributes)));
   const signature = keys.privateKey.sign(signed);
@@ -164,7 +212,7 @@ function reply(query: TimestampQuery, twist: Twist = {}): Uint8Array {
       oidNode(OID.tstInfo),
       asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [octets(signedTstInfo)]),
     ]),
-    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [certificateNode]),
+    asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, certificateNodes),
     set([signerInfo]),
   ]);
   const token = seq([
@@ -244,7 +292,7 @@ describe('acceptTimestampReply', () => {
 
   it('check 7: refuses a token with no signing-certificate attribute', () => {
     const error = refusal(query(), { identified: null });
-    expect(error.message).toContain('exactly one signing-certificate attribute');
+    expect(error.message).toContain('carries no signing-certificate attribute');
   });
 
   it('check 7: refuses an identifier for a DIFFERENT certificate than the one that signed', () => {
@@ -253,6 +301,44 @@ describe('acceptTimestampReply', () => {
     // for, and one the six checks before the correction all passed.
     const error = refusal(query(), { identified: notCritical });
     expect(error.message).toContain('does not match the certificate that signed');
+  });
+
+  /**
+   * THE SHAPES LIVE AUTHORITIES SENT, measured 2026-09-13 by `npm run probe:tsa`.
+   * Every token above was built from the RFCs; these four are what two real
+   * authorities' tokens looked like, and the first two runs refused both — one
+   * correctly for the wrong reason, one wrongly.
+   */
+  it('LIVE SHAPE: accepts a token carrying BOTH signing-certificate attributes, each naming the signer', () => {
+    // A live token signed v1 AND v2. The first draft required exactly one and
+    // refused it — a correct token, refused by a rule stricter than RFC 5816.
+    const asked = query();
+    const accepted = acceptTimestampReply(reply(asked, { alsoIdentifiedV1: timestamping }), asked);
+    expect(accepted.genTime).toBeInstanceOf(Date);
+  });
+
+  it('CONTROL: refuses BOTH attributes when the v1 names a different certificate', () => {
+    // Without this, a rule that checked only the v2 — and let a present v1 say
+    // anything — passes the case above.
+    const error = refusal(query(), { alsoIdentifiedV1: notCritical });
+    expect(error.message).toContain('does not match the certificate that signed');
+  });
+
+  it('LIVE SHAPE: accepts a token whose CHAIN carries a certificate node-forge cannot read', () => {
+    // Only the signer's certificate must be readable. The first draft parsed every
+    // certificate in the token and refused on any failure.
+    const asked = query();
+    const accepted = acceptTimestampReply(reply(asked, { unreadableChainCertificate: true }), asked);
+    expect(accepted.genTime).toBeInstanceOf(Date);
+  });
+
+  it('LIVE SHAPE: refuses a signer whose key this build cannot verify, BY THAT NAME', () => {
+    // A live token was signed with ECDSA, and node-forge verifies RSA only. The first
+    // run's refusal said *a certificate in the token could not be read*, which named
+    // a symptom; a person choosing an authority needs the reason.
+    const error = refusal(query(), { unreadableSigner: true });
+    expect(error.reason).toBe('unverifiable');
+    expect(error.message).toContain('key type this build does not verify');
   });
 });
 
@@ -289,7 +375,7 @@ describe('signing with a timestamp', () => {
     kind: 'signDocument',
     bytes: certificate,
     passphrase: PASSPHRASE,
-    timestamp: 'freetsa',
+    timestamp: 'digicert',
   });
 
   /** A port that answers as the in-memory authority, reading the query it was sent. */
@@ -330,7 +416,7 @@ describe('signing with a timestamp', () => {
     const signed = await signDocumentWith(port)(unsigned, command());
 
     // THE AUTHORITY THE COMMAND NAMED was the one asked, once.
-    expect(asked).toStrictEqual(['freetsa']);
+    expect(asked).toStrictEqual(['digicert']);
 
     const fields = signerInfoOf(signed);
     const unsignedAttributes = fields.find(

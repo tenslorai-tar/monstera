@@ -56,8 +56,8 @@ describe('timestampTransport', () => {
     // Without this, a transport that always asked one authority passes the case
     // above for `globalsign` by coincidence of the fixture.
     const { fetchImpl, asked } = recording(() => new Response(Uint8Array.of(1)));
-    await timestampTransport(fetchImpl)('freetsa', QUERY);
-    expect(asked[0]?.url).toBe(TIMESTAMP_AUTHORITIES.freetsa.url);
+    await timestampTransport(fetchImpl)('digicert', QUERY);
+    expect(asked[0]?.url).toBe(TIMESTAMP_AUTHORITIES.digicert.url);
     expect(asked[0]?.url).not.toBe(TIMESTAMP_AUTHORITIES.globalsign.url);
   });
 

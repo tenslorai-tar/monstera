@@ -83,10 +83,10 @@ describe('SignDocumentBody', () => {
     // `timestamp` at all — an absent field, never a `none` the wire would refuse.
     const { answers } = opened(false);
 
-    choose('[data-sign-timestamp]', 'freetsa');
+    choose('[data-sign-timestamp]', 'sectigo');
     fireEvent.click(SIGN());
 
-    expect(answers).toStrictEqual([{ passphrase: '', timestamp: 'freetsa' }]);
+    expect(answers).toStrictEqual([{ passphrase: '', timestamp: 'sectigo' }]);
     // THE NOTE IS ON SCREEN, which is where ADR-0058 Decision 1 put the promise:
     // the person choosing is the one who needs to know what leaves the machine.
     expect(screen.getByText(/Only a fingerprint of the signature is sent/u)).not.toBeNull();

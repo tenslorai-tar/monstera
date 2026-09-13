@@ -2578,15 +2578,20 @@ export const TIMESTAMP_AUTHORITIES = {
    * requests, which one person signing one document does not approach.
    */
   sectigo: { url: 'http://timestamp.sectigo.com' },
-  /** FreeTSA, `freetsa.org/index_en.php`, no date shown; read 2026-09-13. The one HTTPS endpoint found. */
-  freetsa: { url: 'https://freetsa.org/tsr' },
+  // FREETSA IS NOT OFFERED, and the reason is a live run, 2026-09-13
+  // (`npm run probe:tsa`): its token is signed with ECDSA over an EC key
+  // (`1.2.840.10045.4.3.4`, `1.2.840.10045.2.1`), and this build's verifier,
+  // node-forge, verifies RSA only. An authority whose tokens cannot be verified is
+  // an authority whose timestamps would be refused every time — *implemented
+  // correctly or not offered*. It returns when ECDSA verification does, which is
+  // a change to §3's verifier line and therefore a B4 amendment first.
 } as const satisfies Readonly<Record<string, { readonly url: string }>>;
 
 /** An authority's id, as the signing payload names it. */
 export type TimestampAuthority = keyof typeof TIMESTAMP_AUTHORITIES;
 
 /** Every authority id, in the order a person is offered them. */
-export const TIMESTAMP_AUTHORITY_IDS = ['digicert', 'globalsign', 'sectigo', 'freetsa'] as const satisfies readonly TimestampAuthority[];
+export const TIMESTAMP_AUTHORITY_IDS = ['digicert', 'globalsign', 'sectigo'] as const satisfies readonly TimestampAuthority[];
 
 /**
  * Every way `document.sign` ends without a signature that is not a person's

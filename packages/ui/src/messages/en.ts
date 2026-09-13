@@ -790,7 +790,6 @@ export const SIGN_DOCUMENT_TIMESTAMP_GLOBALSIGN = messageKey(
   'dialog.sign-document.timestamp-globalsign',
 );
 export const SIGN_DOCUMENT_TIMESTAMP_SECTIGO = messageKey('dialog.sign-document.timestamp-sectigo');
-export const SIGN_DOCUMENT_TIMESTAMP_FREETSA = messageKey('dialog.sign-document.timestamp-freetsa');
 export const SIGN_DOCUMENT_TIMESTAMP_NOTE = messageKey('dialog.sign-document.timestamp-note');
 export const SIGN_PROBLEM_TITLE = messageKey('dialog.sign-problem.title');
 export const SIGN_PROBLEM_WRONG_PASSPHRASE = messageKey('dialog.sign-problem.wrong-passphrase');
@@ -1795,9 +1794,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_DOCUMENT_TIMESTAMP_DIGICERT]: 'DigiCert',
   [SIGN_DOCUMENT_TIMESTAMP_GLOBALSIGN]: 'GlobalSign',
   [SIGN_DOCUMENT_TIMESTAMP_SECTIGO]: 'Sectigo',
-  [SIGN_DOCUMENT_TIMESTAMP_FREETSA]: 'FreeTSA',
   [SIGN_DOCUMENT_TIMESTAMP_NOTE]:
-    'A timestamp proves when the document was signed. Only a fingerprint of the signature is sent to the service, never the document. Most services are reached without encryption, so someone watching the network could see that a timestamp was requested.',
+    'A timestamp proves when the document was signed. Only a fingerprint of the signature is sent to the service, never the document. These services are reached without encryption, so someone watching the network could see that a timestamp was requested.',
   [SIGN_PROBLEM_TITLE]: 'The document was not signed',
   [SIGN_PROBLEM_WRONG_PASSPHRASE]:
     'That password did not open the certificate. Nothing has been changed.',
