@@ -892,6 +892,56 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — `replacePage` names the version its page index was read at
+
+ADR-0062's 2026-09-14 correction, built: the reimport's version check belongs to the bus, so
+the command carries the version. This is the feature's prerequisite, and it lands first in a
+commit of its own. The feature itself — the launcher, the watch, the three channels — is
+not in it.
+
+### What changed
+
+- **Contract.**
+  - `replacePageSchema` gains `version`.
+  - `targetVersionOf` answers it.
+  - `NamesAPage = 'replacePage'` joins the three existing names, with its own anchor that it
+    is a real kind.
+- **Kernel.**
+  - `CommandTargets` gains `'page'`.
+  - `replacePage` declares `targets: 'page'`. Its old comment said nothing in the payload
+    pointed into this document, which was true of `source` and false of `at`.
+- **Renderer.** The replace-page control sends `context.version`, the version `context.page`
+  was read at.
+- **Message.** The `stale-target` sentence was written for a list: *"That list was out of date
+  … The list has been refreshed"*. A refused page replace has no list. It now reads *"What you
+  were looking at was out of date, so nothing was changed …"*, which is true of both.
+
+### The anchor met it, as designed
+
+`commandDeclarations.test.ts`' case *"exactly nine kinds declare a target"* failed on the first
+run, naming `replacePage`. That is the third time a new member of this axis has met that line
+first (`'field'` on 2026-09-07, `'text-object'` on 2026-09-09). It now says ten, and its set of
+members includes `'page'`.
+
+### Cases, and the control
+
+- **In `commandBus.test.ts`:** a 3-page target and a 2-page source, so a replace that runs
+  moves the count to 4.
+  - At a stale version (9 against the context's 1), `StaleTargetError` is thrown. The target
+    still has 3 pages, and there are no log entries and no bumps.
+  - **Control:** the same command at version 1 applies, giving 4 pages and one bump.
+- **Existing cases updated:** six kernel cases that build a `replacePage` carry a version.
+  The UI case expects `version: 1` from its context.
+
+**Mutation — `replacePage` declared `targets: 'none'` again.** It failed in three places:
+- the type-level tie (`TS2322` at `commandDeclarations.test.ts:122`);
+- the ten-kinds list;
+- the stale case, because the bus no longer checked and the stale replace applied.
+
+The control stayed green. Reverted.
+
+---
+
 ## 2026-09-14 — GGGGGG-2: ECDSA and RSA-PSS signatures verify, because the signature check is now Node's
 
 The last of the queued signature defects. A valid ECDSA signature read as *unreadable*,

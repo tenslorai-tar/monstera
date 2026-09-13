@@ -855,6 +855,13 @@ export const replacePageSchema = z.object({
   source: docIdSchema,
   /** Zero-based index of the TARGET page being replaced. */
   at: z.number().int().nonnegative(),
+  /**
+   * The version `at` was read at. A page index is a position in the page tree at a
+   * version, and a page inserted or moved since would make it name another page — the
+   * one a replace then destroys. The bus refuses a stale one inside the lane
+   * (ADR-0062's 2026-09-14 correction).
+   */
+  version: docVersionSchema,
 });
 
 /**
@@ -4267,6 +4274,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'placePageObject') return command.version;
   if (command.kind === 'recolorPageObjects') return command.version;
   if (command.kind === 'deletePageObjects') return command.version;
+  if (command.kind === 'replacePage') return command.version;
   return undefined;
 }
 
@@ -4334,3 +4342,16 @@ export type NamesATextObject =
   | 'deletePageObjects';
 const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
 void _theObjectNameIsACommandKind;
+
+/**
+ * Which kinds {@link targetVersionOf} answers for on the PAGE TREE.
+ *
+ * A **fourth** type rather than a member of any above, for {@link NamesAFormField}'s
+ * reason: a page index is a position in the page tree, and folding it into an
+ * annotation, widget or page-object name would make four index spaces read as one.
+ * Added 2026-09-14 by ADR-0062's correction, when `replacePage`'s index was found to
+ * point into this document's tree at a version.
+ */
+export type NamesAPage = 'replacePage';
+const _thePageNameIsACommandKind: NamesAPage extends CommandKind ? true : never = true;
+void _thePageNameIsACommandKind;

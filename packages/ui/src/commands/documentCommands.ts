@@ -1341,10 +1341,15 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
       })) as ReplacePageAnswer | undefined;
       if (answer === undefined) return;
 
+      // THE VERSION `context.page` WAS READ AT, so a page inserted or moved while the
+      // dialog was up is refused by the bus rather than replacing the page that took
+      // this index. Present exactly when `docId` is.
+      if (context.version === undefined) return;
       await applyDocumentCommand(deps, context.docId, {
         kind: 'replacePage',
         source: answer.source as DocId,
         at: context.page,
+        version: context.version,
       });
     },
   };

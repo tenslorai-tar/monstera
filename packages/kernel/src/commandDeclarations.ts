@@ -1053,9 +1053,11 @@ const declarations = {
     replay: 'reapply-intent',
     // ADR-0040's axis, second command to declare it.
     sources: 'one',
-    // Self-contained: it names another DOCUMENT, which is a different axis, and
-    // nothing in its payload points into an answer this document gave.
-    targets: 'none',
+    // ITS INDEX POINTS INTO THIS DOCUMENT'S PAGE TREE, read at a version. This read
+    // `'none'` until 2026-09-14 on the ground that it named another document — true of
+    // `source` and false of `at`, and the index is the half a replace can destroy the
+    // wrong page through (ADR-0062's correction).
+    targets: 'page',
     // Nothing read through another engine.
     reads: 'none',
     asset: 'none',

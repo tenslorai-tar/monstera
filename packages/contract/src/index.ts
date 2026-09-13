@@ -145,6 +145,7 @@ export {
   type NamesAnAnnotation,
   type NamesAFormField,
   type NamesATextObject,
+  type NamesAPage,
   type NamesASecondDocument,
   MAX_REPLACED_TEXT,
   MAX_TEXT_REPLACEMENTS,

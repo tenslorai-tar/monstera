@@ -1,6 +1,8 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import { asDocVersion } from '@monstera/shared';
+
 import { applyDeletePages } from './pageOrder.js';
 import {
   applyMergeDocument,
@@ -294,7 +296,7 @@ describe('mergeDocument', () => {
     const target = await mupdfWriter.open(await flatDocument([100, 110, 120]));
     const source = await mupdfWriter.open(await flatDocument([200, 210]));
     try {
-      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 1 }, source);
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 1 }, source);
       const bytes = await mupdfWriter.serialise(target);
       // Page 110 is gone and the source's two are in its place.
       expect(await widthsOf(bytes)).toEqual([100, 200, 210, 120]);
@@ -313,7 +315,7 @@ describe('mergeDocument', () => {
     const target = await mupdfWriter.open(await flatDocument([100, 110, 120]));
     const source = await mupdfWriter.open(await flatDocument([200, 210]));
     try {
-      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 0 }, source);
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 0 }, source);
       const bytes = await mupdfWriter.serialise(target);
       // Deleting `at` instead would give [210, 110, 120] — same length.
       expect(await widthsOf(bytes)).toEqual([200, 210, 110, 120]);
@@ -331,7 +333,7 @@ describe('mergeDocument', () => {
     const source = await mupdfWriter.open(await flatDocument([200]));
     try {
       await expect(
-        applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 1 }, source),
+        applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 1 }, source),
       ).rejects.toThrow(/outside this document/u);
     } finally {
       await mupdfWriter.close(target);
@@ -343,7 +345,7 @@ describe('mergeDocument', () => {
     const target = await mupdfWriter.open(await flatDocument([100, 110]));
     const source = await mupdfWriter.open(await nestedSource([200, 210, 220]));
     try {
-      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 0 }, source);
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 0 }, source);
       const bytes = await mupdfWriter.serialise(target);
       expect(await parentsAgreeWithKids(bytes)).toEqual([true, true, true, true]);
     } finally {
@@ -362,7 +364,7 @@ describe('mergeDocument', () => {
     const target = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
     const source = await mupdfWriter.open(await flatDocument([200]));
     try {
-      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 0 }, source);
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 0 }, source);
       const reread = await PDFDocument.load(await mupdfWriter.serialise(target));
       expect(reread.catalog.get(PDFName.of('Marker'))?.toString()).toBe('4242');
     } finally {

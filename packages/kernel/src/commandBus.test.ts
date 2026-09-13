@@ -1661,6 +1661,71 @@ describe('CommandBus and the targets axis', () => {
     }
   });
 
+  describe("a PAGE index names the page tree's version (ADR-0062's correction)", () => {
+    const sourceId = 'source' as DocumentContext['docId'];
+
+    /** A two-page source, so a replace that ran moves the target from 3 pages to 4. */
+    async function twoPageSource(): Promise<MupdfSession> {
+      const document = await PDFDocument.create();
+      document.addPage([300, 300]);
+      document.addPage([300, 300]);
+      return mupdfWriter.open(await document.save());
+    }
+
+    function pageCount(session: MupdfSession): Promise<number> {
+      return withDocument(session, (document) => document.countPages());
+    }
+
+    it('refuses a replacePage whose index was read at a version the document has moved past', async () => {
+      // THE RACE THE CORRECTION NAMES: a page inserted between reading an index and
+      // replacing it. `contextStub` is at version 1, so an index read at 9 points into
+      // a tree this document no longer has.
+      const bus = new CommandBus({ mupdf: localMupdfWriter });
+      const target = await mupdfWriter.open(flat);
+      const source = await twoPageSource();
+      const context = contextStub();
+      try {
+        await expect(
+          bus.execute(
+            { mupdf: target },
+            context,
+            { kind: 'replacePage', source: sourceId, at: 0, version: asDocVersion(9) },
+            { ...noByteImageExpected, sources: new Map([[sourceId, { mupdf: source }]]) },
+          ),
+        ).rejects.toThrow(StaleTargetError);
+
+        // NOTHING HAPPENED: the page is still there and nothing arrived.
+        expect(await pageCount(target)).toBe(3);
+        expect(context.log.entries).toHaveLength(0);
+        expect(context.bumps()).toBe(0);
+      } finally {
+        await mupdfWriter.close(target);
+        await mupdfWriter.close(source);
+      }
+    });
+
+    it('CONTROL: the same replacePage at the current version applies', async () => {
+      // Without this, a bus that refused every replacePage would pass the case above.
+      const bus = new CommandBus({ mupdf: localMupdfWriter });
+      const target = await mupdfWriter.open(flat);
+      const source = await twoPageSource();
+      const context = contextStub();
+      try {
+        await bus.execute(
+          { mupdf: target },
+          context,
+          { kind: 'replacePage', source: sourceId, at: 0, version: asDocVersion(1) },
+          { ...noByteImageExpected, sources: new Map([[sourceId, { mupdf: source }]]) },
+        );
+        expect(await pageCount(target)).toBe(4);
+        expect(context.bumps()).toBe(1);
+      } finally {
+        await mupdfWriter.close(target);
+        await mupdfWriter.close(source);
+      }
+    });
+  });
+
   it('CONTROL: the same command at the matching version goes through', async () => {
     // Without this the case above passes for a bus that refused
     // `removeAnnotation` unconditionally — which is a guard that works and a

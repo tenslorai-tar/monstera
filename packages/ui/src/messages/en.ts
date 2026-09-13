@@ -2295,7 +2295,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // row and the row is still there, so the sentence they need is that the
   // document is untouched — not an explanation of versions, which is ours.
   [PROBLEM_STALE_TARGET]:
-    'That list was out of date, so nothing was changed. The document moved on while it was open. The list has been refreshed — have another look and try again.',
+    'What you were looking at was out of date, so nothing was changed. The document moved on while it was open — have another look and try again.',
   // NAMES NO ENGINE AND ASKS FOR NOTHING. Which component is missing is main's
   // business, and the person reading this cannot install it — a Store build
   // ships what it ships. So the sentence says the document is safe, says the

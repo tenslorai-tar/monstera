@@ -445,7 +445,17 @@ export type CommandSources = 'none' | 'one';
  * What it does NOT do — and this is the paragraph above cashed a second time —
  * is make the three index spaces comparable.
  */
-export type CommandTargets = 'none' | 'annotation' | 'field' | 'text-object';
+/*
+ * ## `'page'` ARRIVED, 2026-09-14, and it is the page tree itself
+ *
+ * `replacePage` carried a page index and declared `'none'`, on the ground that it
+ * named another document rather than an answer this one gave. That was false about
+ * its index: a position in the page tree is read at a version, and a page inserted
+ * or moved since makes it name a different page — the one a replace destroys. A
+ * fourth member, not a widening of one of the three, for the paragraph above: a page
+ * index is its own index space ([ADR-0062](../../../docs/DECISIONS/0062-a-page-edited-in-another-application-leaves-as-a-named-file-and-returns-by-the-one-open-route.md)'s correction).
+ */
+export type CommandTargets = 'none' | 'annotation' | 'field' | 'text-object' | 'page';
 
 /**
  * What a command's bytes are FOR, which decides how they are serialised.

@@ -1906,7 +1906,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(sent).toStrictEqual([
       {
         id: 'document.execute',
-        params: { docId: DOC, command: { kind: 'replacePage', source: 'doc-2', at: 3 } },
+        params: { docId: DOC, command: { kind: 'replacePage', source: 'doc-2', at: 3, version: 1 } },
       },
     ]);
   });

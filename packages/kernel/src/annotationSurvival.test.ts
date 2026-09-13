@@ -279,7 +279,7 @@ async function replacedWithMark(): Promise<Uint8Array> {
   const into = await mupdfWriter.open(await document(2));
   const from = await mupdfWriter.open(await marked());
   try {
-    await applyReplacePage(into, { kind: 'replacePage', source: 'source' as never, at: 1 }, from);
+    await applyReplacePage(into, { kind: 'replacePage', source: 'source' as never, at: 1, version: 1 as never }, from);
     return await mupdfWriter.serialise(into);
   } finally {
     await mupdfWriter.close(from);

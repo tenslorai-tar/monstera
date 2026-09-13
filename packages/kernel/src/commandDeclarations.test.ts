@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   CommandKind,
   NamesAFormField,
+  NamesAPage,
   NamesATextObject,
   NamesAnAnnotation,
   NamesASecondDocument,
@@ -118,7 +119,7 @@ type DeclaredTargets = {
  * reason it had two: a page-object index is PDFium's numbering of a page, and
  * folding it into either MuPDF name would say three index spaces are one.
  */
-const _declarationsCoverTheTargets: NamesAnAnnotation | NamesAFormField | NamesATextObject extends
+const _declarationsCoverTheTargets: NamesAnAnnotation | NamesAFormField | NamesATextObject | NamesAPage extends
   DeclaredTargets
   ? true
   : never = true;
@@ -126,6 +127,7 @@ const _targetsCoverTheDeclarations: DeclaredTargets extends
   | NamesAnAnnotation
   | NamesAFormField
   | NamesATextObject
+  | NamesAPage
   ? true
   : never = true;
 void _declarationsCoverTheTargets;
@@ -230,7 +232,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('mergeDocument');
   });
 
-  it('CONTROL: exactly nine kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly ten kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -239,6 +241,7 @@ describe('the declaration table', () => {
     // rotate.
     const named = KINDS.filter((kind) => declaredCommands[kind].targets !== 'none');
     expect(named).toStrictEqual([
+      'replacePage',
       'removeAnnotation',
       'placeAnnotation',
       'styleAnnotation',
@@ -249,7 +252,10 @@ describe('the declaration table', () => {
       'recolorPageObjects',
       'deletePageObjects',
     ]);
-    // AND ALL THREE MEMBERS ARE PRESENT, which the count above cannot say: a
+    // `'page'` IS THE FOURTH MEMBER (ADR-0062's correction, 2026-09-14): a page
+    // index is a position in the page tree, which is none of the three walks below.
+    //
+    // AND ALL FOUR MEMBERS ARE PRESENT, which the count above cannot say: a
     // table where every target read `'annotation'` would satisfy it, and the
     // bus would then compare a version for a payload pointing into the wrong
     // walk — the failure the second member exists to prevent, and the third
@@ -258,7 +264,7 @@ describe('the declaration table', () => {
     // the wrong one would be an index read against a different ENGINE's
     // numbering of the same page.
     expect(new Set(named.map((kind) => declaredCommands[kind].targets))).toStrictEqual(
-      new Set(['annotation', 'field', 'text-object']),
+      new Set(['page', 'annotation', 'field', 'text-object']),
     );
   });
 });
