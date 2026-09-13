@@ -15,7 +15,7 @@ the fact is not a baseline, it is a rationalisation.
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
 | 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 38 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done; D6 row 8 ships complete and carries one trigger only its owner can clear** | **1.50× — continue** |
 | 7 — security and signatures | **2 working days** (owner, 2026-09-12) | **2 days worked** (2026-09-12 → 2026-09-13), 33 commits — began at `fd7d12e`, the commit after Stage 6 closed. **Fourteen of fifteen rows done; DocuSign is built and carries one trigger only its owner can clear.** Two OCR rows were built inside the window and are counted here | **1.00× — continue** |
-| 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | — | — |
+| 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | **in progress** — opened 2026-09-13 at the commit after Stage 7 closed | — |
 | 9 — AI and cloud | **2 working days** (owner, 2026-09-12) | — | — |
 | 10 — ship | **2 working days** (owner, 2026-09-12) | — | — |
 

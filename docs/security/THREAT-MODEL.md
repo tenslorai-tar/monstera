@@ -84,6 +84,20 @@ behaviour (invariant 23).
 Arguments from a shortcut, a browser handler, or another application. Chooses
 which file is opened and, if we ever allow it, which options are applied.
 
+### 1.9 Files picked for import
+
+Stage 8's D9 rows make a new PDF from a file that is not one — Markdown, CSV,
+images, Office documents. Every byte of that file is chosen by whoever produced
+it, exactly as §1.1's are, and the code reading it is a parser §1.1's table does
+not list: a Markdown parser, pdf-lib's image decoders, not MuPDF.
+
+**Measured 2026-09-13, not assumed: a hostile Markdown file is not only slow.**
+`marked` 18.0.13 exhausted its heap on 2,000 levels of nested list and Node
+aborted the process, which no `catch` intercepts; `micromark` 4.0.2 ran past 90
+seconds on two inputs. So a file picked for import is parsed in the compose host
+(§2, [ADR-0060](../DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)),
+where an abort ends a process that holds no open document.
+
 ---
 
 ## 2. What each process can reach
@@ -95,6 +109,7 @@ Windows-only, Microsoft Store distribution ([ADR-0001](../DECISIONS/0001-agpl-on
 | **Main** | Electron main, `DocumentService`, `CommandBus`, `CapabilityRegistry` | Filesystem via `FileHandle`s it minted; child process lifecycle; settings; keychain | Native engine code (invariant 20). Document parsing of any kind |
 | **mupdf-host** (utility) | The MuPDF shim, all native parsing | The document bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Other documents |
 | **pdfium-host** (utility) | PDFium rendering | Same as mupdf-host | Same as mupdf-host |
+| **compose-host** (utility) | `markdown-it` and `@cantoo/pdf-lib`, composing a new PDF from a file picked for import ([ADR-0060](../DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)) | The source bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Every open document |
 | **Renderer** | React UI, PDF.js | Only the contract's IPC channels | Node. Filesystem paths (invariant 2). Any absolute path at all |
 
 **The renderer holds an opaque `DocId` and a `DocVersion`, never a path and never

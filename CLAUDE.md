@@ -391,9 +391,16 @@ is wrong** — fix the boundary, not the test.
   is *the first host with a different import*, so copying is the cheapest edit
   at the moment somebody needs one — and what it duplicates is the pipe framing,
   the containment check, the session table, the failure classification and the
-  shutdown ordering. Each host's accepted command schema is **derived** from the
-  routing table per writer, so a command routed elsewhere is a compile error
-  rather than a native library handed a pointer where bytes were expected.
+  shutdown ordering. Each **writer** host's accepted command schema is
+  **derived** from the routing table per writer, so a command routed elsewhere is
+  a compile error rather than a native library handed a pointer where bytes were
+  expected. **The third host is not a writer**
+  ([ADR-0060](docs/DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)):
+  it parses a file picked for import and composes a new PDF, so it takes the
+  containment probe, its granted area's `open` and `close`, and its own channels —
+  and none of `apply`, `capture` or `invert`, which carry a writer's command union.
+  Threat model §2 keeps document parsing of any kind out of `main`, and measured,
+  `marked` aborted Node on a crafted Markdown file.
 
   **IT IS BUILT, 2026-09-09.** This read *"that is owed, not built —
   `hostBody.ts` takes `CommandExecution<'mupdf'>` today"*, and it stopped being
