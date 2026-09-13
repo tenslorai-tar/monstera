@@ -64,6 +64,7 @@ import {
   engineChannels,
   groupIntoLines,
   localPdfLibWriter,
+  localSignpdfWriter,
   nodeFileSurface,
   parsePageText,
   pdfiumChannels,
@@ -1219,6 +1220,12 @@ function engineSessionOpener(
     // is behind `@monstera/kernel/engine` for exactly that reason, and this
     // file must never name it.
     'pdf-lib': localPdfLibWriter,
+    // THE SIGNER, registered directly for `pdf-lib`'s reason: a byte-image writer
+    // of pure JavaScript, complete at composition, with no host to wait for. It
+    // was absent until 2026-09-13, and `compositionHost.test.ts`' signing case is
+    // the one that routes a signature through this map rather than a bus of its
+    // own — which is the only kind of case that could have seen it.
+    signpdf: localSignpdfWriter,
   };
 
   /**

@@ -142,9 +142,9 @@ export {
   invertSanitizeDocument,
 } from './documentSanitize.js';
 // `documentSign.ts` BINDS NO NATIVE LIBRARY — it is pdf-lib and `@signpdf`,
-// both plain JavaScript — so it could live on the main barrel. It is here
-// because `signpdfWriter.ts` is what the bus registers and this is the subpath
-// its siblings use; nothing in main imports either.
+// both plain JavaScript. Its apply and capture are exported here beside their
+// siblings; the writer the composition root registers, `localSignpdfWriter`, is
+// on the main barrel, which is how main reaches it.
 export {
   applySignDocument,
   captureSignDocument,

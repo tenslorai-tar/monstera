@@ -892,6 +892,64 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-13 — The application could not sign anything, and every signing test passed
+
+**A shipped defect across three D7 rows marked done: digital signing, certify
+and visible signatures.** In the running application, pressing Sign refused
+every document.
+
+### The mechanism
+
+`CommandBus` refuses a command whose writer of record has no adapter registered,
+by name, with `UnregisteredWriterError`. The composition root's bus holds the
+engine host's writers — `mupdf` and `pdf-lib` — and PDFium where a host could be
+built. **It never held `signpdf`.** `localSignpdfWriter` was exported from no
+barrel the root imports; `engine.ts` even said of it *nothing in main imports
+either*, which was true and was the defect.
+
+So every `signDocument` reached the bus and was refused before anything was
+applied. `signHandler` maps only document-state classes and rethrows the rest,
+so a person got an internal error, not a named refusal.
+
+### Why nothing saw it
+
+Every signing test built its own bus. `documentSign.test.ts` calls the apply
+directly; `documentCommands.test.ts` registers a signer by hand to test how main
+names refusals. Both halves of the wired pair were green, and neither routed a
+signature through the map the product builds. This is the pair's blind spot in
+a new form: not two coordinate frames, but two registries, where the test's
+registry was not the application's.
+
+### Found
+
+While placing TSA timestamping: its network call has to reach the signing apply
+through the composition, so the writer's registration was the first thing to
+read. `apps/desktop/src` named `signpdf` in tests only.
+
+### Demonstrated, then fixed
+
+`compositionHost.test.ts` gained **the composition root, SIGNING**. It opens a
+document through `createShellDependencies` with a host fake that serialises a
+real PDF, supplies a PKCS#12 minted in memory, calls `handlers['document.sign']`,
+and asserts `signed` plus a further `engine/open` — the signed bytes installed.
+Before the fix it failed with *UnregisteredWriterError: Command signDocument is
+routed to the 'signpdf' writer of record, which has no adapter registered on
+this bus*.
+
+The fix registers `signpdf: localSignpdfWriter` in the root's writer map and
+exports the writer from the main barrel, beside `localPdfLibWriter`, for the
+same reason: pdf-lib and `@signpdf` are plain JavaScript. `proof:kernelload`
+passes all 11 cases, so nothing native entered the barrel's graph.
+
+### The class, not the instance
+
+Four writers of record are declared and the map is partial, so a fifth writer —
+or a fourth left out — compiles and fails only when a person uses it. The next
+commit makes the composition's static map require every declared writer except
+PDFium, which is absent by design where no host can be built.
+
+---
+
 ## 2026-09-13 — A forged document read as unchanged since it was signed
 
 **A shipped defect in D7's verification row, found while preparing TSA

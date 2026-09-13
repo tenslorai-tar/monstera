@@ -953,3 +953,95 @@ function lastOutputDirectory(directories: readonly string[]): string {
   if (last === undefined) throw new Error('no session directory was created');
   return last.slice('create:'.length);
 }
+
+/**
+ * A host that serialises a REAL document.
+ *
+ * `serialisingEngine` answers five bytes, which is enough for every writer that
+ * only moves bytes. A signer parses what it is given, so a signing case needs a
+ * document pdf-lib can open — and the bytes come from the host, exactly as the
+ * product's byte-image path takes them.
+ */
+function documentServingEngine(document: Uint8Array): FakePeer {
+  let output: string | null = null;
+  return (channel, params) => {
+    if (channel === 'engine/open') {
+      output = (params as { outputDirectory: string }).outputDirectory;
+      return SESSION;
+    }
+    if (channel !== 'engine/serialise') return ENGINE(channel, params);
+    if (output === null) throw new Error('engine/serialise before engine/open');
+    const { into } = params as { into: string };
+    writeFileSync(join(output, into), document);
+    return { ok: true, value: { bytes: document.byteLength } };
+  };
+}
+
+describe('the composition root, SIGNING', () => {
+  it('signs a document through the writers it registers', async () => {
+    // THE SHIPPED ROUTE, END TO END, and the reason this case exists. Every
+    // signing test before it built its own bus — `documentSign.test.ts` calls the
+    // apply, and `documentCommands.test.ts` registers a signer by hand — so none
+    // could see whether the composition root registers one. A route no test
+    // takes through the root is a route the product may not have.
+    const [{ PDFDocument, StandardFonts }, { default: forge }] = await Promise.all([
+      import('@cantoo/pdf-lib'),
+      import('node-forge'),
+    ]);
+
+    const made = await PDFDocument.create();
+    const font = await made.embedFont(StandardFonts.Helvetica);
+    made.addPage([400, 600]).drawText('A document to sign', { font, size: 18, x: 20, y: 540 });
+    const document = await made.save();
+
+    // A SELF-SIGNED P12, minted in memory: B10 forbids committing a credential.
+    const keys = forge.pki.rsa.generateKeyPair(2048);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey;
+    cert.serialNumber = '01';
+    cert.validity.notBefore = new Date(Date.now() - 86_400_000);
+    cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+    const names = [{ name: 'commonName', value: 'Monstera Test' }];
+    cert.setSubject(names);
+    cert.setIssuer(names);
+    cert.sign(keys.privateKey, forge.md.sha256.create());
+    const p12 = forge.asn1
+      .toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'passphrase', { algorithm: '3des' }))
+      .getBytes();
+    const certificate = Uint8Array.from(p12, (character: string) => character.charCodeAt(0));
+
+    const mupdf = platformAnswering(documentServingEngine(document));
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('to-sign.pdf')),
+      pickCertificate: () => Promise.resolve('certificate.p12'),
+      readCertificate: () => Promise.resolve({ kind: 'read', bytes: certificate }),
+      enginePlatform: mupdf.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const opensBefore = spy(mupdf.harness.calls, 'peer.request:engine/open');
+
+    const signed = await handlers['document.sign']({
+      docId: opened.value.docId,
+      passphrase: 'passphrase',
+    });
+
+    // THE OUTCOME, with the whole answer in the message, because what this case
+    // guards against is an answer that is not `signed` for a reason the root
+    // decided rather than the signer.
+    expect(signed.ok, JSON.stringify(signed)).toBe(true);
+    if (!signed.ok) throw new Error('unreachable');
+    expect(signed.value.kind, JSON.stringify(signed.value)).toBe('signed');
+    if (signed.value.kind !== 'signed') throw new Error('unreachable');
+    expect(signed.value.version).toBeGreaterThan(opened.value.version);
+
+    // AND THE SIGNED BYTES WERE INSTALLED: a byte-image command's result becomes
+    // the canonical image and rebuilds the live session, which is a further
+    // `engine/open` on the host. A root that answered `signed` and dropped the
+    // bytes would pass the lines above.
+    expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(opensBefore);
+  }, 120_000);
+});
