@@ -1242,7 +1242,7 @@ A feature is finished when it is **registered**, not when it is wired.
 
 | Registry | Entry | Derives |
 |---|---|---|
-| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts |
+| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons |
 | **Dialogs** | id, lazy component, props schema, **result schema** | one mount point, one focus trap, one Escape/backdrop handler, and the promise an opener awaits |
 | **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, `secret?`, migration | the entire Settings dialog — **one control per schema kind, a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)) — persistence, export (secrets excluded) |
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
@@ -1274,15 +1274,32 @@ type Placement =
   | { surface: 'quick-toolbar'; order: number }
   | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab'; order: number }
   | { surface: 'start-screen';  order: number }
+  | { surface: 'status-bar';    cluster: 'navigation' | 'zoom'; side: 'before' | 'after'; order: number }
 ```
 
 A command may carry several placements — Highlight legitimately lives in
 Home › Quick tools, Comment › Markup, and the annotation context menu.
 
 `SectionId` is exactly the eight sections of §10.3. The ribbon, floating
-toolbar, context menus and start-screen shortcuts are all **derived** from
-placements. **A hand-maintained layout file for any of them is the second wiring
-place this registry exists to forbid.**
+toolbar, context menus, start-screen shortcuts and the status bar's command
+buttons are all **derived** from placements. **A hand-maintained layout file for
+any of them is the second wiring place this registry exists to forbid.**
+
+**The status bar projects commands into two clusters, around one value control
+each** (amended 2026-09-14,
+[ADR-0067](DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md)).
+§10.3 gives it page navigation — first / previous / an editable page field /
+next / last — and a zoom cluster — zoom-out · slider · zoom-in · percentage · fit
+mode. The buttons are commands and are projected: `cluster` names which group,
+and `side` says whether a command sits before or after that group's value
+control. **The page field and the zoom slider are not commands**, because each
+takes a value: they are the bar's own controls, and they write the same state
+the commands change (the page through `jumpTo`, the zoom through the zoom
+state), so there is still one owner of each. The percentage is a readout.
+Writing the navigation buttons into the bar by hand would be the second wiring
+place above. **`check:secondwiring` cannot see it today**: it scans
+`packages/ui/src/surfaces`, and `StatusBar.tsx` sits one directory up, so the
+feature commit that projects the bar moves it into the scanned directory.
 
 Chrome visibility is itself commanded: `view.toggle-quick-toolbar`,
 `view.toggle-panel` and the layout-mode switch are registry commands, which is
@@ -2475,3 +2492,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-09-08 | **One host body, parameterised by engine — a second contained host is a generalisation of the first, never a copy of it** (§3). Written **ahead of `pdfiumHost`**, which is B4's whole point: `hostEntry.ts` imports `mupdfWriter` and `hostBody.ts` is typed `CommandExecution<'mupdf'>`, so a second host cannot be a registration into the seam as it stands, and bending it in place is what B4 forbids. **The pathology is the one that arrives by itself**: a second host is *the first host with a different import*, so copying is the cheapest edit at the moment somebody needs one — and what it duplicates is not plumbing but the pipe framing, the startup containment check, the session table, the failure classification and the shutdown ordering, five mechanisms whose copies would agree until one of them was fixed (B3). Three consequences, each a property the types already carry for one engine: the accepted **command schema is derived per engine** from the routing table (`CommandExecution<W>` binds the kinds to `KindsRoutedTo<W>`, so a command routed elsewhere is a compile error rather than a native library handed a pointer where bytes were expected); **each host owns its channel set**, in `packages/kernel` for ADR-0023 Decision 11's reason, because the payload schemas differ by construction; and **the containment is one problem**, since both hosts contain a native parser reached through koffi. **This amendment was not writable before 2026-09-08's reach decision** — a process containing a WASM sandbox and one containing a native parser are not the same containment problem, and the generalisation would have been over two different kinds of thing. **Rejected:** a second host body copied and edited (the five duplicated mechanisms above); one host serving both engines over one pipe (invariant 25 contains a compromise, and a breach of one engine would then hold the other's documents); and deferring the amendment until the feature needs it, which is the retrofit B4 exists to prevent. | Nothing. §3 has drawn two contained hosts since Stage 0; what it did not say is that the body serving them is one implementation | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md), corrected 2026-09-08 · [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) |
 | 2026-09-09 | **The MuPDF migration's size is 117 members, not 19 imports, and it does not gate Stage 5's editing rows** (§3). *"Nineteen non-test kernel modules import the bare specifier"* was written as what is not yet settled and was then read as the size of the work. Measured through `npm run proof:enginesurface`: the nineteen call **117 distinct MuPDF members** — `PDFAnnotation` 41, `PDFDocument` 20, `PDFObject` 20, `PDFWidget` 15 — against **24** C functions the shim exports, and the shim hands back an opaque handle representing no object model, by design. **Only four of the nineteen load an engine**; fifteen spell `import type` and are erased, so the count that reads like the work is a count of the lines that do not have to change, and what moves is nineteen module bodies against an ABI nobody has designed. The second half is the ordering: the editing rows are PDFium's by `BUILD-PROMPT.md`:257, PDFium's API is flat C needing no shim, and koffi drives it in research today — so they sit behind `pdfiumFfi.ts` and the second host, not behind this. Sequencing them after it would have parked five rows behind unrelated work. | Nothing decided. The reach ruling of 2026-09-08 stands unaltered; what is corrected is a size inferred from a sentence that was explicitly not settling it, and a dependency nothing had checked | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md), corrected 2026-09-09 |
 | 2026-09-14 | **`style-src` admits three hashes: the resizable-panel library's drag cursor** (§9 invariant 27). `@zag-js/splitter` 1.43.3 appends `<style>* { cursor: X !important; }</style>` on every drag, in every configuration, and `'self'` alone refused it — measured by `proof:rendererpolicy`. The line now carries the SHA-256 of exactly the three horizontal texts. Measured in Electron's Chromium: the hashed text is admitted and applies; the same text one space longer is refused; removing the `col-resize` source fails the admission case alone. | `style-src 'self'` alone (pinned 2026-08-21, ADR-0019) | [ADR-0066](DECISIONS/0066-the-splitters-drag-cursor-is-admitted-by-hash.md) |
+| 2026-09-14 | **The status bar is a placement surface** (§7). §10.3 puts page navigation and a zoom cluster in the status bar, and §7's `Placement` had no surface for it, so its buttons could only be written into the bar by hand — the second wiring place. `status-bar` joins the union with a `cluster` (`navigation` or `zoom`) and a `side` (`before` or `after` that cluster's value control). The page field and the zoom slider take values and stay the bar's own controls, writing the state the commands change. | §7's `Placement`, four surfaces | [ADR-0067](DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md) |

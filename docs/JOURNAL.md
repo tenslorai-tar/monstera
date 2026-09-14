@@ -892,6 +892,37 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — B4 for pass E: the status bar is a placement surface (ADR-0067)
+
+§10.3 gives the status bar page navigation and a zoom cluster, *"all real controls"*. The commands exist
+(`view.page-first/-previous/-next/-last`, `view.zoom-in/-out`, `view.fit-width/-page`) and the bar renders none of
+them. §7's `Placement` had four surfaces and no status bar, so the only way to add the buttons was to write them into
+`StatusBar.tsx` — the second wiring place §7 forbids. Amended before any code.
+
+**And `check:secondwiring` could not have seen that list.** The draft of this amendment said it would. Read before
+committing: `secondWiringPlace.mjs` scans `packages/ui/src/surfaces` only, and `StatusBar.tsx` sits in
+`packages/ui/src/`. The amendment now says so, and the feature commit moves the bar into the scanned directory.
+CLAUDE.md's projection list and §7's registry table are updated in this commit, as the digest's own header requires
+of an amendment that changes a sentence it restates.
+
+- `status-bar` joins the union with a `cluster` and a `side` relative to that cluster's value control, because §10.3
+  puts the page field between previous and next and the slider between zoom-out and zoom-in. A fixed index would be a
+  position two features cannot agree on.
+- The page field and the slider take values, which a command's `run` cannot, so they stay the bar's own controls and
+  write the state the commands change.
+
+### Found while reading §7, and owed
+
+**The law names three chrome-visibility commands that do not exist.** *"Chrome visibility is itself commanded:
+`view.toggle-quick-toolbar`, `view.toggle-panel` and the layout-mode switch are registry commands."* None is a product
+command today: `view.toggle-quick-toolbar` appears only in two test fixtures, the document and properties panels
+collapse through settings their chevrons write (passes C and D), and there is no layout switcher yet (pass G). The panel
+collapse is not wrong — a setting is its owner — but §7's guarantee that *"a hidden surface can always be restored from
+the palette or a shortcut"* is not met for either panel. Queued: `view.toggle-quick-toolbar` with pass F (and its
+status-bar placement), the panel toggles as commands writing the same settings, and the layout switch with pass G.
+
+---
+
 ## 2026-09-14 — Design pass D: the right contextual panel holds the properties
 
 §10.3: *"Canvas (the star, quiet chrome) → right contextual panel → status bar"*, and *"Both side
