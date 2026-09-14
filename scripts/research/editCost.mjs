@@ -209,29 +209,41 @@ function openPageZero(bytes) {
 }
 
 /**
- * One set-then-generate cycle, timed apart.
+ * One set-then-generate reading, the two calls timed apart.
  *
  * @param {{ page: unknown, objects: unknown[] }} open
- * @param {number} repeats
- * @returns {{ set: number, generate: number, clean: number }}
+ * @param {number} n which reading this is; picks the target and the text
+ * @returns {{ set: number, generate: number }}
  */
-function editCycle(open, repeats) {
-  /** @type {number[]} */
-  const sets = [];
-  /** @type {number[]} */
-  const generates = [];
-  for (let n = 0; n < repeats; n += 1) {
-    const target = open.objects[n % open.objects.length];
-    sets.push(took(() => api.setText(target, `edited ${String(n)}`)));
-    generates.push(took(() => api.generateContent(open.page)));
-  }
-  /** @type {number[]} */
-  const cleans = [];
-  for (let n = 0; n < repeats; n += 1) cleans.push(took(() => api.generateContent(open.page)));
-  return { set: median(sets), generate: median(generates), clean: median(cleans) };
+function editReading(open, n) {
+  const target = open.objects[n % open.objects.length];
+  // SET TEXT IS TIMED AS A BATCH, and the per-call figure is the batch divided by its
+  // size. One call reads a few microseconds, and a single reading at that scale is
+  // mostly the runner's scheduling: CI at 8814ba5 read 0.001 ms and 0.013 ms for two
+  // documents and failed case 3 on noise. A batch moves the reading into the range
+  // case 1's clock was shown to separate. Alternating two texts makes every call a
+  // change, never a no-op PDFium could skip.
+  const set =
+    took(() => {
+      for (let k = 0; k < SET_TEXT_BATCH; k += 1) {
+        api.setText(target, k % 2 === 0 ? `edited ${String(n)}` : `edited ${String(n)} again`);
+      }
+    }) / SET_TEXT_BATCH;
+  const generate = took(() => api.generateContent(open.page));
+  return { set, generate };
 }
 
 const REPEATS = 5;
+
+/**
+ * How many `FPDFText_SetText` calls make one reading.
+ *
+ * A thousand, because one call measured 0.001–0.013 ms (CI, 2026-09-14), so a batch
+ * reads roughly 1–13 ms. That is the magnitude case 1 proves the clock separates
+ * (1 ms from 50 ms), where a single call sat three orders below it and the runner's
+ * jitter decided case 3.
+ */
+const SET_TEXT_BATCH = 1000;
 
 // ---------------------------------------------------------------------------
 // Case 1 — RESOLUTION. The decision this informs turns on telling a fraction of
@@ -262,26 +274,58 @@ check(
 /** @type {{ label: string, pages: number, lines: number, kb: number, objects: number, set: number, generate: number, clean: number }[]} */
 const cells = [];
 
-for (const { pages, lines } of [
+// THE CELLS ARE READ ROUND-ROBIN, one reading of each per round, never one cell's five
+// readings and then the next's. Cases 3, 5 and 6 compare one cell against another, and
+// read in sequence the two sides were taken seconds apart, so a change in the machine's
+// load between them landed on one side only. The output's own claim — a loaded runner
+// moves both sides of every comparison together — was false for exactly those cases.
+// Measured 2026-09-14 on this machine, cells read in sequence: case 6's weaker ratio
+// (50x400 over 500x1) read 1.29, 1.56, 2.17 and 2.47 across four runs, and 2.24 in a
+// fifth run carrying a mutation of the set timing only — against a margin of 1.5, so it
+// failed once.
+const shapes = [
   { pages: 1, lines: 40 },
   { pages: 100, lines: 40 },
   { pages: 500, lines: 40 },
   { pages: 500, lines: 1 },
   { pages: 50, lines: 400 },
-]) {
+];
+const opened = [];
+for (const { pages, lines } of shapes) {
   const bytes = await build(pages, lines);
-  const open = openPageZero(bytes);
-  const reading = editCycle(open, REPEATS);
+  opened.push({ pages, lines, kb: Math.round(bytes.length / 1024), open: openPageZero(bytes) });
+}
+/** @type {{ set: number[], generate: number[], clean: number[] }[]} */
+const readings = opened.map(() => ({ set: [], generate: [], clean: [] }));
+for (let n = 0; n < REPEATS; n += 1) {
+  opened.forEach(({ open }, i) => {
+    const { set, generate } = editReading(open, n);
+    readings[i]?.set.push(set);
+    readings[i]?.generate.push(generate);
+  });
+}
+// The clean readings follow every edit reading, as they did per cell: a generate leaves
+// the page clean, so each of these times GenerateContent with nothing to regenerate.
+for (let n = 0; n < REPEATS; n += 1) {
+  opened.forEach(({ open }, i) => {
+    readings[i]?.clean.push(took(() => api.generateContent(open.page)));
+  });
+}
+opened.forEach(({ pages, lines, kb, open }, i) => {
+  const reading = readings[i];
+  if (reading === undefined) throw new Error(`CONTROL FAILED: no readings for cell ${String(i)}.`);
   cells.push({
     label: `${String(pages)} x ${String(lines)}`,
     pages,
     lines,
-    kb: Math.round(bytes.length / 1024),
+    kb,
     objects: open.objects.length,
-    ...reading,
+    set: median(reading.set),
+    generate: median(reading.generate),
+    clean: median(reading.clean),
   });
   open.close();
-}
+});
 
 /**
  * @param {number} pages
@@ -371,32 +415,58 @@ check(
 /**
  * k replacements, generating per call against generating once.
  *
- * A fresh document per strategy, so neither inherits the other's dirtied state.
+ * A fresh document per reading, so no reading inherits another's dirtied state.
+ *
+ * THE MEDIAN OF `REPEATS` READINGS PER STRATEGY, alternating which goes first. This was one
+ * reading each, and k=1 asserts the two agree within 2x: a pause landing in either reading
+ * decided it. Measured 2026-09-14 on this machine, one run read 83.8 ms against 39.1 ms
+ * where the two runs before it read 15.8/15.1 and 17.0/16.6 — both sides elevated, and
+ * unevenly. It is case 3's defect at a larger scale: a comparison of single samples.
  *
  * @param {Uint8Array} bytes
  * @param {number} k
  * @returns {{ perCall: number, once: number }}
  */
 function batching(bytes, k) {
-  const a = openPageZero(bytes);
-  const perCall = took(() => {
-    for (let n = 0; n < k; n += 1) {
-      api.setText(a.objects[n % a.objects.length], `replaced ${String(n)}`);
-      api.generateContent(a.page);
-    }
-  });
-  a.close();
+  /** @type {() => number} */
+  const perCallReading = () => {
+    const a = openPageZero(bytes);
+    const reading = took(() => {
+      for (let n = 0; n < k; n += 1) {
+        api.setText(a.objects[n % a.objects.length], `replaced ${String(n)}`);
+        api.generateContent(a.page);
+      }
+    });
+    a.close();
+    return reading;
+  };
+  /** @type {() => number} */
+  const onceReading = () => {
+    const b = openPageZero(bytes);
+    const reading = took(() => {
+      for (let n = 0; n < k; n += 1) {
+        api.setText(b.objects[n % b.objects.length], `replaced ${String(n)}`);
+      }
+      api.generateContent(b.page);
+    });
+    b.close();
+    return reading;
+  };
 
-  const b = openPageZero(bytes);
-  const once = took(() => {
-    for (let n = 0; n < k; n += 1) {
-      api.setText(b.objects[n % b.objects.length], `replaced ${String(n)}`);
+  /** @type {number[]} */
+  const perCall = [];
+  /** @type {number[]} */
+  const once = [];
+  for (let r = 0; r < REPEATS; r += 1) {
+    if (r % 2 === 0) {
+      perCall.push(perCallReading());
+      once.push(onceReading());
+    } else {
+      once.push(onceReading());
+      perCall.push(perCallReading());
     }
-    api.generateContent(b.page);
-  });
-  b.close();
-
-  return { perCall, once };
+  }
+  return { perCall: median(perCall), once: median(once) };
 }
 
 const batchBytes = await build(100, 40);

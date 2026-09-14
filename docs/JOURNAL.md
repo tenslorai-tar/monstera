@@ -892,6 +892,74 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — CI red at `8814ba5`: three edit-cost cases compared readings the runner could move apart
+
+The Windows leg failed at *Attribute the cost of one in-place text edit*
+(`scripts/research/editCost.mjs`, run 34854845313), read from the job's own annotations.
+Guards passed. The pushed range (`63c9d15..8814ba5`) touched only the renderer, its tests
+and this journal, so the change did not cause it. It is an instrument defect that CI met
+on this run.
+
+### The mechanism
+
+Case 3 asserts that `FPDFText_SetText` does not scale with the document:
+`large.set < max(one.set, 0.001) * 10`. Each `set` figure was the median of five
+single-call readings, and one call takes a few microseconds.
+- The run read `0.001 ms` on the 3 KB document and `0.013 ms` on the 997 KB one.
+- The bound was therefore `0.01 ms`, and the larger reading passed it by 3 µs — the size
+  of one scheduling slice on a shared runner.
+
+**The instrument's resolution test did not cover this scale.** Case 1 proves the clock
+separates 1 ms from 50 ms. The quantity case 3 compares sat three orders below that, so
+the comparison was decided by the runner. The file's own output claims margins *"far
+wider than the spread"*, which was true of every other case and not of this one.
+
+### The fix, and the two cases it found beside it
+
+**Case 3.** `SetText` is timed as a batch of `SET_TEXT_BATCH = 1000` calls per reading,
+divided back to a per-call figure. The two texts alternate so every call is a change. A
+reading is now about 1–13 ms, the range case 1 tests. The bound is unchanged: **the
+constant was not raised**. What moved is the quantity, into a range the clock was shown
+to separate.
+
+**Running the fixed file locally reddened two OTHER cases**, one run each, and both were
+the same class — sides that a moment of load could move apart:
+
+- **Case 7** (*one generate per command is flat in k*) compared ONE reading per strategy
+  within 2×. One run read 83.8 ms against 39.1 ms at k=1, where the runs either side read
+  15.8/15.1 and 17.0/16.6. It now takes the median of `REPEATS` fresh-document readings
+  per strategy, alternating which strategy goes first.
+- **Case 6** (*tracks content, not page count*) compared medians, but each cell's five
+  readings were taken before the next cell's, so the two sides were seconds apart. Its
+  weaker ratio read 1.29, 1.56, 2.17 and 2.47 across four runs against a margin of 1.5,
+  and failed on the 1.29. The cells are now read **round-robin**, one reading of each per
+  round, which is what the output's own sentence — *a loaded runner moves both sides of
+  every comparison together* — needed in order to be true. It governs cases 3 and 5 too.
+
+No margin was changed in any of the three.
+
+### Evidence, this machine
+
+- Interleaved and batched, four sequential runs: 7 controls passed each time. Case 6's
+  ratio read 3.34, 2.38, 2.00 and 1.84. **The lowest is a quarter over the margin**, and
+  interleaving has not been shown to remove the failure, only that it has not recurred in
+  four runs — against one failure in four before it. Case 6's margin is therefore
+  **queued as open**, not fixed: the next CI runs are the evidence, and if it reddens
+  again, what to question is the claim's quantity rather than the reading order.
+- Mutation A, a size-scaled amount added to each set reading: case 3 alone went red —
+  *"set text read 0.002 ms on 3 KB and 0.052 ms on 997 KB"*.
+- Mutation B, the *once* strategy generating after every set: case 7 alone went red,
+  k=40 reading 209.8 ms against 212.5 ms.
+- A first mutation for case 3 called `GenerateContent` inside the timed batch. It
+  reddened cases 3, 4 **and** 5, because it cleaned the page before the step 4 and 5
+  time. It mutated two things at once, and was replaced rather than counted.
+- Case 6 was not mutated: its comparison is unchanged, and only the order its readings
+  are taken in moved.
+
+Typecheck passed with the change (both halves).
+
+---
+
 ## 2026-09-14 — Design pass: the UI font is the system stack, on text and on controls
 
 §10.4 says *"System font stack (`Segoe UI` first on Windows). No webfonts for UI chrome."*
