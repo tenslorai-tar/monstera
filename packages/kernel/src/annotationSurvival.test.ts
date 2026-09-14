@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { declaredCommands } from './commandDeclarations.js';
 import type { MupdfSession } from './engineSeam.js';
+import { applyImportPageAsLayer } from './layers.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { applyAddAnnotation } from './pageAnnotations.js';
 import { extractPages } from './pageExtract.js';
@@ -357,8 +358,67 @@ describe('an annotation survives an extract into a NEW document', () => {
   });
 });
 
+/**
+ * Imports the source's FIRST page onto the target's page 1, as a layer (ADR-0064), and
+ * serialises the target.
+ */
+async function layeredOnto(target: Uint8Array, source: Uint8Array): Promise<Uint8Array> {
+  const into = await mupdfWriter.open(target);
+  const from = await mupdfWriter.open(source);
+  try {
+    await applyImportPageAsLayer(
+      into,
+      { kind: 'importPageAsLayer', source: 'source' as never, name: 'Layer', at: 1, version: 1 as never },
+      from,
+    );
+    return await mupdfWriter.serialise(into);
+  } finally {
+    await mupdfWriter.close(from);
+    await mupdfWriter.close(into);
+  }
+}
+
+/** A one-page source whose only page carries the mark. */
+async function markedOnePage(): Promise<Uint8Array> {
+  return through(await document(1), (session) => applyAddAnnotation(session, command(0)));
+}
+
+describe('annotations and a page imported AS A LAYER', () => {
+  /**
+   * The third command that copies out of another document, and the first that does not
+   * copy a PAGE: `importPageAsLayer` places the source page's content inside a Form
+   * XObject on a page that already exists. So both questions this file asks have
+   * different answers from the merge's, and neither follows from it.
+   */
+  it("leaves the TARGET page's own annotation where it was", async () => {
+    // Built from something the defect would break: an import that rewrote the page's
+    // `/Annots` — or replaced the page dictionary rather than editing its resources and
+    // contents — would lose this mark, and the layer lands on the very page carrying it.
+    const layered = await layeredOnto(await marked(), await document(1));
+    const loaded = await PDFDocument.load(layered, { updateMetadata: false });
+    expect(loaded.getPageCount()).toBe(PAGES);
+    expect(await marksIn(layered)).toStrictEqual([{ page: 1, rect: PLACED }]);
+  });
+
+  it("does NOT bring the SOURCE page's annotation — a Form XObject cannot carry /Annots", async () => {
+    // A STATED LIMIT, asserted so it cannot change silently. An annotation is an object in
+    // a page's `/Annots`, and the layer is content drawn inside a Form XObject, which has
+    // no such key; placing the source's marks on the target page would take them out of
+    // the layer the person can hide.
+    //
+    // THE SOURCE IS SHOWN TO CARRY THE MARK FIRST. An empty result is also what a source
+    // with no mark produces, so without this the case could not tell *not brought* from
+    // *there was nothing to bring*.
+    const source = await markedOnePage();
+    expect(await marksIn(source)).toStrictEqual([{ page: 0, rect: PLACED }]);
+
+    const layered = await layeredOnto(await document(), source);
+    expect(await marksIn(layered)).toStrictEqual([]);
+  });
+});
+
 /** The cross-document commands the cases above exercise. */
-const COVERED: readonly CommandKind[] = ['mergeDocument', 'replacePage'];
+const COVERED: readonly CommandKind[] = ['mergeDocument', 'replacePage', 'importPageAsLayer'];
 
 describe('the set of crossings this file covers', () => {
   it('is every command that declares a second document', () => {

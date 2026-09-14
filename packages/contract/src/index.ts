@@ -217,6 +217,7 @@ export {
   renderableCommandSchema,
   targetVersionOf,
   replacePageSchema,
+  importPageAsLayerSchema,
   sourceIdsOf,
   deskewPagesSchema,
   enhancePagesSchema,

@@ -30,6 +30,7 @@ import {
   placeImage,
   mergeDocumentCommand,
   replacePageCommand,
+  importPageAsLayerCommand,
   splitDocumentCommand,
   generateTocCommand,
   protectDocumentCommand,
@@ -1918,6 +1919,72 @@ describe('delete pages — the mutation-dialog gate', () => {
       client,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
+  });
+
+  it("import-as-layer sends importPageAsLayer for the page on screen, named as the CHOSEN tab", async () => {
+    const { client, sent } = recording();
+    const opened: unknown[] = [];
+
+    await importPageAsLayerCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve({ source: 'doc-2' });
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.import-page-as-layer',
+        props: {
+          choices: [
+            { docId: 'doc-0', name: 'Before' },
+            { docId: 'doc-2', name: 'After' },
+          ],
+          page: 3,
+        },
+      },
+    ]);
+    // THE NAME IS THE CHOSEN TAB'S, looked up by the id the dialog answered. The fixture
+    // offers two names and the answer is NOT the first, so a command that took
+    // `choices[0].name` would send 'Before' here. `at: 3` is `CONTEXT.page`, unconverted.
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: { kind: 'importPageAsLayer', source: 'doc-2', name: 'After', at: 3, version: 1 },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED import-as-layer dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await importPageAsLayerCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('an answer naming a document that was NOT offered dispatches nothing', async () => {
+    // The dialog's schema accepts any non-empty string, so this is the command's own
+    // decision to make: a source it never listed has no tab name to send, and sending one
+    // would be a layer named after nothing the reader chose.
+    const { client, sent } = recording();
+
+    await importPageAsLayerCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve({ source: DOC }),
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([]);

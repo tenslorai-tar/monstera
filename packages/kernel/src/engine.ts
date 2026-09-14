@@ -18,8 +18,11 @@ export {
 } from './pageLinks.js';
 export { readDestinations, type Destination } from './destinations.js';
 export {
+  applyImportPageAsLayer,
   applySetLayerVisibility,
+  captureImportPageAsLayer,
   captureSetLayerVisibility,
+  invertImportPageAsLayer,
   invertSetLayerVisibility,
   readLayers,
   type Layer,

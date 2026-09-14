@@ -232,7 +232,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('mergeDocument');
   });
 
-  it('CONTROL: exactly ten kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly eleven kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -242,6 +242,7 @@ describe('the declaration table', () => {
     const named = KINDS.filter((kind) => declaredCommands[kind].targets !== 'none');
     expect(named).toStrictEqual([
       'replacePage',
+      'importPageAsLayer',
       'removeAnnotation',
       'placeAnnotation',
       'styleAnnotation',

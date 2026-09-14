@@ -345,6 +345,13 @@ export interface CommandPrior {
    */
   readonly replacePage: never;
   /**
+   * **`never`**, for `mergeDocument`'s reason: the prior state is the absence of five
+   * structures — a group in `/OCGs` and `/D/Order`, a Form XObject, its `/XObject` entry
+   * and a drawing stream — none of which has a serialisable form. The bus checkpoints the
+   * target (ADR-0064).
+   */
+  readonly importPageAsLayer: never;
+  /**
    * **`never`**, and this one is a genuine *not yet* rather than a structural
    * impossibility — which is why it says so here instead of reading like its
    * neighbours.

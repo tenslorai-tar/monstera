@@ -61,6 +61,7 @@ import {
   insertFromPdfCommand,
   mergeDocumentCommand,
   replacePageCommand,
+  importPageAsLayerCommand,
   splitDocumentCommand,
   deletePagesCommand,
   duplicatePageCommand,
@@ -147,6 +148,7 @@ import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
+import { IMPORT_PAGE_AS_LAYER_DIALOG } from './dialogs/importPageAsLayer.js';
 import { REIMPORT_EXTERNAL_EDIT_DIALOG } from './dialogs/reimportExternalEdit.js';
 import { EXTERNAL_EDIT_PROBLEM_DIALOG } from './dialogs/externalEditProblem.js';
 import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
@@ -423,6 +425,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         MERGE_DOCUMENT_NONE_DIALOG,
         INSERT_FROM_PDF_DIALOG,
         REPLACE_PAGE_DIALOG,
+        IMPORT_PAGE_AS_LAYER_DIALOG,
         REIMPORT_EXTERNAL_EDIT_DIALOG,
         EXTERNAL_EDIT_PROBLEM_DIALOG,
         EXTRACT_PAGES_DIALOG,
@@ -1522,6 +1525,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         mergeDocumentCommand({ client, onApplied: applied, ask }),
         insertFromPdfCommand({ client, onApplied: applied, ask }),
         replacePageCommand({ client, onApplied: applied, ask }),
+        importPageAsLayerCommand({ client, onApplied: applied, ask }),
         // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes
         // `appendMarkdownCommand`'s two callbacks as well as `replacePageCommand`'s (ADR-0062).
         editPageExternallyCommand({

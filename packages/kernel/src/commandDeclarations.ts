@@ -1063,6 +1063,32 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  importPageAsLayer: {
+    kind: 'importPageAsLayer',
+    // ADR-0064's row: MuPDF, through the object-tree writer `layers.ts` already is,
+    // because the command writes `/OCProperties` and that module is its one writer.
+    // *Drawing onto pages* is pdf-lib's, and taking this there would give
+    // `/OCProperties` a second writer.
+    writer: 'mupdf',
+    // `mergeDocument`'s argument: the prior state is the ABSENCE of five structures — a
+    // group in `/OCGs` and `/D/Order`, a Form XObject, its `/XObject` entry and a drawing
+    // stream — and none has a serialisable form.
+    invertible: false,
+    undo: 'checkpoint',
+    // The same source page onto the same target page produces the same tree: the drawing's
+    // name is the first free `MonsteraLayer<n>` on that page, and nothing is read from a
+    // clock or minted.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // ADR-0040's axis, third command to declare it.
+    sources: 'one',
+    // `replacePage`'s reason: `at` is a position in this document's page tree, read at a
+    // version, and a page inserted or moved since would put the layer on another page.
+    targets: 'page',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   addAnnotation: {
     kind: 'addAnnotation',
     // `docs/ARCHITECTURE.md:386` puts "Annotations (all types), appearance

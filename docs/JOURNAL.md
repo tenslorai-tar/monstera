@@ -892,6 +892,124 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Import page as OCG layer: a page becomes a layer in the module that owns layers
+
+D9's row, built on ADR-0064 (`208f168`). Organize › Pages gains *Import page as layer*. The
+first page of another open document is placed on the page on screen as an
+optional-content group, visible by default. The Layers panel lists it by the chosen
+tab's name, and its checkbox hides it through the existing `setLayerVisibility`, with no
+code of its own.
+
+### What was built
+
+- **`importPageAsLayerSchema`**: `source` (a `DocId`, ADR-0040), `name`, `at` and the
+  `version` `at` was read at. It joins both command unions, `sourceIdsOf`,
+  `NamesASecondDocument`, `targetVersionOf` and `NamesAPage`. The declaration tie test now
+  counts eleven targeting kinds.
+- **`MAX_LAYER_NAME_LENGTH` moved into `commands.ts`**, and `channels.ts` imports it.
+  `channels.ts` already imports `commands.ts`, so the import could not go the other way.
+  One number now bounds the name written and the names `document.layers` reads. A longer
+  name written than read would make the next layers read refuse the document.
+- **The writer is in `layers.ts`**, the one writer of `/OCProperties`, following the
+  probe's measured steps:
+  - `pushInheritablesDown`, now exported from `pageExtract.ts` rather than copied;
+  - one graft map;
+  - the source's joined content as a Form XObject with `/OC`, read with `readStream` on
+    the INDIRECT reference;
+  - the drawing under the first free `MonsteraLayer<n>`, deterministic because the
+    declaration says `reproducible`;
+  - the group appended to `/OCGs` and `/D/Order`.
+
+  Undo is the target's checkpoint (`CommandPrior` is `never`), for `mergeDocument`'s reason.
+- **The UI** is `replacePageCommand`'s shape: the shared document picker, a dialog that
+  names the page, and the page's version sent with it. **The name is looked up from the
+  choices offered, never taken from the dialog**, so a name that was not a tab's cannot
+  reach the payload.
+
+### Two decisions taken from the neighbours, not re-derived
+
+1. **The source's first page.** An open-document entry carries no page count, so a chosen
+   source page cannot be bounded in the renderer. `replacePage`'s contract note records the
+   same gap for *insert selected pages*.
+2. **The layer is named after the chosen tab.** The Layers panel renders the group's
+   `/Name` as the row, and the renderer is the side that holds tab names.
+
+### Proven
+
+Seven kernel cases, built with pdf-lib and read back with pdf-lib. Three UI cases:
+
+- the command sends the chosen tab's name, 'After' and not the first choice's 'Before';
+- a dismissed dialog sends nothing;
+- an answer naming a document that was never offered sends nothing.
+
+**One case was wrong on its first run, and the dump found it.** *Keeps the page's own
+content* looked for the ` re` operator. pdf-lib's `drawRectangle` writes a path (`0 0 m`,
+`2 0 l`, `2 2 l`, `0 2 l`, `h`, `f`), read by dumping the stream. It now looks for
+`2 2 l`.
+
+Mutations, each reverted, each turning red exactly the cases named. C, E and F2 were
+predicted before the run:
+
+| mutation | red | the run's own words |
+|---|---|---|
+| A: the source leaf read without pushing inheritables down | the hard shape | `Expected instance of PDFArray, but got instance of undefined`, no `/BBox` |
+| B: `findPage(0)` instead of `findPage(command.at)` | *on the page it was given and no other* | `expected [] to strictly equal [ 'MonsteraLayer0' ]` |
+| C: the `/D/Order` push removed | *one group … and /D/Order*; *APPENDS* | `expected [] to strictly equal [ '7 0 R' ]`; `expected [ '6 0 R' ] to have a length of 2 but got 1` |
+| D: a fixed `MonsteraLayer0` | *a second import takes the NEXT name* | `expected [ 'MonsteraLayer0' ] to strictly equal [ 'MonsteraLayer0', 'MonsteraLayer1' ]` |
+| E: `/OCGs` replaced instead of appended | *APPENDS*; *second import* | `expected [ 'Letterhead' ] to strictly equal [ 'Existing', 'Letterhead' ]`; `expected [ 'Second' ] to strictly equal [ 'First', 'Second' ]` |
+| F: the range check removed | *REFUSES … and writes nothing* | `expected error to be instance of RangeError` |
+| F2: the range check moved after the group is written | *REFUSES … and writes nothing*, on its second clause | `expected [ { ref: '6 0 R', name: 'X' } ] to strictly equal []` |
+
+**F alone did not prove the case's name.** It went red on the error's class, so *writes
+nothing* was never reached. F2 throws the same `RangeError` after the write, and the
+read-back is what caught it. A case whose name makes two claims needed a mutation for
+each.
+
+**`proof:contract` caught a registration the local sweep cannot see.** `npm run local --
+--only "check:"` runs checks, not proofs, and typecheck, lint and the unit tests were all
+green. `scripts/lib/affectedProofs.mjs`, asked about this change set, named ten proofs;
+`proof:contract` was the one whose subject is the command table, and it failed three
+cases:
+
+- its complete spec tables lacked the new kind;
+- its missing-a-kind case now missed two kinds;
+- its union-size pattern still said `39 more`.
+
+It also needed `engine.ts` to export the three functions, because the probe imports them
+from `@monstera/kernel/engine`. All five complete tables gained the fixture in one edit,
+because the file's own rule is that a table missing a kind fails for that reason and not
+the one it was written to test. Without that one command it would have reached the board
+first.
+
+### Annotations: the registry found the question, and the answer is a stated limit
+
+The full suite failed one case the feature's own files could not have: *the set of
+crossings this file covers is every command that declares a second document*, in
+`annotationSurvival.test.ts`. That check derives every `sources: 'one'` command from the
+declaration table and requires each to have a case there, because whether an annotation
+crosses is a fact about how the copy is made. It is the registration check doing its job
+for the third such command.
+
+The cases now say what happens, read back with pdf-lib:
+
+- **The target page's own annotation stays where it was.** The layer lands on the very
+  page carrying the mark, so an import that rewrote `/Annots` would lose it.
+- **The source page's annotation does not come.** An annotation lives in a page's
+  `/Annots`, and the layer is content inside a Form XObject, which has no such key. The case
+  first shows the source's page really carries the mark, since an empty result is also what
+  a source with nothing to bring produces.
+
+ADR-0064 did not state this consequence, so it carries a dated correction.
+
+### Owed before the row is DONE
+
+- **The application's save path with a reopen.** The kernel cases serialise the session
+  directly; the wired pair through `document.save` is not yet run.
+- **Undo removes all five structures.** The checkpoint is the bus's mechanism and is not
+  asserted for this command.
+
+---
+
 ## 2026-09-14 — LibreOffice provisions and verifies; converting it crashes on this machine, which blocks ADR-0063's gate
 
 ADR-0063's second half: `scripts/provision/libreoffice.mjs`, registered as
@@ -1028,6 +1146,16 @@ no 8.3 names, because there it could separate nothing.
 **Verification owed: the next windows-latest run.** It failed this way on both
 runs of identical code, so a green unit-test step there confirms the mechanism,
 and a red one refutes it.
+
+> **Correction, 2026-09-14 — the verification this entry owed has been read, and it
+> confirms.** The one board read for `050fbfc`, the commit that made the watcher resolve
+> its directory with `realpathSync.native`, answered at 05:56: CI `completed success`
+> (run 34803182408) and Guards `completed success` (run 34803182504). The windows-latest
+> unit-test step failed on both earlier runs of identical code, `785ba87` and `c963dfd`,
+> and passes here; `9270171` after it is green as well (runs 34803796315 and
+> 34803796318). The abort still has not been reproduced on the development machine, so
+> what is confirmed is the fix's effect on the runner where the defect lives, not a local
+> reproduction of the mechanism.
 
 ---
 

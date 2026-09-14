@@ -865,6 +865,64 @@ export const replacePageSchema = z.object({
 });
 
 /**
+ * How long an optional-content group's name may be — on the way IN and on the way OUT.
+ *
+ * Two readers, one number. `document.layers` bounds the names it reports with it, and
+ * `importPageAsLayer` bounds the name it writes with it. A command allowed a longer name
+ * than the read side accepts would write a document whose next layers read is refused,
+ * and the person who just imported a layer would find the Layers panel unavailable.
+ *
+ * It moved here from `channels.ts` on 2026-09-14 because `channels.ts` imports this file
+ * and the command schema now needs it too; `MAX_LAYERS` stays there, having one reader.
+ * A tab's name is bounded at 255 by `MAX_DOCUMENT_NAME_LENGTH`, so the source tab's name
+ * the renderer sends always fits.
+ *
+ * Declared above the schema that reads it: a `const` is in its temporal dead zone until
+ * its declaration evaluates, and a schema referencing it from higher up would throw at
+ * import (`MAX_FIND_TEXT`'s note).
+ */
+export const MAX_LAYER_NAME_LENGTH = 256;
+
+/**
+ * Place another OPEN document's first page onto a page of this one, as a layer.
+ *
+ * [ADR-0064](../../../docs/DECISIONS/0064-a-page-imported-as-a-layer-is-mupdfs-because-the-layer-is.md):
+ * the source's page becomes a Form XObject governed by a new optional-content group,
+ * visible by default, which the Layers panel lists and `setLayerVisibility` hides.
+ *
+ * ## The source is a `DocId` of an open document
+ *
+ * `mergeDocumentSchema`'s reason, ADR-0040 Decisions 1 and 2.
+ *
+ * ## Its FIRST page, because the renderer cannot bound another
+ *
+ * An open-document entry carries an id, a version, a byte length and a name, and no page
+ * count. A chosen source page could not be bounded here, which is the gap
+ * `replacePageSchema`'s note records for *insert selected pages*; this command takes the
+ * same default rather than an index the kernel would refuse blind.
+ *
+ * ## The NAME is the renderer's to send
+ *
+ * It is what the Layers panel shows as the row, and the renderer is the side holding the
+ * source tab's name. The kernel holds a session and a `DocId`, so a label invented there
+ * would be one nobody chose.
+ */
+export const importPageAsLayerSchema = z.object({
+  kind: z.literal('importPageAsLayer'),
+  /** The open document whose first page is placed. Never modified. */
+  source: docIdSchema,
+  /** The layer's name, as the Layers panel will show it. */
+  name: z.string().min(1).max(MAX_LAYER_NAME_LENGTH),
+  /** Zero-based index of the TARGET page the layer is placed on. It must exist. */
+  at: z.number().int().nonnegative(),
+  /**
+   * The version `at` was read at — `replacePageSchema`'s reason: a page inserted or moved
+   * since would put the layer on another page. The bus refuses a stale one.
+   */
+  version: docVersionSchema,
+});
+
+/**
  * The largest coordinate an annotation may name, in PDF units.
  *
  * The format's own limit, not one invented here: PDF 32000-1 Annex C.2 puts the
@@ -3907,6 +3965,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   generateTocSchema,
   mergeDocumentSchema,
   replacePageSchema,
+  importPageAsLayerSchema,
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
@@ -3999,6 +4058,10 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // the source's BYTES, and nothing here can express those.
   mergeDocumentSchema,
   replacePageSchema,
+  // RENDERABLE, for merge's reason: two ids, a name a tab already has, an index and a
+  // version — the same size however large either document is. The source page's content
+  // is read inside the engine and never crosses.
+  importPageAsLayerSchema,
   // RENDERABLE, and it is the union's own test rather than an exception: the
   // intent is a page index and a rectangle in the page's own space, which is
   // six numbers whatever the document weighs. The picture the user is pointing
@@ -4202,10 +4265,14 @@ export function sourceIdsOf(command: Command): readonly DocId[] {
   // new kind would fall through it silently — which is the whole failure this
   // function's own comment says naming the kinds prevents.
   //
-  // Listing all sixteen arms to satisfy the rule would be a list nobody reads
-  // and fifteen of whose arms are the same line. The `if` says the same thing
-  // and the type check below is what keeps the name honest.
-  if (command.kind === 'mergeDocument' || command.kind === 'replacePage') {
+  // Listing every arm to satisfy the rule would be a list nobody reads, nearly
+  // all of whose arms are the same line. The `if` says the same thing and the
+  // type check below is what keeps the names honest.
+  if (
+    command.kind === 'mergeDocument' ||
+    command.kind === 'replacePage' ||
+    command.kind === 'importPageAsLayer'
+  ) {
     return [command.source];
   }
   return NO_SOURCES;
@@ -4246,7 +4313,7 @@ const NO_SOURCES: readonly DocId[] = Object.freeze([]);
  * Kept and renamed rather than deleted: a misspelt kind here is still worth a
  * compile error, and a name that overstates a check is worse than no check.
  */
-export type NamesASecondDocument = 'mergeDocument' | 'replacePage';
+export type NamesASecondDocument = 'mergeDocument' | 'replacePage' | 'importPageAsLayer';
 const _bothNamesAreCommandKinds: NamesASecondDocument extends CommandKind ? true : never = true;
 void _bothNamesAreCommandKinds;
 
@@ -4275,6 +4342,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'recolorPageObjects') return command.version;
   if (command.kind === 'deletePageObjects') return command.version;
   if (command.kind === 'replacePage') return command.version;
+  if (command.kind === 'importPageAsLayer') return command.version;
   return undefined;
 }
 
@@ -4352,6 +4420,6 @@ void _theObjectNameIsACommandKind;
  * Added 2026-09-14 by ADR-0062's correction, when `replacePage`'s index was found to
  * point into this document's tree at a version.
  */
-export type NamesAPage = 'replacePage';
+export type NamesAPage = 'replacePage' | 'importPageAsLayer';
 const _thePageNameIsACommandKind: NamesAPage extends CommandKind ? true : never = true;
 void _thePageNameIsACommandKind;

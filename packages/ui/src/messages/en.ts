@@ -160,6 +160,11 @@ export const REPLACE_PAGE_TITLE = messageKey('dialog.replace-page.title');
 export const REPLACE_PAGE_LABEL = messageKey('dialog.replace-page.label');
 export const REPLACE_PAGE_WHICH = messageKey('dialog.replace-page.which');
 export const REPLACE_PAGE_APPLY = messageKey('dialog.replace-page.apply');
+export const IMPORT_PAGE_AS_LAYER_COMMAND_TITLE = messageKey('command.import-page-as-layer.title');
+export const IMPORT_PAGE_AS_LAYER_TITLE = messageKey('dialog.import-page-as-layer.title');
+export const IMPORT_PAGE_AS_LAYER_LABEL = messageKey('dialog.import-page-as-layer.label');
+export const IMPORT_PAGE_AS_LAYER_WHICH = messageKey('dialog.import-page-as-layer.which');
+export const IMPORT_PAGE_AS_LAYER_APPLY = messageKey('dialog.import-page-as-layer.apply');
 export const EXTRACT_PAGES_COMMAND_TITLE = messageKey('command.extract-pages.title');
 export const EDIT_PAGE_EXTERNALLY_COMMAND_TITLE = messageKey('command.edit-page-externally.title');
 export const REIMPORT_EXTERNAL_EDIT_TITLE = messageKey('dialog.reimport-external-edit.title');
@@ -1850,6 +1855,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to check it is the page they mean before pressing.
   [REPLACE_PAGE_WHICH]: 'Page {page} will be removed and replaced.',
   [REPLACE_PAGE_APPLY]: 'Replace page',
+  [IMPORT_PAGE_AS_LAYER_COMMAND_TITLE]: 'Import page as layer…',
+  [IMPORT_PAGE_AS_LAYER_TITLE]: 'Import a page as a layer',
+  [IMPORT_PAGE_AS_LAYER_LABEL]: 'Take the first page of',
+  // SAYS WHICH PAGE, AND THAT IT IS THE FIRST: the renderer knows no other document's page
+  // count, so the dialog cannot offer a choice of source page and must not imply one.
+  [IMPORT_PAGE_AS_LAYER_WHICH]:
+    'The first page of the document you choose is placed on page {page} as a layer you can show and hide.',
+  [IMPORT_PAGE_AS_LAYER_APPLY]: 'Import as layer',
   [EXTRACT_PAGES_COMMAND_TITLE]: 'Extract pages…',
   [EDIT_PAGE_EXTERNALLY_COMMAND_TITLE]: 'Edit page in another app…',
   [REIMPORT_EXTERNAL_EDIT_TITLE]: 'Put the edited page back?',

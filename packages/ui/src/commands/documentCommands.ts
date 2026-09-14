@@ -54,6 +54,8 @@ import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
 import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
 import type { MergeDocumentAnswer } from '../dialogs/mergeDocumentResult.js';
 import { REPLACE_PAGE_DIALOG_ID } from '../dialogs/replacePage.js';
+import { IMPORT_PAGE_AS_LAYER_DIALOG_ID } from '../dialogs/importPageAsLayer.js';
+import type { ImportPageAsLayerAnswer } from '../dialogs/importPageAsLayerResult.js';
 import { SPLIT_DOCUMENT_DIALOG_ID } from '../dialogs/splitDocument.js';
 import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
@@ -115,6 +117,7 @@ import {
   MERGE_DOCUMENT_COMMAND_TITLE,
   PAGE_BACKGROUND_COMMAND_TITLE,
   REPLACE_PAGE_COMMAND_TITLE,
+  IMPORT_PAGE_AS_LAYER_COMMAND_TITLE,
   RESIZE_PAGES_COMMAND_TITLE,
   DESKEW_PAGES_COMMAND_TITLE,
   PAGE_TRANSITION_COMMAND_TITLE,
@@ -1348,6 +1351,60 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'replacePage',
         source: answer.source as DocId,
+        at: context.page,
+        version: context.version,
+      });
+    },
+  };
+}
+
+/**
+ * Places another open document's first page on the page on screen, as a layer
+ * ([ADR-0064](../../../../docs/DECISIONS/0064-a-page-imported-as-a-layer-is-mupdfs-because-the-layer-is.md)).
+ *
+ * ## The layer's NAME is the chosen tab's, read from the choice offered
+ *
+ * The Layers panel shows a group's `/Name` as its row, and this side is the one holding
+ * tab names. It is looked up from `choices` by the id the dialog answered, never taken
+ * from the dialog, so a name that was not a tab's cannot reach the payload.
+ *
+ * ## The page is `context.page`, and its version travels with it
+ *
+ * `replacePageCommand`'s reason: a page inserted or moved while the dialog is up would put
+ * the layer on another page, so the bus refuses a stale version.
+ */
+export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.import-page-as-layer',
+    title: IMPORT_PAGE_AS_LAYER_COMMAND_TITLE,
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 72 },
+    ],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+
+      const choices = context.openDocuments
+        .filter((document) => document.docId !== context.docId)
+        .map((document) => ({ docId: document.docId, name: document.name }));
+
+      if (choices.length === 0) {
+        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
+        return;
+      }
+
+      const answer = (await deps.ask(IMPORT_PAGE_AS_LAYER_DIALOG_ID, {
+        choices,
+        page: context.page,
+      })) as ImportPageAsLayerAnswer | undefined;
+      if (answer === undefined) return;
+
+      const chosen = choices.find((choice) => choice.docId === answer.source);
+      if (chosen === undefined || context.version === undefined) return;
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'importPageAsLayer',
+        source: chosen.docId,
+        name: chosen.name,
         at: context.page,
         version: context.version,
       });

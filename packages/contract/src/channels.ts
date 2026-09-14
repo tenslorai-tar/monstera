@@ -9,6 +9,7 @@ import {
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_LINK_URI,
+  MAX_LAYER_NAME_LENGTH,
   MAX_REPLACED_TEXT,
   annotationKindNameSchema,
   annotationRectSchema,
@@ -425,7 +426,6 @@ export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
  * and the number is meant to be a statement about what the thing is.
  */
 export const MAX_LAYERS = 1024;
-export const MAX_LAYER_NAME_LENGTH = 256;
 
 /**
  * How many duplicate pages may be reported in one answer.

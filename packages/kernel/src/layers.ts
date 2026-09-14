@@ -3,7 +3,8 @@ import type { PDFDocument, PDFObject } from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
-import { withDocument } from './mupdfWriter.js';
+import { copiedOut, withDocument, withDocuments } from './mupdfWriter.js';
+import { pushInheritablesDown } from './pageExtract.js';
 
 /**
  * Optional-content groups — layers — and the command that shows or hides one.
@@ -338,3 +339,215 @@ function setVisibility(document: PDFDocument, layer: number, visible: boolean): 
     list.delete(at);
   }
 }
+
+/**
+ * The name a new layer's drawing is registered under in the target page's `/XObject`
+ * resources.
+ *
+ * DETERMINISTIC, from what the page already carries — never a counter, a clock or a
+ * random id — because the declaration says `reproducible: true`: replaying the command
+ * against the same prior document must produce the same tree. The first free
+ * `MonsteraLayer<n>` is the one taken, so an import after an undo lands on the same name.
+ */
+function freeLayerName(xobjects: PDFObject): string {
+  for (let n = 0; ; n += 1) {
+    const name = `MonsteraLayer${String(n)}`;
+    if (xobjects.get(name).isNull()) return name;
+  }
+}
+
+/**
+ * A page's content streams, joined, read through their INDIRECT references.
+ *
+ * Measured 2026-09-14 (ADR-0064): `readStream` loads through the object number, and
+ * called on `.resolve()`'s result it throws `object is not a stream` — the resolved value
+ * is the stream's dictionary and no longer names the object. So the resolve is used only
+ * to ask whether `/Contents` is an array.
+ *
+ * Each part is followed by a newline: PDF 32000-1 §7.8.2 treats an array's streams as one
+ * stream split at token boundaries, and joining two with nothing between them could fuse
+ * the last operator of one with the first operand of the next.
+ */
+function joinedContents(leaf: PDFObject): Uint8Array {
+  const reference = leaf.get('Contents');
+  if (reference.isNull()) return new Uint8Array(0);
+  const resolved = reference.resolve();
+  const parts: Uint8Array[] = resolved.isArray()
+    ? Array.from({ length: resolved.length }, (_, at) => copiedOut(resolved.get(at).readStream()))
+    : [copiedOut(reference.readStream())];
+  const joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length + 1, 0));
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.length;
+    joined[offset] = 0x0a;
+    offset += 1;
+  }
+  return joined;
+}
+
+/**
+ * Appends one group to `/OCGs` and to the default configuration's `/Order`.
+ *
+ * Creates `/OCProperties` and its `/D` when the document has none, which is the ordinary
+ * case for a document that has never had a layer. `/Order` is appended to only when it
+ * exists or is being created: a document whose `/D` deliberately carries no `/Order`
+ * shows groups in `/OCGs` order, and inventing one would reorder its existing layers.
+ */
+function appendGroup(document: PDFDocument, groupRef: PDFObject): void {
+  const root = document.getTrailer().get('Root');
+  let properties = deref(root.get('OCProperties'));
+  if (!properties.isDictionary()) {
+    properties = document.newDictionary();
+    properties.put('OCGs', document.newArray());
+    const config = document.newDictionary();
+    config.put('Order', document.newArray());
+    properties.put('D', config);
+    root.put('OCProperties', properties);
+  }
+  let groups = deref(properties.get('OCGs'));
+  if (!groups.isArray()) {
+    groups = document.newArray();
+    properties.put('OCGs', groups);
+  }
+  groups.push(groupRef);
+
+  let config = deref(properties.get('D'));
+  if (!config.isDictionary()) {
+    config = document.newDictionary();
+    config.put('Order', document.newArray());
+    properties.put('D', config);
+  }
+  const order = deref(config.get('Order'));
+  if (order.isArray()) order.push(groupRef);
+}
+
+/**
+ * Places the source document's FIRST page onto one page of the target, as a new
+ * optional-content group that is visible by default.
+ *
+ * ## Which source page, and why only the first
+ *
+ * The renderer knows no other document's page count — an open-document entry carries an
+ * id, a version, a byte length and a name — so it cannot bound a chosen page. That is the
+ * gap `replacePage`'s contract note records for *insert selected pages*, and this command
+ * takes the same default rather than a blind index the kernel would refuse.
+ *
+ * ## The group joins `/OCProperties` HERE, in this module
+ *
+ * `/OCProperties` is read and written by this module and nothing else (its header). A new
+ * group is a write to it, so it lives beside `setVisibility`, and the Layers panel lists
+ * it and `setLayerVisibility` hides it with no code of its own.
+ *
+ * ## The steps, in the order ADR-0064's probe measured them
+ *
+ * 1. Push the source leaf's inheritables down — a leaf inheriting its `/MediaBox` would
+ *    otherwise copy without one.
+ * 2. One graft map for the command, so resources the source shares are copied once.
+ * 3. The joined content becomes a Form XObject with the page's box as `/BBox`, its grafted
+ *    `/Resources`, and `/OC` naming the new group.
+ * 4. The target page draws it through its own `/XObject` resources and one appended
+ *    content stream. Its existing content is not rewritten.
+ * 5. The group is appended to `/OCGs` and to `/D/Order`.
+ *
+ * Validated before any write, so an out-of-range page is a refusal and not a document
+ * half-edited.
+ */
+export const applyImportPageAsLayer: Apply<'mupdf', 'importPageAsLayer', 'one'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'importPageAsLayer'>,
+  source: MupdfSession,
+): Promise<void> =>
+  withDocuments(session, source, (target, from) => {
+    const count = target.countPages();
+    if (command.at >= count) {
+      throw new RangeError(
+        `Page ${String(command.at)} is outside this document, which has ${String(count)} ` +
+          'page(s). Page indices are zero-based, and a layer is placed on a page that EXISTS.',
+      );
+    }
+    if (from.countPages() === 0) {
+      throw new RangeError('The source document has no page to import as a layer.');
+    }
+
+    // READ FROM `from`, WRITTEN INTO `target` — `withDocuments` names its parameters
+    // because both are `PDFDocument` and a transposition would type-check.
+    const leaf = pushInheritablesDown(from, 0);
+    const map = target.newGraftMap();
+
+    const group = target.newDictionary();
+    group.put('Type', target.newName('OCG'));
+    // THE NAME IS THE PAYLOAD'S. The renderer holds the source tab's name and sends it;
+    // this side holds a session and a DocId, and inventing a label here would put a name
+    // the person never chose in their Layers panel.
+    group.put('Name', target.newString(command.name));
+    const groupRef = target.addObject(group);
+
+    const form = target.newDictionary();
+    form.put('Type', target.newName('XObject'));
+    form.put('Subtype', target.newName('Form'));
+    const box = leaf.get('CropBox').isNull() ? leaf.get('MediaBox') : leaf.get('CropBox');
+    form.put('BBox', map.graftObject(box));
+    const resources = leaf.get('Resources');
+    if (!resources.isNull()) form.put('Resources', map.graftObject(resources));
+    form.put('OC', groupRef);
+    const formRef = target.addStream(joinedContents(leaf), form);
+
+    appendGroup(target, groupRef);
+
+    const page = target.findPage(command.at);
+    let pageResources = deref(page.get('Resources'));
+    if (!pageResources.isDictionary()) {
+      pageResources = target.newDictionary();
+      page.put('Resources', pageResources);
+    }
+    let xobjects = deref(pageResources.get('XObject'));
+    if (!xobjects.isDictionary()) {
+      xobjects = target.newDictionary();
+      pageResources.put('XObject', xobjects);
+    }
+    const name = freeLayerName(xobjects);
+    xobjects.put(name, formRef);
+
+    const drawing = target.addStream(`q /${name} Do Q`, target.newDictionary());
+    const existing = page.get('Contents');
+    const list = target.newArray();
+    if (!existing.isNull()) {
+      const resolved = existing.resolve();
+      if (resolved.isArray()) {
+        for (let at = 0; at < resolved.length; at += 1) list.push(resolved.get(at));
+      } else {
+        list.push(existing);
+      }
+    }
+    list.push(drawing);
+    page.put('Contents', list);
+  });
+
+/**
+ * Reports that prior state cannot be recorded, always — `captureMergeDocument`'s shape.
+ *
+ * The prior state is the absence of five structures (the group, its place in `/OCGs` and
+ * `/D/Order`, the Form XObject, its `/XObject` entry and the drawing stream), and none
+ * has a serialisable form. The bus checkpoints the target; the source is not modified.
+ */
+export const captureImportPageAsLayer = (): Promise<CaptureResult<never>> =>
+  Promise.resolve({
+    captured: false,
+    reason:
+      'importing a page as a layer has no recordable prior state: undoing it removes a group ' +
+      'from /OCProperties, a Form XObject, its /XObject entry and a content stream. The ' +
+      'checkpoint is of the target; the source is not modified and needs no entry',
+  });
+
+/**
+ * Unreachable, and it exists because the seam's shape requires it:
+ * `CommandPrior['importPageAsLayer']` is `never`, so nothing can call this. It throws
+ * rather than returning quietly, so reaching it names the disagreement that did.
+ */
+export const invertImportPageAsLayer: Invert<'mupdf', 'importPageAsLayer'> = (): Promise<void> => {
+  throw new Error(
+    'importPageAsLayer is undone by the checkpoint the bus takes, never by an inverse; reaching ' +
+      'this means its declaration and its CommandPrior entry disagree',
+  );
+};

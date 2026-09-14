@@ -134,7 +134,7 @@ export function extractPages(
  * page where a landscape one was, with the page count and the order both
  * correct. `pageOrder.ts` carries the same step for the same reason.
  */
-function pushInheritablesDown(document: PDFDocument, page: number): PDFObject {
+export function pushInheritablesDown(document: PDFDocument, page: number): PDFObject {
   const leaf = document.findPage(page);
   for (const key of INHERITABLE) {
     if (leaf.get(key).isNull()) {

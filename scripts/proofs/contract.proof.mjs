@@ -750,7 +750,8 @@ const PROMOTE_SPEC = `  promoteFormObjects: {
   },`;
 
 /**
- * The newest kind, and the one the `missing a command kind` case now omits.
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason; it was the newest kind until
+ * `importPageAsLayer`.
  *
  * `enhancePages`' shape exactly — MuPDF, terminal, reapply-intent — because it rewrites a
  * page's image through the same write, and then the page's boxes and content besides.
@@ -766,6 +767,28 @@ const SCAN_SPEC = `  straightenScans: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * The newest kind, and the one the `missing a command kind` case now omits.
+ *
+ * The third spec declaring `sources: 'one'`, and `replacePage`'s shape exactly — MuPDF,
+ * checkpoint, reapply-intent — because it reads another open document's page into this one.
+ * Its three functions are `layers.ts`', not `pageMerge.ts`', because the command writes
+ * `/OCProperties` and that module is its one writer (ADR-0064).
+ */
+const IMPORT_LAYER_SPEC = `  importPageAsLayer: {
+    kind: 'importPageAsLayer',
+    writer: 'mupdf',
+    apply: applyImportPageAsLayer,
+    capture: captureImportPageAsLayer,
+    invert: invertImportPageAsLayer,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'one',
     reads: 'none',
   },`;
 
@@ -986,6 +1009,9 @@ const SPEC_IMPORTS = `import {
   applyReplacePage,
   captureReplacePage,
   invertReplacePage,
+  applyImportPageAsLayer,
+  captureImportPageAsLayer,
+  invertImportPageAsLayer,
   applyAddAnnotation,
   captureAddAnnotation,
   invertAddAnnotation,
@@ -1648,6 +1674,7 @@ ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
+${IMPORT_LAYER_SPEC}
 };
 `,
   },
@@ -1665,7 +1692,8 @@ ${SCAN_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `straightenScans` on 2026-09-13; `promoteFormObjects`
+    // table has to grow. `importPageAsLayer` on 2026-09-14; `straightenScans` on
+    // 2026-09-13; `promoteFormObjects`
     // and `replaceAllText` on 2026-09-10, and
     // `deletePageObjects` with `placePageObject` and `recolorPageObjects` the
     // same day; `replaceTextObject` on 2026-09-09;
@@ -1685,9 +1713,10 @@ ${SCAN_SPEC}
     // TS2741 — two properties missing rather than one, because the table had
     // not yet grown by the previous kind either. That is the case doing its
     // job: the wrong code is what says *a kind was added and nobody filled the
-    // table in*, and the repair is to complete it up to the newest one.
+    // table in*, and the repair is to complete it up to the newest one. It fired
+    // the same way on `importPageAsLayer`, TS2739 naming it and `straightenScans`.
     because:
-      /Property 'straightenScans' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'importPageAsLayer' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1750,6 +1779,7 @@ ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
+${SCAN_SPEC}
 };
 `,
   },
@@ -1882,6 +1912,7 @@ ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
+${IMPORT_LAYER_SPEC}
 };
 `,
   },
@@ -1949,6 +1980,7 @@ ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
+${IMPORT_LAYER_SPEC}
 };
 `,
   },
@@ -2025,6 +2057,7 @@ ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
+${IMPORT_LAYER_SPEC}
 };
 `,
   },
@@ -2097,6 +2130,7 @@ ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
+${IMPORT_LAYER_SPEC}
 };
 `,
   },
@@ -2965,7 +2999,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // `deskewPages` (2026-09-10), 31 since `ocrPage` and 32 since `enhancePages`
     // (both 2026-09-11), and 38 through 42 since `setDocumentProtection`,
     // `applyRedactions`, `markMatchesForRedaction`, `sanitizeDocument` and
-    // `signDocument` (all 2026-09-12), and 43 since `straightenScans` (2026-09-13).
+    // `signDocument` (all 2026-09-12), 43 since `straightenScans` (2026-09-13), and 44
+    // since `importPageAsLayer` (2026-09-14).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -2983,7 +3018,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 39 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 40 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

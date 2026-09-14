@@ -127,3 +127,25 @@ corrected call in both files.
   - the UI control, with the wired pair and a control case;
   - the two items still owed, read before the row is counted done: the application's
     save path with a reopen, and undo removing all five structures.
+
+## Correction, 2026-09-14 — what happens to annotations, which this ADR did not say
+
+This ADR decided where the source page's **content** goes and said nothing about its
+**annotations**. The omission was found by `annotationSurvival.test.ts`, which requires
+every command that copies out of another document to state what happens to annotations,
+not by review of this ADR.
+
+The answer, now asserted there and read back with pdf-lib:
+
+- **The target page's own annotations stay where they were.** The import edits the page's
+  `/Resources` and `/Contents` and never its `/Annots`. The case places the layer on the
+  very page carrying a mark.
+- **The source page's annotations do not come.** An annotation is an object in a page's
+  `/Annots`, and the layer is content inside a Form XObject, which has no such key.
+  Grafting them onto the target page would put them outside the layer, where hiding the
+  layer would not hide them. The case first shows the source page carries the mark, so the
+  absence is *not brought*, not *nothing to bring*.
+
+This is a limit of the decision as taken, not a defect in it. A layer that also carried
+the source's annotations would need them flattened into the Form XObject's content, which
+is a different command.

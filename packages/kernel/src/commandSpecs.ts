@@ -21,7 +21,10 @@ import type {
   MupdfSession,
 } from './engineSeam.js';
 import {
+  applyImportPageAsLayer,
   applySetLayerVisibility,
+  captureImportPageAsLayer,
+  invertImportPageAsLayer,
   captureSetLayerVisibility,
   invertSetLayerVisibility,
 } from './layers.js';
@@ -352,6 +355,14 @@ const declared = {
     apply: applyReplacePage,
     capture: captureReplacePage,
     invert: invertReplacePage,
+  },
+  // IN `layers.ts`, not beside the merge it resembles: the command writes `/OCProperties`,
+  // and that module is its one writer (ADR-0064).
+  importPageAsLayer: {
+    ...declaredCommands.importPageAsLayer,
+    apply: applyImportPageAsLayer,
+    capture: captureImportPageAsLayer,
+    invert: invertImportPageAsLayer,
   },
   addAnnotation: {
     ...declaredCommands.addAnnotation,
