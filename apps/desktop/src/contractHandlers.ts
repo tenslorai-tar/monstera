@@ -15,6 +15,7 @@ import {
   DocumentNotOpenError,
   type DocumentService,
   EngineFormDataExportFailed,
+  StaleTargetError,
   type WriteTargetVerdict,
   readDocumentRange,
 } from '@monstera/kernel';
@@ -283,6 +284,9 @@ export function createContractHandlers(deps: {
     'document.newFromImages': newFromImagesHandler(deps),
     'document.newFromCapture': newFromCaptureHandler(deps),
     'document.appendMarkdown': appendMarkdownHandler(deps),
+    'document.editPageExternally': editPageExternallyHandler(deps.commands),
+    'document.awaitExternalEdit': awaitExternalEditHandler(deps.commands),
+    'document.reimportExternalEdit': reimportExternalEditHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
     'docusign.send': docusignSendHandler(deps.commands),
@@ -678,6 +682,127 @@ function appendMarkdownHandler(
 
       return ok({
         kind: 'appended',
+        version: applied.version,
+        byteLength: applied.byteLength,
+        historyDropped: applied.historyDropped,
+        opened: {
+          docId: outcome.docId,
+          version: outcome.version,
+          byteLength: outcome.byteLength,
+          name: outcome.name,
+        },
+      });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Sends one page out to be edited elsewhere (ADR-0062).
+ *
+ * {@link extractHandler}'s mapping for the copy's outcomes, written out for the reason that
+ * one gives, plus the three a page handed to the operating system adds.
+ */
+function editPageExternallyHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.editPageExternally'] {
+  return async ({
+    docId,
+    page,
+    version,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.editPageExternally']>>> => {
+    try {
+      const outcome = await commands.editPageExternally(docId, page, version);
+      switch (outcome.kind) {
+        case 'refused':
+          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'write-failed':
+          return ok({ kind: 'write-failed' } as const);
+        case 'sent':
+        case 'cancelled':
+        case 'not-pdf':
+        case 'not-watchable':
+        case 'launch-failed':
+          return ok({ kind: outcome.kind } as const);
+      }
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** Waits a bounded time for the page this document sent out to be saved (ADR-0062 Decision 4). */
+function awaitExternalEditHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.awaitExternalEdit'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.awaitExternalEdit']>>> => {
+    try {
+      return ok({ kind: await commands.awaitExternalEdit(docId) } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Puts a page edited elsewhere back — ADR-0062 Decision 5 and its 2026-09-14 correction.
+ *
+ * {@link appendMarkdownHandler}'s shape: the file opens through {@link openPath} as a visible
+ * tab, the command waits for its sessions, and a replace that is refused closes that tab
+ * again, because nobody asked for it without its page going back.
+ *
+ * ## `already-open` is `open-elsewhere`, never a tab reused
+ *
+ * A tab of the edited file holds the bytes from when it was opened, not the save: the service
+ * finds the open record by the file's identity and does not reload it. Replacing from that tab
+ * would put back an older page than the one the person just saved.
+ *
+ * ## A moved document is `document-changed`
+ *
+ * The replace carries the version recorded when the page left, so `StaleTargetError` from the
+ * bus is exactly *the document moved*, and nothing was replaced.
+ */
+function reimportExternalEditHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.reimportExternalEdit'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.reimportExternalEdit']>>> => {
+    try {
+      const path = deps.commands.externalEditToReimport(docId);
+      if (path === undefined) return ok({ kind: 'no-edit' });
+
+      const { outcome, sessions } = await openPath(deps, path);
+      if (outcome.kind === 'absent') return ok({ kind: 'absent' });
+      if (outcome.kind === 'at-capacity') {
+        return ok({ kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling });
+      }
+      if (outcome.kind === 'already-open') return ok({ kind: 'open-elsewhere' });
+
+      await sessions;
+      let applied: Awaited<ReturnType<DocumentCommands['reimportExternalEdit']>>;
+      try {
+        applied = await deps.commands.reimportExternalEdit(docId, outcome.docId);
+      } catch (thrown) {
+        await deps.documents.close(outcome.docId);
+        deps.recent.closed(outcome.docId);
+        if (thrown instanceof StaleTargetError) return ok({ kind: 'document-changed' });
+        throw thrown;
+      }
+
+      return ok({
+        kind: 'reimported',
         version: applied.version,
         byteLength: applied.byteLength,
         historyDropped: applied.historyDropped,

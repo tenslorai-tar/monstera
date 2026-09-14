@@ -892,6 +892,89 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Edit page in external app: a page out as a file, back through the one open route
+
+ADR-0062 and its 2026-09-14 correction, built. Organize › Pages gains *Edit page in another
+app*.
+
+### What was built
+
+- **Main.** `editPageExternally` writes the page through the copy path. `awaitExternalEdit`
+  is the bounded wait. `reimportExternalEdit` is a `replacePage` at the recorded version.
+  `endExternalEdit` is registered on `DocumentTeardown` beside the engine session's release
+  (finding FFFF-1's rule).
+- **The watch.** `externalEditWatch.ts` is the rule, with no platform call; `nodeEditWatch.ts`
+  is the real surface over `fs.watch`, SHA-256 and timers.
+- **The launcher.** `openExternalEditor` sits in `entry.ts` beside `openInBrowser`.
+  `isPdfPath` is the one `.pdf` rule, and both the send-out and the launcher call it.
+- **Channels.** `document.editPageExternally`, `document.awaitExternalEdit` and
+  `document.reimportExternalEdit`, registered in the contract, the proof's three maps, the
+  shim, the payload-bounds reasons and main's handlers.
+- **Renderer.** The command; the reimport question, which names the page by number; and a
+  problem dialog with one sentence per reason. A refused or failed write reuses the save
+  problem dialog, because it is the same write.
+
+### Found while building, and decided
+
+- **`.pdf` is refused BEFORE the write, not only before the launch.** Decision 2 said *before
+  `shell.openPath`*, which would have left a page's bytes under `page.exe`.
+- **Each edit is announced once.** A pending edit answered `changed` to every wait, so *not
+  now* would have reopened the question at once, for ever. The stated cost: to put back a
+  dismissed edit, save it again.
+- **`already-open` is `open-elsewhere`.** A tab of the edited file holds the bytes from when
+  it was opened — the service finds the record by file identity and does not reload — so
+  replacing from it would put back an older page than the one just saved.
+- **The version recorded is the renderer's read**, not the version when the write ran. A
+  document that moved at any point after that read is refused at reimport, including in the
+  window where the extract itself could have read a different page.
+- **A folder the platform will not watch is `not-watchable`**, an outcome rather than an
+  internal error, and nothing is opened for it.
+- **The watch starts before the launch**, so an editor's immediate save is not missed, and a
+  failed launch closes it.
+- **It sits on Organize › Pages at order 75, beside *Replace page*.** D9 is the Tools ribbon,
+  but none of its groups there is about an existing page, and this act ends in a page
+  replaced.
+
+### Cases and controls
+
+- **`externalEditWatch.test.ts`, 11 cases.** A burst costs one look. Another name schedules
+  nothing. Identical bytes, and a file that cannot be read yet, are not edits. An accepted
+  edit is not offered again. A newer save replaces a pending one. Closing, and a platform
+  error, end a wait. A refused watch is `null`. Each edit is announced once.
+  - **Mutation, no restart on each event:** the burst case went red (3 looks, not 1), and
+    the other 9 stayed green.
+- **`nodeEditWatch.test.ts`, 5 cases, on a real folder.** Every save pattern in ADR-0062's
+  table: in place, temp-and-rename, delete-then-recreate, two renames. Plus the control that
+  rewriting identical bytes is not an edit.
+- **`openExternalEditor.test.ts`, 9 cases.** The accepted and refused spellings of `.pdf`.
+- **`editPageExternally.test.ts`, 8 cases,** over a client that answers from per-channel
+  queues and refuses any extra call, so *the loop stopped* is an assertion. A dismissal sends
+  no reimport. `document-changed` ends the loop. `open-elsewhere` keeps waiting.
+- **`documentCommands.test.ts`, 5 new cases, with a real document service, engine session
+  and file.**
+  - A name not ending `.pdf` writes, opens and watches nothing.
+  - A sent page is a one-page PDF, suggested as *page 2*.
+  - A failed launch closes its watch.
+  - End to end, an edited 300-point page comes back in place of page 2 and reads
+    `[612, 300, 612]` through pdf-lib.
+  - **Control:** after a rotate moves the document, the reimport throws `StaleTargetError`,
+    page 2 stays 612, and the edit stays waiting.
+  - **Mutation, the replace carrying the document's CURRENT version instead of the recorded
+    one:** the control went red, and the other 63 cases in the file, the end-to-end one
+    included, stayed green. Reverted.
+
+### Stated limits
+
+- The one-second quiet period and the thirty-second wait are policy, per ADR-0062.
+- A dismissed edit comes back only after another save.
+- An edited file of more than one page replaces the one page with all of them. That is
+  `replacePage`'s existing meaning, stated rather than refused.
+- **One live run with a real editor on this PC is owed.** The real operating-system handler
+  and a real editor's save have not been exercised end to end, and the earlier request to
+  control the app window was declined.
+
+---
+
 ## 2026-09-14 — `replacePage` names the version its page index was read at
 
 ADR-0062's 2026-09-14 correction, built: the reimport's version check belongs to the bus, so

@@ -88,6 +88,14 @@ import {
 import { join } from 'node:path';
 
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
+import {
+  EXTERNAL_EDIT_WAIT_MS,
+  type EditWait,
+  type EditWatch,
+  type EditWatchSurface,
+  watchEdits,
+} from './externalEditWatch.js';
+import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
 /**
  * The composition point (ADR-0009, 2026-08-19): the one place that owns
@@ -525,6 +533,20 @@ function imageMediaType(path: string): 'image/jpeg' | 'image/png' | null {
   if (lower.endsWith('.png')) return 'image/png';
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
   return null;
+}
+
+/**
+ * What editing a page in another application needs from the platform, bundled for
+ * {@link CopySource}'s reason (ADR-0062). Every member is a parameter: the launcher needs
+ * Electron's `shell` and the watch needs Node's `fs`, and this file imports neither.
+ */
+export interface ExternalEditSource {
+  /** Runs the platform's save dialog. See {@link PickDestination}. */
+  readonly pick: PickDestination;
+  /** Opens a `.pdf` in the operating system's handler. See {@link OpenExternalEditor}. */
+  readonly open: OpenExternalEditor;
+  /** The watch on a page sent out. See {@link EditWatchSurface}. */
+  readonly watch: EditWatchSurface;
 }
 
 export interface ImageSource {
@@ -1508,6 +1530,8 @@ export interface DocumentCommandsParts {
   readonly snapshot: SnapshotSource;
   readonly formData: FormDataSource;
   readonly directory: PickDirectory;
+  /** A page edited in another application. See {@link ExternalEditSource}. */
+  readonly externalEdit: ExternalEditSource;
 }
 
 export class DocumentCommands {
@@ -1543,6 +1567,20 @@ export class DocumentCommands {
   readonly #snapshot: SnapshotSource;
   readonly #formData: FormDataSource;
   readonly #directory: PickDirectory;
+  readonly #externalEdit: ExternalEditSource;
+  /**
+   * The page out for editing, per document — one each (ADR-0062 Decision 3). Its version is
+   * the one the index was read at, which the reimport's `replacePage` carries.
+   */
+  readonly #outs = new Map<
+    DocId,
+    {
+      readonly path: string;
+      readonly page: number;
+      readonly version: DocVersion;
+      readonly watch: EditWatch;
+    }
+  >();
 
   constructor(parts: DocumentCommandsParts) {
     this.#documents = parts.documents;
@@ -1577,6 +1615,7 @@ export class DocumentCommands {
     this.#snapshot = parts.snapshot;
     this.#formData = parts.formData;
     this.#directory = parts.directory;
+    this.#externalEdit = parts.externalEdit;
   }
 
   /**
@@ -2626,6 +2665,152 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Writes one page to a file the person names, opens it in the operating system's PDF
+   * handler, and watches it for saves
+   * ([ADR-0062](../../../docs/DECISIONS/0062-a-page-edited-in-another-application-leaves-as-a-named-file-and-returns-by-the-one-open-route.md)).
+   *
+   * ## `extract`'s route for one page, and `.pdf` is refused BEFORE the write
+   *
+   * The picker runs before the lane, for `saveCopy`'s reason. A destination not ending
+   * `.pdf` is refused before anything is written, so no page's bytes sit under a name the
+   * operating system would run as a program (`openExternalEditor.ts`).
+   *
+   * ## The version recorded is the one the RENDERER read the index at
+   *
+   * The reimport's `replacePage` carries it, so the bus refuses a document that moved at any
+   * point after that read — including between the read and this write. The window in which
+   * a stale index could extract a different page is therefore one whose reimport cannot land
+   * (ADR-0062's 2026-09-14 correction).
+   *
+   * ## Watched before it is opened
+   *
+   * The watch starts before the handler launches, so a save an editor makes at once is not
+   * missed, and a launch that fails closes it again.
+   */
+  async editPageExternally(
+    docId: DocId,
+    page: number,
+    version: DocVersion,
+  ): Promise<
+    | { readonly kind: 'sent' }
+    | { readonly kind: 'cancelled' }
+    | { readonly kind: 'not-pdf' }
+    | { readonly kind: 'not-watchable' }
+    | { readonly kind: 'launch-failed' }
+    | Exclude<CopyOutcome, { readonly kind: 'copied' }>
+  > {
+    const name = this.#documents.nameOf(docId);
+    if (name === undefined) throw new DocumentNotOpenError(docId, 'edit a page in another application');
+
+    // A PERSON COUNTS PAGES FROM ONE, so the suggested file name does; the index stays zero-based.
+    const destination = await this.#externalEdit.pick(suffixed(name, `page ${String(page + 1)}`));
+    if (destination === null) return { kind: 'cancelled' };
+    if (!isPdfPath(destination)) return { kind: 'not-pdf' };
+
+    const { value: written } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return await writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => this.#extract(docId, sessions, [page]),
+        destination,
+      );
+    });
+    if (written.kind !== 'copied') return written;
+
+    // THE BASELINE IS WHAT IS ON DISK, read back rather than taken from the bytes the copy
+    // path held, so the watch compares against exactly the file the editor opens.
+    const baseline = await this.#externalEdit.watch.digest(destination);
+    if (baseline === null) {
+      throw new Error('the page was written and could not be read back to start its watch');
+    }
+    const watch = watchEdits(this.#externalEdit.watch, destination, baseline);
+    if (watch === null) return { kind: 'not-watchable' };
+
+    const failure = await this.#externalEdit.open(destination);
+    if (failure !== null) {
+      watch.close();
+      return { kind: 'launch-failed' };
+    }
+
+    // ONE PAGE OUT PER DOCUMENT (Decision 3): a second send-out ends the first's watch.
+    this.#outs.get(docId)?.watch.close();
+    this.#outs.set(docId, { path: destination, page, version, watch });
+    return { kind: 'sent' };
+  }
+
+  /**
+   * Waits a bounded time for the page this document sent out to be saved (Decision 4).
+   *
+   * `ended` where no page is out, so a renderer that asks after a close or before a send-out
+   * is answered rather than left waiting.
+   */
+  awaitExternalEdit(docId: DocId, boundMs: number = EXTERNAL_EDIT_WAIT_MS): Promise<EditWait> {
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'wait for an edit made in another application');
+    }
+    const out = this.#outs.get(docId);
+    if (out === undefined) return Promise.resolve('ended');
+    return out.watch.wait(boundMs);
+  }
+
+  /**
+   * The file to open for a reimport, when a save of the page sent out is waiting.
+   *
+   * The path is for the handler alone, which opens it by the one open route; it never
+   * crosses to the renderer (invariant 2).
+   */
+  externalEditToReimport(docId: DocId): string | undefined {
+    const out = this.#outs.get(docId);
+    if (out === undefined) return undefined;
+    return out.watch.pending() === null ? undefined : out.path;
+  }
+
+  /**
+   * Puts the edited page back: `replacePage` at the index sent out, carrying the version
+   * recorded then, so the bus refuses a document that moved (ADR-0062's correction).
+   *
+   * The edit is accepted only once the replace has landed, and the recorded version moves
+   * to the new one, so the NEXT save of the same page can come back too.
+   *
+   * @throws StaleTargetError where the document moved; the handler answers `document-changed`.
+   */
+  async reimportExternalEdit(docId: DocId, source: DocId): Promise<Applied> {
+    const out = this.#outs.get(docId);
+    if (out === undefined) {
+      throw new Error('reimportExternalEdit was called with no page out; its handler checks first');
+    }
+    if (out.watch.pending() === null) {
+      throw new Error('reimportExternalEdit was called with no edit pending; its handler checks first');
+    }
+    const applied = await this.execute(docId, {
+      kind: 'replacePage',
+      source,
+      at: out.page,
+      version: out.version,
+    });
+    out.watch.accept();
+    // ONLY IF THIS PAGE-OUT IS STILL THE CURRENT ONE: a close during the replace ended it, and
+    // writing it back would resurrect a watch that has already stopped.
+    if (this.#outs.get(docId) === out) this.#outs.set(docId, { ...out, version: applied.version });
+    return applied;
+  }
+
+  /**
+   * Ends a document's page-out watch. The composition registers it on `DocumentTeardown`, so a
+   * close ends it without any close path having to remember to (finding FFFF-1's rule).
+   */
+  endExternalEdit(docId: DocId): void {
+    const out = this.#outs.get(docId);
+    if (out === undefined) return;
+    this.#outs.delete(docId);
+    out.watch.close();
   }
 
   /**

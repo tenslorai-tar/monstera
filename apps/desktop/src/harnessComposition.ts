@@ -127,6 +127,20 @@ export function harnessSurfaces(
     openInBrowser: () => {
       throw new Error(`${harness} signs in to nothing, so nothing may open a browser`);
     },
+    openExternalEditor: () => {
+      throw new Error(`${harness} edits no page elsewhere, so nothing may open an editor`);
+    },
+    editWatch: {
+      watchDirectory: () => {
+        throw new Error(`${harness} edits no page elsewhere, so nothing may watch a folder`);
+      },
+      digest: () => {
+        throw new Error(`${harness} edits no page elsewhere, so nothing may read an edit`);
+      },
+      after: () => {
+        throw new Error(`${harness} edits no page elsewhere, so no edit timer may start`);
+      },
+    },
     settings: createEphemeralSettings(),
     recent: createRecentFiles(createEphemeralSettings()),
     // NULL, which is the state every unit test and every non-Windows run is in:

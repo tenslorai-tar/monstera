@@ -134,6 +134,7 @@ import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
 import { CAMERA_CAPTURE_DIALOG } from './dialogs/cameraCapture.js';
 import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
 import { openFromUrlCommand } from './commands/openFromUrl.js';
+import { editPageExternallyCommand } from './commands/editPageExternally.js';
 import {
   appendMarkdownCommand,
   newFromCaptureCommand,
@@ -146,6 +147,8 @@ import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
+import { REIMPORT_EXTERNAL_EDIT_DIALOG } from './dialogs/reimportExternalEdit.js';
+import { EXTERNAL_EDIT_PROBLEM_DIALOG } from './dialogs/externalEditProblem.js';
 import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
 import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from './dialogs/annotationLink.js';
 import {
@@ -420,6 +423,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         MERGE_DOCUMENT_NONE_DIALOG,
         INSERT_FROM_PDF_DIALOG,
         REPLACE_PAGE_DIALOG,
+        REIMPORT_EXTERNAL_EDIT_DIALOG,
+        EXTERNAL_EDIT_PROBLEM_DIALOG,
         EXTRACT_PAGES_DIALOG,
         SPLIT_DOCUMENT_DIALOG,
         DUPLICATE_PAGES_DIALOG,
@@ -1517,6 +1522,15 @@ export function App({ client, settings }: AppProps): ReactElement {
         mergeDocumentCommand({ client, onApplied: applied, ask }),
         insertFromPdfCommand({ client, onApplied: applied, ask }),
         replacePageCommand({ client, onApplied: applied, ask }),
+        // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes
+        // `appendMarkdownCommand`'s two callbacks as well as `replacePageCommand`'s (ADR-0062).
+        editPageExternallyCommand({
+          client,
+          onApplied: applied,
+          ask,
+          onOpened: opened,
+          onActivate: activate,
+        }),
         extractPagesCommand({ client, onApplied: applied, ask }),
         splitDocumentCommand({ client, onApplied: applied, ask }),
         generateTocCommand({ client, onApplied: applied, ask }),

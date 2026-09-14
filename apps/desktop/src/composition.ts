@@ -155,6 +155,8 @@ import {
 import type { RecentFiles } from './recentFiles.js';
 import { createDocusignSession } from './docusignSession.js';
 import type { OpenInBrowser } from './docusignSignIn.js';
+import type { EditWatchSurface } from './externalEditWatch.js';
+import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
@@ -442,6 +444,13 @@ export interface ShellComposition {
    * URL `main` built and waits for the redirect on loopback (ADR-0059).
    */
   readonly openInBrowser: OpenInBrowser;
+  /**
+   * Opens a `.pdf` this application just wrote in the operating system's PDF handler —
+   * `shell.openPath`, built in `entry.ts` because this file imports no Electron (ADR-0062).
+   */
+  readonly openExternalEditor: OpenExternalEditor;
+  /** The watch on a page sent out — `fs.watch`, built in `entry.ts` for the same reason. */
+  readonly editWatch: EditWatchSurface;
   /** Where settings are stored. Required — see the note above. */
   readonly settings: SettingsSurface;
   /**
@@ -546,6 +555,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickCertificate,
     readCertificate,
     openInBrowser,
+    openExternalEditor,
+    editWatch,
     settings,
     secrets,
     recent,
@@ -577,7 +588,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
 
   const documents = new DocumentService(capabilities, {
     documentBytesCeiling: MAIN_DOCUMENT_BYTES_CEILING,
-    teardown: engine.releaseOnClose,
+    // TWO THINGS END WITH A DOCUMENT, and both are registrations on this one seam rather than
+    // calls a close path must remember (finding FFFF-1): its page-out watch (ADR-0062),
+    // which is synchronous and cannot fail, and then its engine session. `commands` is built
+    // below; no close can reach this before it exists, because nothing is open before it does.
+    teardown: async (docId) => {
+      commands.endExternalEdit(docId);
+      await engine.releaseOnClose(docId);
+    },
     // INVARIANT 22'S CAPABILITY, wired so it exists rather than so it is
     // called. §2 leaves the moment open and requires only that the operation be
     // offered and not wired solely to a pressure trigger; nothing in this graph
@@ -990,6 +1008,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // reason: the picker needs Electron and the read needs Node's filesystem,
     // and this file imports neither.
     image: { pick: pickImage, read: readImage },
+    // EDITING A PAGE ELSEWHERE, and every member is a parameter for `image`'s reason:
+    // `shell` is Electron's and `fs.watch` is Node's, and this file imports neither (ADR-0062).
+    externalEdit: { pick: pickDestination, open: openExternalEditor, watch: editWatch },
     // IMPORTING MARKDOWN: the picker and the read are parameters for `image`'s reason,
     // and the composition is the compose host's — `null` where no host can exist, so
     // the import is refused by name and the source is never parsed here (ADR-0060).

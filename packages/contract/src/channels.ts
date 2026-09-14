@@ -1525,6 +1525,109 @@ export const channels = {
   ),
 
   /**
+   * Writes one page to a file the user names, opens it in the operating system's PDF
+   * handler, and starts watching it for saves
+   * ([ADR-0062](../../../docs/DECISIONS/0062-a-page-edited-in-another-application-leaves-as-a-named-file-and-returns-by-the-one-open-route.md)).
+   *
+   * ## `document.extract`'s route, for one page, and the file is the person's
+   *
+   * Main runs the save dialog and writes the page through the copy path; this build never
+   * deletes the file. `version` is the one `page` was read at, and main records it: the
+   * reimport's `replacePage` carries it, so the bus refuses a document that moved since
+   * (the 2026-09-14 correction).
+   *
+   * ## Only a `.pdf` is handed to the operating system
+   *
+   * An extension chooses the program the operating system runs, and a save dialog lets a
+   * person type `page.exe`. A destination not ending `.pdf` is refused BEFORE anything is
+   * written, so no page's bytes are left under a name that says they are a program.
+   */
+  'document.editPageExternally': channel(
+    'Writes one page to a file the user names and opens it in their PDF editor, watching it for saves.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative(), version: docVersionSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('sent') }),
+      z.object({ kind: z.literal('cancelled') }),
+      /** The chosen destination does not end `.pdf`; nothing was written or opened. */
+      z.object({ kind: z.literal('not-pdf') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      /** The page was written, and the operating system could not open it. Not watched. */
+      z.object({ kind: z.literal('launch-failed') }),
+      /** The page was written, and its folder is one the platform will not watch. Not opened. */
+      z.object({ kind: z.literal('not-watchable') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Waits up to thirty seconds for the page this document sent out to be saved.
+   *
+   * ## Bounded, on the one bridge function
+   *
+   * No push exists, and no `invoke` is left pending past the bound: `unchanged` after
+   * thirty seconds, and the renderer asks again. An edit is a changed SHA-256 digest after
+   * a quiet second, never an event (ADR-0062 Decisions 3 and 4).
+   */
+  'document.awaitExternalEdit': channel(
+    'Waits a bounded time for the page sent to another application to be saved there.',
+    z.object({ docId: docIdSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('changed') }),
+      z.object({ kind: z.literal('unchanged') }),
+      /** The document closed, the watch ended, or no page is out for it. */
+      z.object({ kind: z.literal('ended') }),
+    ]),
+    ['document-not-open'],
+  ),
+
+  /**
+   * Opens the edited page as a visible tab and puts it back in place of the page sent out.
+   *
+   * The open is the one open route's (ADR-0040 Decision 2); the replace is `replacePage`
+   * carrying the version recorded when the page left, so a document that moved is refused
+   * by the bus inside its lane and answered as `document-changed`. The tab stays open.
+   */
+  'document.reimportExternalEdit': channel(
+    'Opens the edited page as a tab and puts it back in place of the page that was sent out.',
+    z.object({ docId: docIdSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('reimported'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+        /** The edited page, open as its own tab. */
+        opened: z.object({
+          docId: docIdSchema,
+          version: docVersionSchema,
+          byteLength: z.number().int().nonnegative(),
+          name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+        }),
+      }),
+      /** The document moved since the page left; nothing was replaced. */
+      z.object({ kind: z.literal('document-changed') }),
+      /** No page is out for this document, or no edit of it is pending. */
+      z.object({ kind: z.literal('no-edit') }),
+      /**
+       * The edited file is already open as a tab. That tab holds the bytes from when it was
+       * opened rather than the save, so nothing is replaced; closing the tab lets the edit
+       * come back.
+       */
+      z.object({ kind: z.literal('open-elsewhere') }),
+      /** The edited file would not fit under main's ceiling. */
+      z.object({
+        kind: z.literal('at-capacity'),
+        wouldHold: z.number().int().nonnegative(),
+        ceiling: z.number().int().nonnegative(),
+      }),
+      /** The edited file was gone before it could be opened. */
+      z.object({ kind: z.literal('absent') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
    * Writes a region of one page to a PNG at a destination the user picks.
    *
    * ## NO RASTER CROSSES, which is the gate this channel had to satisfy

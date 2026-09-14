@@ -36,6 +36,8 @@ import { createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
 import { startShell } from './main.js';
+import { nodeEditWatchSurface } from './nodeEditWatch.js';
+import { isPdfPath } from './openExternalEditor.js';
 
 /**
  * The Electron entry point, and the only file that both builds the graph and
@@ -146,6 +148,19 @@ startShell(() => {
       }
       await shell.openExternal(url);
     },
+    // THE OPERATING SYSTEM'S PDF HANDLER, for a page sent out to be edited (ADR-0062 Decision
+    // 2) — `openInBrowser`'s shape: its only caller passes a path `main` just wrote, and
+    // anything not ending `.pdf` is refused all the same, so a mistake here cannot hand the
+    // operating system a program to run.
+    openExternalEditor: async (path: string) => {
+      if (!isPdfPath(path)) {
+        throw new Error('only a .pdf may be opened in the operating system’s PDF handler');
+      }
+      // `shell.openPath` RESOLVES with an error message, or an empty string when it opened.
+      const failure = await shell.openPath(path);
+      return failure === '' ? null : failure;
+    },
+    editWatch: nodeEditWatchSurface,
     // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
     // function here rather than a `readFile` at the call site: `stat` costs
     // nothing and a 4 GB file a user picked by mistake is refused as a decided

@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -34,6 +34,7 @@ import {
   TimestampUnreachableError,
   UrlFetchRefused,
   siblingNames,
+  StaleTargetError,
 } from '@monstera/kernel';
 // See the note in `engineSessions.test.ts`: a local engine in main's process is
 // the pre-host arrangement, and `/engine` is what makes that import say so
@@ -99,6 +100,8 @@ import {
 } from './documentCommands.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import { EngineSessions } from './engineSessions.js';
+import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
+import { nodeEditWatchSurface } from './nodeEditWatch.js';
 
 /**
  * The composition point and the first handler, driven end to end against a real
@@ -563,6 +566,21 @@ const INERT = {
   snapshot: localSnapshot,
   formData: localFormData,
   directory: noDirectory,
+  // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
+  // application without meaning to fails at the call rather than opening or watching anything.
+  externalEdit: {
+    pick: () => Promise.reject(new Error('INERT: this case sends no page to another application')),
+    open: () => Promise.reject(new Error('INERT: this case opens no external editor')),
+    watch: {
+      watchDirectory: () => {
+        throw new Error('INERT: this case watches no folder');
+      },
+      digest: () => Promise.reject(new Error('INERT: this case reads no edited page')),
+      after: () => {
+        throw new Error('INERT: this case starts no edit timer');
+      },
+    },
+  },
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
 /** The same, with every read answering from the session the case holds. */
@@ -2070,6 +2088,246 @@ describe('DocumentCommands.composeCapturedFrames', () => {
       file: null,
     });
     expect(sent).toStrictEqual(['image/jpeg:255,216,255,224,1', 'image/jpeg:255,216,255,219,2']);
+  });
+});
+
+describe('DocumentCommands — a page edited in another application (ADR-0062)', () => {
+  /** The copy path over the real disk, `openFromUrl`'s `realSave`. */
+  function realSave(): SaveSource {
+    return {
+      deps: {
+        checkWriteTarget: () => Promise.reject(new Error('a page sent out writes a copy, never a save')),
+        surface: nodeFileSurface,
+        names: siblingNames,
+        wait: () => Promise.resolve(),
+      },
+      flush: () => Promise.reject(new Error('a page sent out flushes no document')),
+    };
+  }
+
+  /**
+   * A watch surface a case drives: the REAL SHA-256 over the real file, with the event and the
+   * quiet second supplied by hand, so a save is exact rather than timed.
+   */
+  function drivenWatch() {
+    let onEvent: ((name: string) => void) | null = null;
+    let watched = 0;
+    let closed = 0;
+    const quiet: { run: () => void; live: boolean }[] = [];
+    const surface: EditWatchSurface = {
+      watchDirectory: (_directory, event) => {
+        watched += 1;
+        onEvent = event;
+        return {
+          close: () => {
+            closed += 1;
+          },
+        };
+      },
+      digest: (path) => nodeEditWatchSurface.digest(path),
+      after: (ms, run) => {
+        const timer = { run, live: ms === EDIT_QUIET_MS };
+        quiet.push(timer);
+        return {
+          cancel: () => {
+            timer.live = false;
+          },
+        };
+      },
+    };
+    return {
+      surface,
+      /** An editor's save of `name`: the event, then a quiet second passing. */
+      saved: (name: string): void => {
+        onEvent?.(name);
+        for (const timer of quiet.splice(0)) {
+          if (timer.live) {
+            timer.live = false;
+            timer.run();
+          }
+        }
+      },
+      watched: () => watched,
+      closed: () => closed,
+    };
+  }
+
+  /** A three-page target with its own service and registry, so a second document can open beside it. */
+  async function target(name: string) {
+    const bytes = await pdfBytes();
+    const path = join(directory, name);
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    const documents = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const outcome = await documents.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`the target did not open: ${outcome.kind}`);
+    const held = new EngineSessions();
+    const session = await mupdfWriter.open(bytes);
+    held.hold(outcome.docId, { mupdf: session });
+    // THE CURRENT VERSION, read the one way the service offers: a `run` answers the version its
+    // work finished at, and an empty work finishes at the version the document is at.
+    const { version } = await documents.run(outcome.docId, () => Promise.resolve(null));
+    return { registry, documents, held, session, id: outcome.docId, version };
+  }
+
+  function commandsFor(
+    t: Awaited<ReturnType<typeof target>>,
+    destination: string,
+    watch: EditWatchSurface,
+    open: (path: string) => Promise<string | null>,
+  ): { readonly commands: DocumentCommands; readonly picked: string[] } {
+    const picked: string[] = [];
+    return {
+      picked,
+      commands: new DocumentCommands({
+        ...INERT,
+        documents: t.documents,
+        bus: bus(),
+        engine: t.held,
+        save: realSave(),
+        copy: {
+          pick: () => Promise.reject(new Error('this case writes no copy')),
+          checkTarget: (path) => t.documents.checkCopyTarget(path),
+        },
+        externalEdit: {
+          pick: (suggested) => {
+            picked.push(suggested);
+            return Promise.resolve(destination);
+          },
+          open,
+          watch,
+        },
+      }),
+    };
+  }
+
+  /** Each page's width, read back through pdf-lib — a different parser than the one that wrote it. */
+  async function widths(session: MupdfSession): Promise<number[]> {
+    const document = await PDFDocument.load(await mupdfWriter.serialise(session));
+    return document.getPages().map((page) => page.getWidth());
+  }
+
+  /** The other application's save: a one-page, 300-point-square PDF written over the page sent out. */
+  async function editedElsewhere(path: string): Promise<void> {
+    const document = await PDFDocument.create();
+    document.addPage([300, 300]);
+    writeFileSync(path, await document.save());
+  }
+
+  /** Opens the edited file beside the target, as the reimport's one open route would. */
+  async function openEdited(
+    t: Awaited<ReturnType<typeof target>>,
+    path: string,
+  ): Promise<{ readonly id: DocId; readonly session: MupdfSession }> {
+    const outcome = await t.documents.open(t.registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`the edited file did not open: ${outcome.kind}`);
+    const session = await mupdfWriter.open(readFileSync(path));
+    t.held.hold(outcome.docId, { mupdf: session });
+    return { id: outcome.docId, session };
+  }
+
+  it('REFUSES a name not ending .pdf BEFORE anything is written, and opens and watches nothing', async () => {
+    const t = await target('refuse-target.pdf');
+    const destination = join(directory, 'page 2.exe');
+    const driven = drivenWatch();
+    const opened: string[] = [];
+    const { commands } = commandsFor(t, destination, driven.surface, (path) => {
+      opened.push(path);
+      return Promise.resolve(null);
+    });
+
+    expect(await commands.editPageExternally(t.id, 1, t.version)).toStrictEqual({ kind: 'not-pdf' });
+    // THE DECISION IS WHAT DID NOT HAPPEN: the same refusal after the write would answer the same.
+    expect(existsSync(destination)).toBe(false);
+    expect(opened).toStrictEqual([]);
+    expect(driven.watched()).toBe(0);
+  });
+
+  it('SENDS one page as a one-page PDF where the person chose, suggests its number, and opens and watches it', async () => {
+    const t = await target('send-target.pdf');
+    const destination = join(directory, 'sent page.pdf');
+    const driven = drivenWatch();
+    const opened: string[] = [];
+    const { commands, picked } = commandsFor(t, destination, driven.surface, (path) => {
+      opened.push(path);
+      return Promise.resolve(null);
+    });
+
+    expect(await commands.editPageExternally(t.id, 1, t.version)).toStrictEqual({ kind: 'sent' });
+    // A PERSON COUNTS FROM ONE: index 1 is page 2.
+    expect(picked).toStrictEqual(['send-target page 2.pdf']);
+    expect((await PDFDocument.load(readFileSync(destination))).getPageCount()).toBe(1);
+    expect(opened).toStrictEqual([destination]);
+    expect(driven.watched()).toBe(1);
+
+    commands.endExternalEdit(t.id);
+    expect(driven.closed()).toBe(1);
+    await expect(commands.awaitExternalEdit(t.id)).resolves.toBe('ended');
+  });
+
+  it('a launch that FAILS closes the watch it started and leaves no page out', async () => {
+    const t = await target('launch-target.pdf');
+    const driven = drivenWatch();
+    const { commands } = commandsFor(t, join(directory, 'unopened.pdf'), driven.surface, () =>
+      Promise.resolve('No application is associated with the specified file'),
+    );
+
+    expect(await commands.editPageExternally(t.id, 0, t.version)).toStrictEqual({ kind: 'launch-failed' });
+    expect(driven.watched()).toBe(1);
+    expect(driven.closed()).toBe(1);
+    await expect(commands.awaitExternalEdit(t.id)).resolves.toBe('ended');
+  });
+
+  it('END TO END: a save in the other application comes back IN PLACE OF the page sent out, and reads back that way', async () => {
+    const t = await target('roundtrip-target.pdf');
+    const destination = join(directory, 'roundtrip page.pdf');
+    const driven = drivenWatch();
+    const { commands } = commandsFor(t, destination, driven.surface, () => Promise.resolve(null));
+    try {
+      expect(await commands.editPageExternally(t.id, 1, t.version)).toStrictEqual({ kind: 'sent' });
+
+      // THE WAIT IS OPEN BEFORE THE SAVE, so the edit is announced to it rather than raced.
+      const waiting = commands.awaitExternalEdit(t.id);
+      await editedElsewhere(destination);
+      driven.saved(basename(destination));
+      await expect(waiting).resolves.toBe('changed');
+      expect(commands.externalEditToReimport(t.id)).toBe(destination);
+
+      const edited = await openEdited(t, destination);
+      await commands.reimportExternalEdit(t.id, edited.id);
+
+      // PAGE 2 IS THE EDIT and the pages either side are untouched, read by a different parser.
+      expect(await widths(t.session)).toStrictEqual([612, 300, 612]);
+      // ACCEPTED: the same save is not offered again.
+      expect(commands.externalEditToReimport(t.id)).toBeUndefined();
+    } finally {
+      commands.endExternalEdit(t.id);
+    }
+  });
+
+  it('CONTROL: a document that MOVED after the page left is refused inside the lane, and page 2 is untouched', async () => {
+    const t = await target('moved-target.pdf');
+    const destination = join(directory, 'moved page.pdf');
+    const driven = drivenWatch();
+    const { commands } = commandsFor(t, destination, driven.surface, () => Promise.resolve(null));
+    try {
+      expect(await commands.editPageExternally(t.id, 1, t.version)).toStrictEqual({ kind: 'sent' });
+      // THE DOCUMENT MOVES while the page is out.
+      await commands.execute(t.id, rotateOnce);
+
+      const waiting = commands.awaitExternalEdit(t.id);
+      await editedElsewhere(destination);
+      driven.saved(basename(destination));
+      await expect(waiting).resolves.toBe('changed');
+
+      const edited = await openEdited(t, destination);
+      await expect(commands.reimportExternalEdit(t.id, edited.id)).rejects.toThrow(StaleTargetError);
+      expect(await widths(t.session)).toStrictEqual([612, 612, 612]);
+      // NOT ACCEPTED: nothing came back, so the edit is still the one waiting.
+      expect(commands.externalEditToReimport(t.id)).toBe(destination);
+    } finally {
+      commands.endExternalEdit(t.id);
+    }
   });
 });
 

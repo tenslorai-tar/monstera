@@ -134,6 +134,9 @@ const handlers: ContractHandlers = {
   'document.newFromCapture': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.openFromUrl': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.appendMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.editPageExternally': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.awaitExternalEdit': () => Promise.resolve(ok({ kind: 'ended' as const })),
+  'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     // Echoes the SIZE it was asked for, so the L11 cases below can assert what

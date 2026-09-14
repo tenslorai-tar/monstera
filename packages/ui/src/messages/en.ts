@@ -161,6 +161,20 @@ export const REPLACE_PAGE_LABEL = messageKey('dialog.replace-page.label');
 export const REPLACE_PAGE_WHICH = messageKey('dialog.replace-page.which');
 export const REPLACE_PAGE_APPLY = messageKey('dialog.replace-page.apply');
 export const EXTRACT_PAGES_COMMAND_TITLE = messageKey('command.extract-pages.title');
+export const EDIT_PAGE_EXTERNALLY_COMMAND_TITLE = messageKey('command.edit-page-externally.title');
+export const REIMPORT_EXTERNAL_EDIT_TITLE = messageKey('dialog.reimport-external-edit.title');
+export const REIMPORT_EXTERNAL_EDIT_SAVED = messageKey('dialog.reimport-external-edit.saved');
+export const REIMPORT_EXTERNAL_EDIT_APPLY = messageKey('dialog.reimport-external-edit.apply');
+export const EXTERNAL_EDIT_PROBLEM_TITLE = messageKey('dialog.external-edit-problem.title');
+export const EXTERNAL_EDIT_PROBLEM_NOT_PDF = messageKey('dialog.external-edit-problem.not-pdf');
+export const EXTERNAL_EDIT_PROBLEM_LAUNCH_FAILED = messageKey('dialog.external-edit-problem.launch-failed');
+export const EXTERNAL_EDIT_PROBLEM_NOT_WATCHABLE = messageKey('dialog.external-edit-problem.not-watchable');
+export const EXTERNAL_EDIT_PROBLEM_DOCUMENT_CHANGED = messageKey(
+  'dialog.external-edit-problem.document-changed',
+);
+export const EXTERNAL_EDIT_PROBLEM_OPEN_ELSEWHERE = messageKey('dialog.external-edit-problem.open-elsewhere');
+export const EXTERNAL_EDIT_PROBLEM_ABSENT = messageKey('dialog.external-edit-problem.absent');
+export const EXTERNAL_EDIT_PROBLEM_AT_CAPACITY = messageKey('dialog.external-edit-problem.at-capacity');
 export const EXTRACT_PAGES_TITLE = messageKey('dialog.extract-pages.title');
 export const EXTRACT_PAGES_LABEL = messageKey('dialog.extract-pages.label');
 export const EXTRACT_PAGES_EMPTY = messageKey('dialog.extract-pages.empty');
@@ -1837,6 +1851,28 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REPLACE_PAGE_WHICH]: 'Page {page} will be removed and replaced.',
   [REPLACE_PAGE_APPLY]: 'Replace page',
   [EXTRACT_PAGES_COMMAND_TITLE]: 'Extract pages…',
+  [EDIT_PAGE_EXTERNALLY_COMMAND_TITLE]: 'Edit page in another app…',
+  [REIMPORT_EXTERNAL_EDIT_TITLE]: 'Put the edited page back?',
+  // NAMES THE PAGE, because putting it back replaces one, and says the document is still
+  // unchanged, because nothing happens until the answer is yes.
+  [REIMPORT_EXTERNAL_EDIT_SAVED]:
+    'Page {page} was saved in the other app. Put it back in place of page {page}? Your document has not changed yet.',
+  [REIMPORT_EXTERNAL_EDIT_APPLY]: 'Put it back',
+  [EXTERNAL_EDIT_PROBLEM_TITLE]: 'That page could not go to or come back from the other app',
+  [EXTERNAL_EDIT_PROBLEM_NOT_PDF]:
+    'The file name you chose does not end in .pdf, so nothing was written. Choose a name that ends in .pdf. Your document has not changed.',
+  [EXTERNAL_EDIT_PROBLEM_LAUNCH_FAILED]:
+    'The page was saved where you chose, but no app on this computer opened it, so it is not being watched for changes. Your document has not changed.',
+  [EXTERNAL_EDIT_PROBLEM_NOT_WATCHABLE]:
+    'The page was saved, but that folder cannot be watched for changes, so it was not opened for editing. Choose another folder. Your document has not changed.',
+  [EXTERNAL_EDIT_PROBLEM_DOCUMENT_CHANGED]:
+    'This document changed after the page was sent out, so the edit was not put back — it could have replaced the wrong page. Your document has not changed, and the edited file is still where you saved it.',
+  [EXTERNAL_EDIT_PROBLEM_OPEN_ELSEWHERE]:
+    'The edited file is already open in a tab, and that tab shows it as it was when it was opened. Close that tab and try again. Your document has not changed.',
+  [EXTERNAL_EDIT_PROBLEM_ABSENT]:
+    'The edited file is no longer where it was saved, so nothing was put back. Your document has not changed.',
+  [EXTERNAL_EDIT_PROBLEM_AT_CAPACITY]:
+    'The edited file is too large to open alongside the documents already open, so nothing was put back. Close a document and try again. Your document has not changed.',
   [EXTRACT_PAGES_TITLE]: 'Extract pages',
   [EXTRACT_PAGES_LABEL]: 'Pages to extract',
   // SAYS WHAT HAPPENS TO THE OPEN DOCUMENT, because the obvious worry about a

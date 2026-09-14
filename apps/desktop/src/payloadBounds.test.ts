@@ -305,6 +305,14 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // file main writes, and no byte of it is on this wire (ADR-0061).
   'document.openFromUrl': 'needs the network, a save dialog and the SSRF guard',
   'document.appendMarkdown': 'needs an engine session, a compose host and two dialogs',
+  // THE PAGE LEAVES AND RETURNS AS A FILE, NEVER ON THIS WIRE (ADR-0062). The send-out asks
+  // with a DocId, an index and a version, and main writes the page; the wait asks with a
+  // DocId and answers one of three words; the reimport asks with a DocId and answers an
+  // open's outcome and three numbers — the same size for a one-page document and a
+  // thousand-page one.
+  'document.editPageExternally': 'needs an engine session, a save dialog and the operating system’s PDF handler',
+  'document.awaitExternalEdit': 'needs a page sent out and a file watch',
+  'document.reimportExternalEdit': 'needs a page sent out, an edited file and an engine session',
   // THE IMAGE GOES THE OTHER WAY AND NEVER CROSSES THIS BOUNDARY, which is the
   // sentence to read before the page list. The renderer sends a page list and a
   // rectangle; main runs the picker, reads the file and mints `placeImage`, and

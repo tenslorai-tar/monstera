@@ -535,6 +535,16 @@ export interface BrowserShimOptions {
    * other is open as a tab (ADR-0060's correction).
    */
   readonly markdownAppends?: readonly ChannelResult<'document.appendMarkdown'>[];
+  /** What `document.editPageExternally` answers, in order; `cancelled` once the queue is empty. */
+  readonly externalEditSends?: readonly ChannelResult<'document.editPageExternally'>[];
+  /** What `document.awaitExternalEdit` answers, in order; `ended` once the queue is empty. */
+  readonly externalEditWaits?: readonly ChannelResult<'document.awaitExternalEdit'>[];
+  /**
+   * What `document.reimportExternalEdit` answers, in order; `no-edit` once the queue is
+   * empty. A `reimported` answer moves the target to its version AND seeds the edited
+   * page's tab, for `markdownAppends`' reason.
+   */
+  readonly externalEditReimports?: readonly ChannelResult<'document.reimportExternalEdit'>[];
 
   /**
    * What `document.unlock` answers, in order.
@@ -653,6 +663,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const queuedUrlOpens = [...(options.urlOpens ?? [])];
   const queuedCaptureNews = [...(options.captureNews ?? [])];
   const queuedMarkdownAppends = [...(options.markdownAppends ?? [])];
+  const queuedExternalEditSends = [...(options.externalEditSends ?? [])];
+  const queuedExternalEditWaits = [...(options.externalEditWaits ?? [])];
+  const queuedExternalEditReimports = [...(options.externalEditReimports ?? [])];
   const queuedUnlocks: UnlockAnswer[] = [...(options.unlocks ?? [])];
   const queuedSignings: SignAnswer[] = [...(options.signings ?? [])];
 
@@ -805,6 +818,28 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
       const answer = queuedMarkdownAppends.shift() ?? { kind: 'cancelled' as const };
       if (answer.kind === 'appended') {
+        versions.set(docId, answer.version);
+        versions.set(answer.opened.docId, answer.opened.version);
+      }
+      return Promise.resolve(ok(answer));
+    },
+
+    'document.editPageExternally': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok(queuedExternalEditSends.shift() ?? { kind: 'cancelled' as const }));
+    },
+
+    'document.awaitExternalEdit': ({ docId }) => {
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok(queuedExternalEditWaits.shift() ?? { kind: 'ended' as const }));
+    },
+
+    'document.reimportExternalEdit': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const answer = queuedExternalEditReimports.shift() ?? { kind: 'no-edit' as const };
+      if (answer.kind === 'reimported') {
         versions.set(docId, answer.version);
         versions.set(answer.opened.docId, answer.opened.version);
       }
