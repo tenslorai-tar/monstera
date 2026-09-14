@@ -36,8 +36,13 @@ export const PLAIN_NODE_EXTENSIONS = ['mjs', 'js', 'cjs'];
  * neither list. A `.ts` or `.mts` landing under `scripts/` is a decision
  * someone has to make, and silently sorting it into the safe pile is how a
  * search comes to report an absence it caused.
+ *
+ * `asc` is an ASCII-armored OpenPGP block: a public key a provisioner verifies
+ * against (ADR-0063), which nothing loads or executes. It arrived with
+ * `scripts/provision/keys/`, and this scan refused it until it was classified,
+ * which is the design working.
  */
-export const SCAN_DATA_EXTENSIONS = ['json'];
+export const SCAN_DATA_EXTENSIONS = ['json', 'asc'];
 
 /**
  * One glob per extension, never a brace list.

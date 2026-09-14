@@ -201,6 +201,13 @@ jobs:
       - name: Prove a verified download retries a reset and never a mismatch
         run: node scripts/ci/annotate.mjs scripts/proofs/fetchVerified.proof.mjs
 
+      # A detached OpenPGP signature is accepted only under a key pinned by its
+      # computed fingerprint (ADR-0063). The signatures are built in the process,
+      # so every refusal case asserts WHICH rule refused: a verifier that refused
+      # everything would pass a case that only asserted the refusal.
+      - name: Prove a detached signature verifies only under the pinned key
+        run: node scripts/ci/annotate.mjs scripts/proofs/openpgpVerify.proof.mjs
+
       # The scan below is only worth its runtime if it cannot be silently
       # disarmed. This proves each suppression channel is closed AND, by running
       # the corpus without each closure, that the closure is what shuts it —

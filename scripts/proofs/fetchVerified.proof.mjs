@@ -30,11 +30,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createRoster } from '../lib/passRoster.mjs';
-import { downloadVerified } from '../lib/fetchVerified.mjs';
+import { DigestMismatch, DownloadTooLarge, downloadVerified } from '../lib/fetchVerified.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 18 });
+const roster = createRoster(failures, { cases: 19 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -203,6 +203,22 @@ async function run(
   );
 }
 
+{
+  // The other direction of the two classes below. A caller trying several hosts
+  // moves on from a host that delivered nothing and stops on bytes that verified
+  // wrong (ADR-0063); if an exhausted retry carried either class, the first
+  // unreachable mirror would end the provision instead of asking the next.
+  const result = await run(() => new Error('read ECONNRESET'));
+  check(
+    'an exhausted retry is neither DigestMismatch nor DownloadTooLarge',
+    !result.ok &&
+      result.error !== undefined &&
+      !(result.error instanceof DigestMismatch) &&
+      !(result.error instanceof DownloadTooLarge),
+    `error=${String(result.error?.name)}: ${String(result.error?.message).slice(0, 120)}`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // IT REFUSES — the half that matters, and the reason this file exists.
 // ---------------------------------------------------------------------------
@@ -214,7 +230,10 @@ async function run(
   const result = await run(() => served(wrong));
   check(
     'CONTROL: a DIGEST MISMATCH is not retried — exactly one request',
-    !result.ok && result.calls === 1 && /SHA-256 mismatch/u.test(String(result.error?.message)),
+    !result.ok &&
+      result.calls === 1 &&
+      /SHA-256 mismatch/u.test(String(result.error?.message)) &&
+      result.error instanceof DigestMismatch,
     `calls=${String(result.calls)} error=${String(result.error?.message).slice(0, 120)}`,
   );
 }
@@ -233,7 +252,10 @@ async function run(
   const result = await run(() => served(PAYLOAD), { maxBytes: 4 });
   check(
     'CONTROL: a ceiling breach is not retried, though it arrives as the same rejection',
-    !result.ok && result.calls === 1 && /ceiling/u.test(String(result.error?.message)),
+    !result.ok &&
+      result.calls === 1 &&
+      /ceiling/u.test(String(result.error?.message)) &&
+      result.error instanceof DownloadTooLarge,
     `calls=${String(result.calls)} error=${String(result.error?.message).slice(0, 120)}`,
   );
 }

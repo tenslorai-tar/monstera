@@ -57,11 +57,27 @@ const MAX_REDIRECTS = 5;
  * two must not share a classification: a stream that died is nobody answering,
  * a stream that ran past its ceiling is an asset that is not what we pinned.
  */
-class DownloadTooLarge extends Error {
+export class DownloadTooLarge extends Error {
   /** @param {string} message */
   constructor(message) {
     super(message);
     this.name = 'DownloadTooLarge';
+  }
+}
+
+/**
+ * Bytes that arrived complete and hash differently from the pin.
+ *
+ * Both refusals are exported for a caller that tries several hosts: these are
+ * the two that must END the attempt rather than move it to the next host,
+ * because what was delivered verified wrong (ADR-0063). Keyed on a class, not a
+ * message, so rewording a message cannot turn a stop into a retry.
+ */
+export class DigestMismatch extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'DigestMismatch';
   }
 }
 
@@ -297,7 +313,7 @@ export async function downloadVerified({
   });
   if (actual !== expected) {
     await rm(quarantine, { force: true });
-    throw new Error(
+    throw new DigestMismatch(
       `SHA-256 mismatch for ${url}\n  expected ${expected}\n  received ${actual}\n` +
         `The quarantined file was deleted unread.`,
     );

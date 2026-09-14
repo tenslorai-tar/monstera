@@ -892,6 +892,90 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — A detached signature is checked by one Node module, under a key pinned by its computed fingerprint
+
+ADR-0063's first half: the verifier the LibreOffice provisioner will call. The
+provisioner itself is the next commit, because running it is the measurement
+(358 MB, an administrative unpack, a sandbox start), and a provisioner committed
+unrun would be asserted rather than executed.
+
+### What was built
+
+- **`scripts/lib/openpgpVerify.mjs`**: RFC 9580's version-4 subset, once, on
+  `node:crypto`. It covers armor with its CRC-24, packet framing, the primary
+  key's fingerprint computed as SHA-1 over `0x99 ‖ length ‖ body`, and the
+  signature's hashed trailer. It accepts a v4, class `0x00`, RSA, SHA-256 or
+  SHA-512 signature by the pinned primary key, and refuses everything else by
+  name. The hash is streamed, so a 358 MB file is never held in memory.
+- **Every octet is read through a method that throws past the end.** The first
+  draft indexed Buffers directly, and `npm run typecheck` refused it 24 times
+  under `noUncheckedIndexedAccess`. That was not a type-only complaint: past a
+  Buffer's end an index is `undefined`, length arithmetic on it is `NaN`, and
+  `NaN` compares false against every bound, so a truncated packet would have
+  walked on. `readUInt8` and its siblings throw `RangeError` there instead.
+- **`scripts/provision/keys/`**: TDF's public key block (keyserver.ubuntu.com's
+  copy, read 2026-09-14) beside the one module that writes its fingerprint,
+  `C2839ECAD9408FBE9531C3E9F434A1EFAFEEAEA3`. The proof and the provisioner both
+  import it.
+- **`proof:electronimports` refused the key block, and was right to.** Its walk
+  of `scripts/` refuses any extension it does not classify, rather than
+  skipping it. `.asc` was the first of its kind, so the sweep sealed failed
+  before this commit. `asc` is now in `SCAN_DATA_EXTENSIONS`, because nothing
+  loads or executes an armored key. The refusal's own message named
+  `eslint.config.js` as where the lists live. They moved to
+  `scripts/lib/plainNodeScope.mjs`, and the message now says so: a pointer to the
+  wrong file costs exactly the person the refusal exists to help.
+- **`fetchVerified.mjs` names its two stopping refusals.** `DigestMismatch` is
+  new (same message) and `DownloadTooLarge` is exported. A caller that tries
+  several mirrors moves on from one that delivered nothing and stops on bytes
+  that verified wrong. Keying that on a class means rewording a message cannot
+  turn a stop into a retry.
+
+### Proven
+
+`proof:openpgpverify`, 12 cases, on Guards beside `proof:fetchverified`. Its
+signatures are built in the process (B10), so signer and verifier are one
+author's two readings of the RFC. The independent readings are named, not
+implied:
+
+- `gpg` 2.4.8 made a key and a signature that this module verified, in a
+  scratch probe on 2026-09-14;
+- the committed TDF key computes to the pinned fingerprint, which is a case;
+- the provisioner verifies TDF's real signature over the real MSI.
+
+Every refusal asserts **which rule refused**. Mutations, each reverted and each
+reddening exactly the cases named:
+
+| mutation | red |
+|---|---|
+| RSA verification removed | tampered value with the quick check intact; signature CLAIMING the pinned issuer |
+| key fingerprint not compared to the pin | another key; the one-nibble CONTROL |
+| issuer subpacket not compared | a signature naming another issuer |
+| `fetchVerified`'s digest check throws a plain `Error` again, same message | the mismatch case alone, on its class clause: one request, and the message still matched |
+
+The first three were run on the draft in the scratchpad, before the
+bounds-checked rewrite. The rewrite changed how octets are read, not which rule
+refuses, and the 12 cases pass on it.
+
+`proof:fetchverified` goes from 18 to 19 cases. Mismatch and ceiling now also
+assert their class, and a new case asserts an exhausted retry carries
+**neither** class, which is the direction the mirror loop depends on.
+
+### Not done
+
+- The provisioner, and everything ADR-0063 lists as unmeasured.
+- Only SHA-256 and SHA-512 are accepted. A TDF release signed otherwise would be
+  refused by name, which is the intended failure.
+- **Caught before commit: the armor-checksum case was a one-in-2^24 red flake.**
+  Its first form appended a zero checksum to a freshly keyed signature, and on
+  the body whose CRC-24 happens to be zero that checksum is valid, so the case
+  would fail. It now changes one character of the committed key block's own
+  checksum line, a fixed input. That block's first case already parses it with
+  the checksum checked, so this module's CRC-24 agrees with one the keyserver
+  computed.
+
+---
+
 ## 2026-09-14 — Edit page in external app: a page out as a file, back through the one open route
 
 ADR-0062 and its 2026-09-14 correction, built. Organize › Pages gains *Edit page in another

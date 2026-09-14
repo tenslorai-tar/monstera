@@ -170,6 +170,7 @@
     "proof:retrytransient": "node scripts/proofs/retryTransient.proof.mjs",
     "proof:osvquery": "node scripts/proofs/osvQuery.proof.mjs",
     "proof:fetchverified": "node scripts/proofs/fetchVerified.proof.mjs",
+    "proof:openpgpverify": "node scripts/proofs/openpgpVerify.proof.mjs",
     "proof:verifieddownload": "node scripts/proofs/verifiedDownload.proof.mjs",
     "proof:ocrhandwriting": "node scripts/proofs/ocrHandwriting.proof.mjs",
     "notice:generate": "node scripts/release/generateNotice.mjs",

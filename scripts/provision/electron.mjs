@@ -340,7 +340,7 @@ export async function scriptsLoadingAtRuntime(specifier, root = REPO_ROOT) {
         // here instead of being silently dropped into the safe pile.
         throw new Error(
           `${relative(root, full).replaceAll('\\', '/')} has an extension this scan does not ` +
-            `classify. Add it to PLAIN_NODE_EXTENSIONS in eslint.config.js if it is code that ` +
+            `classify. Add it to PLAIN_NODE_EXTENSIONS in scripts/lib/plainNodeScope.mjs if it is code that ` +
             `runs — which also brings it under the lint rule — or to SCAN_DATA_EXTENSIONS if ` +
             `it is not. Skipping it would report "nothing loads ${specifier}" without ever ` +
             `having read it.`,
