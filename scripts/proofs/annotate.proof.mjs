@@ -11,7 +11,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,7 @@ const MARKER = 'the-line-only-a-failing-proof-would-print';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -166,6 +166,46 @@ try {
     `the same passing script emitted a ::notice with no --always, so the case above is ` +
       `satisfied by a wrapper that annotates unconditionally and separates nothing. GitHub ` +
       `caps annotations per run, so an unconditional notice would crowd out real errors.`,
+  );
+
+  // -------------------------------------------------------------------------
+  // `--npm`. A step whose script is a TOOL names no path, so the wrapper runs
+  // `npm run <name>` through npm's own entry point. The fixture is a scratch
+  // package with its own manifest, never this repository's: a script added to
+  // package.json only so a proof could fail it would be a registration nothing
+  // else reads.
+  // -------------------------------------------------------------------------
+  const npmPackage = join(scratch, 'npm-package');
+  mkdirSync(npmPackage);
+  writeFileSync(join(npmPackage, 'emit.mjs'), `process.stdout.write('${MARKER}\\n');\nprocess.exit(Number(process.argv[2]));\n`);
+  writeFileSync(
+    join(npmPackage, 'package.json'),
+    JSON.stringify({ name: 'annotate-fixture', private: true, scripts: { fails: 'node emit.mjs 3', passes: 'node emit.mjs 0' } }),
+  );
+  /** @param {string} script */
+  const throughNpm = (script) => {
+    const result = spawnSync(process.execPath, [WRAPPER, '--npm', script], { encoding: 'utf8', cwd: npmPackage });
+    return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+  };
+
+  const npmFailing = throughNpm('fails');
+  check(
+    '--npm carries a failing npm script’s own words and its exit code into ::error',
+    npmFailing.status === 3 &&
+      npmFailing.stderr.includes('::error title=npm run fails failed (exit 3)') &&
+      npmFailing.stderr.includes(MARKER),
+    `exit ${String(npmFailing.status)}, stderr: ${npmFailing.stderr.slice(-600)}. A --npm that ran ` +
+      `nothing, or ran the flag as a path, would carry no marker, and one that normalised the code ` +
+      `would not say 3.`,
+  );
+
+  const npmPassing = throughNpm('passes');
+  check(
+    'CONTROL: --npm on a passing script is passed through with NO annotation',
+    npmPassing.status === 0 && npmPassing.stdout.includes(MARKER) && !npmPassing.stderr.includes('::error'),
+    `exit ${String(npmPassing.status)}, marker in stdout: ${String(npmPassing.stdout.includes(MARKER))}, ` +
+      `::error present: ${String(npmPassing.stderr.includes('::error'))}. Without it the case above is ` +
+      `satisfied by a --npm that annotates every run.`,
   );
 
   process.stdout.write(

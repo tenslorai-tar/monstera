@@ -44,6 +44,7 @@
  * runner already printed from a place nobody can read to a place anybody can.
  *
  * Usage: node scripts/ci/annotate.mjs [--always] <script-path> [args...]
+ *        node scripts/ci/annotate.mjs [--always] --npm <script-name> [args...]
  */
 
 import { spawnSync } from 'node:child_process';
@@ -66,15 +67,36 @@ function forAnnotation(text) {
 
 const argv = process.argv.slice(2);
 const always = argv[0] === '--always';
-const [target, ...rest] = always ? argv.slice(1) : argv;
-if (target === undefined) {
-  process.stderr.write('usage: node scripts/ci/annotate.mjs [--always] <script-path> [args...]\n');
+const afterAlways = always ? argv.slice(1) : argv;
+const viaNpm = afterAlways[0] === '--npm';
+const [named, ...rest] = viaNpm ? afterAlways.slice(1) : afterAlways;
+if (named === undefined) {
+  process.stderr.write(
+    'usage: node scripts/ci/annotate.mjs [--always] [--npm <script-name> | <script-path>] [args...]\n',
+  );
   process.exit(2);
 }
 
-const result = spawnSync(process.execPath, [target, ...rest], {
+/**
+ * `--npm test` runs `npm run test` through npm's JavaScript entry point.
+ *
+ * A step whose script is a TOOL — `vitest run` — names no repository path, so
+ * until 2026-09-14 the wrapper could not spawn it. Its failure on windows-latest
+ * then carried only *"Process completed with exit code 1"* twice, on identical
+ * code, while every local run passed. That is this file's own founding gap,
+ * arriving at the one step type the path form cannot reach.
+ *
+ * npm is located by `npmCliPath`, never by this file: *npm's shim resolution*
+ * is one of B3a's recorded second opinions, and there is one resolver.
+ */
+const target = viaNpm ? `npm run ${named}` : named;
+const command = viaNpm
+  ? [(await import('../hooks/lockfileIntegrity.mjs')).npmCliPath(), 'run', named, ...rest]
+  : [named, ...rest];
+
+const result = spawnSync(process.execPath, command, {
   encoding: 'utf8',
-  maxBuffer: 32 * 1024 * 1024,
+  maxBuffer: 256 * 1024 * 1024,
 });
 
 // Passed through FIRST and in full, so the annotation is an addition to the log

@@ -50,12 +50,18 @@
  * evidence was the exit-code line. That is the failure diagnosed at `a0d2ec0`,
  * moved one step to the left.
  *
- * The criterion is now **what the wrapper can actually spawn**, which is a
+ * The criterion is **a step that names a repository script by path**, which is a
  * property rather than a category: `annotate.mjs` runs a node script with
- * `process.execPath`, so a step that runs one is wrappable and a step that runs
- * `tsc`, `eslint` or `vitest` is not. `npm run build` chains two other scripts
- * and names no path of its own, so it is correctly outside — the derivation
- * reads each command's own text and does not follow chains.
+ * `process.execPath`, so a step that runs one must go through it. `npm run build`
+ * chains two other scripts and names no path of its own, so it is correctly
+ * outside — the derivation reads each command's own text and does not follow
+ * chains.
+ *
+ * **A step that runs a TOOL is wrappable since 2026-09-14 and NOT required by
+ * this scan.** `annotate.mjs --npm <script>` spawns npm's entry point, which is
+ * how the unit-test step's windows-latest failure became readable after two runs
+ * that carried only the exit code. Requiring it of every `npm run` line would be
+ * a widening this range did not measure, so it is stated, not enforced.
  *
  * ## Why a path match also requires a `node` invocation on the line
  *
@@ -108,11 +114,12 @@ const WRAPPER = 'scripts/ci/annotate.mjs';
 /**
  * The wrappable entry points, read out of `package.json` rather than listed.
  *
- * Wrappable means what `annotate.mjs` can actually spawn: a node script. It runs
- * its target with `process.execPath`, so `npm run lint` and `npm run typecheck`
- * are outside the rule as a matter of mechanism rather than of category, and a
- * chain like `npm run build` is outside because its own command names no path —
- * each command is read as text and chains are not followed.
+ * Required means a command that names a node script by path. `npm run lint` and
+ * `npm run typecheck` run tools and name no path, so the rule does not reach
+ * them — they CAN go through `annotate.mjs --npm` since 2026-09-14, and this scan
+ * does not demand it. A chain like `npm run build` is outside because its own
+ * command names no path — each command is read as text and chains are not
+ * followed.
  *
  * Returns both the script NAMES (so `npm run x` is recognisable) and the FILE
  * PATHS they invoke (so a workflow naming a path directly is recognised too,

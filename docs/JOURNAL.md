@@ -892,6 +892,62 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — CI red at `785ba87`: the unit-test step fails on windows-latest only, and nothing public says why
+
+`785ba87` (Edit page in external app) went red on CI's **Typecheck, lint, and
+proofs (windows-latest)** job, step **Unit tests**. The ubuntu leg and Guards
+were green. `c963dfd`, a documentation-only commit on identical code, went red
+the same way. So this is a failure that reproduces on the runner, not a flake.
+
+### What could be read, and what could not
+
+- **The annotation** was `Process completed with exit code 1` on both runs,
+  and nothing else. Read through `/check-runs/{id}/annotations`, which needs no
+  token.
+- **Not a failing assertion, probably.** Vitest 4.1.11 adds its
+  `github-actions` reporter by itself when `GITHUB_ACTIONS === "true"` (read in
+  `node_modules/vitest/dist`), and that reporter annotates a failed test with
+  its file. No such annotation appeared. That points at an error outside a test
+  (an import, a worker, an unhandled rejection), but it is inferred, not seen.
+- **The step log** needs an authenticated caller. The browser pane showed *Sign
+  in to view logs*, and `gh` is not installed here.
+- **Local runs reproduce nothing.** The full suite passed 203 files and 2,812
+  tests twice here: once plain, and once with `CI=true GITHUB_ACTIONS=true`,
+  which printed no `::error` line. The five external-edit files pass 97/97, and
+  the real-directory watch cases take about 1.1 s against an 8 s bound.
+
+### The fix is to the instrument, not to a guess
+
+`scripts/ci/annotate.mjs` exists for exactly this gap and could not reach this
+step: it spawns a script **path** with `process.execPath`, and `npm test` is a
+tool. Its own coverage check stated that as a matter of mechanism.
+
+- `annotate.mjs --npm <script>` now runs `npm run <script>` through npm's entry
+  point, located by `npmCliPath` (one resolver, B3a).
+- The unit-test step runs through it.
+- `proof:annotate` goes from 8 to 10 cases: a failing npm script carries its
+  own words and its exit code, and a CONTROL confirms a passing one carries no
+  annotation. The fixture is a scratch package with its own manifest.
+  Mutation: `--npm` no longer recognised. Both new cases go red: node refuses
+  the flag as a script (`bad option: --npm`, exit 9), so the failing case has
+  no marker and the wrong code, and the control's passing script never runs.
+  The eight existing cases stay green. Reverted.
+- `annotateCoverage.mjs`' header said a vitest step "is not" wrappable. It now
+  says a tool step is wrappable and not required. Requiring it everywhere is a
+  widening nobody measured.
+
+**Not verified: that the tail lands on the failure.** The annotation carries the
+last 40 lines of stdout followed by stderr, and this suite writes expected
+diagnostics to stderr during the run. Vitest prints its failure and
+unhandled-error sections at the end, so the tail should reach them, but that is
+read from how vitest orders its output, not from a red run.
+
+**Not done: the defect itself.** The next red run names it, and it is fixed
+from the root in its own commit. Until then `main` stays red on a cause not
+known, which is stated here rather than guessed at.
+
+---
+
 ## 2026-09-14 — A detached signature is checked by one Node module, under a key pinned by its computed fingerprint
 
 ADR-0063's first half: the verifier the LibreOffice provisioner will call. The

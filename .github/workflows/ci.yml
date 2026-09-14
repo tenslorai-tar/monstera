@@ -782,8 +782,13 @@ jobs:
       # reveal a broken include glob, a renamed src layout, or a vitest config
       # that stopped matching. It was correct in b55fffa, a commit with zero test
       # files, and became a stale escape hatch the moment tests landed.
+      #
+      # Through the wrapper's --npm form, because vitest is a tool and names no
+      # repository path. At 785ba87 and c963dfd this step failed on windows-latest
+      # only, on identical code, with every local run green — and the public
+      # evidence both times was "Process completed with exit code 1".
       - name: Unit tests
-        run: npm test
+        run: node scripts/ci/annotate.mjs --npm test
 
       # §10.4'S MANDATED GATE: "axe-core running on every Playwright-rendered
       # screen from Stage 0, with zero serious violations". BUILD-PROMPT.md:768
