@@ -892,6 +892,80 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — CI red at `785ba87`, named: libuv's Windows watcher aborts on a directory not in its long form
+
+The annotation `334277a` made public ended with the cause:
+
+```
+Assertion failed: !_wcsnicmp(filename, dir, dirlen), file src\win\fs-event.c, line 72
+Vitest caught 1 unhandled error during the test run.
+Error: [vitest-pool]: Worker forks emitted error.
+```
+
+A C `assert` inside libuv's Windows `fs.watch` failed, and a failed `assert` is
+`abort()`. The fork worker died with no test failing, which is why vitest's own
+reporter annotated nothing. The only real `fs.watch` in `apps/` and `packages/`
+is `apps/desktop/src/nodeEditWatch.ts`, and its test watches real directories
+under `os.tmpdir()`.
+
+### The mechanism, and how much of it was reproduced
+
+The assertion compares a changed file's full path with the watched directory's
+path, as a prefix. libuv builds that full path in long form, so a directory
+handed over through an 8.3 short component can fail the comparison. On the
+windows-latest runner `os.tmpdir()` is `C:\Users\RUNNER~1\…`; here it has no
+short component, which fits green-here, red-there.
+
+**The abort itself did not reproduce on this machine**, and that is stated here,
+not smoothed over:
+
+- A watch through a real 8.3 path, read from `Scripting.FileSystemObject`, with
+  `page.pdf` written: exit 0.
+- The same, with eight temp-and-rename saves and a long-named file: 71 events,
+  exit 0. Every notification carried long names.
+
+What was measured is the precondition's remedy. On `…\C-54FA~1\…\A-DIRE~1`,
+`realpathSync.native` returned the long path, and `realpathSync` without
+`.native` returned the **short** path unchanged.
+
+### The fix, and why it is a root fix even unreproduced
+
+`nodeEditWatchSurface` watches `realpathSync.native(directory)`. The directory is
+then always in the form libuv builds, so the prefix holds whichever form a
+notification carries. A directory that cannot be resolved answers `null`, like
+one that cannot be watched.
+
+This is a product defect, not only a test's: the surface runs in Electron's main
+process, where an abort takes the application down. A person whose profile path
+carries a short component would meet it at the first edit in another app.
+
+**The resolver is not injectable.** Only `watch` is, typed to the one shape the
+surface calls, so no cast is needed. The first draft of the test injected its
+own resolver as well, and that would have let production's be deleted under a
+green suite.
+
+### Proven
+
+Three cases, each asserting **the path handed to `watch`**, not the events. A
+run that did not abort looks the same whether it was resolved or lucky.
+
+| case | mutation A: watched as passed | mutation B: `realpathSync`, not `.native` |
+|---|---|---|
+| a junction is watched at its target (every platform) | red, recorded the link | green, the JS resolver follows links |
+| an 8.3 short path is watched in long form (Windows) | red, received `…\mob91c~1` | **red, received `…\mo2644~1`** |
+| CONTROL: an unresolvable directory is `null`, nothing watched | red, `watch` was called first | green |
+
+The five save-pattern cases stay green under both. The 8.3 case carries a
+20,000 ms bound on its **fixture**: PowerShell answering the short path took
+3,860 ms against vitest's 5,000 ms default. It refuses to pass on a volume with
+no 8.3 names, because there it could separate nothing.
+
+**Verification owed: the next windows-latest run.** It failed this way on both
+runs of identical code, so a green unit-test step there confirms the mechanism,
+and a red one refutes it.
+
+---
+
 ## 2026-09-14 — CI red at `785ba87`: the unit-test step fails on windows-latest only, and nothing public says why
 
 `785ba87` (Edit page in external app) went red on CI's **Typecheck, lint, and
