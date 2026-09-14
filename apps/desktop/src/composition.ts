@@ -67,6 +67,7 @@ import {
   localPdfLibWriter,
   nodeFileSurface,
   signpdfWriterWith,
+  parsePageStructure,
   parsePageText,
   pdfiumChannels,
   type ComposeChannels,
@@ -757,7 +758,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pageText: async (docId, sessions, page) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return parsePageText(await engineHost.pageText(session, page));
+      return parsePageText(await engineHost.pageText(session, page, 'substrate'));
     },
     // THE LINK READ, composed here for the two reads above's reason. Unlike the
     // text, nothing is parsed on the way through: the host answers a declared
@@ -767,6 +768,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.pageLinks(session, page);
+    },
+    // THE STRUCTURE READ, composed for the text read's reason and PARSED here by
+    // the same walk: the host answers the `structure` read's JSON through the one
+    // text channel, and main turns it into elements (ADR-0065). One page, for
+    // ADR-0035's reason.
+    pageStructure: async (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return parsePageStructure(await engineHost.pageText(session, page, 'structure'));
     },
     // THE OUTLINE, composed here for the reads above's reason and taking no
     // page, because an outline is a property of the document rather than of a
@@ -1407,7 +1417,7 @@ function engineSessionOpener(
    */
   let pageText: HostPageTextReader | null = null;
 
-  const readPageTextThroughHost: HostPageTextReader = (session, page) => {
+  const readPageTextThroughHost: HostPageTextReader = (session, page, read) => {
     if (pageText === null) {
       throw new Error(
         'A text read reached the engine with no host text reader registered. A session was ' +
@@ -1415,7 +1425,7 @@ function engineSessionOpener(
           'host connection have diverged.',
       );
     }
-    return pageText(session, page);
+    return pageText(session, page, read);
   };
 
   /** The link read's half of the same registration. See {@link pageText}. */

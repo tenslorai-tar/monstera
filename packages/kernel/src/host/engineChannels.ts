@@ -49,6 +49,7 @@ import { z } from 'zod';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
+import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 
 /**
@@ -1930,6 +1931,15 @@ export const engineChannels = {
         session: sessionSchema,
         /** Zero-based index, as `commands.ts` declares them. */
         page: z.number().int().nonnegative(),
+        /**
+         * WHICH READ, by name
+         * ([ADR-0065](../../../../docs/DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)).
+         * A closed set and never an option string: the host composes the options
+         * from the name, so a request cannot choose what `fz_parse_stext_options`
+         * is handed. Required rather than defaulted, so every caller names the read
+         * it means and the substrate's is not the one a forgotten field gets.
+         */
+        read: z.enum(PAGE_TEXT_READS),
       })
       .strict(),
     z

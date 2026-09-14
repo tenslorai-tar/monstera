@@ -32,6 +32,7 @@ import {
 // so naming the error class here costs this module nothing.
 import { HandwritingModelUnreadableError, type HandwritingRequest } from '../ocrHandwriting.js';
 import type { PageLink } from '../pageLinks.js';
+import type { PageTextRead } from '../textStructure.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
@@ -55,8 +56,16 @@ import {
  * **The JSON is not parsed here.** `parsePageText` is the one reader of that
  * format and it lives main-side, so nothing in the hostile process holds an
  * opinion about the structure MuPDF computed.
+ *
+ * **It takes a read's NAME**, never an option string: the substrate composes the
+ * options from the name, so a request crossing the pipe cannot choose what
+ * `fz_parse_stext_options` is handed (ADR-0065).
  */
-export type HostPageTextReader = (session: MupdfSession, page: number) => Promise<string>;
+export type HostPageTextReader = (
+  session: MupdfSession,
+  page: number,
+  read: PageTextRead,
+) => Promise<string>;
 
 /**
  * Reads one page's links.
@@ -673,7 +682,7 @@ export function createEngineHandlers({
       return { ok: true, value: await geometry(held.session, pages) };
     },
 
-    'engine/page-text': async ({ session, page }) => {
+    'engine/page-text': async ({ session, page, read }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       // NO try/catch, for `engine/page-geometry`'s reason: a text read of a
@@ -685,7 +694,7 @@ export function createEngineHandlers({
       // shape this build invented; `parsePageText` main-side is the one reader
       // (§3.2), and the schema's size bound is what makes the string safe to
       // carry rather than trust.
-      return { ok: true, value: { json: await pageText(held.session, page) } };
+      return { ok: true, value: { json: await pageText(held.session, page, read) } };
     },
 
     'engine/ocr-page': async (request) => {

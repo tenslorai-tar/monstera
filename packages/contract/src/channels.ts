@@ -198,6 +198,23 @@ export const MAX_TEXT_LAYER_LINES = 2048;
 export const MAX_TEXT_LAYER_LINE = 1024;
 
 /**
+ * The most structure elements `document.pageStructure` carries for one page.
+ *
+ * Measured 2026-09-14 over the corpus's tagged documents, first five pages each: the
+ * densest page carries **129** elements (a page of two tables). This is about thirty
+ * times that, so a real page is not cut, and a crafted one costs a bounded frame.
+ */
+export const MAX_STRUCTURE_NODES = 4096;
+
+/**
+ * The most characters of one element's role or raw name.
+ *
+ * A standard role is a short word; a raw name is the document's own string, so it
+ * is the document's author who decides its length and this bound that caps it.
+ */
+export const MAX_STRUCTURE_NAME = 128;
+
+/**
  * The spelling dictionaries this build ships, and the ONE place they are named.
  *
  * ## One language, and that is the founding record read whole
@@ -2725,6 +2742,64 @@ export const channels = {
       characters: z.number().int().nonnegative(),
       /** Characters excluding whitespace — the figure most editors show. */
       charactersNoSpaces: z.number().int().nonnegative(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * One page's tagged structure: the elements, in tree order, and nothing of the
+   * page's text.
+   *
+   * ## The structure is the engine's, read on its own request
+   *
+   * [ADR-0065](DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md).
+   * MuPDF's `structured` option follows the document's structure tree; the shared
+   * read never asks for it, because it reorders and re-breaks the lines search and
+   * the text layer read. So this is a second named read of the same page through
+   * the same host channel, parsed by the same walk.
+   *
+   * ## Roles, nesting and counts cross; words do not
+   *
+   * A node is a role, the document's own name for the element, a depth and a line
+   * count, so the answer is bounded by the page's tagging rather than its text — and
+   * the renderer that shows it never holds the page's words
+   * ([ADR-0035](DECISIONS/0035-extracted-text-is-never-resident-in-main.md)).
+   *
+   * ## FLAT WITH A DEPTH, which is the tree's order already
+   *
+   * Preorder is the structure tree's reading order, and a depth is all an indented
+   * list needs, so no recursive schema has to be bounded twice.
+   *
+   * ## `page` is ZERO-BASED, like every other page index that crosses here
+   */
+  'document.pageStructure': channel(
+    'One page’s tagged structure — roles, nesting and line counts, never its text.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+    }),
+    z.object({
+      version: docVersionSchema,
+      nodes: z
+        .array(
+          z.object({
+            /** The standard role, `P` or `H1`; empty where the engine resolved none. */
+            role: z.string().max(MAX_STRUCTURE_NAME),
+            /** The document's own name for the element. */
+            raw: z.string().max(MAX_STRUCTURE_NAME),
+            depth: z.number().int().nonnegative().max(MAX_STRUCTURE_NODES),
+            /** Text lines directly inside this element. */
+            lines: z.number().int().nonnegative(),
+          }),
+        )
+        .max(MAX_STRUCTURE_NODES)
+        .readonly(),
+      /** Whether elements were left out or a name clipped, for `pageTextLayer`'s reason. */
+      truncated: z.boolean(),
+      /** Lines on the page inside no tagged element. */
+      untaggedLines: z.number().int().nonnegative(),
+      /** Image blocks on the page, so a page tagged only as a figure is not read as empty. */
+      images: z.number().int().nonnegative(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

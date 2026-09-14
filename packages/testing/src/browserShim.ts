@@ -1431,6 +1431,29 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     },
 
     /**
+     * One page's tagged structure: NONE, and the page's lines counted as untagged.
+     *
+     * The shim's pages are plain fixture lines with no structure tree, so an honest
+     * answer is an untagged page — and its line count is the fixture's, so a surface
+     * that reads `untaggedLines` sees the page it drew rather than a zero that means
+     * nothing was asked.
+     */
+    'document.pageStructure': ({ docId, page }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          nodes: [],
+          truncated: false,
+          untaggedLines: (pageLines[page] ?? []).length,
+          images: 0,
+        }),
+      );
+    },
+
+    /**
      * One page's links, from the fixture the shim was built with.
      *
      * **One of each kind on the first page**, because the split is what a

@@ -258,10 +258,10 @@ export function remoteMupdfPageText(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
 ): HostPageTextReader {
-  return async (session, page) =>
+  return async (session, page, read) =>
     answered(
       'engine/page-text',
-      await client['engine/page-text']({ session: sessions.handleFor(session), page }),
+      await client['engine/page-text']({ session: sessions.handleFor(session), page, read }),
     ).json;
 }
 

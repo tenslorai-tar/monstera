@@ -596,6 +596,36 @@ body {
   font-weight: 600;
 }
 
+/*
+ * The reading-order inspection: a list, so it takes the spell check's two rules
+ * for their reason — no bullets or indent the primitive did not ask for, and one
+ * line per element. The indent it does want is the depth, set on the row.
+ *
+ * The role carries the weight; the document's own name and the line count are
+ * `--muted` beside it, for `.m-spell-check__word`'s reason.
+ */
+.m-page-structure__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-page-structure__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  padding-block: var(--space-2);
+}
+
+.m-page-structure__role {
+  font-weight: 600;
+}
+
+.m-page-structure__raw,
+.m-page-structure__lines {
+  color: var(--muted);
+}
+
 .m-spell-check__where,
 .m-spell-check__suggestions,
 .m-spell-check__added {

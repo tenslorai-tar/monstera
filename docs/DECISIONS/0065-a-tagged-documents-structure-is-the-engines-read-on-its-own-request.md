@@ -127,3 +127,38 @@ corpus is the owner's eleven-document set, and its names and text are not record
   with no options and top-level blocks only. It is correct today because it asks for
   no options, and it is queued as its own task because moving it onto the substrate
   could change which fields it proposes. The inspection takes the substrate's reader.
+
+## Correction, 2026-09-14 — Decision 5 is not built, and Decision 4's field has no default
+
+Two sentences of this ADR were wrong on the day the feature was built. Both were
+found by measuring before wiring, not by review.
+
+- **Decision 5 said the inspection shows where the structure order differs from the
+  drawing order.** Measured that day with a scratch probe through `parsePageText`,
+  the product's own reader, and a generated control whose lines are the same and
+  whose order differs. Over the 12 tagged corpus pages carrying text:
+  - the structure read and the shared read hold **identical characters on all 12**;
+  - they hold **the same lines on only 4**. On the other 8, the structure read breaks
+    the same characters into more lines.
+
+  A comparison of line sequences would therefore report *order differs* where only
+  line breaking does. A character-level alignment would be an algorithm of ours over a
+  page's text, which this ADR did not decide.
+
+  So the inspection shows the tree: roles, nesting, each element's own line count,
+  the lines outside every tag, and the images. **It does not compare orders.**
+  Reading 4's *5 of 8 pages* stands as a measurement against stream order. It is not
+  something the product shows.
+- **Decision 4 called `substrate` the default.** The field is **required**. Every
+  caller names the read it means, so a forgotten field is a schema refusal rather
+  than the shared read.
+
+One reading this ADR did not have decides how the view is built: a page's structure
+blocks include segmentation's own.
+- Under the structure read, every structure block on every page of the seven untagged
+  corpus documents is raw `Split`, standard `Div` (first five pages of each).
+- None on the four tagged documents is.
+
+The view therefore walks through `Split` blocks rather than listing them. A document
+that names one of its own elements `Split` is read as segmentation's, which
+`textStructure.ts` states as a limit.

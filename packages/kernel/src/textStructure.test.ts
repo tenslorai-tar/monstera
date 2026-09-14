@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { scoreAgainstTruth } from './textAccuracy.js';
 import {
+  PAGE_TEXT_READS,
+  SEGMENTATION_RAW_ROLE,
   STEXT_OPTION_STRING,
   STEXT_OPTIONS,
   linesOf,
+  parsePageStructure,
   parsePageText,
   plainTextOf,
+  stextOptionsFor,
 } from './textStructure.js';
 
 /**
@@ -94,12 +98,157 @@ describe('the stext options', () => {
   });
 
   it('spells the names MuPDFs own parser accepts, not names invented here', () => {
-    // `fz_parse_stext_options` matches these literally, and an unknown option
-    // is IGNORED rather than refused — so a misspelt name gives a page parsed
-    // with default options and no error anywhere. That is the reassuring answer
-    // for a defect, which is why the spelling is asserted rather than trusted.
+    // `fz_parse_stext_options` matches these literally. This comment said an
+    // unknown option is IGNORED rather than refused; measured 2026-09-14 on
+    // MuPDF 1.28.0 (ADR-0013's correction of that date), an unknown option
+    // THROWS. So a misspelling fails at the first read — and a name misspelt INTO
+    // another valid option would not, which is why the spelling is still asserted
+    // rather than trusted.
     expect(STEXT_OPTIONS.segment).toBe('segment');
     expect(STEXT_OPTIONS.tableHunt).toBe('table-hunt');
+    expect(STEXT_OPTIONS.structured).toBe('structured');
+  });
+
+  it('keeps `structured` OUT of the shared read (ADR-0065)', () => {
+    // Measured 2026-09-14: under it every one of the corpus's 12 tagged pages
+    // carrying text gives a different line sequence from the shared read. Search,
+    // the text layer, word count and spell check asked for none of that.
+    expect(STEXT_OPTION_STRING.split(',')).not.toContain(STEXT_OPTIONS.structured);
+  });
+});
+
+describe('the named reads', () => {
+  it('the substrate read is the shared option string, exactly', () => {
+    expect(stextOptionsFor('substrate')).toBe(STEXT_OPTION_STRING);
+  });
+
+  it('the structure read is the shared set PLUS `structured`, and nothing else', () => {
+    // AS SETS, both directions: a read that dropped `preserve-images` would
+    // contain `structured` and pass a one-way check, and on a page tagged only as
+    // a Figure it would report nothing on the page.
+    const shared = STEXT_OPTION_STRING.split(',');
+    const structure = stextOptionsFor('structure').split(',');
+    expect(structure.filter((name) => !shared.includes(name))).toStrictEqual([
+      STEXT_OPTIONS.structured,
+    ]);
+    expect(shared.filter((name) => !structure.includes(name))).toStrictEqual([]);
+  });
+
+  it('names exactly the two reads, so a third is a visible change to this line', () => {
+    expect(PAGE_TEXT_READS).toStrictEqual(['substrate', 'structure']);
+  });
+});
+
+/**
+ * A tagged page as the structure read returns it.
+ *
+ * The keys — `raw`, `std`, `contents` — and the nesting are the shape read on
+ * 2026-09-14 from MuPDF 1.28.0 on a generated page whose tree lists its second
+ * paragraph first. The lines are shortened; the ORDER is the tree's, which is the
+ * engine's answer, and the parser must keep it.
+ */
+function taggedPage(): string {
+  const text = (words: string, y: number) => ({
+    type: 'text',
+    bbox: { x: 72, y, w: 80, h: 16 },
+    lines: [{ wmode: 0, bbox: { x: 72, y, w: 80, h: 16 }, font: { size: 14 }, x: 72, y, text: words }],
+  });
+  return JSON.stringify({
+    blocks: [
+      {
+        type: 'structure',
+        raw: 'Document',
+        std: 'Document',
+        contents: [
+          { type: 'structure', raw: 'P', std: 'P', contents: [text('drawn second', 180)] },
+          { type: 'structure', raw: 'P', std: 'P', contents: [text('drawn first', 580)] },
+        ],
+      },
+    ],
+  });
+}
+
+describe('parsePageStructure', () => {
+  it('reads the elements in TREE order, with their depth and their own lines', () => {
+    expect(parsePageStructure(taggedPage())).toStrictEqual({
+      nodes: [
+        { role: 'Document', raw: 'Document', depth: 0, lines: 0 },
+        { role: 'P', raw: 'P', depth: 1, lines: 1 },
+        { role: 'P', raw: 'P', depth: 1, lines: 1 },
+      ],
+      untaggedLines: 0,
+      images: 0,
+    });
+  });
+
+  it('walks THROUGH segmentation’s blocks: an untagged page has no elements', () => {
+    // The two-column fixture is `SEGMENT`'s output, raw `Split` at every level —
+    // measured on every untagged corpus page. Reported as elements, it would tell
+    // a reader an untagged page is tagged as three `Div`s.
+    expect(parsePageStructure(segmentedTwoColumn())).toStrictEqual({
+      nodes: [],
+      untaggedLines: 4,
+      images: 0,
+    });
+  });
+
+  it('a tagged element inside a segmentation block keeps its own depth', () => {
+    const json = JSON.stringify({
+      blocks: [
+        {
+          type: 'structure',
+          raw: SEGMENTATION_RAW_ROLE,
+          std: 'Div',
+          contents: [
+            {
+              type: 'structure',
+              raw: 'Caption',
+              std: 'Caption',
+              contents: [
+                {
+                  type: 'text',
+                  bbox: { x: 0, y: 0, w: 1, h: 1 },
+                  lines: [{ bbox: { x: 0, y: 0, w: 1, h: 1 }, x: 0, y: 0, text: 'inside' }],
+                },
+              ],
+            },
+            {
+              type: 'text',
+              bbox: { x: 0, y: 0, w: 1, h: 1 },
+              lines: [{ bbox: { x: 0, y: 0, w: 1, h: 1 }, x: 0, y: 0, text: 'outside' }],
+            },
+            { type: 'image', bbox: { x: 0, y: 0, w: 1, h: 1 } },
+          ],
+        },
+      ],
+    });
+    // DEPTH ZERO, not one: the `Split` above it is not a parent. And the line
+    // beside it belongs to no element, so it is counted as untagged rather than
+    // given to the element that happened to close just before it.
+    expect(parsePageStructure(json)).toStrictEqual({
+      nodes: [{ role: 'Caption', raw: 'Caption', depth: 0, lines: 1 }],
+      untaggedLines: 1,
+      images: 1,
+    });
+  });
+
+  it('ONE WALK: the structure view accounts for exactly the lines the text view reads', () => {
+    for (const json of [taggedPage(), segmentedTwoColumn(), unsegmentedTwoColumn()]) {
+      const structure = parsePageStructure(json);
+      const counted = structure.nodes.reduce((sum, node) => sum + node.lines, 0);
+      expect(counted + structure.untaggedLines).toBe(linesOf(parsePageText(json)).length);
+    }
+    // CONTROL: the tagged page's text view keeps the TREE's order, so the two
+    // views agree on order as well as on count.
+    expect(linesOf(parsePageText(taggedPage())).map((line) => line.text)).toStrictEqual([
+      'drawn second',
+      'drawn first',
+    ]);
+  });
+
+  it('refuses what parsePageText refuses, rather than answering an untagged page', () => {
+    expect(() => parsePageStructure('not json')).toThrow(/not JSON/u);
+    expect(() => parsePageStructure('{}')).toThrow(/no `blocks` array/u);
   });
 });
 

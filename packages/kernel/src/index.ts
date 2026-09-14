@@ -357,15 +357,23 @@ export { type PageKind, pageKindOf } from './pageKind.js';
 export { countPageWords } from './wordCount.js';
 export {
   type DisplayedRect,
+  type PageStructure,
   type PageText,
+  type PageTextRead,
+  type StructureNode,
   type TextBlock,
   type TextLine,
+  PAGE_TEXT_READS,
+  SEGMENTATION_RAW_ROLE,
   STEXT_OPTIONS,
   STEXT_OPTION_STRING,
   linesOf,
+  parsePageStructure,
   parsePageText,
   plainTextOf,
+  stextOptionsFor,
 } from './textStructure.js';
+export { type StructureOutline, structureOutlineOf } from './structureOutline.js';
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
 // engine, and `readPageLinks` — which does — stays behind `/engine`.

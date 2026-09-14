@@ -335,6 +335,15 @@ export const WORD_COUNT_CHARACTERS_LABEL = messageKey('dialog.word-count.charact
 export const WORD_COUNT_CHARACTERS_TIGHT_LABEL = messageKey('dialog.word-count.characters-tight');
 export const WORD_COUNT_PAGES_LABEL = messageKey('dialog.word-count.pages');
 export const WORD_COUNT_PARTIAL = messageKey('dialog.word-count.partial');
+export const PAGE_STRUCTURE_COMMAND_TITLE = messageKey('command.page-structure.title');
+export const PAGE_STRUCTURE_TITLE = messageKey('dialog.page-structure.title');
+export const PAGE_STRUCTURE_PAGE = messageKey('dialog.page-structure.page');
+export const PAGE_STRUCTURE_UNTAGGED = messageKey('dialog.page-structure.untagged');
+export const PAGE_STRUCTURE_LINES = messageKey('dialog.page-structure.lines');
+export const PAGE_STRUCTURE_UNTAGGED_LINES = messageKey('dialog.page-structure.untagged-lines');
+export const PAGE_STRUCTURE_IMAGES = messageKey('dialog.page-structure.images');
+export const PAGE_STRUCTURE_TRUNCATED = messageKey('dialog.page-structure.truncated');
+export const PAGE_STRUCTURE_REFUSED = messageKey('dialog.page-structure.refused');
 export const SPELL_CHECK_COMMAND_TITLE = messageKey('command.spell-check.title');
 export const SPELL_CHECK_TITLE = messageKey('dialog.spell-check.title');
 export const SPELL_CHECK_LANGUAGE = messageKey('dialog.spell-check.language');
@@ -859,6 +868,8 @@ export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
 export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
 /** TOOLS › OCR, which `BUILD-PROMPT.md`:472 names as D6's ribbon placement. */
 export const GROUP_OCR = messageKey('surface.ribbon.group.ocr');
+/** REVIEW › Accessibility, where D8's reading-order inspection sits. */
+export const GROUP_ACCESSIBILITY = messageKey('surface.ribbon.group.accessibility');
 
 /** PROTECT › Encryption, where Stage 7's password rows land. */
 export const GROUP_ENCRYPTION = messageKey('surface.ribbon.group.encryption');
@@ -1121,6 +1132,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // total smaller than the document is indistinguishable from a correct total
   // for a shorter one, and a reader quoting it has no way to tell.
   [WORD_COUNT_PARTIAL]: 'Counted {counted} of {total} pages — these totals are incomplete.',
+  [PAGE_STRUCTURE_COMMAND_TITLE]: 'Reading order',
+  [PAGE_STRUCTURE_TITLE]: 'Reading order and tags',
+  [PAGE_STRUCTURE_PAGE]: 'Tags on page {page}, in the order the document gives them.',
+  [PAGE_STRUCTURE_UNTAGGED]: 'This page has no tags.',
+  [PAGE_STRUCTURE_LINES]: '{count, plural, one {# line} other {# lines}}',
+  [PAGE_STRUCTURE_UNTAGGED_LINES]:
+    '{count, plural, one {One line of text is outside every tag.} other {# lines of text are outside every tag.}}',
+  [PAGE_STRUCTURE_IMAGES]:
+    '{count, plural, one {One image on this page.} other {# images on this page.}}',
+  // A LIST THAT STOPS EARLY SAYS SO: a page shown tagged that far reads as a
+  // page tagged that far.
+  [PAGE_STRUCTURE_TRUNCATED]: 'This page has more tags than can be shown here, so the list stops early.',
+  [PAGE_STRUCTURE_REFUSED]:
+    'The tags on page {page} could not be read. The document may be busy or no longer open.',
   [SPELL_CHECK_COMMAND_TITLE]: 'Spell check',
   // NAMES THE PAGE, because the command acts on the one in front of the reader
   // and the ribbon has no other way to say so. "Replace text" alone reads as
@@ -2217,6 +2242,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_NAVIGATE]: 'Navigate',
   [GROUP_APPLICATION]: 'Application',
   [GROUP_OCR]: 'OCR',
+  [GROUP_ACCESSIBILITY]: 'Accessibility',
   [WORD_COUNT_PROGRESS]: 'Counting words',
   [SPELL_CHECK_PROGRESS]: 'Checking spelling',
   [OCR_PROGRESS]: 'Recognising text',

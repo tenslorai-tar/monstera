@@ -346,6 +346,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // being per page and counted in the lane: a whole-document count would hold
   // text ADR-0035 measured at 3.59x the document's bytes.
   'document.pageWordCount': 'needs an engine session',
+  // ROLES AND COUNTS, never the page's words, and at most MAX_STRUCTURE_NODES of
+  // them: the tagging bounds the answer rather than the text (ADR-0065).
+  'document.pageStructure': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',
   'document.destinations': 'needs an engine session',

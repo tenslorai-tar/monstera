@@ -90,6 +90,16 @@ export const STEXT_OPTIONS = {
   tableHunt: 'table-hunt',
   /** `FZ_STEXT_PRESERVE_IMAGES` — on; see {@link PageText.images}. */
   preserveImages: 'preserve-images',
+  /**
+   * `structured` — follow a tagged document's structure tree. **Never part of the
+   * shared read**, and asked for only by the structure read
+   * ([ADR-0065](../../../docs/DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)):
+   * measured 2026-09-14 over the corpus's tagged documents, it gives a different
+   * line sequence from the shared read on every one of the 12 pages carrying text,
+   * and breaks the same characters into different lines on 8 of them. Search, the
+   * text layer, word count and spell check asked for neither.
+   */
+  structured: 'structured',
 } as const;
 
 /**
@@ -149,6 +159,38 @@ export const STEXT_OPTION_STRING: string = [
   STEXT_OPTIONS.segment,
   STEXT_OPTIONS.preserveImages,
 ].join(',');
+
+/**
+ * The reads a caller may ask the engine for, by NAME.
+ *
+ * A closed set rather than an option string, so nothing crossing a boundary can
+ * carry an option to `fz_parse_stext_options`: the engine host maps a name to the
+ * string {@link stextOptionsFor} composes, and nothing else composes one (ADR-0065).
+ */
+export const PAGE_TEXT_READS = ['substrate', 'structure'] as const;
+
+/** One of {@link PAGE_TEXT_READS}. */
+export type PageTextRead = (typeof PAGE_TEXT_READS)[number];
+
+/**
+ * The option string for a named read.
+ *
+ * ## `structure` is the shared set PLUS one option, never `structured` alone
+ *
+ * Measured 2026-09-14 on a generated tagged page: the shared set plus `structured`
+ * gives the tag roles in tree order exactly as `structured` alone does, and keeps
+ * `preserve-images` — without which a page tagged only as a Figure reads as a page
+ * with nothing on it. So the two reads differ by the one option this read exists
+ * for, and a difference between them is that option's doing.
+ */
+export function stextOptionsFor(read: PageTextRead): string {
+  switch (read) {
+    case 'substrate':
+      return STEXT_OPTION_STRING;
+    case 'structure':
+      return [STEXT_OPTION_STRING, STEXT_OPTIONS.structured].join(',');
+  }
+}
 
 /**
  * A rectangle in the page's **display space**, as two corners rather than a size.
@@ -296,7 +338,29 @@ function rectOf(value: unknown): DisplayedRect {
 }
 
 /**
- * Flattens MuPDF's block tree into blocks, **in document order**.
+ * What {@link walkBlocks} reports, in document order.
+ *
+ * ## ONE WALK, TWO VIEWS
+ *
+ * {@link parsePageText} flattens the tree into blocks and
+ * {@link parsePageStructure} keeps the structure elements that flattening drops.
+ * Both take this one traversal, so they cannot disagree about which lines a page
+ * holds or where the engine put them. A second walk over the same JSON would be a
+ * second reader of MuPDF's format (§3.2), and `flatFields.ts` already shows the
+ * shape: correct under the options it asks for, and blind the day those change.
+ */
+interface BlockVisitor {
+  /** A block carrying `contents`, before them. */
+  readonly enter: (block: RawNode) => void;
+  /** The same block, after its contents. */
+  readonly leave: () => void;
+  readonly image: () => void;
+  /** A block carrying `lines`, with the ones this module could read — possibly none. */
+  readonly text: (block: RawNode, lines: readonly TextLine[]) => void;
+}
+
+/**
+ * Walks MuPDF's block tree, **in document order**.
  *
  * ## The recursion is where the reading order lives
  *
@@ -313,25 +377,26 @@ function rectOf(value: unknown): DisplayedRect {
  * **So the flattening must never re-sort.** Any ordering of ours here would be
  * the block clusterer ADR-0034 rejected, arriving as a tidy-up.
  *
- * @param nodes MuPDF's `blocks` or a structure block's `contents`
- * @param into the accumulator, appended in place to keep the walk order exact
- * @param images counted through the same walk, for {@link PageText.images}
+ * @param source MuPDF's `blocks` or a structure block's `contents`
+ * @param visitor told about each block in the order the engine put it
  */
-function collectBlocks(source: readonly unknown[], into: TextBlock[], images: { count: number }): void {
+function walkBlocks(source: readonly unknown[], visitor: BlockVisitor): void {
   for (const entry of source) {
     const block = node(entry);
     if (block === null) continue;
 
     const contents = nodes(field(block, 'contents'));
     if (contents !== null) {
-      collectBlocks(contents, into, images);
+      visitor.enter(block);
+      walkBlocks(contents, visitor);
+      visitor.leave();
       continue;
     }
 
     // COUNTED IN THIS WALK, not in a second pass over the same tree. An image
     // may sit inside a `structure` block like any other, so a top-level count
     // would miss exactly the segmented pages this option was turned on for.
-    if (str(field(block, 'type')) === 'image') images.count += 1;
+    if (str(field(block, 'type')) === 'image') visitor.image();
 
     const rawLines = nodes(field(block, 'lines'));
     if (rawLines === null) continue;
@@ -348,11 +413,35 @@ function collectBlocks(source: readonly unknown[], into: TextBlock[], images: { 
         size: num(field(node(field(line, 'font')), 'size'), 0),
       });
     }
-    // A TEXT BLOCK WITH NO LINES IS DROPPED, not kept empty: MuPDF emits image
-    // and vector blocks through the same array, and an empty block in a reading
-    // order is a gap a consumer has to know to skip.
-    if (lines.length > 0) into.push({ lines, box: rectOf(field(block, 'bbox')) });
+    visitor.text(block, lines);
   }
+}
+
+/**
+ * The page's top-level `blocks`, or a refusal.
+ *
+ * Shared by both views, so *could not read what MuPDF said* is refused the same
+ * way whichever view was asked for.
+ *
+ * @throws if the payload is not JSON, or is not a page-shaped object
+ */
+function blocksOf(json: string): readonly unknown[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json) as unknown;
+  } catch (cause) {
+    throw new Error('structured text was not JSON, so this page was not read', { cause });
+  }
+
+  const source = nodes(field(node(parsed), 'blocks'));
+  if (source === null) {
+    throw new Error(
+      'structured text carried no `blocks` array. Returning an empty page here would be ' +
+        'indistinguishable from a page with no text, and every consumer treats that as a ' +
+        'clean result.',
+    );
+  }
+  return source;
 }
 
 /**
@@ -374,27 +463,24 @@ function collectBlocks(source: readonly unknown[], into: TextBlock[], images: { 
  * @throws if the payload is not JSON, or is not a page-shaped object
  */
 export function parsePageText(json: string): PageText {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json) as unknown;
-  } catch (cause) {
-    throw new Error('structured text was not JSON, so this page was not read', { cause });
-  }
-
-  const page = node(parsed);
-  const source = nodes(field(page, 'blocks'));
-  if (source === null) {
-    throw new Error(
-      'structured text carried no `blocks` array. Returning an empty page here would be ' +
-        'indistinguishable from a page with no text, and every consumer treats that as a ' +
-        'clean result.',
-    );
-  }
-
   const blocks: TextBlock[] = [];
-  const images = { count: 0 };
-  collectBlocks(source, blocks, images);
-  return { blocks, images: images.count };
+  let images = 0;
+  walkBlocks(blocksOf(json), {
+    // A STRUCTURE BLOCK IS WALKED THROUGH and leaves nothing here: its lines
+    // arrive through `text` in the order the tree holds them.
+    enter: () => undefined,
+    leave: () => undefined,
+    image: () => {
+      images += 1;
+    },
+    // A TEXT BLOCK WITH NO LINES IS DROPPED, not kept empty: MuPDF emits image
+    // and vector blocks through the same array, and an empty block in a reading
+    // order is a gap a consumer has to know to skip.
+    text: (block, lines) => {
+      if (lines.length > 0) blocks.push({ lines, box: rectOf(field(block, 'bbox')) });
+    },
+  });
+  return { blocks, images };
 }
 
 /** Every line of a page, in reading order, with its block boundaries dropped. */
@@ -411,4 +497,111 @@ export function linesOf(page: PageText): readonly TextLine[] {
  */
 export function plainTextOf(page: PageText): string {
   return page.blocks.map((block) => block.lines.map((line) => line.text).join('\n')).join('\n\n');
+}
+
+/**
+ * The raw name MuPDF gives the structure blocks `FZ_STEXT_SEGMENT` makes.
+ *
+ * **Segmentation's, not the document's.** Measured 2026-09-14 under the structure
+ * read over the whole corpus, first five pages of each document: on every page of
+ * the seven untagged documents every structure block is raw `Split`, standard
+ * `Div`, and on every page of the four tagged ones not one is. A generated
+ * untagged two-column page gives three `Split` blocks and its tagged twin none.
+ *
+ * **Stated limit:** a document that names one of its own elements `Split` has that
+ * element read as segmentation's, and its children appear one level up. The raw
+ * name is the only thing that separates the two in MuPDF's output.
+ */
+export const SEGMENTATION_RAW_ROLE = 'Split';
+
+/** One element of a tagged page's structure, in tree order. */
+export interface StructureNode {
+  /**
+   * The standard role — `P`, `H1`, `Table` — as MuPDF resolved it through the
+   * document's role map. Empty where it gave none.
+   */
+  readonly role: string;
+  /** The document's own name for the element, before the role map. */
+  readonly raw: string;
+  /** Nesting depth: zero for an element with no tagged ancestor on this page. */
+  readonly depth: number;
+  /** Text lines directly inside this element, not inside a tagged child of it. */
+  readonly lines: number;
+}
+
+/** A page's structure as the engine read it under the structure read. */
+export interface PageStructure {
+  /**
+   * The elements, in PREORDER — which is the structure tree's order, and the order
+   * a reader of a tagged document is meant to follow. Flat with a depth, so a
+   * consumer indents rather than rebuilding a tree.
+   */
+  readonly nodes: readonly StructureNode[];
+  /** Text lines on the page inside no tagged element. */
+  readonly untaggedLines: number;
+  /** Image blocks, for {@link PageText.images}' reason. */
+  readonly images: number;
+}
+
+/**
+ * MuPDF's structured-text JSON under the `structure` read, as the elements it
+ * carries.
+ *
+ * The other view over {@link walkBlocks}: nothing here re-reads a line or re-sorts
+ * an element, so the order is the engine's and the lines are the ones
+ * {@link parsePageText} would find in the same payload.
+ *
+ * **No text leaves.** A node carries a role, a name, a depth and a count — which is
+ * what an inspection of a page's tagging shows, and what lets the answer cross to
+ * the renderer without a page's words
+ * ([ADR-0035](../../../docs/DECISIONS/0035-extracted-text-is-never-resident-in-main.md)).
+ *
+ * @param json the payload from the engine's structured-text call under `structure`
+ * @throws for {@link parsePageText}'s reasons
+ */
+export function parsePageStructure(json: string): PageStructure {
+  const found: { role: string; raw: string; depth: number; lines: number }[] = [];
+  // ONE ENTRY PER OPEN BLOCK, `null` for a block that is not an element — so
+  // `leave` knows whether the block it closes moved the depth.
+  const open: (number | null)[] = [];
+  let depth = 0;
+  let untaggedLines = 0;
+  let images = 0;
+
+  walkBlocks(blocksOf(json), {
+    enter: (block) => {
+      const raw = str(field(block, 'raw'));
+      if (str(field(block, 'type')) !== 'structure' || raw === SEGMENTATION_RAW_ROLE) {
+        open.push(null);
+        return;
+      }
+      found.push({ role: str(field(block, 'std')) ?? '', raw: raw ?? '', depth, lines: 0 });
+      open.push(found.length - 1);
+      depth += 1;
+    },
+    leave: () => {
+      const closed = open.pop();
+      if (closed !== null && closed !== undefined) depth -= 1;
+    },
+    image: () => {
+      images += 1;
+    },
+    text: (_block, lines) => {
+      // THE NEAREST OPEN ELEMENT owns the lines: a segmentation block between
+      // them is walked through, not counted as a parent.
+      let owner: number | undefined;
+      for (let at = open.length - 1; at >= 0; at -= 1) {
+        const index = open[at];
+        if (index !== null && index !== undefined) {
+          owner = index;
+          break;
+        }
+      }
+      const element = owner === undefined ? undefined : found[owner];
+      if (element === undefined) untaggedLines += lines.length;
+      else element.lines += lines.length;
+    },
+  });
+
+  return { nodes: found, untaggedLines, images };
 }

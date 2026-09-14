@@ -184,6 +184,21 @@ const handlers: ContractHandlers = {
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 5, characters: 27, charactersNoSpaces: 23 }),
     ),
+  // TWO ELEMENTS WITH DIFFERENT NAMES AND DEPTHS, and every count non-zero and
+  // distinct, so a boundary that dropped a field or a node is visible.
+  'document.pageStructure': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        nodes: [
+          { role: 'H1', raw: 'Heading1', depth: 0, lines: 1 },
+          { role: 'P', raw: 'Body', depth: 1, lines: 3 },
+        ],
+        truncated: true,
+        untaggedLines: 2,
+        images: 4,
+      }),
+    ),
   // ONE OF EACH KIND, for the search fixture's reason: a list holding only
   // internal links would let a boundary that dropped the external branch pass,
   // and the external branch is the one invariant 24 rests on.

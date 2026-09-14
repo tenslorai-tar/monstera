@@ -112,8 +112,10 @@ import { showAboutCommand } from './commands/showAbout.js';
 import { showSettingsCommand } from './commands/showSettings.js';
 import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
+import { inspectPageStructureCommand } from './commands/inspectPageStructure.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
+import { PAGE_STRUCTURE_DIALOG } from './dialogs/pageStructure.js';
 import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
 import { OCR_DIALOG } from './dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
@@ -383,6 +385,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       new DialogRegistry([
         ABOUT_DIALOG,
         WORD_COUNT_DIALOG,
+        PAGE_STRUCTURE_DIALOG,
         SPELL_CHECK_DIALOG,
         OCR_DIALOG,
         OCR_OUTCOME_DIALOG,
@@ -1438,6 +1441,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           },
         }),
         showWordCountCommand({ client, ask, track }),
+        inspectPageStructureCommand({ client, ask }),
         // TAKES THE SETTINGS STORE, which no other command here does. The
         // personal dictionary is what makes this feature manageable rather than
         // fixed, and it is a preference rather than document state — so it

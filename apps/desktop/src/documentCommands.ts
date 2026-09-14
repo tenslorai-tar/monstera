@@ -11,6 +11,8 @@ import {
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
   MAX_IMPORT_IMAGE_PIXELS,
+  MAX_STRUCTURE_NAME,
+  MAX_STRUCTURE_NODES,
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
   type ComposeRefusal,
@@ -39,7 +41,9 @@ import {
   type ListedField,
   type Layer,
   type PageLink,
+  type PageStructure,
   type PageText,
+  type StructureOutline,
   type RecognitionRequest,
   type RecognisedPage,
   type SaveDependencies,
@@ -58,6 +62,7 @@ import {
   countPageWords,
   findInPages,
   plainTextOf,
+  structureOutlineOf,
   textLayerOf,
   saveDocument,
   type SplitOutcome,
@@ -977,6 +982,20 @@ export type DocumentPageText = (
 ) => Promise<PageText>;
 
 /**
+ * Reads one page's tagged structure.
+ *
+ * Injected for {@link DocumentPageText}'s reason, and one page for the same one. It
+ * answers a PARSED structure, so this module holds no reader of MuPDF's format:
+ * `parsePageStructure` runs where `parsePageText` does, over the same walk
+ * ([ADR-0065](../../../docs/DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)).
+ */
+export type DocumentPageStructure = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<PageStructure>;
+
+/**
  * Reads one page's links.
  *
  * Injected for {@link DocumentPageText}'s reason: this module names no engine,
@@ -1431,6 +1450,11 @@ export interface PageWordCountResult extends WordCount {
   readonly version: DocVersion;
 }
 
+/** One page's tagged structure, bounded, stamped with the version the lane read it at. */
+export interface PageStructureResult extends StructureOutline {
+  readonly version: DocVersion;
+}
+
 /** One page's selectable text, stamped with the version the lane read it at. */
 export interface PageTextLayerResult {
   readonly version: DocVersion;
@@ -1511,6 +1535,8 @@ export interface DocumentCommandsParts {
   readonly save: SaveSource;
   readonly geometry: DocumentGeometry;
   readonly pageText: DocumentPageText;
+  /** The `structure` read of one page — `pageStructure`'s (ADR-0065). */
+  readonly pageStructure: DocumentPageStructure;
   readonly pageLinks: DocumentPageLinksReader;
   readonly destinations: DocumentDestinationsReader;
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
@@ -1594,6 +1620,7 @@ export class DocumentCommands {
   readonly #save: SaveSource;
   readonly #geometry: DocumentGeometry;
   readonly #pageText: DocumentPageText;
+  readonly #pageStructure: DocumentPageStructure;
   readonly #pageLinks: DocumentPageLinksReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
@@ -1644,6 +1671,7 @@ export class DocumentCommands {
     this.#save = parts.save;
     this.#geometry = parts.geometry;
     this.#pageText = parts.pageText;
+    this.#pageStructure = parts.pageStructure;
     this.#pageLinks = parts.pageLinks;
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
@@ -1869,6 +1897,41 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       return countPageWords(await this.#pageText(docId, sessions, page));
+    });
+
+    return { version, ...value };
+  }
+
+  /**
+   * One page's tagged structure, bounded.
+   *
+   * ## In the LANE, through the host's second named read of the same page
+   *
+   * `#pageStructure` asks the host for the `structure` read — the shared option set
+   * plus `structured` — where `#pageText` asks for the shared one
+   * ([ADR-0065](../../../docs/DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)).
+   * Same channel, same walk; what leaves the lane is a role, a name, a depth and a
+   * count per element, and the page's words are dropped inside it.
+   *
+   * The version comes back with the answer for `pageTextLayer`'s reason: an
+   * outline of a page the document no longer has is one a renderer must discard.
+   *
+   * @param page the zero-based index, as every page index crossing the contract is
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async pageStructure(docId: DocId, page: number): Promise<PageStructureResult> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return structureOutlineOf(
+        await this.#pageStructure(docId, sessions, page),
+        MAX_STRUCTURE_NODES,
+        MAX_STRUCTURE_NAME,
+      );
     });
 
     return { version, ...value };

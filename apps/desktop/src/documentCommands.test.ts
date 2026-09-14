@@ -26,6 +26,7 @@ import {
   EngineSessionGone,
   type MupdfSession,
   nodeFileSurface,
+  parsePageStructure,
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -51,6 +52,7 @@ import {
   readLayers,
   readPageLinks,
   readPageText,
+  readPageTextJson,
   detectFlatFields,
   readFormData,
   serialiseFormData,
@@ -95,6 +97,7 @@ import {
   type DocumentFormFieldsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
+  type DocumentPageStructure,
   DocumentPoisonedError,
   type DocumentRestore,
   MissingSessionError,
@@ -249,6 +252,9 @@ const localGeometry: DocumentGeometry = (id, sessions, pages) => {
 /** Refuses, for {@link noGeometry}'s reason: a case must say it reads text. */
 const noPageText: DocumentPageText = () =>
   Promise.reject(new Error('this case does not read page text'));
+
+const noPageStructure: DocumentPageStructure = () =>
+  Promise.reject(new Error('this case does not read page structure'));
 
 const noPageLinks: DocumentPageLinksReader = () =>
   Promise.reject(new Error('this case does not read page links'));
@@ -484,6 +490,18 @@ const localPageText: DocumentPageText = async (id, sessions, page) => {
 };
 
 /**
+ * The production composition of the structure read, the way `composition.ts`
+ * assembles it — the host's own reader under the `structure` name, then the one
+ * walk. The real reader for `localPageText`'s reason: what the structure cases
+ * claim is about the tags IN the document.
+ */
+const localPageStructure: DocumentPageStructure = async (id, sessions, page) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return parsePageStructure(await readPageTextJson(held, page, 'structure'));
+};
+
+/**
  * The production composition of the link read, the way `composition.ts`
  * assembles it — a session lookup and `readPageLinks`.
  *
@@ -548,6 +566,7 @@ const INERT = {
   },
   geometry: noGeometry,
   pageText: noPageText,
+  pageStructure: noPageStructure,
   pageLinks: noPageLinks,
   destinations: noDestinations,
   // REFUSES IN BOTH SETS, for the reason `textLines` gives below: recognition is
@@ -606,6 +625,7 @@ const LOCAL_READS = {
   ...INERT,
   geometry: localGeometry,
   pageText: localPageText,
+  pageStructure: localPageStructure,
   pageLinks: localPageLinks,
   destinations: localDestinations,
   layers: localLayers,
@@ -1290,6 +1310,120 @@ describe('search is E2s first consumer, through the composition point', () => {
  * So this drives the real `DocumentCommands` against a real session, writes
  * two formats to two files, and reads what landed.
  */
+describe('pageStructure — a tagged page’s elements, never its words (ADR-0065)', () => {
+  /**
+   * One page whose structure tree lists its second-drawn paragraph FIRST.
+   *
+   * Assembled by hand because pdf-lib writes no marked content. These are the
+   * objects the 2026-09-14 probe read MuPDF 1.28.0's tree order from: stream order
+   * is *drawn first, drawn second*, and the tree says the reverse.
+   */
+  function taggedPdf(): Uint8Array {
+    const content =
+      '/P <</MCID 0>> BDC BT /F1 14 Tf 72 200 Td (drawn first) Tj ET EMC\n' +
+      '/P <</MCID 1>> BDC BT /F1 14 Tf 72 600 Td (drawn second) Tj ET EMC\n';
+    const objects = [
+      '<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /StructTreeRoot 5 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R /StructParents 0 >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+      '<< /Type /StructTreeRoot /K 6 0 R /ParentTree << /Nums [0 [9 0 R 8 0 R]] >> >>',
+      '<< /Type /StructElem /S /Document /P 5 0 R /K [8 0 R 9 0 R] >>',
+      `<< /Length ${String(content.length)} >>\nstream\n${content}endstream`,
+      '<< /Type /StructElem /S /P /P 6 0 R /Pg 3 0 R /K 1 >>',
+      '<< /Type /StructElem /S /P /P 6 0 R /Pg 3 0 R /K 0 >>',
+    ];
+    let body = '%PDF-1.7\n';
+    const offsets: number[] = [];
+    for (const [index, object] of objects.entries()) {
+      offsets.push(body.length);
+      body += `${String(index + 1)} 0 obj\n${object}\nendobj\n`;
+    }
+    const xref = body.length;
+    body += `xref\n0 ${String(objects.length + 1)}\n0000000000 65535 f \n`;
+    for (const offset of offsets) body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+    body += `trailer\n<< /Size ${String(objects.length + 1)} /Root 1 0 R >>\nstartxref\n${String(xref)}\n%%EOF\n`;
+    return new TextEncoder().encode(body);
+  }
+
+  let tagged: DocId;
+  let taggedSession: MupdfSession;
+  let untagged: DocId;
+  let untaggedSession: MupdfSession;
+  let structureService: DocumentService;
+
+  beforeAll(async () => {
+    const registry = new CapabilityRegistry();
+    structureService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+
+    const taggedBytes = taggedPdf();
+    const taggedPath = join(directory, 'tagged.pdf');
+    writeFileSync(taggedPath, taggedBytes);
+    const openedTagged = await structureService.open(registry.mint(taggedPath));
+    if (openedTagged.kind !== 'opened') throw new Error(`Fixture did not open: ${openedTagged.kind}`);
+    tagged = openedTagged.docId;
+    taggedSession = await mupdfWriter.open(taggedBytes);
+
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    document.addPage([612, 792]).drawText('an untagged line', { x: 72, y: 700, size: 12, font });
+    const untaggedBytes = await document.save({ useObjectStreams: false });
+    const untaggedPath = join(directory, 'untagged.pdf');
+    writeFileSync(untaggedPath, untaggedBytes);
+    const openedUntagged = await structureService.open(registry.mint(untaggedPath));
+    if (openedUntagged.kind !== 'opened') {
+      throw new Error(`Fixture did not open: ${openedUntagged.kind}`);
+    }
+    untagged = openedUntagged.docId;
+    untaggedSession = await mupdfWriter.open(untaggedBytes);
+  });
+
+  function structureCommands(): DocumentCommands {
+    const held = new EngineSessions();
+    held.hold(tagged, { mupdf: taggedSession });
+    held.hold(untagged, { mupdf: untaggedSession });
+    return new DocumentCommands({
+      ...LOCAL_READS,
+      documents: structureService,
+      bus: bus(),
+      engine: held,
+    });
+  }
+
+  it('answers the elements in TREE order, each with its own lines', async () => {
+    const answer = await structureCommands().pageStructure(tagged, 0);
+
+    expect(answer.nodes).toStrictEqual([
+      { role: 'Document', raw: 'Document', depth: 0, lines: 0 },
+      { role: 'P', raw: 'P', depth: 1, lines: 1 },
+      { role: 'P', raw: 'P', depth: 1, lines: 1 },
+    ]);
+    expect(answer.untaggedLines).toBe(0);
+    expect(answer.truncated).toBe(false);
+  });
+
+  it('CONTROL: the same lane’s TEXT read of that page follows the stream, not the tree', async () => {
+    // What separates the two reads. If the substrate read also followed the tree,
+    // an answer above could have come from either name, and a reader that asked
+    // for the wrong one would pass.
+    const found = await structureCommands().searchPage(tagged, 0, 'drawn', 10);
+    expect(found.matches.map((match) => match.text)).toStrictEqual(['drawn first', 'drawn second']);
+  });
+
+  it('carries NONE of the page’s words', async () => {
+    // The control above shows the page does hold `drawn`, so an absence here is
+    // the lane dropping the text rather than a page with none (ADR-0035).
+    const answer = await structureCommands().pageStructure(tagged, 0);
+    expect(JSON.stringify(answer)).not.toContain('drawn');
+  });
+
+  it('an untagged page answers no elements, and counts its line as outside every tag', async () => {
+    const answer = await structureCommands().pageStructure(untagged, 0);
+    expect(answer.nodes).toStrictEqual([]);
+    expect(answer.untaggedLines).toBe(1);
+  });
+});
+
 describe('the form data export carries the format all the way to the file', () => {
   let formDoc: DocId;
   let formSession: MupdfSession;

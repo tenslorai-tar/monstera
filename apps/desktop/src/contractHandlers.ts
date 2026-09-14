@@ -298,6 +298,7 @@ export function createContractHandlers(deps: {
     'document.searchPage': searchPageHandler(deps.commands),
     'document.pageTextLayer': pageTextLayerHandler(deps.commands),
     'document.pageWordCount': pageWordCountHandler(deps.commands),
+    'document.pageStructure': pageStructureHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
@@ -1389,6 +1390,35 @@ function pageWordCountHandler(
         page,
       );
       return ok({ version, words, characters, charactersNoSpaces });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * One page's tagged structure.
+ *
+ * Its own four lines of `catch` for `pageWordCountHandler`'s reason. The fields are
+ * named rather than spread, so a field the lane adds later is a compile error here
+ * rather than something that crosses without the schema having been read.
+ */
+function pageStructureHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.pageStructure'] {
+  return async ({
+    docId,
+    page,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.pageStructure']>>> => {
+    try {
+      const { version, nodes, truncated, untaggedLines, images } = await commands.pageStructure(
+        docId,
+        page,
+      );
+      return ok({ version, nodes, truncated, untaggedLines, images });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

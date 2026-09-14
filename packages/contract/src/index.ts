@@ -34,6 +34,8 @@ export {
   // would be the number this channel refuses on, written twice.
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
+  MAX_STRUCTURE_NAME,
+  MAX_STRUCTURE_NODES,
   MAX_TEXT_LAYER_LINE,
   MAX_TEXT_LAYER_LINES,
   // NAMED BECAUSE THE KERNEL SEAM NOW READS IT TOO. ADR-0040's extension hands

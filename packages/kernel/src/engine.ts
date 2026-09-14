@@ -7,7 +7,7 @@ export {
 } from './rotatePages.js';
 export { commandSpecs, declaredSpecs, localMupdfExecution } from './commandSpecs.js';
 export { readPageGeometry } from './pageGeometry.js';
-export { readPageText, type PageTextResult } from './pageText.js';
+export { readPageText, readPageTextJson, type PageTextResult } from './pageText.js';
 export {
   applyAddLink,
   captureAddLink,

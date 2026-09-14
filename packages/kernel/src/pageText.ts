@@ -2,7 +2,12 @@ import type * as mupdf from 'mupdf';
 
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
-import { type PageText, STEXT_OPTION_STRING, parsePageText } from './textStructure.js';
+import {
+  type PageText,
+  type PageTextRead,
+  parsePageText,
+  stextOptionsFor,
+} from './textStructure.js';
 
 /**
  * One page's text, read from a live session through the engine's own
@@ -69,7 +74,9 @@ export function readPageText(
       }
     }
 
-    const read = pages.map((number) => parsePageText(structuredJson(document, number)));
+    const read = pages.map((number) =>
+      parsePageText(structuredJson(document, number, 'substrate')),
+    );
 
     return { pageCount, pages: read };
   });
@@ -86,8 +93,16 @@ export function readPageText(
  * The page index is validated the same way {@link readPageText} validates its
  * array: a page outside the document is a `RangeError`, never an empty answer,
  * because empty is what a consumer reads as *no text here*.
+ *
+ * @param read which named read — the NAME crosses from main, and the option string
+ *   is composed here from it, so no request can carry an option of its own
+ *   ([ADR-0065](../../../docs/DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)).
  */
-export function readPageTextJson(session: MupdfSession, page: number): Promise<string> {
+export function readPageTextJson(
+  session: MupdfSession,
+  page: number,
+  read: PageTextRead,
+): Promise<string> {
   return withDocument(session, (document) => {
     const pageCount = document.countPages();
     if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
@@ -96,7 +111,7 @@ export function readPageTextJson(session: MupdfSession, page: number): Promise<s
           'page(s). Page indices are zero-based.',
       );
     }
-    return structuredJson(document, page);
+    return structuredJson(document, page, read);
   });
 }
 
@@ -111,9 +126,10 @@ export function readPageTextJson(session: MupdfSession, page: number): Promise<s
  *
  * @param document the open document, inside a `withDocument`
  * @param page a zero-based index the caller has already validated
+ * @param read the named read, whose option string the substrate composes
  */
-function structuredJson(document: mupdf.PDFDocument, page: number): string {
-  const structured = document.loadPage(page).toStructuredText(STEXT_OPTION_STRING);
+function structuredJson(document: mupdf.PDFDocument, page: number, read: PageTextRead): string {
+  const structured = document.loadPage(page).toStructuredText(stextOptionsFor(read));
   try {
     return structured.asJSON();
   } finally {

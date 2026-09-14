@@ -1208,6 +1208,10 @@ export const handlers: ContractHandlers = {
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
     ),
+  'document.pageStructure': () =>
+    Promise.resolve(
+      ok({ version: asDocVersion(1), nodes: [], truncated: false, untaggedLines: 0, images: 0 }),
+    ),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
@@ -1320,6 +1324,10 @@ export const handlers: ContractHandlers = {
   'document.pageWordCount': () =>
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+    ),
+  'document.pageStructure': () =>
+    Promise.resolve(
+      ok({ version: asDocVersion(1), nodes: [], truncated: false, untaggedLines: 0, images: 0 }),
     ),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
@@ -1508,6 +1516,10 @@ export const shim: ContractClient = {
   'document.pageWordCount': () =>
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+    ),
+  'document.pageStructure': () =>
+    Promise.resolve(
+      ok({ version: asDocVersion(1), nodes: [], truncated: false, untaggedLines: 0, images: 0 }),
     ),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>

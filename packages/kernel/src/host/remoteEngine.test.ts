@@ -20,6 +20,7 @@ import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
+import { linesOf, parsePageStructure, parsePageText } from '../textStructure.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import {
@@ -27,6 +28,7 @@ import {
   EngineSessionGone,
   remoteMupdfExecution,
   remoteMupdfGeometry,
+  remoteMupdfPageText,
   type SessionAssets,
   UnknownRemoteSession,
 } from './remoteEngine.js';
@@ -48,12 +50,51 @@ import {
  */
 
 let flat: ByteImage;
+let tagged: ByteImage;
 
 beforeAll(async () => {
   const document = await PDFDocument.create();
   for (let index = 0; index < 3; index += 1) document.addPage([612, 792]);
   flat = await document.save();
+  tagged = taggedPdf();
 });
+
+/**
+ * One tagged page whose structure tree lists its second-drawn paragraph FIRST.
+ *
+ * Assembled by hand because pdf-lib writes no marked content. These are the
+ * objects the 2026-09-14 probe read MuPDF 1.28.0's tree order from: the stream
+ * draws *drawn first* then *drawn second*, and the tree says the reverse — so the
+ * two reads of this page disagree about order, which is what lets a case tell
+ * which one crossed.
+ */
+function taggedPdf(): ByteImage {
+  const content =
+    '/P <</MCID 0>> BDC BT /F1 14 Tf 72 200 Td (drawn first) Tj ET EMC\n' +
+    '/P <</MCID 1>> BDC BT /F1 14 Tf 72 600 Td (drawn second) Tj ET EMC\n';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /StructTreeRoot 5 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R /StructParents 0 >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /StructTreeRoot /K 6 0 R /ParentTree << /Nums [0 [9 0 R 8 0 R]] >> >>',
+    '<< /Type /StructElem /S /Document /P 5 0 R /K [8 0 R 9 0 R] >>',
+    `<< /Length ${String(content.length)} >>\nstream\n${content}endstream`,
+    '<< /Type /StructElem /S /P /P 6 0 R /Pg 3 0 R /K 1 >>',
+    '<< /Type /StructElem /S /P /P 6 0 R /Pg 3 0 R /K 0 >>',
+  ];
+  let body = '%PDF-1.7\n';
+  const offsets: number[] = [];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(body.length);
+    body += `${String(index + 1)} 0 obj\n${object}\nendobj\n`;
+  }
+  const xref = body.length;
+  body += `xref\n0 ${String(objects.length + 1)}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${String(objects.length + 1)} /Root 1 0 R >>\nstartxref\n${String(xref)}\n%%EOF\n`;
+  return new TextEncoder().encode(body);
+}
 
 /**
  * A token stands for a handle AND an area since ADR-0030 Decision 2.
@@ -107,16 +148,17 @@ const rotationOf = (session: MupdfSession): Promise<number | null> =>
  * this side* from *refused by the host* — two outcomes that produce the same
  * rejection otherwise.
  */
-async function joined(): Promise<{
+async function joined(bytes: ByteImage = flat): Promise<{
   readonly session: MupdfSession;
   readonly token: MupdfSession;
   readonly remote: ReturnType<typeof remoteMupdfExecution>;
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
+  readonly pageText: ReturnType<typeof remoteMupdfPageText>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
   readonly requests: () => number;
   readonly incidents: readonly Incident[];
 }> {
-  const session = await mupdfWriter.open(flat);
+  const session = await mupdfWriter.open(bytes);
   const held = new Map<string, HostSession>([
     [
       'h1',
@@ -228,6 +270,7 @@ async function joined(): Promise<{
     token: sessions.adopt('h1', AREA),
     remote: remoteMupdfExecution(client, sessions, NO_ASSETS),
     geometry: remoteMupdfGeometry(client, sessions),
+    pageText: remoteMupdfPageText(client, sessions),
     sessions,
     requests: () => requests,
     incidents,
@@ -257,6 +300,48 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageCount: 3,
         rotations: [0, 0, 0],
       });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the TEXT read crosses under the NAME asked for, and the host composes the options', async () => {
+    const { session, token, pageText } = await joined(tagged);
+    try {
+      const structure = await pageText(token, 0, 'structure');
+      const substrate = await pageText(token, 0, 'substrate');
+
+      // THE STRUCTURE READ carries the document's tags, in the tree's order.
+      expect(parsePageStructure(structure).nodes.map((node) => node.role)).toStrictEqual([
+        'Document',
+        'P',
+        'P',
+      ]);
+      expect(linesOf(parsePageText(structure)).map((line) => line.text)).toStrictEqual([
+        'drawn second',
+        'drawn first',
+      ]);
+
+      // AND THE SUBSTRATE READ of the same page carries none of them and follows
+      // the stream. Without this half, a host that ignored the name and always
+      // asked for `structured` would pass the half above.
+      expect(parsePageStructure(substrate).nodes).toStrictEqual([]);
+      expect(linesOf(parsePageText(substrate)).map((line) => line.text)).toStrictEqual([
+        'drawn first',
+        'drawn second',
+      ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a read that is not one of the named two is refused, not handed to the engine', async () => {
+    const { session, token, pageText } = await joined(tagged);
+    try {
+      // AN OPTION STRING, which is exactly what the closed set exists to keep off
+      // the wire — and one MuPDF would accept, so a refusal here is the schema's
+      // and not the engine's.
+      await expect(pageText(token, 0, 'segment,structured' as never)).rejects.toThrow();
     } finally {
       await mupdfWriter.close(session);
     }

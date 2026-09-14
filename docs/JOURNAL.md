@@ -892,6 +892,67 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Reading-order / tagged-PDF inspection: the engine's structure, one page, no words
+
+The design decision came first, in its own commit: `ac06032` (ADR-0065, a §3 row, the §3.2 opt-in, the
+amendment log and the ADR index). Its board was green at 11:23:02.
+
+### Measured before wiring (scratch probes, MuPDF 1.28.0, corpus names withheld)
+
+- **Comparing order line by line would give false answers.** The structure read was set against the shared read,
+  both through `parsePageText`, on the 12 tagged corpus pages carrying text. The characters were identical on all
+  12. The same set of lines appeared on only 4. The sequence differed on all 12. The control was a generated page
+  holding the same lines in a different order. So ADR-0065 Decision 5 is not built, and the ADR carries a dated
+  correction.
+- **The raw name separates segmentation's blocks from the document's tags.** Under the structure read, every
+  structure block on every page of the 7 untagged documents is raw `Split`, standard `Div`. None of the 4 tagged
+  documents has one. A generated untagged two-column page gives 3 `Split` blocks, and its tagged twin gives 0. The
+  view walks through them. Stated limit: a document that names one of its own elements `Split`.
+
+### Built
+
+- **Kernel:**
+  - `STEXT_OPTIONS.structured`.
+  - The closed `PAGE_TEXT_READS` and `stextOptionsFor`.
+  - **One `walkBlocks`** under both `parsePageText` and `parsePageStructure`.
+  - `structureOutlineOf` bounds the result.
+  - `readPageTextJson` takes the read's name.
+- **Host channel:** `engine/page-text` gains a required `read` enum.
+- **Renderer contract:** `document.pageStructure` carries roles, raw names, depth and line counts, and never text.
+  Its bounds are `MAX_STRUCTURE_NODES` (4096; the densest corpus page has 129) and `MAX_STRUCTURE_NAME` (128).
+- **Main:** the lane method, its handler and the composition reader.
+- **Registries:** the shim and its list, payload bounds, the contract proof's three tables, and the channel fixture.
+- **UI:** Review › Accessibility › *Reading order*.
+  - It reads one page, the one on screen. The request carries the zero-based index, and the dialog shows the page
+    number from `pdfjsPageOf`.
+  - The dialog lists the tree indented by depth. It also shows the lines outside every tag, the images, and whether
+    the list was cut short.
+  - A refusal still opens the dialog, and says the page could not be read.
+
+### Mutations (each restored after its run; the five touched test files, 128 cases)
+
+| | mutation | red |
+|---|---|---|
+| A | structure read loses `structured` | named-reads set case; remote host named read; lane tree order — 3, all targets |
+| B | `Split` no longer walked through | substrate untagged and depth cases; remote host named read; lane untagged — 4, all targets |
+| C | host handler ignores `read` (always `structure`) | remote host named read — 1, its target; the lane cases use the local reader and are not its subject |
+| D | command sends the printed page number | the case naming both numbers — 1, its target |
+| E | outline truncation at `>=` | the exactly-at-the-limit case — 1, its target |
+
+### Found on the way
+
+- `remoteEngine.test.ts` said *"so the text case below is about what the HOST's document says"*. No case in the
+  file drove `engine/page-text`, and no test anywhere called `remoteMupdfPageText`. The two new cases make the
+  comment true.
+- `textStructure.test.ts` said an unknown stext option is *IGNORED rather than refused*. It throws, measured
+  2026-09-14 (ADR-0013's correction). Corrected in place, because a test comment is not a record.
+
+### Not done
+
+- There is no comparison of structure order against drawing order (see above).
+- The inspection reads one page at a time; there is no whole-document report.
+- The accessibility check still waits on the owner's choice of standard.
+
 ## 2026-09-14 — Text extraction, plain: one page read, written and dropped before the next
 
 D10's text-extraction row, its plain half. Home › File gains *Export text…*, which writes the
