@@ -29,6 +29,7 @@ import {
   mergeDocumentSchema,
   movePageSchema,
   ocrLanguageSchema,
+  PAGE_IMAGE_FORMATS,
   trocrSizeSchema,
   placeAnnotationSchema,
   styleAnnotationSchema,
@@ -1792,6 +1793,33 @@ export const engineChannels = {
       })
       .strict(),
     ['no-such-session', 'snapshot-failed'],
+  ),
+
+  /**
+   * One whole page, rasterised and encoded into the output directory.
+   *
+   * `engine/snapshotRegion`'s route and its reason: the raster is built where
+   * MuPDF is and never crosses, so what travels is a page, a format, two numbers
+   * and a count. One page per call, because an export of a long document writes
+   * one file at a time and holding every page's image at once is the
+   * document-scaled allocation `writeDocumentSplit` exists to avoid.
+   */
+  'engine/pageImage': channel(
+    'Rasterises one page to a PNG or JPEG in the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        format: z.enum(PAGE_IMAGE_FORMATS),
+        /** Device pixels per PDF point. The kernel holds the bounds. */
+        scale: z.number().positive(),
+        quality: z.number().int(),
+        into: outputNameSchema,
+      })
+      .strict(),
+    // A COUNT, for `engine/serialise`'s reason.
+    z.object({ bytes: z.number().int().nonnegative() }).strict(),
+    ['no-such-session', 'page-image-failed'],
   ),
 
   /**

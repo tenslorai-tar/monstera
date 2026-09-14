@@ -41,6 +41,11 @@ import {
   fileHandleSchema,
   COMPOSE_REFUSALS,
   URL_FETCH_REFUSALS,
+  PAGE_IMAGE_FORMATS,
+  MIN_PAGE_IMAGE_DPI,
+  MAX_PAGE_IMAGE_DPI,
+  MIN_JPEG_QUALITY,
+  MAX_JPEG_QUALITY,
 } from './schemas.js';
 
 /**
@@ -1714,6 +1719,45 @@ export const channels = {
         .min(1)
         .max(MAX_SPLIT_PARTS),
     }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('split'), files: z.number().int().positive() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Writes each named page as a PNG or JPEG in a folder the user picks —
+   * D10's *Pages → PNG / JPEG*.
+   *
+   * ## `document.split`'s shape, one image per page
+   *
+   * A folder, for the split's reason: an export of every page is the ordinary
+   * case and there is no save dialog for several files. Main derives the names
+   * and every one is checked before anything is written. The answer is split's
+   * four outcomes, and `files` is what a person will look for in the folder.
+   *
+   * ## The ask is pages and three numbers; the images never cross
+   *
+   * The pages are bounded by {@link MAX_SPLIT_PARTS}, since one page is one
+   * file. DPI and quality are bounded here as well as in the host, so a
+   * renderer asking for a scale the host would refuse is refused at the
+   * boundary it crossed rather than one page into the write.
+   */
+  'document.exportPageImages': channel(
+    'Writes each named page as a PNG or JPEG in a folder the user picks.',
+    z
+      .object({
+        docId: docIdSchema,
+        /** Zero-based page indices, one file each. */
+        pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_SPLIT_PARTS),
+        format: z.enum(PAGE_IMAGE_FORMATS),
+        dpi: z.number().int().min(MIN_PAGE_IMAGE_DPI).max(MAX_PAGE_IMAGE_DPI),
+        quality: z.number().int().min(MIN_JPEG_QUALITY).max(MAX_JPEG_QUALITY),
+      })
+      .strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('split'), files: z.number().int().positive() }),
       z.object({ kind: z.literal('cancelled') }),

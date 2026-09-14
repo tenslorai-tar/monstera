@@ -892,6 +892,106 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Pages as PNG or JPEG: the split's folder write, with MuPDF's image where a document was
+
+D10's first row, its PNG and JPEG halves. Organize › Pages gains *Export pages as
+images…*. A person chooses every page or typed ranges, a format, a resolution and, for a
+JPEG, a quality. Main then asks for a folder and writes one file per page, named like
+`report 3.png`.
+
+### No B4, and why
+
+`docs/ARCHITECTURE.md` §3 already reads `Print & export rasterisation | MuPDF`, and
+MuPDF 1.28.0's pixmap encodes both formats itself. The route is the region snapshot's: the
+host rasterises and writes into the granted directory, and main reads the file and checks
+its size against the count the host reported. The folder write is the split's:
+`writeDocumentSplit` checks every derived name before the first file lands.
+
+### WebP is blocked, not built
+
+Measured 2026-09-14: MuPDF's pixmap offers `asPNG`, `asJPEG`, `asPSD` and `asPAM`, and
+Electron's `nativeImage` offers only PNG and JPEG. `sharp` is a devDependency used only by
+scripts, so shipping it would make native code a production dependency, which is a
+decision rather than a detail. Two WASM encoders exist on npm (`@jsquash/webp` 1.5.0,
+Apache-2.0; `wasm-webp` 0.1.0, MIT). Measuring either needs a download outside the owner's
+consents, so it is an owner question. The format list in `schemas.ts` is additive: WebP is
+one member there and one kernel branch.
+
+### Measured before the module was written
+
+A scratch probe used a 200×200 page with blue content and a red Square annotation that
+has an appearance stream. Red pixels counted:
+
+| route | red pixels |
+|---|---|
+| `toPixmap(…, showExtras=true)` | **4096** |
+| `toPixmap(…, showExtras=false)` | **0** |
+| the snapshot's own `page.run` | **4096** |
+
+The same held after save and reopen, and the blue content counted **3600** in all six. So
+the export draws annotations, as the snapshot does.
+
+**The probe's first pass read one pixel and got white in every mode.** A MuPDF
+annotation's `setRect` is in its top-down page space, and the sample was taken at the PDF
+y. A point sample in the wrong frame reads exactly like *not drawn*, so the tests count
+pixels instead.
+
+### A comment whose arithmetic was backwards
+
+`MAX_SNAPSHOT_PIXELS` said an A4 page at 600 dpi *"is about 35 megapixels, so the bound is
+well clear"*. That is 35 against 32, the wrong way round. It did not matter for a dragged
+region, but a whole A4 page at scale 8 is 4763×6736 = 32,083,568 and is refused, while US
+Letter is 31,021,056 and is not. The comment now carries a dated correction with both
+figures, and a case asserts that the A4 refusal names its count.
+
+### Proven
+
+- **`pageImages.test.ts`, 9 cases:**
+  - the PNG signature, and the IHDR size at scale 2;
+  - the content square counted exactly;
+  - `/Rotate 90` turning the image;
+  - annotations drawn, with a content control;
+  - the JPEG signature, and quality reaching the encoder;
+  - refusals for a missing page, a scale at either end (with the bounds themselves
+    admitted), a quality, the A4 pixel count and a page with no box.
+- **`remoteLifecycle.test.ts`:** the channel's round trip for PNG and JPEG, the granted
+  directory empty afterwards, and a missing page answered as `page-image-failed`. It is
+  written in this commit so the channel cannot arrive the way `engine/exportFormData` did,
+  with a dependency filled in and no case calling it.
+- **Main, against the real engine and the real write path:**
+  - JPEG pages 1 and 3 written, and page 2 not;
+  - each page in the file named for it;
+  - a PNG at 144 dpi at twice the page's points;
+  - a dismissed picker returning nothing and never rasterising;
+  - a contested name refusing before page 1 is written;
+  - `pageImageName` cases.
+- **UI:** the command sends the dialog's pages, format, DPI and quality unchanged; a
+  contested folder reaches the save problem dialog; a dismissed dialog sends nothing.
+- **Registries:** `coreChannels`' MuPDF reads, the browser shim and its channel list,
+  `payloadBounds`, `channels.test.ts`, and `proof:contract`'s three full stub tables.
+
+### Mutations, each applied alone and reverted
+
+| # | mutation | result |
+|---|---|---|
+| A | `showExtras` → `false` | only *draws the page's annotations* red |
+| B | `asJPEG(request.quality)` → `asJPEG(90)` | only *quality reaches the encoder* red: `expected 1814 to be greater than 1814` |
+| C | the pixel bound doubled | only *an A4 page at the top scale* red: the promise resolved a PNG |
+| D | the UI command sends `quality: 90` | only *sends exactly the pages and encoding the dialog chose* red |
+| E | main sends `scale: 1` | only *writes a PNG at the DPI asked for* red: `[612, 792]` for `[1224, 1584]` |
+| F | main rasterises page 0 for every file | **survived first**, then red after the fixture fix (below) |
+
+**F survived against the first fixture, as predicted before it ran.** The file-level
+fixture's three pages are identical blank Letter sheets. The names came from the request,
+every image was the same picture, and all four cases passed, so main's page-to-file
+mapping had no case at all. The describe now opens its own document with three page sizes
+and reads each PNG's header. Under F, *puts EACH page in the file named for it* reads
+`[100, 100]` for `[400, 500]`, and the DPI case reads `[200, 200]` for `[400, 600]`.
+
+### Owed before done
+
+One export from the running application, opened in an image viewer.
+
 ## 2026-09-14 — Import page as OCG layer: a page becomes a layer in the module that owns layers
 
 D9's row, built on ADR-0064 (`208f168`). Organize › Pages gains *Import page as layer*. The

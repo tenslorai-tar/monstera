@@ -277,6 +277,7 @@ export function createContractHandlers(deps: {
     'document.exportFormData': exportFormDataHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands),
+    'document.exportPageImages': exportPageImagesHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1113,6 +1114,35 @@ function splitHandler(commands: DocumentCommands): ContractHandlers['document.sp
   }): Promise<Awaited<ReturnType<ContractHandlers['document.split']>>> => {
     try {
       const outcome = await commands.split(docId, groups);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The page-image export's handler: {@link splitHandler} word for word, because it
+ * is the same folder write with an image where a document was.
+ */
+function exportPageImagesHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.exportPageImages'] {
+  return async ({
+    docId,
+    pages,
+    format,
+    dpi,
+    quality,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPageImages']>>> => {
+    try {
+      const outcome = await commands.exportPageImages(docId, { pages, format, dpi, quality });
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);

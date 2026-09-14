@@ -10,6 +10,7 @@ import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
+import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { accessFor, mupdfWriter } from '../mupdfWriter.js';
@@ -251,6 +252,10 @@ function joined(
       // round trip through the granted area.
       exportFormData: async (session, format) =>
         serialiseFormData(await readFormData(session), format),
+      // AND THE FOURTH, for the same reason — AAAAAA-1's lesson applied at the
+      // moment the dependency is added rather than an audit later: the case
+      // below drives it.
+      pageImage: rasterisePageImage,
       flatFields: detectFlatFields,
     }),
     (incident) => incidents.push(incident),
@@ -432,6 +437,37 @@ describe('remoteMupdfLifecycle', () => {
   });
 
   /**
+   * A PAGE IMAGE'S ROUND TRIP, written in the commit that adds the channel so it
+   * cannot arrive the way `engine/exportFormData` did — a dependency filled in to
+   * make the fixture compile and no case calling it.
+   *
+   * What only the trip can say: the file exists, is the format asked for, and
+   * its size is the count the host reported; and the granted directory is empty
+   * afterwards.
+   */
+  it('carries a page image out through the granted directory, with the count checked', async () => {
+    const areas = realAreas();
+    const { lifecycle, open } = joined(areas);
+
+    const session = await open(flat);
+    const png = await lifecycle.pageImage(session, { page: 0, format: 'png', scale: 1, quality: 90 });
+    const jpeg = await lifecycle.pageImage(session, { page: 0, format: 'jpeg', scale: 1, quality: 90 });
+
+    expect([...png.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    expect([...jpeg.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+    expect(await exists(join(areas.made[0]?.outputDirectory ?? '', 'f1'))).toBe(false);
+    expect(await exists(join(areas.made[0]?.outputDirectory ?? '', 'f2'))).toBe(false);
+
+    // A REFUSAL COMES BACK AS THE CHANNEL'S OWN CODE, not as a dead host: the
+    // page does not exist, which is the request's fault.
+    await expect(
+      lifecycle.pageImage(session, { page: 99, format: 'png', scale: 1, quality: 90 }),
+    ).rejects.toThrow(/page-image-failed/u);
+
+    await lifecycle.close(session);
+  });
+
+  /**
    * NOTHING DOCUMENT-SIZED CROSSED THE PIPE, and this asserts it on the
    * MESSAGES rather than by inspecting the design.
    *
@@ -504,6 +540,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         duplicates: () => {
           throw new Error('the byte-size case must not look for duplicates');
+        },
+        pageImage: () => {
+          throw new Error('the byte-size case must not export a page image');
         },
         extract: () => {
           throw new Error('the byte-size case must not build a document');

@@ -192,6 +192,19 @@ export const SPLIT_DOCUMENT_LABEL = messageKey('dialog.split-document.label');
 export const SPLIT_DOCUMENT_EMPTY = messageKey('dialog.split-document.empty');
 export const SPLIT_DOCUMENT_FILES = messageKey('dialog.split-document.files');
 export const SPLIT_DOCUMENT_APPLY = messageKey('dialog.split-document.apply');
+export const EXPORT_PAGE_IMAGES_COMMAND_TITLE = messageKey('command.export-page-images.title');
+export const EXPORT_PAGE_IMAGES_TITLE = messageKey('dialog.export-page-images.title');
+export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
+export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
+export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
+export const EXPORT_PAGE_IMAGES_EMPTY = messageKey('dialog.export-page-images.empty');
+export const EXPORT_PAGE_IMAGES_FORMAT = messageKey('dialog.export-page-images.format');
+export const EXPORT_PAGE_IMAGES_PNG = messageKey('dialog.export-page-images.png');
+export const EXPORT_PAGE_IMAGES_JPEG = messageKey('dialog.export-page-images.jpeg');
+export const EXPORT_PAGE_IMAGES_DPI = messageKey('dialog.export-page-images.dpi');
+export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.quality');
+export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
+export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -1903,6 +1916,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the folder is chosen after this dialog, so *saved* would be premature.
   [SPLIT_DOCUMENT_FILES]: 'This document is not changed. {files} files will be written.',
   [SPLIT_DOCUMENT_APPLY]: 'Choose a folder…',
+  [EXPORT_PAGE_IMAGES_COMMAND_TITLE]: 'Export pages as images…',
+  [EXPORT_PAGE_IMAGES_TITLE]: 'Export pages as images',
+  [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
+  [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
+  [EXPORT_PAGE_IMAGES_LABEL]: 'Pages',
+  [EXPORT_PAGE_IMAGES_EMPTY]: 'Type the pages to export, for example 1-3, 5.',
+  [EXPORT_PAGE_IMAGES_FORMAT]: 'Format',
+  [EXPORT_PAGE_IMAGES_PNG]: 'PNG — exact, larger files',
+  [EXPORT_PAGE_IMAGES_JPEG]: 'JPEG — smaller files, some detail lost',
+  [EXPORT_PAGE_IMAGES_DPI]: 'Resolution (dots per inch)',
+  [EXPORT_PAGE_IMAGES_QUALITY]: 'JPEG quality (1–100)',
+  // THE BOUNDS ARE IN THE MESSAGE, because a disabled button with no reason is a
+  // control that looks broken.
+  [EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS]:
+    'Resolution must be a whole number from {minDpi} to {maxDpi}, and quality from {minQuality} to {maxQuality}.',
+  [EXPORT_PAGE_IMAGES_FILES]:
+    'This document is not changed. One image for each page: {files} files will be written.',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:

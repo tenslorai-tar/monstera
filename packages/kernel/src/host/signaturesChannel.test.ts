@@ -83,6 +83,7 @@ async function joined(parts: {
       extract: refuse('build a document'),
       snapshot: refuse('write a PNG out'),
       exportFormData: refuse('encode an export'),
+      pageImage: refuse('export a page image'),
       flatFields: refuse('propose fields'),
     }),
     () => undefined,

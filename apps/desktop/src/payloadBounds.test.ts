@@ -282,6 +282,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // four-thousand-field one.
   'document.importFormData': 'needs an engine session and an open dialog',
   'document.split': 'needs an engine session and a folder dialog',
+  // THE ASK IS PAGES AND THREE NUMBERS, bounded by the split's own part count;
+  // the images are written in the host and never cross.
+  'document.exportPageImages': 'needs an engine session and a folder dialog',
   'document.insertImage': 'needs an engine session and an image picker',
   // THE ASK IS NOTHING, OR A `DocId` AND ONE INDEX, and the source never crosses:
   // main picks and reads the Markdown file, the compose host sets it, and main

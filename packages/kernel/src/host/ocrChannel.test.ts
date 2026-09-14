@@ -191,6 +191,9 @@ async function joined(
       exportFormData: () => {
         throw new Error('a recognition must not encode an export');
       },
+      pageImage: () => {
+        throw new Error('a recognition must not export a page image');
+      },
       flatFields: () => {
         throw new Error('a recognition must not propose fields');
       },

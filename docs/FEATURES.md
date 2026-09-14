@@ -229,7 +229,7 @@ planner counting a table of rows as a table of untouched work.
 
 | Feature | Status |
 |---|---|
-| Pages → PNG / JPEG / WebP (range, DPI, quality) | — |
+| Pages → PNG / JPEG / WebP (range, DPI, quality). **PNG and JPEG BUILT 2026-09-14; WebP BLOCKED.** Organize › Pages › *Export pages as images…*: every page or typed ranges, PNG or JPEG, 72–576 dpi (the snapshot's scale bounds), JPEG quality 1–100, one file per page named `<stem> <page>.png`/`.jpg` in a folder the user picks. Main runs `writeDocumentSplit`: every name is checked before the first file is written. MuPDF rasterises in the engine host (§3's export row) with annotations drawn, and the image reaches main through the granted directory. The pixel bound is `MAX_SNAPSHOT_PIXELS`, so an A4 page stops just under 576 dpi and the refusal names the count. **WebP is blocked**: MuPDF 1.28.0 and Electron's `nativeImage` have no WebP encoder, so it needs a new dependency, which is the owner's decision. **Owed before done**: one export from the running application, opened in an image viewer | PNG, JPEG BUILT |
 | Text extraction, plain and layout-preserving — **MuPDF** structured text; the founding record's "when Poppler available" is withdrawn, since Poppler was named in no matrix row and no provisioning list ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)). Layout fidelity is **unexecuted**: ENGINE-SPIKE H7 compares it against `pdftotext -layout` before this is built on | — |
 | Word (rich / layout / text modes) | — |
 | PowerPoint | — |

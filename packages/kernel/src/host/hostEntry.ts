@@ -12,6 +12,7 @@ import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
+import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { recogniseHandwriting } from '../ocrHandwriting.js';
 import { recognisePage } from '../ocrRecognise.js';
@@ -143,6 +144,9 @@ const engineHandlers = createEngineHandlers({
   flatFields: detectFlatFields,
   exportFormData: async (session, format) =>
     serialiseFormData(await readFormData(session), format),
+  // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export
+  // rasterisation to MuPDF, which is here.
+  pageImage: rasterisePageImage,
 });
 
 startEngineHost(

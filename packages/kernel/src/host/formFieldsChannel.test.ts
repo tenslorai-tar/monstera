@@ -183,6 +183,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       exportFormData: () => {
         throw new Error('a field read must not encode an export');
       },
+      pageImage: () => {
+        throw new Error('a field read must not rasterise a page');
+      },
       flatFields: () => {
         throw new Error('a field read must not propose candidates');
       },

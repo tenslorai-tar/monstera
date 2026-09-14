@@ -8,6 +8,7 @@ import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { accessFor, mupdfWriter, withDocument } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
 import { extractPages } from '../pageExtract.js';
+import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
@@ -209,6 +210,7 @@ async function joined(): Promise<{
       snapshot: snapshotRegion,
       exportFormData: async (session, format) =>
         serialiseFormData(await readFormData(session), format),
+      pageImage: rasterisePageImage,
       flatFields: detectFlatFields,
     }),
     (incident) => incidents.push(incident),
@@ -495,6 +497,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         exportFormData: () => {
           throw new Error('unused');
         },
+        pageImage: () => {
+          throw new Error('unused');
+        },
         flatFields: () => {
           throw new Error('unused');
         },
@@ -597,6 +602,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         exportFormData: () => {
           throw new Error('the rotation-refusal case must not export form data');
+        },
+        pageImage: () => {
+          throw new Error('the rotation-refusal case must not export a page image');
         },
         flatFields: () => {
           throw new Error('the rotation-refusal case must not propose fields');

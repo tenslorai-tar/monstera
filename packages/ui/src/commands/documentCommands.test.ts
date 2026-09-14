@@ -32,6 +32,7 @@ import {
   replacePageCommand,
   importPageAsLayerCommand,
   splitDocumentCommand,
+  exportPageImagesCommand,
   generateTocCommand,
   protectDocumentCommand,
   applyRedactionsCommand,
@@ -2074,6 +2075,65 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client, sent } = recording();
 
     await splitDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('export pages as images sends exactly the pages and encoding the dialog chose', async () => {
+    const { client, sent } = recording({
+      'document.exportPageImages': { kind: 'split', files: 2 },
+    });
+    const asked: unknown[] = [];
+
+    await exportPageImagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve({ pages: [0, 4], format: 'jpeg', dpi: 150, quality: 70 });
+      },
+    }).run(CONTEXT);
+
+    // THE PAGE COUNT GOES IN, and every field comes back out unchanged — a
+    // command that dropped `quality` or defaulted `format` fails here.
+    expect(asked).toStrictEqual([{ id: 'dialog.export-page-images', props: { pageCount: 10 } }]);
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.exportPageImages',
+        params: { docId: DOC, pages: [0, 4], format: 'jpeg', dpi: 150, quality: 70 },
+      },
+    ]);
+  });
+
+  it('export pages as images reports a contested folder through the save problem dialog', async () => {
+    const { client } = recording({
+      'document.exportPageImages': { kind: 'refused', openElsewhere: 1 },
+    });
+    const spoken: unknown[] = [];
+
+    await exportPageImagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        spoken.push({ id, props });
+        return Promise.resolve({ pages: [0], format: 'png', dpi: 72, quality: 90 });
+      },
+    }).run(CONTEXT);
+
+    expect(spoken).toStrictEqual([
+      { id: 'dialog.export-page-images', props: { pageCount: 10 } },
+      { id: 'dialog.save-problem', props: { outcome: 'contested' } },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED export-pages-as-images dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await exportPageImagesCommand({
       client,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),

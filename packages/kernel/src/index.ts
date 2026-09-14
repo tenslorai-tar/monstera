@@ -124,6 +124,7 @@ export {
   type HostLayersReader,
   type HostHandwritingReader,
   type HostOcrReader,
+  type HostPageImage,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostSession,
@@ -135,12 +136,16 @@ export {
   EngineDocumentLocked,
   EngineFormDataExportFailed,
   EngineOpenFailed,
+  EnginePageImageFailed,
   EngineSerialiseFailed,
   EngineSerialiseMismatch,
   type RemoteMupdfLifecycle,
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './host/remoteLifecycle.js';
+// A TYPE ONLY, for `FlatFieldCandidate`'s reason below: `pageImages.ts` binds the
+// native library, and main names the request without ever rasterising.
+export type { PageImageRequest } from './pageImages.js';
 // A TYPE ONLY, which is what keeps it on this barrel: `flatFields.ts` binds the
 // native library, and main reads its answers without ever calling it.
 export type { FlatFieldCandidate } from './flatFields.js';

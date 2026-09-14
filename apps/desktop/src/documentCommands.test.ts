@@ -54,6 +54,7 @@ import {
   detectFlatFields,
   readFormData,
   serialiseFormData,
+  rasterisePageImage,
   snapshotRegion,
   withDocument,
 } from '@monstera/kernel/engine';
@@ -72,6 +73,8 @@ import {
   type DocumentDestinationsReader,
   type DocumentOcrReader,
   type DocumentExtractReader,
+  type DocumentPageImageReader,
+  pageImageName,
   type PickDirectory,
   type DocumentLayersReader,
   type DocumentPageLinksReader,
@@ -377,6 +380,17 @@ const localFormData: FormDataSource = {
 };
 
 /**
+ * The page image composed the way `composition.ts` composes it: the real
+ * rasteriser, for {@link localSnapshot}'s reason — a case claiming an image
+ * shows THIS page cannot be satisfied by a stub.
+ */
+const localPageImage: DocumentPageImageReader = (id, sessions, request) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return rasterisePageImage(held, request);
+};
+
+/**
  * The production composition of the duplicate report, the way `composition.ts`
  * assembles it — a session lookup and `findDuplicatePages`.
  *
@@ -565,6 +579,7 @@ const INERT = {
   extract: localExtract,
   snapshot: localSnapshot,
   formData: localFormData,
+  pageImage: localPageImage,
   directory: noDirectory,
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
   // application without meaning to fails at the call rather than opening or watching anything.
@@ -1371,6 +1386,175 @@ describe('the form data export carries the format all the way to the file', () =
 
     expect(await commands.exportFormData(formDoc, 'fdf')).toBeUndefined();
     expect(existsSync(untouched)).toBe(false);
+  });
+});
+
+describe('pageImageName — the file a page is exported under', () => {
+  it('replaces the document’s extension, counts from 1, and spells JPEG as .jpg', () => {
+    expect(pageImageName('report.pdf', 0, 'png')).toBe('report 1.png');
+    expect(pageImageName('report.pdf', 2, 'jpeg')).toBe('report 3.jpg');
+    // THE LAST DOT, so a dotted stem survives whole.
+    expect(pageImageName('a.b.pdf', 9, 'png')).toBe('a.b 10.png');
+    // A DOTFILE has no extension to replace.
+    expect(pageImageName('.pdf', 0, 'png')).toBe('.pdf 1.png');
+  });
+});
+
+describe('exportPageImages — one image per page, in a folder, all or nothing', () => {
+  /**
+   * THREE PAGES OF THREE SIZES, and that is the fixture's whole point.
+   *
+   * The file-level fixture's pages are identical blank Letter sheets, and against
+   * it a main that rasterised page 0 into every file passed all four cases — the
+   * names came from the request and every image was the same picture (mutation F,
+   * 2026-09-14). A size per page makes *which page is in which file* readable
+   * from each PNG's own header.
+   */
+  const SIZES = [
+    [100, 100],
+    [200, 300],
+    [400, 500],
+  ] as const;
+  let sizedService: DocumentService;
+  let sizedDoc: DocId;
+  let sizedSession: MupdfSession;
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    for (const size of SIZES) document.addPage([...size]);
+    const bytes = await document.save();
+    const path = join(directory, 'sized.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    sizedService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const outcome = await sizedService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    sizedDoc = outcome.docId;
+    sizedSession = await mupdfWriter.open(bytes);
+  });
+
+  function sizedEngine(): EngineSessions {
+    const held = new EngineSessions();
+    held.hold(sizedDoc, { mupdf: sizedSession });
+    return held;
+  }
+
+  /** A PNG's size, from its own IHDR. */
+  function pngSize(path: string): readonly number[] {
+    const png = readFileSync(path);
+    return [png.readUInt32BE(16), png.readUInt32BE(20)];
+  }
+
+  /** The production composition, with a folder picker answering `folder`. */
+  function exportingInto(
+    folder: string | null,
+    checkTarget: CopySource['checkTarget'] = (target) => sizedService.checkCopyTarget(target),
+  ): DocumentCommands {
+    return new DocumentCommands({
+      ...LOCAL_READS,
+      documents: sizedService,
+      bus: bus(),
+      engine: sizedEngine(),
+      // THE REAL WRITE PATH, for the form export's reason: what this claims is
+      // that files land, and an injected surface cannot say so.
+      save: {
+        deps: {
+          checkWriteTarget: (id) => service.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: siblingNames,
+          wait: () => Promise.resolve(),
+        },
+        flush: () => Promise.reject(new Error('an image export does not flush the document')),
+      },
+      copy: {
+        pick: () => Promise.reject(new Error('an image export picks a folder, not a file')),
+        checkTarget,
+      },
+      directory: () => Promise.resolve(folder),
+    });
+  }
+
+  it('writes the named pages as JPEGs, named by page, and nothing else', async () => {
+    const folder = mkdtempSync(join(directory, 'images-'));
+
+    const outcome = await exportingInto(folder).exportPageImages(sizedDoc, {
+      pages: [0, 2],
+      format: 'jpeg',
+      dpi: 72,
+      quality: 80,
+    });
+
+    expect(outcome).toEqual({ kind: 'split', files: 2 });
+    const first = readFileSync(join(folder, 'sized 1.jpg'));
+    const third = readFileSync(join(folder, 'sized 3.jpg'));
+    expect([...first.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+    expect([...third.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+    // THE PAGE NOT ASKED FOR IS NOT WRITTEN, which is what separates this from
+    // an export that ignored the list and wrote every page.
+    expect(existsSync(join(folder, 'sized 2.jpg'))).toBe(false);
+  });
+
+  it('puts EACH page in the file named for it', async () => {
+    const folder = mkdtempSync(join(directory, 'images-'));
+
+    await exportingInto(folder).exportPageImages(sizedDoc, {
+      pages: [0, 2],
+      format: 'png',
+      dpi: 72,
+      quality: 90,
+    });
+
+    // Page 1 is 100×100 and page 3 is 400×500. A main that rasterised one page
+    // for every name writes two images of the same size.
+    expect(pngSize(join(folder, 'sized 1.png'))).toEqual([...SIZES[0]]);
+    expect(pngSize(join(folder, 'sized 3.png'))).toEqual([...SIZES[2]]);
+  });
+
+  it('writes a PNG at the DPI asked for', async () => {
+    const folder = mkdtempSync(join(directory, 'images-'));
+
+    await exportingInto(folder).exportPageImages(sizedDoc, {
+      pages: [1],
+      format: 'png',
+      dpi: 144,
+      quality: 90,
+    });
+
+    // 200×300 points at 144 dpi is scale 2. A DPI that went nowhere answers 200×300.
+    expect(pngSize(join(folder, 'sized 2.png'))).toEqual([400, 600]);
+  });
+
+  it('CONTROL: a dismissed folder picker writes nothing and reaches no page', async () => {
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      documents: sizedService,
+      bus: bus(),
+      engine: sizedEngine(),
+      pageImage: () => Promise.reject(new Error('a dismissed picker must not rasterise')),
+      directory: () => Promise.resolve(null),
+    });
+
+    expect(
+      await commands.exportPageImages(sizedDoc, { pages: [0], format: 'png', dpi: 72, quality: 90 }),
+    ).toBeUndefined();
+  });
+
+  it('refuses a contested name before the FIRST page is written', async () => {
+    const folder = mkdtempSync(join(directory, 'images-'));
+    const contested = join(folder, 'sized 2.png');
+
+    const outcome = await exportingInto(folder, (target) =>
+      Promise.resolve(
+        target === contested
+          ? { kind: 'contested' as const, others: [asDocId('other')] }
+          : { kind: 'writable' as const },
+      ),
+    ).exportPageImages(sizedDoc, { pages: [0, 1], format: 'png', dpi: 72, quality: 90 });
+
+    expect(outcome?.kind).toBe('refused');
+    // PAGE 1's NAME WAS FREE and it is still not written: every name is checked
+    // before anything lands, so a refusal leaves no partial export behind.
+    expect(existsSync(join(folder, 'sized 1.png'))).toBe(false);
   });
 });
 

@@ -12,6 +12,7 @@ import {
   MAX_IMPORT_IMAGE_BYTES,
   MAX_IMPORT_IMAGE_PIXELS,
   MAX_TEXT_LAYER_LINE,
+  type PageImageFormat,
   type ComposeRefusal,
   type UrlFetchRefusal,
   type RequestedSignatureMark,
@@ -49,6 +50,7 @@ import {
   type CommandInputs,
   type SessionsByWriter,
   type RegionRequest,
+  type PageImageRequest,
   type SnapshotWrite,
   type PageKind,
   type TextLayerLine,
@@ -1033,6 +1035,36 @@ export type DocumentExtractReader = (
 ) => Promise<ByteImage>;
 
 /**
+ * Encodes one page as an image, through whichever host is live.
+ *
+ * {@link DocumentExtractReader}'s sibling and not a read either: it produces a
+ * file's bytes. It runs in the host because rasterising reaches MuPDF.
+ */
+export type DocumentPageImageReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  request: PageImageRequest,
+) => Promise<ByteImage>;
+
+/**
+ * The filename a page's image is written under: page 3 of `report.pdf` as a
+ * JPEG is `report 3.jpg`.
+ *
+ * **The document's extension is REPLACED, not kept**, which is where this
+ * differs from {@link splitPartName}: `report 3.pdf.png` would be a file whose
+ * name says it is two things. `.jpg` rather than `.jpeg`, because that is the
+ * spelling people and the platform's own file associations expect.
+ *
+ * One-based, as every page number a person reads is; `page` arrives zero-based.
+ */
+export function pageImageName(name: string, page: number, format: PageImageFormat): string {
+  const dot = name.lastIndexOf('.');
+  // `dot <= 0` for `suffixed`'s reason: a dotfile has no extension to replace.
+  const stem = dot <= 0 ? name : name.slice(0, dot);
+  return `${stem} ${String(page + 1)}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+}
+
+/**
  * Rasterises a region of a page, through whichever host is live.
  *
  * {@link DocumentExtractReader}'s sibling and not a read either: it produces a
@@ -1529,6 +1561,8 @@ export interface DocumentCommandsParts {
   readonly extract: DocumentExtractReader;
   readonly snapshot: SnapshotSource;
   readonly formData: FormDataSource;
+  /** How a page becomes an image file's bytes. See {@link DocumentPageImageReader}. */
+  readonly pageImage: DocumentPageImageReader;
   readonly directory: PickDirectory;
   /** A page edited in another application. See {@link ExternalEditSource}. */
   readonly externalEdit: ExternalEditSource;
@@ -1566,6 +1600,7 @@ export class DocumentCommands {
   readonly #extract: DocumentExtractReader;
   readonly #snapshot: SnapshotSource;
   readonly #formData: FormDataSource;
+  readonly #pageImage: DocumentPageImageReader;
   readonly #directory: PickDirectory;
   readonly #externalEdit: ExternalEditSource;
   /**
@@ -1614,6 +1649,7 @@ export class DocumentCommands {
     this.#extract = parts.extract;
     this.#snapshot = parts.snapshot;
     this.#formData = parts.formData;
+    this.#pageImage = parts.pageImage;
     this.#directory = parts.directory;
     this.#externalEdit = parts.externalEdit;
   }
@@ -3016,6 +3052,74 @@ export class DocumentCommands {
         groups.map((pages) => ({
           destination: join(directory, splitPartName(suggest, pages)),
           pages,
+        })),
+      );
+    });
+
+    return value;
+  }
+
+  /**
+   * Writes each named page as an image file in a folder the user picks.
+   *
+   * ## `split`'s body, with an image where a document was
+   *
+   * One file per page in a folder, with names this build derives — so the
+   * contested check runs over every derived path before the first is written,
+   * which is `writeDocumentSplit`'s whole contract, and each page is rasterised
+   * and written before the next is rasterised, which is its other one. A part is
+   * a single page; the extract it is handed is the host's page image.
+   *
+   * ## It does NOT touch the document
+   *
+   * An export is a picture of pages. No command, no log entry, no version bump,
+   * and `writeDocumentSplit` is given no `DocumentContext`.
+   *
+   * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
+   *   reason.
+   */
+  async exportPageImages(
+    docId: DocId,
+    request: {
+      readonly pages: readonly number[];
+      readonly format: PageImageFormat;
+      readonly dpi: number;
+      readonly quality: number;
+    },
+  ): Promise<SplitOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export pages as images');
+
+    const directory = await this.#directory();
+    if (directory === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeDocumentSplit(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        (pages) => {
+          const [page] = pages;
+          // NOT REACHABLE: every part below is built with exactly one page, and
+          // the type cannot say so. A file named after no page is refused rather
+          // than written.
+          if (page === undefined) throw new RangeError('a page image part named no page');
+          return this.#pageImage(docId, sessions, {
+            page,
+            format: request.format,
+            // A PDF point is 1/72 inch, and the host's bounds are in points.
+            scale: request.dpi / 72,
+            quality: request.quality,
+          });
+        },
+        request.pages.map((page) => ({
+          destination: join(directory, pageImageName(suggest, page, request.format)),
+          pages: [page],
         })),
       );
     });

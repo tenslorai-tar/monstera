@@ -201,6 +201,7 @@ describe('browser shim', () => {
       'document.editPageExternally',
       'document.execute',
       'document.exportFormData',
+      'document.exportPageImages',
       'document.extract',
       'document.flatFieldCandidates',
       'document.formFields',

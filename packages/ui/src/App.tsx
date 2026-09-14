@@ -63,6 +63,7 @@ import {
   replacePageCommand,
   importPageAsLayerCommand,
   splitDocumentCommand,
+  exportPageImagesCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -145,6 +146,7 @@ import {
 } from './commands/importMarkdown.js';
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
 import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
+import { EXPORT_PAGE_IMAGES_DIALOG } from './dialogs/exportPageImages.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
@@ -430,6 +432,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         EXTERNAL_EDIT_PROBLEM_DIALOG,
         EXTRACT_PAGES_DIALOG,
         SPLIT_DOCUMENT_DIALOG,
+        EXPORT_PAGE_IMAGES_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
         SETTINGS_DIALOG,
@@ -1537,6 +1540,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         }),
         extractPagesCommand({ client, onApplied: applied, ask }),
         splitDocumentCommand({ client, onApplied: applied, ask }),
+        exportPageImagesCommand({ client, onApplied: applied, ask }),
         generateTocCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),

@@ -554,6 +554,9 @@ describe('the engine host answers a containment probe', () => {
     exportFormData: () => {
       throw new Error('a containment probe must not read a form');
     },
+    pageImage: () => {
+      throw new Error('a containment probe must not export a page image');
+    },
     flatFields: () => {
       throw new Error('a containment probe must not walk a page');
     },

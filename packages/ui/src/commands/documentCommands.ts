@@ -58,6 +58,8 @@ import { IMPORT_PAGE_AS_LAYER_DIALOG_ID } from '../dialogs/importPageAsLayer.js'
 import type { ImportPageAsLayerAnswer } from '../dialogs/importPageAsLayerResult.js';
 import { SPLIT_DOCUMENT_DIALOG_ID } from '../dialogs/splitDocument.js';
 import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
+import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
+import type { ExportPageImagesAnswer } from '../dialogs/exportPageImagesResult.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
@@ -124,6 +126,7 @@ import {
   ROTATE_PAGE_TITLE,
   SAVE_COPY_TITLE,
   SPLIT_DOCUMENT_COMMAND_TITLE,
+  EXPORT_PAGE_IMAGES_COMMAND_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
@@ -1749,6 +1752,48 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
       const answer = await deps.client['document.split']({
         docId: context.docId,
         groups: chosen.groups,
+      });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'split' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
+/**
+ * Writes the chosen pages as PNG or JPEG images in a folder the user picks.
+ *
+ * {@link splitDocumentCommand}'s shape and outcomes, because main runs the same
+ * folder write with an image where a document was: `split` and `cancelled` say
+ * nothing, and the two failures reach the save problem dialog.
+ */
+export function exportPageImagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.export-page-images',
+    title: EXPORT_PAGE_IMAGES_COMMAND_TITLE,
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 55 },
+    ],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.pageCount === undefined) return;
+
+      const chosen = (await deps.ask(EXPORT_PAGE_IMAGES_DIALOG_ID, {
+        pageCount: context.pageCount,
+      })) as ExportPageImagesAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.exportPageImages']({
+        docId: context.docId,
+        pages: chosen.pages,
+        format: chosen.format,
+        dpi: chosen.dpi,
+        quality: chosen.quality,
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);

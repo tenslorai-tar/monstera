@@ -47,12 +47,21 @@ import { frameOf, placedRect } from './pageAnnotations.js';
  * A bound rather than trust, and on the PIXEL COUNT rather than on either
  * dimension: a region is a rectangle a person drags and a scale is a number,
  * and the product is what allocates. Four bytes a pixel makes this 128 MB of
- * pixmap, which is a large image and not a hostile one — an A4 page at 600 dpi
- * is about 35 megapixels, so the bound is well clear of the biggest thing a
- * reader would ask for and well short of a number that ends the host.
+ * pixmap, which is a large image and not a hostile one, and well short of a
+ * number that ends the host.
  *
  * The refusal names the count, because *too large* with no figure leaves the
  * reader unable to tell a slip from a limit.
+ *
+ * ## Correction, 2026-09-14: it is NOT clear of a whole page at the top scale
+ *
+ * This comment said an A4 page at 600 dpi *"is about 35 megapixels, so the bound
+ * is well clear"* — which is 35 against 32, the wrong way round. It did not matter
+ * while the only caller was a dragged region. `pageImages.ts` rasterises whole
+ * pages under the same bound, and computed from the page's points and rounded up:
+ * A4 (595.28×841.89) at scale 8 is 4763×6736 = **32,083,568**, refused; US Letter
+ * (612×792) at scale 8 is 4896×6336 = **31,021,056**, admitted. So an A4 export
+ * tops out just under 576 dpi, and the refusal says so with the figure.
  */
 export const MAX_SNAPSHOT_PIXELS = 32_000_000;
 

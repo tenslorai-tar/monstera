@@ -277,6 +277,38 @@ export const MIN_SNAPSHOT_SCALE = 1;
 export const MAX_SNAPSHOT_SCALE = 8;
 
 /**
+ * The raster formats a page can be exported as — D10's *Pages → PNG / JPEG / WebP*.
+ *
+ * **Two, and the row names three.** MuPDF is the export rasteriser (§3) and its
+ * pixmap encodes PNG and JPEG; measured 2026-09-14 on 1.28.0, it has no WebP
+ * encoder, and neither does Electron's `nativeImage`. A third format needs an
+ * encoder this build does not have, which is a dependency decision rather than a
+ * value in this list. Adding it later is one member here and one branch in the
+ * kernel.
+ */
+export const PAGE_IMAGE_FORMATS = ['png', 'jpeg'] as const;
+export type PageImageFormat = (typeof PAGE_IMAGE_FORMATS)[number];
+
+/**
+ * An exported page's resolution, in dots per inch.
+ *
+ * **The snapshot's scale bounds in the unit a person types**, derived rather than
+ * restated: a PDF point is 1/72 inch, so the host's scale is `dpi / 72` and these
+ * cannot drift from the bounds the host enforces.
+ */
+export const MIN_PAGE_IMAGE_DPI = MIN_SNAPSHOT_SCALE * 72;
+export const MAX_PAGE_IMAGE_DPI = MAX_SNAPSHOT_SCALE * 72;
+
+/**
+ * A JPEG's quality, as MuPDF's `asJPEG` takes it: 1 to 100.
+ *
+ * Only a JPEG reads it. A PNG is lossless, so the field is carried for both and
+ * ignored by one, rather than being a second request shape per format.
+ */
+export const MIN_JPEG_QUALITY = 1;
+export const MAX_JPEG_QUALITY = 100;
+
+/**
  * Every setting id whose value is a SECRET, and the only list of them.
  *
  * ## Why the contract has to know, when a setting id is otherwise the registry's

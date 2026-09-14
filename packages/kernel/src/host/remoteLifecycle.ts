@@ -1,6 +1,7 @@
 import type { ClientApi, FormDataFormat } from '@monstera/contract';
 
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
+import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import type { EngineChannels } from './engineChannels.js';
 import type { RemoteSessions, SessionArea } from './remoteEngine.js';
@@ -130,6 +131,21 @@ export class EngineSnapshotFailed extends Error {
 }
 
 /**
+ * The host could not export a page as an image.
+ *
+ * Its own class for {@link EngineSnapshotFailed}'s reason: a page the document
+ * lacks, a scale or quality outside its bounds and a page past the pixel bound
+ * are refusals about the request, not a document that cannot be written.
+ */
+export class EnginePageImageFailed extends Error {
+  override readonly name = 'EnginePageImageFailed';
+
+  constructor(detail: string) {
+    super(`The engine host could not export that page as an image: ${detail}.`);
+  }
+}
+
+/**
  * The host could not write the form's data out.
  *
  * `detail` is the host's own code, so a caller can separate the one refusal
@@ -247,6 +263,13 @@ export interface RemoteMupdfLifecycle {
     session: MupdfSession,
     format: FormDataFormat,
   ) => Promise<ByteImage>;
+  /**
+   * One whole page, encoded as an image.
+   *
+   * The fourth caller of the same dance, for the snapshot's reason: a raster
+   * never crosses the pipe.
+   */
+  readonly pageImage: (session: MupdfSession, request: PageImageRequest) => Promise<ByteImage>;
   /** Ends the session on the host and removes its granted pair. */
   readonly close: (session: MupdfSession) => Promise<void>;
 }
@@ -344,6 +367,28 @@ export function remoteMupdfLifecycle(
       // THE SAME MISMATCH CHECK the three above make, and here for the
       // snapshot's reason: a file main never looks inside is one whose
       // truncation nothing would notice until somebody opened it.
+      if (bytes.length !== answer.value.bytes) {
+        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
+      }
+      return bytes;
+    },
+
+    pageImage: async (session, request) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/pageImage']({
+        session: sessions.handleFor(session),
+        page: request.page,
+        format: request.format,
+        scale: request.scale,
+        quality: request.quality,
+        into,
+      });
+      if (!answer.ok) throw new EnginePageImageFailed(answer.error.code);
+
+      const bytes = await areas.takeOutput(area, into);
+      // THE SAME MISMATCH CHECK, for the snapshot's reason: an image main never
+      // looks inside is one whose truncation nothing would notice.
       if (bytes.length !== answer.value.bytes) {
         throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
       }

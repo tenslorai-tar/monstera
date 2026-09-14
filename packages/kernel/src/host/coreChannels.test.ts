@@ -54,6 +54,7 @@ const LIVE_SESSION = ['engine/serialise'] as const;
 const MUPDF_READS = [
   'engine/extract',
   'engine/snapshotRegion',
+  'engine/pageImage',
   'engine/page-geometry',
   'engine/page-text',
   'engine/page-links',

@@ -43,6 +43,7 @@ import {
   type HostAnnotationsReader,
   type HostFlatFieldsReader,
   type HostFormDataExport,
+  type HostPageImage,
   type HostFormFieldsReader,
   type HostLayersReader,
   type HostPageLinksReader,
@@ -1074,6 +1075,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       open: openFormData,
       read: readFormData,
     },
+    // THE PAGE IMAGE, composed as the snapshot is and for its reasons: MuPDF
+    // rasterises in the host, and the image arrives through the granted directory.
+    pageImage: (docId, sessions, request) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.pageImage(session, request);
+    },
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the
     // part that arrives from `entry.ts` and this file keeps its property of
@@ -1234,6 +1242,8 @@ function engineSessionOpener(
   readonly snapshot: HostSnapshot;
   /** Encodes the form's data. On this surface for {@link extract}'s reason. */
   readonly exportFormData: HostFormDataExport;
+  /** Encodes one page as an image. On this surface for {@link extract}'s reason. */
+  readonly pageImage: HostPageImage;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -1586,6 +1596,18 @@ function engineSessionOpener(
       );
     }
     return writer.exportFormData(session, format);
+  };
+
+  /** The page image's half, and {@link extractThroughHost}'s reason word for word. */
+  const pageImageThroughHost: HostPageImage = (session, request) => {
+    if (writer === null) {
+      throw new Error(
+        'A page image reached the engine with no host writer registered. A session was resolved ' +
+          'for this document, so one was issued by a host — the supervisor and the host ' +
+          'connection have diverged.',
+      );
+    }
+    return writer.pageImage(session, request);
   };
 
   /**
@@ -1984,6 +2006,7 @@ function engineSessionOpener(
     extract: extractThroughHost,
     snapshot: snapshotThroughHost,
     exportFormData: exportFormDataThroughHost,
+    pageImage: pageImageThroughHost,
     closeHost,
     rebuildSessions: create,
     restoreSessions: buildSessions,

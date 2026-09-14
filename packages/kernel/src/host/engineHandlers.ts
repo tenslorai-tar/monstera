@@ -33,6 +33,7 @@ import {
 import { HandwritingModelUnreadableError, type HandwritingRequest } from '../ocrHandwriting.js';
 import type { PageLink } from '../pageLinks.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
+import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import {
@@ -223,6 +224,16 @@ export type HostFormDataExport = (
 ) => Promise<ByteImage>;
 
 /**
+ * One whole page, encoded as an image — a FOURTH producer of bytes that are not
+ * the session's document, for {@link HostSnapshot}'s reason: rasterising reaches
+ * MuPDF, and a handler proof must drive the channel without rasterising.
+ */
+export type HostPageImage = (
+  session: MupdfSession,
+  request: PageImageRequest,
+) => Promise<ByteImage>;
+
+/**
  * Where a flat page's fields probably are — a READ, unlike the three above.
  *
  * Per page rather than per document, because what it feeds is a proposal a
@@ -406,6 +417,8 @@ export interface EngineHandlerParts {
   readonly snapshot: HostSnapshot;
   /** How this process writes the form's data out. `engine/exportFormData`. */
   readonly exportFormData: HostFormDataExport;
+  /** How this process encodes one page as an image. `engine/pageImage`. */
+  readonly pageImage: HostPageImage;
   /** How this process proposes fields on a flat page. `detectFlatFields`. */
   readonly flatFields: HostFlatFieldsReader;
 }
@@ -431,6 +444,7 @@ export function createEngineHandlers({
   extract,
   snapshot,
   exportFormData,
+  pageImage,
   flatFields,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
@@ -830,6 +844,22 @@ export function createEngineHandlers({
         // is `engine/extract`'s distinction: the supervisor declines to count a
         // distinguishable code as a host death.
         return failed('export-failed', error);
+      }
+    },
+
+    'engine/pageImage': async ({ session, page, format, scale, quality, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        // `engine/snapshotRegion`'s route: the raster is built here and written
+        // into the granted directory, and main reads the file.
+        const bytes = await pageImage(held.session, { page, format, scale, quality });
+        const written = await files.writeOutput(held.outputDirectory, into, bytes);
+        return { ok: true, value: { bytes: written } };
+      } catch (error) {
+        // THE REQUEST'S FAULT rather than the host's, as a snapshot's is: every
+        // refusal is about the page, the scale, the quality or the pixel count.
+        return failed('page-image-failed', error);
       }
     },
 

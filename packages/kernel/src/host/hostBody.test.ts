@@ -170,6 +170,9 @@ function start(stream: HostByteStream) {
     exportFormData: () => {
       throw new Error('no case here exports form data');
     },
+    pageImage: () => {
+      throw new Error('no case here exports a page image');
+    },
     flatFields: () => {
       throw new Error('no case here proposes fields');
     },

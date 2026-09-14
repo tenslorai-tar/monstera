@@ -176,6 +176,9 @@ async function joined(): Promise<{
       exportFormData: () => {
         throw new Error('unused');
       },
+      pageImage: () => {
+        throw new Error('unused');
+      },
       flatFields: () => {
         throw new Error('unused');
       },
