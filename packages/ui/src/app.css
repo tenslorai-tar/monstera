@@ -53,10 +53,12 @@ textarea {
  * the tools, with `display: contents`, so each lands in its own area without the
  * component knowing the layout.
  *
- * `extras` holds the panels still stacked under the status bar. It is the
- * layout they already had, kept so this commit moves the rail and the ribbon
- * and nothing else; the document-panel commit takes them into the tab strip and
- * removes the area.
+ * There is no `extras` area any more. It held the panels stacked under the
+ * status bar until they moved: the document panels into §10.3's tab strip
+ * (design pass C) and the style panels into the right contextual panel (design
+ * pass D), both inside the body row. *Corrected 2026-09-14:* this said the
+ * document-panel commit would remove the area; that commit left the two style
+ * panels in it, and pass D removed it.
  *
  * `minmax(0, 1fr)` on the body row, because a grid track's default minimum is its
  * content, and a document scroller then grows the row instead of scrolling
@@ -65,13 +67,12 @@ textarea {
 .m-document-surface {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
     'tabs tabs'
     'ribbon ribbon'
     'rail body'
-    'status status'
-    'extras extras';
+    'status status';
   block-size: 100dvh;
   overflow: hidden;
   background: var(--canvas);
@@ -99,12 +100,6 @@ textarea {
 
 .m-status-bar {
   grid-area: status;
-}
-
-.m-surface-extras {
-  grid-area: extras;
-  max-block-size: 40vh;
-  overflow-y: auto;
 }
 
 /*
@@ -1154,6 +1149,52 @@ textarea {
   padding-block-start: var(--space-8);
   background: var(--bg2);
   border-inline-end: 1px solid var(--border-soft); /* decorative: the handle's seam against the page list */
+}
+
+/*
+ * §10.3's right contextual panel. It FILLS its pane: the width is
+ * `appearance.context-panel-width`, applied by the splitter `DocumentBody` puts it in. Its header
+ * carries the collapse chevron §10.3 names; its body scrolls on its own, so a tall set of
+ * properties never pushes the page area.
+ */
+.m-context-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  inline-size: 100%;
+  min-block-size: 0;
+  background: var(--bg2);
+  border-inline-start: 1px solid var(--border); /* decorative: separates the panel from the page area; its controls draw their own focus rings */
+}
+
+.m-context-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8);
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates the header from the properties below */
+}
+
+.m-context-panel__title {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-context-panel__body {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+/* The slim edge handle that reopens a collapsed right panel, on the canvas's trailing edge. */
+.m-context-panel-handle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  padding-block-start: var(--space-8);
+  background: var(--bg2);
+  border-inline-start: 1px solid var(--border-soft); /* decorative: the handle's seam against the page area */
 }
 
 .m-thumbnails {

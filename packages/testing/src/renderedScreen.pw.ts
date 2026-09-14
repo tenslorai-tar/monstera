@@ -408,6 +408,99 @@ test('dragging the handle moves the document panel WHILE the pointer moves, not 
   await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(before + 40);
 });
 
+/** The right contextual panel's pane — the last pane of the row — measured width, in CSS pixels. */
+async function contextPaneWidth(page: Page): Promise<number> {
+  const pane = page.locator('.m-splitter__pane').last();
+  await expect(pane).toBeVisible();
+  const box = await pane.boundingBox();
+  return box?.width ?? 0;
+}
+
+test('the RIGHT contextual panel resizes on its own handle, persists, and leaves the left alone', async ({
+  page,
+}) => {
+  // §10.3: "Both side panels are collapsible … State is persisted per panel" and "panels resizable
+  // with persisted widths". Two fixed panes around a flexible one is the layout the splitter fills
+  // with a hole in its size array (Splitter.tsx), which no component test can lay out — so this is
+  // also the case that fails if a library version stops filling that hole.
+  //
+  // STORED WIDTHS THAT ARE NOT THE FALLBACKS: 300 on the right against 256, 240 on the left against
+  // 224, so a side that ignored its setting cannot pass by drawing its default.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(
+    page,
+    { 'appearance.document-panel-width': 240, 'appearance.context-panel-width': 300 },
+    2,
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+
+  const right = page.getByRole('separator', { name: 'Resize the properties panel' });
+  await expect(right).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Properties' })).toBeVisible();
+  // THE STYLE CONTROLS MOVED HERE, out of the row under the status bar.
+  await expect(page.getByRole('complementary', { name: 'Properties' }).locator('.m-style-panel')).toBeVisible();
+
+  // Each drawn pane is within its handle's width of its stored width — the library's layout rule,
+  // measured for the left pane in the case above; two handles now share the root.
+  const handleWidth = (await right.boundingBox())?.width ?? 0;
+  expect(handleWidth).toBeGreaterThan(0);
+  await expect.poll(async () => Math.abs((await contextPaneWidth(page)) - 300)).toBeLessThan(2 * handleWidth + 1);
+  const leftBefore = await panelPaneWidth(page);
+
+  // THE RIGHT HANDLE, BY KEYBOARD. ArrowLeft moves the handle left, which widens the right pane.
+  await right.focus();
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => contextPaneWidth(page)).toBeGreaterThan(306);
+  const rightResized = await contextPaneWidth(page);
+  // AND THE LEFT PANE DID NOT MOVE: a resize at one handle writes only its own side.
+  expect(Math.abs((await panelPaneWidth(page)) - leftBefore)).toBeLessThan(1.5);
+
+  // ACROSS A RELOAD, both widths as they were left.
+  await page.reload();
+  await page.getByRole('button', { name: 'Open a document' }).click();
+  await expect(page.getByRole('separator', { name: 'Resize the properties panel' })).toBeVisible();
+  await expect.poll(() => contextPaneWidth(page)).toBeGreaterThan(306);
+  expect(Math.abs((await contextPaneWidth(page)) - rightResized)).toBeLessThan(1.5);
+  expect(Math.abs((await panelPaneWidth(page)) - leftBefore)).toBeLessThan(1.5);
+
+  // COLLAPSING THE RIGHT leaves the left's width, and the reopen handle is on the canvas's edge.
+  await page.getByRole('button', { name: 'Collapse the properties panel' }).click();
+  await expect(page.getByRole('complementary', { name: 'Properties' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Show the properties panel' })).toBeVisible();
+  await expect(page.getByRole('separator', { name: 'Resize the properties panel' })).toHaveCount(0);
+  expect(Math.abs((await panelPaneWidth(page)) - leftBefore)).toBeLessThan(1.5);
+});
+
+test('at its MINIMUM width the right contextual panel still holds the widest style row', async ({ page }) => {
+  // `CONTEXT_PANEL_MIN_WIDTH` is 216, MEASURED: the style controls' min-content width was 211.39 px,
+  // the opacity row's slider being the widest. This is the rendered panel at that width, asserting
+  // no style row runs past the pane — what a person would see clipped.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.context-panel-width': 216 }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+
+  const region = page.getByRole('complementary', { name: 'Properties' });
+  await expect(region.locator('.m-style-panel')).toBeVisible();
+  await expect.poll(() => contextPaneWidth(page)).toBeGreaterThan(200);
+  const overflow = await page.evaluate(() => {
+    const panes = document.querySelectorAll('.m-splitter__pane');
+    const pane = panes[panes.length - 1];
+    if (pane === undefined) return null;
+    const paneRight = pane.getBoundingClientRect().right;
+    return [...pane.querySelectorAll('.m-style-row')].map((row) => {
+      // The row's LAST control, which is what space-between pushes to the pane's edge.
+      const last = row.lastElementChild;
+      return (last?.getBoundingClientRect().right ?? 0) - paneRight;
+    });
+  });
+  expect(overflow).not.toBeNull();
+  expect((overflow ?? []).length).toBeGreaterThan(0);
+  for (const past of overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
+});
+
 test("at its MINIMUM width the document panel's strip still holds every tab and the chevron", async ({
   page,
 }) => {

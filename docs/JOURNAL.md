@@ -892,6 +892,72 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Design pass D: the right contextual panel holds the properties
+
+§10.3: *"Canvas (the star, quiet chrome) → right contextual panel → status bar"*, and *"Both side
+panels are collapsible … State is persisted per panel"*. No FEATURES row existed; one does now.
+
+### What it holds, and the record that decides it
+
+The founding record reads *"right contextual panel (annotations list / properties)"*
+(`BUILD-PROMPT.md`:1070). The architecture keeps the panel and drops the parenthetical, and it
+lists *Comments* among the left document panel's six tabs, where pass C put the annotations list.
+A second list on the right would be two surfaces for one list (B3). So the right panel holds the
+**properties**: the style controls and the selection's styles, moved out of the row under the
+status bar. That row, its grid area and its rule are removed, and the stylesheet's comment that
+said pass C would remove them is corrected — pass C left the two style panels in it.
+
+### Built
+
+- `surfaces/ContextPanel.tsx`: a region named *Properties* with a header chevron that collapses it
+  and an edge handle that reopens it. `appearance.context-panel-open` is its own.
+- `appearance.context-panel-width`, CSS pixels, 216–480, fallback 256. **216 is measured**, not
+  summed: in the production build at 1280 × 800 the style controls' min-content width was
+  211.39 px — the opacity row, 195.39, being the widest — and with the border that is 212.39 on
+  the 8 px grid. The fallback is a choice: the panels had no width before.
+- **One splitter row, three panes.** `Splitter` now takes an optional fixed pane at each side and one
+  flexible pane between, as its type: two flexible panes, or a handle between two fixed ones, cannot
+  be written. Each handle writes only the pane that moved.
+
+### The flexible pane is a hole, and that took one cast
+
+With a fixed pane at the end, the flexible pane's entry is in the middle of the size array, and
+`PanelSize[]` cannot type a hole. Read before choosing: the package exports `.`, `./anatomy` and its
+`package.json` only, so the library's own resolver cannot be called; computing the middle
+percentage would be a second `parsePanelSize` (B3a); nested splitters mirror the same hole. And
+the library handles a hole on both paths — `resolvePanelSizes` splits the remainder across entries
+that did not parse, and `getPanelFlexBoxStyle` gives an unresolved one `flex-grow: 1`. So the array
+is built with the hole and cast once, stated as that one fact, and the rendered right-panel case is
+what fails if a version stops filling it.
+
+### Proof
+
+Rendered, against the production build: the right pane draws its stored 300 within two handles'
+widths; two ArrowLeft presses widen it and the left pane does not move; after a reload both widths
+hold; collapsing it removes its handle and leaves the left width. At 216, no style row's last control
+runs past the pane. The left panel's three cases still pass on the three-pane row.
+
+Unit: the region, its chevron and handle, a stored collapse, and that collapsing it records its own
+setting and not the left's; the row with both open, left shut, and both shut.
+
+### Mutations
+
+- **D1 — the right pane's width not written.** The right-panel case alone failed, at the keyboard step
+  (297.47 px against more than 306): the live size set and cleared on each key press, and nothing
+  written, so it returned. The four other panel cases passed.
+- **D2 — the collapse chevron writing the left panel's open setting.** The collapse case alone failed:
+  the region stayed, because its own setting never changed. The other two cases passed.
+
+### Owed, and said on the row
+
+- The comment styles panel **with a selection** is unmeasured: 73.55 px was its empty state. The
+  216 floor does not claim to hold the selected state.
+- The style **colour** can no longer be set before a document is open. The panels used to render
+  under the start screen too; they are now inside the document's row, and the Settings dialog does not
+  offer the colour.
+
+---
+
 ## 2026-09-14 — Design pass C2: the document panel's width is resizable and persisted
 
 §10.3: *"panels resizable with persisted widths"*. No FEATURES row existed for it; one does now.

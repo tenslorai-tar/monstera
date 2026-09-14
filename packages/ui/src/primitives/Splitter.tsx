@@ -2,16 +2,23 @@ import { useLingui } from '@lingui/react';
 import { normalizeProps, useMachine } from '@zag-js/react';
 import * as splitter from '@zag-js/splitter';
 import type { MessageKey } from '@monstera/shared';
-import { useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { Fragment, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 
 import { pixelsOfRoot } from './splitterSize.js';
 
 /**
- * Two panes side by side, the first resizable by dragging or by keyboard (§10.3: *"panels
+ * A row of panes: an optional fixed-width pane at each side, and one flexible pane between them
+ * that takes the rest. Each fixed pane is resizable by dragging or by keyboard (§10.3: *"panels
  * resizable with persisted widths"*).
  *
  * `@zag-js/splitter` is ADR-0005's machine for this, and ADR-0005 wraps every Zag machine in a
  * primitive so no feature imports one. This is that wrapper.
+ *
+ * ## THE SHAPE IS THE TYPE: at most one fixed pane per side, exactly one flexible pane
+ *
+ * `start` and `end` are optional and `middle` is not, so a row with two flexible panes, or a
+ * handle between two fixed ones, cannot be written. Each handle sits between the flexible pane and
+ * one fixed pane, and resizes exactly that pair (`resizeByDelta` pivots on the handle's two panes).
  *
  * ## HORIZONTAL AND WITHOUT A REGISTRY, and invariant 27 is why
  *
@@ -21,20 +28,29 @@ import { pixelsOfRoot } from './splitterSize.js';
  * A vertical orientation or a `registry` would inject texts no hash covers, so neither is a prop
  * here: a caller cannot pick a configuration the policy refuses.
  *
- * ## Pixels in, pixels out — and the pane is not quite those pixels, by the library's rule
+ * ## Pixels in, pixels out — and a pane is not quite those pixels, by the library's rule
  *
- * `width`, `minWidth` and `maxWidth` are CSS pixels and go to the machine as `"Npx"` strings,
- * which it resolves against its root itself. It reports a finished resize as percentages, and
- * `pixelsOfRoot` turns that back into the pixels `onWidthChange` receives, over the same root the
- * inward rule divides by — so a stored width maps back to the same percentage and does not drift
- * across launches.
+ * Widths are CSS pixels and go to the machine as `"Npx"` strings, which it resolves against its
+ * root itself. It reports a finished resize as percentages, and `pixelsOfRoot` turns each fixed
+ * pane's back into pixels over the same root the inward rule divides by — so a stored width maps
+ * back to the same percentage and does not drift across launches.
  *
- * **The rendered pane is narrower than `width` by a pixel or two, and that is not this module's
- * to correct.** The inward rule divides by the whole root, while `getPanelFlexBoxStyle` lays the
- * percentage out as a flex-grow share of the root minus the handle, written to three significant
- * figures. Measured 2026-09-14 in the production build at 1280 × 800: root 1216.33 px, handle 6,
- * `width` 256 drew a 254.17 px pane. Correcting it here would be a second opinion about the
- * library's layout; the persisted value is exact, and the drawn one is within the handle's width.
+ * **A drawn pane is narrower than its width by a pixel or two, and that is not this module's to
+ * correct.** The inward rule divides by the whole root, while `getPanelFlexBoxStyle` lays the
+ * percentage out as a flex-grow share of the root minus the handles, to three significant figures.
+ * Measured 2026-09-14 in the production build at 1280 × 800: root 1216.33 px, one 6 px handle, a
+ * stored 256 drew a 254.17 px pane. Correcting it here would be a second opinion about the
+ * library's layout; the persisted value is exact.
+ *
+ * ## THE FLEXIBLE PANE IS A HOLE IN `size`, and that takes one cast
+ *
+ * The flexible pane has no stored size: it is the rest. The library's `resolvePanelSizes` is written
+ * for exactly that — it splits the remainder across the entries that did not parse — and
+ * `getPanelFlexBoxStyle` gives an unresolved hole `flex-grow: 1` before the first measurement. But
+ * `PanelSize[]` cannot type a hole, and with a fixed pane at the END the hole is in the middle,
+ * where it cannot be left off the array. The package exports no resolver to compute it with, and
+ * computing it here would be a second `parsePanelSize` (B3a). So the array is built with the hole
+ * and cast once, below; the rendered three-pane case fails loudly if a version stops filling it.
  *
  * ## THE LIVE SIZE IS HELD HERE DURING A RESIZE, because a controlled machine does not hold it
  *
@@ -46,85 +62,109 @@ import { pixelsOfRoot } from './splitterSize.js';
  * back round.
  *
  * So `onResize` keeps the live percentages in state and they are `size` until the resize ends;
- * then the stored width is written once and `size` is that width again. One resize is still one
- * write to whatever owns `width`.
+ * then each fixed pane whose width changed is written once, and `size` is the stored widths again.
  */
-export interface SplitterProps {
-  /** The resize handle's accessible name. The handle is a `role="separator"`. */
+export interface FixedPane {
+  readonly content: ReactNode;
+  /** The accessible name of the handle between this pane and the flexible one. */
   readonly label: MessageKey;
-  /** The first pane's width in CSS pixels. */
+  /** CSS pixels. */
   readonly width: number;
   readonly minWidth: number;
   readonly maxWidth: number;
-  /** A finished resize, in whole CSS pixels within `minWidth`–`maxWidth`. */
+  /** A finished resize that changed this pane, in whole CSS pixels within its bounds. */
   readonly onWidthChange: (width: number) => void;
-  /** The resizable pane. */
-  readonly start: ReactNode;
-  /** The pane that takes the rest. */
-  readonly end: ReactNode;
 }
 
-export function Splitter({
-  label,
-  width,
-  minWidth,
-  maxWidth,
-  onWidthChange,
-  start,
-  end,
-}: SplitterProps): ReactElement {
+export interface SplitterProps {
+  readonly start?: FixedPane | undefined;
+  /** The flexible pane, which takes whatever the fixed panes leave. */
+  readonly middle: ReactNode;
+  readonly end?: FixedPane | undefined;
+}
+
+type PaneId = 'start' | 'middle' | 'end';
+
+export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
   const { i18n } = useLingui();
   // THE MACHINE'S ID IS REQUIRED (`@zag-js/types` `CommonProperties`) and names the elements it
   // looks up; a literal would collide the day two splitters are on screen.
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   // THE SIZE WHILE A RESIZE IS IN PROGRESS, in the machine's percentages. `null` between resizes,
-  // when the stored `width` is the size. See the header for why the machine needs this handed back.
+  // when the stored widths are the size. See the header for why the machine needs this handed back.
   const [live, setLive] = useState<number[] | null>(null);
+
+  // In DOCUMENT order, which is the order the machine indexes sizes by.
+  const panes: readonly { readonly id: PaneId; readonly fixed: FixedPane | undefined }[] = [
+    ...(start === undefined ? [] : [{ id: 'start' as const, fixed: start }]),
+    { id: 'middle' as const, fixed: undefined },
+    ...(end === undefined ? [] : [{ id: 'end' as const, fixed: end }]),
+  ];
+
+  const stored = panes.map((pane) =>
+    pane.fixed === undefined ? undefined : `${String(pane.fixed.width)}px`,
+  );
 
   const service = useMachine(splitter.machine, {
     id,
     orientation: 'horizontal',
-    panels: [
-      {
-        id: 'start',
-        minSize: `${String(minWidth)}px`,
-        maxSize: `${String(maxWidth)}px`,
-        resizeBehavior: 'preserve-pixel-size',
-      },
-      { id: 'end' },
-    ],
-    size: live ?? [`${String(width)}px`],
+    panels: panes.map((pane) =>
+      pane.fixed === undefined
+        ? { id: pane.id }
+        : {
+            id: pane.id,
+            minSize: `${String(pane.fixed.minWidth)}px`,
+            maxSize: `${String(pane.fixed.maxWidth)}px`,
+            resizeBehavior: 'preserve-pixel-size' as const,
+          },
+    ),
+    // THE ONE CAST, and it is one fact: the flexible pane's entry is a hole the library fills with
+    // the remainder, which `PanelSize[]` cannot express (header, "a hole in size").
+    size: live ?? (stored as splitter.PanelSize[]),
     onResize: (details) => {
       setLive(details.size);
     },
     onResizeEnd: (details) => {
-      const percent = details.size[0];
       const measured = root.current?.getBoundingClientRect().width ?? 0;
       // Cleared first and whatever happens next: a resize that could not be converted must not
-      // leave the pane pinned to its last live size and deaf to the stored width.
+      // leave the panes pinned to their last live sizes and deaf to the stored widths.
       setLive(null);
-      if (percent === undefined) return;
-      const pixels = pixelsOfRoot(percent, measured);
-      if (pixels === undefined) return;
-      onWidthChange(Math.min(maxWidth, Math.max(minWidth, Math.round(pixels))));
+      panes.forEach((pane, index) => {
+        if (pane.fixed === undefined) return;
+        const percent = details.size[index];
+        if (percent === undefined) return;
+        const pixels = pixelsOfRoot(percent, measured);
+        if (pixels === undefined) return;
+        const next = Math.min(pane.fixed.maxWidth, Math.max(pane.fixed.minWidth, Math.round(pixels)));
+        // ONLY THE PANE THAT MOVED: a resize at one handle leaves the other side's width exactly
+        // where it was, and writing it back unchanged would be a second change nobody made.
+        if (next !== pane.fixed.width) pane.fixed.onWidthChange(next);
+      });
     },
   });
   const api = splitter.connect(service, normalizeProps);
 
   return (
     <div {...api.getRootProps()} ref={root} className="m-splitter">
-      <div {...api.getPanelProps({ id: 'start' })} className="m-splitter__pane">
-        {start}
-      </div>
-      <div
-        {...api.getResizeTriggerProps({ id: 'start:end' })}
-        aria-label={i18n._(label)}
-        className="m-splitter__handle"
-      />
-      <div {...api.getPanelProps({ id: 'end' })} className="m-splitter__pane m-splitter__pane--end">
-        {end}
-      </div>
+      {panes.map((pane, index) => {
+        const next = panes[index + 1];
+        const pairFixed = pane.fixed ?? next?.fixed;
+        return (
+          <Fragment key={pane.id}>
+            <div {...api.getPanelProps({ id: pane.id })} className="m-splitter__pane">
+              {pane.fixed === undefined ? middle : pane.fixed.content}
+            </div>
+            {next === undefined || pairFixed === undefined ? null : (
+              <div
+                {...api.getResizeTriggerProps({ id: `${pane.id}:${next.id}` })}
+                aria-label={i18n._(pairFixed.label)}
+                className="m-splitter__handle"
+              />
+            )}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }

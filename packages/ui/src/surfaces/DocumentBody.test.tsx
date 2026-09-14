@@ -8,7 +8,11 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
-import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_WIDTH_SETTING } from '../settings/layout.js';
+import {
+  CONTEXT_PANEL_OPEN_SETTING,
+  DOCUMENT_PANEL_OPEN_SETTING,
+  DOCUMENT_PANEL_WIDTH_SETTING,
+} from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
 import { DocumentBody } from './DocumentBody.js';
 
@@ -31,7 +35,12 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS))): SettingsStore {
   render(
     <Wrapped>
-      <DocumentBody settings={settings} panel={<p>panel</p>} page={<p>page</p>} />
+      <DocumentBody
+        settings={settings}
+        panel={<p>panel</p>}
+        page={<p>page</p>}
+        contextPanel={<p>context</p>}
+      />
     </Wrapped>,
   );
   return settings;
@@ -47,15 +56,38 @@ describe('DocumentBody', () => {
     expect(handle.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('COLLAPSED: no resize handle, and both panes still render', () => {
+  it('BOTH OPEN: two resize handles, panel · page · context, each named by its own side', () => {
+    drawn();
+    const left = screen.getByRole('separator', { name: 'Resize the document panel' });
+    const right = screen.getByRole('separator', { name: 'Resize the properties panel' });
+    const order = [screen.getByText('panel'), left, screen.getByText('page'), right, screen.getByText('context')];
+    order.slice(1).forEach((node, index) => {
+      const before = order[index];
+      expect(before === undefined ? false : (before.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
+    });
+  });
+
+  it('LEFT COLLAPSED: only the right handle, and every pane still renders', () => {
     const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
     settings.hydrate({ [DOCUMENT_PANEL_OPEN_SETTING.id]: false });
     drawn(settings);
-    // No splitter at all while shut: the machine's own collapse would be a second owner of
-    // "is the panel open", and a handle for a panel nobody can see resizes nothing.
+    // No handle for a shut side: the machine's own collapse would be a second owner of "is the
+    // panel open", and a handle for a panel nobody can see resizes nothing.
+    expect(screen.queryByRole('separator', { name: 'Resize the document panel' })).toBeNull();
+    expect(screen.getByRole('separator', { name: 'Resize the properties panel' })).toBeDefined();
+    expect(screen.getByText('panel')).toBeDefined();
+    expect(screen.getByText('page')).toBeDefined();
+    expect(screen.getByText('context')).toBeDefined();
+  });
+
+  it('BOTH COLLAPSED: no resize handle at all, and every pane still renders', () => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.hydrate({ [DOCUMENT_PANEL_OPEN_SETTING.id]: false, [CONTEXT_PANEL_OPEN_SETTING.id]: false });
+    drawn(settings);
     expect(screen.queryByRole('separator')).toBeNull();
     expect(screen.getByText('panel')).toBeDefined();
     expect(screen.getByText('page')).toBeDefined();
+    expect(screen.getByText('context')).toBeDefined();
   });
 
   it('collapsing and reopening neither WRITES nor forgets the stored width', async () => {
@@ -72,7 +104,9 @@ describe('DocumentBody', () => {
       settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, false);
       await Promise.resolve();
     });
-    expect(screen.queryByRole('separator')).toBeNull();
+    // THE LEFT HANDLE by name: the right contextual panel is still open, so its handle stays, and
+    // "no separator at all" would be asserting the wrong side's absence.
+    expect(screen.queryByRole('separator', { name: 'Resize the document panel' })).toBeNull();
     await act(async () => {
       settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
       await Promise.resolve();

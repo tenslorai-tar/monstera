@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import {
+  CONTEXT_PANEL_OPEN_TITLE,
+  CONTEXT_PANEL_WIDTH_TITLE,
   DOCUMENT_PANEL_OPEN_TITLE,
   DOCUMENT_PANEL_TITLE,
   DOCUMENT_PANEL_WIDTH_TITLE,
@@ -84,5 +86,45 @@ export const DOCUMENT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   title: DOCUMENT_PANEL_WIDTH_TITLE,
   schema: z.number().int().min(DOCUMENT_PANEL_MIN_WIDTH).max(DOCUMENT_PANEL_MAX_WIDTH),
   fallback: 224,
+  category: 'appearance',
+};
+
+/**
+ * Whether §10.3's right contextual panel is open (*"Both side panels are collapsible … State is
+ * persisted per panel"*). Its own setting, never the document panel's: collapsing one side changes
+ * nothing about the other.
+ */
+export const CONTEXT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'appearance.context-panel-open',
+  title: CONTEXT_PANEL_OPEN_TITLE,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'appearance',
+};
+
+/**
+ * The narrowest the right contextual panel may be, in CSS pixels.
+ *
+ * MEASURED, not summed: its rows are a label and a native control spread apart, so no declaration
+ * states a width. In the production build at 1280 × 800 on 2026-09-14, the style controls'
+ * min-content width was 211.39 px — the widest row, the opacity slider's, at 195.39, plus the
+ * panel's padding — and with the panel's 1 px border that is 212.39, raised to 216 on §10.2's 8 px
+ * grid. The comment styles panel measured 73.55 px with nothing selected; with a selection it is
+ * UNMEASURED, and this floor does not claim to hold it.
+ */
+export const CONTEXT_PANEL_MIN_WIDTH = 216;
+
+/** The widest the right contextual panel may be: the document panel's bound, for its reason. */
+export const CONTEXT_PANEL_MAX_WIDTH = DOCUMENT_PANEL_MAX_WIDTH;
+
+/**
+ * The right contextual panel's width, in CSS pixels. The fallback is a CHOICE — the style panels
+ * had no width before, filling a row beneath the document — set 40 px over the measured floor.
+ */
+export const CONTEXT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
+  id: 'appearance.context-panel-width',
+  title: CONTEXT_PANEL_WIDTH_TITLE,
+  schema: z.number().int().min(CONTEXT_PANEL_MIN_WIDTH).max(CONTEXT_PANEL_MAX_WIDTH),
+  fallback: 256,
   category: 'appearance',
 };

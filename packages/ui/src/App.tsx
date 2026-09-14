@@ -18,6 +18,7 @@ import {
   useState,
   useSyncExternalStore,
   type ReactElement,
+  type ReactNode,
 } from 'react';
 
 import {
@@ -238,6 +239,7 @@ import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { Ribbon } from './surfaces/Ribbon.js';
+import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
@@ -1843,6 +1845,20 @@ export function App({ client, settings }: AppProps): ReactElement {
           secondRenderer={secondRenderer}
           requestPassword={requestPassword}
           settings={settings}
+          // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
+          // `PageCanvas`' row beside the page area (design pass D).
+          contextPanel={
+            <ContextPanel settings={settings}>
+              {/* THE STYLE CONTROLS, which take no document at all: they set what the
+                  NEXT annotation is drawn in, so they do not change when the version
+                  moves. That is what makes them settings rather than document state. */}
+              <StylePanel settings={settings} />
+              {/* THE OTHER HALF: what the selected annotations look like now, and the
+                  command that changes them. Takes the same resolved style the tools
+                  take, so *Apply* writes what the controls above say. */}
+              <CommentStylesPanel onApply={restyleSelection} selection={selection} style={style} />
+            </ContextPanel>
+          }
           // §10.3's DOCUMENT PANELS other than Pages, built here where their state lives.
           // `PageCanvas` hosts them beside the thumbnail strip, which needs its document
           // view; one of the six shows at a time (`DocumentPanel`).
@@ -1929,21 +1945,6 @@ export function App({ client, settings }: AppProps): ReactElement {
           task={task}
         />
       )}
-      {/* THE STYLE PANELS, still under the status bar in one grid area. The other
-          panels moved into §10.3's document panel (design pass C); these two are the
-          RIGHT contextual panel's, which is the next commit, and they stay here until it
-          lands so no commit leaves a surface with nowhere to be. */}
-      <div className="m-surface-extras">
-      {/* THE STYLE CONTROLS, which take no document at all: they set what the
-          NEXT annotation is drawn in, so they are useful before anything is
-          open and they do not change when the version moves. That is what makes
-          them settings rather than document state. */}
-      <StylePanel settings={settings} />
-      {/* THE OTHER HALF: what the selected annotations look like now, and the
-          command that changes them. Takes the same resolved style the tools
-          take, so *Apply* writes what the controls above say. */}
-      <CommentStylesPanel onApply={restyleSelection} selection={selection} style={style} />
-      </div>
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because
           each command placed on it declares `when`. */}
@@ -2112,6 +2113,7 @@ function PageCanvas({
   secondRenderer,
   settings,
   panels,
+  contextPanel,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -2155,6 +2157,8 @@ function PageCanvas({
   readonly settings: SettingsStore;
   /** The document panels other than Pages, built by `App` where their state lives. */
   readonly panels: DocumentPanelProps['panels'];
+  /** §10.3's right contextual panel, built by `App` where its state lives. */
+  readonly contextPanel: ReactNode;
   /**
    * Asks for an encrypted document's password, or `undefined` on a dismissal.
    *
@@ -2268,6 +2272,7 @@ function PageCanvas({
         settings={settings}
         panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
         page={<canvas className="m-page" data-failed="true" />}
+        contextPanel={contextPanel}
       />
     );
   }
@@ -2282,6 +2287,7 @@ function PageCanvas({
         settings={settings}
         panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
         page={<div className="m-page-list" />}
+        contextPanel={contextPanel}
       />
     );
   }
@@ -2296,6 +2302,7 @@ function PageCanvas({
     // the row before.
     <DocumentBody
       settings={settings}
+      contextPanel={contextPanel}
       panel={
       <DocumentPanel
         settings={settings}

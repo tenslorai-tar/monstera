@@ -721,6 +721,12 @@ export const DOCUMENT_PANEL_TITLE = messageKey('setting.appearance-document-pane
 export const DOCUMENT_PANEL_OPEN_TITLE = messageKey('setting.appearance-document-panel-open.title');
 export const DOCUMENT_PANEL_WIDTH_TITLE = messageKey('setting.appearance-document-panel-width.title');
 export const PANEL_RESIZE = messageKey('surface.panel.resize');
+export const CONTEXT_PANEL_LABEL = messageKey('surface.context-panel.label');
+export const CONTEXT_PANEL_RESIZE = messageKey('surface.context-panel.resize');
+export const CONTEXT_PANEL_COLLAPSE = messageKey('surface.context-panel.collapse');
+export const CONTEXT_PANEL_REOPEN = messageKey('surface.context-panel.reopen');
+export const CONTEXT_PANEL_OPEN_TITLE = messageKey('setting.appearance-context-panel-open.title');
+export const CONTEXT_PANEL_WIDTH_TITLE = messageKey('setting.appearance-context-panel-width.title');
 export const THUMBNAIL_PAGE = messageKey('surface.thumbnails.page');
 export const NEXT_PAGE_TITLE = messageKey('command.page-next.title');
 export const PREVIOUS_PAGE_TITLE = messageKey('command.page-previous.title');
@@ -1722,6 +1728,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUMENT_PANEL_OPEN_TITLE]: 'Show the document panel',
   [DOCUMENT_PANEL_WIDTH_TITLE]: 'Document panel width',
   [PANEL_RESIZE]: 'Resize the document panel',
+  [CONTEXT_PANEL_LABEL]: 'Properties',
+  [CONTEXT_PANEL_RESIZE]: 'Resize the properties panel',
+  [CONTEXT_PANEL_COLLAPSE]: 'Collapse the properties panel',
+  [CONTEXT_PANEL_REOPEN]: 'Show the properties panel',
+  [CONTEXT_PANEL_OPEN_TITLE]: 'Show the properties panel',
+  [CONTEXT_PANEL_WIDTH_TITLE]: 'Properties panel width',
   [THUMBNAIL_PAGE]: 'Page {page}',
   [NEXT_PAGE_TITLE]: 'Next page',
   [PREVIOUS_PAGE_TITLE]: 'Previous page',

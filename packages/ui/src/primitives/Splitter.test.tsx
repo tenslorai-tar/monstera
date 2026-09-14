@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
+import { messageKey } from '@monstera/shared';
 import { render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, PANEL_RESIZE } from '../messages/en.js';
-import { Splitter } from './Splitter.js';
+import { Splitter, type FixedPane } from './Splitter.js';
 
 /**
  * What a component test CAN see of a splitter, and what it cannot.
@@ -14,69 +14,106 @@ import { Splitter } from './Splitter.js';
  * happy-dom lays nothing out, so every element measures 0 and the machine resolves no pixel size
  * (`parsePanelSize` returns nothing for a zero root). A resize cannot be observed here, and a case
  * pretending otherwise would pass for a splitter that never moves. The drag, the keyboard step and
- * the width surviving a reload belong to the rendered test against the production build.
+ * a width surviving a reload belong to the rendered cases against the production build.
  *
- * What is here is the part that does not need layout: the handle a person operates, named and
- * oriented, the two panes, and that nothing is written when no resize has happened.
+ * What is here needs no layout: the handles a person operates, named, oriented and between the
+ * right panes, and that nothing is written when no resize has happened.
  */
 
+const RESIZE_START = messageKey('test.splitter.resize-start');
+const RESIZE_END = messageKey('test.splitter.resize-end');
+
 beforeAll(() => {
-  activateCatalogue('en', EN);
+  activateCatalogue('en', { [RESIZE_START]: 'Resize the start pane', [RESIZE_END]: 'Resize the end pane' });
 });
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
 
+function fixed(content: string, label: FixedPane['label'], onWidthChange = (): void => undefined): FixedPane {
+  return { content: <p>{content}</p>, label, width: 224, minWidth: 192, maxWidth: 480, onWidthChange };
+}
+
+/** Whether `a` comes before `b` in document order. */
+function precedes(a: Node, b: Node): boolean {
+  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
 describe('Splitter', () => {
-  it('renders ONE separator named by its label, horizontal, between the two panes', () => {
+  it('START + MIDDLE: one separator, named, horizontal, focusable, between the two panes', () => {
+    render(
+      <Wrapped>
+        <Splitter start={fixed('start pane', RESIZE_START)} middle={<p>middle pane</p>} />
+      </Wrapped>,
+    );
+
+    expect(screen.getAllByRole('separator')).toHaveLength(1);
+    const handle = screen.getByRole('separator', { name: 'Resize the start pane' });
+    // HORIZONTAL is what keeps the injected cursor inside ADR-0066's three hashes.
+    expect(handle.getAttribute('aria-orientation')).toBe('horizontal');
+    expect(handle.getAttribute('tabindex')).toBe('0');
+    expect(precedes(screen.getByText('start pane'), handle)).toBe(true);
+    expect(precedes(handle, screen.getByText('middle pane'))).toBe(true);
+  });
+
+  it('START + MIDDLE + END: two separators, each named by its OWN fixed pane, in order', () => {
     render(
       <Wrapped>
         <Splitter
-          label={PANEL_RESIZE}
-          width={224}
-          minWidth={192}
-          maxWidth={480}
-          onWidthChange={() => undefined}
-          start={<p>start pane</p>}
-          end={<p>end pane</p>}
+          start={fixed('start pane', RESIZE_START)}
+          middle={<p>middle pane</p>}
+          end={fixed('end pane', RESIZE_END)}
         />
       </Wrapped>,
     );
 
-    const handles = screen.getAllByRole('separator');
-    expect(handles).toHaveLength(1);
-    const handle = screen.getByRole('separator', { name: 'Resize the document panel' });
-    // HORIZONTAL is what keeps the injected cursor inside ADR-0066's three hashes.
-    expect(handle.getAttribute('aria-orientation')).toBe('horizontal');
-    // Keyboard-operable: the machine's own step is the keyboard resize.
-    expect(handle.getAttribute('tabindex')).toBe('0');
+    expect(screen.getAllByRole('separator')).toHaveLength(2);
+    const startHandle = screen.getByRole('separator', { name: 'Resize the start pane' });
+    const endHandle = screen.getByRole('separator', { name: 'Resize the end pane' });
+    // A handle named after the wrong pane is one a screen reader describes as resizing the other
+    // side — the order below and the names above are asserted together for that reason.
+    const order = [
+      screen.getByText('start pane'),
+      startHandle,
+      screen.getByText('middle pane'),
+      endHandle,
+      screen.getByText('end pane'),
+    ];
+    order.slice(1).forEach((node, index) => {
+      const before = order[index];
+      expect(before === undefined ? false : precedes(before, node)).toBe(true);
+    });
+  });
 
-    const start = screen.getByText('start pane');
-    const end = screen.getByText('end pane');
-    // In DOCUMENT order, start then the handle then end: a handle after both panes would resize
-    // nothing a person can see.
-    expect(start.compareDocumentPosition(handle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(handle.compareDocumentPosition(end) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it('MIDDLE + END: the handle is the end pane\'s, before it', () => {
+    render(
+      <Wrapped>
+        <Splitter middle={<p>middle pane</p>} end={fixed('end pane', RESIZE_END)} />
+      </Wrapped>,
+    );
+
+    expect(screen.getAllByRole('separator')).toHaveLength(1);
+    const handle = screen.getByRole('separator', { name: 'Resize the end pane' });
+    expect(precedes(screen.getByText('middle pane'), handle)).toBe(true);
+    expect(precedes(handle, screen.getByText('end pane'))).toBe(true);
   });
 
   it('writes NOTHING when no resize has happened', () => {
-    const onWidthChange = vi.fn();
+    const onStart = vi.fn();
+    const onEnd = vi.fn();
     render(
       <Wrapped>
         <Splitter
-          label={PANEL_RESIZE}
-          width={224}
-          minWidth={192}
-          maxWidth={480}
-          onWidthChange={onWidthChange}
-          start={<p>start pane</p>}
-          end={<p>end pane</p>}
+          start={fixed('start pane', RESIZE_START, onStart)}
+          middle={<p>middle pane</p>}
+          end={fixed('end pane', RESIZE_END, onEnd)}
         />
       </Wrapped>,
     );
-    // A mount that reported a width would write the stored value back on every launch — or, with
-    // no layout, write a width of nothing.
-    expect(onWidthChange).not.toHaveBeenCalled();
+    // A mount that reported a width would write the stored value back on every launch — or, with no
+    // layout, write a width of nothing.
+    expect(onStart).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
   });
 });
