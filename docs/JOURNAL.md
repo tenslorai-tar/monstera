@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — HHHHHH-1: an external edit saved again is offered again, and a reverted file offers nothing
+
+The audit just below queued this, and it is taken first.
+
+### The mechanism
+
+`watchEdits` returned from a look whose digest matched the pending edit. Its own header
+gives the way back from *not now* as saving again, and an editor's second Save usually
+writes the same bytes. That save was a look with nothing new to say, so every later wait
+answered `unchanged`.
+
+It returned just as early for a digest equal to what `main` wrote, before clearing
+anything. So a file put back kept offering a reimport of bytes it no longer held.
+
+### What changed
+
+`externalEditWatch.ts` `look()`:
+- **A digest equal to `known` clears the pending edit.** The file is back where `main`
+  left it.
+- **The announced edit, found again, is announced again.** The quiet second folds one
+  save's duplicate events into one look, so a look is one save.
+- **An edit found and not yet announced stays as it was.** The next wait tells it.
+
+### Proven
+
+Two cases in `externalEditWatch.test.ts`, each built from input the defect gets wrong:
+- **The same bytes, dismissed, then saved again.** Both looks answer one digest, and the
+  wait after the second answers `changed`.
+- **A file reverted to the written bytes.** Nothing is left pending.
+
+The existing *accepted edit is not offered again* and *a wait holds until a newer save*
+cases still pass, and so do all 102 cases across the two watch files and the desktop
+command file.
+
+Mutations, each reverted:
+
+| mutation | red |
+|---|---|
+| A: the old `digest === pending` return | only *saved again with the SAME bytes*, which timed out at 5 s with the wait never answered |
+| B: the whole `digest === known` branch disabled | three: the new revert case, and the two older cases that rely on the branch |
+| B2: the branch kept, `pending = null` removed | only *REVERTED … leaves nothing pending*: `expected 'edited' to be null` |
+
+B separated nothing new, because the branch was already load-bearing, so B2 is the
+mutation that proves the added line.
+
+**Still owed on this row:** the live run with a real editor.
+
+---
+
 ## 2026-09-14 — Stage audit of `4971b60..09e0f74`: an edit a person re-saves is never offered again, and a migration figure that grew for the third time
 
 Thirty-six commits and 190 files: the audit `b0699a3`, D9's compose rows (Markdown, CSV,

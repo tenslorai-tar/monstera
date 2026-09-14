@@ -115,7 +115,20 @@ export function watchEdits(
   const look = async (): Promise<void> => {
     quiet = null;
     const digest = await surface.digest(path);
-    if (closed || digest === null || digest === known || digest === pending) return;
+    if (closed || digest === null) return;
+    if (digest === known) {
+      // BACK TO THE BYTES MAIN WROTE OR ACCEPTED: the edit is gone. Leaving it pending would
+      // offer a reimport that reads what the file no longer holds (audit HHHHHH-1).
+      pending = null;
+      announced = null;
+      return;
+    }
+    // ONE LOOK IS ONE SAVE, because the quiet second folds a save's duplicate events into a
+    // single look. So the announced edit found again is the person saving it again — the
+    // header's way back from *not now* — and it is offered again. An edit found and not yet
+    // announced stays as it is: the next wait tells it (audit HHHHHH-1).
+    if (digest === pending && pending !== announced) return;
+    announced = null;
     pending = digest;
     // ANNOUNCED ONLY TO SOMEONE LISTENING: an edit found while no wait is open stays
     // unannounced, so the next wait is told of it.

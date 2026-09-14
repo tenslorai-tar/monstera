@@ -176,6 +176,42 @@ describe('watchEdits — an edit is a changed digest after a quiet second', () =
     expect(watch.pending()).toBe('second-save');
   });
 
+  it('a DISMISSED edit saved again with the SAME bytes is offered again — the header’s way back (HHHHHH-1)', async () => {
+    // THE SEPARATING FIXTURE: both looks answer one digest. The dismissal case above saves
+    // different bytes the second time, which the defect also handles, so it could not see this.
+    const driven = fake(['edited', 'edited']);
+    const watch = started(driven);
+    driven.event('page.pdf');
+    await driven.quietSecond();
+    await expect(watch.wait(30_000)).resolves.toBe('changed');
+
+    // NOT NOW: a wait with no new save holds.
+    const held = watch.wait(30_000);
+    await driven.bound(30_000);
+    await expect(held).resolves.toBe('unchanged');
+
+    // SAVED AGAIN, identical bytes: one event, one look.
+    const again = watch.wait(30_000);
+    driven.event('page.pdf');
+    await driven.quietSecond();
+    expect(driven.looks()).toBe(2);
+    await expect(again).resolves.toBe('changed');
+    expect(watch.pending()).toBe('edited');
+  });
+
+  it('a file REVERTED to the bytes main wrote leaves nothing pending (HHHHHH-1)', async () => {
+    const driven = fake(['edited', WRITTEN]);
+    const watch = started(driven);
+    driven.event('page.pdf');
+    await driven.quietSecond();
+    expect(watch.pending()).toBe('edited');
+
+    driven.event('page.pdf');
+    await driven.quietSecond();
+    // THE DECISION: a reimport now would read bytes the file no longer holds.
+    expect(watch.pending()).toBeNull();
+  });
+
   it('a NEWER save replaces an edit still pending', async () => {
     const driven = fake(['first-save', 'second-save']);
     const watch = started(driven);
