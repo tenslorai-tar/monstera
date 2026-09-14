@@ -892,6 +892,71 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — LibreOffice provisions and verifies; converting it crashes on this machine, which blocks ADR-0063's gate
+
+ADR-0063's second half: `scripts/provision/libreoffice.mjs`, registered as
+`provision:libreoffice`. Its first run was the measurement the ADR owed, and the
+dated correction in the ADR records what it read. This entry covers the commit.
+
+### What was built
+
+- **Download from four pinned mirrors**, each locked to its own host. A mirror
+  that delivered nothing moves on to the next. A `DigestMismatch` or a
+  `DownloadTooLarge` stops the provision, keyed on the classes `9f49884` named.
+- **TDF's `.asc`** comes from `download.documentfoundation.org` against its own
+  SHA-256. It is verified with `openpgpVerify.mjs` under the key in
+  `scripts/provision/keys/`, **before** `msiexec` sees the MSI.
+- **Unpacking** is `msiexec /a <msi> /qn TARGETDIR=<staging>`, spawned without a
+  shell, with the arguments as a list.
+- **Confirmed in staging, then published by rename.** This is `pdfium.mjs`'
+  shape, and it was not the first draft's. See below.
+
+### What the first run read
+
+- The download, the SHA-256 and the signature all passed.
+- `msiexec /a` exited 0 from a **Medium**-integrity shell, so it needs no
+  elevation. Read via `whoami.exe /groups`, with `MSYS_NO_PATHCONV=1`, because
+  Git Bash turned `/groups` into a path on the first two tries.
+- `soffice.exe` lands at `program\soffice.exe` directly under `TARGETDIR`.
+- The tree is 1,596,517,458 bytes in 19,421 files.
+
+### Two defects the run found in the script
+
+1. **The guessed path.** The draft looked for `LibreOffice\program\soffice.exe`,
+   which is where a normal install puts it. The run failed at that line, and the
+   path is now the measured one.
+2. **Publish before confirm.** The draft renamed the tree into place and **then**
+   looked for `soffice.exe`, so the failed look left a complete-looking version
+   directory behind. It now confirms in staging and renames only after.
+
+   **Not re-run end to end after this fix.** A second full run costs the 358 MB
+   download again and would prove only the order of two statements. Stated, not
+   claimed.
+
+### Blocked: headless conversion
+
+`soffice --headless --convert-to pdf` crashed `soffice.bin` on every attempt here.
+It exited 0, wrote nothing, and the Application log recorded `APPCRASH` in
+`KERNELBASE.dll` for 26.8.0.3 and in `ucrtbase.dll` (`0xc0000409`) for the
+machine's installed 26.2.3.2.
+
+Each of these was ruled out:
+
+- **Git Bash's argument layer:** PowerShell crashes too.
+- **Environment variables:** PowerShell carries all of them.
+- **First-start profile creation:** later runs, with the profile present, crash.
+- **The input format:** `.txt`, `.txt` with an explicit filter, and `.fodt` all
+  crash.
+- **The administrative-image tree:** the installed build crashes as well.
+- **This session's command sandbox:** disabled for one command, same fault
+  bucket.
+
+**Recorded as a symptom, not a cause.** The question that separates what remains
+is the owner's. ADR-0063 items 3 (the AppContainer start) and 4 (macros off)
+need a working conversion first, so the Office import row does not start.
+
+---
+
 ## 2026-09-14 — CI red at `785ba87`, named: libuv's Windows watcher aborts on a directory not in its long form
 
 The annotation `334277a` made public ended with the cause:

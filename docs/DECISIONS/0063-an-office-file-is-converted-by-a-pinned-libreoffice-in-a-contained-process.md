@@ -233,3 +233,74 @@ provisioning commit measures the unpacked size.
   records them in a dated correction to this ADR. **No feature commit before those readings.**
 - **The feature commit** generalises `createSuspended`, adds the converter surface, and
   builds the Office import row, with the pair and a control.
+
+## Correction, 2026-09-14 — what the provisioning run measured, and the item it could not
+
+The first run of the LibreOffice provisioner read the five items this ADR left
+unmeasured. Two are answered, one is blocked on something this machine does
+that nothing here can see, and two are not reached, because the blocked one
+gates them.
+
+### Answered
+
+- **Download and verification work as decided (Decisions 3 and 3a).** A pinned
+  mirror served the MSI directly. SHA-256 matched the pin, and TDF's detached
+  signature verified under the pinned key, through the verifier module, before
+  anything unpacked it. The 833-byte `.asc` came from
+  `download.documentfoundation.org` against its own digest.
+- **Item 1: an administrative install unpacks without elevation.** `msiexec /a
+  <msi> /qn TARGETDIR=<dir>` exited 0 from a shell at *Medium Mandatory Level*.
+  Read through `whoami.exe /groups`: Administrators is present in the token but
+  not enabled.
+- **Where the executable lands.** It is `program\soffice.exe` directly under
+  `TARGETDIR`, not `LibreOffice\program\` as the provisioner first guessed. The
+  guess failed the first run at its last line, which also exposed a publish-order
+  defect: the tree was renamed into place before it was confirmed. Both are fixed
+  in the provisioner commit.
+- **Item 5: the unpacked tree is 1,596,517,458 bytes in 19,421 files** (`du -sb`,
+  2026-09-14). That includes a 19.8 MB administrative-image `.msi`. It is the
+  Store-size figure Decision 4 said this run would supply, and it is recorded
+  here, not decided.
+
+### Blocked: item 2, headless conversion
+
+`soffice.com --headless --convert-to pdf` **crashes `soffice.bin`** on this
+machine, every time. It exits 0 and writes nothing, and the Windows Application
+log records the crash:
+
+| | |
+|---|---|
+| provisioned 26.8.0.3, six attempts 04:59–05:04 | `APPCRASH`, `KERNELBASE.dll`, exception `0x00000000`, offset `0xc41ca`, one fault bucket |
+| the machine's installed 26.2.3.2, as a control | `ucrtbase.dll`, `0xc0000409` (fail-fast) |
+| `--version` on both | prints and exits 0 |
+
+Each of these was measured and ruled out:
+
+- **Git Bash's argument layer.** PowerShell crashes the same way.
+- **A missing environment variable.** PowerShell carries all of them.
+- **A first start on a fresh profile.** The profile is populated, and later
+  runs crash too.
+- **The input format.** `.txt`, `.txt` with an explicit filter, and `.fodt` all
+  crash.
+- **The administrative-image tree.** The installed build crashes as well.
+- **This session's command sandbox.** Disabling it for one command crashed in
+  the same bucket.
+
+Each attempt got past profile creation and made a `lu*.tmp` directory before
+dying.
+
+**This is a symptom, and it is not recorded as a cause.** *LibreOffice cannot
+convert on this machine* is not the finding. The finding is that two builds
+crash in different system modules from every context this session can launch,
+and that the reason is not visible from here. The question that separates the
+remaining explanations is the owner's: whether the installed LibreOffice
+converts a file headless when started from their own session.
+
+### Not reached
+
+- **Item 3, the AppContainer start.**
+- **Item 4, forcing macros off.**
+
+Both need a conversion that works outside containment first, and there is none
+yet. **No feature commit before they are read**, as the Consequences section
+already requires.
