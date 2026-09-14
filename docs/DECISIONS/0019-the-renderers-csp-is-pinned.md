@@ -261,3 +261,22 @@ package and did not see the contradiction. Writing the true version twice in one
 day is not a mechanism for noticing the false one, and there is no check that
 could have caught this: it is a claim about a direction, and both directions
 parse.
+
+## Addendum, 2026-09-14 — enforcement covers three directives, and the first library to trip one has arrived
+
+The consequence *"Enforcement evidence still covers two directives of eleven"* stopped
+being true on 2026-09-14. `rendererHarness.ts` now inserts a `<style>` element inside
+the listener that reads the other two directives' violations, and
+`proof:rendererpolicy` asserts `style-src 'self'` refuses it: three of eleven.
+
+The element is not an arbitrary fixture. It is `@zag-js/splitter` 1.43.3's drag
+cursor, verbatim — `* { cursor: col-resize !important; }` — and ADR-0005 names that
+library for §10.3's resizable panels. No configuration of that version injects
+nothing: the standalone machine and the registry both append a `<style>` to `head`.
+
+So the trip this ADR said would be *"recognised rather than debugged"* is here, and
+the response is the one this ADR already chose: a measured amendment preferring a
+hash over a blanket grant, in its own commit, with an amendment-log row. That commit
+owes the reading this one does not take — whether this Chromium admits a
+script-inserted `<style>` by hash — and a control that a text one character different
+is still refused.

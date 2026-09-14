@@ -397,9 +397,12 @@ diff someone has to justify rather than a default nobody re-reads.
 of record; `apps/desktop/src/windowPolicy.ts` is derived from it and
 `proof:rendererpolicy` fails when the two disagree. The policy is read back from
 a running Chromium as it received it, and the renderer is observed refusing a
-`connect-src` fetch and an `eval` — **enforcement evidence covers two directives
-of eleven**, which the invariant states rather than implies
-([ADR-0019](../DECISIONS/0019-the-renderers-csp-is-pinned.md)).
+`connect-src` fetch, an `eval`, and a script-inserted `<style>` element —
+**enforcement evidence covers three directives of eleven**, which the invariant
+states rather than implies
+([ADR-0019](../DECISIONS/0019-the-renderers-csp-is-pinned.md)). *Corrected
+2026-09-14:* this read "two directives" until `style-src` was exercised against the
+style element `@zag-js/splitter` injects on every drag.
 
 **Reason:** §3 row 10.
 
