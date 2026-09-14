@@ -145,3 +145,29 @@ feature whose subject is a table still owes that reading before turning the
 option on, exactly as the per-consumer opt-in already says.
 
 Poppler does not return: nothing here found MuPDF insufficient.
+
+## Correction, 2026-09-14 — the layout half is measured, and MuPDF has no layout output
+
+This ADR said that **if the layout-fidelity spike finds MuPDF insufficient**, Poppler returns
+through the external-converter seam. The spike's layout part is now executed
+(`docs/ENGINE-SPIKE.md` H7, addition of this date). It found MuPDF insufficient in one specific
+sense, and not in the sense that sentence expected.
+
+- **MuPDF's text is right.** Its lines were intact on every fixture, including a `/Rotate 90`
+  page.
+- **MuPDF has no layout output.** `asText()` gives one line per text line under every option
+  the engine names. A two-column page came back as twelve one-line rows against six two-cell
+  rows of truth.
+- **A layout mode would therefore be built, not called.** A row grid over MuPDF's lines matched
+  the generator's truth on two columns, a table and a rotated run. It failed a rotated page when
+  laid out in display space. And a grid is the clustering
+  [ADR-0034](0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md) keeps
+  out of the kernel.
+
+**So the fallback this ADR named is one of three answers, not the automatic one.** The choice
+is between a grid amending ADR-0034, Poppler (or Xpdf) through the external-converter seam
+(a new provisioned binary, licence and advisories included), and plain text only. It is left
+to the owner.
+
+**The plain half is built on MuPDF** (D10, 2026-09-14): one extraction path through the text
+substrate, streamed a page at a time under ADR-0035. The matrix row stands.

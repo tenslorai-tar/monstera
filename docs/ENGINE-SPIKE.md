@@ -372,3 +372,36 @@ against the same documents through `pdftotext -layout` — the comparison is the
 point, since "the output looks reasonable" is not a measurement. If MuPDF falls
 short, Poppler returns through the external-converter seam and ADR-0013 gets a
 dated correction.
+
+**Addition, 2026-09-14 — H7 is executed in three parts, and the layout part found
+that MuPDF has no layout text mode.**
+
+- **Columns**, 2026-09-02, [ADR-0034](DECISIONS/0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md):
+  `FZ_STEXT_SEGMENT` gives column-major order at 268pt and 60pt gutters, and no line
+  merged across a gutter.
+- **Tables**, 2026-09-10, ADR-0013's correction: `table-hunt` improved nothing on the
+  corpus and stays off. That reading was scored against PDFium, not `pdftotext`.
+- **Layout against `pdftotext -layout`**, 2026-09-14, on four generated fixtures scored
+  against the generator's own placement. MuPDF 1.28.0's lines were placed on a row grid
+  in display space, and the reference was **`pdftotext` 4.00 from Xpdf**, not Poppler's:
+
+  | fixture | MuPDF grid, exact rows | `pdftotext -layout`, exact rows |
+  |---|---|---|
+  | two columns, shared baselines | 6 / 6 | 6 / 6 |
+  | ruled 4×3 table | 4 / 4 | 4 / 4 |
+  | a 90° run beside upright lines | 4 / 4 | 4 / 4 |
+  | a `/Rotate 90` page | **0 / 4** | 4 / 4 |
+
+  The rotated page's four lines were intact. The grid, keyed on display-space baselines,
+  put them in one reversed row. **MuPDF's own `asText()` got that page right (4/4)** but
+  has **no layout mode**: under `preserve-whitespace`, `preserve-spans`, `paragraph-break`
+  and none, a two-column page came back as twelve one-line rows, 0/6. The control, an
+  unknown option, threw `Unused stext arguments found`, so the options reached the engine.
+- **The supplied corpus**, 11 documents and 21 pages, `/Rotate 0` on every page read,
+  has no ground truth. Row counts agreed on 9 of 14 pages with text, and row content on 1.
+  That figure mixes how each reader splits cells with what it read, so it ranks neither.
+
+So MuPDF falls short in one specific sense: it offers no layout output. Whether a grid of
+ours, Poppler through the external-converter seam, or plain text only is the answer is a
+decision for the owner, recorded in ADR-0013's correction of this date. The plain half is
+built on MuPDF.
