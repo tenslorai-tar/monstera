@@ -719,6 +719,8 @@ export const PANEL_COLLAPSE = messageKey('surface.panel.collapse');
 export const PANEL_REOPEN = messageKey('surface.panel.reopen');
 export const DOCUMENT_PANEL_TITLE = messageKey('setting.appearance-document-panel.title');
 export const DOCUMENT_PANEL_OPEN_TITLE = messageKey('setting.appearance-document-panel-open.title');
+export const DOCUMENT_PANEL_WIDTH_TITLE = messageKey('setting.appearance-document-panel-width.title');
+export const PANEL_RESIZE = messageKey('surface.panel.resize');
 export const THUMBNAIL_PAGE = messageKey('surface.thumbnails.page');
 export const NEXT_PAGE_TITLE = messageKey('command.page-next.title');
 export const PREVIOUS_PAGE_TITLE = messageKey('command.page-previous.title');
@@ -1718,6 +1720,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PANEL_REOPEN]: 'Show the document panel',
   [DOCUMENT_PANEL_TITLE]: 'Document panel',
   [DOCUMENT_PANEL_OPEN_TITLE]: 'Show the document panel',
+  [DOCUMENT_PANEL_WIDTH_TITLE]: 'Document panel width',
+  [PANEL_RESIZE]: 'Resize the document panel',
   [THUMBNAIL_PAGE]: 'Page {page}',
   [NEXT_PAGE_TITLE]: 'Next page',
   [PREVIOUS_PAGE_TITLE]: 'Previous page',

@@ -892,6 +892,69 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Design pass C2: the document panel's width is resizable and persisted
+
+§10.3: *"panels resizable with persisted widths"*. No FEATURES row existed for it; one does now.
+
+### What it is
+
+- `primitives/Splitter.tsx` wraps `@zag-js/splitter` (ADR-0005), fixed **horizontal with no
+  registry** — the only configuration whose drag cursor invariant 27 admits (ADR-0066, the
+  commit before). Neither is a prop.
+- `appearance.document-panel-width`, CSS pixels, 192–480, fallback 224 — the fixed width the panel
+  had, so nothing moved the day this landed. 192 is the strip's declared parts summed (189) raised
+  to the 8 px grid; 480 is a stated choice. Numeric, so the Settings dialog edits it too.
+- `surfaces/DocumentBody.tsx` is the row all three of `PageCanvas`' states now render. Collapsed,
+  it renders **no splitter**, so the open setting stays the one owner of "is the panel open".
+- `primitives/splitterSize.ts` holds one function, `pixelsOfRoot`: the exact inverse of the
+  library's own `parsePanelSize`. Widths go INTO the machine as `"Npx"` strings for it to resolve.
+  A pixels-to-percent function was written, then removed when nothing called it — a second
+  resolver for a rule the library owns.
+
+### Measured, not assumed
+
+- **The drawn pane is narrower than the stored width, by the library's rule.** At 1280 × 800 the
+  root measured 1216.33 px, the handle 6, and a stored 256 drew 254.17. `parsePanelSize` divides by
+  the whole root; `getPanelFlexBoxStyle` lays the result out as a flex-grow share of the root
+  minus the handle, to three significant figures: 1.26 px from the handle, 0.57 from the rounding.
+  The rendered case's tolerance is the handle as the page measures it, plus a pixel.
+- **A pointer drag moved nothing, and only a rendered case could see it.** The first version
+  passed `size` and handled only `onResizeEnd`. `setSize` in a controlled machine does not move
+  its own size — it calls `onResize` and waits to be handed the size back — so through a 60 px
+  drag the pane stayed at 254.17. The keyboard case passed throughout, because each key press ends
+  a resize and the stored width came back round. The mid-drag case was added when the first
+  mutation below showed the view depended on the write. The splitter now keeps `onResize`'s
+  percentages as `size` until the resize ends, then writes once.
+
+### Proof
+
+Rendered, against the production build, because happy-dom lays nothing out and a unit test there
+cannot finish a resize:
+
+1. a stored 256 is drawn; two ArrowRight presses widen it; after a reload the new width holds;
+2. the pane follows the pointer mid-drag, and stays where it was dropped;
+3. at 192 the strip's last tab and the collapse chevron sit inside the pane.
+
+Unit: `pixelsOfRoot` off-centre and against the library's quoted inward rule, refusing an
+unmeasured root; the separator is named, horizontal, focusable and between the panes; a mount
+writes nothing; collapsing and reopening neither writes nor forgets a stored 320.
+
+### Mutations
+
+- **A — `DocumentBody` stops writing the width.** Before the live-size fix this failed the
+  keyboard step, not the reload, which is what exposed the drag defect. After it, two cases failed:
+  the keyboard step (each key press sets and clears the live size, so it returns to the unwritten
+  width) and the on-release check (the drag followed the pointer, then snapped back). The minimum
+  case passed. Both failures are the same property: between resizes, the stored width *is* the size.
+- **B — `onResize` stops keeping the live size.** The mid-drag assertion alone failed (254.17
+  against more than 294.17); the other two cases passed.
+- **`pixelsOfRoot` dividing by the root where it multiplies** failed the off-centre case and the
+  inverse-of-the-library case, and left the unmeasured-root refusal green, which returns before the
+  formula. (An earlier mutation was run on `percentOfRoot`, since removed; its result is not this
+  function's evidence.)
+
+---
+
 ## 2026-09-14 — B4 for C2: invariant 27 admits the splitter's drag cursor by hash (ADR-0066)
 
 The entry below measured that `style-src 'self'` refuses the `<style>` element `@zag-js/splitter`

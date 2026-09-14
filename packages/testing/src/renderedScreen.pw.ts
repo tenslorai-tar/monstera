@@ -4,7 +4,8 @@
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
 import { BRIDGE_KEY } from '@monstera/contract';
-import { asFileHandle } from '@monstera/shared';
+import { PDFDocument } from '@cantoo/pdf-lib';
+import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { createBrowserShim } from './browserShim.js';
@@ -287,4 +288,146 @@ test('the start screen WITH a recent list and a recovery offer is clean too', as
   });
 
   await expectNoSeriousViolations(page, 'Monstera closed unexpectedly. These documents were open:');
+});
+
+/** A one-page document built here, so the case needs no fixture from the corpus (B10). */
+async function onePagePdf(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  document.addPage([612, 792]);
+  return document.save();
+}
+
+/**
+ * Bridges a page whose Open command yields the one-page document, `times` times.
+ *
+ * `times` because a reload is a fresh renderer that has to open the document again, and each
+ * open takes one answer.
+ */
+async function bridgeWithDocument(
+  page: Page,
+  stored: Record<string, unknown>,
+  times: number,
+): Promise<void> {
+  const bytes = await onePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000c2');
+  await bridge(page, {
+    settings: stored,
+    opens: Array.from({ length: times }, () => ({
+      kind: 'opened' as const,
+      docId,
+      version: asDocVersion(1),
+      byteLength: bytes.byteLength,
+      name: 'width.pdf',
+    })),
+    documentBytes: new Map([[docId, bytes]]),
+  });
+}
+
+/** The resizable pane's measured width, in CSS pixels. */
+async function panelPaneWidth(page: Page): Promise<number> {
+  const pane = page.locator('.m-splitter__pane').first();
+  await expect(pane).toBeVisible();
+  const box = await pane.boundingBox();
+  return box?.width ?? 0;
+}
+
+test('the document panel is RESIZABLE, and its width is the stored setting, across a reload', async ({
+  page,
+}) => {
+  // §10.3: "panels resizable with persisted widths". No component test can see this: happy-dom
+  // lays nothing out, every rect is 0, and the splitter resolves no pixel size against a zero
+  // root. The production build in a real browser is the subject.
+  //
+  // THE STORED WIDTH IS NOT THE FALLBACK. 256 against a fallback of 224, so a panel that ignored
+  // the setting cannot pass the first assertion by drawing its default.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.document-panel-width': 256 }, 2);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+
+  const handle = page.getByRole('separator', { name: 'Resize the document panel' });
+  await expect(handle).toBeVisible();
+
+  // THE PANE IS NOT THE STORED PIXELS EXACTLY, and the gap is the library's rule, measured.
+  // `parsePanelSize` resolves "256px" as 256 / root × 100 %, and `getPanelFlexBoxStyle` lays that
+  // percentage out as a flex-grow share of the root MINUS the handle, written to three significant
+  // figures. Measured 2026-09-14 at this viewport: root 1216.33, handle 6, pane 254.17 — 1.26 px
+  // from the handle's share and 0.57 px from the rounding. So the tolerance is the handle as this
+  // page measures it, plus one pixel for the rounding, and it still separates the stored 256 from
+  // the fallback 224 by thirty pixels.
+  const handleWidth = (await handle.boundingBox())?.width ?? 0;
+  expect(handleWidth).toBeGreaterThan(0);
+  await expect.poll(async () => Math.abs((await panelPaneWidth(page)) - 256)).toBeLessThan(handleWidth + 1);
+
+  // THE KEYBOARD STEP, the resize every person can perform. The machine's own step is 1 % of the
+  // root, so at this viewport it moves the pane by several pixels — well past the rounding the
+  // setting applies.
+  await handle.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(262);
+  const resized = await panelPaneWidth(page);
+
+  // ACROSS A RELOAD, which is what PERSISTED means: a fresh renderer reads the settings the shim
+  // saved, and the width it lays out is the resized one, not 256 and not the fallback.
+  await page.reload();
+  await page.getByRole('button', { name: 'Open a document' }).click();
+  await expect(page.getByRole('separator', { name: 'Resize the document panel' })).toBeVisible();
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(262);
+  expect(Math.abs((await panelPaneWidth(page)) - resized)).toBeLessThan(1.5);
+});
+
+test('dragging the handle moves the document panel WHILE the pointer moves, not only on release', async ({
+  page,
+}) => {
+  // A resize a person cannot see until they let go is not a resize they can aim. The machine
+  // reports a drag only when it ends (`onResizeEnd`), and the width is a controlled setting, so
+  // whether the pane follows the pointer mid-drag is a property of how the two meet — and a
+  // keyboard case cannot see it, because every key press ends a resize.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.document-panel-width': 256 }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+
+  const handle = page.getByRole('separator', { name: 'Resize the document panel' });
+  await expect(handle).toBeVisible();
+  const before = await panelPaneWidth(page);
+  const box = await handle.boundingBox();
+  expect(box).not.toBeNull();
+  const x = (box?.x ?? 0) + (box?.width ?? 0) / 2;
+  const y = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 60, y, { steps: 6 });
+  // MID-DRAG, before the pointer is released.
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(before + 40);
+  await page.mouse.up();
+
+  // AND ON RELEASE it stays where it was dropped, rather than snapping back to the stored width.
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(before + 40);
+});
+
+test("at its MINIMUM width the document panel's strip still holds every tab and the chevron", async ({
+  page,
+}) => {
+  // `DOCUMENT_PANEL_MIN_WIDTH` is 192, derived by adding the strip's padding, six tabs, their gaps,
+  // the chevron and the border as the stylesheets declare them: 189. That sum is arithmetic on
+  // declarations; this is the rendered strip, which is what a person would see clipped.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.document-panel-width': 192 }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+
+  await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(191);
+  const pane = await page.locator('.m-splitter__pane').first().boundingBox();
+  const lastTab = await page.getByRole('tab', { name: 'Search' }).boundingBox();
+  const chevron = await page.getByRole('button', { name: 'Collapse the document panel' }).boundingBox();
+  expect(pane).not.toBeNull();
+  expect(lastTab).not.toBeNull();
+  expect(chevron).not.toBeNull();
+  const paneRight = (pane?.x ?? 0) + (pane?.width ?? 0);
+  // Inside the pane, both of them: a clipped last tab or chevron is the defect.
+  expect((lastTab?.x ?? 0) + (lastTab?.width ?? 0)).toBeLessThanOrEqual(paneRight + 0.5);
+  expect((chevron?.x ?? 0) + (chevron?.width ?? 0)).toBeLessThanOrEqual(paneRight + 0.5);
 });

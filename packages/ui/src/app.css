@@ -1077,14 +1077,15 @@ textarea {
  * of six 24 px icon tabs with the collapse chevron at the strip's end. There is no title
  * row; the active tab's accessible name and tooltip name the panel.
  *
- * A fixed inline size until the resizable-width commit, and a scroll region of its own,
- * so a long outline scrolls inside the panel and never pushes the page list.
+ * It FILLS its pane: the width is `appearance.document-panel-width`, applied by the splitter
+ * `DocumentBody` puts it in, so no inline size is written here. A scroll region of its own, so a
+ * long outline scrolls inside the panel and never pushes the page list.
  */
 .m-document-panel {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   flex-direction: column;
-  inline-size: calc(var(--space-32) * 7);
+  inline-size: 100%;
   min-block-size: 0;
   background: var(--bg2);
   border-inline-end: 1px solid var(--border); /* decorative: separates the panel from the page list; its controls draw their own focus rings */

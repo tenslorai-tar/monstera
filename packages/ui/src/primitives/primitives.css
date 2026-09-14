@@ -125,6 +125,39 @@
   height: var(--icon-20);
 }
 
+/* ─── Splitter ───────────────────────────────────────────────────────────── */
+
+/* The machine sets the root's flex row, its size and its overflow as a style object (a CSSOM
+   write, which invariant 27 does not govern), and each pane's flex basis the same way. What is
+   left here is appearance and the handle's hit area. */
+.m-splitter {
+  min-block-size: 0;
+}
+
+.m-splitter__pane {
+  display: flex;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/* The handle is a CONTROL a person drags and focuses: a 4 px strip on the 2/4 px interior scale,
+   its seam decorative, its focus ring the control boundary every keyboard user must see. */
+.m-splitter__handle {
+  inline-size: var(--space-4);
+  background: var(--bg2);
+  border-inline: 1px solid var(--border-soft); /* decorative: the seam between the panes */
+}
+
+.m-splitter__handle:hover,
+.m-splitter__handle[data-dragging] {
+  background: var(--accent-soft);
+}
+
+.m-splitter__handle:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: -2px;
+}
+
 /* ─── ToolButton ─────────────────────────────────────────────────────────── */
 
 /* §10.3's compact ribbon button: glyph over caption, 52 px tall. The boundary is

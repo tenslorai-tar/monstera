@@ -238,6 +238,7 @@ import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { Ribbon } from './surfaces/Ribbon.js';
+import { DocumentBody } from './surfaces/DocumentBody.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
@@ -2263,10 +2264,11 @@ function PageCanvas({
     // document PDF.js cannot parse still has all five. Only the Pages panel is empty,
     // because it is the one that draws through the view that failed.
     return (
-      <div className="m-document-body">
-        <DocumentPanel settings={settings} panels={panels} pages={null} />
-        <canvas className="m-page" data-failed="true" />
-      </div>
+      <DocumentBody
+        settings={settings}
+        panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
+        page={<canvas className="m-page" data-failed="true" />}
+      />
     );
   }
 
@@ -2276,10 +2278,11 @@ function PageCanvas({
     // is the one that carries a marker. The document panel is already there, for the
     // failure case's reason: five of its six panels do not wait for PDF.js.
     return (
-      <div className="m-document-body">
-        <DocumentPanel settings={settings} panels={panels} pages={null} />
-        <div className="m-page-list" />
-      </div>
+      <DocumentBody
+        settings={settings}
+        panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
+        page={<div className="m-page-list" />}
+      />
     );
   }
 
@@ -2287,7 +2290,13 @@ function PageCanvas({
     // THE SIDEBAR IS A SIBLING OF THE SPINE, inside this component, because it
     // needs the same parser: a strip that opened its own would parse the
     // document twice and hold two copies of every page it drew.
-    <div className="m-document-body">
+    //
+    // THE PAGE SIDE IS BOTH PANES. `DocumentBody` makes the panel the resizable pane and the rest
+    // of the row the other, so split view's second pane shares the page side exactly as it shared
+    // the row before.
+    <DocumentBody
+      settings={settings}
+      panel={
       <DocumentPanel
         settings={settings}
         panels={panels}
@@ -2302,6 +2311,9 @@ function PageCanvas({
           />
         }
       />
+      }
+      page={
+      <>
       <PageList
         client={client}
         view={ready}
@@ -2429,7 +2441,9 @@ function PageCanvas({
           ) : null}
         </div>
       ) : null}
-    </div>
+      </>
+      }
+    />
   );
 }
 
