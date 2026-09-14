@@ -1248,6 +1248,35 @@ ADR-0064 did not state this consequence, so it carries a dated correction.
 - **Undo removes all five structures.** The checkpoint is the bus's mechanism and is not
   asserted for this command.
 
+### Correction, 2026-09-14 — both owed readings taken; the row is done
+
+The reviewing seat caught that the handoff report listed this row as done while its status
+cell said `—`. That was right: it was not done until these two readings were taken.
+
+Both are now cases in `apps/desktop/src/documentCommands.test.ts`. They run through the
+lane: the bus resolves the source via `#sourcesFor`, the save pipeline flushes and renames,
+and the supervisor's `recycle` does the restore. The engine and the filesystem are real.
+The five structures are read back with pdf-lib:
+- the group in `/OCGs`;
+- its `/D/Order` entry;
+- the page's `/XObject` entry;
+- every Form XObject carrying `/OC` anywhere in the file;
+- the `Do` in the page's content.
+
+- **Saved and reopened.** `commands.save` writes the file. The file on disk carries all
+  five on page 1 and has no entry or drawing on page 0. A session that never saw the
+  command lists `['Letterhead']` through `readLayers`, the Layers panel's reader.
+- **Undone.** All five are present before the undo, read from the same session with the
+  same reader, which is this case's control. After the undo the restore has run once, all
+  five read absent, and `readLayers` answers `[]`.
+
+Mutations, each reverted:
+
+| mutation | red | the run's own words |
+|---|---|---|
+| A: the restore writes the checkpoint and keeps the old session | only *UNDONE* | `expected { ocgs: 1, order: 1, …(3) } to strictly equal { ocgs: +0, order: +0, …(3) }` |
+| B: the save's flush returns the file's original bytes | only *SAVED AND REOPENED* | `expected { ocgs: +0, order: +0, …(3) } to strictly equal { ocgs: 1, order: 1, …(3) }` |
+
 ---
 
 ## 2026-09-14 — LibreOffice provisions and verifies; converting it crashes on this machine, which blocks ADR-0063's gate

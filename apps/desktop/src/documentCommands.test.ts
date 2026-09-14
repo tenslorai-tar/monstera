@@ -2,7 +2,15 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFRawStream,
+  StandardFonts,
+  decodePDFRawStream,
+} from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -2787,6 +2795,177 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
     } finally {
       commands.endExternalEdit(t.id);
     }
+  });
+});
+
+/**
+ * ADR-0064's two owed readings, taken through the lane rather than the writer alone:
+ * the application's save path with a reopen, and undo removing all five structures.
+ *
+ * `pageLayerImport.test.ts` proves the writer. What it cannot say is that the command
+ * survives the route a person's click takes — the bus resolving the source through
+ * `#sourcesFor`, the checkpoint the bus takes because `CommandPrior` is `never`, the
+ * save pipeline's flush and rename, and a restore that rebuilds the session.
+ */
+describe('importPageAsLayer — saved and reopened, and undone, through the lane (ADR-0064)', () => {
+  let opened = 0;
+
+  /** A one-page 400 × 200 source with a mark, so its Form XObject has content. */
+  async function sourceBytes(): Promise<Uint8Array> {
+    const document = await PDFDocument.create();
+    document.addPage([400, 200]).drawRectangle({ x: 10, y: 10, width: 50, height: 50 });
+    return document.save({ useObjectStreams: false });
+  }
+
+  /** A target on disk and a source beside it, one service, both sessions held, a real save and restore. */
+  async function twoDocuments() {
+    opened += 1;
+    const targetPath = join(directory, `layer-target-${String(opened)}.pdf`);
+    const sourcePath = join(directory, `layer-source-${String(opened)}.pdf`);
+    writeFileSync(targetPath, await pdfBytes());
+    writeFileSync(sourcePath, await sourceBytes());
+
+    const registry = new CapabilityRegistry();
+    const documents = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const target = await documents.open(registry.mint(targetPath));
+    const source = await documents.open(registry.mint(sourcePath));
+    if (target.kind !== 'opened' || source.kind !== 'opened') throw new Error('a fixture did not open');
+
+    const held = new EngineSessions();
+    held.hold(target.docId, { mupdf: await mupdfWriter.open(readFileSync(targetPath)) });
+    held.hold(source.docId, { mupdf: await mupdfWriter.open(readFileSync(sourcePath)) });
+
+    let restores = 0;
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      documents,
+      bus: bus(),
+      engine: held,
+      save: {
+        deps: {
+          checkWriteTarget: (id) => documents.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: siblingNames,
+          wait: () => Promise.resolve(),
+        },
+        flush: (_docId, sessions) => {
+          const mupdf = sessions.mupdf;
+          if (mupdf === undefined) throw new Error('the target holds a session');
+          return mupdfWriter.serialise(mupdf);
+        },
+      },
+      // THE SUPERVISOR'S OWN RECYCLE, with the checkpoint written where a host's granted
+      // directory would be: `DocumentRestore`'s contract, composed locally.
+      restore: (id, write) =>
+        held.recycle(id, async () => {
+          restores += 1;
+          const path = join(directory, `layer-restore-${String(opened)}-${String(restores)}.pdf`);
+          await write(path);
+          return { mupdf: await mupdfWriter.open(readFileSync(path)) };
+        }),
+    });
+    const { version } = await documents.run(target.docId, () => Promise.resolve(null));
+    return {
+      commands,
+      held,
+      targetPath,
+      target: target.docId,
+      source: source.docId,
+      version,
+      restores: () => restores,
+    };
+  }
+
+  /** The five structures ADR-0064 names, read with pdf-lib — a different parser than the writer. */
+  function structures(document: PDFDocument, page: number) {
+    const properties = document.catalog.lookupMaybe(PDFName.of('OCProperties'), PDFDict);
+    const ocgs = properties?.lookupMaybe(PDFName.of('OCGs'), PDFArray)?.size() ?? 0;
+    const order =
+      properties?.lookupMaybe(PDFName.of('D'), PDFDict)?.lookupMaybe(PDFName.of('Order'), PDFArray)?.size() ?? 0;
+
+    const node = document.getPage(page).node;
+    const xobjects = node
+      .lookupMaybe(PDFName.of('Resources'), PDFDict)
+      ?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    const entries = xobjects === undefined ? [] : xobjects.keys().map((key) => key.decodeText());
+
+    // EVERY Form XObject carrying `/OC` in the whole file, not only those a page names: an
+    // undo that dropped the resource entry and left the object would pass a page-scoped read.
+    let governedForms = 0;
+    for (const [, object] of document.context.enumerateIndirectObjects()) {
+      if (object instanceof PDFRawStream && object.dict.get(PDFName.of('OC')) !== undefined) governedForms += 1;
+    }
+
+    const contents = node.get(PDFName.of('Contents'));
+    const refs = contents instanceof PDFArray ? contents.asArray() : contents === undefined ? [] : [contents];
+    const drawn = refs.some((ref) => {
+      const stream = document.context.lookup(ref);
+      return (
+        stream instanceof PDFRawStream &&
+        /\/MonsteraLayer\d+ Do/u.test(new TextDecoder().decode(decodePDFRawStream(stream).decode()))
+      );
+    });
+
+    return { ocgs, order, entries, governedForms, drawn };
+  }
+
+  const PRESENT = { ocgs: 1, order: 1, entries: ['MonsteraLayer0'], governedForms: 1, drawn: true };
+  const ABSENT = { ocgs: 0, order: 0, entries: [], governedForms: 0, drawn: false };
+
+  it('SAVED AND REOPENED: the file on disk carries all five, and a new session lists the layer', async () => {
+    const t = await twoDocuments();
+    // PAGE 1 OF 3, for `pageLayerImport.test.ts`' rotate lesson.
+    await t.commands.execute(t.target, {
+      kind: 'importPageAsLayer',
+      source: t.source,
+      name: 'Letterhead',
+      at: 1,
+      version: t.version,
+    });
+
+    const saved = await t.commands.save(t.target);
+    expect(saved.kind).toBe('saved');
+
+    // THE FILE, NOT THE SESSION: a save that wrote the original bytes back would leave the
+    // session carrying the layer and this reading empty.
+    const onDisk = readFileSync(t.targetPath);
+    expect(structures(await PDFDocument.load(onDisk), 1)).toStrictEqual(PRESENT);
+    expect(structures(await PDFDocument.load(onDisk), 0)).toStrictEqual({ ...ABSENT, ocgs: 1, order: 1, governedForms: 1 });
+
+    // A REOPEN, through a session that never saw the command: the Layers panel's own reader.
+    const reopened = await mupdfWriter.open(onDisk);
+    try {
+      const layers = await readLayers(reopened);
+      expect(layers.map((layer) => layer.name)).toStrictEqual(['Letterhead']);
+    } finally {
+      await mupdfWriter.close(reopened);
+    }
+  });
+
+  it('UNDONE: all five structures are gone, from a checkpoint the lane restored', async () => {
+    const t = await twoDocuments();
+    await t.commands.execute(t.target, {
+      kind: 'importPageAsLayer',
+      source: t.source,
+      name: 'Letterhead',
+      at: 1,
+      version: t.version,
+    });
+
+    // THE CONTROL FOR THE ABSENCE BELOW, read from the same session and the same reader: an
+    // import that wrote nothing would make every "gone" hold before the undo ran.
+    const before = t.held.sessions(t.target)?.mupdf;
+    if (before === undefined) throw new Error('the target holds a session');
+    expect(structures(await PDFDocument.load(await mupdfWriter.serialise(before)), 1)).toStrictEqual(PRESENT);
+
+    expect(await t.commands.undo(t.target)).toBeDefined();
+
+    // THE RESTORE RAN: undo reversed a checkpoint, not an inverse nobody captured.
+    expect(t.restores()).toBe(1);
+    const after = t.held.sessions(t.target)?.mupdf;
+    if (after === undefined) throw new Error('the restore held no session');
+    expect(structures(await PDFDocument.load(await mupdfWriter.serialise(after)), 1)).toStrictEqual(ABSENT);
+    expect(await readLayers(after)).toStrictEqual([]);
   });
 });
 

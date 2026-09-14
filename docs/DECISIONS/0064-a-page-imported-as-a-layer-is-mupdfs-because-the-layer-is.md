@@ -149,3 +149,16 @@ The answer, now asserted there and read back with pdf-lib:
 This is a limit of the decision as taken, not a defect in it. A layer that also carried
 the source's annotations would need them flattened into the Form XObject's content, which
 is a different command.
+
+## Correction, 2026-09-14 — the two owed readings are taken
+
+The two readings Consequences held back are both now cases in
+`apps/desktop/src/documentCommands.test.ts`, run through the application's lane with a
+real engine and a real filesystem:
+
+- **The save path with a reopen.** `document.save` writes all five structures to disk. A
+  session that never saw the command lists the layer.
+- **Undo.** The bus restores its checkpoint, and all five structures are gone. Each case
+  was reddened by its own mutation (`docs/JOURNAL.md`, this date).
+
+This is as the decision predicted, and the decision is unchanged.
