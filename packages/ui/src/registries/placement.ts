@@ -88,7 +88,25 @@ export type Placement =
     }
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }
-  | { readonly surface: 'start-screen'; readonly order: number };
+  | { readonly surface: 'start-screen'; readonly order: number }
+  | {
+      readonly surface: 'status-bar';
+      /**
+       * Which of §10.3's two groups the button belongs to (ARCHITECTURE §7, ADR-0067). Each
+       * group is built around one control that takes a value — the page field, the zoom slider —
+       * and those are the bar's own, never commands.
+       */
+      readonly cluster: StatusBarCluster;
+      /** Whether the button sits before or after its cluster's value control. */
+      readonly side: StatusBarSide;
+      readonly order: number;
+    };
+
+/** §10.3's two status-bar groups, each around one value control (ADR-0067). */
+export type StatusBarCluster = 'navigation' | 'zoom';
+
+/** Which side of its cluster's value control a status-bar button sits on. */
+export type StatusBarSide = 'before' | 'after';
 
 /** Every `surface` tag, for a projection that needs to name the one it is. */
 export type SurfaceId = Placement['surface'];

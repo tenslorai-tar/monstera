@@ -82,12 +82,30 @@ export function pageMoveCommand(
     first: 'Ctrl+Home',
     last: 'Ctrl+End',
   } as const;
+  const icons = {
+    next: 'ChevronRight',
+    previous: 'ChevronLeft',
+    first: 'ChevronFirst',
+    last: 'ChevronLast',
+  } as const;
+  // §10.3: "first / previous / an editable "page ⁄ total" field / next / last". The field is the
+  // status bar's own value control, so first and previous sit before it and next and last after
+  // (ADR-0067).
+  const slots = {
+    first: { side: 'before', order: 10 },
+    previous: { side: 'before', order: 20 },
+    next: { side: 'after', order: 10 },
+    last: { side: 'after', order: 20 },
+  } as const;
 
   return {
     id: `view.page-${move}`,
+    icon: icons[move],
     title: titles[move],
     shortcut: shortcuts[move],
-    placements: [],
+    placements: [
+      { surface: 'status-bar', cluster: 'navigation', side: slots[move].side, order: slots[move].order },
+    ],
     when: hasDocument,
     run: (context: CommandContext): void => {
       const count = context.pageCount ?? 0;

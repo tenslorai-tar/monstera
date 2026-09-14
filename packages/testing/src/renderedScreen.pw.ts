@@ -501,6 +501,103 @@ test('at its MINIMUM width the right contextual panel still holds the widest sty
   for (const past of overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
 });
 
+test('the page list FITS its pane: nothing of it sits above the pane or under the status bar', async ({
+  page,
+}) => {
+  // THE CONTROL FOR A 32 PX OVERFLOW, found 2026-09-14. `.m-page-list` was content-box with
+  // `block-size: 100%` and 16 px block padding, so its box was 700 px in a 668 px pane. The pane,
+  // `overflow: hidden` but scrollable from script, had been scrolled 16 px into that surplus: the
+  // list's top sat 16 px above the pane and its bottom 16 px under the status bar. Before the
+  // splitter clipped the pane, the page was drawn over the bar. No component test lays anything
+  // out, so the production build is the subject.
+  //
+  // THE PANE'S scrollTop is asserted, not only the boxes: a pane with 32 px to spare and scrolled
+  // back to 0 would pass a box comparison by luck, and the surplus is the defect.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+
+  const fit = await page.evaluate(() => {
+    const list = document.querySelector('.m-page-list');
+    const pane = list?.closest('.m-splitter__pane') ?? null;
+    const status = document.querySelector('.m-status-bar');
+    if (list === null || pane === null || status === null) return null;
+    const listBox = list.getBoundingClientRect();
+    const paneBox = pane.getBoundingClientRect();
+    return {
+      listTop: listBox.top,
+      listBottom: listBox.bottom,
+      paneTop: paneBox.top,
+      paneBottom: paneBox.bottom,
+      statusTop: status.getBoundingClientRect().top,
+      paneScrollTop: pane.scrollTop,
+      paneSurplus: pane.scrollHeight - pane.clientHeight,
+    };
+  });
+  expect(fit).not.toBeNull();
+  expect(Math.abs((fit?.listTop ?? 0) - (fit?.paneTop ?? 1))).toBeLessThan(0.5);
+  expect(Math.abs((fit?.listBottom ?? 0) - (fit?.paneBottom ?? 1))).toBeLessThan(0.5);
+  expect(fit?.listBottom ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual((fit?.statusTop ?? 0) + 0.5);
+  expect(fit?.paneSurplus).toBe(0);
+  expect(fit?.paneScrollTop).toBe(0);
+});
+
+/** A three-page document built here, for navigation that needs somewhere to go (B10). */
+async function threePagePdf(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  for (let index = 0; index < 3; index += 1) document.addPage([612, 792]);
+  return document.save();
+}
+
+test('the STATUS BAR projects page navigation and zoom, and each control changes what it says', async ({
+  page,
+}) => {
+  // §10.3: "first / previous / an editable page ⁄ total field / next / last" and "zoom-out button ·
+  // slider · zoom-in button · current percentage · fit mode, all real controls". The buttons are a
+  // projection (ADR-0067); the page field and the slider are the bar's own. The unit tests prove the
+  // bar dispatches the command it was handed; this proves, in the production build, that the
+  // command the application registered moves the page and the slider moves the zoom.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e1');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+
+  const bar = page.getByRole('status', { name: 'Document status' });
+  const field = bar.locator('[data-goto-input]');
+  await expect(field).toHaveValue('1');
+  await expect(bar.locator('.m-status-total')).toHaveText('/ 3');
+
+  // ALL FOUR navigation buttons are there, from the registry.
+  for (const name of ['First page', 'Previous page', 'Next page', 'Last page']) {
+    await expect(bar.getByRole('button', { name })).toBeVisible();
+  }
+
+  await bar.getByRole('button', { name: 'Last page' }).click();
+  await expect(field).toHaveValue('3');
+  await bar.getByRole('button', { name: 'Previous page' }).click();
+  await expect(field).toHaveValue('2');
+  await bar.getByRole('button', { name: 'First page' }).click();
+  await expect(field).toHaveValue('1');
+
+  // THE SLIDER, which is not a command: moving it changes the percentage the bar reports.
+  const percentage = bar.locator('.m-status-zoom');
+  const before = await percentage.textContent();
+  await bar.getByRole('slider', { name: 'Zoom level' }).fill('2');
+  await expect(percentage).toHaveText('200%');
+  expect(before).not.toBe('200%');
+
+  // AND A ZOOM BUTTON from the projection, stepping from what is shown.
+  await bar.getByRole('button', { name: 'Zoom out' }).click();
+  await expect(percentage).toHaveText('150%');
+});
+
 test("at its MINIMUM width the document panel's strip still holds every tab and the chevron", async ({
   page,
 }) => {

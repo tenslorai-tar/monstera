@@ -556,6 +556,9 @@ export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand 
         group: GROUP_DISPLAY,
         order: direction === 'in' ? 10 : 20,
       },
+      // §10.3's zoom cluster, "zoom-out button · slider · zoom-in button": the slider is the bar's
+      // own value control, so out sits before it and in after it (ADR-0067).
+      { surface: 'status-bar', cluster: 'zoom', side: direction === 'in' ? 'after' : 'before', order: 10 },
     ],
     when: hasDocument,
     run: (): void => {
@@ -590,6 +593,8 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
         group: GROUP_DISPLAY,
         order: fit === 'width' ? 30 : 40,
       },
+      // §10.3's "fit mode", at the end of the zoom cluster after the percentage.
+      { surface: 'status-bar', cluster: 'zoom', side: 'after', order: fit === 'width' ? 20 : 30 },
     ],
     when: hasDocument,
     run: (): void => {

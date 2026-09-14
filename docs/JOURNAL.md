@@ -892,6 +892,72 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Design pass E: the status bar projects navigation and zoom, and the page list fits its pane
+
+§10.3: *"first / previous / an editable "page ⁄ total" field / next / last"* and *"zoom-out button · slider ·
+zoom-in button · current percentage · fit mode, all real controls"*. Built on the surface the entry below amended in.
+
+### The page ran under the status bar — measured before any CSS changed
+
+Seen in every look since pass B. Three readings in the production build at 1280 × 800, a document open:
+
+1. The body row, document body and splitter were 668 px tall (107–775); the status bar 775–800. `.m-page-list` was
+   **700 px, from 91 to 791** — 32 px taller than its container, 16 above it and 16 under the bar.
+2. Computed: the list is `box-sizing: content-box` with `block-size: 668px` and 16 px of block padding. The 32 px is the
+   padding added to 100%. The middle pane carries the library's inline `overflow: hidden`.
+3. `scrollTop`: the middle pane **16**, with `scrollHeight` 700 against `clientHeight` 668; every other ancestor and the
+   list itself 0. So the pane — `overflow: hidden`, still scrollable from script — had been scrolled into the surplus.
+
+**Mechanism:** content-box sizing of `block-size: 100%` plus padding made the list 32 px taller than its pane, which
+left the pane that much scroll; something scrolled it 16. Before pass C2's splitter clipped the pane, the same overflow
+painted over the status bar, which is what every look showed. **Fix:** `box-sizing: border-box` on the list. Not a
+clamped `scrollTop` and not overflow hidden elsewhere, both of which leave the 32 px. Of the stylesheets' six
+`block-size: 100%` rules, this is the only one that also carries block padding.
+
+A rendered case asserts the list's box equals the pane's, the pane has no surplus and is not scrolled, and the list ends
+at the bar. **Mutation E1** — the fix removed and rebuilt — failed it: the list's top 16 px from the pane's.
+
+### The status bar
+
+- `status-bar` joins `Placement`, and the four existing surface switches reddened at their `never` defaults until each
+  said where it goes — ADR-0029 Decision 4, working. It joins `DRAWS_A_GLYPH`, so a command placed there must name an
+  icon; the four `view.page-*` commands gained chevrons.
+- `statusBarModel` sorts commands into cluster and side. Placed: first/previous before the page field, next/last after;
+  zoom-out before the slider, zoom-in and the two fits after.
+- `StatusBar.tsx` moved into `packages/ui/src/surfaces/`, so `check:secondwiring` scans it, and renders the model.
+- **The page field shows the page**, as §10.3 asks. It had been empty since 2026-09-03 because an `<input>` React
+  updates fires no text mutation and the bar is `role="status"`. Both hold: the readout stays as visually hidden text in
+  the region. FEATURES rows 61 and 74 are edited to that.
+- **The slider** writes through `changeZoom`, the zoom commands' own setter, over `ZOOM_STEPS`' range.
+- `projections.ts` described `view.toggle-quick-toolbar` as existing, in the camelCase §7 withdrew; corrected.
+
+### A deviation from §10.3's order, stated
+
+§10.3 lists *"slider · zoom-in button · current percentage"*. ADR-0067 gives each cluster one value control, and the
+percentage is a readout of the slider's value, so it renders beside the slider: zoom-out · slider · percentage ·
+zoom-in · fit. Holding §10.3's exact order would need a third position in `side` — another amendment — for one readout.
+It is recorded in the component's header and here, and it is an owner question in the report rather than a decision
+taken quietly.
+
+### Proof
+
+- Rendered, production build: the four navigation buttons are present; *Last page* sets the field to 3, *Previous* to
+  2, *First* to 1; the slider set to 2 reads 200 %, and *Zoom out* from there reads 150 %. All 13 rendered cases pass.
+- Unit: each command in its cluster and side around the value controls, and a click runs it with the bar's context; no
+  button for a command placed elsewhere; the slider asks for the chosen scale; the field shows the page, the hidden
+  readout announces it, conversion and refusal as before; submitting untouched jumps nowhere.
+- **Mutation E2**, the projection ignored: the cluster case alone failed. **Mutation E3**, the slider asking for
+  nothing: the slider case alone failed. 16 other cases passed.
+
+### Observed, not yet a defect
+
+One full UI run failed `App.test.tsx`'s *delete-pages dialog* case on its 5 s timeout, in a run whose imports took 133 s
+and environments 122 s. The file alone: 56 passed, that case 759 ms. Pass D's full run had passed it. No pre-E duration
+was measured, so pass E's heavier status bar is not ruled out as a contributor; the timeout was not raised. If the next
+full run times it out again, it is investigated as a defect.
+
+---
+
 ## 2026-09-14 — B4 for pass E: the status bar is a placement surface (ADR-0067)
 
 §10.3 gives the status bar page navigation and a zoom cluster, *"all real controls"*. The commands exist

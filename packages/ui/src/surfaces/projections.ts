@@ -1,5 +1,12 @@
 import type { CommandContext, CommandRegistry, UiCommand } from '../registries/commands.js';
-import { SECTION_IDS, type MenuContext, type Placement, type SectionId } from '../registries/placement.js';
+import {
+  SECTION_IDS,
+  type MenuContext,
+  type Placement,
+  type SectionId,
+  type StatusBarCluster as StatusBarClusterId,
+  type StatusBarSide,
+} from '../registries/placement.js';
 
 /**
  * Every surface, derived from the command registry. **There is no second place
@@ -123,6 +130,7 @@ function ribbonSlot(
     case 'quick-toolbar':
     case 'context-menu':
     case 'start-screen':
+    case 'status-bar':
       return undefined;
     default: {
       // Decision 4. A new `Placement` variant lands here as a compile error, in
@@ -142,9 +150,11 @@ export interface OrderedEntry {
 /**
  * The floating quick toolbar — §10.3's vertical pill on the canvas edge.
  *
- * Its visibility is itself a command (`view.toggleQuickToolbar`), which is what
- * guarantees a hidden toolbar can be restored from the palette. That command is
- * an ordinary registry entry and needs nothing from this function.
+ * Its visibility is meant to be a command, `view.toggle-quick-toolbar` (§7), which
+ * is what would guarantee a hidden toolbar can be restored from the palette. That
+ * command does NOT exist yet — it appears only in test fixtures — and is owed with
+ * the quick toolbar's own pass. *Corrected 2026-09-14:* this spelt the id in the
+ * camelCase §7 withdrew on 2026-08-30 and described the command as existing.
  */
 export function quickToolbarModel(
   registry: CommandRegistry,
@@ -167,6 +177,7 @@ function quickToolbarOrder(placement: Placement): number | undefined {
     case 'ribbon':
     case 'context-menu':
     case 'start-screen':
+    case 'status-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -206,6 +217,7 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
     case 'ribbon':
     case 'quick-toolbar':
     case 'start-screen':
+    case 'status-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -243,6 +255,62 @@ function startScreenOrder(placement: Placement): number | undefined {
     case 'ribbon':
     case 'quick-toolbar':
     case 'context-menu':
+    case 'status-bar':
+      return undefined;
+    default: {
+      const unhandled: never = placement;
+      return unhandled;
+    }
+  }
+}
+
+/** One side of one status-bar cluster: the buttons before or after its value control. */
+export interface StatusBarCluster {
+  readonly before: readonly OrderedEntry[];
+  readonly after: readonly OrderedEntry[];
+}
+
+/** The status bar's projected buttons, by cluster (§10.3, ARCHITECTURE §7, ADR-0067). */
+export interface StatusBarModel {
+  readonly navigation: StatusBarCluster;
+  readonly zoom: StatusBarCluster;
+}
+
+/**
+ * The status bar's buttons — §10.3's page navigation and zoom cluster.
+ *
+ * **Only the buttons.** Each cluster is built around a control that takes a value — the page
+ * field, the zoom slider — and a command's `run` takes none, so those are the bar's own and are
+ * not here. What this answers is which commands sit before and after each of them, in order, so
+ * no command list is written into the bar.
+ */
+export function statusBarModel(registry: CommandRegistry, context: CommandContext): StatusBarModel {
+  const slots = {
+    navigation: { before: [] as OrderedEntry[], after: [] as OrderedEntry[] },
+    zoom: { before: [] as OrderedEntry[], after: [] as OrderedEntry[] },
+  };
+  for (const command of registry.available(context)) {
+    for (const placement of command.placements) {
+      const slot = statusBarSlot(placement);
+      if (slot !== undefined) slots[slot.cluster][slot.side].push({ command, order: slot.order });
+    }
+  }
+  return {
+    navigation: { before: ordered(slots.navigation.before), after: ordered(slots.navigation.after) },
+    zoom: { before: ordered(slots.zoom.before), after: ordered(slots.zoom.after) },
+  };
+}
+
+function statusBarSlot(
+  placement: Placement,
+): { readonly cluster: StatusBarClusterId; readonly side: StatusBarSide; readonly order: number } | undefined {
+  switch (placement.surface) {
+    case 'status-bar':
+      return { cluster: placement.cluster, side: placement.side, order: placement.order };
+    case 'ribbon':
+    case 'quick-toolbar':
+    case 'context-menu':
+    case 'start-screen':
       return undefined;
     default: {
       const unhandled: never = placement;

@@ -125,6 +125,24 @@
   height: var(--icon-20);
 }
 
+/* ─── Visually hidden ────────────────────────────────────────────────────── */
+
+/* Text a screen reader reads and nobody sees. Not `display: none` or `visibility: hidden`, which
+   remove it from the accessibility tree too: this is for a live readout whose visible form is a
+   control, where an `<input>` React updates fires no text mutation to announce (the status bar's
+   page field). The 1 px box and the clip keep it in the tree and out of the layout. */
+.m-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ─── Splitter ───────────────────────────────────────────────────────────── */
 
 /* The machine sets the root's flex row, its size and its overflow as a style object (a CSSOM

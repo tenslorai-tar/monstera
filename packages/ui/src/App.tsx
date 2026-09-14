@@ -89,7 +89,7 @@ import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
-import { StatusBar } from './StatusBar.js';
+import { StatusBar } from './surfaces/StatusBar.js';
 import { LinksPanel } from './LinksPanel.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
@@ -1942,6 +1942,11 @@ export function App({ client, settings }: AppProps): ReactElement {
           // THE SAME `jumpTo` a key, a thumbnail and an outline entry dispatch,
           // so a typed page is recorded in the history exactly as those are.
           onGoTo={navigator.jumpTo}
+          // THE SAME setter the zoom commands take, so the slider has no second owner.
+          onZoom={changeZoom}
+          // The bar's buttons are projected from here (ADR-0067).
+          registry={registry}
+          context={context}
           task={task}
         />
       )}

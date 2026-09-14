@@ -996,6 +996,28 @@ textarea {
 }
 
 /*
+ * §10.3's two clusters: page navigation around the page field, zoom around the slider. The icon
+ * buttons draw at the status bar's 14 px (`dense`), and the gap is an interior step, tighter than
+ * the bar's gap between clusters.
+ */
+.m-status-cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* The "⁄ total" beside the page field: a readout, so the muted text colour. */
+.m-status-total {
+  color: var(--muted);
+}
+
+/* The zoom slider, sized in the bar's own terms rather than the browser's default range width. */
+.m-status-zoom-slider {
+  inline-size: calc(var(--space-32) * 3);
+  accent-color: var(--accent);
+}
+
+/*
  * The go-to field, and it is deliberately narrow.
  *
  * A page number is at most a few digits, and a box sized for a sentence reads
@@ -1289,6 +1311,16 @@ textarea {
   flex-direction: column;
   align-items: center;
   gap: var(--space-16);
+  /*
+   * BORDER-BOX, because 100% has to include the padding below. Content-box made the list
+   * 668 + 32 = 700 px inside a 668 px pane (measured 2026-09-14 in the production build at
+   * 1280 × 800). The pane, `overflow: hidden` but still scrollable from script, was left 32 px
+   * of scroll and had been scrolled 16: the list's top padding sat above the pane and its last
+   * 16 px beneath the status bar. Before the splitter clipped the pane, the same overflow drew
+   * the page over the status bar. Of the stylesheets' six `block-size: 100%` rules, this is the
+   * only one that also carries block padding.
+   */
+  box-sizing: border-box;
   block-size: 100%;
   overflow-y: auto;
   padding-block: var(--space-16);

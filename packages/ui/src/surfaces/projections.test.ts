@@ -12,6 +12,7 @@ import {
   ribbonModel,
   shortcutMapOf,
   startScreenModel,
+  statusBarModel,
 } from './projections.js';
 
 const context: CommandContext = {
@@ -140,8 +141,26 @@ describe('the other placement surfaces', () => {
     command('a.ribbon', [
       { surface: 'ribbon', section: 'home', group: messageKey('group.g'), order: 1 },
     ]),
+    // THE STATUS BAR'S FOUR SLOTS, each holding something, and registered OUT of order so the
+    // projection has to sort. Every other case in this block names its exact ids, so a status-bar
+    // command leaking onto another surface turns that case red too.
+    command('a.nav-after', [{ surface: 'status-bar', cluster: 'navigation', side: 'after', order: 1 }]),
+    command('a.nav-before-2', [{ surface: 'status-bar', cluster: 'navigation', side: 'before', order: 2 }]),
+    command('a.nav-before-1', [{ surface: 'status-bar', cluster: 'navigation', side: 'before', order: 1 }]),
+    command('a.zoom-before', [{ surface: 'status-bar', cluster: 'zoom', side: 'before', order: 1 }]),
+    command('a.zoom-after', [{ surface: 'status-bar', cluster: 'zoom', side: 'after', order: 1 }]),
   ];
   const registry = new CommandRegistry(everywhere);
+
+  it('the status bar sorts each command into its CLUSTER and SIDE, in order, and takes nothing else', () => {
+    const model = statusBarModel(registry, context);
+    // All four slots are asserted, because a projection that ignored `side` would put both
+    // navigation commands in one list and pass a check of that list alone.
+    expect(ids(model.navigation.before)).toStrictEqual(['a.nav-before-1', 'a.nav-before-2']);
+    expect(ids(model.navigation.after)).toStrictEqual(['a.nav-after']);
+    expect(ids(model.zoom.before)).toStrictEqual(['a.zoom-before']);
+    expect(ids(model.zoom.after)).toStrictEqual(['a.zoom-after']);
+  });
 
   it('the quick toolbar takes its own placements only, in order', () => {
     expect(ids(quickToolbarModel(registry, context))).toStrictEqual(['a.quick-first', 'a.quick']);

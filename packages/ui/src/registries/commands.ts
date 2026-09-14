@@ -175,6 +175,8 @@ const DRAWS_A_GLYPH: ReadonlySet<SurfaceId> = new Set<SurfaceId>([
   'ribbon',
   'quick-toolbar',
   'start-screen',
+  // §10.4: "14 px status bar". Its buttons are icon-only (ADR-0067).
+  'status-bar',
 ]);
 
 export class CommandRegistry {
@@ -203,8 +205,8 @@ export class CommandRegistry {
             `that forbids a second wiring place (ADR-0029 Decision 4).`,
         );
       }
-      // A GLYPH WHERE ONE IS DRAWN. §10.4 gives the ribbon, the quick toolbar
-      // and the start screen icons at stated sizes, and `icon` was optional with
+      // A GLYPH WHERE ONE IS DRAWN. §10.4 gives the ribbon, the quick toolbar,
+      // the start screen and the status bar icons at stated sizes, and `icon` was optional with
       // nothing requiring it: every command on those surfaces carried none, and
       // they rendered as text. Refused here, at startup, naming the command and
       // the surface, rather than left to a screenshot someone has to notice.
