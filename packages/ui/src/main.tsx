@@ -12,6 +12,12 @@ import { SettingsStore } from './settingsStore.js';
 import { hydrateSettings } from './settingsSync.js';
 
 import './tokens.css';
+// THE PRIMITIVES' OWN STYLESHEET, and until 2026-09-14 nothing imported it. Every
+// `Button`, `IconButton`, `Dialog` and `Input` shipped as an unstyled browser control
+// while each primitive's class names read as styled in review. The design pass's first
+// screenshot found it. Between the tokens it consumes and the shell that lays it out,
+// so a shell rule can still place a primitive.
+import './primitives/primitives.css';
 import './app.css';
 
 /**

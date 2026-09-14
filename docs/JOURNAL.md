@@ -892,6 +892,44 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — The primitives' stylesheet was imported by nothing, so every primitive shipped unstyled
+
+Found by the design pass's first screenshot, which is the M7 visual pass doing the job no
+other check could.
+
+### The mechanism
+
+`packages/ui/src/primitives/primitives.css` holds the rules for `Button`, `IconButton`,
+`Dialog`, `Input`, the four icon sizes and, since design pass B, `ToolButton`. The
+renderer's entry, `main.tsx`, imported `tokens.css` and `app.css` and nothing else, and Vite
+emits only what the entry graph reaches. So every primitive rendered with Chromium's own
+button, input and dialog styling:
+- the ribbon's buttons;
+- the start screen's Open button;
+- every dialog's frame.
+
+The class names were right in review, and nothing rendered them.
+
+**Nothing could have seen it.**
+- Component tests run in happy-dom, which loads no stylesheet.
+- `iconSize.ts`' own header already says an icon's size *"belongs to the visual pass
+  (§10.7)"*.
+- The axe gate passes either way, because default browser buttons have adequate contrast.
+- This journal recorded `primitives.css` as *"never applied anywhere"* on 2026-08-28, under
+  the visual pass as owed. The owed pass is what found it.
+
+### The fix and its proof
+
+- `main.tsx` imports `./primitives/primitives.css` between the tokens it consumes and the
+  shell that places it.
+- `renderedScreen.pw.ts` gains *the PRIMITIVES are styled in the production build*. It reads
+  the start screen's Open button's computed padding from the **built** renderer.
+- **Against the build made before the fix it failed** with `{ top: '1px', left: '6px' }`,
+  Chromium's default, where the primitive declares `8px` and `16px`. After the rebuild, all
+  five cases in the file pass, including the axe gate on the now-styled screen.
+
+---
+
 ## 2026-09-14 — HHHHHH-1: an external edit saved again is offered again, and a reverted file offers nothing
 
 The audit just below queued this, and it is taken first.

@@ -182,6 +182,30 @@ test('the start screen renders through the contract and has no serious a11y viol
   await expectNoSeriousViolations(page, 'Open a PDF to begin.');
 });
 
+test('the PRIMITIVES are styled in the production build, not left as browser controls', async ({
+  page,
+}) => {
+  // THE CONTROL FOR A STYLESHEET NOTHING IMPORTED, found 2026-09-14. `primitives.css`
+  // existed and was reviewed, and `main.tsx` imported only `tokens.css` and `app.css`, so
+  // every primitive shipped with the browser's own button styling. No unit test can see
+  // it: happy-dom loads no stylesheet. The built bundle is the subject, as in the
+  // placeholder case below.
+  //
+  // PADDING, because the value separates the two states. The primitive declares
+  // `var(--space-8) var(--space-16)`, and Chromium's default button padding is 1px 6px, so
+  // a missing stylesheet cannot produce 8px by coincidence.
+  await bridge(page);
+  await page.goto('/');
+
+  const open = page.getByRole('button', { name: 'Open a document' });
+  await expect(open).toBeVisible();
+  const padding = await open.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { top: style.paddingTop, left: style.paddingLeft };
+  });
+  expect(padding).toStrictEqual({ top: '8px', left: '16px' });
+});
+
 test('a message with a PLACEHOLDER renders its value, in the production build', async ({
   page,
 }) => {
