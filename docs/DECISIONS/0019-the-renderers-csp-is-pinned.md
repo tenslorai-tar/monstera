@@ -280,3 +280,8 @@ hash over a blanket grant, in its own commit, with an amendment-log row. That co
 owes the reading this one does not take — whether this Chromium admits a
 script-inserted `<style>` by hash — and a control that a text one character different
 is still refused.
+
+*Taken the same day in
+[ADR-0066](0066-the-splitters-drag-cursor-is-admitted-by-hash.md):* the hash admits the
+element and the style applies, one more space is refused, and `style-src` now carries
+exactly three hashes.

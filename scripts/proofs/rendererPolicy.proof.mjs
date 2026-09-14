@@ -92,7 +92,8 @@ const RUNTIME_CASES = [
   'the renderer RECEIVES the policy the shell declares',
   'CONTROL: a policy the renderer does NOT have is not reported as delivered',
   'the renderer OBEYS it: no network under connect-src none, no eval',
-  'and style-src self REFUSES a script-inserted style element, the splitter drag cursor verbatim',
+  'style-src ADMITS the splitter drag cursor by its granted hash, and the style APPLIES',
+  'CONTROL: the same style one space longer is REFUSED and does not apply',
   'the React shell MOUNTS under the pinned policy, so script-src self permits the bundle',
   'and its stylesheet arrived, so style-src self permits it too',
   'no Node surface is reachable from page script',
@@ -302,7 +303,10 @@ function pinnedPolicy(markdown) {
  *   delivered: string | null,
  *   connectBlocked: boolean,
  *   evalBlocked: boolean,
- *   styleElementBlocked: boolean,
+ *   styleElements: {
+ *     hashed: { blocked: boolean, cursor: string },
+ *     altered: { blocked: boolean, cursor: string },
+ *   },
  *   shell: { mounted: boolean, background: string | null },
  *   nodeSurface: string[],
  *   bridgeExposed: boolean,
@@ -543,13 +547,23 @@ try {
     );
 
     check(
-      'and style-src self REFUSES a script-inserted style element, the splitter drag cursor verbatim',
-      seen.styleElementBlocked,
-      `no style-src violation was reported for an inserted <style> carrying ` +
-        `"* { cursor: col-resize !important; }". The listener that watched for it is the one the ` +
-        `case above read connect-src and script-src from, so it was listening. This is the text ` +
-        `@zag-js/splitter injects on every drag (ADR-0005's resizable-panel library), and if it is ` +
-        `admitted the policy no longer says what invariant 27 pins.`,
+      'style-src ADMITS the splitter drag cursor by its granted hash, and the style APPLIES',
+      !seen.styleElements.hashed.blocked && seen.styleElements.hashed.cursor === 'col-resize',
+      `the hashed <style> reported blocked=${String(seen.styleElements.hashed.blocked)} and the body ` +
+        `computed cursor "${seen.styleElements.hashed.cursor}". Invariant 27 grants this exact text's ` +
+        `hash (ADR-0066) because @zag-js/splitter injects it on every drag; refused, the drag cursor ` +
+        `is lost and every drag reports a violation. The COMPUTED cursor is the witness, because no ` +
+        `event is also what a listener that heard nothing reports.`,
+    );
+
+    check(
+      'CONTROL: the same style one space longer is REFUSED and does not apply',
+      seen.styleElements.altered.blocked && seen.styleElements.altered.cursor !== 'col-resize',
+      `the altered <style> reported blocked=${String(seen.styleElements.altered.blocked)} and the ` +
+        `body computed cursor "${seen.styleElements.altered.cursor}". A hash admits one text; a ` +
+        `policy that admitted this one too would be admitting inline style, which is ` +
+        `'unsafe-inline' arriving without the word. Its refusal is also what proves the listener ` +
+        `above hears style-src at all.`,
     );
 
     // -------------------------------------------------------------------------

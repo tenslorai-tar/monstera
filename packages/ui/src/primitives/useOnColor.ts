@@ -40,7 +40,7 @@ import { type RefObject, useEffect } from 'react';
  *
  * ## CSP: `setProperty`, deliberately
  *
- * §9.27 pins `style-src 'self'` with no `'unsafe-inline'`, and records the
+ * §9.27 pins `style-src` to `'self'` and three fixed hashes, with no `'unsafe-inline'`, and records the
  * distinction that makes this legal: the directive governs `<style>` elements
  * and parsed `style=` attributes, and does **not** intercept CSSOM writes.
  * `element.style.setProperty` is a CSSOM write. Serialising the same value into

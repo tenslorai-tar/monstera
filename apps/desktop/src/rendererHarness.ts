@@ -84,20 +84,49 @@ const MARKER = 'MONSTERA_RENDERER_READBACK ';
 /** How long a refused operation is given to fail to happen. */
 const SETTLE_MS = 400;
 
+/**
+ * `@zag-js/splitter` 1.43.3's drag cursor for a horizontal splitter, as `setupGlobalCursor` builds
+ * it. Invariant 27 grants this text's hash (ADR-0066), so a library version that changes one
+ * character is refused — loudly, at the first drag.
+ */
+const SPLITTER_CURSOR_STYLE = '* { cursor: col-resize !important; }';
+
+/** The same text with one more space, which no granted hash matches: the control. */
+const SPLITTER_CURSOR_STYLE_ALTERED = '* { cursor: col-resize  !important; }';
+
+/** Narrows the style-element probe's answer, so a broken probe cannot report a policy. */
+function isStyleElementsReport(value: unknown): value is Readback['styleElements'] {
+  const isOne = (entry: unknown): boolean =>
+    typeof entry === 'object' &&
+    entry !== null &&
+    typeof (entry as { blocked?: unknown }).blocked === 'boolean' &&
+    typeof (entry as { cursor?: unknown }).cursor === 'string';
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    isOne((value as { hashed?: unknown }).hashed) &&
+    isOne((value as { altered?: unknown }).altered)
+  );
+}
+
 interface Readback {
   readonly delivered: string | null;
   readonly url: string | null;
   readonly connectBlocked: boolean;
   readonly evalBlocked: boolean;
   /**
-   * Whether a script-inserted `<style>` element is refused under `style-src`.
+   * What `style-src` does with a script-inserted `<style>` element, twice.
    *
-   * The text is `@zag-js/splitter` 1.43.3's global drag cursor, verbatim (`splitter.dom.mjs`
-   * `setupGlobalCursor`), because that library is ADR-0005's choice for resizable panels and it
-   * injects exactly this during a drag. `style-src` had been delivered and never exercised
-   * against an injected element: the shell's own stylesheet is a `<link>`.
+   * `hashed` carries `@zag-js/splitter` 1.43.3's drag cursor verbatim (`splitter.dom.mjs`
+   * `setupGlobalCursor`), whose hash invariant 27 grants (ADR-0066). `altered` is the same text
+   * with one more space, which no hash matches. Each reports whether a `style-src` violation fired
+   * while it was in the document, and the `<body>`'s computed cursor at that moment — the EFFECT,
+   * because an absent event is also what a listener that heard nothing reports.
    */
-  readonly styleElementBlocked: boolean;
+  readonly styleElements: {
+    readonly hashed: { readonly blocked: boolean; readonly cursor: string };
+    readonly altered: { readonly blocked: boolean; readonly cursor: string };
+  };
   /**
    * Whether the React shell mounted, and what its surface computed to.
    *
@@ -456,11 +485,7 @@ export async function reportRendererPolicy(): Promise<void> {
        document.addEventListener('securitypolicyviolation', record);
        try { await fetch('https://example.invalid/'); } catch { /* the event is the signal */ }
        try { new Function('return 1')(); } catch { /* likewise */ }
-       const injected = document.createElement('style');
-       injected.textContent = '* { cursor: col-resize !important; }';
-       document.head.appendChild(injected);
        await new Promise((done) => { setTimeout(done, 200); });
-       injected.remove();
        document.removeEventListener('securitypolicyviolation', record);
        return seen;
      })()`,
@@ -472,9 +497,41 @@ export async function reportRendererPolicy(): Promise<void> {
   // `script-src-attr`/`script-src-elem` for other cases, so the family is
   // matched rather than one spelling.
   const evalBlocked = violated.some((directive) => directive.startsWith('script-src'));
-  // Chromium names `style-src-elem` for an element and `style-src-attr` for an attribute, so the
-  // family is matched, as for script-src above.
-  const styleElementBlocked = violated.some((directive) => directive.startsWith('style-src'));
+
+  // ---------------------------------------------------------------------------
+  // style-src against an inserted <style>: the granted hash admitted, one space more refused.
+  // ---------------------------------------------------------------------------
+  //
+  // One element at a time, each inside its own listener window, because a violation event does not
+  // say which element caused it without `'report-sample'`, which the policy does not carry. Chromium
+  // names `style-src-elem` for an element and `style-src-attr` for an attribute, so the family is
+  // matched, as for script-src above. The ALTERED element is the control twice over: its refusal
+  // proves the listener hears style-src, and its unchanged cursor proves the read can see a style
+  // that did not apply.
+  const styleElements = await evaluate(
+    webContents,
+    `(async () => {
+       const insert = async (text) => {
+         const seen = [];
+         const record = (event) => { seen.push(event.effectiveDirective); };
+         document.addEventListener('securitypolicyviolation', record);
+         const element = document.createElement('style');
+         element.textContent = text;
+         document.head.appendChild(element);
+         await new Promise((done) => { setTimeout(done, 200); });
+         const cursor = getComputedStyle(document.body).cursor;
+         document.removeEventListener('securitypolicyviolation', record);
+         element.remove();
+         return { blocked: seen.some((directive) => directive.startsWith('style-src')), cursor };
+       };
+       return {
+         hashed: await insert(${JSON.stringify(SPLITTER_CURSOR_STYLE)}),
+         altered: await insert(${JSON.stringify(SPLITTER_CURSOR_STYLE_ALTERED)}),
+       };
+     })()`,
+    isStyleElementsReport,
+    'style element',
+  );
 
   // ---------------------------------------------------------------------------
   // The Node surface, and the bridge that proves the probe can see anything.
@@ -506,8 +563,9 @@ export async function reportRendererPolicy(): Promise<void> {
   // The shell: did the bundle run, and did its stylesheet arrive?
   // ---------------------------------------------------------------------------
   //
-  // `script-src 'self'` and `style-src 'self'` are two of the nine directives
-  // this proof delivered and never exercised, and `file://` is the reason they
+  // `script-src 'self'` and `style-src 'self'` were two of the nine directives
+  // this proof delivered and never exercised (style-src is also exercised against an
+  // injected element above since 2026-09-14), and `file://` is the reason they
   // needed exercising: its origin is opaque, so whether `'self'` matches one is
   // not a thing to reason about. Both are now answered by an artefact rather
   // than by an argument.
@@ -725,7 +783,7 @@ export async function reportRendererPolicy(): Promise<void> {
     preloadNodeReach,
     connectBlocked,
     evalBlocked,
-    styleElementBlocked,
+    styleElements,
     shell,
     nodeSurface: surface.visible,
     bridgeExposed: surface.bridge,

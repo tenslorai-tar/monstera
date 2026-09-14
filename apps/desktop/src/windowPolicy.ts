@@ -155,24 +155,25 @@ export function isPermittedPermission(permission: string): boolean {
  * arrive as blobs, and a policy that forbids them fails the first time a
  * document is opened rather than at review.
  *
- * **`style-src` grants `'self'` and nothing else**, and this list carried
- * `'unsafe-inline'` until the moment it was pinned. Nothing in this repository
- * needs it — the renderer document is empty — so pinning it would have made an
- * unproven grant into law by arriving early, which is the one thing the pin
- * exists to prevent
- * ([ADR-0019](../../../docs/DECISIONS/0019-the-renderers-csp-is-pinned.md)).
- * The predicted trip is named there so it is recognised rather than debugged:
- * Vite's dev server injects `<style>` elements for HMR.
+ * **`style-src` grants `'self'` and three hashes, never `'unsafe-inline'`**, which
+ * this list carried until the moment it was pinned
+ * ([ADR-0019](../../../docs/DECISIONS/0019-the-renderers-csp-is-pinned.md)). The
+ * hashes are `@zag-js/splitter`'s three horizontal drag-cursor styles, exactly —
+ * the library ADR-0005 names for resizable panels injects one `<style>` of those
+ * texts on every drag, and a hash admits that text and no other
+ * ([ADR-0066](../../../docs/DECISIONS/0066-the-splitters-drag-cursor-is-admitted-by-hash.md)).
  *
  * Verified against a running renderer by `proof:rendererpolicy` — read from the
- * response as Chromium received it, with two directives observed being obeyed.
- * That covers *delivery* completely and *enforcement* for `connect-src` and
- * `script-src` only; the other nine are pinned and delivered, not exercised.
+ * response as Chromium received it, with three directives observed being obeyed.
+ * That covers *delivery* completely and *enforcement* for `connect-src`,
+ * `script-src` and `style-src`; the other eight are pinned and delivered, not
+ * exercised. *Corrected 2026-09-14:* this said two directives and named Vite's
+ * HMR as the predicted trip, a prediction ADR-0019 had already withdrawn.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'self'",
+  "style-src 'self' 'sha256-xdlIrB/4WiSknZvpoFpCjfGK/lJUmYy2eZyjhAkS6Gc=' 'sha256-jCCYA3vpFOJV+i2q53qkChQ7iYHu/CA8MARujZ+f5lg=' 'sha256-kf+FbTsVu4ocGti/dUsGhX4NbwF01+EmbZmIT5W1mGI='",
   "img-src 'self' data: blob:",
   "font-src 'self'",
   "media-src 'self' blob:",

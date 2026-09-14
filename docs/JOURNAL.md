@@ -892,6 +892,35 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — B4 for C2: invariant 27 admits the splitter's drag cursor by hash (ADR-0066)
+
+The entry below measured that `style-src 'self'` refuses the `<style>` element `@zag-js/splitter`
+injects on every drag, and ended owing the reading ADR-0019 asks for before any grant. Taken:
+
+- `style-src` now carries the SHA-256 of the three texts a horizontal splitter without a registry
+  can inject (`col-resize`, `e-resize`, `w-resize`). Nothing vertical, nothing from the registry:
+  each of those owes its own amendment, and until then it is refused loudly.
+- **The hash admits a script-inserted element in this Chromium, and the style applies.** The
+  harness now inserts each probe inside its own listener window and reads the `<body>`'s computed
+  cursor while the element is present: `col-resize` for the hashed text, with no violation.
+- **Control:** the same text one space longer fires `style-src` and leaves the cursor unchanged.
+- **Mutation:** the `col-resize` source removed from both the pinned block and `windowPolicy.ts` —
+  both, so the block-equals-constant case stays green and cannot be what reddens — failed the
+  admission case alone, one failure line.
+- 22 renderer-policy cases pass.
+
+Rejected, with reasons in the ADR: `'unsafe-inline'`, a fixed nonce, the registry, a patched
+library, and a splitter of our own.
+
+**Found on the way, fixed here:** `windowPolicy.ts`'s comment above the constant still said two
+directives were exercised and named Vite's HMR as the predicted trip — the first false since
+`36ac3b5`, the second since ADR-0019's own correction of 2026-08-21. `cad25ff`'s sweep for the
+phrase searched 79 documents and no source comments, so it could not see this one; a sweep with
+`sweep:prose` reaches documents only, and a figure repeated in a comment needs a grep of the tree
+beside it.
+
+---
+
 ## 2026-09-14 — The resizable-panel library injects a style element the pinned policy refuses
 
 Pass C2 is §10.3's *"panels resizable with persisted widths"*, and ADR-0005 names the library for
