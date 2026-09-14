@@ -162,6 +162,12 @@
   --icon-16: 16px;
   --icon-20: 20px;
 
+  /* Control extents the law names by number. §10.3: the ribbon's "compact 52 px
+     buttons". A size stated in the architecture is a token with that source; a
+     calc() of spacing tokens that happens to equal it would be a magic number
+     wearing tokens. */
+  --control-ribbon: 52px;
+
   --radius-4: 4px;
   --radius-6: 6px;
   --radius-10: 10px;

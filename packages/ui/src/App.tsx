@@ -1758,13 +1758,15 @@ export function App({ client, settings }: AppProps): ReactElement {
           screen offers it. The ribbon is DOCUMENT chrome; the start screen is
           what there is instead. */}
       {open === undefined ? (
-        <>
+        // ONE GRID AREA for the start screen and its recent list, spanning the rail's
+        // column: no rail is drawn with no document (`Ribbon` renders nothing).
+        <div className="m-start-area">
           <StartScreen registry={registry} context={context} problem={openProblem} />
           {/* BESIDE the projection, not inside it: a recent file is data with a
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
           <RecentFiles client={client} onOpened={opened} />
-        </>
+        </div>
       ) : (
         // THE ERROR BOUNDARY, AND ITS POSITION IS THE GUARANTEE (§10.5a).
         //
@@ -1792,6 +1794,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         // the reader was.
         <>
         <Ribbon registry={registry} context={context} />
+        {/* THE BODY AREA, one element whatever the view renders: a scroller, a
+            loading placeholder or a failed canvas. Each of those is otherwise a
+            grid item the shell would have to name, and a new state would land in
+            no area. */}
+        <div className="m-body-area">
         <ErrorBoundary
           key={open.docId}
           fallback={({ reset }) => (
@@ -1836,6 +1843,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           requestPassword={requestPassword}
         />
         </ErrorBoundary>
+        </div>
         </>
       )}
       {palette ? (
@@ -1856,6 +1864,11 @@ export function App({ client, settings }: AppProps): ReactElement {
           task={task}
         />
       )}
+      {/* THE PANELS STILL STACKED UNDER THE STATUS BAR, in one grid area — the
+          layout they had before the grid, kept so the rail-and-ribbon commit
+          changes only the rail and the ribbon. The document-panel commit moves
+          them into §10.3's tab strip and removes this wrapper. */}
+      <div className="m-surface-extras">
       {/* THE LINKS PANEL, which renders nothing with no document for the find
           bar's reason. It is the third source of a jump, after the keys and the
           thumbnails, and it dispatches the same one. */}
@@ -1939,6 +1952,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // the same route rather than a second opinion about how a command ends.
         commands={{ client, onApplied: applied, ask }}
       />
+      </div>
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because
           each command placed on it declares `when`. */}

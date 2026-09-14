@@ -28,10 +28,67 @@ body {
   color: var(--text);
 }
 
+/*
+ * §10.3's anatomy as one grid: the tabs, then the active section's tools across
+ * the top, then the section rail beside the document, then the status bar.
+ *
+ * Areas rather than source order, because two of the pieces belong to one
+ * component: `Ribbon` owns the active section and renders both the rail and
+ * the tools, with `display: contents`, so each lands in its own area without the
+ * component knowing the layout.
+ *
+ * `extras` holds the panels still stacked under the status bar. It is the
+ * layout they already had, kept so this commit moves the rail and the ribbon
+ * and nothing else; the document-panel commit takes them into the tab strip and
+ * removes the area.
+ *
+ * `minmax(0, 1fr)` on the body row, because a grid track's default minimum is its
+ * content, and a document scroller then grows the row instead of scrolling
+ * inside it.
+ */
 .m-document-surface {
-  display: block;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'tabs tabs'
+    'ribbon ribbon'
+    'rail body'
+    'status status'
+    'extras extras';
   block-size: 100dvh;
+  overflow: hidden;
   background: var(--canvas);
+}
+
+.m-tabs {
+  grid-area: tabs;
+}
+
+.m-body-area {
+  grid-area: body;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* THE START SCREEN SPANS THE RAIL'S COLUMN, because there is no rail over it:
+   `Ribbon` renders nothing when no section holds a command. */
+.m-start-area {
+  grid-area: body;
+  grid-column: 1 / -1;
+  overflow-y: auto;
+}
+
+.m-status-bar {
+  grid-area: status;
+}
+
+.m-surface-extras {
+  grid-area: extras;
+  max-block-size: 40vh;
+  overflow-y: auto;
 }
 
 /*
@@ -1315,38 +1372,60 @@ body {
 /*
  * §10.3's left section rail and top tool ribbon.
  *
- * The rail is horizontal here rather than down the left edge, and that is a
- * stated limit rather than a reading of the law: §10.3 puts the rail beside the
- * document panel, which does not exist yet, so a vertical rail today would be a
- * column of eight labels against nothing. The anatomy it belongs to lands with
- * the panels; the ORDER — sections, then the active section's tools, then the
- * canvas — is §10.3's and is what this keeps.
+ * THE RAIL IS DOWN THE LEFT EDGE NOW. It was horizontal until 2026-09-14, and
+ * the reason given was that §10.3 puts the rail beside the document panel,
+ * "which does not exist yet". That premise had dissolved: the thumbnail strip
+ * has been that panel since Stage 1. The design pass read it against the law and
+ * moved the rail.
  *
- * A disabled tab is a section of the product with nothing in it yet, which is a
- * true thing to show. It is muted rather than hidden because a rail that gained
- * an entry per stage would teach the reader that the layout moves.
+ * `.m-ribbon` is `display: contents`, so its two children take the shell's
+ * `rail` and `ribbon` areas (see `.m-document-surface`).
+ *
+ * A disabled section is a section of the product with nothing in it yet, which
+ * is a true thing to show. It is muted rather than hidden because a rail that
+ * gained an entry per stage would teach the reader that the layout moves.
  */
 .m-ribbon {
-  display: flex;
-  flex-direction: column;
-  border-block-end: 1px solid var(--border-soft); /* decorative: the seam between chrome and canvas; it bounds nothing a person operates */
-  background: var(--surface);
+  display: contents;
 }
 
 .m-ribbon__rail {
+  grid-area: rail;
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4) var(--space-8) 0;
+  padding: var(--space-8) var(--space-4);
+  overflow-y: auto;
+  background: var(--bg2);
+  border-inline-end: 1px solid var(--border); /* decorative: separates the rail from the document; each section draws its own focus ring */
 }
 
+/* A LABELLED ICON (§10.3), the glyph at §10.4's primary-control size over a
+   10 px caption, which is M2's floor. No fixed width: §10.3 names none, so the
+   rail is as wide as its longest label. */
 .m-ribbon__tab {
-  padding: var(--space-4) var(--space-8);
-  border: 0;
-  border-block-end: 2px solid transparent;
-  border-radius: var(--radius-4) var(--radius-4) 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
   background: transparent;
   color: var(--muted);
-  font-size: var(--font-chrome-12);
+  font-size: var(--font-chrome-10);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.m-ribbon__tab:hover:not(:disabled) {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.m-ribbon__tab:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
 }
 
 .m-ribbon__tab:disabled {
@@ -1357,17 +1436,25 @@ body {
   cursor: default;
 }
 
+/* The active section on `--accent-soft`, a state surface. Its text stays
+   `--text` rather than an accent colour: the derived chrome accent text is owed
+   to the overlay-on-page work, and a stored green here would be the defect M2
+   names. The boundary is the control boundary, so it reads in forced colours. */
 .m-ribbon__tab.is-active {
-  border-block-end-color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--border-control);
   color: var(--text);
 }
 
 .m-ribbon__tools {
+  grid-area: ribbon;
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-16);
-  padding: var(--space-8);
+  align-items: stretch;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-8);
   overflow-x: auto;
+  background: var(--bg2);
+  border-block-end: 1px solid var(--border); /* decorative: the seam between chrome and canvas; it bounds nothing a person operates */
 }
 
 /* THE HAIRLINE SEPARATOR §10.3 names, on the group rather than between them:
@@ -1376,8 +1463,8 @@ body {
 .m-ribbon__group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding-inline-end: var(--space-16);
+  gap: var(--space-2);
+  padding-inline-end: var(--space-8);
   border-inline-end: 1px solid var(--border-soft); /* decorative: §10.3's hairline separator between captioned groups; each button draws its own boundary */
 }
 
@@ -1387,7 +1474,9 @@ body {
 
 .m-ribbon__buttons {
   display: flex;
-  gap: var(--space-4);
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .m-ribbon__caption {

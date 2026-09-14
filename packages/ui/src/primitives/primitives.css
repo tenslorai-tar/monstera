@@ -125,6 +125,42 @@
   height: var(--icon-20);
 }
 
+/* ─── ToolButton ─────────────────────────────────────────────────────────── */
+
+/* §10.3's compact ribbon button: glyph over caption, 52 px tall. The boundary is
+   transparent until hovered, because a ribbon of outlined boxes is the wireframe
+   §10.2 warns against; the focus ring is `--border-control`, the one boundary a
+   keyboard user must always see. */
+.m-tool-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-block-size: var(--control-ribbon);
+  padding-inline: var(--space-8);
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.m-tool-button:hover:not(:disabled) {
+  background: var(--surface2);
+}
+
+.m-tool-button:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
+}
+
+.m-tool-button__label {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  white-space: nowrap;
+}
+
 /* ─── Icon ───────────────────────────────────────────────────────────────── */
 
 /* A glyph drawn beside text rather than alone in a button: a ribbon button's

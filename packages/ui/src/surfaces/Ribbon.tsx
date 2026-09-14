@@ -14,7 +14,9 @@ import {
   SECTION_TOOLS,
 } from '../messages/en.js';
 import type { MessageKey } from '@monstera/shared';
-import { Button } from '../primitives/Button.js';
+import { Icon } from '../primitives/Icon.js';
+import type { IconName } from '../primitives/icons.js';
+import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { SECTION_IDS, type SectionId } from '../registries/placement.js';
 import { type RibbonSection, ribbonModel } from './projections.js';
@@ -90,6 +92,22 @@ const SECTION_TITLES: Readonly<Record<SectionId, MessageKey>> = {
   tools: SECTION_TOOLS,
 };
 
+/**
+ * A section's glyph on the rail (§10.3: *"the eight feature sections … as labeled
+ * icons"*). A total record for `SECTION_TITLES`' reason: a ninth section is a
+ * compile error here.
+ */
+const SECTION_ICONS: Readonly<Record<SectionId, IconName>> = {
+  home: 'House',
+  comment: 'MessageSquare',
+  edit: 'PenLine',
+  organize: 'Files',
+  forms: 'ClipboardList',
+  review: 'ClipboardCheck',
+  protect: 'Shield',
+  tools: 'Wrench',
+};
+
 export function Ribbon({ registry, context }: RibbonProps): ReactElement | null {
   const { i18n } = useLingui();
   const [chosen, setChosen] = useState<SectionId | undefined>(undefined);
@@ -111,6 +129,11 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
     filled.find((section) => section.section === chosen)?.section ?? filled[0]?.section;
 
   return (
+    // `display: contents` on this root, in `app.css`. The rail and the tool strip
+    // are two pieces of §10.3's anatomy in two places — the rail down the left
+    // beside the document, the tools across the top — and one component still
+    // owns the one piece of state they share. Their grid areas are the shell's,
+    // so this component never learns where the shell puts them.
     <div className="m-ribbon">
       <nav aria-label={i18n._(RIBBON_RAIL_LABEL)} className="m-ribbon__rail">
         {SECTION_IDS.map((id) => {
@@ -127,7 +150,8 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
               }}
               type="button"
             >
-              {i18n._(SECTION_TITLES[id])}
+              <Icon name={SECTION_ICONS[id]} size="control" />
+              <span className="m-ribbon__tab-label">{i18n._(SECTION_TITLES[id])}</span>
             </button>
           );
         })}
@@ -142,8 +166,12 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
           <div className="m-ribbon__group" key={group.group}>
             <div className="m-ribbon__buttons">
               {group.entries.map((entry) => (
-                <Button
+                <ToolButton
                   key={entry.command.id}
+                  // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no
+                  // icon is refused at construction, so `File` is never drawn for a
+                  // command in the shipped graph.
+                  icon={entry.command.icon ?? 'File'}
                   label={entry.command.title}
                   onClick={() => {
                     // Not awaited, for `QuickToolbar`'s reason: a handler
