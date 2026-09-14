@@ -79,3 +79,30 @@ id = "monstera-openai-legacy-key"
 description = "OpenAI legacy key — sk- followed by a long unbroken alphanumeric run"
 regex = '''\bsk-[A-Za-z0-9]{32,}\b'''
 keywords = ["sk-"]
+
+# ---------------------------------------------------------------------------
+# Allowlist: a PUBLIC key's fingerprint, not a secret.
+#
+# Finding: generic-api-key at scripts/provision/keys/libreOfficeKey.mjs:16, on
+# `LIBREOFFICE_KEY_FINGERPRINT = 'C2839ECAD9408FBE9531C3E9F434A1EFAFEEAEA3'`.
+# The rule keys on a KEY-named assignment holding a long high-entropy string.
+# That string is the v4 fingerprint of The Document Foundation's LibreOffice
+# signing key: TDF publishes it, keyservers serve it, and every LibreOffice
+# signature names it in its own issuer subpacket (ADR-0063). Knowing it grants
+# nothing; it is what a verifier compares against.
+#
+# Narrow on all three axes at once (condition AND): this rule, this one file,
+# this exact value. Measured on gitleaks 8.30.1 before it landed: the committed
+# line produces no finding, and the same file and shape holding a DIFFERENT
+# 40-hex value still fires generic-api-key, so the entry covers this fingerprint
+# and nothing that merely looks like it. Renaming the constant so the rule stops
+# matching was rejected: that evades the detector instead of recording why the
+# finding is not a secret.
+# ---------------------------------------------------------------------------
+
+[[allowlists]]
+description = "The Document Foundation's public LibreOffice signing-key fingerprint (ADR-0063)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|[\\/])scripts[\\/]provision[\\/]keys[\\/]libreOfficeKey\.mjs$''']
+regexes = ['''^C2839ECAD9408FBE9531C3E9F434A1EFAFEEAEA3$''']
