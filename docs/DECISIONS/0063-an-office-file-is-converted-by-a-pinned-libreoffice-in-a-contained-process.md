@@ -304,3 +304,30 @@ converts a file headless when started from their own session.
 Both need a conversion that works outside containment first, and there is none
 yet. **No feature commit before they are read**, as the Consequences section
 already requires.
+
+## Correction, 2026-09-14 afternoon — item 2 is read: headless conversion works, and the morning's crash is unexplained
+
+The owner returned the question above: their installed copy crashes too, so the
+investigation is ours, and the AppContainer is not the cause. Every conversion
+this afternoon, 13:20–13:35, exited 0 and wrote a PDF. Each run varied one thing
+the morning's crashing runs had:
+
+- the launcher, `.com` or `.exe`;
+- the flags;
+- a fresh profile, a copy of the default profile, or a copy of a morning profile
+  that crashed;
+- an ASCII input, or the morning's own non-ASCII input;
+- the provisioned 26.8.0.3, or the installed 26.2.3.2.
+
+The machine showed no change across the gap, as far as can be read:
+- no restart, hotfix or runtime install;
+- no Defender or Resource-Exhaustion-Detector event;
+- no `soffice.bin` fault after 05:04.
+
+The table and every reading are in `docs/JOURNAL.md` under this date.
+
+**Item 2 is therefore read as working, with the premise stated rather than
+claimed:** the morning's crash is not explained, and the minidump that would name
+its exception is unread for want of a debugger. If it recurs, those controls are
+the first thing to repeat. **Items 3 and 4 are now reachable**, and they still
+come before any feature commit.

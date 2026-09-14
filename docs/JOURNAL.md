@@ -1342,6 +1342,58 @@ Each of these was ruled out:
 is the owner's. ADR-0063 items 3 (the AppContainer start) and 4 (macros off)
 need a working conversion first, so the Office import row does not start.
 
+### Correction, 2026-09-14 afternoon — the crash does not reproduce, and its cause is not known
+
+The owner handed this back: their installed copy crashes too, so the
+AppContainer is not the cause, and the investigation is ours. It started where
+the owner pointed: an isolated `-env:UserInstallation=`, the unpacked tree, and
+the exit code and stderr read.
+
+**Every run converted.** Each exited 0 and wrote a PDF whose first bytes are
+`%PDF-1.7`. The only stderr line was the embedded Python's *could not find
+platform independent libraries* notice, which prints on every run and is not a
+failure. Each row changes one thing against the morning's crashing runs:
+
+| clock | launcher | profile | input | PDF |
+|---|---|---|---|---|
+| 13:20 | provisioned `soffice.com` | fresh | ASCII `.txt` | 13,328 B |
+| 13:22 | provisioned `soffice.exe` | fresh | ASCII `.txt` | 13,328 B |
+| 13:23 | `soffice.exe`, `--headless --convert-to pdf` only | fresh | ASCII `.txt` | 13,328 B |
+| 13:25 | `soffice.exe` | a copy of the default profile (last written by 26.2 at 12:17) | ASCII `.txt` | 13,328 B |
+| 13:33 | `soffice.com` | fresh | the morning's own input, with an em dash | 16,000 B |
+| 13:34 | `soffice.com` | a copy of a morning profile that crashed | ASCII `.txt` | 13,328 B |
+| 13:35 | the installed 26.2.3.2 `soffice.com` | fresh | the morning's input | 17,212 B |
+
+**What this rules out:**
+- the launcher;
+- the flags;
+- the profile's contents, both the default one and a copy of one that crashed;
+- the input's content;
+- the tree;
+- which build runs.
+
+**What stayed the same between the morning and now:**
+- no restart since 2026-09-13 08:06;
+- no hotfix in three days;
+- no runtime installed today; the only installer activity today was our own
+  unpack, 04:50–04:53;
+- no Windows Defender event between 04:45 and 05:10 except a health report;
+- no Resource-Exhaustion-Detector event today, read from a System log holding 25
+  events today;
+- no `soffice` process running at 13:18.
+
+The Application log holds nine `soffice.bin` faults today, all between 04:57 and
+05:04, and none since. No other application faulted in that window.
+
+**So the morning's crash is unexplained, not fixed.** Memory pressure would fit
+both fault codes, but no record supports it, so it is not given as the cause.
+The 127,772-byte minidump in the tree root would name the exception; no
+debugger is installed to read it.
+
+**What changes:** headless conversion works outside containment. ADR-0063 item 2
+is therefore read, and items 3 and 4 are reachable. If the crash comes back, the
+seven rows above are the controls to repeat first.
+
 ---
 
 ## 2026-09-14 — CI red at `785ba87`, named: libuv's Windows watcher aborts on a directory not in its long form
