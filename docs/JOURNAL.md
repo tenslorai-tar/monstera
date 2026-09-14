@@ -892,6 +892,222 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Stage audit of `4971b60..09e0f74`: an edit a person re-saves is never offered again, and a migration figure that grew for the third time
+
+Thirty-six commits and 190 files: the audit `b0699a3`, D9's compose rows (Markdown, CSV,
+images, Open from URL, webcam, document scan), the five-defect fix and GGGGGG-2, the
+external-app edit, the LibreOffice provisioner and its item-2 reading, the page-as-a-layer
+import and its readings, D10's page images and plain text, and D8's spell-check and
+reading-order rows. **The gate fired on the design pass's first commit** at 206 files
+against a batch of 200, where it fires by design. That commit is held until this one lands.
+
+Read by four read-only reviews in parallel: the modified proofs, the instruments, the
+fix-shaped commits with a catch sweep and the B4 order, and documents against code.
+**Every finding below was read in the code in this session before it was recorded.** Two
+reported items did not survive in the form reported and are narrowed below.
+
+Findings **HHHHHH-1** to **HHHHHH-17**:
+- one shipped defect, queued and taken next;
+- seven notes on instruments;
+- four proof or comment findings, fixed here;
+- five documents a commit falsified without opening them, fixed here.
+
+### 1. Root cause, or workaround?
+
+Every fix-shaped commit states a mechanism and is root cause:
+- `3e7d1fd` — survival judged from one look;
+- `f3d736e` — a tamper that tampered with nothing one run in 256;
+- `408d95c` — five shipped defects;
+- `87bc0dd` — ECDSA and RSA-PSS through `crypto.verify`;
+- `d6e4b07` — a page index that names its version;
+- `050fbfc` — libuv's watcher on a short-form directory, confirmed on CI and not
+  reproduced locally.
+
+`334277a` claims no fix: it made the failure public. `9270171` and `09e0f74` record an
+investigation and change nothing to route around it. **No retry, raised timeout,
+disabled check, widened type or special-cased input** was found.
+
+**HHHHHH-13 — catches that name one cause for every failure (the class GGGGGG-1 was;
+recorded).** Read in the code:
+- `engineHandlers.ts:868`, `engine/pageImage` (`93a2058`): any throw, including a
+  failed `files.writeOutput`, answers `page-image-failed`, the request's fault. The
+  cause is dropped by `failed`'s design, which is stated and right: the string comes
+  from a library parsing a hostile file. What stands is narrower than reported: a host
+  write fault is labelled a bad request, so the supervisor does not count it.
+- `pageScan.ts:378` (`7668fba`): a `toPixmap` throw answers `unreadable`. The try holds
+  one call, so this is close to single-source.
+- `imageCompose.ts:97` (`b9f8757`): `addImagePage` answers `image-unreadable`, and the
+  image is **read twice** (`:65` and `:94`). A second read that differed from the first
+  would reach `checkPngPixels` inside `addImagePage` and be called unreadable rather
+  than too large.
+- `signedDataCheck.ts:309-318` (`87bc0dd`): `forgeOf` answers `null` for any node-forge
+  throw, and its docblock says *"for a key that is not RSA"*. A malformed RSA
+  certificate gets the same answer.
+
+Every other catch in the range narrows by class or has one call inside it.
+
+### 2. Verified against the easy shape only?
+
+**HHHHHH-1 — a dismissed external edit re-saved with the same bytes is never offered
+again (shipped; queued, taken next).**
+- `externalEditWatch.ts:118` returns when `digest === pending`.
+- The module's own header gives the way back from *not now* as *"they save it again"*.
+  An editor's second Save usually writes identical bytes, and then every later wait
+  answers `unchanged`.
+- A file reverted to what `main` wrote leaves `pending` set, because the
+  `digest === known` return comes before anything clears it. The reimport would then
+  read bytes the file no longer holds.
+- The dismissal case (`externalEditWatch.test.ts:158`) re-saves **different** bytes, so
+  neither path has a case. Introduced in `785ba87`.
+
+**HHHHHH-6 — a sheet photographed at more than 45° reports `straightened` (note).**
+`pageScan.ts:227-231` takes corners from the x+y and x−y extremes, so past 45° the
+page comes out turned a quarter. The header states the limit, and nothing checks it.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+**HHHHHH-10 — a claimed refusal with no case (fixed as a comment; the gap recorded).**
+- `87bc0dd` renamed a timestamp case from *cannot verify* to *cannot READ*. That is a
+  correction, because the fixture is an RSA key labelled `id-ecPublicKey`.
+- Its new comment then said *"a real EC authority is refused at check 6 instead"*.
+  The check-6 cases use RSA certificates, so what a real EC authority's token meets is
+  asserted by nothing.
+- The fixture's own docblock still called it the live ECDSA shape.
+- Both comments now say what is and is not covered.
+
+No check was loosened. `removalCollects.test.ts`' residue went from widgets to widgets
+plus fields, which is stricter.
+
+### 3. Would CI have caught it?
+
+Answered from the Actions API, one runs-list read (100 runs, oldest
+2026-09-12T18:37Z), joined to every commit in the range. **The read's positive control
+refused the first attempt**: `09e0f74` is unpushed, so it has no run, and the range end
+was moved to `d19cf0d`. `09e0f74` is read with the next push.
+
+Green everywhere except the following, each with its entry already in this journal:
+- **Guards at `f8cab12`:** fixed in `3e7d1fd`.
+- **CI at `dc7c2af`:** fixed in `f3d736e`.
+- **CI at `785ba87`, `c963dfd` and `334277a`:** one mechanism, libuv's Windows watcher on
+  a directory not in its long form. `334277a` made the failure public and `050fbfc`
+  fixed it.
+
+`babc8f7`, `9f49884`, `b222aff`, `f3d736e` and `3e7d1fd` were pushed inside a batch whose
+head is green. **None of this range's findings would have reddened CI:** HHHHHH-1 is a
+path no case constructs.
+
+### 4. Are the proofs non-vacuous?
+
+- **HHHHHH-8 — the real-surface watcher control claimed a look it never asserted
+  (fixed).** `nodeEditWatch.test.ts`' CONTROL said *"the bound is past the quiet second,
+  so a look did happen"* and asserted only `unchanged`. That is also what a platform
+  that delivered no event produces. It now counts the real surface's digest reads.
+  **Mutation**, the rewrite removed so no event arrives: the old form passes, and the
+  new one reads `expected 0 to be greater than or equal to 1`.
+- **HHHHHH-11 — a mutation control's stated reason was false (fixed).**
+  `checkLocal.proof.mjs` said that with `SURVIVAL_BUDGET_MS` at 0 *"no reading is taken
+  after the kill"*. One is: `afterKill` is read before the loop. The outcome it predicts
+  holds, and the reason did not.
+
+### 4a. Resolution tests
+
+- **HHHHHH-4 (note, unmeasured).** `guardedFetch.ts`' IPv6 blocks list `::/128` and
+  `::1/128`, so an IPv4-compatible literal such as `::127.0.0.1` is in no block. The
+  table is faithful to IANA's registry, which does not list the deprecated `::/96`.
+  Whether any stack routes such an address is unmeasured.
+- **HHHHHH-5 (note, unmeasured).** `isPdfPath` accepts `page.exe:s.pdf`, an NTFS stream
+  name. Whether a save dialog can produce one, or `shell.openPath` would launch it, is
+  unread.
+
+### 4b. Positive controls on the searches
+
+- **HHHHHH-2 (note).** `signatureRead.ts:123` removes a duplicate only when `/V` is
+  indirect. A merged field and widget carrying a direct `/V` is listed twice: once from
+  `/Fields` and once from the page. The result is a duplicate row, never a missing one.
+- **HHHHHH-7 (note).** `textStructure.ts:388` walks a block with no `contents` key as a
+  line block, so an empty tagged element is not a node. The structure read over the
+  wrong options gives `nodes: []`, which looks untagged; the host picks options from a
+  closed name.
+- **HHHHHH-3 (note).** `signedDataCheck.ts` never holds the SignerInfo's algorithm
+  family to the certificate's key type, because `crypto.verify` picks by the key. It is
+  not a forgery path: a real signature under that key is still required.
+
+The five GGGGGG items queued by the last audit are fixed in the range: -1, -3, -4 and -12
+in `408d95c`, and -2 in `87bc0dd`. -3 (`signatureRead.ts:241-256`) and -12
+(`pageRedact.ts:161-181`) were read in the code; -1, -2 and -4 were read in their
+commits.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+Nothing does. `coreChannels.test.ts` holds its names as a literal, `verifiedDownload`'s
+twelve cases per form sit beside a `FORMS.length * 12` guard, and `kernelLoad` counts 21
+against its checks. **HHHHHH-9 (fixed):** the same file's header and title said
+*fourteen* reads when `93a2058` made the literal fifteen. The assertion compares names,
+so only the prose was wrong.
+
+### 5. Executed, or asserted?
+
+- **Never run live:**
+  - a webcam capture;
+  - an external edit in a real editor;
+  - Azure, 401 because the owner's resource was Computer Vision, not Document
+    Intelligence;
+  - LibreOffice inside containment, ADR-0063 items 3 and 4.
+- **Owed one export from the running application:** page images and plain text.
+- **Run on drawn sheets only:** document scan, which is **done** with no real
+  photograph.
+- **Not re-run end to end:** the LibreOffice provisioner after its order fix.
+- **Confirmed on CI and never reproduced locally:** `050fbfc`.
+
+### 6. Did architecture change before the feature?
+
+Yes, for every new trust boundary, each in its own commit: `7aff532` → `06c0c03`,
+`c461859` → `785ba87` (with `942ea73` → `d6e4b07`), `c963dfd` (no feature yet), `208f168`
+→ `eeeeb11`, `babc8f7` → `b4672cd`, `ac06032` → `be09660`. No commit outside those and
+`b0699a3` touched `docs/ARCHITECTURE.md`.
+
+One judgement is recorded: `be09660` carried ADR-0065's correction dropping Decision 5
+in the feature commit. That is ADR text rather than law, and it removed a decided
+behaviour; it cannot be split after publication.
+
+### 7. Do the documents still match the code?
+
+**Five documents a commit falsified without opening them, all edited true in this
+commit:**
+- **HHHHHH-12 — the MuPDF migration's size, a third time.**
+  - `npm run proof:enginesurface` at `09e0f74` reads **30** modules and **10** that load
+    an engine. Twenty are type-only, 132 members are called, and the per-class counts
+    are unchanged.
+  - `CLAUDE.md` and `docs/ARCHITECTURE.md` said 28 and 8.
+  - `pageScan.ts` (`7668fba`) and `pageImages.ts` (`93a2058`) arrived as value imports.
+    The sentence telling the next range to re-run the count was already on the page.
+    It is now part of this item rather than a thing to recall.
+- **HHHHHH-15 — ARCHITECTURE's channel split** said twenty-one channels and fourteen
+  reads. `engine/pageImage` (`93a2058`) made it **twenty-two and fifteen**; the test was
+  updated and the law was not.
+- **HHHHHH-14 — the Open from URL row** opened *"BUILT 2026-09-13, owing one live run"*
+  under a **done** status. `89e2619` added the live run and left the clause.
+- **HHHHHH-16 — ADR-0063's index row** still said conversion crashes and items 3 and 4
+  are not reached, after `09e0f74`'s correction.
+- **HHHHHH-17 — the §3 Office row** said containment *"is the provisioning commit's first
+  reading"*. It was not read there, and it is now the next reading after item 2.
+
+Every other FEATURES row dated 2026-09-13 or -14 was checked against its cited
+constants, files and case counts, and agrees.
+
+### What this range says about itself
+
+**The class that recurred is a stated way back that nothing exercises.** HHHHHH-1's
+header names the recovery from a dismissal, and its dismissal case takes a different
+route to the same assertion. HHHHHH-10 names a refusal no case builds. HHHHHH-8 names a
+look nobody counted. Each is a sentence about behaviour written beside a case that
+could not fail if the sentence were false. **When a comment says how something recovers
+or why a control holds, the case beside it must take exactly that route.**
+
+Watermark advances to `09e0f74`.
+
+---
+
 ## 2026-09-14 — Reading-order / tagged-PDF inspection: the engine's structure, one page, no words
 
 The design decision came first, in its own commit: `ac06032` (ADR-0065, a §3 row, the §3.2 opt-in, the

@@ -31,12 +31,15 @@ afterEach(() => {
 
 const sha256 = (bytes: string): string => createHash('sha256').update(bytes).digest('hex');
 
-async function pageOut(original: string): Promise<{ readonly path: string; readonly watch: EditWatch }> {
+async function pageOut(
+  original: string,
+  surface: EditWatchSurface = nodeEditWatchSurface,
+): Promise<{ readonly path: string; readonly watch: EditWatch }> {
   const directory = mkdtempSync(join(tmpdir(), 'monstera-edit-watch-'));
   directories.push(directory);
   const path = join(directory, 'page.pdf');
   await writeFile(path, original);
-  const watch = watchEdits(nodeEditWatchSurface, path, sha256(original));
+  const watch = watchEdits(surface, path, sha256(original));
   if (watch === null) throw new Error('the platform refused to watch a directory this case just made');
   watches.push(watch);
   return { path, watch };
@@ -80,10 +83,21 @@ describe('nodeEditWatchSurface — every save pattern in ADR-0062’s table', ()
 
   it('CONTROL: rewriting the SAME bytes is an event and not an edit', async () => {
     // Without this, a surface that answered `changed` for every event would pass the four
-    // cases above. The bound is past the quiet second, so a look did happen.
-    const { path, watch } = await pageOut('%PDF-original');
+    // cases above. THE LOOK IS COUNTED, not inferred from the bound (audit HHHHHH-8): an
+    // `unchanged` is also what a platform that delivered no event for the rewrite produces,
+    // and then this case would pass without the digest ever being compared.
+    let looks = 0;
+    const counting: EditWatchSurface = {
+      ...nodeEditWatchSurface,
+      digest: (target) => {
+        looks += 1;
+        return nodeEditWatchSurface.digest(target);
+      },
+    };
+    const { path, watch } = await pageOut('%PDF-original', counting);
     await writeFile(path, '%PDF-original');
     await expect(watch.wait(3_000)).resolves.toBe('unchanged');
+    expect(looks).toBeGreaterThanOrEqual(1);
     expect(watch.pending()).toBeNull();
   }, 15_000);
 });

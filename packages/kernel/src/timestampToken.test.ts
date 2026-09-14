@@ -109,8 +109,10 @@ interface Twist {
    */
   readonly unreadableChainCertificate?: boolean;
   /**
-   * The SIGNER'S certificate carries a key algorithm node-forge refuses — the shape a
-   * live authority's ECDSA token had, measured 2026-09-13.
+   * The SIGNER'S certificate is labelled with a key algorithm its key is not — an RSA
+   * key marked `id-ecPublicKey`, which no reader can decode. This was the stand-in for a
+   * live authority's ECDSA token until 87bc0dd made ECDSA verifiable; it is now only an
+   * unreadable key, and no case here builds a real EC authority (audit HHHHHH-10).
    */
   readonly unreadableSigner?: boolean;
   /** Alter the TSTInfo AFTER its digest is attested. */
@@ -358,8 +360,10 @@ describe('acceptTimestampReply', () => {
     // THE FIXTURE IS AN RSA KEY LABELLED `id-ecPublicKey`, which no reader can decode.
     // This case read *key type this build does not verify* until 2026-09-13, when the
     // signature check moved to `node:crypto` and began verifying ECDSA (GGGGGG-2): an
-    // EC key is no longer the reason, and a key that cannot be decoded is. A real EC
-    // authority is refused at check 6 instead, where its extensions are read.
+    // EC key is no longer the reason, and a key that cannot be decoded is. What a real EC
+    // authority's token meets now is NOT asserted by any case in this file (audit
+    // HHHHHH-10): the check-6 cases use RSA certificates, so an accepted or refused EC
+    // token is equally untested.
     const error = refusal(query(), { unreadableSigner: true });
     expect(error.reason).toBe('unverifiable');
     expect(error.message).toContain('signed with a key this build cannot read');

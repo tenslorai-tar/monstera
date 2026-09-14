@@ -343,8 +343,11 @@ const CLEANUP_ADVANCE_BUDGET_MS = 2000;
  * within this long* rather than *did it move in the one window opened*. A separate
  * name because it is a separate term in {@link PROBE_SPAN_MS}.
  *
- * DETERMINISTIC CONTROL: set to `0`, no reading is taken after the kill, so the
- * win32 detached-survivor case and the cleanup differential go red on every run.
+ * DETERMINISTIC CONTROL: set to `0`, the one reading taken after the kill is never
+ * compared with a later one, so nothing can advance, and the win32 detached-survivor
+ * case and the cleanup differential go red on every run. (This read *no reading is
+ * taken after the kill* until audit HHHHHH-11: `afterKill` is read before the loop, so
+ * the outcome held and the stated reason did not.)
  */
 const SURVIVAL_BUDGET_MS = 2000;
 

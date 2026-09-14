@@ -270,16 +270,18 @@ one engine:
 built without either** ([ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
 2026-09-09).
 
-**A host's reader set is its own engine's.** The twenty-one channels split
+**A host's reader set is its own engine's.** The twenty-two channels split
 **six engine-agnostic** — `probe-containment`, `open`, `close`, `apply`,
 `capture`, `invert` — one that belongs to the **live-session shape**,
-`serialise`, and **fourteen MuPDF document-model reads**:
+`serialise`, and **fifteen MuPDF document-model reads**:
 `page-geometry`, `page-text`, `page-links`, `destinations`, `layers`,
 `annotations`, `form-fields`, `exportFormData`, `flat-fields`,
-`duplicate-pages`, `extract`, `snapshotRegion`, `ocr-page`, `signatures`. **A
-second engine owes none of the fourteen.** `signatures` joined on 2026-09-12 with
-D7's verification row, and this paragraph said *twenty* and *thirteen* until the
-audit of `622f794..4971b60` — the count `coreChannels.test.ts` holds as a literal.
+`duplicate-pages`, `extract`, `snapshotRegion`, `pageImage`, `ocr-page`,
+`signatures`. **A second engine owes none of the fifteen.** `signatures` joined on
+2026-09-12 with D7's verification row, and `pageImage` on 2026-09-14 with D10's
+page-images row. This paragraph said *twenty* and *thirteen* until the audit of
+`622f794..4971b60`, and *twenty-one* and *fourteen* until the audit of
+`4971b60..09e0f74` — the names `coreChannels.test.ts` holds as a literal.
 
 **`ocr-page` is the thirteenth, added 2026-09-11 with D6 row 2, and it arrived
 while this paragraph said twelve** — the count and the list were both written
@@ -597,7 +599,7 @@ reached natively, as a shared
 library built from source and bound with koffi behind a thin flat-C shim —
 never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
 bare specifier `mupdf`, which resolves to the npm package's
-`dist/mupdf-wasm.wasm`; **twenty-eight non-test modules do so (2026-09-13), and a search for
+`dist/mupdf-wasm.wasm`; **thirty non-test modules do so (2026-09-14), and a search for
 `monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
 built, is scanned by four security proofs, and is loaded by nothing the product
 runs.
@@ -625,15 +627,15 @@ which is what the measurement above says and what a reader must not infer their
 way past.
 
 **AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09, re-measured
-2026-09-11 and again 2026-09-13** (ADR-0010's correction of the first date; `npm run
-proof:enginesurface`). The twenty-eight modules call **132 distinct MuPDF
+2026-09-11, 2026-09-13 and again 2026-09-14** (ADR-0010's correction of the first
+date; `npm run proof:enginesurface`). The thirty modules call **132 distinct MuPDF
 members**, of which `PDFAnnotation` declares 41, `PDFObject` 23, `PDFDocument` 20
 and `PDFWidget` 15 — an object model. The shim exports **24** C functions and
 hands back an opaque handle by design, so most of the 132 have nothing to move
-onto and must be written behind an ABI that does not exist yet. Only **eight** of
-the twenty-eight load an engine at all; the other twenty spell `import type`,
-are erased by the compiler, and operate on handles those eight opened. So
-changing the engine changes every one of the twenty-eight **bodies** and not one of
+onto and must be written behind an ABI that does not exist yet. Only **ten** of
+the thirty load an engine at all; the other twenty spell `import type`,
+are erased by the compiler, and operate on handles those ten opened. So
+changing the engine changes every one of the thirty **bodies** and not one of
 their first lines — the count that reads like the work is a count of the thing
 that does not have to change.
 
@@ -645,7 +647,10 @@ opened this paragraph, which is item 7's hole; what makes it worth a sentence
 rather than a silent edit is the **direction**. A migration's size is read as a
 debt being paid down, so a figure that grew while a stage was built on the engine
 is the one a reader will not think to re-run. Re-run it: the command is one line
-and prints the whole table.
+and prints the whole table. **It moved again twice**: to 28 and 8 by 2026-09-13
+(GGGGGG-14), and to 30 and 10 by 2026-09-14 (HHHHHH-12), when `pageScan.ts` and
+`pageImages.ts` arrived as value imports. Neither time did the commit reopen this
+paragraph.
 
 **This does not gate Stage 5's editing rows**, and that is written here because
 the opposite was assumed. Those rows are PDFium's by `BUILD-PROMPT.md`:257;
@@ -711,7 +716,7 @@ model survives a round trip through a reader that cannot express it) and
 | Digital signatures (PKCS#7) | **`@signpdf/signpdf` + `@signpdf/signer-p12`, over a placeholder THIS BUILD writes** — executed 2026-09-12 against a real document, which is the gate ADR-0006 left for Stage 7 ([ADR-0054](DECISIONS/0054-the-signing-core-ships-and-the-placeholder-is-ours.md)). The signing core is **4 packages**, each carrying its licence; `@signpdf/placeholder-plain` would take it to **125**, seven of them shipping no licence text and one a deprecated `crypto-js`, which is ADR-0050's refusal at seventeen times the scale — so the placeholder is `@cantoo/pdf-lib`'s, as the form rows' dictionaries already are. The contract is a literal token shape, `/ByteRange [0 /********** /********** /**********]` with slots 1-3 as PDF **names**, written with `useObjectStreams: false` so the signer can find the `/Contents` hole in the raw bytes. Measured: the signed file is the **same length** as the placeholder, the signature verifies against the certificate, and the `messageDigest` attribute matches SHA-256 of exactly the covered ranges. **A timestamp is an unsigned `id-aa-timeStampToken` on the signature, requested through a port the composition supplies from a declared authority list, and verified before it is embedded** ([ADR-0058](DECISIONS/0058-a-timestamp-authority-is-verified-not-trusted-and-its-request-may-be-plain-http.md)) | node-forge (verify) — and it is also what **signs**: `signer-p12` peers on it for the PKCS#12 parse and the PKCS#7 build, so verifying a foreign signature needs no `@signpdf` at all |
 | Text extraction, plain and layout-preserving | — (read-only) | **Plain: MuPDF** structured text, through the one substrate (`plainTextOf`), streamed to disk a page at a time so `main` holds at most the largest page ([ADR-0035](DECISIONS/0035-extracted-text-is-never-resident-in-main.md)). **Layout: NO WRITER, and choosing one is the owner's** (corrected 2026-09-14). ENGINE-SPIKE H7's layout part, executed that day against `pdftotext -layout` (Xpdf 4.00) on generated fixtures scored against the generator's own placement, found MuPDF's lines right on every fixture and **no layout output**: `asText()` gives one line per text line under every option the engine names, and an unknown option throws, so the options reach it. A row grid over those lines is the clustering ADR-0034 keeps out of the kernel, and it failed a `/Rotate 90` page when laid out in display space. So the choice is between a grid amending ADR-0034, Poppler or Xpdf through the external-converter seam, and plain only. The founding record's "layout-preserving when Poppler available" stays withdrawn as a conditional: Poppler was named in no matrix row and no provisioning list. **The COLUMNS half is executed** (2026-09-02, MuPDF 1.28.0): lines never merge across a gutter at 268pt or 60pt, and `FZ_STEXT_SEGMENT` yields column-major reading order — so no second engine and no clusterer of ours ([ADR-0034](DECISIONS/0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md)). **THE TABLES HALF IS EXECUTED, 2026-09-10** — it read *stay unexecuted* while no fixture contained a table, and the corpus now carries table-bearing documents. `FZ_STEXT_TABLE_HUNT` scored on against off over the eleven-document corpus: **two of the six documents carrying text change, at −1.5 and −17.5 points of line agreement against PDFium, and none improves**, with a constructed grid as the control that separates *found no table* from *the option never reached the engine*. It stays **off** and stays a per-consumer opt-in, now on a reading rather than on an absence — see §3.2, and note there why a fall in line agreement is not on its own the argument ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md), corrected 2026-09-10) |
 | **Tagged-PDF structure: the reading-order inspection's read** (added 2026-09-14 ahead of D8's row; the accessibility check will read the same structure) | — (read-only) | **MuPDF** structured text with its own `structured` option, a per-consumer opt-in named in the one substrate module and never part of the shared option set ([ADR-0065](DECISIONS/0065-a-tagged-documents-structure-is-the-engines-read-on-its-own-request.md)). MuPDF's type surface declares no structure-tree API, and a `/StructTreeRoot` walker here would be a second opinion about the standard. Measured that day on MuPDF 1.28.0: the option returns the tag roles nested and in structure-TREE order, while the product options alone give segmentation's `Div` blocks in stream order; on the owner's corpus 4 of 11 documents are tagged, and on 5 of their 8 pages carrying text the two orders differ, so the shared set must not take it. Read one page at a time on `engine/page-text` through a closed request field, parsed by the one reader; the largest tagged page read is 0.397% of that channel's bound |
-| Office document → PDF (import: `.docx`, `.xlsx`, `.pptx`) | **LibreOffice, headless, through the external-converter seam, never in `main`** ([ADR-0063](DECISIONS/0063-an-office-file-is-converted-by-a-pinned-libreoffice-in-a-contained-process.md), 2026-09-14). MuPDF, PDFium and `@cantoo/pdf-lib` read none of these formats, and threat model §2 keeps document parsing of any kind out of `main`. The PDF it writes opens by the one open route. Row **unexecuted**: whether `soffice.exe` starts inside an AppContainer holding only its input and output is the provisioning commit's first reading | — |
+| Office document → PDF (import: `.docx`, `.xlsx`, `.pptx`) | **LibreOffice, headless, through the external-converter seam, never in `main`** ([ADR-0063](DECISIONS/0063-an-office-file-is-converted-by-a-pinned-libreoffice-in-a-contained-process.md), 2026-09-14). MuPDF, PDFium and `@cantoo/pdf-lib` read none of these formats, and threat model §2 keeps document parsing of any kind out of `main`. The PDF it writes opens by the one open route. Row **unexecuted inside containment**: headless conversion outside it was read working on 2026-09-14 (ADR-0063's afternoon correction), and whether `soffice.exe` starts inside an AppContainer holding only its input and output is the next reading, before any feature commit | — |
 | PDF/A-2b export (Stage 8) | **Ghostscript** — MuPDF has no PDF/A output mode and veraPDF validates without converting. **Not provisioned and not shipped until Stage 8 builds the feature**: a binary in the 1.0 installer that nothing calls is the wired-tools rule one layer down. Row **unexecuted** ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)) | — |
 
 ### 3.1 The matrix is evidence, and stays that way

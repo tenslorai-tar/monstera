@@ -11,7 +11,7 @@ import { byteImageWire, coreEngineChannels, engineChannels } from './engineChann
  * ## Why this is a case and not a comment
  *
  * The decision is *a second engine owes the seven engine-agnostic channels and
- * its own reads, and none of the fourteen MuPDF document-model ones*. Nothing in
+ * its own reads, and none of the fifteen MuPDF document-model ones*. Nothing in
  * the type system says which side a channel belongs on: a reader added to the
  * factory compiles, and so does a core channel moved into MuPDF's literal. The
  * cost of either is not a build failure — it is a second host inheriting a
@@ -244,7 +244,7 @@ describe('the core channel set', () => {
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core six, the live-session one, and its own fourteen reads', () => {
+  it('is the core six, the live-session one, and its own fifteen reads', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
       [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );
