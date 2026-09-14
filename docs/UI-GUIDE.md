@@ -191,8 +191,16 @@ component written obeys them, and each names what is owed:
   `IconButton` and `Input` beside it. *Still owed: a check that no second modal
   is written — the rule is a rule, and nothing looks for a `div` with
   `role="dialog"`.*
-- **No emoji as icons.** Icons come from the generated set; emoji render
-  differently per platform and carry no accessible name.
+- **No emoji as icons.** Emoji render differently per platform and carry no
+  accessible name. **Every named glyph comes from `primitives/icons.ts`**, one
+  closed map over lucide. A command's `icon` is an `IconName`, so a misspelt glyph
+  does not compile. `CommandRegistry` refuses, at startup, a command placed on the
+  ribbon, the quick toolbar or the start screen that names none. A glyph beside
+  visible text is `<Icon name size />`, which is hidden from assistive technology
+  because the text is its name. A glyph alone is `IconButton`, whose label is
+  required. Both take one of §10.4's four uses, never a pixel value.
+  *Corrected 2026-09-14:* this line used to say icons come from "the generated
+  set", and no such set existed until the map above.
 - **No magic pixel values.** Spacing and radii are tokens for the same reason
   colours are.
 

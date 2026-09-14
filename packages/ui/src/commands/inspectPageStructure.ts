@@ -35,6 +35,7 @@ export function inspectPageStructureCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.inspect-page-structure',
+    icon: 'ListTree',
     title: PAGE_STRUCTURE_COMMAND_TITLE,
     // REVIEW, which is where `BUILD-PROMPT.md`:491 lists it, in a group of its own:
     // the accessibility check will sit beside it and reads the same structure.

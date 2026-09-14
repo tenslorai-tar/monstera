@@ -27,6 +27,7 @@ export function showAboutCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.about',
+    icon: 'Info',
     title: ABOUT_COMMAND_TITLE,
     placements: [
       { surface: 'start-screen', order: 1 },

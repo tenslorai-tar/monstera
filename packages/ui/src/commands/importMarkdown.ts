@@ -130,6 +130,7 @@ export function newFromMarkdownCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-markdown',
+    icon: 'FileCode',
     title: NEW_FROM_MARKDOWN_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 10 }],
     run: async (): Promise<void> => {
@@ -173,6 +174,7 @@ export function newFromCsvCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-csv',
+    icon: 'Sheet',
     title: NEW_FROM_CSV_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30 }],
     run: async (): Promise<void> => {
@@ -215,6 +217,7 @@ export function newFromImagesCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-images',
+    icon: 'Images',
     title: NEW_FROM_IMAGES_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 40 }],
     run: async (): Promise<void> => {
@@ -258,6 +261,7 @@ export function newFromCaptureCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.new-from-camera',
+    icon: 'Webcam',
     title: NEW_FROM_CAMERA_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 60 }],
     run: async (): Promise<void> => {
@@ -312,6 +316,7 @@ export function appendMarkdownCommand(
 ): UiCommand {
   return {
     id: 'document.append-markdown',
+    icon: 'ListPlus',
     title: APPEND_MARKDOWN_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 20 }],
     when: hasDocument,

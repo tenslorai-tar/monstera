@@ -28,6 +28,7 @@ import type { UiCommand } from '../registries/commands.js';
 export function revealLogCommand(deps: { readonly client: ContractClient }): UiCommand {
   return {
     id: 'log.reveal',
+    icon: 'ScrollText',
     title: REVEAL_LOG_TITLE,
     // The start screen, because that is where somebody who cannot open their
     // document goes looking. A document-scoped placement would put the

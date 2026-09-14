@@ -80,6 +80,7 @@ export function openDocumentCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.open',
+    icon: 'FolderOpen',
     title: OPEN_DOCUMENT_TITLE,
     // The chord is a property of the command, not an entry in a keymap — the
     // shortcut map is a projection of this registry, so declaring it here is the

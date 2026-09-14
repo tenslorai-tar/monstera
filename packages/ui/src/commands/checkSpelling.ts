@@ -85,6 +85,7 @@ export function checkSpellingCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.spell-check',
+    icon: 'SpellCheck',
     title: SPELL_CHECK_COMMAND_TITLE,
     // EDIT › PROOFING, beside word count. Both read the whole document's text
     // and both are things a person does to prose, which is what a group is.

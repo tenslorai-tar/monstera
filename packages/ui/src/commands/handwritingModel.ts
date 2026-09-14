@@ -67,6 +67,7 @@ export function fetchHandwritingModelCommand(deps: HandwritingModelDeps): UiComm
     // style: `check:secondwiring` matches ids by it, so an id outside it is
     // invisible to the scan that forbids a second wiring place.
     id: 'app.fetch-handwriting-model',
+    icon: 'Download',
     title: HANDWRITING_FETCH_TITLE,
     // TOOLS › OCR, beside the recognition commands it serves.
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 40 }],
@@ -89,6 +90,7 @@ export function fetchHandwritingModelCommand(deps: HandwritingModelDeps): UiComm
 export function clearHandwritingCacheCommand(deps: HandwritingModelDeps): UiCommand {
   return {
     id: 'app.clear-handwriting-cache',
+    icon: 'Trash',
     title: HANDWRITING_CLEAR_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 50 }],
     when: () => true,

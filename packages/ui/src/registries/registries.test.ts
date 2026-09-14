@@ -70,6 +70,42 @@ describe('CommandRegistry', () => {
     expect(new CommandRegistry([command('view.toggle-quick-toolbar')]).size).toBe(1);
   });
 
+  it('refuses a command DRAWN on a surface with no icon, and names the command and the surface', () => {
+    // §10.4 gives the ribbon, the pill and the start screen icons. An icon field
+    // nothing requires is how `icon?: string` sat unset on every command for
+    // stages: the surfaces drew text, and nothing noticed.
+    expect(() =>
+      new CommandRegistry([
+        command('edit.rotate', { placements: [{ surface: 'quick-toolbar', order: 1 }] }),
+      ]),
+    ).toThrow(/"edit\.rotate" is placed on the quick-toolbar and names no icon/u);
+  });
+
+  it('CONTROL: the same placement WITH an icon is accepted', () => {
+    // Without this, the refusal above is satisfied by refusing every placed
+    // command — which would also make the next case the only one that passes.
+    const registry = new CommandRegistry([
+      command('edit.rotate', {
+        icon: 'RotateCw',
+        placements: [{ surface: 'quick-toolbar', order: 1 }],
+      }),
+    ]);
+    expect(registry.size).toBe(1);
+  });
+
+  it('CONTROL: a command only in a context menu or the palette may omit its icon', () => {
+    // The refusal is about surfaces that draw a glyph. A menu row and a palette
+    // entry are text, and demanding an icon there would be a rule broader than
+    // §10.4, which a reader would then learn to satisfy with any glyph at all.
+    const registry = new CommandRegistry([
+      command('edit.menu-only', {
+        placements: [{ surface: 'context-menu', context: 'annotation', order: 1 }],
+      }),
+      command('edit.palette-only'),
+    ]);
+    expect(registry.size).toBe(2);
+  });
+
   it('treats an absent `when` as always, and a false one as ABSENT rather than disabled', () => {
     const registry = new CommandRegistry([
       command('edit.always'),

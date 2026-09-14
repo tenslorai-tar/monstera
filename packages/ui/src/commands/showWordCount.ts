@@ -66,6 +66,7 @@ export function showWordCountCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.word-count',
+    icon: 'WholeWord',
     title: WORD_COUNT_COMMAND_TITLE,
     // THE RIBBON LANDED 2026-09-08 AND THIS IS THE ONE LINE IT PREDICTED. The
     // note here said a section could not be named because no projection

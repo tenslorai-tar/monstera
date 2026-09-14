@@ -35,6 +35,7 @@ export function showSettingsCommand(deps: {
 }): UiCommand {
   return {
     id: 'app.settings',
+    icon: 'Settings',
     title: SETTINGS_COMMAND_TITLE,
     placements: [
       { surface: 'start-screen', order: 3 },

@@ -125,6 +125,36 @@
   height: var(--icon-20);
 }
 
+/* ─── Icon ───────────────────────────────────────────────────────────────── */
+
+/* A glyph drawn beside text rather than alone in a button: a ribbon button's
+   icon over its label, a rail section's, a panel tab's. The same four uses as
+   `IconButton`, and the same four tokens — `Icon.tsx` passes the use, never a
+   number. `flex: none` so a long label beside it cannot squeeze the glyph. */
+.m-icon {
+  flex: none;
+}
+
+.m-icon--chrome {
+  width: var(--icon-12);
+  height: var(--icon-12);
+}
+
+.m-icon--dense {
+  width: var(--icon-14);
+  height: var(--icon-14);
+}
+
+.m-icon--control {
+  width: var(--icon-16);
+  height: var(--icon-16);
+}
+
+.m-icon--ribbon {
+  width: var(--icon-20);
+  height: var(--icon-20);
+}
+
 /* ─── Input ──────────────────────────────────────────────────────────────── */
 
 .m-field {

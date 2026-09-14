@@ -81,6 +81,7 @@ export function recogniseTextCommand(
 ): UiCommand {
   return {
     id: 'document.ocr',
+    icon: 'ScanText',
     title: OCR_COMMAND_TITLE,
     // TOOLS › OCR, which `BUILD-PROMPT.md`:472 names for D6.
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 10 }],
@@ -148,6 +149,7 @@ export function enhanceScansCommand(
 ): UiCommand {
   return {
     id: 'document.enhance-scans',
+    icon: 'WandSparkles',
     title: ENHANCE_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 30 }],
     when: hasDocument,
@@ -226,6 +228,7 @@ export function straightenScansCommand(
 ): UiCommand {
   return {
     id: 'document.straighten-scans',
+    icon: 'ScanLine',
     title: SCAN_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 40 }],
     when: hasDocument,
@@ -364,6 +367,7 @@ export function exportSearchableCommand(
 ): UiCommand {
   return {
     id: 'document.export-searchable',
+    icon: 'FileSearch',
     title: OCR_EXPORT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 20 }],
     when: hasDocument,

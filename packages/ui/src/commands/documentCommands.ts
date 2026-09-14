@@ -134,6 +134,7 @@ import {
   ZOOM_IN_TITLE,
   ZOOM_OUT_TITLE,
 } from '../messages/en.js';
+import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { type ZoomMode, zoomInFrom, zoomOutFrom } from '../zoom.js';
 
@@ -537,6 +538,7 @@ export async function placeImage(
 export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand {
   return {
     id: direction === 'in' ? 'view.zoom-in' : 'view.zoom-out',
+    icon: direction === 'in' ? 'ZoomIn' : 'ZoomOut',
     title: direction === 'in' ? ZOOM_IN_TITLE : ZOOM_OUT_TITLE,
     shortcut: direction === 'in' ? 'Ctrl+=' : 'Ctrl+-',
     placements: [
@@ -576,6 +578,7 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
   const mode: ZoomMode = fit === 'width' ? { kind: 'fit-width' } : { kind: 'fit-page' };
   return {
     id: fit === 'width' ? 'view.fit-width' : 'view.fit-page',
+    icon: fit === 'width' ? 'MoveHorizontal' : 'Maximize',
     title: fit === 'width' ? FIT_WIDTH_TITLE : FIT_PAGE_TITLE,
     shortcut: fit === 'width' ? 'Ctrl+1' : 'Ctrl+0',
     placements: [
@@ -596,6 +599,7 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
 export function findCommand(): UiCommand {
   return {
     id: 'document.find',
+    icon: 'Search',
     title: FIND_TITLE,
     shortcut: 'Ctrl+F',
     placements: [
@@ -629,19 +633,23 @@ export function findCommand(): UiCommand {
  * together where the single one was.
  */
 const ROTATIONS = {
-  1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, order: 10 },
-  2: { id: 'document.rotate-page-180', title: ROTATE_PAGE_180_TITLE, order: 11 },
-  3: { id: 'document.rotate-page-270', title: ROTATE_PAGE_270_TITLE, order: 12 },
-} as const satisfies Record<1 | 2 | 3, { id: string; title: MessageKey; order: number }>;
+  1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, icon: 'RotateCw', order: 10 },
+  2: { id: 'document.rotate-page-180', title: ROTATE_PAGE_180_TITLE, icon: 'RefreshCw', order: 11 },
+  3: { id: 'document.rotate-page-270', title: ROTATE_PAGE_270_TITLE, icon: 'RotateCcw', order: 12 },
+} as const satisfies Record<
+  1 | 2 | 3,
+  { id: string; title: MessageKey; icon: IconName; order: number }
+>;
 
 export function rotatePageCommand(
   deps: DocumentCommandDeps,
   quarterTurns: 1 | 2 | 3 = 1,
 ): UiCommand {
-  const { id, title, order } = ROTATIONS[quarterTurns];
+  const { id, title, icon, order } = ROTATIONS[quarterTurns];
   return {
     id,
     title,
+    icon,
     // THE TABLE'S OWN `order`, so the three rotations sit in the ribbon in the
     // sequence it already fixed. A second number here would be a second opinion
     // about how the three relate.
@@ -683,6 +691,7 @@ export function rotatePageCommand(
 export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-blank-page',
+    icon: 'FilePlus',
     title: INSERT_BLANK_PAGE_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 10 },
@@ -710,6 +719,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
 export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.duplicate-page',
+    icon: 'CopyPlus',
     title: DUPLICATE_PAGE_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 10 },
@@ -755,6 +765,7 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-page',
+    icon: 'FileMinus',
     title: DELETE_PAGE_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
@@ -799,6 +810,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-pages',
+    icon: 'Trash2',
     title: DELETE_PAGES_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 30 },
@@ -838,6 +850,7 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.crop-pages',
+    icon: 'Crop',
     title: CROP_PAGES_COMMAND_TITLE,
     placements: [
       // On the pill too — §10.3 names crop in its list. See `zoomCommand`.
@@ -890,6 +903,7 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.header-footer',
+    icon: 'PanelTop',
     title: HEADER_FOOTER_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 30 },
@@ -925,6 +939,7 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
 export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.bates-number',
+    icon: 'Hash',
     title: BATES_NUMBER_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 40 },
@@ -964,6 +979,7 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
 export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.page-transition',
+    icon: 'Presentation',
     title: PAGE_TRANSITION_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 },
@@ -996,6 +1012,7 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
 export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.resize-pages',
+    icon: 'Scaling',
     title: RESIZE_PAGES_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 20 },
@@ -1041,6 +1058,7 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.deskew-pages',
+    icon: 'RotateCwSquare',
     title: DESKEW_PAGES_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 }],
     when: hasDocument,
@@ -1076,6 +1094,7 @@ export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-image',
+    icon: 'ImagePlus',
     title: INSERT_IMAGE_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 30 },
@@ -1157,6 +1176,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
 export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.generate-toc',
+    icon: 'ListOrdered',
     title: GENERATE_TOC_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 40 },
@@ -1209,6 +1229,7 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
 export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.merge',
+    icon: 'Merge',
     title: MERGE_DOCUMENT_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 60 },
@@ -1270,6 +1291,7 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
 export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.insert-from-pdf',
+    icon: 'FileInput',
     title: INSERT_FROM_PDF_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 20 },
@@ -1325,6 +1347,7 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
 export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.replace-page',
+    icon: 'Replace',
     title: REPLACE_PAGE_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 70 },
@@ -1380,6 +1403,7 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
 export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.import-page-as-layer',
+    icon: 'Layers',
     title: IMPORT_PAGE_AS_LAYER_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 72 },
@@ -1428,6 +1452,7 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
 export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.page-background',
+    icon: 'PaintBucket',
     title: PAGE_BACKGROUND_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 10 },
@@ -1459,6 +1484,7 @@ const DEFAULT_PAGE_BACKGROUND = { red: 0.98, green: 0.97, blue: 0.94 } as const;
 export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.watermark-pages',
+    icon: 'Droplet',
     title: WATERMARK_PAGES_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 20 },
@@ -1507,6 +1533,7 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-duplicate-pages',
+    icon: 'CopyCheck',
     title: FIND_DUPLICATES_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 80 },
@@ -1549,6 +1576,7 @@ export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand 
 export function undoCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.undo',
+    icon: 'Undo2',
     title: UNDO_TITLE,
     shortcut: 'Ctrl+Z',
     placements: [
@@ -1621,6 +1649,7 @@ export function saveCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.save',
+    icon: 'Save',
     title: SAVE_TITLE,
     shortcut: 'Ctrl+S',
     placements: [
@@ -1694,6 +1723,7 @@ export function saveCommand(deps: {
 export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.extract-pages',
+    icon: 'FileOutput',
     title: EXTRACT_PAGES_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 40 },
@@ -1737,6 +1767,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
 export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.split',
+    icon: 'Scissors',
     title: SPLIT_DOCUMENT_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 50 },
@@ -1777,6 +1808,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
 export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.export-text',
+    icon: 'FileText',
     title: EXPORT_TEXT_COMMAND_TITLE,
     // HOME › FILE, beside Save a copy: `docs/FEATURES.md` places D10 under Home ›
     // Export, and File is the Home group that writes a file out today.
@@ -1808,6 +1840,7 @@ export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
 export function exportPageImagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.export-page-images',
+    icon: 'FileImage',
     title: EXPORT_PAGE_IMAGES_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 55 },
@@ -1867,10 +1900,12 @@ function exportFormDataCommand(
   id: string,
   title: MessageKey,
   order: number,
+  icon: IconName,
 ): (deps: DocumentCommandDeps) => UiCommand {
   return (deps) => ({
     id,
     title,
+    icon,
     // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
     // caller's, so import and export interleave by the numbering that already
     // existed rather than by a second one.
@@ -1904,18 +1939,21 @@ export const exportFormDataJsonCommand = exportFormDataCommand(
   'document.export-form-data-json',
   EXPORT_FORM_DATA_JSON_TITLE,
   32,
+  'Braces',
 );
 export const exportFormDataXfdfCommand = exportFormDataCommand(
   'xfdf',
   'document.export-form-data-xfdf',
   EXPORT_FORM_DATA_XFDF_TITLE,
   33,
+  'FileCode',
 );
 export const exportFormDataFdfCommand = exportFormDataCommand(
   'fdf',
   'document.export-form-data-fdf',
   EXPORT_FORM_DATA_FDF_TITLE,
   34,
+  'FileDown',
 );
 
 /**
@@ -1939,10 +1977,12 @@ function importFormDataCommand(
   id: string,
   title: MessageKey,
   order: number,
+  icon: IconName,
 ): (deps: DocumentCommandDeps) => UiCommand {
   return (deps) => ({
     id,
     title,
+    icon,
     // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
     // caller's, so import and export interleave by the numbering that already
     // existed rather than by a second one.
@@ -1988,18 +2028,21 @@ export const importFormDataJsonCommand = importFormDataCommand(
   'document.import-form-data-json',
   IMPORT_FORM_DATA_JSON_TITLE,
   35,
+  'FileUp',
 );
 export const importFormDataXfdfCommand = importFormDataCommand(
   'xfdf',
   'document.import-form-data-xfdf',
   IMPORT_FORM_DATA_XFDF_TITLE,
   36,
+  'FileUp',
 );
 export const importFormDataFdfCommand = importFormDataCommand(
   'fdf',
   'document.import-form-data-fdf',
   IMPORT_FORM_DATA_FDF_TITLE,
   37,
+  'FileUp',
 );
 
 /**
@@ -2029,6 +2072,7 @@ export const importFormDataFdfCommand = importFormDataCommand(
 export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-flat-fields',
+    icon: 'SquareDashedMousePointer',
     title: FLAT_FIELDS_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 10 },
@@ -2081,6 +2125,7 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
 export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.save-copy',
+    icon: 'SaveAll',
     title: SAVE_COPY_TITLE,
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 30 },
@@ -2152,6 +2197,7 @@ export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
 export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.replace-text-object',
+    icon: 'Type',
     title: REPLACE_TEXT_OBJECT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
     when: hasDocument,
@@ -2251,6 +2297,7 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
 export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.edit-page-object',
+    icon: 'SquarePen',
     title: EDIT_PAGE_OBJECT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 }],
     when: hasDocument,
@@ -2321,6 +2368,7 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
 export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.check-signatures',
+    icon: 'BadgeCheck',
     title: SIGNATURES_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 20 }],
     when: hasDocument,
@@ -2363,6 +2411,7 @@ export function signaturesCommand(deps: DocumentCommandDeps): UiCommand {
 export function signDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.sign-document',
+    icon: 'Signature',
     title: SIGN_DOCUMENT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 10 }],
     when: hasDocument,
@@ -2456,6 +2505,7 @@ export interface DocusignReadiness {
 export function docusignSendCommand(deps: DocumentCommandDeps & DocusignReadiness): UiCommand {
   return {
     id: 'document.docusign-send',
+    icon: 'Send',
     title: DOCUSIGN_SEND_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 30 }],
     when: (context) => hasDocument(context) && deps.docusignReady(),
@@ -2492,6 +2542,7 @@ export function docusignRetrieveCommand(
 ): UiCommand {
   return {
     id: 'document.docusign-retrieve',
+    icon: 'Inbox',
     title: DOCUSIGN_RETRIEVE_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 31 }],
     when: (context) => hasDocument(context) && deps.docusignReady(),
@@ -2544,6 +2595,7 @@ export function docusignRetrieveCommand(
 export function sanitizeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.sanitize',
+    icon: 'ShieldCheck',
     title: SANITIZE_DOCUMENT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_ENCRYPTION, order: 20 }],
     when: hasDocument,
@@ -2574,6 +2626,7 @@ export function sanitizeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
 export function redactMatchesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.redact-matches',
+    icon: 'TextSearch',
     title: REDACT_MATCHES_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 20 }],
     when: hasDocument,
@@ -2607,6 +2660,7 @@ export function redactMatchesCommand(deps: DocumentCommandDeps): UiCommand {
 export function applyRedactionsCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.apply-redactions',
+    icon: 'ShieldAlert',
     title: APPLY_REDACTIONS_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 10 }],
     when: hasDocument,
@@ -2652,6 +2706,7 @@ export function applyRedactionsCommand(deps: DocumentCommandDeps): UiCommand {
 export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.protect',
+    icon: 'Lock',
     title: PROTECT_DOCUMENT_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_ENCRYPTION, order: 10 }],
     when: hasDocument,

@@ -57,6 +57,7 @@ export function openFromUrlCommand(deps: {
 }): UiCommand {
   return {
     id: 'document.open-from-url',
+    icon: 'Globe',
     title: OPEN_FROM_URL_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 50 }],
     run: async (): Promise<void> => {

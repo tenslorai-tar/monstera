@@ -82,6 +82,7 @@ export function editPageExternallyCommand(
 ): UiCommand {
   return {
     id: 'document.edit-page-externally',
+    icon: 'ExternalLink',
     title: EDIT_PAGE_EXTERNALLY_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 75 }],
     when: hasDocument,

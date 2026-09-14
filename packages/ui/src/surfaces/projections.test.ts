@@ -27,7 +27,9 @@ const context: CommandContext = {
 const ANY_TITLE = messageKey('command.any.label');
 
 function command(id: string, placements: readonly Placement[], over: Partial<UiCommand> = {}): UiCommand {
-  return { id, title: ANY_TITLE, placements, run: () => undefined, ...over };
+  // AN ICON BY DEFAULT, because the registry refuses a command drawn on a surface
+  // without one; these cases are about ordering, not about glyphs.
+  return { id, title: ANY_TITLE, icon: 'File', placements, run: () => undefined, ...over };
 }
 
 const ids = (entries: readonly { readonly command: UiCommand }[]): string[] =>

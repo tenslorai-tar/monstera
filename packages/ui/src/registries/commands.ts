@@ -1,7 +1,8 @@
 import { type DocId, type DocVersion, type MessageKey, isDottedName } from '@monstera/shared';
 
 import type { ComparableDocument } from '../ComparePane.js';
-import type { Placement } from './placement.js';
+import type { IconName } from '../primitives/icons.js';
+import type { Placement, SurfaceId } from './placement.js';
 
 /**
  * The command registry — §7's first row, and the one every surface projects.
@@ -124,8 +125,16 @@ export interface UiCommand {
   readonly id: string;
   /** The user-facing label, as a key. A literal is a compile error here. */
   readonly title: MessageKey;
-  /** An icon name from the generated set, or none for palette-only commands. */
-  readonly icon?: string;
+  /**
+   * The glyph a surface draws for this command, from the one closed set.
+   *
+   * **Required wherever the command is drawn as a control** — on the ribbon, the
+   * quick toolbar or the start screen. {@link CommandRegistry} refuses a command
+   * placed there without one, because §10.4 gives those surfaces icons and a
+   * control with none would be sized for a glyph that is not there. A command in
+   * the palette or a context menu alone may omit it.
+   */
+  readonly icon?: IconName;
   /** A chord, e.g. `Ctrl+S`. Normalised by {@link shortcutMapOf}, not here. */
   readonly shortcut?: string;
   /** Where this appears. Empty means palette-only, which is legitimate. */
@@ -155,6 +164,19 @@ export interface UiCommand {
  * Construction is where it fires, so a collision is a startup crash with both
  * ids named rather than a defect that surfaces when someone presses a key.
  */
+/**
+ * The surfaces that draw a command as a glyph (§10.4's four icon uses).
+ *
+ * A context menu row and a palette entry are text, so they are not here. A new
+ * `Placement` surface has to be added or left out deliberately, and the
+ * compiler holds the member names to the union.
+ */
+const DRAWS_A_GLYPH: ReadonlySet<SurfaceId> = new Set<SurfaceId>([
+  'ribbon',
+  'quick-toolbar',
+  'start-screen',
+]);
+
 export class CommandRegistry {
   readonly #byId = new Map<string, UiCommand>();
 
@@ -179,6 +201,19 @@ export class CommandRegistry {
             `dot-separated, e.g. edit.rotate-pages. The grammar is not cosmetic: ` +
             `check:secondwiring matches ids by it, so an id outside it is invisible to the scan ` +
             `that forbids a second wiring place (ADR-0029 Decision 4).`,
+        );
+      }
+      // A GLYPH WHERE ONE IS DRAWN. §10.4 gives the ribbon, the quick toolbar
+      // and the start screen icons at stated sizes, and `icon` was optional with
+      // nothing requiring it: every command on those surfaces carried none, and
+      // they rendered as text. Refused here, at startup, naming the command and
+      // the surface, rather than left to a screenshot someone has to notice.
+      const drawn = command.placements.find((placement) => DRAWS_A_GLYPH.has(placement.surface));
+      if (drawn !== undefined && command.icon === undefined) {
+        throw new Error(
+          `"${command.id}" is placed on the ${drawn.surface} and names no icon. That surface ` +
+            `draws a glyph at one of §10.4's four sizes; give the command an \`icon\` from ` +
+            `primitives/icons.ts.`,
         );
       }
       const existing = this.#byId.get(command.id);

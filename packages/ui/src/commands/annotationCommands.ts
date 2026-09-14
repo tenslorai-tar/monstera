@@ -92,6 +92,7 @@ import {
   TYPEWRITER_TOOL_TITLE,
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
+import type { IconName } from '../primitives/icons.js';
 import type { UiCommand } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
 import { hasDocument } from './documentCommands.js';
@@ -197,6 +198,8 @@ export interface SelectionCommandDeps {
 function toolCommand(
   id: string,
   title: MessageKey,
+  /** The glyph the ribbon draws for this tool (§10.4), from the one closed set. */
+  icon: IconName,
   order: number,
   deps: ToolCommandDeps,
   where: { readonly section: SectionId; readonly group: MessageKey } = {
@@ -218,6 +221,7 @@ function toolCommand(
   return {
     id,
     title,
+    icon,
     // ONE SURFACE, and §7's own example is why this is not two. *"Highlight
     // legitimately lives in Home › Quick tools, Comment › Markup, and the
     // annotation context menu"* — those are places a reader meets the command
@@ -237,27 +241,27 @@ function toolCommand(
 }
 
 export function rectangleToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(RECTANGLE_TOOL_ID, RECTANGLE_TOOL_TITLE, 40, deps);
+  return toolCommand(RECTANGLE_TOOL_ID, RECTANGLE_TOOL_TITLE, 'Square', 40, deps);
 }
 
 export function ellipseToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(ELLIPSE_TOOL_ID, ELLIPSE_TOOL_TITLE, 41, deps);
+  return toolCommand(ELLIPSE_TOOL_ID, ELLIPSE_TOOL_TITLE, 'Circle', 41, deps);
 }
 
 export function lineToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(LINE_TOOL_ID, LINE_TOOL_TITLE, 42, deps);
+  return toolCommand(LINE_TOOL_ID, LINE_TOOL_TITLE, 'Minus', 42, deps);
 }
 
 export function arrowToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(ARROW_TOOL_ID, ARROW_TOOL_TITLE, 43, deps);
+  return toolCommand(ARROW_TOOL_ID, ARROW_TOOL_TITLE, 'MoveUpRight', 43, deps);
 }
 
 export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 44, deps);
+  return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 'Pencil', 44, deps);
 }
 
 export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(REDACT_TOOL_ID, REDACT_TOOL_TITLE, 45, deps);
+  return toolCommand(REDACT_TOOL_ID, REDACT_TOOL_TITLE, 'RectangleHorizontal', 45, deps);
 }
 
 /**
@@ -270,7 +274,7 @@ export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
  * layer up.
  */
 export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 46, deps);
+  return toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 'TextCursorInput', 46, deps);
 }
 
 /**
@@ -283,7 +287,7 @@ export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
  * gestured would be the overlay's dispatch table one layer up.
  */
 export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
-  return alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, TOOL_STICKY_NOTE_TITLE, 47, deps), 47);
+  return alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, TOOL_STICKY_NOTE_TITLE, 'StickyNote', 47, deps), 47);
 }
 
 /**
@@ -294,7 +298,7 @@ export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
  * selecting a tool never depended on what the tool needs.
  */
 export function caretToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(CARET_TOOL_ID, TOOL_CARET_TITLE, 48, deps);
+  return toolCommand(CARET_TOOL_ID, TOOL_CARET_TITLE, 'ChevronUp', 48, deps);
 }
 
 /**
@@ -311,11 +315,11 @@ export function caretToolCommand(deps: ToolCommandDeps): UiCommand {
  * overlay holds.
  */
 export function polygonToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(POLYGON_TOOL_ID, POLYGON_TOOL_TITLE, 49, deps);
+  return toolCommand(POLYGON_TOOL_ID, POLYGON_TOOL_TITLE, 'Pentagon', 49, deps);
 }
 
 export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(POLYLINE_TOOL_ID, POLYLINE_TOOL_TITLE, 50, deps);
+  return toolCommand(POLYLINE_TOOL_ID, POLYLINE_TOOL_TITLE, 'Spline', 50, deps);
 }
 
 /**
@@ -327,15 +331,15 @@ export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
  * the overlay are all untouched.
  */
 export function highlightToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(HIGHLIGHT_TOOL_ID, HIGHLIGHT_TOOL_TITLE, 36, deps);
+  return toolCommand(HIGHLIGHT_TOOL_ID, HIGHLIGHT_TOOL_TITLE, 'Highlighter', 36, deps);
 }
 
 export function underlineToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(UNDERLINE_TOOL_ID, UNDERLINE_TOOL_TITLE, 37, deps);
+  return toolCommand(UNDERLINE_TOOL_ID, UNDERLINE_TOOL_TITLE, 'Underline', 37, deps);
 }
 
 export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(STRIKEOUT_TOOL_ID, STRIKEOUT_TOOL_TITLE, 38, deps);
+  return toolCommand(STRIKEOUT_TOOL_ID, STRIKEOUT_TOOL_TITLE, 'Strikethrough', 38, deps);
 }
 
 /**
@@ -354,7 +358,7 @@ export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
  * on never learns how many presses it takes.
  */
 export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 55, deps);
+  return toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 'MessageSquareQuote', 55, deps);
 }
 
 /**
@@ -368,15 +372,15 @@ export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
  * it to make room would touch ten call sites to move one.
  */
 export function typewriterToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 46.5, deps);
+  return toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 'Keyboard', 46.5, deps);
 }
 
 export function linkAddressToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(LINK_ADDRESS_TOOL_ID, LINK_ADDRESS_TOOL_TITLE, 53, deps);
+  return toolCommand(LINK_ADDRESS_TOOL_ID, LINK_ADDRESS_TOOL_TITLE, 'Link', 53, deps);
 }
 
 export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(LINK_PAGE_TOOL_ID, LINK_PAGE_TOOL_TITLE, 54, deps);
+  return toolCommand(LINK_PAGE_TOOL_ID, LINK_PAGE_TOOL_TITLE, 'Link2', 54, deps);
 }
 
 /**
@@ -387,7 +391,7 @@ export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
  * has never depended on what the tool does when it is on.
  */
 export function selectToolCommand(deps: ToolCommandDeps): UiCommand {
-  return alsoOnThePill(toolCommand(SELECT_TOOL_ID, SELECT_TOOL_TITLE, 39, deps), 39);
+  return alsoOnThePill(toolCommand(SELECT_TOOL_ID, SELECT_TOOL_TITLE, 'MousePointer2', 39, deps), 39);
 }
 
 /**
@@ -556,11 +560,11 @@ export function nudgeSelectionCommands(deps: SelectionCommandDeps): readonly UiC
  * is one line the same shape as the rectangle's.
  */
 export function eraserToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(ERASER_TOOL_ID, ERASER_TOOL_TITLE, 52, deps);
+  return toolCommand(ERASER_TOOL_ID, ERASER_TOOL_TITLE, 'Eraser', 52, deps);
 }
 
 export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(CLOUD_TOOL_ID, CLOUD_TOOL_TITLE, 51, deps);
+  return toolCommand(CLOUD_TOOL_ID, CLOUD_TOOL_TITLE, 'Cloud', 51, deps);
 }
 
 /**
@@ -577,15 +581,15 @@ export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
  * registrations from the same factory, each one line.
  */
 export function measureDistanceToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_DISTANCE_TOOL_ID, MEASURE_DISTANCE_TOOL_TITLE, 56, deps);
+  return toolCommand(MEASURE_DISTANCE_TOOL_ID, MEASURE_DISTANCE_TOOL_TITLE, 'RulerDimensionLine', 56, deps);
 }
 
 export function measureAreaToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_AREA_TOOL_ID, MEASURE_AREA_TOOL_TITLE, 57, deps);
+  return toolCommand(MEASURE_AREA_TOOL_ID, MEASURE_AREA_TOOL_TITLE, 'SquareDashed', 57, deps);
 }
 
 export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_PERIMETER_TOOL_ID, MEASURE_PERIMETER_TOOL_TITLE, 58, deps);
+  return toolCommand(MEASURE_PERIMETER_TOOL_ID, MEASURE_PERIMETER_TOOL_TITLE, 'Hexagon', 58, deps);
 }
 
 /**
@@ -609,7 +613,7 @@ export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
  * such factory somewhere else.
  */
 export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
-  return alsoOnThePill(toolCommand(SNAPSHOT_TOOL_ID, SNAPSHOT_TOOL_TITLE, 29, deps), 29);
+  return alsoOnThePill(toolCommand(SNAPSHOT_TOOL_ID, SNAPSHOT_TOOL_TITLE, 'Camera', 29, deps), 29);
 }
 
 /**
@@ -622,7 +626,7 @@ export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
  * object into it that survives the save.
  */
 export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(PLACE_IMAGE_TOOL_ID, PLACE_IMAGE_TOOL_TITLE, 59, deps);
+  return toolCommand(PLACE_IMAGE_TOOL_ID, PLACE_IMAGE_TOOL_TITLE, 'Image', 59, deps);
 }
 
 /**
@@ -634,7 +638,7 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
  * signatures* at 20, so the group reads invisible, visible, verify.
  */
 export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(PLACE_SIGNATURE_TOOL_ID, PLACE_SIGNATURE_TOOL_TITLE, 15, deps, {
+  return toolCommand(PLACE_SIGNATURE_TOOL_ID, PLACE_SIGNATURE_TOOL_TITLE, 'PenTool', 15, deps, {
     section: 'protect',
     group: GROUP_SIGNATURES,
   });
@@ -654,7 +658,7 @@ export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
  * a test behind it.
  */
 export function ocrRegionToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(OCR_REGION_TOOL_ID, OCR_REGION_TOOL_TITLE, 60, deps);
+  return toolCommand(OCR_REGION_TOOL_ID, OCR_REGION_TOOL_TITLE, 'ScanSearch', 60, deps);
 }
 
 /**
@@ -669,6 +673,7 @@ export function handwritingRegionToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     HANDWRITING_REGION_TOOL_ID,
     HANDWRITING_REGION_TOOL_TITLE,
+    'NotebookPen',
     61,
     deps,
     { section: 'comment', group: GROUP_MARKUP },
@@ -693,6 +698,7 @@ export function cloudRegionToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     CLOUD_REGION_TOOL_ID,
     CLOUD_REGION_TOOL_TITLE,
+    'CloudUpload',
     62,
     deps,
     { section: 'comment', group: GROUP_MARKUP },
@@ -711,6 +717,7 @@ export function claudeRegionToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     CLAUDE_REGION_TOOL_ID,
     CLAUDE_REGION_TOOL_TITLE,
+    'Sparkles',
     63,
     deps,
     { section: 'comment', group: GROUP_MARKUP },
@@ -790,10 +797,10 @@ export function formFieldToolCommands(deps: ToolCommandDeps): readonly UiCommand
   // FORMS › FIELDS, named once here rather than five times below.
   const fields = { section: 'forms', group: GROUP_FIELDS } as const;
   return [
-    toolCommand(FORM_FIELD_TEXT_TOOL_ID, FORM_FIELD_TEXT_TOOL_TITLE, 70, deps, fields),
-    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, FORM_FIELD_CHECKBOX_TOOL_TITLE, 71, deps, fields),
-    toolCommand(FORM_FIELD_RADIO_TOOL_ID, FORM_FIELD_RADIO_TOOL_TITLE, 72, deps, fields),
-    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, FORM_FIELD_DROPDOWN_TOOL_TITLE, 73, deps, fields),
-    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, FORM_FIELD_LISTBOX_TOOL_TITLE, 74, deps, fields),
+    toolCommand(FORM_FIELD_TEXT_TOOL_ID, FORM_FIELD_TEXT_TOOL_TITLE, 'TextCursor', 70, deps, fields),
+    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, FORM_FIELD_CHECKBOX_TOOL_TITLE, 'SquareCheck', 71, deps, fields),
+    toolCommand(FORM_FIELD_RADIO_TOOL_ID, FORM_FIELD_RADIO_TOOL_TITLE, 'CircleDot', 72, deps, fields),
+    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, FORM_FIELD_DROPDOWN_TOOL_TITLE, 'ChevronDown', 73, deps, fields),
+    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, FORM_FIELD_LISTBOX_TOOL_TITLE, 'List', 74, deps, fields),
   ];
 }

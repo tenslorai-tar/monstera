@@ -40,6 +40,8 @@ function commandOf(id: string, title: string, placements: readonly Placement[]):
   return {
     id,
     title: messageKey(title),
+    // The registry refuses a ribbon command with no glyph (§10.4).
+    icon: 'File',
     placements,
     run: () => undefined,
   };

@@ -70,6 +70,7 @@ import type { SettingsStore } from '../settingsStore.js';
 export function toggleRulersCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-rulers',
+    icon: 'Ruler',
     title: RULERS_TITLE,
     shortcut: 'Ctrl+R',
     // TOOLS › DISPLAY, which is where `docs/FEATURES.md`'s D1 heading puts the
@@ -107,6 +108,7 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
 export function commandPaletteCommand(deps: { readonly onOpen: () => void }): UiCommand {
   return {
     id: 'view.command-palette',
+    icon: 'Command',
     title: PALETTE_TITLE,
     shortcut: 'Ctrl+K',
     // HOME › FIND, beside the find bar's own control, because both answer
@@ -126,6 +128,7 @@ export function commandPaletteCommand(deps: { readonly onOpen: () => void }): Ui
 export function toggleGridCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-grid',
+    icon: 'Grid3x3',
     title: GRID_TITLE,
     shortcut: 'Ctrl+G',
     placements: [
@@ -142,6 +145,7 @@ export function toggleGridCommand(deps: { readonly settings: SettingsStore }): U
 export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-loupe',
+    icon: 'Focus',
     title: LOUPE_TITLE,
     shortcut: 'Ctrl+Shift+L',
     placements: [
@@ -163,6 +167,7 @@ export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): 
 export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-split',
+    icon: 'Columns2',
     title: SPLIT_VIEW_TITLE,
     shortcut: 'Ctrl+Shift+E',
     placements: [
@@ -184,6 +189,7 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
 export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'view.toggle-dark-page',
+    icon: 'Moon',
     title: DARK_PAGE_TITLE,
     shortcut: 'Ctrl+Shift+D',
     placements: [
