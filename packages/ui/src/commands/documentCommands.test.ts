@@ -33,6 +33,7 @@ import {
   importPageAsLayerCommand,
   splitDocumentCommand,
   exportPageImagesCommand,
+  exportTextCommand,
   generateTocCommand,
   protectDocumentCommand,
   applyRedactionsCommand,
@@ -2128,6 +2129,40 @@ describe('delete pages — the mutation-dialog gate', () => {
       { id: 'dialog.export-page-images', props: { pageCount: 10 } },
       { id: 'dialog.save-problem', props: { outcome: 'contested' } },
     ]);
+  });
+
+  it('export text dispatches the document and opens no dialog of its own', async () => {
+    const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12 } });
+    const asked: unknown[] = [];
+
+    await exportTextCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC } }]);
+    // NOTHING WAS ASKED: the save dialog is main's, and a success reports nothing.
+    expect(asked).toStrictEqual([]);
+  });
+
+  it('export text reports a contested destination through the save problem dialog', async () => {
+    const { client } = recording({ 'document.exportText': { kind: 'refused', openElsewhere: 1 } });
+    const spoken: unknown[] = [];
+
+    await exportTextCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        spoken.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(spoken).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]);
   });
 
   it('CONTROL: a DISMISSED export-pages-as-images dialog dispatches nothing', async () => {

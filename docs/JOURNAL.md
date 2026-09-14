@@ -892,6 +892,85 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Text extraction, plain: one page read, written and dropped before the next
+
+D10's text-extraction row, its plain half. Home › File gains *Export text…*, which writes the
+document's text to one UTF-8 `.txt` file, with a form feed between pages. The layout-preserving
+half is measured and left to the owner (below).
+
+### Why it is a registration, and what it reuses
+
+- **One extraction path.** Main reads each page through `#pageText`, the read that search, the
+  text layer and word count already make, and renders it with the substrate's own
+  `plainTextOf`. BUILD-PROMPT's anti-pattern table names *text extraction ×3*.
+- **ADR-0035 decides the shape.** `main` never holds a document's extracted text, and the
+  budget is a peak. So a private generator reads one page, encodes it and yields it, and
+  `writeStreamedDocument`, written for Open from URL, pulls from it as it writes. What is
+  resident is bounded by the largest page, which is the ADR's own bound.
+- **The destination is checked before any page is read**, because that function calls `open`
+  only once the check has passed.
+- **The lane is held for the whole document**, which is `split`'s choice, so every page comes
+  from one version.
+- **The page count** comes from the geometry read with no pages named, which answers the count
+  and loads nothing. An empty document therefore writes an empty file.
+
+### The layout half: measured, not built
+
+ENGINE-SPIKE H7's layout part was executed today, and its addition of this date carries the
+tables.
+
+- **The grid test.** On four generated fixtures scored against the generator's own placement,
+  a row grid over MuPDF's lines matched `pdftotext -layout` on two columns, a ruled table and a
+  rotated run. It failed a `/Rotate 90` page (0/4) where the reference got 4/4. The lines were
+  intact; the grid, keyed on display-space baselines, was wrong for a turned page.
+- **MuPDF has no layout text mode.** `asText()` gave twelve one-line rows for a two-column page
+  under `preserve-whitespace`, `preserve-spans`, `paragraph-break` and no option at all. An
+  unknown option threw, so the options reached the engine.
+- **The reference** was `pdftotext` **4.00 from Xpdf**, not Poppler's.
+- **The supplied corpus** (11 documents, 21 pages, all `/Rotate 0`) has no ground truth. Row
+  counts agreed on 9 of 14 pages with text, and row content on 1, a figure that mixes how each
+  reader splits cells with what it read.
+
+A grid is the clustering ADR-0034 keeps out of the kernel, and Poppler would be a new
+provisioned binary. So ADR-0013 carries a dated correction, and the choice is the owner's.
+
+### Instrument defects on the way, all in scratch probes
+
+- `pdftotext -v` exits **99** with its version on stderr, so `execFileSync` threw before any
+  fixture was scored.
+- A dynamic import of pdf-lib's CommonJS entry put its exports under `default`.
+- A scan of the WASM for option NAMES found them all. That proves the strings exist, not that
+  a mode does; the mode was decided only by running `asText`.
+
+### Proven
+
+- **Main, against the real engine and the real write path:**
+  - two pages' words land in order with a form feed between them, and the byte count is the
+    file's;
+  - **streaming, asserted on the decision rather than the end state.** A file surface records
+    how many pages had been read when each chunk arrived, and the answer is `[1, 2]`. An export
+    that read everything first writes the identical file and answers `[2, 2]`;
+  - a dismissed picker returns nothing and reads no page;
+  - a contested destination refuses and reads no page.
+- **`suggestedTextName` cases.**
+- **UI:** the command dispatches the document and asks nothing; a contested destination reaches
+  the save problem dialog.
+- **Registries:** the browser shim and its list, `payloadBounds`, `channels.test.ts`, and
+  `proof:contract`'s three stub tables.
+
+### Mutations, each applied alone and reverted
+
+| # | mutation | result |
+|---|---|---|
+| G | the generator reads every page, then yields | only *STREAMS* red: `[2, 2]` for `[1, 2]` |
+| H | a page read before the destination check | the target, *refuses a contested destination before reading a single page*, red: `[0]` for `[]`. **Two more went red too**: the content case and *STREAMS* also count reads |
+| I | separator `\f` → `\n` | only the content case red |
+| J | the UI command's guard inverted | both UI cases red: nothing dispatched, no dialog |
+
+### Owed before done
+
+One export from the running application. The layout half waits on the owner.
+
 ## 2026-09-14 — Pages as PNG or JPEG: the split's folder write, with MuPDF's image where a document was
 
 D10's first row, its PNG and JPEG halves. Organize › Pages gains *Export pages as

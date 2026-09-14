@@ -205,6 +205,7 @@ export const EXPORT_PAGE_IMAGES_DPI = messageKey('dialog.export-page-images.dpi'
 export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.quality');
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
 export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
+export const EXPORT_TEXT_COMMAND_TITLE = messageKey('command.export-text.title');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -1933,6 +1934,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Resolution must be a whole number from {minDpi} to {maxDpi}, and quality from {minQuality} to {maxQuality}.',
   [EXPORT_PAGE_IMAGES_FILES]:
     'This document is not changed. One image for each page: {files} files will be written.',
+  [EXPORT_TEXT_COMMAND_TITLE]: 'Export text…',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:

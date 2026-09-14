@@ -127,6 +127,7 @@ import {
   SAVE_COPY_TITLE,
   SPLIT_DOCUMENT_COMMAND_TITLE,
   EXPORT_PAGE_IMAGES_COMMAND_TITLE,
+  EXPORT_TEXT_COMMAND_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
@@ -1758,6 +1759,38 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         return;
       }
       if (answer.value.kind === 'split' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
+/**
+ * Writes the document's text to a plain-text file the user picks.
+ *
+ * **No dialog of its own**: there is nothing to choose before the save dialog,
+ * which main runs. `saveCopyCommand`'s outcomes, because it is the same
+ * single-file destination path — `copied` and `cancelled` say nothing, and the
+ * two failures reach the save problem dialog.
+ */
+export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.export-text',
+    title: EXPORT_TEXT_COMMAND_TITLE,
+    // HOME › FILE, beside Save a copy: `docs/FEATURES.md` places D10 under Home ›
+    // Export, and File is the Home group that writes a file out today.
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 40 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+
+      const answer = await deps.client['document.exportText']({ docId: context.docId });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });

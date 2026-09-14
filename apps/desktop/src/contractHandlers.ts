@@ -278,6 +278,7 @@ export function createContractHandlers(deps: {
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands),
     'document.exportPageImages': exportPageImagesHandler(deps.commands),
+    'document.exportText': exportTextHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1145,6 +1146,29 @@ function exportPageImagesHandler(
       const outcome = await commands.exportPageImages(docId, { pages, format, dpi, quality });
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The text export's handler: {@link saveCopyHandler}'s outcomes, because it is the
+ * same single-file destination path with the document's text where its bytes were.
+ */
+function exportTextHandler(commands: DocumentCommands): ContractHandlers['document.exportText'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.exportText']>>> => {
+    try {
+      const outcome = await commands.exportText(docId);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {

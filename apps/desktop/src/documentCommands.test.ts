@@ -75,6 +75,7 @@ import {
   type DocumentExtractReader,
   type DocumentPageImageReader,
   pageImageName,
+  suggestedTextName,
   type PickDirectory,
   type DocumentLayersReader,
   type DocumentPageLinksReader,
@@ -580,6 +581,8 @@ const INERT = {
   snapshot: localSnapshot,
   formData: localFormData,
   pageImage: localPageImage,
+  // REFUSES BY NAME, like every inert picker: a case that exports text supplies its own.
+  pickText: () => Promise.reject(new Error('INERT: this case does not export text')),
   directory: noDirectory,
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
   // application without meaning to fails at the call rather than opening or watching anything.
@@ -1555,6 +1558,144 @@ describe('exportPageImages — one image per page, in a folder, all or nothing',
     // PAGE 1's NAME WAS FREE and it is still not written: every name is checked
     // before anything lands, so a refusal leaves no partial export behind.
     expect(existsSync(join(folder, 'sized 1.png'))).toBe(false);
+  });
+});
+
+describe('exportText — the document’s words, streamed one page at a time', () => {
+  /** Two pages, each carrying words nothing else in the file has. */
+  let textService: DocumentService;
+  let textDoc: DocId;
+  let textSession: MupdfSession;
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    document.addPage([300, 200]).drawText('first page words', { x: 20, y: 150, size: 12, font });
+    document.addPage([300, 200]).drawText('second page words', { x: 20, y: 150, size: 12, font });
+    const bytes = await document.save();
+    const path = join(directory, 'words.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    textService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const outcome = await textService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    textDoc = outcome.docId;
+    textSession = await mupdfWriter.open(bytes);
+  });
+
+  function textEngine(): EngineSessions {
+    const held = new EngineSessions();
+    held.hold(textDoc, { mupdf: textSession });
+    return held;
+  }
+
+  /**
+   * The production composition with the real write path, and a page-text read that
+   * COUNTS its calls — which is what lets a case see the order of reads and writes.
+   */
+  function exportingTo(
+    destination: string | null,
+    options: {
+      readonly checkTarget?: CopySource['checkTarget'];
+      readonly surface?: typeof nodeFileSurface;
+    } = {},
+  ): { readonly commands: DocumentCommands; readonly reads: number[] } {
+    const reads: number[] = [];
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      documents: textService,
+      bus: bus(),
+      engine: textEngine(),
+      pageText: async (id, sessions, page) => {
+        reads.push(page);
+        return await LOCAL_READS.pageText(id, sessions, page);
+      },
+      save: {
+        deps: {
+          checkWriteTarget: (id) => textService.checkWriteTarget(id),
+          surface: options.surface ?? nodeFileSurface,
+          names: siblingNames,
+          wait: () => Promise.resolve(),
+        },
+        flush: () => Promise.reject(new Error('a text export does not flush the document')),
+      },
+      copy: {
+        pick: () => Promise.reject(new Error('a text export uses its own picker')),
+        checkTarget: options.checkTarget ?? ((target) => textService.checkCopyTarget(target)),
+      },
+      pickText: () => Promise.resolve(destination),
+    });
+    return { commands, reads };
+  }
+
+  it('writes every page’s text, in order, with a form feed between pages', async () => {
+    const destination = join(mkdtempSync(join(directory, 'text-')), 'words.txt');
+    const { commands, reads } = exportingTo(destination);
+
+    const outcome = await commands.exportText(textDoc);
+
+    const written = readFileSync(destination, 'utf8');
+    expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8') });
+    expect(written).toBe('first page words\fsecond page words');
+    expect(reads).toEqual([0, 1]);
+  });
+
+  it('STREAMS: each page reaches the file before the next page is read (ADR-0035)', async () => {
+    // The decision is the ORDER of reads and writes, and the end state cannot show
+    // it: an export that read every page first writes the identical file. So the
+    // surface records how many pages had been read when each chunk arrived.
+    const readsAtChunk: number[] = [];
+    let reads: number[] = [];
+    const destination = join(mkdtempSync(join(directory, 'text-')), 'words.txt');
+    const built = exportingTo(destination, {
+      surface: {
+        ...nodeFileSurface,
+        writeStream: async (path, chunks) => {
+          const parts: Uint8Array[] = [];
+          for await (const chunk of chunks) {
+            readsAtChunk.push(reads.length);
+            parts.push(chunk);
+          }
+          await nodeFileSurface.write(path, Buffer.concat(parts));
+        },
+      },
+    });
+    reads = built.reads;
+
+    await built.commands.exportText(textDoc);
+
+    // Chunk 1 arrived after ONE read and chunk 2 after TWO. Reading everything
+    // first answers [2, 2].
+    expect(readsAtChunk).toEqual([1, 2]);
+  });
+
+  it('CONTROL: a dismissed picker returns nothing and reads no page', async () => {
+    const { commands, reads } = exportingTo(null);
+
+    expect(await commands.exportText(textDoc)).toBeUndefined();
+    expect(reads).toEqual([]);
+  });
+
+  it('refuses a contested destination before reading a single page', async () => {
+    const destination = join(mkdtempSync(join(directory, 'text-')), 'words.txt');
+    const { commands, reads } = exportingTo(destination, {
+      checkTarget: () =>
+        Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
+    });
+
+    expect((await commands.exportText(textDoc))?.kind).toBe('refused');
+    // THE DECISION, not the end state: no file either way, but a refusal that came
+    // after extracting the document would still have read both pages.
+    expect(reads).toEqual([]);
+    expect(existsSync(destination)).toBe(false);
+  });
+});
+
+describe('suggestedTextName — the name a text export is offered under', () => {
+  it('replaces the extension with .txt, and leaves a dotfile whole', () => {
+    expect(suggestedTextName('report.pdf')).toBe('report.txt');
+    expect(suggestedTextName('a.b.pdf')).toBe('a.b.txt');
+    expect(suggestedTextName('.pdf')).toBe('.pdf.txt');
   });
 });
 

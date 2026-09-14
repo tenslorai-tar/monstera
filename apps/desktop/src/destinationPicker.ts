@@ -7,6 +7,7 @@ import {
   type FormDataSource,
   type PickDestination,
   suggestedFormDataName,
+  suggestedTextName,
 } from './documentCommands.js';
 
 /**
@@ -125,6 +126,26 @@ export function createSnapshotPicker(): PickDestination {
  * `showOverwriteConfirmation`, `createDirectory` and the two routes to a
  * dismissal holds here unchanged.
  */
+/**
+ * The save picker for a text export: the same dialog, narrowed to plain text.
+ *
+ * {@link createSnapshotPicker}'s sibling and for its reason — a fixed format, so
+ * a function of its own rather than a parameter. It takes the DOCUMENT'S name and
+ * derives the suggested one, for {@link createFormDataPicker}'s reason: the
+ * extension in the name and the one in the filter come from one place.
+ */
+export function createTextPicker(): (sourceName: string) => Promise<string | null> {
+  return async (sourceName: string): Promise<string | null> => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: suggestedTextName(sourceName),
+      properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
+      filters: [{ name: 'Plain text', extensions: ['txt'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePath.length === 0 ? null : result.filePath;
+  };
+}
+
 export function createFormDataPicker(): FormDataSource['pick'] {
   return async (sourceName: string, format: FormDataFormat): Promise<string | null> => {
     const file = FORM_DATA_FILES[format];

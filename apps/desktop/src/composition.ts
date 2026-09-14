@@ -362,6 +362,8 @@ export interface ShellComposition {
    * `destinationPicker.ts` carries the argument for the difference.
    */
   readonly pickFormData: FormDataSource['pick'];
+  /** Where a text export goes. The same dialog narrowed to plain text. */
+  readonly pickText: (sourceName: string) => Promise<string | null>;
   /** Which data file fills the form. The open dialog, narrowed to the format. */
   readonly openFormData: FormDataSource['open'];
   /** The bytes at a path, bound-checked first. `readImage`'s shape. */
@@ -542,6 +544,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickDestination,
     pickSnapshot,
     pickFormData,
+    pickText,
     openFormData,
     readFormData,
     pickImage,
@@ -1082,6 +1085,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.pageImage(session, request);
     },
+    // THE TEXT EXPORT'S DIALOG, a parameter for the folder picker's reason below.
+    pickText,
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the
     // part that arrives from `entry.ts` and this file keeps its property of

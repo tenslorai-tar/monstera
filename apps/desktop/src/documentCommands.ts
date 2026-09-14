@@ -57,6 +57,7 @@ import {
   type TextMatch,
   countPageWords,
   findInPages,
+  plainTextOf,
   textLayerOf,
   saveDocument,
   type SplitOutcome,
@@ -434,6 +435,19 @@ export function suggestedFormDataName(name: string, format: FormDataFormat): str
   const dot = suffixed_.lastIndexOf('.');
   const stem = dot <= 0 ? suffixed_ : suffixed_.slice(0, dot);
   return `${stem}.${FORM_DATA_FILES[format].extension}`;
+}
+
+/**
+ * The name a text export's picker opens with: `report.pdf` becomes `report.txt`.
+ *
+ * **No suffix, unlike its two neighbours.** A snapshot and a form-data file sit
+ * beside the document and are different things from it; a text export is the
+ * same document's words, and `report text.txt` says nothing the extension does
+ * not. The extension is REPLACED for {@link pageImageName}'s reason.
+ */
+export function suggestedTextName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return `${dot <= 0 ? name : name.slice(0, dot)}.txt`;
 }
 
 export function suggestedSnapshotName(name: string): string {
@@ -1563,6 +1577,11 @@ export interface DocumentCommandsParts {
   readonly formData: FormDataSource;
   /** How a page becomes an image file's bytes. See {@link DocumentPageImageReader}. */
   readonly pageImage: DocumentPageImageReader;
+  /**
+   * Where a text export goes: the save dialog narrowed to plain text, given the
+   * document's name so the suggested one and the filter share an extension.
+   */
+  readonly pickText: (sourceName: string) => Promise<string | null>;
   readonly directory: PickDirectory;
   /** A page edited in another application. See {@link ExternalEditSource}. */
   readonly externalEdit: ExternalEditSource;
@@ -1601,6 +1620,7 @@ export class DocumentCommands {
   readonly #snapshot: SnapshotSource;
   readonly #formData: FormDataSource;
   readonly #pageImage: DocumentPageImageReader;
+  readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #directory: PickDirectory;
   readonly #externalEdit: ExternalEditSource;
   /**
@@ -1650,6 +1670,7 @@ export class DocumentCommands {
     this.#snapshot = parts.snapshot;
     this.#formData = parts.formData;
     this.#pageImage = parts.pageImage;
+    this.#pickText = parts.pickText;
     this.#directory = parts.directory;
     this.#externalEdit = parts.externalEdit;
   }
@@ -3057,6 +3078,85 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Writes the document's text to a plain-text file the user picks — D10's
+   * *text extraction*, its plain half.
+   *
+   * ## The text is STREAMED, one page at a time, and that is ADR-0035
+   *
+   * *"`main` never holds a document's extracted text, transiently or otherwise"*:
+   * a document's text is 3.59× its bytes against `main`'s 1.5× budget, and the
+   * budget is a peak. So each page is read, encoded and handed to the file before
+   * the next is read — {@link #textChunks} is a generator, and
+   * `writeStreamedDocument` pulls from it as it writes — so what is resident is
+   * bounded by the largest page, which is the ADR's own bound.
+   *
+   * ## One extraction path
+   *
+   * `#pageText` is the read search, the text layer and word count already make,
+   * and `plainTextOf` is the substrate's own rendering of it. A second path is
+   * Part E2's K.0 regression and BUILD-PROMPT's *text extraction ×3*.
+   *
+   * ## The LANE is held for the whole document, `split`'s choice
+   *
+   * The pages come from one version. Releasing the lane between pages would let
+   * a command land mid-export and write a file whose pages describe two documents.
+   *
+   * ## It does NOT touch the document
+   *
+   * No command, no log entry, no version bump, and no `DocumentContext`.
+   *
+   * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
+   *   reason.
+   */
+  async exportText(docId: DocId): Promise<CopyOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export text');
+
+    const destination = await this.#pickText(suggest);
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeStreamedDocument(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        // `open` is called only once the destination is known to be free, so a
+        // contested file reads no page at all.
+        () => Promise.resolve(this.#textChunks(docId, sessions)),
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /**
+   * The document's text as UTF-8, one chunk per page.
+   *
+   * **A FORM FEED between pages**, `pdftotext`'s convention, so a reader can find
+   * page boundaries in a file that otherwise has none. No byte-order mark: UTF-8
+   * needs none, and one is a stray character at the head of the file for every
+   * tool that reads it as text.
+   *
+   * The page count comes from the geometry read with NO pages named, which
+   * answers the count and loads nothing — so an empty document writes an empty
+   * file rather than asking for a page 0 it does not have.
+   */
+  async *#textChunks(docId: DocId, sessions: DocumentSessions): AsyncIterable<Uint8Array> {
+    const { pageCount } = await this.#geometry(docId, sessions, []);
+    const encoder = new TextEncoder();
+    for (let page = 0; page < pageCount; page += 1) {
+      const text = plainTextOf(await this.#pageText(docId, sessions, page));
+      yield encoder.encode(page === 0 ? text : `\f${text}`);
+    }
   }
 
   /**

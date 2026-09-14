@@ -14,6 +14,7 @@ import {
   createDestinationPicker,
   createFormDataPicker,
   createSnapshotPicker,
+  createTextPicker,
 } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
@@ -116,6 +117,8 @@ startShell(() => {
     // The fourth save dialog, on the line after its siblings for the reason
     // above: every Electron dialog this application opens is visible together.
     pickFormData: createFormDataPicker(),
+    // The fifth save dialog, beside its siblings for the reason above.
+    pickText: createTextPicker(),
     // The fifth, and the first OPEN dialog added since the image picker.
     openFormData: createFormDataOpenPicker(),
     // The third dialog, beside the two above so all of them are visible

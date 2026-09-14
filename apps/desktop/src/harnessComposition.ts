@@ -80,6 +80,9 @@ export function harnessSurfaces(
     pickFormData: () => {
       throw new Error(`${harness} exports no form data, so nothing may pick a file for it`);
     },
+    pickText: () => {
+      throw new Error(`${harness} exports no text, so nothing may pick a file for it`);
+    },
     openFormData: () => {
       throw new Error(`${harness} imports no form data, so nothing may pick a file to read`);
     },

@@ -1807,6 +1807,35 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
+  /**
+   * Writes the document's text to a plain-text file the user picks — D10's
+   * *text extraction*, its plain half.
+   *
+   * ## The ask is a `DocId`, and the text never crosses
+   *
+   * Main picks the file, reads each page's text from the host, and streams it to
+   * disk one page at a time, so neither the renderer nor `main` holds the
+   * document's text (ADR-0035). The answer counts BYTES, as a copy's does,
+   * because the file is one file.
+   *
+   * ## The layout-preserving half is not here
+   *
+   * MuPDF's text output has no layout mode — measured 2026-09-14, every option
+   * the engine names gave one line per text line — so a layout export is a
+   * decision, not a registration.
+   */
+  'document.exportText': channel(
+    'Writes the document’s text to a plain-text file the user picks.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),
