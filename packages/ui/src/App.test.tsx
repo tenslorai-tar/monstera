@@ -214,6 +214,13 @@ const OPEN_DOCUMENT_ANSWERS = {
   // range answer only has to be well formed. What these cases are about is the
   // dispatch, and the pixels have their own proof in real Chromium.
   'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
+  // A SETTING WRITE SUCCEEDS, as it does in the product. `persistSettings` saves every
+  // change, and a fixture with no answer here refused every save — which opened the
+  // "Preference not saved" dialog behind every case that changed a setting. Cases that
+  // counted elements never noticed, because a modal hides nothing from
+  // `querySelectorAll`; the case that first chose a document panel by its accessible
+  // role did, because a modal hides everything else from role queries.
+  'settings.save': { stored: true as const },
   // TWO PAGES AND ONE OF THEM TURNED. An all-zero model is what a dropped array
   // and a flat document produce alike, so a fixture of zeros would make "the
   // renderer used the model" and "the renderer ignored it" the same observation.
@@ -240,6 +247,20 @@ async function withDocumentOpen(): Promise<void> {
     await Promise.resolve();
   });
   await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+/**
+ * Shows one of §10.3's document panels by its tab, the way a person does.
+ *
+ * The panel is ONE AT A TIME since design pass C, so the find field, the outline and the
+ * form list are not in the document while another panel shows. The tab is found by its
+ * accessible name, which is the panel's name, since there is no title row.
+ */
+async function openPanel(name: string): Promise<void> {
+  await act(async () => {
+    screen.getByRole('tab', { name }).click();
     await Promise.resolve();
   });
 }
@@ -917,6 +938,7 @@ describe('App', () => {
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
+      await openPanel('Search');
 
       const field = screen.getByLabelText('Find on this page');
       await act(async () => {
@@ -1021,6 +1043,7 @@ describe('App', () => {
         });
         render(<App client={client} settings={freshSettings()} />);
         await withDocumentOpen();
+        await openPanel('Search');
 
         const field = screen.getByLabelText('Find on this page');
         await act(async () => {
@@ -1073,6 +1096,7 @@ describe('App', () => {
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
+      await openPanel('Search');
 
       await act(async () => {
         fireEvent.change(screen.getByLabelText('Find on this page'), {
@@ -1112,6 +1136,7 @@ describe('App', () => {
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
+      await openPanel('Search');
 
       await act(async () => {
         fireEvent.change(screen.getByLabelText('Find on this page'), {
@@ -1170,6 +1195,7 @@ describe('App', () => {
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
+      await openPanel('Search');
 
       await act(async () => {
         fireEvent.change(screen.getByLabelText('Find on this page'), {
@@ -1221,6 +1247,7 @@ describe('App', () => {
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
+      await openPanel('Search');
 
       await act(async () => {
         fireEvent.change(screen.getByLabelText('Find on this page'), { target: { value: '(' } });
@@ -1245,6 +1272,7 @@ describe('App', () => {
       const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
+      await openPanel('Search');
 
       await act(async () => {
         screen.getByRole('button', { name: 'Search this page' }).click();
@@ -1262,13 +1290,23 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      expect(document.activeElement).not.toBe(screen.getByLabelText('Find on this page'));
+      // NOT ON SCREEN BEFORE THE CHORD, and this is stronger than the "not focused" this
+      // case asserted before design pass C: the Pages panel shows by default, so the field
+      // exists only if the chord opened the Search panel. A command that focused a field
+      // it did not first reveal would find nothing to focus.
+      expect(screen.queryByLabelText('Find on this page')).toBeNull();
 
       await act(async () => {
         document.dispatchEvent(
           new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, cancelable: true }),
         );
         await Promise.resolve();
+        // ONE FRAME: the command focuses after the render its setting causes.
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => {
+            resolve(undefined);
+          });
+        });
       });
 
       expect(document.activeElement).toBe(screen.getByLabelText('Find on this page'));

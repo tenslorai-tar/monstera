@@ -1072,6 +1072,89 @@ textarea {
   min-block-size: 0;
 }
 
+/*
+ * §10.3's document panel: one panel at a time beside the page list, switched by a strip
+ * of six 24 px icon tabs with the collapse chevron at the strip's end. There is no title
+ * row; the active tab's accessible name and tooltip name the panel.
+ *
+ * A fixed inline size until the resizable-width commit, and a scroll region of its own,
+ * so a long outline scrolls inside the panel and never pushes the page list.
+ */
+.m-document-panel {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  inline-size: calc(var(--space-32) * 7);
+  min-block-size: 0;
+  background: var(--bg2);
+  border-inline-end: 1px solid var(--border); /* decorative: separates the panel from the page list; its controls draw their own focus rings */
+}
+
+.m-document-panel__strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates the strip from the panel it switches */
+}
+
+.m-document-panel__tabs {
+  display: flex;
+  flex: 1;
+  gap: var(--space-2);
+}
+
+.m-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--control-panel-tab);
+  block-size: var(--control-panel-tab);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.m-panel-tab:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.m-panel-tab:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
+}
+
+/* The active tab on the state surface, with the control boundary, as the rail's active
+   section is. `data-active` is the attribute Base UI 1.7.0's Tab sets on the chosen tab
+   (TabsTabDataAttributes); `DocumentPanel.test.tsx` asserts the rendered tab carries the
+   attribute this selector names. */
+.m-panel-tab[data-active] {
+  background: var(--accent-soft);
+  border-color: var(--border-control);
+  color: var(--text);
+}
+
+.m-document-panel__body {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+/* THE SLIM EDGE HANDLE §10.3 reopens a collapsed panel with, on the canvas's leading
+   edge. */
+.m-document-panel-handle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  padding-block-start: var(--space-8);
+  background: var(--bg2);
+  border-inline-end: 1px solid var(--border-soft); /* decorative: the handle's seam against the page list */
+}
+
 .m-thumbnails {
   flex: 0 0 auto;
   display: flex;

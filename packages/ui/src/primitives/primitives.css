@@ -161,6 +161,21 @@
   white-space: nowrap;
 }
 
+/* ─── Tooltip ────────────────────────────────────────────────────────────── */
+
+/* The name of an icon-only control (§10.4). Chrome text on `--surface2`, a pair the token
+   file declares, at the 11 px chrome size, with the control boundary so it reads in
+   forced colours. */
+.m-tooltip {
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: var(--font-chrome-11);
+  box-shadow: var(--elevation-2);
+}
+
 /* ─── Icon ───────────────────────────────────────────────────────────────── */
 
 /* A glyph drawn beside text rather than alone in a button: a ribbon button's

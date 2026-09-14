@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
-import { render as renderBare, screen } from '@testing-library/react';
+import { fireEvent, render as renderBare, screen } from '@testing-library/react';
 import { X } from 'lucide-react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -72,6 +72,16 @@ describe('IconButton', () => {
     render(<IconButton disabled icon={X} label={CLOSE} onClick={onClick} size="dense" />);
     screen.getByRole('button', { name: 'Close' }).click();
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a tooltip carrying the label, on keyboard focus as well as hover (§10.4)', async () => {
+    // The text is asserted, not the popup's presence: a tooltip reading the key, or
+    // empty, would be a popup too. `getByText` reads text nodes and never the
+    // aria-label, so before the tooltip opens nothing on the page matches.
+    render(<IconButton icon={X} label={CLOSE} size="control" />);
+    expect(screen.queryByText('Close')).toBeNull();
+    fireEvent.focus(screen.getByRole('button', { name: 'Close' }));
+    expect(await screen.findByText('Close', {}, { timeout: 2000 })).toBeDefined();
   });
 
   it('is focusable from the keyboard', () => {

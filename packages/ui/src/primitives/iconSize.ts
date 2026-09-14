@@ -3,9 +3,11 @@
  * number.
  *
  * §10.4: *"One icon set: lucide, consistent stroke, at exactly four sizes with a
- * stated use each: 12 px panel tabs and inline chrome · 14 px status bar and
- * dense controls · 16 px primary controls (rail, floating toolbar, buttons) ·
- * 20 px ribbon buttons."*
+ * stated use each: 12 px inline chrome · 14 px status bar, dense controls and the
+ * document panel's tabs · 16 px primary controls (rail, floating toolbar,
+ * buttons) · 20 px ribbon buttons."* §10.4 read *"12 px panel tabs"* until
+ * 2026-09-14, against §10.3's *"24 px tabs, 14 px icons"*; the specific clause won
+ * and both now agree (design pass C).
  *
  * ## Why the names are uses and not numbers
  *

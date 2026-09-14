@@ -3,6 +3,7 @@ import { ACCENT_SETTING } from './accent.js';
 import { ANTHROPIC_KEY_SETTING } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
 import { THEME_SETTING } from './appearance.js';
+import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from './layout.js';
 import {
   ANNOTATION_COLOUR_SETTING,
   ANNOTATION_FONT_SIZE_SETTING,
@@ -58,6 +59,8 @@ import {
 export const ALL_SETTINGS: readonly SettingDefinition[] = [
   THEME_SETTING,
   ACCENT_SETTING,
+  DOCUMENT_PANEL_SETTING,
+  DOCUMENT_PANEL_OPEN_SETTING,
   RULERS_SETTING,
   GRID_SETTING,
   RULER_UNIT_SETTING,

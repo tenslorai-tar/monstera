@@ -238,6 +238,7 @@ import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { Ribbon } from './surfaces/Ribbon.js';
+import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
@@ -1564,7 +1565,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
-        findCommand(),
+        findCommand({ settings }),
         zoomCommand('in', { onZoom: changeZoom }),
         zoomCommand('out', { onZoom: changeZoom }),
         fitCommand('width', { onZoom: changeZoom }),
@@ -1840,6 +1841,70 @@ export function App({ client, settings }: AppProps): ReactElement {
           search={search ?? undefined}
           secondRenderer={secondRenderer}
           requestPassword={requestPassword}
+          settings={settings}
+          // §10.3's DOCUMENT PANELS other than Pages, built here where their state lives.
+          // `PageCanvas` hosts them beside the thumbnail strip, which needs its document
+          // view; one of the six shows at a time (`DocumentPanel`).
+          panels={{
+            // THE OUTLINE, keyed on the document rather than the page — it is a
+            // property of the document — and the links on the page beside it: both
+            // are things a person jumps to, which is what a bookmark is.
+            bookmarks: (
+              <>
+                <DestinationsPanel
+                  client={client}
+                  docId={open.docId}
+                  version={open.version}
+                  onJump={navigator.jumpTo}
+                />
+                <LinksPanel
+                  client={client}
+                  docId={open.docId}
+                  page={context.page}
+                  onJump={navigator.jumpTo}
+                />
+              </>
+            ),
+            // Keyed on the version: every drawing tool moves it, so the list is re-read
+            // after the rectangle just drawn and after an undo of it.
+            comments: (
+              <AnnotationsPanel
+                client={client}
+                docId={open.docId}
+                onJump={navigator.jumpTo}
+                onRemove={removeAnnotation}
+                version={open.version}
+              />
+            ),
+            // Keyed on the version, and every control writes, so a row from a previous
+            // version's walk would fill a field by arithmetic.
+            forms: (
+              <FormsPanel
+                client={client}
+                docId={open.docId}
+                onDelete={deleteFormField}
+                onFill={fillFormField}
+                onFlatten={flattenForm}
+                onJump={navigator.jumpTo}
+                version={open.version}
+              />
+            ),
+            // Keyed on the version: its own toggle is a command that moves it.
+            layers: <LayersPanel client={client} docId={open.docId} version={open.version} />,
+            // E2's substrate, reached by a person. `onHighlight` is the setter itself,
+            // which React keeps stable, and `commands` are the three every dispatch takes.
+            search: (
+              <FindBar
+                client={client}
+                docId={open.docId}
+                page={context.page}
+                pageCount={pageCount}
+                onJump={navigator.jumpTo}
+                onHighlight={setSearch}
+                commands={{ client, onApplied: applied, ask }}
+              />
+            ),
+          }}
         />
         </ErrorBoundary>
         </div>
@@ -1863,33 +1928,11 @@ export function App({ client, settings }: AppProps): ReactElement {
           task={task}
         />
       )}
-      {/* THE PANELS STILL STACKED UNDER THE STATUS BAR, in one grid area — the
-          layout they had before the grid, kept so the rail-and-ribbon commit
-          changes only the rail and the ribbon. The document-panel commit moves
-          them into §10.3's tab strip and removes this wrapper. */}
+      {/* THE STYLE PANELS, still under the status bar in one grid area. The other
+          panels moved into §10.3's document panel (design pass C); these two are the
+          RIGHT contextual panel's, which is the next commit, and they stay here until it
+          lands so no commit leaves a surface with nowhere to be. */}
       <div className="m-surface-extras">
-      {/* THE LINKS PANEL, which renders nothing with no document for the find
-          bar's reason. It is the third source of a jump, after the keys and the
-          thumbnails, and it dispatches the same one. */}
-      {/* THE OUTLINE, keyed on the document rather than the page — it is a
-          property of the document, and re-asking on every scroll would be the
-          same round trip for the same answer. */}
-      <DestinationsPanel
-        client={client}
-        docId={open?.docId}
-        version={open?.version}
-        onJump={navigator.jumpTo}
-      />
-      <LinksPanel
-        client={client}
-        docId={open?.docId}
-        page={context.page}
-        onJump={navigator.jumpTo}
-      />
-      {/* THE LAYERS PANEL, keyed on the version rather than the page because
-          its own toggle moves the version — a command, not a view preference,
-          so what it shows is re-read from the document after every mutation
-          including an undo of its own. */}
       {/* THE STYLE CONTROLS, which take no document at all: they set what the
           NEXT annotation is drawn in, so they are useful before anything is
           open and they do not change when the version moves. That is what makes
@@ -1899,58 +1942,6 @@ export function App({ client, settings }: AppProps): ReactElement {
           command that changes them. Takes the same resolved style the tools
           take, so *Apply* writes what the controls above say. */}
       <CommentStylesPanel onApply={restyleSelection} selection={selection} style={style} />
-      <LayersPanel client={client} docId={open?.docId} version={open?.version} />
-      {/* THE ANNOTATIONS PANEL, keyed on the version for the layers panel's
-          reason: every drawing tool moves it, so the list is re-read after the
-          rectangle that was just drawn and after an undo of it. Keyed on the
-          document rather than the page, unlike the links, because it lists the
-          whole document and the page number is what a row carries. */}
-      <AnnotationsPanel
-        client={client}
-        docId={open?.docId}
-        onJump={navigator.jumpTo}
-        onRemove={removeAnnotation}
-        version={open?.version}
-      />
-      {/* THE FORMS PANEL, keyed on the version for the annotations panel's
-          reason and with one more of its own: every control on it writes, so a
-          row built from a previous version's walk would fill a field by
-          arithmetic. It lists the whole document because a form is a thing a
-          person works through rather than a property of the page they are on. */}
-      <FormsPanel
-        client={client}
-        docId={open?.docId}
-        onDelete={deleteFormField}
-        onFill={fillFormField}
-        onFlatten={flattenForm}
-        onJump={navigator.jumpTo}
-        version={open?.version}
-      />
-      {/* E2's substrate, reached by a person. It renders nothing with no
-          document open, for `QuickToolbar`'s reason: a find field over no
-          document is a control that cannot work. */}
-      <FindBar
-        client={client}
-        docId={open?.docId}
-        page={context.page}
-        pageCount={pageCount}
-        // THE SAME `jumpTo` the thumbnails, the outline and the status bar's
-        // field dispatch — a match is one more thing that names a page, not a
-        // second way to move the reader.
-        onJump={navigator.jumpTo}
-        // THE SETTER ITSELF, which React guarantees is stable. The find bar
-        // calls this from an effect keyed on its own answer, so an inline arrow
-        // here would be a new dependency every render and the effect would run
-        // in a loop.
-        onHighlight={setSearch}
-        // THE SAME THREE THE REGISTERED COMMANDS TAKE, so the find bar's
-        // replace-all reports a refusal, tells the shell the version moved and
-        // raises invariant 18's dialog the way every other dispatch does. The
-        // thumbnail strip's drag-reorder already dispatches through the same
-        // helper; this is the second surface outside the registry and it takes
-        // the same route rather than a second opinion about how a command ends.
-        commands={{ client, onApplied: applied, ask }}
-      />
       </div>
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because
@@ -2118,6 +2109,8 @@ function PageCanvas({
   drawing,
   search,
   secondRenderer,
+  settings,
+  panels,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -2157,6 +2150,10 @@ function PageCanvas({
   readonly search: SearchHighlight | undefined;
   /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
   readonly secondRenderer: boolean;
+  /** The settings store, for the document panel's which-panel and open state. */
+  readonly settings: SettingsStore;
+  /** The document panels other than Pages, built by `App` where their state lives. */
+  readonly panels: DocumentPanelProps['panels'];
   /**
    * Asks for an encrypted document's password, or `undefined` on a dismissal.
    *
@@ -2260,14 +2257,30 @@ function PageCanvas({
     // onto a container turned every failure into a sixty-second wait, which is
     // what a working renderer with no display also produces. The two must not
     // share an output.
-    return <canvas className="m-page" data-failed="true" />;
+    //
+    // THE DOCUMENT PANEL STAYS BESIDE IT (design pass C). The outline, the annotations, the
+    // form fields, the layers and the find field come from main, not from PDF.js, so a
+    // document PDF.js cannot parse still has all five. Only the Pages panel is empty,
+    // because it is the one that draws through the view that failed.
+    return (
+      <div className="m-document-body">
+        <DocumentPanel settings={settings} panels={panels} pages={null} />
+        <canvas className="m-page" data-failed="true" />
+      </div>
+    );
   }
 
   if (ready === undefined) {
     // NOT A SPINNER: the parser is what knows how many pages there are, so
     // until it opens there is nothing honest to lay out. The failure case above
-    // is the one that carries a marker.
-    return <div className="m-page-list" />;
+    // is the one that carries a marker. The document panel is already there, for the
+    // failure case's reason: five of its six panels do not wait for PDF.js.
+    return (
+      <div className="m-document-body">
+        <DocumentPanel settings={settings} panels={panels} pages={null} />
+        <div className="m-page-list" />
+      </div>
+    );
   }
 
   return (
@@ -2275,13 +2288,19 @@ function PageCanvas({
     // needs the same parser: a strip that opened its own would parse the
     // document twice and hold two copies of every page it drew.
     <div className="m-document-body">
-      <Thumbnails
-        view={ready}
-        pageCount={ready.document.numPages}
-        current={current}
-        onJump={onJump}
-        onMove={onMove}
-        onSwap={onSwap}
+      <DocumentPanel
+        settings={settings}
+        panels={panels}
+        pages={
+          <Thumbnails
+            view={ready}
+            pageCount={ready.document.numPages}
+            current={current}
+            onJump={onJump}
+            onMove={onMove}
+            onSwap={onSwap}
+          />
+        }
       />
       <PageList
         client={client}

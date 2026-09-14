@@ -892,6 +892,90 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Design pass C: the document panel is one panel at a time, behind a six-tab strip
+
+§10.3: *"one document panel at a time — Pages, Bookmarks, Comments, Forms, Layers, Search —
+switched by a panel-tab strip of six icon tabs (24 px tabs, 14 px icons)"*, with the collapse
+chevron at the strip's end, and *"State is persisted per panel."*
+
+### What was there
+
+Every panel rendered at once: thumbnails beside the canvas, and the destinations, links,
+annotations, forms, layers and find panels stacked in a row below it.
+
+### What it is now
+
+- `surfaces/panels.ts` names the six as a closed union with a total record of title and icon.
+- `surfaces/DocumentPanel.tsx` renders Base UI `Tabs`: the strip, each tab an icon whose name
+  is its accessible name and its tooltip, and only the chosen panel's body. Collapsed, it is a
+  slim handle that reopens it.
+- **Which panel is open is a setting, and nothing else holds it** (B3):
+  `appearance.document-panel` and `appearance.document-panel-open`. The find command writes
+  both and then focuses the input, so Ctrl+F opens Search rather than focusing an input that is
+  not mounted.
+- Thumbnails need PDF.js's parsed document, which only `PageCanvas` holds, so the host renders
+  there and `App` hands in the other five as a record.
+- `StylePanel` and `CommentStylesPanel` stay below the document until the right contextual
+  panel (pass D).
+
+### Found on the way
+
+- **The host renders in the loading and failed states too.** The first draft mounted it only
+  once a document had parsed, so a document that failed to parse would have lost its panels —
+  Search and Comments included — which it had before this commit.
+- **The find tests' fixture answered no `settings.save`.** With the panel opened by a setting,
+  every find case showed *"Preference not saved"* and failed. The product was right — an
+  unanswered save is a failure the user must see — and the fixture lacked the answer a real
+  bridge gives.
+- **`IconButton`'s owed tooltip fired with this commit.** Its header recorded the obligation as
+  live at the first surface needing `Tooltip`, and this is that surface. It now renders one from
+  its own `label`. The new case fails with the tooltip removed (*"Unable to find an element with
+  the text: Close"*, the other six passing) and passes with it.
+- **The a11y spec cannot see this surface.** Every case in `renderedScreen.pw.ts` is the start
+  screen; none opens a document, so the panel, the ribbon and the tooltips are outside axe's
+  reach. Queued for the baselines commit (pass J), which opens one.
+- The temporary look spec lives beside the a11y spec, so an unfiltered `test:a11y` ran it and
+  wrote screenshots into the repository root. Nothing was staged; the spec is untracked and
+  goes when pass J replaces it.
+- **The chosen tab was styled by nothing.** The stylesheet selected `.m-panel-tab[data-selected]`;
+  Base UI 1.7.0's `Tab` sets `data-active` (`TabsTabDataAttributes`). Every unit case passed and
+  the screenshot showed no chosen tab. Fixed to `data-active`, with a case that reads the
+  selector out of `app.css` and asserts the rendered chosen tab — and only it — carries that
+  attribute: the correspondence is stated where both names meet, not remembered.
+- **That case first read an empty stylesheet.** Vitest replaces CSS with an empty string unless a
+  file is included, `?raw` imports too, so the regex found no selector. `vitest.config.mjs` now
+  includes `app.css` alone. A filesystem read was not the route: this package never imports Node.
+  With the old `data-selected` selector restored, that case alone failed — *expected [] to
+  strictly equal [ 'Search' ]* — and the other four passed.
+- **The look spec could not click the rail's Organize section in any theme**, where pass B's look
+  at 15:22 had. Playwright names the cause: the quick toolbar's *Crop pages…* button *intercepts
+  pointer events*. Pass B's look predates `63c9d15`, which gave the primitives their padding;
+  the floating toolbar grew taller and now covers Organize. That is pass F's known overlap made
+  worse by a correct fix, not a change this commit made — and it is a real defect a person meets:
+  the Organize section cannot be clicked at 1280×800 with a document open. Queued as pass F.
+
+### A disagreement in the law, corrected
+
+§10.4 listed *"12 px panel tabs"*; §10.3 says the panel tabs carry 14 px icons. The specific
+clause wins, and §10.4 is edited to agree, with a correction note.
+
+### Evidence, this machine
+
+- Final chain, sequential, on the tree as committed: typecheck, lint and `npm run test` exit 0
+  (208 files, 2,893 tests); build; `test:a11y` on `renderedScreen.pw.ts`, 6 passed.
+- Then, on that same build, the set `affectedProofs` names for this tree: `proof:preload` 10,
+  `proof:rendererpolicy` 20, `proof:canvaspixels` 10, `proof:rendergeometry` 8,
+  `proof:tokencontrast` 9 — all exit 0. They were also green before the two fixes above, and
+  were rerun rather than argued to be unaffected.
+- The three-theme look after the fix shows the chosen tab on its state surface. It also shows
+  **the page running over the status bar** — present in pass B's look at 15:22 as well, so not
+  this commit's; queued with the status bar (pass E).
+- Base UI `tabs` and `tooltip` (1.7.0) inject no style element: a search for one finds nothing
+  in either, beside a control that finds their parts. FEATURES' style-element trigger stays
+  unfired.
+
+---
+
 ## 2026-09-14 — CI red at `8814ba5`: three edit-cost cases compared readings the runner could move apart
 
 The Windows leg failed at *Attribute the cost of one in-place text edit*

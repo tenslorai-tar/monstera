@@ -41,5 +41,13 @@ export default defineConfig({
     // query finds a previous test's node. The file is inert where there is no
     // DOM, which is everywhere outside `packages/ui`.
     setupFiles: ['packages/testing/src/domCleanup.ts'],
+
+    // Vitest replaces every stylesheet with an EMPTY STRING unless it is included here, and
+    // that covers a `?raw` import too — so a test reading `app.css` read nothing, and its
+    // regex reported no selector. One file, named, rather than all CSS: the only reader is
+    // `DocumentPanel.test.tsx`, which ties the attribute Base UI sets on a chosen tab to the
+    // selector the stylesheet styles it by, and processing every stylesheet would change
+    // what every other rendering test loads.
+    css: { include: [/packages[\\/]ui[\\/]src[\\/]app\.css/u] },
   },
 });

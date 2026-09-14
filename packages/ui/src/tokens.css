@@ -159,8 +159,9 @@
   /* One display size: the start-screen wordmark. */
   --font-display: 40px;
 
-  /* Icons. Each size has a stated use (§10.4): panel tabs and inline chrome ·
-     status bar and dense controls · primary controls · ribbon buttons. */
+  /* Icons. Each size has a stated use (§10.4): inline chrome · status bar, dense
+     controls and the document panel's tabs (§10.3) · primary controls · ribbon
+     buttons. */
   --icon-12: 12px;
   --icon-14: 14px;
   --icon-16: 16px;
@@ -171,6 +172,8 @@
      calc() of spacing tokens that happens to equal it would be a magic number
      wearing tokens. */
   --control-ribbon: 52px;
+  /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
+  --control-panel-tab: 24px;
 
   --radius-4: 4px;
   --radius-6: 6px;

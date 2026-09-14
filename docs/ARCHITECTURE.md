@@ -2301,9 +2301,14 @@ them.
 
 - System font stack (`Segoe UI` first on Windows). No webfonts for UI chrome.
 - **One icon set: lucide**, consistent stroke, at exactly four sizes with a
-  stated use each: **12 px** panel tabs and inline chrome · **14 px** status bar
-  and dense controls · **16 px** primary controls (rail, floating toolbar,
-  buttons) · **20 px** ribbon buttons. Brand artwork is art, not an icon, and is
+  stated use each: **12 px** inline chrome · **14 px** status bar, dense
+  controls and the document panel's tabs · **16 px** primary controls (rail,
+  floating toolbar, buttons) · **20 px** ribbon buttons. *Corrected
+  2026-09-14:* this list read *"12 px panel tabs and inline chrome"*, which
+  contradicts §10.3's *"six icon tabs (24 px tabs, 14 px icons)"* and
+  `BUILD-PROMPT.md` M3's reason for it, *"primary navigation, not inline
+  chrome"*. The specific clause wins, and the list now agrees with it (design
+  pass C). Brand artwork is art, not an icon, and is
   exempt. Every icon-only control has a tooltip and an accessible name.
 - One primitive set, grown in the primitives package. Stage 0 builds `Dialog`,
   `Button`, `IconButton`, `Input`; the rest (`Select`, `Checkbox`, `Radio`,

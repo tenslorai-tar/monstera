@@ -695,6 +695,30 @@ export const STATUS_LABEL = messageKey('surface.status.label');
 export const STATUS_PAGE_OF = messageKey('surface.status.page-of');
 export const STATUS_ZOOM = messageKey('surface.status.zoom');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
+/**
+ * §10.3's document panel: six tabs, each named by its accessible name and tooltip,
+ * since the panel has "no separate title row". The option titles are these same keys,
+ * so the Settings dialog names a panel the way its tab does.
+ */
+export const PANEL_PAGES = messageKey('surface.panel.pages');
+export const PANEL_BOOKMARKS = messageKey('surface.panel.bookmarks');
+export const PANEL_COMMENTS = messageKey('surface.panel.comments');
+export const PANEL_FORMS = messageKey('surface.panel.forms');
+export const PANEL_LAYERS = messageKey('surface.panel.layers');
+export const PANEL_SEARCH = messageKey('surface.panel.search');
+export const PANEL_TITLES = {
+  pages: PANEL_PAGES,
+  bookmarks: PANEL_BOOKMARKS,
+  comments: PANEL_COMMENTS,
+  forms: PANEL_FORMS,
+  layers: PANEL_LAYERS,
+  search: PANEL_SEARCH,
+} as const;
+export const PANEL_STRIP_LABEL = messageKey('surface.panel.strip');
+export const PANEL_COLLAPSE = messageKey('surface.panel.collapse');
+export const PANEL_REOPEN = messageKey('surface.panel.reopen');
+export const DOCUMENT_PANEL_TITLE = messageKey('setting.appearance-document-panel.title');
+export const DOCUMENT_PANEL_OPEN_TITLE = messageKey('setting.appearance-document-panel-open.title');
 export const THUMBNAIL_PAGE = messageKey('surface.thumbnails.page');
 export const NEXT_PAGE_TITLE = messageKey('command.page-next.title');
 export const PREVIOUS_PAGE_TITLE = messageKey('command.page-previous.title');
@@ -1683,6 +1707,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STATUS_PAGE_OF]: 'Page {page} of {count}',
   [STATUS_ZOOM]: '{percent}%',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
+  [PANEL_PAGES]: 'Pages',
+  [PANEL_BOOKMARKS]: 'Bookmarks',
+  [PANEL_COMMENTS]: 'Comments',
+  [PANEL_FORMS]: 'Forms',
+  [PANEL_LAYERS]: 'Layers',
+  [PANEL_SEARCH]: 'Search',
+  [PANEL_STRIP_LABEL]: 'Document panels',
+  [PANEL_COLLAPSE]: 'Collapse the document panel',
+  [PANEL_REOPEN]: 'Show the document panel',
+  [DOCUMENT_PANEL_TITLE]: 'Document panel',
+  [DOCUMENT_PANEL_OPEN_TITLE]: 'Show the document panel',
   [THUMBNAIL_PAGE]: 'Page {page}',
   [NEXT_PAGE_TITLE]: 'Next page',
   [PREVIOUS_PAGE_TITLE]: 'Previous page',

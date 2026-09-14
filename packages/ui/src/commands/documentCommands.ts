@@ -136,6 +136,8 @@ import {
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
+import type { SettingsStore } from '../settingsStore.js';
 import { type ZoomMode, zoomInFrom, zoomOutFrom } from '../zoom.js';
 
 /**
@@ -596,7 +598,7 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
   };
 }
 
-export function findCommand(): UiCommand {
+export function findCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.find',
     icon: 'Search',
@@ -607,11 +609,20 @@ export function findCommand(): UiCommand {
     ],
     when: hasDocument,
     run: (): void => {
-      const field = document.querySelector('[data-find-input]');
-      // `instanceof` rather than a cast: the selector is a string and the
-      // element it finds is whatever the DOM holds, so a surface that renamed
-      // its input leaves this doing nothing rather than throwing at a user.
-      if (field instanceof HTMLInputElement) field.focus();
+      // THE SEARCH PANEL FIRST. Since design pass C the find field lives in §10.3's
+      // Search panel, one panel at a time, so with another panel showing there is no
+      // field to focus. The setting is the one owner of which panel shows.
+      deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
+      deps.settings.set(DOCUMENT_PANEL_SETTING.id, 'search');
+      // AFTER THE RENDER the setting causes: `set` notifies synchronously and React
+      // renders the panel on its next commit, so the field exists one frame later.
+      requestAnimationFrame(() => {
+        const field = document.querySelector('[data-find-input]');
+        // `instanceof` rather than a cast: the selector is a string and the
+        // element it finds is whatever the DOM holds, so a surface that renamed
+        // its input leaves this doing nothing rather than throwing at a user.
+        if (field instanceof HTMLInputElement) field.focus();
+      });
     },
   };
 }

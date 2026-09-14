@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { ReactElement } from 'react';
 
 import type { IconSize } from './iconSize.js';
+import { Tooltip } from './Tooltip.js';
 
 /**
  * An icon-only button (§10.4).
@@ -20,17 +21,12 @@ import type { IconSize } from './iconSize.js';
  * `size` is an {@link IconSize}, so the pixel value is §10.4's and never a call
  * site's opinion.
  *
- * ## The tooltip half is OWED, with a trigger rather than a note
+ * ## The tooltip comes from the same label
  *
- * §10.4 asks for a tooltip as well, and `Tooltip` is not one of Stage 0's four
- * primitives — it is in the set added *"the first time a feature needs them"*.
- * Nothing mounts an icon button yet, so the obligation is not live; it becomes
- * live at the first surface that renders one, which is the same commit that
- * needs `Tooltip`. `label` is already the text that tooltip will carry, so this
- * is one prop feeding two consumers rather than a second thing to write.
- *
- * Recorded here rather than in a document because this is where someone
- * building that surface will be reading.
+ * §10.4 asks for a tooltip as well. `label` is the one text both carry, so the
+ * tooltip cannot say something the accessible name does not, and a caller cannot
+ * give one without the other. There is no prop to leave the tooltip off: an
+ * icon-only control with a name and no tooltip is §10.4's defect too.
  */
 export interface IconButtonProps {
   /** The lucide icon component, e.g. `X`. Passed in, so this file imports none. */
@@ -61,22 +57,24 @@ export function IconButton({
   const { _ } = useLingui();
 
   return (
-    <BaseButton
-      aria-label={_(label)}
-      className={`m-icon-button m-icon-button--${size}`}
-      disabled={disabled}
-      nativeButton
-      onClick={onClick}
-      type="button"
-    >
-      {/* `aria-hidden`: the glyph must not contribute a second name beside the
-          label above. lucide renders an <svg> with no accessible name of its
-          own, but a future icon carrying a <title> would, and the announcement
-          would then read twice.
+    <Tooltip label={label}>
+      <BaseButton
+        aria-label={_(label)}
+        className={`m-icon-button m-icon-button--${size}`}
+        disabled={disabled}
+        nativeButton
+        onClick={onClick}
+        type="button"
+      >
+        {/* `aria-hidden`: the glyph must not contribute a second name beside the
+            label above. lucide renders an <svg> with no accessible name of its
+            own, but a future icon carrying a <title> would, and the announcement
+            would then read twice.
 
-          No width or height: the size class above carries it, from the one
-          place §10.4's four values are written down. */}
-      <Icon aria-hidden focusable={false} />
-    </BaseButton>
+            No width or height: the size class above carries it, from the one
+            place §10.4's four values are written down. */}
+        <Icon aria-hidden focusable={false} />
+      </BaseButton>
+    </Tooltip>
   );
 }
