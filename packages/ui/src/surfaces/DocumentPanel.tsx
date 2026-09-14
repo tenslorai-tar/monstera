@@ -53,16 +53,14 @@ export function DocumentPanel({ settings, pages, panels }: DocumentPanelProps): 
     // disabled when the panel is open: one control at a time says where the panel went.
     return (
       <div className="m-document-panel-handle">
-        <Tooltip label={PANEL_REOPEN}>
-          <IconButton
-            icon={ICONS.ChevronsRight}
-            label={PANEL_REOPEN}
-            size="dense"
-            onClick={() => {
-              settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
-            }}
-          />
-        </Tooltip>
+        <IconButton
+          icon={ICONS.ChevronsRight}
+          label={PANEL_REOPEN}
+          size="dense"
+          onClick={() => {
+            settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
+          }}
+        />
       </div>
     );
   }
@@ -93,16 +91,16 @@ export function DocumentPanel({ settings, pages, panels }: DocumentPanelProps): 
             </Tooltip>
           ))}
         </Tabs.List>
-        <Tooltip label={PANEL_COLLAPSE}>
-          <IconButton
-            icon={ICONS.ChevronsLeft}
-            label={PANEL_COLLAPSE}
-            size="dense"
-            onClick={() => {
-              settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, false);
-            }}
-          />
-        </Tooltip>
+        {/* No Tooltip here: IconButton renders its own from `label`. A wrapper would hand its
+            trigger props to a component that does not pass them on, so it could never open. */}
+        <IconButton
+          icon={ICONS.ChevronsLeft}
+          label={PANEL_COLLAPSE}
+          size="dense"
+          onClick={() => {
+            settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, false);
+          }}
+        />
       </div>
       <Tabs.Panel className="m-document-panel__body" data-panel={chosen} value={chosen}>
         {chosen === 'pages' ? pages : panels[chosen]}

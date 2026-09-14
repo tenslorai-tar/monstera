@@ -970,6 +970,21 @@ clause wins, and §10.4 is edited to agree, with a correction note.
 - The three-theme look after the fix shows the chosen tab on its state surface. It also shows
   **the page running over the status bar** — present in pass B's look at 15:22 as well, so not
   this commit's; queued with the status bar (pass E).
+
+#### Correction, 2026-09-14 18:16 — the collapse and reopen buttons carried a dead tooltip wrapper
+
+Pushed in `ea82a37` and found reading `DocumentPanel.tsx` for the next pass. The strip's
+collapse chevron and the collapsed handle were written as `Tooltip` around `IconButton`,
+before `IconButton` rendered its own. After it did, the outer `Tooltip`'s trigger handed its
+props and ref to `IconButton`, which passes on neither — its props are its own interface and
+it forwards no ref — so the outer one had no element and could not open. The inner one, from
+`label`, is the tooltip a person saw.
+
+So it was dead code, not a doubled tooltip, and **no case can separate the two versions**:
+the rendered behaviour is identical, which is also why every case above passed. Removed at
+both sites. The tabs keep their `Tooltip`, because `Tabs.Tab` renders the element it is
+handed. The entry above says *"IconButton now renders one from its own label"* and did not
+say its two callers already wrapped it; both halves were written in the same commit.
 - Base UI `tabs` and `tooltip` (1.7.0) inject no style element: a search for one finds nothing
   in either, beside a control that finds their parts. FEATURES' style-element trigger stays
   unfired.
