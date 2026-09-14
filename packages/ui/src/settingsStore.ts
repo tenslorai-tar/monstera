@@ -146,4 +146,28 @@ export class SettingsStore {
       this.#listeners.delete(listener);
     };
   }
+
+  /**
+   * Calls `listener` when any of `ids` changes, AND after a hydrate. Returns the
+   * unsubscribe.
+   *
+   * ## Why this exists beside `subscribe`
+   *
+   * A hydrate notifies `'*'`, because it may change any number of settings at once.
+   * Three readers compared the notified id with their own and so never matched it:
+   * the theme, the dark page and every `useSetting` reader. The hydrate lands one
+   * round trip after the first render, so a stored setting was never applied at
+   * launch. Found 2026-09-14, when the design pass's screenshot of a stored light
+   * theme rendered dark.
+   *
+   * *A hydrate is a change to every id* now has one owner, and a reader takes this.
+   * `subscribe` stays for the one caller that must tell a hydrate from a change,
+   * `persistSettings`, which must not write back what it just read.
+   */
+  watch(ids: readonly string[], listener: () => void): () => void {
+    const wanted = new Set(ids);
+    return this.subscribe((id) => {
+      if (id === '*' || wanted.has(id)) listener();
+    });
+  }
 }

@@ -1721,9 +1721,8 @@ export function App({ client, settings }: AppProps): ReactElement {
       applyDarkPage(root, settings.get(DARK_PAGE_SETTING.id) === true);
     };
     apply();
-    return settings.subscribe((id) => {
-      if (id === DARK_PAGE_SETTING.id) apply();
-    });
+    // `watch`, not `subscribe`: a stored value arrives as a hydrate, after this runs.
+    return settings.watch([DARK_PAGE_SETTING.id], apply);
   }, [settings]);
 
   return (
@@ -2063,9 +2062,9 @@ function useTheme(settings: SettingsStore): void {
     const watched = HIGH_CONTRAST_QUERIES.map((query) => window.matchMedia(query));
     for (const query of watched) query.addEventListener('change', apply);
 
-    const unsubscribe = settings.subscribe((id) => {
-      if (id === THEME_SETTING.id || id === ACCENT_SETTING.id) apply();
-    });
+    // `watch`, not `subscribe`: the stored theme arrives as a hydrate one round trip
+    // after this first applies the fallback, and a hydrate names no single id.
+    const unsubscribe = settings.watch([THEME_SETTING.id, ACCENT_SETTING.id], apply);
 
     return (): void => {
       for (const query of watched) query.removeEventListener('change', apply);

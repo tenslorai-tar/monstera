@@ -58,10 +58,9 @@ export function useSetting<Schema extends z.ZodType>(
   const held = useRef<{ key: string; value: unknown } | null>(null);
 
   const subscribe = useCallback(
-    (onChange: () => void) =>
-      store.subscribe((id) => {
-        if (id === setting.id) onChange();
-      }),
+    // `watch`, which also fires after a hydrate: a stored value arrives after the first
+    // render, and a filter on this id alone left every reader on the fallback.
+    (onChange: () => void) => store.watch([setting.id], onChange),
     [store, setting.id],
   );
 

@@ -892,6 +892,50 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — A stored setting was not applied at launch: three readers never heard the hydrate
+
+Found by the design pass's same screenshot run. A shim seeded with a stored light theme
+rendered the dark tokens.
+
+### The mechanism
+
+`main.tsx` fires `hydrateSettings` and renders without waiting, which is deliberate: a first
+paint that depended on main would show a blank window when main is absent. So stored
+settings land one round trip after the first render. `SettingsStore.hydrate` then notifies
+`'*'`, as its own docblock says, because a hydrate may change any number of ids at once.
+
+**Three readers filtered on their own id and so never matched `'*'`:**
+- `useTheme`, for the theme and the accent (`App.tsx`);
+- the dark-page effect (`App.tsx`);
+- `useSetting`, which is how the rulers, grid, unit, loupe, split view, second renderer and
+  the style panels read.
+
+Each applied the fallback at first render and was never told the stored value had arrived.
+It was masked wherever something else re-rendered a `useSyncExternalStore` reader, and
+never masked for the two effects, which write the root element. The only correct listener
+was `persistSettings`, which skips `'*'` on purpose.
+
+**The class, not the instance (B3a):** the rule *a hydrate is a change to every id* lived
+in three call sites as the same missing clause.
+
+### The fix
+
+`SettingsStore.watch(ids, listener)` fires for those ids and after a hydrate, and all three
+readers take it. `subscribe` remains for the one caller that must tell a hydrate from a
+change.
+
+### Proven
+
+- **`settingsStore.test.ts`:** `watch` fires on its own id and on a hydrate, not on another
+  id (the control), and not after it is stopped.
+- **`App.test.tsx`:** *a STORED theme is applied at launch*. The app renders on the
+  fallback, and a hydrate afterwards sets `data-theme="light"`.
+- `packages/ui`: 84 files, 924 tests.
+- **Mutation, the `'*'` branch removed:** exactly those two cases fail, with
+  `expected 1 to be 2` and `expected null to be 'light'`.
+
+---
+
 ## 2026-09-14 — The primitives' stylesheet was imported by nothing, so every primitive shipped unstyled
 
 Found by the design pass's first screenshot, which is the M7 visual pass doing the job no

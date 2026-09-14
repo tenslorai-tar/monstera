@@ -504,6 +504,24 @@ describe('App', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('a STORED theme is applied at launch: a hydrate after the first render moves the root attribute', async () => {
+    // THE STARTUP ORDER, which the case below does not reach. `main.tsx` fires the hydrate
+    // and renders without waiting, so the stored theme lands after `useTheme` first applied
+    // the fallback. The notification is `*`, and the effect listened for its own id only.
+    // Found by the design pass's screenshot of a stored light theme rendering dark.
+    const { client } = recordingClient({ kind: 'cancelled' });
+    const settings = freshSettings();
+    render(<App client={client} settings={settings} />);
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+
+    await act(async () => {
+      settings.hydrate({ [THEME_SETTING.id]: 'light' });
+      await Promise.resolve();
+    });
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+  });
+
   it('the registered SETTING is read, and changing it moves the root attribute', async () => {
     // Exit clause 7, and the assertion is the whole point of it: a registered
     // key nothing reads is the display-only sin one layer down. `tokens.css`

@@ -111,6 +111,30 @@ describe('SettingsStore', () => {
     expect(seen).toStrictEqual(['appearance.theme', '*']);
   });
 
+  it('watch: fires for its own ids AND after a hydrate, and not for another id', () => {
+    // THE HYDRATE IS THE CASE THE DEFECT MISSED: three readers filtered on their own id
+    // and a hydrate notifies `*`, so a stored setting never reached them at launch.
+    const store = new SettingsStore(registry);
+    let calls = 0;
+    const stop = store.watch(['appearance.theme'], () => {
+      calls += 1;
+    });
+
+    // CONTROL: a change to another id does not fire, so this is not a listener on everything.
+    store.set('ai.key', 'x');
+    expect(calls).toBe(0);
+
+    store.set('appearance.theme', 'dark');
+    expect(calls).toBe(1);
+
+    store.hydrate({ 'appearance.theme': 'light' });
+    expect(calls).toBe(2);
+
+    stop();
+    store.set('appearance.theme', 'dark');
+    expect(calls).toBe(2);
+  });
+
   it('refuses a write to an unregistered id rather than dropping it silently', () => {
     const store = new SettingsStore(registry);
     expect(() => {
