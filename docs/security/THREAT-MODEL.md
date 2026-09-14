@@ -55,6 +55,11 @@ reaches every subsequent release. Already mitigated by pinned-hash verification
 before any parser touches the bytes (invariant 9); the archive **extraction** path
 is not yet (§4.6).
 
+Where an artefact publishes a detached OpenPGP signature, provisioning also verifies
+it, against a key pinned by its computed fingerprint
+([ADR-0063](../DECISIONS/0063-an-office-file-is-converted-by-a-pinned-libreoffice-in-a-contained-process.md)).
+The digest says the bytes are the pinned ones; the signature says who built them.
+
 ### 1.4 Cloud provider responses
 
 Any cloud storage integration returns bytes and metadata under someone else's
@@ -97,6 +102,12 @@ aborted the process, which no `catch` intercepts; `micromark` 4.0.2 ran past 90
 seconds on two inputs. So a file picked for import is parsed in the compose host
 (§2, [ADR-0060](../DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)),
 where an abort ends a process that holds no open document.
+
+An Office document is parsed by LibreOffice, a program this build did not write and
+cannot read the source of in any practical sense. It runs as an **external converter**
+under the same containment as the engine hosts, with macros off and a profile that
+exists for one conversion
+([ADR-0063](../DECISIONS/0063-an-office-file-is-converted-by-a-pinned-libreoffice-in-a-contained-process.md)).
 
 ### 1.10 URLs a person types
 
@@ -143,6 +154,7 @@ Windows-only, Microsoft Store distribution ([ADR-0001](../DECISIONS/0001-agpl-on
 | **mupdf-host** (AppContainer process we create, [ADR-0022](../DECISIONS/0022-the-engine-host-is-a-process-we-create.md)) | The MuPDF shim, all native parsing | The document bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Other documents |
 | **pdfium-host** (AppContainer process we create) | PDFium rendering | Same as mupdf-host | Same as mupdf-host |
 | **compose-host** (AppContainer process we create) | `markdown-it` and `@cantoo/pdf-lib`, composing a new PDF from a file picked for import ([ADR-0060](../DECISIONS/0060-an-imported-source-is-parsed-in-a-contained-host-that-holds-no-document.md)) | The source bytes handed to it; its own scratch space | Network. Filesystem beyond what it was handed. The user's profile. Every open document |
+| **converter** (AppContainer process we create, [ADR-0063](../DECISIONS/0063-an-office-file-is-converted-by-a-pinned-libreoffice-in-a-contained-process.md)) | LibreOffice, headless, converting one Office file picked for import to PDF | The one input copied in under a fixed name; its output directory; a profile made for this conversion | Network. Filesystem beyond those three. The user's own LibreOffice profile. Every open document |
 | **Renderer** | React UI, PDF.js | Only the contract's IPC channels | Node. Filesystem paths (invariant 2). Any absolute path at all |
 
 **The renderer holds an opaque `DocId` and a `DocVersion`, never a path and never
