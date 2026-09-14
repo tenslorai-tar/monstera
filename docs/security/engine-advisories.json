@@ -87,10 +87,10 @@
     "DEBIAN-CVE-2025-71382": "NOT-AFFECTED — uncontrolled recursion in the EPUB CSS engine, fixed before 1.27.0-rc1 and so before our 1.28.0; and no EPUB path exists regardless.",
     "DEBIAN-CVE-2026-3308": "NOT-AFFECTED — CORRECTED from UNRESOLVED. Integer overflow in pdf-image.c inline image size handling, reported against 1.27.0. The checked-arithmetic fix (Artifex bug 709426, 2026-06-01) is in .tools/mupdf/1.28.0: pdf-image.c:197 and :200 throw \"integer overflow in inline image size\". Fixed before our release.",
     "DEBIAN-CVE-2026-40505": "NOT-AFFECTED — ANSI escape injection through mutool terminal output. mutool is not shipped (ADR-0010) and no document-derived text reaches a terminal here.",
-    "DEBIAN-CVE-2026-7233": "NOT-AFFECTED — CORRECTED from an earlier AFFECTED verdict that read the CVE text instead of upstream history. The CVE says \"up to 1.28.0\", which is the report-time upper bound, not a statement that 1.28.0 ships the bug. The fixing commits — Artifex bug 709364 (missing bounds checks in CFF subsetting) and 709365 — landed 2026-05-13, before 1.28.0 shipped 2026-06-26, and are present in .tools/mupdf/1.28.0: subset-cff.c:299 (data_offset > len) and :315 (data_offset + v > len). Verified by executing the trigger against the built engine: scripts/security/cffOobProof.mjs shows a clean throw with the checks and a crash without them. Additionally NOT REACHABLE: font subsetting is opt-in via pdf_subset_fonts, which no code path we ship calls, and pdf_save_document does not reach it."
+    "DEBIAN-CVE-2026-7233": "NOT-AFFECTED — CORRECTED from an earlier AFFECTED verdict that read the CVE text instead of upstream history. The CVE says \"up to 1.28.0\", which is the report-time upper bound, not a statement that 1.28.0 ships the bug. The fixing commits — Artifex bug 709364 (missing bounds checks in CFF subsetting) and 709365 — landed 2026-05-13, before 1.28.0 shipped 2026-06-26, and are present in .tools/mupdf/1.28.0: subset-cff.c:299 (data_offset > len) and :315 (data_offset + v > len). Verified by executing the trigger against the built engine: scripts/security/cffOobProof.mjs shows a clean throw with the checks and a crash without them. Additionally NOT REACHABLE: font subsetting is opt-in via pdf_subset_fonts, which no code path we ship calls, and pdf_save_document does not reach it. Addition 2026-09-14: the npm build the kernel loads exposes the same subsetting as PDFDocument.subsetFonts(), a name that never contains pdf_subset_fonts; it is watched separately under reachability.subsetFonts (ADR-0017's correction)."
   },
   "watch": {
-    "ARTIFEX-BUG-709567": "UNRESOLVED (no CVE, no release) — \"potential memory overwrite in CFF2 subsetting\", fixed upstream in commit a3caa67262bd on 2026-08-07. In NO released version: it postdates 1.28.2 (2026-08-03) and exists only on master. A memory OVERWRITE, so more serious than the over-read of CVE-2026-7233. NOT REACHABLE here: CFF2 subsetting requires font subsetting, which no shipped code path performs. Take at the first release that contains it, per ADR-0011; until then the register is the record that it is known and waiting."
+    "ARTIFEX-BUG-709567": "UNRESOLVED (no CVE, no release) — \"potential memory overwrite in CFF2 subsetting\", fixed upstream in commit a3caa67262bd on 2026-08-07. In NO released version: it postdates 1.28.2 (2026-08-03) and exists only on master. A memory OVERWRITE, so more serious than the over-read of CVE-2026-7233. NOT REACHABLE here: CFF2 subsetting requires font subsetting, which no shipped code path performs. Take at the first release that contains it, per ADR-0011; until then the register is the record that it is known and waiting. Addition 2026-09-14: the npm build the kernel loads exposes the same subsetting as PDFDocument.subsetFonts(), a name that never contains pdf_subset_fonts; it is watched separately under reachability.subsetFonts (ADR-0017's correction)."
   },
   "reachability": {
     "ocr": {
@@ -194,6 +194,26 @@
             "docs/DECISIONS/**"
           ],
           "why": "ADR-0015 and ADR-0017 name the symbol as part of the decisions that rest on it. Deliberately NOT the register or the script that reads it: witnessing a symbol in the file that declares it is circular, since a misspelling would be present in both places and find itself. The ADRs are independent text, and their losing the name would itself be worth stopping on."
+        }
+      }
+    },
+    "subsetFonts": {
+      "guards": [
+        "DEBIAN-CVE-2026-7233",
+        "ARTIFEX-BUG-709567"
+      ],
+      "why": "The SAME code as pdf_subset_fonts, through the door this build actually uses. The kernel loads MuPDF's npm WASM package, whose PDFDocument declares subsetFonts(): void (mupdf.d.ts) and whose mupdf.js calls libmupdf._wasm_pdf_subset_fonts. A shipped call spells it subsetFonts(), which contains no pdf_subset_fonts, so the verdict keyed on the C name would stay green while both advisories became reachable. Measured 2026-09-14: no shipped path names subsetFonts (explicit-directory git grep with controls). Optimise is the feature that will be tempted to call it, and 709567 is a memory overwrite in no release.",
+      "shippedPaths": [
+        "native/**",
+        "packages/*/src/**",
+        "apps/*/src/**"
+      ],
+      "witness": {
+        "subsetFonts": {
+          "in": [
+            "docs/DECISIONS/**"
+          ],
+          "why": "ADR-0017's correction of 2026-09-14 names the JavaScript door as the second route to the subsetting its text already cites. Independent text, disjoint from the shipped paths, and not the register — the same reasoning as pdf_subset_fonts' witness."
         }
       }
     }

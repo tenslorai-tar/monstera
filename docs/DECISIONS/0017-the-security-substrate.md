@@ -111,3 +111,19 @@ document, and the reason four of them were about to be built underneath.
   cheap now and is the whole reason for the timing.
 - The invariant count moves to 25; `CLAUDE.md` is updated in this commit, and
   `check:docs` verifies the two agree.
+
+## Correction, 2026-09-14 — the guard on font subsetting watched one of its two doors
+
+This ADR cites `pdf_subset_fonts` as a *"nothing calls it today"* claim that once rested on a guard
+that did not exist, and the advisory register became that guard: it scans shipped source for the
+C name. **The engine this application loads has a second door to the same code.** MuPDF's npm
+build declares `PDFDocument.subsetFonts()`, and its JavaScript calls `_wasm_pdf_subset_fonts`. A
+shipped call would be written `subsetFonts()`, which contains no `pdf_subset_fonts`. So the register
+would have stayed green while ARTIFEX-BUG-709567, a memory overwrite in no release, became
+reachable.
+
+Measured 2026-09-14, it is not reachable today: no shipped path names `subsetFonts`, read by
+explicit-directory searches whose controls were found. The register now watches `subsetFonts` as
+its own verdict guarding the same two advisories. The general form belongs beside the first: **a
+guard keyed on the name one layer spells does not see the layer above it**, so ask what the calling
+code would actually write.
