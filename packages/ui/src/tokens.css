@@ -143,6 +143,10 @@
   --space-24: 24px;
   --space-32: 32px;
 
+  /* The UI font (§10.4): the system stack, Segoe UI first on Windows. A stack and not
+     a webfont, so the application draws in the platform's own face and loads nothing. */
+  --font-ui: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+
   /* Type. Chrome sizes, and 10 px is the FLOOR — no UI text renders smaller. */
   --font-chrome-10: 10px;
   --font-chrome-11: 11px;

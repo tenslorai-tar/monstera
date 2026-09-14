@@ -22,10 +22,26 @@
  * set of conditions is how a value acquires an unstated dependency.
  */
 
+/* THE UI FONT, which nothing set until 2026-09-14: `font-family` appeared nowhere in this
+   package, so the shell drew in the browser's default serif, against §10.4's system stack.
+   13 px is the largest chrome size, and the chrome's own text is that. */
 body {
   margin: 0;
   background: var(--canvas);
   color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-13);
+}
+
+/* CONTROLS INHERIT IT. Chromium gives `button`, `input`, `select` and `textarea` a font of
+   their own rather than the parent's, so without this every control reads in a different
+   face and size from the text beside it — the "default browser form styling" M1 names as
+   the anti-goal. A primitive that sets a size still wins, being more specific. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 /*

@@ -892,6 +892,39 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — Design pass: the UI font is the system stack, on text and on controls
+
+§10.4 says *"System font stack (`Segoe UI` first on Windows). No webfonts for UI chrome."*
+Measured: `font-family` appeared nowhere in `packages/ui/src`, so the shell drew in the
+browser's default serif. The screenshot run showed it in the status bar and every panel.
+
+### What changed
+
+- **`tokens.css`:** `--font-ui` declares the stack — `'Segoe UI'`, `system-ui`,
+  `-apple-system`, `'Helvetica Neue'`, `Arial`, `sans-serif`. It is a token so the
+  family has one writer.
+- **`app.css`:** `body` takes `var(--font-ui)` at `--font-chrome-13`.
+- **`app.css`:** `button`, `input`, `select` and `textarea` take `font: inherit`. Chromium
+  gives controls a font of their own, and without this every control reads in a different
+  face from the text beside it. A primitive that sets a size is more specific and still
+  wins.
+
+### Proven, in the built renderer (`renderedScreen.pw.ts`)
+
+The case reads the **declared** family: the same string on every platform, where the face
+drawn is not. It checks the token, then `body`, then the start screen's Open button.
+
+| run | result |
+|---|---|
+| against the build made before the change | red at the token check: nothing declared it |
+| after a rebuild | all six cases in the file pass, the axe gate included |
+| mutation, the controls-inherit rule removed and rebuilt | red at the **control** assertion only, `Received: "Arial"`; `body` still matched |
+
+The mutation is what separates *controls inherit* from *text has a font*. The first control
+run stopped at the token and could not say it.
+
+---
+
 ## 2026-09-14 — A stored setting was not applied at launch: three readers never heard the hydrate
 
 Found by the design pass's same screenshot run. A shim seeded with a stored light theme

@@ -206,6 +206,33 @@ test('the PRIMITIVES are styled in the production build, not left as browser con
   expect(padding).toStrictEqual({ top: '8px', left: '16px' });
 });
 
+test('the UI FONT is the system stack, on text and on controls, in the production build', async ({
+  page,
+}) => {
+  // §10.4: "System font stack (Segoe UI first on Windows)". Nothing set a font until
+  // 2026-09-14, so the shell drew in the browser's serif. The DECLARED family is read,
+  // not the face drawn: it is the same on every platform, where the face the stack falls
+  // through to is not. A control is read as well as text, because Chromium gives
+  // controls a font of their own unless told to inherit.
+  await bridge(page);
+  await page.goto('/');
+
+  const expected = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim(),
+  );
+  // THE TOKEN IS THERE, or the comparisons below would pass on two empty strings.
+  expect(expected.startsWith("'Segoe UI'") || expected.startsWith('"Segoe UI"')).toBe(true);
+
+  const body = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
+  const open = page.getByRole('button', { name: 'Open a document' });
+  await expect(open).toBeVisible();
+  const control = await open.evaluate((element) => getComputedStyle(element).fontFamily);
+
+  const normalise = (family: string): string => family.replaceAll("'", '"').replaceAll(/\s*,\s*/gu, ',');
+  expect(normalise(body)).toBe(normalise(expected));
+  expect(normalise(control)).toBe(normalise(expected));
+});
+
 test('a message with a PLACEHOLDER renders its value, in the production build', async ({
   page,
 }) => {
