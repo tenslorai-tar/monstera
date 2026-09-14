@@ -205,7 +205,7 @@ planner counting a table of rows as a table of untouched work.
 |---|---|
 | Document compare | — |
 | Annotation import / export | — |
-| Spell check pass | — |
+| Spell check pass. **DONE 2026-09-08 as D4's *Spell check*, placed in Review 2026-09-14.** BUILD-PROMPT lists the pass under D4's editing tools and again under D8's review tools, and it is one command. It walks every page through the text layer, with progress, cancellation and a personal dictionary (see D4's row). What D8 owed was that it be reachable from Review, which is a second placement of the same command rather than a second command. A case asserts both ribbon placements; that a placement lands in its section is `projections.test.ts`' subject. | **done** |
 | Reading-order / tagged-PDF inspection | — |
 | Accessibility check | — |
 | Comment summarization (AI) — Stage 9 | — |

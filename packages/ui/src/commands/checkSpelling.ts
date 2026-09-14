@@ -88,7 +88,14 @@ export function checkSpellingCommand(deps: {
     title: SPELL_CHECK_COMMAND_TITLE,
     // EDIT › PROOFING, beside word count. Both read the whole document's text
     // and both are things a person does to prose, which is what a group is.
-    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 10 }],
+    // AND REVIEW › PROOFING: BUILD-PROMPT lists the pass under D4's editing
+    // tools and again under D8's review tools. One command placed twice is the
+    // registry saying so; a second command would be a second opinion about what
+    // a spell check pass does.
+    placements: [
+      { surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 10 },
+      { surface: 'ribbon', section: 'review', group: GROUP_PROOFING, order: 10 },
+    ],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;

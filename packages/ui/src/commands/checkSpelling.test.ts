@@ -3,6 +3,7 @@ import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { SPELL_CHECK_DIALOG_ID } from '../dialogs/spellCheck.js';
+import { GROUP_PROOFING } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -296,5 +297,28 @@ describe('the spell check command', () => {
     await checkSpellingCommand({ client, settings: store(), ask, track }).run(contextWith(2));
 
     expect(steps).toStrictEqual([1, 2, -1]);
+  });
+});
+
+describe('spell check is placed in Review as well as Edit', () => {
+  /**
+   * BUILD-PROMPT lists the pass under D4's editing tools and again under D8's review tools, and
+   * it is one command. What this asserts is the REGISTRATION: both ribbon placements, both under
+   * Proofing. That a placement lands in its section is projections.test.ts' subject, proven there
+   * against a registry it builds, so this does not import a surface to prove it again.
+   */
+  it('declares a ribbon placement in edit AND in review, both under Proofing', () => {
+    const { client } = clientWith([]);
+    const { ask } = askAnswering(undefined);
+    const command = checkSpellingCommand({ client, settings: store(), ask, track: UNTRACKED });
+
+    const ribbon = command.placements.flatMap((placement) =>
+      placement.surface === 'ribbon' ? [[placement.section, placement.group]] : [],
+    );
+
+    expect(ribbon).toStrictEqual([
+      ['edit', GROUP_PROOFING],
+      ['review', GROUP_PROOFING],
+    ]);
   });
 });
