@@ -2078,9 +2078,13 @@ say**.
     it; the renderer is observed *refusing* a `connect-src` fetch and an `eval`;
     and a control asserts that a policy we do not serve is not reported as
     delivered. Delivery is covered for all eleven directives. **Enforcement is
-    covered for two of them** — `connect-src` and `script-src` — because a header
-    can arrive and be ignored, and Chromium drops a directive list it cannot
-    parse. The other nine are pinned and delivered rather than exercised.
+    covered for three of them** — `connect-src`, `script-src`, and since
+    2026-09-14 `style-src` against a script-inserted `<style>` element — because a
+    header can arrive and be ignored, and Chromium drops a directive list it cannot
+    parse. The other eight are pinned and delivered rather than exercised.
+    *Corrected 2026-09-14:* this read "two of them … the other nine" until the
+    harness began inserting `@zag-js/splitter`'s drag-cursor style, which ADR-0005's
+    resizable-panel library injects on every drag and this policy refuses.
 
     **Order is part of the pin, and Chromium does not care about it.** The
     comparison is string equality, so a reordering fails it. That is a

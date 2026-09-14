@@ -92,6 +92,7 @@ const RUNTIME_CASES = [
   'the renderer RECEIVES the policy the shell declares',
   'CONTROL: a policy the renderer does NOT have is not reported as delivered',
   'the renderer OBEYS it: no network under connect-src none, no eval',
+  'and style-src self REFUSES a script-inserted style element, the splitter drag cursor verbatim',
   'the React shell MOUNTS under the pinned policy, so script-src self permits the bundle',
   'and its stylesheet arrived, so style-src self permits it too',
   'no Node surface is reachable from page script',
@@ -301,6 +302,7 @@ function pinnedPolicy(markdown) {
  *   delivered: string | null,
  *   connectBlocked: boolean,
  *   evalBlocked: boolean,
+ *   styleElementBlocked: boolean,
  *   shell: { mounted: boolean, background: string | null },
  *   nodeSurface: string[],
  *   bridgeExposed: boolean,
@@ -538,6 +540,16 @@ try {
         `A header can arrive and be IGNORED — Chromium drops a directive list it cannot parse, ` +
         `and a dropped policy is indistinguishable from an enforced one if all you compare is ` +
         `the string. This is the set-versus-enforced distinction invariant 25 refuses to elide.`,
+    );
+
+    check(
+      'and style-src self REFUSES a script-inserted style element, the splitter drag cursor verbatim',
+      seen.styleElementBlocked,
+      `no style-src violation was reported for an inserted <style> carrying ` +
+        `"* { cursor: col-resize !important; }". The listener that watched for it is the one the ` +
+        `case above read connect-src and script-src from, so it was listening. This is the text ` +
+        `@zag-js/splitter injects on every drag (ADR-0005's resizable-panel library), and if it is ` +
+        `admitted the policy no longer says what invariant 27 pins.`,
     );
 
     // -------------------------------------------------------------------------

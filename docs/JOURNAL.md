@@ -892,6 +892,48 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-14 — The resizable-panel library injects a style element the pinned policy refuses
+
+Pass C2 is §10.3's *"panels resizable with persisted widths"*, and ADR-0005 names the library for
+exactly that row: `@zag-js/splitter`, already a `packages/ui` dependency (1.43.3, MIT), unused.
+Reading its build before wrapping it:
+
+- `splitter.dom.mjs` `setupGlobalCursor` appends `<style>* { cursor: X !important; }</style>` to
+  `head` on every drag, X one of `col-resize`, `e-resize`, `w-resize` for a horizontal splitter.
+  The machine skips it only when a `registry` is supplied.
+- `utils/registry.mjs` `setGlobalCursor` — the registry path — appends the same shape, X one of
+  `default`, `move`, `ew-resize`, `ns-resize`. **No configuration of 1.43.3 injects nothing.**
+- The library's escape is a `nonce` prop. Invariant 27's policy has no nonce.
+
+Invariant 27 pins `style-src 'self'`, and §9.27 names this exact exposure: *"a library that
+injects a `<style>` element … at run time."* So the claim that it trips was a reading of the
+source, and the directive had never been exercised against an injected element — the shell's own
+stylesheet is a `<link>`.
+
+### Measured, not reasoned
+
+`rendererHarness.ts` now inserts that element verbatim inside the listener that already reads
+`connect-src` and `script-src` violations, and `proof:rendererpolicy` carries a case for it.
+
+- **It is refused**: 21 renderer-policy cases passed, the new one among them, on a fresh build.
+- Mutation — the harness builds the element and does not insert it: that case alone failed, one
+  failure line in the run, the other twenty passing.
+- The same listener reporting the two directives beside it is what makes a refusal readable:
+  a listener that could see nothing reports no style-src violation too.
+
+§9.27's enforcement sentence is corrected from two directives to three in the same commit.
+
+### What this decides, and what it does not
+
+ADR-0019 already says how a library that trips this is answered — *"a measured amendment"*,
+preferring *"a hash, over a blanket grant"*, as a diff to §9.27 with an amendment-log row. The
+injected texts are a finite set, which is what makes a hash possible. **That amendment is the next
+commit and is not taken here.** Still unmeasured: whether this Chromium admits a script-inserted
+`<style>` whose text matches a `'sha256-…'` source. The amendment owes that reading, with a control
+that a text one character different is still refused.
+
+---
+
 ## 2026-09-14 — Design pass C: the document panel is one panel at a time, behind a six-tab strip
 
 §10.3: *"one document panel at a time — Pages, Bookmarks, Comments, Forms, Layers, Search —

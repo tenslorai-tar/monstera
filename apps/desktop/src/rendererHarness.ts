@@ -90,6 +90,15 @@ interface Readback {
   readonly connectBlocked: boolean;
   readonly evalBlocked: boolean;
   /**
+   * Whether a script-inserted `<style>` element is refused under `style-src`.
+   *
+   * The text is `@zag-js/splitter` 1.43.3's global drag cursor, verbatim (`splitter.dom.mjs`
+   * `setupGlobalCursor`), because that library is ADR-0005's choice for resizable panels and it
+   * injects exactly this during a drag. `style-src` had been delivered and never exercised
+   * against an injected element: the shell's own stylesheet is a `<link>`.
+   */
+  readonly styleElementBlocked: boolean;
+  /**
    * Whether the React shell mounted, and what its surface computed to.
    *
    * `mounted` answers `script-src 'self'` against a `file://` origin; the
@@ -447,7 +456,11 @@ export async function reportRendererPolicy(): Promise<void> {
        document.addEventListener('securitypolicyviolation', record);
        try { await fetch('https://example.invalid/'); } catch { /* the event is the signal */ }
        try { new Function('return 1')(); } catch { /* likewise */ }
+       const injected = document.createElement('style');
+       injected.textContent = '* { cursor: col-resize !important; }';
+       document.head.appendChild(injected);
        await new Promise((done) => { setTimeout(done, 200); });
+       injected.remove();
        document.removeEventListener('securitypolicyviolation', record);
        return seen;
      })()`,
@@ -459,6 +472,9 @@ export async function reportRendererPolicy(): Promise<void> {
   // `script-src-attr`/`script-src-elem` for other cases, so the family is
   // matched rather than one spelling.
   const evalBlocked = violated.some((directive) => directive.startsWith('script-src'));
+  // Chromium names `style-src-elem` for an element and `style-src-attr` for an attribute, so the
+  // family is matched, as for script-src above.
+  const styleElementBlocked = violated.some((directive) => directive.startsWith('style-src'));
 
   // ---------------------------------------------------------------------------
   // The Node surface, and the bridge that proves the probe can see anything.
@@ -709,6 +725,7 @@ export async function reportRendererPolicy(): Promise<void> {
     preloadNodeReach,
     connectBlocked,
     evalBlocked,
+    styleElementBlocked,
     shell,
     nodeSurface: surface.visible,
     bridgeExposed: surface.bridge,
