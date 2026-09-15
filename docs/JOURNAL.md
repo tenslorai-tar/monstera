@@ -892,6 +892,76 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Live runs: webcam PASSED; external edit FAILED at the reimport; four findings
+
+Both runs used screen control, which the owner approved on 2026-09-14, against the development build (`npm start`,
+the provisioned Electron binary). Control was granted by that binary's path; the older installed *Monstera PDF Editor*
+(2.1.8) is a different program.
+
+### Webcam capture — PASSED
+
+Palette → *New PDF from camera…* → live preview → one picture → *Make PDF* → a save dialog → a one-page PDF that opened
+as a tab and shows the picture (141,721 bytes, `%PDF-1.7`). **The camera off on close is read from Windows, not from the
+app:** `HKCU\…\CapabilityAccessManager\ConsentStore\webcam\NonPackaged\…electron.exe` had no entry before the run;
+`LastUsedTimeStart` 08:07:31 with `LastUsedTimeStop` 0 while the dialog was open; `LastUsedTimeStop` 08:09:31 after it
+closed. D9's webcam row is done.
+
+**Defect found — the camera dialog is unbounded.** The live preview filled the window and pushed *Take picture* and
+*Make PDF* outside it; the run finished by keyboard. Mechanism, read: `.m-dialog` (`primitives.css`) is `position:
+fixed`, centred by `translate(-50%, -50%)`, with no `max-inline-size`, `max-block-size` or overflow, and the `<video>`
+has no rule at all, so the dialog grows to the camera's native frame and spills past every edge, where a fixed box
+cannot be scrolled to. **Queued**; the fix is the dialog primitive (bounded to the viewport, body scrolling) plus the
+preview's size, which closes the class rather than this dialog.
+
+### Edit page in another app — FAILED at the reimport
+
+First attempt, 08:12: *"Monstera can no longer work on this document."* The document had been **poisoned at open** —
+`shell.log` 06:11:02Z: *"no connection within 10000ms … a host that started and did not reach its pipe"*, twice — and
+external edit was simply the first command to need the engine.
+
+**The slow connects were a condition of that period, not a code path — measured, not assumed.** `roleMupdfHost.mjs
+--host` read 9,249 / 6,213 / 7,788 ms and two refusals over 08:1x–08:3x, against the 698–1,370 ms the 10 s bound was
+set from (2026-08-28). Decomposed with scratch instruments on the host's own runtime: the host entry's 25 imports load
+uncontained in 1,306–2,291 ms; the same workload through the product's Win32 route starts in 1,575–2,496 ms contained
+and 1,459–2,000 ms uncontained; the reader worker is ready in 141–216 ms; the real entry reaches the real pipe and
+reader 1,623–3,533 ms contained. At 09:14 the project's own probe read 1,793 and 1,611 ms beside those. What loaded the
+machine earlier was not captured and is not asserted. **No code and no bound changed on this evidence.**
+
+Second attempt, 09:17–09:23, after close-and-reopen: the page went out (`live-external-edit-page.pdf`, 141,786 bytes).
+Windows opened it in the older installed Monstera 2.1.8 rather than PDF-XChange Editor, which the registry's
+`UserChoice` names; an already-installed editor either way. *Rotate Clockwise*, *Ctrl+S* rewrote the file at 09:22:54,
+and the development build then offered *"Put the edited page back?"* — so the send-out, the watch and the
+announcement all worked live. **Put it back was refused**: *"Something went wrong inside Monstera. Reference i1."*
+
+- `shell.log` INCIDENT i1 `document.reimportExternalEdit`: *"The engine host refused engine/apply: internal"*.
+- The host's own log: *"This MuPDF session was not produced by this adapter, or it has already been closed"* at
+  `documentFor` ← `withDocuments` (`mupdfWriter.js:291:53`, which is `documentFor(source)`; the target's lookup at
+  column 32 passed) ← `applyReplacePage` ← `engine/apply`.
+- So the edited file's host handle was still registered — an unknown handle is a declared `gone`, not this — while its
+  document had been closed. On the host only `engine/close` closes a session, and it forgets the handle first.
+
+**What was ruled out by reading:** the reimport handler waits for the source's sessions before applying and closes the
+source only on failure; the UI calls reimport once per announced edit; `#sourcesFor` reads the source's sessions at the
+moment of the command; the host session table is a plain map; main's release closure closes its own session; both
+`recycle` callers act on the document they name. **The mechanism is not found**, and D9's row says so.
+
+**Coverage added, and what it separates.** No case drove a `sources: 'one'` command through `engine/apply`:
+`remoteEngine.test.ts` used the real writer 24 times with no source command, and `documentCommands.test.ts`' end-to-end
+reimport runs on `localMupdfWriter`, in-process. `remoteEngine.test.ts` now carries *a command that names a SOURCE
+crosses with both sessions* — `replacePage` at page 1 of `[100, 110, 120]` with a `[200, 210]` source, reading
+`[100, 200, 210, 120]` on the host's document. **It passes**, so the host path is sound with a live source.
+**Control R1**, the source closed before the command crosses: it fails with the live message, word for word — the case
+can see the failure the live run produced, which puts the fault on which session main sent.
+
+### Two observations, not yet defects
+
+- **Escape did not close the command palette or the problem dialog** during the session. Focus is the unexcluded
+  explanation — screen-control clicks had just gone to another window — and `CommandPalette.test.tsx`' *closes on
+  Escape* fires the key on the palette's root rather than on the input a person types in. Owed: a case on the input.
+- **The palette offers no command to close a document**; only the tab's × does.
+
+---
+
 ## 2026-09-15 — CI red on `e64336e`: a test fixture that started PowerShell, not the code it tested
 
 **The board.** `e64336e` (design pass F): Guards success (34935200826), CI **failure** (34935200839), read once at

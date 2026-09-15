@@ -1,4 +1,5 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
+import { asDocId, asDocVersion } from '@monstera/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@monstera/contract';
@@ -141,6 +142,22 @@ const rotationOf = (session: MupdfSession): Promise<number | null> =>
     return rotate.isNull() ? null : rotate.asNumber();
   });
 
+/** A document whose pages are these widths, each 792 tall — `pageMerge.test.ts`' fixture shape. */
+async function pagesOfWidths(widths: readonly number[]): Promise<ByteImage> {
+  const document = await PDFDocument.create();
+  for (const width of widths) document.addPage([width, 792]);
+  return await document.save();
+}
+
+/** Every page's width, read from the session itself rather than from a serialised copy. */
+const widthsOf = (session: MupdfSession): Promise<number[]> =>
+  withDocument(session, (document) =>
+    Array.from({ length: document.countPages() }, (_, index) => {
+      const [x0, , x1] = document.loadPage(index).getBounds();
+      return Math.round(x1 - x0);
+    }),
+  );
+
 /**
  * One host and one main, wired to each other.
  *
@@ -148,9 +165,12 @@ const rotationOf = (session: MupdfSession): Promise<number | null> =>
  * this side* from *refused by the host* — two outcomes that produce the same
  * rejection otherwise.
  */
-async function joined(bytes: ByteImage = flat): Promise<{
+async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise<{
   readonly session: MupdfSession;
   readonly token: MupdfSession;
+  /** A second document on the host, for a command that names a source; absent without `sourceBytes`. */
+  readonly sourceSession: MupdfSession | undefined;
+  readonly sourceToken: MupdfSession | undefined;
   readonly remote: ReturnType<typeof remoteMupdfExecution>;
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
@@ -159,6 +179,7 @@ async function joined(bytes: ByteImage = flat): Promise<{
   readonly incidents: readonly Incident[];
 }> {
   const session = await mupdfWriter.open(bytes);
+  const sourceSession = sourceBytes === undefined ? undefined : await mupdfWriter.open(sourceBytes);
   const held = new Map<string, HostSession>([
     [
       'h1',
@@ -169,6 +190,13 @@ async function joined(bytes: ByteImage = flat): Promise<{
       },
     ],
   ]);
+  if (sourceSession !== undefined) {
+    held.set('h2', {
+      session: sourceSession,
+      outputDirectory: 'no directory: the execution half writes no bytes',
+      snapshotDirectory: 'no directory: no command here carries an asset',
+    });
+  }
 
   const incidents: Incident[] = [];
   const wrapped = wrapHandlers(
@@ -268,6 +296,8 @@ async function joined(bytes: ByteImage = flat): Promise<{
   return {
     session,
     token: sessions.adopt('h1', AREA),
+    sourceSession,
+    sourceToken: sourceSession === undefined ? undefined : sessions.adopt('h2', AREA),
     remote: remoteMupdfExecution(client, sessions, NO_ASSETS),
     geometry: remoteMupdfGeometry(client, sessions),
     pageText: remoteMupdfPageText(client, sessions),
@@ -278,6 +308,29 @@ async function joined(bytes: ByteImage = flat): Promise<{
 }
 
 describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () => {
+  it('a command that names a SOURCE crosses with both sessions, and the host grafts the source (replacePage)', async () => {
+    // THE HOST PATH FOR `sources: 'one'`, which no case drove before 2026-09-15. The live external-edit run failed
+    // inside `engine/apply` with "This MuPDF session was not produced by this adapter, or it has already been closed"
+    // at documentFor(source). `pageMerge.test.ts` proves the replace in-process; this proves it after crossing, so a
+    // failure here is the host path and a pass sends the search to which session main sent.
+    const { session, token, sourceSession, sourceToken, remote } = await joined(
+      await pagesOfWidths([100, 110, 120]),
+      await pagesOfWidths([200, 210]),
+    );
+    if (sourceSession === undefined || sourceToken === undefined) throw new Error('joined was given a source');
+    try {
+      await remote.apply(
+        token,
+        { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 1 },
+        sourceToken,
+      );
+      expect(await widthsOf(session)).toStrictEqual([100, 200, 210, 120]);
+    } finally {
+      await mupdfWriter.close(session);
+      await mupdfWriter.close(sourceSession);
+    }
+  });
+
   it('THE ROUND TRIP: an applied command changes the document the HOST holds', async () => {
     const { session, token, remote } = await joined();
     try {
