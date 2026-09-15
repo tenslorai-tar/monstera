@@ -892,6 +892,71 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass G1: the three layout modes, commanded, with the rail's section persisted
+
+§10.3: *"Layout switcher: a segmented control in the title bar toggling three chrome modes, persisted per user —
+Ribbon (default) · Studio (the ribbon is auto-hidden; selecting a section opens its full tool set as a temporary overlay
+below the title bar, dismissed on tool choice, Escape or click-away) · Focus (chrome hidden except the title bar,
+floating toolbar and status bar; Esc returns …). Focus supersedes per-panel collapse state; each panel restores its own
+prior state on exit. The rail's state model is identical in every mode: the active section persists … Modes hide chrome,
+never capability."* §7: the layout-mode switch is a registry command.
+
+**Pass G is split.** G1 is the modes and their commands; G2 is the title bar row that carries the segmented control, the
+command search, the tabs and the window controls. Until G2 the mode is reached from the palette, its chords and the
+Settings dialog, which derives a select from the enum — so nothing renders that does nothing.
+
+### What was built
+
+- `appearance.layout-mode` (ribbon · studio · focus) and `appearance.ribbon-section` — the rail's active section,
+  component state in `Ribbon.tsx` until now under a header saying persistence waited for the switcher. The section's
+  enum is written out (zod needs a literal tuple) and `layout.test.ts` holds it equal to `SECTION_IDS`.
+- `view.layout-ribbon`, `view.layout-studio`, `view.layout-focus` (Ctrl+Shift+F) and `view.leave-focus` (Escape), the
+  last existing only in Focus so Escape is unclaimed elsewhere. The mode before Focus is a variable those four commands
+  close over (`layoutModeCommands`), for the session, never persisted: a second setting would be a second writer of the
+  layout's state.
+- **Focus** draws neither rail nor strip (`Ribbon`), and neither side panel in any form — open, or collapsed to its reopen
+  handle (`DocumentBody`) — without writing either open setting, so leaving restores each side by construction.
+- **Studio** hides the strip; a rail selection, including the current section, opens it as `.m-ribbon__tools--overlay`,
+  absolutely positioned in the `ribbon` grid area of the now-positioned surface, so the auto row takes no height.
+  Dismissed on a tool choice, Escape, or a press outside both the overlay and the rail.
+- **The palette consumes its Escape.** Base UI's dialog dismissal already calls `stopPropagation` on the key (read in
+  `useDismiss.mjs`); the palette is not Base UI, so without this one Escape would close the palette and leave Focus.
+
+### A defect the production build found that the unit case could not
+
+The first Studio overlay heard Escape through its own `onKeyDown`. Its unit case fired the key **at the overlay** and
+passed; the rendered case failed at its last assertion — *"Expected: 0, Received: 1"* for the strip after Escape.
+**Mechanism:** after a rail click, focus is on the rail button, so a person's Escape lands there and never reaches the
+overlay. The fixture was one the defect also satisfies. Fixed by hearing Escape on the document while the overlay is
+open, beside click-away; no command claims Escape in Studio. The unit case now presses Escape on the rail button, with a
+non-Escape control, and the rendered case uses `page.keyboard.press`.
+
+### A defect lint found
+
+The memory was first a `useRef` in `App`, handed to the commands through a `useMemo` that the registry's own render-time
+`useMemo` read. `react-hooks` refused all four registrations: *"Cannot access refs during render"*. The rule was right —
+nothing about a registry built during render proves the ref is read only inside `run`. The memory now belongs to the
+commands themselves, so there is no render for it to be read in, and `layoutCommands.test.ts` builds the same factory
+`App` registers rather than a hand-made copy of the memory.
+
+### Proof
+
+- Unit: `layout.test.ts` (3), `layoutCommands.test.ts` (7: each mode written; Leave Focus exists only in Focus; Escape
+  returns to Studio, not the default; falls back to Ribbon when the session began in Focus; re-entering Focus keeps the
+  mode to return to; Focus writes no panel setting; the two chords, no collision), `RibbonModes.test.tsx` (8),
+  `DocumentBody.test.tsx`' Focus case, the palette's document-listener case with its control, and `App.test.tsx`: from
+  Studio, Ctrl+Shift+F enters Focus, Escape in the palette closes it and stays in Focus, Escape then returns to Studio.
+- Rendered, production build: Focus hides the rail, the strip, the panel tabs, the Properties panel, its reopen handle
+  and every separator, and keeps the status bar and the floating toolbar; Studio shows no strip, opens the overlay on
+  Home without moving the page list, and Escape dismisses it.
+- **Mutation G1a**, `DocumentBody` ignoring Focus: its Focus case alone failed. **G1b**, the strip shown in Studio
+  regardless: exactly the four Studio cases failed, 17 passed. **G1c**, the palette's Escape not consumed: exactly the
+  palette's document-listener case and the App Focus case failed, 64 passed. All reverted.
+
+Part M: M3's anatomy for the three modes; M2 tokens only (`--elevation-3` for the overlay); M6 no motion added.
+
+---
+
 ## 2026-09-15 — A dialog is bounded by the window, and the palette's Escape is proven from the field
 
 Two findings from the live-runs entry below, taken in order.

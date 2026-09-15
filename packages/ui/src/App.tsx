@@ -85,10 +85,12 @@ import {
   toggleRulersCommand,
 } from './commands/viewCommands.js';
 import {
+  layoutModeCommands,
   toggleContextPanelCommand,
   togglePanelCommand,
   toggleQuickToolbarCommand,
 } from './commands/chromeCommands.js';
+import { LAYOUT_MODE_SETTING } from './settings/layout.js';
 import { CommandPalette } from './CommandPalette.js';
 import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
@@ -1112,6 +1114,8 @@ export function App({ client, settings }: AppProps): ReactElement {
    * and a tool asks for a colour by handing over the one it would use itself.
    */
   const styleColour = useSetting(settings, ANNOTATION_COLOUR_SETTING);
+  // §10.3'S CHROME MODE, read here because the surface is marked with it.
+  const layoutMode = useSetting(settings, LAYOUT_MODE_SETTING);
   const styleOpacity = useSetting(settings, ANNOTATION_OPACITY_SETTING);
   const styleLineWidth = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
   const styleFontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
@@ -1621,6 +1625,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         toggleQuickToolbarCommand({ settings }),
         togglePanelCommand({ settings }),
         toggleContextPanelCommand({ settings }),
+        // §7'S LAYOUT-MODE SWITCH and §10.3's "Esc returns": one command per mode, and Leave Focus.
+        ...layoutModeCommands({ settings }),
         pageMoveCommand('next', { navigator }),
         pageMoveCommand('previous', { navigator }),
         pageMoveCommand('first', { navigator }),
@@ -1740,7 +1746,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   }, [settings]);
 
   return (
-    <main className="m-document-surface">
+    <main className="m-document-surface" data-layout={layoutMode}>
       {/* THE OPEN DOCUMENTS. First in the surface because it is what the rest
           of it is about — the strip names which document every panel, the
           status bar and every command below refer to. */}
@@ -1806,7 +1812,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // it in the same event as the reset and the remounted view starts where
         // the reader was.
         <>
-        <Ribbon registry={registry} context={context} />
+        <Ribbon registry={registry} context={context} settings={settings} />
         {/* THE BODY AREA, one element whatever the view renders: a scroller, a
             loading placeholder or a failed canvas. Each of those is otherwise a
             grid item the shell would have to name, and a new state would land in

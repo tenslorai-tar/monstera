@@ -175,4 +175,23 @@ describe('CommandPalette', () => {
     fireEvent.keyDown(queryField(container), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('an Escape that closed the palette does NOT reach a listener on the document', () => {
+    // The application's shortcuts listen on `document`, and Escape is `view.leave-focus` there. Without this, closing
+    // the palette in Focus would also leave Focus — one key, two effects.
+    const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+    const { container, onClose } = open(registry);
+    const reached = vi.fn();
+    document.addEventListener('keydown', reached);
+    try {
+      fireEvent.keyDown(queryField(container), { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(reached).not.toHaveBeenCalled();
+      // CONTROL: a key the palette does not consume still reaches the document, so the listener can see at all.
+      fireEvent.keyDown(queryField(container), { key: 'a' });
+      expect(reached).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', reached);
+    }
+  });
 });

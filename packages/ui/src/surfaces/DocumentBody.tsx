@@ -11,6 +11,7 @@ import {
   DOCUMENT_PANEL_MIN_WIDTH,
   DOCUMENT_PANEL_OPEN_SETTING,
   DOCUMENT_PANEL_WIDTH_SETTING,
+  LAYOUT_MODE_SETTING,
 } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
@@ -38,6 +39,13 @@ import { useSetting } from '../useSetting.js';
  * `appearance.document-panel-width` and `appearance.context-panel-width` are the writers of record,
  * in CSS pixels. The splitter writes only the pane that moved, so a drag at one handle is one write
  * and leaves the other side's width alone.
+ *
+ * ## FOCUS HIDES BOTH SIDES WITHOUT TOUCHING EITHER SETTING
+ *
+ * §10.3: *"Focus supersedes per-panel collapse state; each panel restores its own prior state on exit"*, and M3:
+ * *"reopen handles are hidden in Focus"*. So in Focus neither side renders in any form — open, or collapsed to its
+ * reopen handle — and neither open setting is written. Leaving Focus restores each side by construction: the settings
+ * never moved.
  */
 export interface DocumentBodyProps {
   readonly settings: SettingsStore;
@@ -60,13 +68,14 @@ export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar
   const panelWidth = useSetting(settings, DOCUMENT_PANEL_WIDTH_SETTING);
   const contextOpen = useSetting(settings, CONTEXT_PANEL_OPEN_SETTING);
   const contextWidth = useSetting(settings, CONTEXT_PANEL_WIDTH_SETTING);
+  const focus = useSetting(settings, LAYOUT_MODE_SETTING) === 'focus';
 
   return (
     <div className="m-document-body">
-      {panelOpen ? null : panel}
+      {focus || panelOpen ? null : panel}
       <Splitter
         start={
-          panelOpen
+          !focus && panelOpen
             ? {
                 content: panel,
                 label: PANEL_RESIZE,
@@ -86,7 +95,7 @@ export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar
           </div>
         }
         end={
-          contextOpen
+          !focus && contextOpen
             ? {
                 content: contextPanel,
                 label: CONTEXT_PANEL_RESIZE,
@@ -100,7 +109,7 @@ export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar
             : undefined
         }
       />
-      {contextOpen ? null : contextPanel}
+      {focus || contextOpen ? null : contextPanel}
     </div>
   );
 }

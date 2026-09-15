@@ -662,6 +662,43 @@ describe('App', () => {
       expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
     });
 
+    it('FOCUS from the keyboard and back: Escape returns to the mode left, and an Escape the palette used does not', async () => {
+      // §10.3: "Focus (chrome hidden except the title bar, floating toolbar and status bar; Esc returns)". Two
+      // properties only the composed application has: the chord reaches `view.layout-focus` from any mode, and an
+      // Escape that closed the palette is consumed there — otherwise one key would close the palette AND leave Focus.
+      const settings = freshSettings();
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+      // SET AFTER THE OPEN, so a hydrate from the client's stored settings cannot put Ribbon back underneath the case.
+      await act(async () => {
+        settings.set('appearance.layout-mode', 'studio');
+        await Promise.resolve();
+      });
+
+      const key = async (init: KeyboardEventInit, target: EventTarget = document): Promise<void> => {
+        await act(async () => {
+          target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
+          await Promise.resolve();
+        });
+      };
+
+      await key({ key: 'F', ctrlKey: true, shiftKey: true });
+      expect(settings.get('appearance.layout-mode')).toBe('focus');
+
+      await key({ key: 'k', ctrlKey: true });
+      const field = document.querySelector('.m-palette-query');
+      if (!(field instanceof HTMLInputElement)) throw new Error('Ctrl+K opened the palette');
+      await key({ key: 'Escape' }, field);
+      expect(document.querySelector('.m-palette-query')).toBeNull();
+      // THE LOAD-BEARING LINE: still Focus after the Escape the palette consumed.
+      expect(settings.get('appearance.layout-mode')).toBe('focus');
+
+      await key({ key: 'Escape' });
+      // RETURNED TO STUDIO, the mode left — not to the Ribbon default.
+      expect(settings.get('appearance.layout-mode')).toBe('studio');
+    });
+
     it('the ROTATE control names the SAME page the renderer asked the model about', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,

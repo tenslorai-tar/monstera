@@ -716,3 +716,52 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   expect((saveBox?.y ?? -1) >= 0 && (saveBox?.y ?? 0) + (saveBox?.height ?? 0) <= 420).toBe(true);
   await expect(dialog.getByRole('heading', { name: 'Settings' })).toBeInViewport();
 });
+
+test('FOCUS hides the rail, the ribbon and both side panels, and keeps the status bar and the floating toolbar', async ({
+  page,
+}) => {
+  // §10.3: "Focus (chrome hidden except the title bar, floating toolbar and status bar)"; M3: "reopen handles are hidden
+  // in Focus". Asserted on the production build, where a stylesheet could still draw what a component omitted.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.layout-mode': 'focus' }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+
+  await expect(page.locator('.m-ribbon__rail')).toHaveCount(0);
+  await expect(page.locator('.m-ribbon__tools')).toHaveCount(0);
+  await expect(page.locator('.m-panel-tab')).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'Properties' })).toHaveCount(0);
+  await expect(page.locator('.m-context-panel-handle')).toHaveCount(0);
+  await expect(page.getByRole('separator')).toHaveCount(0);
+  // WHAT STAYS.
+  await expect(page.getByRole('status', { name: 'Document status' })).toBeVisible();
+  await expect(page.getByRole('toolbar', { name: 'Document tools' })).toBeVisible();
+});
+
+test('STUDIO opens the tool strip as an OVERLAY on a rail selection, moves nothing, and Escape dismisses it', async ({
+  page,
+}) => {
+  // §10.3: "Studio (the ribbon is auto-hidden; selecting a section opens its full tool set as a temporary overlay below
+  // the title bar, dismissed on tool choice, Escape or click-away)".
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.layout-mode': 'studio' }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+
+  await expect(page.locator('.m-ribbon__rail')).toBeVisible();
+  await expect(page.locator('.m-ribbon__tools')).toHaveCount(0);
+  const before = await page.locator('.m-page-list').boundingBox();
+
+  await page.locator('[data-ribbon-section="home"]').click();
+  const overlay = page.locator('.m-ribbon__tools--overlay');
+  await expect(overlay).toBeVisible();
+  // THE OVERLAY TAKES NO ROW: the page list has not moved down under it.
+  const after = await page.locator('.m-page-list').boundingBox();
+  expect(Math.abs((after?.y ?? 0) - (before?.y ?? 1))).toBeLessThan(0.5);
+
+  // PRESSED WHERE FOCUS IS after the click — the rail button — not aimed at the overlay: a person's Escape lands there.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.m-ribbon__tools')).toHaveCount(0);
+});

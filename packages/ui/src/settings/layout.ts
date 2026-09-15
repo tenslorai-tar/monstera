@@ -10,6 +10,10 @@ import {
   QUICK_TOOLBAR_EDGE_TITLE,
   QUICK_TOOLBAR_EDGE_TITLES,
   QUICK_TOOLBAR_OPEN_TITLE,
+  LAYOUT_MODE_OPTION_TITLES,
+  LAYOUT_MODE_TITLE,
+  RIBBON_SECTION_OPTION_TITLES,
+  RIBBON_SECTION_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -90,6 +94,56 @@ export const DOCUMENT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   schema: z.number().int().min(DOCUMENT_PANEL_MIN_WIDTH).max(DOCUMENT_PANEL_MAX_WIDTH),
   fallback: 224,
   category: 'appearance',
+};
+
+/**
+ * §10.3's layout switcher: *"three chrome modes, persisted per user — Ribbon (default) · Studio (the ribbon is
+ * auto-hidden; selecting a section opens its full tool set as a temporary overlay …) · Focus (chrome hidden except the
+ * title bar, floating toolbar and status bar; Esc returns)"*. **Modes hide chrome, never capability**, so this setting
+ * decides only what is drawn; every command stays registered in every mode.
+ *
+ * Focus supersedes the side panels' collapse state without writing it: each panel's own open setting is untouched, so
+ * leaving Focus restores *"its own prior state"* by construction rather than by remembering it.
+ */
+export const LAYOUT_MODE_SETTING: SettingDefinition<z.ZodEnum<{ ribbon: 'ribbon'; studio: 'studio'; focus: 'focus' }>> = {
+  id: 'appearance.layout-mode',
+  title: LAYOUT_MODE_TITLE,
+  schema: z.enum(['ribbon', 'studio', 'focus']),
+  fallback: 'ribbon',
+  category: 'appearance',
+  optionTitles: LAYOUT_MODE_OPTION_TITLES,
+};
+
+/** One of §10.3's three chrome modes. */
+export type LayoutMode = z.infer<(typeof LAYOUT_MODE_SETTING)['schema']>;
+
+/**
+ * The rail's active section, persisted (§10.3: *"The rail's state model is identical in every mode: the active section
+ * persists"*). `Ribbon.tsx` held it as component state and said persistence waited for the layout switcher, because the
+ * two share one state model; this is that trigger.
+ *
+ * **The members are written out, and `layout.test.ts` holds them to `SECTION_IDS`.** A zod enum needs a literal tuple,
+ * and deriving one from the array would take a cast; a test that fails when the two lists differ is the check a cast
+ * would skip. A stored section that holds nothing is still the ribbon's to resolve — it opens on the first filled one.
+ */
+export const RIBBON_SECTION_SETTING: SettingDefinition<
+  z.ZodEnum<{
+    home: 'home';
+    comment: 'comment';
+    edit: 'edit';
+    organize: 'organize';
+    forms: 'forms';
+    review: 'review';
+    protect: 'protect';
+    tools: 'tools';
+  }>
+> = {
+  id: 'appearance.ribbon-section',
+  title: RIBBON_SECTION_TITLE,
+  schema: z.enum(['home', 'comment', 'edit', 'organize', 'forms', 'review', 'protect', 'tools']),
+  fallback: 'home',
+  category: 'appearance',
+  optionTitles: RIBBON_SECTION_OPTION_TITLES,
 };
 
 /**

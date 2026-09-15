@@ -774,6 +774,14 @@ export const SETTINGS_CATEGORY_ADVANCED = messageKey('dialog.settings.category.a
 export const THEME_SYSTEM_TITLE = messageKey('setting.appearance-theme.system');
 export const THEME_LIGHT_TITLE = messageKey('setting.appearance-theme.light');
 export const THEME_DARK_TITLE = messageKey('setting.appearance-theme.dark');
+export const LAYOUT_MODE_TITLE = messageKey('setting.appearance-layout-mode.title');
+export const LAYOUT_MODE_RIBBON = messageKey('setting.appearance-layout-mode.ribbon');
+export const LAYOUT_MODE_STUDIO = messageKey('setting.appearance-layout-mode.studio');
+export const LAYOUT_MODE_FOCUS = messageKey('setting.appearance-layout-mode.focus');
+export const LAYOUT_RIBBON_COMMAND_TITLE = messageKey('command.layout-ribbon.title');
+export const LAYOUT_STUDIO_COMMAND_TITLE = messageKey('command.layout-studio.title');
+export const LAYOUT_FOCUS_COMMAND_TITLE = messageKey('command.layout-focus.title');
+export const LEAVE_FOCUS_COMMAND_TITLE = messageKey('command.leave-focus.title');
 export const UNIT_PT_TITLE = messageKey('setting.unit.pt');
 export const UNIT_MM_TITLE = messageKey('setting.unit.mm');
 export const UNIT_CM_TITLE = messageKey('setting.unit.cm');
@@ -846,6 +854,12 @@ export const THEME_OPTION_TITLES = {
   light: THEME_LIGHT_TITLE,
   dark: THEME_DARK_TITLE,
 } as const;
+/** `appearance.layout-mode`'s members, by the word a person reads (§10.3's three chrome modes). */
+export const LAYOUT_MODE_OPTION_TITLES = {
+  ribbon: LAYOUT_MODE_RIBBON,
+  studio: LAYOUT_MODE_STUDIO,
+  focus: LAYOUT_MODE_FOCUS,
+} as const;
 /**
  * Every unit a setting offers, once. The ruler's three are a subset of the
  * measurement's six, so both settings take their titles from here rather than
@@ -899,6 +913,21 @@ export const SECTION_FORMS = messageKey('surface.ribbon.section.forms');
 export const SECTION_REVIEW = messageKey('surface.ribbon.section.review');
 export const SECTION_PROTECT = messageKey('surface.ribbon.section.protect');
 export const SECTION_TOOLS = messageKey('surface.ribbon.section.tools');
+export const RIBBON_SECTION_TITLE = messageKey('setting.appearance-ribbon-section.title');
+/**
+ * `appearance.ribbon-section`'s members, by the word the rail already shows. Declared AFTER the section keys it names,
+ * because a module-scope object reads its members when the module evaluates.
+ */
+export const RIBBON_SECTION_OPTION_TITLES = {
+  home: SECTION_HOME,
+  comment: SECTION_COMMENT,
+  edit: SECTION_EDIT,
+  organize: SECTION_ORGANIZE,
+  forms: SECTION_FORMS,
+  review: SECTION_REVIEW,
+  protect: SECTION_PROTECT,
+  tools: SECTION_TOOLS,
+} as const;
 
 export const GROUP_FILE = messageKey('surface.ribbon.group.file');
 export const GROUP_HISTORY = messageKey('surface.ribbon.group.history');
@@ -1106,6 +1135,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOSE_LABEL]: 'Close',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
+  [LAYOUT_MODE_TITLE]: 'Layout',
+  [RIBBON_SECTION_TITLE]: 'Ribbon section',
+  [LAYOUT_MODE_RIBBON]: 'Ribbon',
+  [LAYOUT_MODE_STUDIO]: 'Studio',
+  [LAYOUT_MODE_FOCUS]: 'Focus',
+  [LAYOUT_RIBBON_COMMAND_TITLE]: 'Ribbon layout',
+  [LAYOUT_STUDIO_COMMAND_TITLE]: 'Studio layout',
+  [LAYOUT_FOCUS_COMMAND_TITLE]: 'Focus layout',
+  [LEAVE_FOCUS_COMMAND_TITLE]: 'Leave Focus',
   [ABOUT_TITLE]: 'About Monstera',
   [ABOUT_COMMAND_TITLE]: 'About',
   // "Reveal" and not "Open": the command shows the folder in the file manager,

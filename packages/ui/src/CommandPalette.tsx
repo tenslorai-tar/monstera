@@ -68,7 +68,11 @@ export function CommandPalette({
       aria-modal="true"
       aria-label={i18n._(PALETTE_LABEL)}
       onKeyDown={(event) => {
-        if (event.key === 'Escape') onClose();
+        if (event.key !== 'Escape') return;
+        onClose();
+        // CONSUMED, as Base UI's dialog dismissal consumes it: the application's shortcuts listen on the document, and
+        // an Escape that closed the palette must not also run `view.leave-focus` and change the layout underneath.
+        event.stopPropagation();
       }}
     >
       <input

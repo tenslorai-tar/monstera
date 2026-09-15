@@ -15,6 +15,9 @@ import {
 } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
+import { SettingsRegistry } from '../registries/settings.js';
+import { ALL_SETTINGS } from '../settings/all.js';
+import { SettingsStore } from '../settingsStore.js';
 import { Ribbon } from './Ribbon.js';
 
 /**
@@ -63,12 +66,24 @@ beforeAll(() => {
   });
 });
 
-function draw(commands: readonly UiCommand[]): ReturnType<typeof render> {
-  return render(
-    <Wrapped>
-      <Ribbon registry={new CommandRegistry(commands)} context={CONTEXT} />
-    </Wrapped>,
-  );
+/**
+ * Renders the ribbon over a settings store, and returns that store with the render.
+ *
+ * THE STORE IS RETURNED because the active section lives in it: a case that rerenders must hand the SAME store back, or
+ * the section it chose is lost with a fresh one and a fallback case passes for the wrong reason.
+ */
+function draw(
+  commands: readonly UiCommand[],
+  settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS)),
+): ReturnType<typeof render> & { readonly settings: SettingsStore } {
+  return {
+    settings,
+    ...render(
+      <Wrapped>
+        <Ribbon registry={new CommandRegistry(commands)} context={CONTEXT} settings={settings} />
+      </Wrapped>,
+    ),
+  };
 }
 
 describe('the ribbon', () => {
@@ -167,7 +182,7 @@ describe('the ribbon', () => {
     // `when`, and a document closing takes them all. A ribbon that kept the
     // selection would show an empty tool area beside a selected rail entry,
     // which reads as broken rather than as empty.
-    const { container, rerender } = draw([SAVE, ROTATE]);
+    const { container, rerender, settings } = draw([SAVE, ROTATE]);
     const organize = container.querySelector('[data-ribbon-section="organize"]');
     if (!(organize instanceof HTMLButtonElement)) throw new Error('the rail has an Organize tab');
     act(() => {
@@ -175,9 +190,10 @@ describe('the ribbon', () => {
     });
     expect(screen.getByRole('toolbar').getAttribute('data-ribbon-active')).toBe('organize');
 
+    // THE SAME STORE, still holding Organize — so the fallback below is the ribbon's, not a fresh store's default.
     rerender(
       <Wrapped>
-        <Ribbon registry={new CommandRegistry([SAVE])} context={CONTEXT} />
+        <Ribbon registry={new CommandRegistry([SAVE])} context={CONTEXT} settings={settings} />
       </Wrapped>,
     );
 

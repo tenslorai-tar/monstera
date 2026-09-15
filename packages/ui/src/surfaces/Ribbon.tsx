@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import {
   RIBBON_RAIL_LABEL,
@@ -19,6 +19,9 @@ import type { IconName } from '../primitives/icons.js';
 import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { SECTION_IDS, type SectionId } from '../registries/placement.js';
+import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.js';
+import type { SettingsStore } from '../settingsStore.js';
+import { useSetting } from '../useSetting.js';
 import { type RibbonSection, ribbonModel } from './projections.js';
 
 /**
@@ -59,18 +62,27 @@ import { type RibbonSection, ribbonModel } from './projections.js';
  * sections fill; the disabled state is derived from the model on every render,
  * so nothing has to be revisited when they do.
  *
- * ## The active section is component state, not a setting — yet
+ * ## The active section is a SETTING, and the layout mode decides only how the tools are shown
  *
- * §10.3 says the active section persists per user, and that is a settings-
- * registry entry. It is deliberately not registered here: persistence belongs
- * with the layout switcher (Ribbon · Studio · Focus), which shares the same
- * state model — *"the rail's state model is identical in every mode"* — and
- * registering a key now would mean a second decision about what persists when
- * the switcher lands. The trigger is the switcher, which is Stage 10's.
+ * §10.3: *"The rail's state model is identical in every mode: the active section persists, and selecting a section —
+ * including re-selecting the current one — is what opens the overlay in Studio. One state model, two presentations."*
+ * So `appearance.ribbon-section` is the one owner of which section is active — component state until 2026-09-15, waiting
+ * for exactly this — and `appearance.layout-mode` decides the presentation:
+ *
+ * - **Ribbon** — the tools strip is in the grid, always.
+ * - **Studio** — the strip is hidden; selecting a section opens it as a temporary overlay, dismissed on a tool choice,
+ *   Escape, or a press outside both the overlay and the rail.
+ * - **Focus** — neither rail nor strip is drawn. Capability stays: every command is still in the palette and on its
+ *   chord.
+ *
+ * A stored section that holds nothing still falls back to the first filled one, below, so a persisted choice can never
+ * leave the ribbon showing an empty strip.
  */
 export interface RibbonProps {
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
+  /** Where the active section and the layout mode live. */
+  readonly settings: SettingsStore;
 }
 
 /**
@@ -108,9 +120,40 @@ const SECTION_ICONS: Readonly<Record<SectionId, IconName>> = {
   tools: 'Wrench',
 };
 
-export function Ribbon({ registry, context }: RibbonProps): ReactElement | null {
+export function Ribbon({ registry, context, settings }: RibbonProps): ReactElement | null {
   const { i18n } = useLingui();
-  const [chosen, setChosen] = useState<SectionId | undefined>(undefined);
+  const chosen = useSetting(settings, RIBBON_SECTION_SETTING);
+  const mode = useSetting(settings, LAYOUT_MODE_SETTING);
+  // STUDIO'S OVERLAY IS PRESENTATION, not state that persists: a reopened window starts with it shut.
+  const [overlay, setOverlay] = useState(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const railRef = useRef<HTMLElement | null>(null);
+
+  // CLICK-AWAY AND ESCAPE, only while Studio's overlay is open. A press on the rail is not "away": selecting a section
+  // is what opens the overlay, so it must not also close it.
+  //
+  // ESCAPE IS HEARD ON THE DOCUMENT, not on the overlay, because that is where focus is when a person presses it: the
+  // rail button they just clicked. A handler on the overlay passed a unit case that fired the key AT the overlay and
+  // failed in the production build (2026-09-15), where no real key press lands there. No command claims Escape in
+  // Studio — `view.leave-focus` exists only in Focus — so nothing else competes for the key.
+  useEffect(() => {
+    if (mode !== 'studio' || !overlay) return undefined;
+    const away = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (overlayRef.current?.contains(target) === true || railRef.current?.contains(target) === true) return;
+      setOverlay(false);
+    };
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOverlay(false);
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', escape);
+    return (): void => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [mode, overlay]);
   const sections = ribbonModel(registry, context);
   const filled = sections.filter((section) => section.groups.length > 0);
 
@@ -120,6 +163,8 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
   // never whether a document is open — a surface consulting application state
   // would be deciding its own contents.
   if (filled.length === 0) return null;
+  // FOCUS draws neither rail nor strip (§10.3); the commands stay registered, reachable from the palette and chords.
+  if (mode === 'focus') return null;
 
   // THE CHOSEN SECTION ONLY IF IT STILL HOLDS SOMETHING. A section can empty
   // out under the reader — every command in it declares `when`, and closing a
@@ -135,7 +180,7 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
     // owns the one piece of state they share. Their grid areas are the shell's,
     // so this component never learns where the shell puts them.
     <div className="m-ribbon">
-      <nav aria-label={i18n._(RIBBON_RAIL_LABEL)} className="m-ribbon__rail">
+      <nav aria-label={i18n._(RIBBON_RAIL_LABEL)} className="m-ribbon__rail" ref={railRef}>
         {SECTION_IDS.map((id) => {
           const has = filled.some((section) => section.section === id);
           return (
@@ -146,7 +191,9 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
               disabled={!has}
               key={id}
               onClick={() => {
-                setChosen(id);
+                settings.set(RIBBON_SECTION_SETTING.id, id);
+                // Re-selecting the current section opens the overlay too: §10.3 names that case.
+                if (mode === 'studio') setOverlay(true);
               }}
               type="button"
             >
@@ -156,10 +203,12 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
           );
         })}
       </nav>
+      {mode === 'ribbon' || overlay ? (
       <div
         aria-label={i18n._(RIBBON_TOOLS_LABEL)}
-        className="m-ribbon__tools"
+        className={mode === 'studio' ? 'm-ribbon__tools m-ribbon__tools--overlay' : 'm-ribbon__tools'}
         data-ribbon-active={active}
+        ref={overlayRef}
         role="toolbar"
       >
         {groupsOf(sections, active).map((group) => (
@@ -178,6 +227,8 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
                     // returning a promise would make React's event handling
                     // wait on IPC, and nothing here reads the result.
                     void entry.command.run(context);
+                    // A TOOL CHOICE DISMISSES STUDIO'S OVERLAY (§10.3).
+                    if (mode === 'studio') setOverlay(false);
                   }}
                 />
               ))}
@@ -194,6 +245,7 @@ export function Ribbon({ registry, context }: RibbonProps): ReactElement | null 
           </div>
         ))}
       </div>
+      ) : null}
     </div>
   );
 }

@@ -65,6 +65,8 @@ textarea {
  * inside it.
  */
 .m-document-surface {
+  /* The containing block for Studio's overlay tool strip (`.m-ribbon__tools--overlay`). */
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
@@ -1628,6 +1630,19 @@ textarea {
   overflow-x: auto;
   background: var(--bg2);
   border-block-end: 1px solid var(--border); /* decorative: the seam between chrome and canvas; it bounds nothing a person operates */
+}
+
+/*
+ * §10.3's Studio mode: the tools strip is auto-hidden, and selecting a section opens its full tool set as a TEMPORARY
+ * OVERLAY. Absolutely positioned in the `ribbon` grid area of the positioned surface, so it takes no row height — the
+ * auto row collapses and the canvas keeps the space — and it sits over the canvas while it is open.
+ */
+.m-ribbon__tools--overlay {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  z-index: 2;
+  box-shadow: var(--elevation-3);
 }
 
 /* THE HAIRLINE SEPARATOR §10.3 names, on the group rather than between them:

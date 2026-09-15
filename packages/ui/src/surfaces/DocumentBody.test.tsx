@@ -12,6 +12,7 @@ import {
   CONTEXT_PANEL_OPEN_SETTING,
   DOCUMENT_PANEL_OPEN_SETTING,
   DOCUMENT_PANEL_WIDTH_SETTING,
+  LAYOUT_MODE_SETTING,
 } from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
 import { DocumentBody } from './DocumentBody.js';
@@ -115,5 +116,32 @@ describe('DocumentBody', () => {
     expect(screen.getByRole('separator', { name: 'Resize the document panel' })).toBeDefined();
     expect(writes).toStrictEqual([]);
     expect(settings.get(DOCUMENT_PANEL_WIDTH_SETTING.id)).toBe(320);
+  });
+
+  it('FOCUS hides both sides and every handle, writes no panel setting, and leaving it restores each side', async () => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    // THE SEPARATING STATE: left collapsed, right open. A Focus that hid only open panels leaves the left's collapsed
+    // form on screen; one that wrote the open settings, or a leave that reopened both, fails the last lines.
+    settings.hydrate({ [DOCUMENT_PANEL_OPEN_SETTING.id]: false, [LAYOUT_MODE_SETTING.id]: 'focus' });
+    const writes: string[] = [];
+    settings.subscribe((id) => {
+      if (id === DOCUMENT_PANEL_OPEN_SETTING.id || id === CONTEXT_PANEL_OPEN_SETTING.id) writes.push(id);
+    });
+    drawn(settings);
+    expect(screen.queryByText('panel')).toBeNull();
+    expect(screen.queryByText('context')).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+    expect(screen.getByText('page')).toBeDefined();
+
+    await act(async () => {
+      settings.set(LAYOUT_MODE_SETTING.id, 'ribbon');
+      await Promise.resolve();
+    });
+    // EACH SIDE AS IT WAS: the left still collapsed (its form renders, no left handle), the right open with its handle.
+    expect(screen.getByText('panel')).toBeDefined();
+    expect(screen.getByText('context')).toBeDefined();
+    expect(screen.queryByRole('separator', { name: 'Resize the document panel' })).toBeNull();
+    expect(screen.getByRole('separator', { name: 'Resize the properties panel' })).toBeDefined();
+    expect(writes).toStrictEqual([]);
   });
 });
