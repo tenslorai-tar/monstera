@@ -344,6 +344,15 @@ function settle(ms: number): Promise<void> {
  * A control that is not found is reported as `dispatched: false` rather than
  * thrown, because "the button is missing" and "the button did nothing" are
  * different defects and the proof says which.
+ *
+ * ## The NAME is `aria-label` when there is one, and the text otherwise
+ *
+ * That is the accessible-name computation's order for a button, and it is what
+ * this function always claimed to match. It compared `textContent` alone until
+ * 2026-09-15, which agreed with the name for as long as every control it clicked
+ * carried visible text; design pass F made the quick toolbar's zoom control an
+ * icon button whose name lives only in `aria-label`, and the harness then found
+ * it zero times.
  */
 async function clickControl(
   contents: Electron.WebContents,
@@ -355,7 +364,8 @@ async function clickControl(
     `(() => {
        const wanted = ${JSON.stringify(name)};
        const controls = Array.from(document.querySelectorAll('button'));
-       const target = controls.find((entry) => (entry.textContent ?? '').trim() === wanted);
+       const nameOf = (entry) => (entry.getAttribute('aria-label') ?? entry.textContent ?? '').trim();
+       const target = controls.find((entry) => nameOf(entry) === wanted);
        if (target === undefined) return false;
        target.click();
        return true;

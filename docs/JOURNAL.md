@@ -13,7 +13,7 @@ the fact is not a baseline, it is a rationalisation.
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | **3 days worked** (2026-09-05 → 2026-09-07), 53 commits | **1.00× — continue** |
 | 4 — forms | **2 working days** (owner, 2026-09-07) | **2 days worked** (2026-09-07 → 2026-09-08), 35 commits — began at `ecf95a9`, the commit after Stage 3 closed | **1.00× — continue** |
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
-| 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 38 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done; D6 row 8 ships complete and carries one trigger only its owner can clear** | **1.50× — continue** |
+| 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 38 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done at closing; the tenth, D6 row 8, passed its live run 2026-09-15 — ten of ten, figure unchanged** | **1.50× — continue** |
 | 7 — security and signatures | **2 working days** (owner, 2026-09-12) | **2 days worked** (2026-09-12 → 2026-09-13), 33 commits — began at `fd7d12e`, the commit after Stage 6 closed. **Fourteen of fifteen rows done; DocuSign is built and carries one trigger only its owner can clear.** Two OCR rows were built inside the window and are counted here | **1.00× — continue** |
 | 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | **in progress** — opened 2026-09-13 at the commit after Stage 7 closed | — |
 | 9 — AI and cloud | **2 working days** (owner, 2026-09-12) | — | — |
@@ -889,6 +889,87 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-15 — Design pass F: the floating toolbar is a pill on the canvas, and chrome visibility is commanded
+
+§10.3: *"Floating quick toolbar: a vertical pill on the canvas edge … repositionable and hideable. Hiding and restoring
+it is the registry command `view.toggle-quick-toolbar` — in the palette, on a shortcut, and as a status-bar toggle"*.
+§7: *"Chrome visibility is itself commanded: `view.toggle-quick-toolbar`, `view.toggle-panel` and the layout-mode switch
+are registry commands."* §10.4: *"16 px primary controls (rail, floating toolbar, buttons)"*.
+
+### The defect, measured before any CSS changed
+
+Production build, 1280 × 800, a document open (2026-09-15 ~00:04, a temporary rendered case since removed): the
+toolbar's box was x 16–165.64, y 280–520, `position: fixed`, its parent `.m-document-surface`; the rail x 0–63.67 with
+its Organize button at x 4–58.67, y 277–329; the document panel's pane x 63.67–285.48. **Mechanism:** fixed positioning
+resolves against the viewport, so `inset-inline-start: var(--space-16)` put the pill 16 px from the window's edge —
+where the rail and the document panel are — and nothing in its rule referred to the page area. It was 149.64 px wide
+because it rendered text `Button`s. **Fix:** the pill lives inside the page area — `DocumentBody` wraps its middle pane
+in `.m-canvas-area`, `position: relative` — and is `position: absolute` against that. Not a larger offset: one tuned to
+today's rail width breaks when the rail or the panel changes width.
+
+### What was built
+
+- `QuickToolbar.tsx` draws `IconButton`s at `control` (16 px), `aria-orientation="vertical"`, and reads two new
+  settings: `appearance.quick-toolbar-open` (the one owner of whether it shows) and `appearance.quick-toolbar-edge`
+  (left or right — *repositionable*, set in the Settings dialog, which derives the controls from the schemas).
+- `chromeCommands.ts`: `view.toggle-quick-toolbar` (Ctrl+Shift+Q, placed in ADR-0067's chrome cluster, so the status
+  bar's *Panels and toolbars* group now renders), `view.toggle-panel` (Ctrl+Shift+B) and `view.toggle-context-panel`
+  (Ctrl+Shift+J), each writing its own open setting. Two panel commands where §7 names one id: §7 was written with one
+  side panel, and one command toggling both would make the guarantee false for a side collapsed alone.
+- **The header's false reason is corrected.** It said the toggle waited because *"The palette does not exist"*;
+  `App.tsx` renders `CommandPalette` and `view.command-palette` is registered. The header now states what holds.
+- The layout-mode switch is not built here: it switches between Ribbon, Studio and Focus, which the title bar's pass
+  builds, and a command switching to a mode nothing renders would be a control that does nothing.
+
+### Proof
+
+- Unit: each toggle hides and restores exactly its own setting and leaves the other two; all three are in the palette
+  with a document and absent without one; the chords are exactly the three and do not collide; the quick-toolbar
+  toggle is the status bar's chrome entry. The toolbar draws icon buttons with no text, in order, dispatching; is absent
+  when hidden and returns; takes its edge class.
+- App: a hidden toolbar is restored by Ctrl+Shift+Q in the real application.
+- **Mutation F2**, the toolbar ignoring its open setting: the component's hidden case and the App chord case failed,
+  59 others passed. **Mutation F3**, `view.toggle-panel` writing the context panel's setting: its own case alone
+  failed, 4 passed.
+- Rendered, production build, 1280 × 800: the pill's box lies inside `.m-canvas-area` on all four sides, at or right
+  of the rail's Organize button and the document panel's pane, under 64 px wide; the status bar's toggle hides it and
+  Ctrl+Shift+Q restores it. All 14 rendered cases pass, including the page list still fitting its pane inside the new
+  wrapper. **Mutation F4**, `position: fixed` restored: the toolbar case failed at its first containment assertion —
+  the pill's left edge at 8 against the page area's 290.98.
+- Part M: M4 — each control is the `IconButton` primitive at 16 px with a tooltip and an accessible name from its
+  command's title; M5 — an empty toolbar renders nothing rather than an empty pill; M6 — no motion added.
+
+### Two defects the final sweep found in this pass, both fixed before commit
+
+- **`en.test.ts` — "has no entry no code can reach"** reported `setting.appearance-quick-toolbar-edge.start` and
+  `.end`. **Mechanism:** the test's reachable set is the catalogue keys *exported as constants*; the two option titles
+  were minted inline inside the `QUICK_TOOLBAR_EDGE_TITLES` object, so no exported name carried them. `PANEL_TITLES`
+  builds its object from exported constants, and the fix takes that shape.
+- **`proof:canvaspixels`** — *"the harness clicked a control named "Zoom in" 0 time(s) of 3"*, and the size and
+  painted-pixel cases after it. **Mechanism:** `canvasHarness.ts`' `clickControl` says it finds a control *"by its
+  accessible name"* and compared `textContent`, which is that name only for a button with visible text. This pass made
+  the quick toolbar's zoom control an icon button named by `aria-label`, so the harness's second reading of "name"
+  stopped agreeing with the name. Fixed by reading `aria-label` first and text otherwise — the accessible-name order
+  for a button — not by giving the icon button a hidden text node for the harness. The proof's positive control is what
+  caught it: without its click count the unchanged canvas would have read as a renderer ignoring the zoom.
+
+---
+
+## 2026-09-15 — Live run: Azure Document Intelligence PASSED
+
+`npm run probe:azure -- --require-azure`, one run, against the Document Intelligence resource the owner created (the
+reviewing seat confirmed both variables are present and the endpoint is no longer the Computer Vision resource, without
+reading either value). The probe's own line: *"PASSED — the live service read the drawn word, at 1 word(s) returned,
+with its box inside the region and over the drawing."* Exit 0. Neither value was printed; the wrapper refuses to show
+its log if the key's text appears in it.
+
+**Correction to the 2026-09-13 entry**, which is not edited: its 401 was the resource, not the request — the same
+probe, unchanged, passes against a Document Intelligence endpoint. D6 row 8 is done, and **Stage 6's row count is ten
+of ten. Stage 6's figure does not move**: it closed 2026-09-12 at 3 working days, 1.50×, and this run is recorded here
+rather than folded into that range.
 
 ---
 

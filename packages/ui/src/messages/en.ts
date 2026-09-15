@@ -731,6 +731,17 @@ export const CONTEXT_PANEL_RESIZE = messageKey('surface.context-panel.resize');
 export const CONTEXT_PANEL_COLLAPSE = messageKey('surface.context-panel.collapse');
 export const CONTEXT_PANEL_REOPEN = messageKey('surface.context-panel.reopen');
 export const CONTEXT_PANEL_OPEN_TITLE = messageKey('setting.appearance-context-panel-open.title');
+export const QUICK_TOOLBAR_OPEN_TITLE = messageKey('setting.appearance-quick-toolbar-open.title');
+export const QUICK_TOOLBAR_EDGE_TITLE = messageKey('setting.appearance-quick-toolbar-edge.title');
+export const QUICK_TOOLBAR_EDGE_START = messageKey('setting.appearance-quick-toolbar-edge.start');
+export const QUICK_TOOLBAR_EDGE_END = messageKey('setting.appearance-quick-toolbar-edge.end');
+export const QUICK_TOOLBAR_EDGE_TITLES = {
+  start: QUICK_TOOLBAR_EDGE_START,
+  end: QUICK_TOOLBAR_EDGE_END,
+} as const;
+export const QUICK_TOOLBAR_TOGGLE_TITLE = messageKey('command.toggle-quick-toolbar.title');
+export const DOCUMENT_PANEL_TOGGLE_TITLE = messageKey('command.toggle-panel.title');
+export const CONTEXT_PANEL_TOGGLE_TITLE = messageKey('command.toggle-context-panel.title');
 export const CONTEXT_PANEL_WIDTH_TITLE = messageKey('setting.appearance-context-panel-width.title');
 export const THUMBNAIL_PAGE = messageKey('surface.thumbnails.page');
 export const NEXT_PAGE_TITLE = messageKey('command.page-next.title');
@@ -1743,6 +1754,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CONTEXT_PANEL_COLLAPSE]: 'Collapse the properties panel',
   [CONTEXT_PANEL_REOPEN]: 'Show the properties panel',
   [CONTEXT_PANEL_OPEN_TITLE]: 'Show the properties panel',
+  [QUICK_TOOLBAR_OPEN_TITLE]: 'Show the floating toolbar',
+  [QUICK_TOOLBAR_EDGE_TITLE]: 'Floating toolbar side',
+  [QUICK_TOOLBAR_EDGE_START]: 'Left side of the pages',
+  [QUICK_TOOLBAR_EDGE_END]: 'Right side of the pages',
+  [QUICK_TOOLBAR_TOGGLE_TITLE]: 'Show or hide the floating toolbar',
+  [DOCUMENT_PANEL_TOGGLE_TITLE]: 'Show or hide the document panel',
+  [CONTEXT_PANEL_TOGGLE_TITLE]: 'Show or hide the properties panel',
   [CONTEXT_PANEL_WIDTH_TITLE]: 'Properties panel width',
   [THUMBNAIL_PAGE]: 'Page {page}',
   [NEXT_PAGE_TITLE]: 'Next page',

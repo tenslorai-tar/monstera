@@ -2,73 +2,83 @@ import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
 import { DOCUMENT_TOOLS_LABEL } from '../messages/en.js';
-import { Button } from '../primitives/Button.js';
+import { ICONS } from '../primitives/icons.js';
+import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
+import { QUICK_TOOLBAR_EDGE_SETTING, QUICK_TOOLBAR_OPEN_SETTING } from '../settings/layout.js';
+import type { SettingsStore } from '../settingsStore.js';
+import { useSetting } from '../useSetting.js';
 import { quickToolbarModel } from './projections.js';
 
 /**
- * §10.3's floating quick toolbar, as a **projection of the command registry**.
+ * §10.3's floating quick toolbar, as a **projection of the command registry**: *"a vertical pill on
+ * the canvas edge with the always-needed tools … repositionable and hideable"*.
  *
  * ## It names no command, and `check:secondwiring` is the mechanism
  *
- * This renders `quickToolbarModel(...)` and knows nothing about what is in it.
- * Registering a command with a `quick-toolbar` placement is the whole of putting
- * it here, and removing the registration removes the control with nothing to
- * edit — which is §7's *"there is no second place where a feature is wired"*
- * applied to the surface where it is easiest to break.
+ * This renders `quickToolbarModel(...)` and knows nothing about what is in it. Registering a command
+ * with a `quick-toolbar` placement is the whole of putting it here, and removing the registration
+ * removes the control with nothing to edit — §7's *"there is no second place where a feature is
+ * wired"*.
  *
- * ## Rendered only when it has something in it
+ * ## ICONS, at §10.4's primary-control size
  *
- * The model is empty when no document is focused, because every command placed
- * here declares `when: hasDocument`. An empty pill floating on the start screen
- * would be a container that looks like a surface under construction, which
- * §10.4 bans in the same sentence as a control that does nothing.
+ * §10.4: *"16 px primary controls (rail, floating toolbar, buttons)"*. `DRAWS_A_GLYPH` already
+ * refuses a command placed here with no icon, so every entry has one; the skip below keeps the type
+ * honest rather than asserting. Each `IconButton` carries its title as accessible name and tooltip.
+ * Until 2026-09-15 this drew text buttons, 150 px wide, which is not a pill.
  *
- * That is a decision about **emptiness**, not about documents: this component
- * asks the model what it holds and never asks whether a document is open. A
- * surface that consulted application state would be deciding its own contents.
+ * ## Rendered only when it has something in it, and when it is shown
  *
- * ## Labelled, because a group of controls needs a name
+ * The model is empty when no document is focused, because every command placed here declares
+ * `when: hasDocument` — a decision about emptiness, not about documents. And
+ * `appearance.quick-toolbar-open` is the one owner of whether it shows; `view.toggle-quick-toolbar`
+ * writes it from the palette, a chord and the status bar, which is what makes hiding it
+ * recoverable once the pill itself is gone.
  *
- * `aria-label` on a `toolbar` role: without it a screen reader announces an
- * unnamed group of three buttons, and B9 makes accessibility substrate rather
- * than a later pass. The label is a `MessageKey` like every other visible
- * string, resolved by `useLingui` so a locale change re-renders it.
+ * ## Repositionable: which edge of the page area
  *
- * ## THERE IS NO VISIBILITY TOGGLE YET, and that is deliberate
- *
- * `projections.ts` notes that this toolbar's visibility is itself a command, so
- * that a hidden toolbar can be restored from the palette. The palette does not
- * exist. Registering a toggle now would ship a control that can hide this
- * toolbar with no way to bring it back — a working button whose effect is
- * irreversible, which is worse than the missing feature. It lands with the
- * palette, in the same commit, for that reason.
+ * `appearance.quick-toolbar-edge`, left or right, set in the Settings dialog. Positioned against the
+ * page area it floats over — `DocumentBody` places it inside that pane — never the window.
  */
 export interface QuickToolbarProps {
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
+  readonly settings: SettingsStore;
 }
 
-export function QuickToolbar({ registry, context }: QuickToolbarProps): ReactElement | null {
+export function QuickToolbar({ registry, context, settings }: QuickToolbarProps): ReactElement | null {
   const { i18n } = useLingui();
+  const open = useSetting(settings, QUICK_TOOLBAR_OPEN_SETTING);
+  const edge = useSetting(settings, QUICK_TOOLBAR_EDGE_SETTING);
   const entries = quickToolbarModel(registry, context);
-  if (entries.length === 0) return null;
+  if (!open || entries.length === 0) return null;
 
   return (
-    <div className="m-quick-toolbar" role="toolbar" aria-label={i18n._(DOCUMENT_TOOLS_LABEL)}>
-      {entries.map((entry) => (
-        <Button
-          key={entry.command.id}
-          label={entry.command.title}
-          onClick={() => {
-            // Not awaited, for `StartScreen`'s reason: a click handler returning
-            // a promise would make React's event handling wait on IPC, and
-            // nothing here reads the result — the command reports through its
-            // own callback.
-            void entry.command.run(context);
-          }}
-        />
-      ))}
+    <div
+      className={`m-quick-toolbar m-quick-toolbar--${edge}`}
+      role="toolbar"
+      aria-orientation="vertical"
+      aria-label={i18n._(DOCUMENT_TOOLS_LABEL)}
+    >
+      {entries.flatMap((entry) => {
+        const icon = entry.command.icon;
+        if (icon === undefined) return [];
+        return [
+          <IconButton
+            key={entry.command.id}
+            icon={ICONS[icon]}
+            label={entry.command.title}
+            size="control"
+            onClick={() => {
+              // Not awaited: a click handler returning a promise would make React's event handling
+              // wait on IPC, and nothing here reads the result — the command reports through its
+              // own callback.
+              void entry.command.run(context);
+            }}
+          />,
+        ];
+      })}
     </div>
   );
 }

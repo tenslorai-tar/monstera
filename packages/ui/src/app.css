@@ -1688,9 +1688,26 @@ textarea {
   font-size: var(--font-chrome-11);
 }
 
+/*
+ * The page area, and the box the floating toolbar is positioned against. It fills its splitter pane
+ * the way the page list did before it was wrapped, so the list's own box is unchanged.
+ */
+.m-canvas-area {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/*
+ * §10.3's floating quick toolbar: a vertical pill on the canvas edge. ABSOLUTE against
+ * `.m-canvas-area`, never fixed: fixed placed it against the window, 16 px from its left edge, which
+ * is where the section rail and the document panel are (measured 2026-09-15). The edge is
+ * `appearance.quick-toolbar-edge`, in physical terms because its option titles say left and right.
+ */
 .m-quick-toolbar {
-  position: fixed;
-  inset-inline-start: var(--space-16);
+  position: absolute;
   inset-block-start: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -1700,6 +1717,14 @@ textarea {
   border: 1px solid var(--border-control);
   border-radius: var(--radius-10);
   background: var(--surface);
+}
+
+.m-quick-toolbar--start {
+  left: var(--space-8);
+}
+
+.m-quick-toolbar--end {
+  right: var(--space-8);
 }
 
 /*

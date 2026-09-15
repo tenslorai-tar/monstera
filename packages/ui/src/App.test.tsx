@@ -641,6 +641,27 @@ describe('App', () => {
       expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
     });
 
+    it('a HIDDEN toolbar is restored by its chord, in the real application (§7)', async () => {
+      // The guarantee §7 states: a hidden surface can always be restored. The pill's own controls
+      // are gone once it is hidden, so what restores it must be something else — here the chord
+      // the registry projects, pressed on the document the application listens to.
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
+
+      const press = async (): Promise<void> => {
+        await act(async () => {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Q', ctrlKey: true, shiftKey: true, cancelable: true }));
+          await Promise.resolve();
+        });
+      };
+      await press();
+      expect(screen.queryByRole('toolbar', { name: 'Document tools' })).toBeNull();
+      await press();
+      expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
+    });
+
     it('the ROTATE control names the SAME page the renderer asked the model about', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,

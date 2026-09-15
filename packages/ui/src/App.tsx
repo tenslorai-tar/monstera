@@ -84,6 +84,11 @@ import {
   toggleSplitViewCommand,
   toggleRulersCommand,
 } from './commands/viewCommands.js';
+import {
+  toggleContextPanelCommand,
+  togglePanelCommand,
+  toggleQuickToolbarCommand,
+} from './commands/chromeCommands.js';
 import { CommandPalette } from './CommandPalette.js';
 import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
@@ -1611,6 +1616,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         toggleLoupeCommand({ settings }),
         toggleSplitViewCommand({ settings }),
         commandPaletteCommand({ onOpen: openPalette }),
+        // §7's CHROME VISIBILITY, as commands: a hidden surface is restorable from the palette and
+        // a chord because these exist, not because its own control survives being hidden.
+        toggleQuickToolbarCommand({ settings }),
+        togglePanelCommand({ settings }),
+        toggleContextPanelCommand({ settings }),
         pageMoveCommand('next', { navigator }),
         pageMoveCommand('previous', { navigator }),
         pageMoveCommand('first', { navigator }),
@@ -1847,6 +1857,8 @@ export function App({ client, settings }: AppProps): ReactElement {
           settings={settings}
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
           // `PageCanvas`' row beside the page area (design pass D).
+          // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
+          quickToolbar={<QuickToolbar registry={registry} context={context} settings={settings} />}
           contextPanel={
             <ContextPanel settings={settings}>
               {/* THE STYLE CONTROLS, which take no document at all: they set what the
@@ -1950,10 +1962,6 @@ export function App({ client, settings }: AppProps): ReactElement {
           task={task}
         />
       )}
-      {/* A projection, like the start screen, and it renders nothing when its
-          model is empty — which is every moment no document is focused, because
-          each command placed on it declares `when`. */}
-      <QuickToolbar registry={registry} context={context} />
       {/* The ONE mount point. `DialogHost` renders nothing when none is open —
           not a hidden dialog — so this is not a control that renders and does
           nothing; it is the seam every dialog arrives through. */}
@@ -2119,6 +2127,7 @@ function PageCanvas({
   settings,
   panels,
   contextPanel,
+  quickToolbar,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -2164,6 +2173,8 @@ function PageCanvas({
   readonly panels: DocumentPanelProps['panels'];
   /** §10.3's right contextual panel, built by `App` where its state lives. */
   readonly contextPanel: ReactNode;
+  /** §10.3's floating quick toolbar, placed inside the page area by `DocumentBody`. */
+  readonly quickToolbar: ReactNode;
   /**
    * Asks for an encrypted document's password, or `undefined` on a dismissal.
    *
@@ -2277,7 +2288,7 @@ function PageCanvas({
         settings={settings}
         panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
         page={<canvas className="m-page" data-failed="true" />}
-        contextPanel={contextPanel}
+        contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
     );
   }
@@ -2292,7 +2303,7 @@ function PageCanvas({
         settings={settings}
         panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
         page={<div className="m-page-list" />}
-        contextPanel={contextPanel}
+        contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
     );
   }
@@ -2307,7 +2318,7 @@ function PageCanvas({
     // the row before.
     <DocumentBody
       settings={settings}
-      contextPanel={contextPanel}
+      contextPanel={contextPanel} quickToolbar={quickToolbar}
       panel={
       <DocumentPanel
         settings={settings}

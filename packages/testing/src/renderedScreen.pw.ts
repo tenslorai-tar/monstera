@@ -638,3 +638,48 @@ test("at its MINIMUM width the document panel's strip still holds every tab and 
   expect((lastTab?.x ?? 0) + (lastTab?.width ?? 0)).toBeLessThanOrEqual(paneRight + 0.5);
   expect((chevron?.x ?? 0) + (chevron?.width ?? 0)).toBeLessThanOrEqual(paneRight + 0.5);
 });
+
+test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the panel, and hides and returns', async ({
+  page,
+}) => {
+  // §10.3: "a vertical pill on the canvas edge … repositionable and hideable", restored "in the palette, on a
+  // shortcut, and as a status-bar toggle". MEASURED BEFORE THE FIX (2026-09-15, this build at 1280 × 800): the
+  // toolbar was `position: fixed` at x 16–165.64, over the rail's Organize button (x 4–58.67) and 102 px of the
+  // document panel's pane, and 149.64 px wide because it drew text buttons.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open a document' }).click();
+
+  const toolbar = page.getByRole('toolbar', { name: 'Document tools' });
+  await expect(toolbar).toBeVisible();
+  const box = await toolbar.boundingBox();
+  const area = await page.locator('.m-canvas-area').boundingBox();
+  const organize = await page.getByRole('button', { name: 'Organize' }).boundingBox();
+  const panelPane = await page.locator('.m-splitter__pane').first().boundingBox();
+  expect(box).not.toBeNull();
+  expect(area).not.toBeNull();
+  expect(organize).not.toBeNull();
+  expect(panelPane).not.toBeNull();
+  const right = (b: { x: number; width: number } | null): number => (b?.x ?? 0) + (b?.width ?? 0);
+  const bottom = (b: { y: number; height: number } | null): number => (b?.y ?? 0) + (b?.height ?? 0);
+
+  // INSIDE THE PAGE AREA, on every side.
+  expect(box?.x ?? 0).toBeGreaterThanOrEqual((area?.x ?? 0) - 0.5);
+  expect(right(box)).toBeLessThanOrEqual(right(area) + 0.5);
+  expect(box?.y ?? 0).toBeGreaterThanOrEqual((area?.y ?? 0) - 0.5);
+  expect(bottom(box)).toBeLessThanOrEqual(bottom(area) + 0.5);
+  // AND THEREFORE OFF what it covered, asserted directly, so a page area that itself overlapped them fails too.
+  expect(box?.x ?? 0).toBeGreaterThanOrEqual(right(organize) - 0.5);
+  expect(box?.x ?? 0).toBeGreaterThanOrEqual(right(panelPane) - 0.5);
+  // A PILL: one icon column. Its icon buttons are 16 px glyphs with their padding; under 64 px separates that from
+  // the 149.64 px of text buttons with room either side.
+  expect(box?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(64);
+
+  // HIDDEN from the status bar's toggle, and RESTORED by the chord — the pill's own controls are gone by then.
+  const bar = page.getByRole('status', { name: 'Document status' });
+  await bar.getByRole('button', { name: 'Show or hide the floating toolbar' }).click();
+  await expect(toolbar).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+Q');
+  await expect(toolbar).toBeVisible();
+});

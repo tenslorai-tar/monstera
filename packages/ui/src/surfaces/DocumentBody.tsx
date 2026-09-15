@@ -47,9 +47,15 @@ export interface DocumentBodyProps {
   readonly page: ReactNode;
   /** The right contextual panel, which draws its own reopen handle when collapsed. */
   readonly contextPanel: ReactNode;
+  /**
+   * §10.3's floating quick toolbar, *"a vertical pill on the canvas edge"*. It is positioned against
+   * the page area it floats over, so it sits inside that pane; fixed to the window it covered the
+   * section rail and the document panel (measured 2026-09-15, JOURNAL).
+   */
+  readonly quickToolbar?: ReactNode;
 }
 
-export function DocumentBody({ settings, panel, page, contextPanel }: DocumentBodyProps): ReactElement {
+export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar }: DocumentBodyProps): ReactElement {
   const panelOpen = useSetting(settings, DOCUMENT_PANEL_OPEN_SETTING);
   const panelWidth = useSetting(settings, DOCUMENT_PANEL_WIDTH_SETTING);
   const contextOpen = useSetting(settings, CONTEXT_PANEL_OPEN_SETTING);
@@ -73,7 +79,12 @@ export function DocumentBody({ settings, panel, page, contextPanel }: DocumentBo
               }
             : undefined
         }
-        middle={page}
+        middle={
+          <div className="m-canvas-area">
+            {page}
+            {quickToolbar}
+          </div>
+        }
         end={
           contextOpen
             ? {

@@ -7,6 +7,9 @@ import {
   DOCUMENT_PANEL_TITLE,
   DOCUMENT_PANEL_WIDTH_TITLE,
   PANEL_TITLES,
+  QUICK_TOOLBAR_EDGE_TITLE,
+  QUICK_TOOLBAR_EDGE_TITLES,
+  QUICK_TOOLBAR_OPEN_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
@@ -87,6 +90,32 @@ export const DOCUMENT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   schema: z.number().int().min(DOCUMENT_PANEL_MIN_WIDTH).max(DOCUMENT_PANEL_MAX_WIDTH),
   fallback: 224,
   category: 'appearance',
+};
+
+/**
+ * Whether §10.3's floating quick toolbar shows (*"repositionable and hideable"*). Its own setting, so
+ * `view.toggle-quick-toolbar` restores it from the palette, a chord and the status bar once the pill
+ * is gone.
+ */
+export const QUICK_TOOLBAR_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'appearance.quick-toolbar-open',
+  title: QUICK_TOOLBAR_OPEN_TITLE,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'appearance',
+};
+
+/**
+ * Which edge of the page area the floating quick toolbar sits on — §10.3's *"repositionable"*. Left
+ * by default, beside the pages a person reads from the left.
+ */
+export const QUICK_TOOLBAR_EDGE_SETTING: SettingDefinition<z.ZodEnum<{ start: 'start'; end: 'end' }>> = {
+  id: 'appearance.quick-toolbar-edge',
+  title: QUICK_TOOLBAR_EDGE_TITLE,
+  schema: z.enum(['start', 'end']),
+  fallback: 'start',
+  category: 'appearance',
+  optionTitles: QUICK_TOOLBAR_EDGE_TITLES,
 };
 
 /**
