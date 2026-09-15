@@ -89,24 +89,36 @@ export type Placement =
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }
   | { readonly surface: 'start-screen'; readonly order: number }
+  | StatusBarPlacement;
+
+/**
+ * A status-bar button, DISCRIMINATED BY CLUSTER (ARCHITECTURE §7, ADR-0067 and its 2026-09-15
+ * correction). Each cluster's `side` is exactly the gaps between the bar's own controls in that
+ * cluster, so a gap that does not exist cannot be spelt:
+ *
+ * - `navigation` — `before` or `after` the page field;
+ * - `zoom` — `before` the slider, `between` the slider and the percentage, `after` the percentage,
+ *   which is what renders §10.3's *"zoom-out button · slider · zoom-in button · current percentage ·
+ *   fit mode"*;
+ * - `chrome` — the commands about the chrome itself. No control of the bar's own, so no `side`.
+ */
+export type StatusBarPlacement =
   | {
       readonly surface: 'status-bar';
-      /**
-       * Which of §10.3's two groups the button belongs to (ARCHITECTURE §7, ADR-0067). Each
-       * group is built around one control that takes a value — the page field, the zoom slider —
-       * and those are the bar's own, never commands.
-       */
-      readonly cluster: StatusBarCluster;
-      /** Whether the button sits before or after its cluster's value control. */
-      readonly side: StatusBarSide;
+      readonly cluster: 'navigation';
+      readonly side: 'before' | 'after';
       readonly order: number;
-    };
+    }
+  | {
+      readonly surface: 'status-bar';
+      readonly cluster: 'zoom';
+      readonly side: 'before' | 'between' | 'after';
+      readonly order: number;
+    }
+  | { readonly surface: 'status-bar'; readonly cluster: 'chrome'; readonly order: number };
 
-/** §10.3's two status-bar groups, each around one value control (ADR-0067). */
-export type StatusBarCluster = 'navigation' | 'zoom';
-
-/** Which side of its cluster's value control a status-bar button sits on. */
-export type StatusBarSide = 'before' | 'after';
+/** §10.3's status-bar groups (ADR-0067). */
+export type StatusBarCluster = StatusBarPlacement['cluster'];
 
 /** Every `surface` tag, for a projection that needs to name the one it is. */
 export type SurfaceId = Placement['surface'];

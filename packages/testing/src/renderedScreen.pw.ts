@@ -596,6 +596,23 @@ test('the STATUS BAR projects page navigation and zoom, and each control changes
   // AND A ZOOM BUTTON from the projection, stepping from what is shown.
   await bar.getByRole('button', { name: 'Zoom out' }).click();
   await expect(percentage).toHaveText('150%');
+
+  // §10.3's ZOOM ORDER, ON SCREEN, from the commands the application registers: zoom-out · slider ·
+  // zoom-in · percentage · fit mode (ADR-0067, corrected 2026-09-15). Read as painted left edges
+  // rather than DOM order, so a stylesheet reordering the flex row would fail it too. The unit case
+  // holds the bar to the placement it is handed; only this holds the real zoom-in to `between`.
+  const lefts = await Promise.all(
+    [
+      bar.getByRole('button', { name: 'Zoom out' }),
+      bar.getByRole('slider', { name: 'Zoom level' }),
+      bar.getByRole('button', { name: 'Zoom in' }),
+      percentage,
+      bar.getByRole('button', { name: 'Fit width' }),
+      bar.getByRole('button', { name: 'Fit page' }),
+    ].map(async (locator) => (await locator.boundingBox())?.x ?? Number.NaN),
+  );
+  expect(lefts.every((x) => Number.isFinite(x))).toBe(true);
+  expect(lefts).toStrictEqual([...lefts].sort((a, b) => a - b));
 });
 
 test("at its MINIMUM width the document panel's strip still holds every tab and the chevron", async ({

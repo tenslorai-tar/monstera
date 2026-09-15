@@ -556,9 +556,10 @@ export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand 
         group: GROUP_DISPLAY,
         order: direction === 'in' ? 10 : 20,
       },
-      // §10.3's zoom cluster, "zoom-out button · slider · zoom-in button": the slider is the bar's
-      // own value control, so out sits before it and in after it (ADR-0067).
-      { surface: 'status-bar', cluster: 'zoom', side: direction === 'in' ? 'after' : 'before', order: 10 },
+      // §10.3's zoom cluster, "zoom-out button · slider · zoom-in button · current percentage": out
+      // sits before the slider, and in BETWEEN the slider and the percentage (ADR-0067's
+      // 2026-09-15 correction).
+      { surface: 'status-bar', cluster: 'zoom', side: direction === 'in' ? 'between' : 'before', order: 10 },
     ],
     when: hasDocument,
     run: (): void => {

@@ -2,6 +2,7 @@ import { useLingui } from '@lingui/react';
 import { type ReactElement, useId, useState } from 'react';
 
 import {
+  STATUS_CHROME_GROUP,
   STATUS_GO_TO,
   STATUS_GO_TO_OUTSIDE,
   STATUS_LABEL,
@@ -63,12 +64,16 @@ const SLIDER_STEP = 0.05;
  * A typed 500 in a twelve-page document is not "the last page", and answering it with page 12
  * tells the reader their document has 500 pages. The navigation commands clamp, and are right to.
  *
- * ## The percentage sits BESIDE THE SLIDER
+ * ## §10.3's zoom order, exactly: zoom-out · slider · zoom-in · percentage · fit
  *
- * §10.3 lists "slider · zoom-in button · current percentage". ADR-0067 gives each cluster ONE value
- * control, so the percentage — a readout of the slider's value — is rendered with it, and zoom-in
- * follows. The order therefore reads zoom-out · slider · percentage · zoom-in · fit; the deviation
- * from §10.3's list is stated here and in the journal rather than hidden in a position.
+ * The slider and the percentage are both the bar's own, with a command between them, so the zoom
+ * cluster has three gaps and the placement names one (ADR-0067's 2026-09-15 correction). Until then
+ * the percentage sat beside the slider and zoom-in after it — a deviation from the approved design
+ * that the type could not avoid.
+ *
+ * ## The chrome group renders only when something is in it
+ *
+ * It has no control of its own, so an empty group would be a named region holding nothing.
  */
 export function StatusBar({
   name,
@@ -207,12 +212,18 @@ export function StatusBar({
             onZoom(() => ({ kind: 'scale', scale }));
           }}
         />
+        {buttons(model.zoom.between)}
         <span className="m-status-zoom">
           {/* ROUNDED FOR DISPLAY ONLY: derived from the live scale, never stored. */}
           {i18n._(STATUS_ZOOM, { percent: Math.round(zoom * 100) })}
         </span>
         {buttons(model.zoom.after)}
       </div>
+      {model.chrome.length === 0 ? null : (
+        <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_CHROME_GROUP)}>
+          {buttons(model.chrome)}
+        </div>
+      )}
       {/* THE RUNNING TASK, absent rather than empty when nothing is running, and last, so the
           numbers a reader checks do not move sideways while one runs. */}
       {task === undefined ? null : (

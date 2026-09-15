@@ -16,7 +16,9 @@ import { StatusBar } from './StatusBar.js';
 const NAV_FIRST = messageKey('test.status.first');
 const NAV_NEXT = messageKey('test.status.next');
 const ZOOM_OUT = messageKey('test.status.zoom-out');
+const ZOOM_IN = messageKey('test.status.zoom-in');
 const FIT = messageKey('test.status.fit');
+const TOGGLE = messageKey('test.status.toggle');
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
   activateCatalogue('en', {
@@ -24,7 +26,9 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
     [NAV_FIRST]: 'First page',
     [NAV_NEXT]: 'Next page',
     [ZOOM_OUT]: 'Zoom out',
+    [ZOOM_IN]: 'Zoom in',
     [FIT]: 'Fit width',
+    [TOGGLE]: 'Show the floating toolbar',
   });
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
@@ -114,28 +118,37 @@ describe('StatusBar', () => {
         commands: [
           command('view.page-next', NAV_NEXT, { surface: 'status-bar', cluster: 'navigation', side: 'after', order: 1 }, next),
           command('view.page-first', NAV_FIRST, { surface: 'status-bar', cluster: 'navigation', side: 'before', order: 1 }, first),
-          command('view.zoom-out', ZOOM_OUT, { surface: 'status-bar', cluster: 'zoom', side: 'before', order: 1 }),
           command('view.fit-width', FIT, { surface: 'status-bar', cluster: 'zoom', side: 'after', order: 1 }),
+          command('view.zoom-in', ZOOM_IN, { surface: 'status-bar', cluster: 'zoom', side: 'between', order: 1 }),
+          command('view.zoom-out', ZOOM_OUT, { surface: 'status-bar', cluster: 'zoom', side: 'before', order: 1 }),
         ],
       });
 
       const field = container.querySelector('[data-goto-input]');
       const slider = container.querySelector('.m-status-zoom-slider');
+      const percentage = container.querySelector('.m-status-zoom');
       const byName = (name: string): Element | null => container.querySelector(`button[aria-label="${name}"]`);
       const firstButton = byName('First page');
       const nextButton = byName('Next page');
       const zoomOut = byName('Zoom out');
+      const zoomIn = byName('Zoom in');
       const fit = byName('Fit width');
-      expect([field, slider, firstButton, nextButton, zoomOut, fit].every((node) => node !== null)).toBe(true);
+      expect([field, slider, percentage, firstButton, nextButton, zoomOut, zoomIn, fit].every((node) => node !== null)).toBe(
+        true,
+      );
 
-      // POSITION, which is the whole of `side`: first before the field, next after it; zoom-out
-      // before the slider, fit after it.
+      // POSITION, which is the whole of `side`: first before the field, next after it; and §10.3's
+      // zoom order EXACTLY — zoom-out · slider · zoom-in · percentage · fit. Every adjacent pair is
+      // asserted, because the order built before 2026-09-15 (percentage before zoom-in) satisfies
+      // "zoom-in after the slider" and "fit after zoom-in" and fails only the pair in the middle.
       const precedes = (a: Element | null, b: Element | null): boolean =>
         a !== null && b !== null && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
       expect(precedes(firstButton, field)).toBe(true);
       expect(precedes(field, nextButton)).toBe(true);
       expect(precedes(zoomOut, slider)).toBe(true);
-      expect(precedes(slider, fit)).toBe(true);
+      expect(precedes(slider, zoomIn)).toBe(true);
+      expect(precedes(zoomIn, percentage)).toBe(true);
+      expect(precedes(percentage, fit)).toBe(true);
 
       // AND THE BUTTON RUNS ITS COMMAND with the bar's context — the UI half of the wired pair.
       if (!(nextButton instanceof HTMLButtonElement)) throw new Error('next page is a button');
@@ -149,6 +162,21 @@ describe('StatusBar', () => {
         commands: [command('a.ribbon-only', NAV_FIRST, { surface: 'ribbon', section: 'home', group: messageKey('group.g'), order: 1 })],
       });
       expect(container.querySelectorAll('.m-status-cluster button')).toHaveLength(0);
+    });
+
+    it('the CHROME group holds its commands under its own name, and is absent when it holds none', () => {
+      const toggled = vi.fn();
+      const withToggle = drawn({
+        commands: [command('view.toggle-x', TOGGLE, { surface: 'status-bar', cluster: 'chrome', order: 1 }, toggled)],
+      });
+      const group = withToggle.container.querySelector('[role="group"][aria-label="Panels and toolbars"]');
+      const button = group?.querySelector('button[aria-label="Show the floating toolbar"]');
+      if (!(button instanceof HTMLButtonElement)) throw new Error('the chrome group holds the toggle');
+      fireEvent.click(button);
+      expect(toggled).toHaveBeenCalledWith(context);
+
+      const without = drawn();
+      expect(without.container.querySelector('[aria-label="Panels and toolbars"]')).toBeNull();
     });
   });
 

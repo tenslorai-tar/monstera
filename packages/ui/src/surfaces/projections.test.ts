@@ -148,7 +148,9 @@ describe('the other placement surfaces', () => {
     command('a.nav-before-2', [{ surface: 'status-bar', cluster: 'navigation', side: 'before', order: 2 }]),
     command('a.nav-before-1', [{ surface: 'status-bar', cluster: 'navigation', side: 'before', order: 1 }]),
     command('a.zoom-before', [{ surface: 'status-bar', cluster: 'zoom', side: 'before', order: 1 }]),
+    command('a.zoom-between', [{ surface: 'status-bar', cluster: 'zoom', side: 'between', order: 1 }]),
     command('a.zoom-after', [{ surface: 'status-bar', cluster: 'zoom', side: 'after', order: 1 }]),
+    command('a.chrome', [{ surface: 'status-bar', cluster: 'chrome', order: 1 }]),
   ];
   const registry = new CommandRegistry(everywhere);
 
@@ -159,7 +161,21 @@ describe('the other placement surfaces', () => {
     expect(ids(model.navigation.before)).toStrictEqual(['a.nav-before-1', 'a.nav-before-2']);
     expect(ids(model.navigation.after)).toStrictEqual(['a.nav-after']);
     expect(ids(model.zoom.before)).toStrictEqual(['a.zoom-before']);
+    expect(ids(model.zoom.between)).toStrictEqual(['a.zoom-between']);
     expect(ids(model.zoom.after)).toStrictEqual(['a.zoom-after']);
+    expect(ids(model.chrome)).toStrictEqual(['a.chrome']);
+  });
+
+  it('a status-bar gap that does not exist cannot be SPELT (ADR-0067, corrected 2026-09-15)', () => {
+    // Compile-time cases, and `npm run typecheck` is what runs them: an unused `@ts-expect-error` is
+    // itself an error, so a type that started accepting either line reddens the build.
+    const gaps: Placement[] = [
+      // @ts-expect-error — the page field is one control, so navigation has no `between`.
+      { surface: 'status-bar', cluster: 'navigation', side: 'between', order: 1 },
+      // @ts-expect-error — the chrome cluster has no control of the bar's own, so no `side`.
+      { surface: 'status-bar', cluster: 'chrome', side: 'after', order: 1 },
+    ];
+    expect(gaps).toHaveLength(2);
   });
 
   it('the quick toolbar takes its own placements only, in order', () => {

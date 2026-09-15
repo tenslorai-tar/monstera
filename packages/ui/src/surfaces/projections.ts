@@ -4,8 +4,7 @@ import {
   type MenuContext,
   type Placement,
   type SectionId,
-  type StatusBarCluster as StatusBarClusterId,
-  type StatusBarSide,
+  type StatusBarPlacement,
 } from '../registries/placement.js';
 
 /**
@@ -264,54 +263,95 @@ function startScreenOrder(placement: Placement): number | undefined {
   }
 }
 
-/** One side of one status-bar cluster: the buttons before or after its value control. */
-export interface StatusBarCluster {
-  readonly before: readonly OrderedEntry[];
-  readonly after: readonly OrderedEntry[];
+/**
+ * The status bar's projected buttons, by cluster and gap (§10.3, ARCHITECTURE §7, ADR-0067 and its
+ * 2026-09-15 correction). Each list is one gap between the bar's own controls, so the shape here is
+ * the placement type's, and a gap the type cannot spell has no list.
+ */
+export interface StatusBarModel {
+  /** Around the page field. */
+  readonly navigation: { readonly before: readonly OrderedEntry[]; readonly after: readonly OrderedEntry[] };
+  /** Before the slider, between the slider and the percentage, and after the percentage. */
+  readonly zoom: {
+    readonly before: readonly OrderedEntry[];
+    readonly between: readonly OrderedEntry[];
+    readonly after: readonly OrderedEntry[];
+  };
+  /** The commands about the chrome itself, which have no control of the bar's own to sit around. */
+  readonly chrome: readonly OrderedEntry[];
 }
 
-/** The status bar's projected buttons, by cluster (§10.3, ARCHITECTURE §7, ADR-0067). */
-export interface StatusBarModel {
-  readonly navigation: StatusBarCluster;
-  readonly zoom: StatusBarCluster;
-}
+/** Every gap in the bar, as one key, so the projection fills one map rather than a nest of them. */
+type StatusBarGap = 'navigation.before' | 'navigation.after' | 'zoom.before' | 'zoom.between' | 'zoom.after' | 'chrome';
 
 /**
- * The status bar's buttons — §10.3's page navigation and zoom cluster.
+ * The status bar's buttons — §10.3's page navigation, zoom cluster and chrome toggles.
  *
- * **Only the buttons.** Each cluster is built around a control that takes a value — the page
- * field, the zoom slider — and a command's `run` takes none, so those are the bar's own and are
- * not here. What this answers is which commands sit before and after each of them, in order, so
- * no command list is written into the bar.
+ * **Only the buttons.** The page field, the zoom slider and the percentage are the bar's own —
+ * the first two take a value, which a command's `run` cannot, and the third is a readout — so they
+ * are not here. What this answers is which commands sit in each gap between them, in order, so no
+ * command list is written into the bar.
  */
 export function statusBarModel(registry: CommandRegistry, context: CommandContext): StatusBarModel {
-  const slots = {
-    navigation: { before: [] as OrderedEntry[], after: [] as OrderedEntry[] },
-    zoom: { before: [] as OrderedEntry[], after: [] as OrderedEntry[] },
-  };
+  const gaps = new Map<StatusBarGap, OrderedEntry[]>();
   for (const command of registry.available(context)) {
     for (const placement of command.placements) {
       const slot = statusBarSlot(placement);
-      if (slot !== undefined) slots[slot.cluster][slot.side].push({ command, order: slot.order });
+      if (slot === undefined) continue;
+      const entries = gaps.get(slot.gap) ?? [];
+      entries.push({ command, order: slot.order });
+      gaps.set(slot.gap, entries);
     }
   }
+  const at = (gap: StatusBarGap): readonly OrderedEntry[] => ordered(gaps.get(gap) ?? []);
   return {
-    navigation: { before: ordered(slots.navigation.before), after: ordered(slots.navigation.after) },
-    zoom: { before: ordered(slots.zoom.before), after: ordered(slots.zoom.after) },
+    navigation: { before: at('navigation.before'), after: at('navigation.after') },
+    zoom: { before: at('zoom.before'), between: at('zoom.between'), after: at('zoom.after') },
+    chrome: at('chrome'),
   };
 }
 
-function statusBarSlot(
-  placement: Placement,
-): { readonly cluster: StatusBarClusterId; readonly side: StatusBarSide; readonly order: number } | undefined {
+function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; readonly order: number } | undefined {
   switch (placement.surface) {
     case 'status-bar':
-      return { cluster: placement.cluster, side: placement.side, order: placement.order };
+      return { gap: statusBarGap(placement), order: placement.order };
     case 'ribbon':
     case 'quick-toolbar':
     case 'context-menu':
     case 'start-screen':
       return undefined;
+    default: {
+      const unhandled: never = placement;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * Which gap a status-bar placement names. A `never` default for Decision 4's reason, one level
+ * down: a fourth cluster fails to compile here until somebody says where it renders.
+ */
+function statusBarGap(placement: StatusBarPlacement): StatusBarGap {
+  switch (placement.cluster) {
+    case 'navigation':
+      return placement.side === 'before' ? 'navigation.before' : 'navigation.after';
+    case 'zoom': {
+      const { side } = placement;
+      switch (side) {
+        case 'before':
+          return 'zoom.before';
+        case 'between':
+          return 'zoom.between';
+        case 'after':
+          return 'zoom.after';
+        default: {
+          const unhandled: never = side;
+          return unhandled;
+        }
+      }
+    }
+    case 'chrome':
+      return 'chrome';
     default: {
       const unhandled: never = placement;
       return unhandled;

@@ -698,6 +698,7 @@ export const STATUS_PAGE_TOTAL = messageKey('surface.status.page-total');
 export const STATUS_NAVIGATION = messageKey('surface.status.navigation');
 export const STATUS_ZOOM_GROUP = messageKey('surface.status.zoom-group');
 export const STATUS_ZOOM_SLIDER = messageKey('surface.status.zoom-slider');
+export const STATUS_CHROME_GROUP = messageKey('surface.status.chrome-group');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
  * §10.3's document panel: six tabs, each named by its accessible name and tooltip,
@@ -1721,6 +1722,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STATUS_PAGE_TOTAL]: '/ {count}',
   [STATUS_NAVIGATION]: 'Page navigation',
   [STATUS_ZOOM_GROUP]: 'Zoom',
+  [STATUS_CHROME_GROUP]: 'Panels and toolbars',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
   [PANEL_PAGES]: 'Pages',

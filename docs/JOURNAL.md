@@ -892,6 +892,40 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — The zoom cluster renders §10.3's order, and the status bar gains a chrome group
+
+The owner's ruling of 2026-09-15 on pass E's stated deviation: *follow the approved design; do not edit §10.3 to match
+the build.* `BUILD-PROMPT.md`:1075 (Part M3): *"The zoom cluster is zoom-out button · slider · zoom-in button · current
+percentage · fit mode"*. The placement type is what changed, in `474bcf4` (ADR-0067's dated correction), and this is the
+feature commit.
+
+**Correction to the pass E entry below**, which is not edited: *"Holding §10.3's exact order would need a third position
+in `side` — another amendment — for one readout"* was right about the cost and wrong to leave the design deviating. The
+amendment is taken.
+
+- `Placement`'s `status-bar` variant is discriminated by cluster: `navigation` before/after the page field; `zoom`
+  before the slider, `between` it and the percentage, after the percentage; `chrome` with no `side`. Two
+  `@ts-expect-error` lines hold that a navigation `between` and a chrome `side` cannot be spelt.
+- `statusBarModel` fills one map keyed by gap; `statusBarGap` ends in a `never` default for a fourth cluster.
+- `view.zoom-in` is placed `between`; the fits stay `after` the percentage, now correctly.
+- `StatusBar.tsx` renders `zoom.between` before the percentage, and a *Panels and toolbars* group only when the chrome
+  cluster holds a command — none does until pass F registers `view.toggle-quick-toolbar`.
+
+### Proof
+
+- Unit: every adjacent pair of zoom-out · slider · zoom-in · percentage · fit is asserted, because the pre-correction
+  order satisfies "zoom-in after the slider" and "fit after zoom-in" and fails only the pair in the middle. The chrome
+  group holds its command, dispatches it, and is absent when empty.
+- Rendered, production build, the application's own registry: the painted left edges of zoom-out, slider, zoom-in,
+  percentage, fit width and fit page are increasing.
+- **Mutation F0**, the percentage rendered before `zoom.between`: the unit order case alone failed (18 others passed).
+- **Mutation F0b**, `between` projected into `after`: the projection case and the bar's order case failed — both read
+  the gap mapping — and 40 passed.
+- **Mutation F1**, the real `view.zoom-in` placed `after`: the rendered status-bar case failed at the order assertion.
+  No unit case can see this one, which is why the rendered assertion exists.
+
+---
+
 ## 2026-09-14 — Design pass E: the status bar projects navigation and zoom, and the page list fits its pane
 
 §10.3: *"first / previous / an editable "page ⁄ total" field / next / last"* and *"zoom-out button · slider ·
