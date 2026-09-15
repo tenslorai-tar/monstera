@@ -96,3 +96,60 @@ state holds the key whatever the field draws. E5's rule is about the state.
   Part F lists and nothing has registered are not added by this.
 - **An `ai` category.** Part F groups the Azure pair under AI; the registry has no
   such category and they sit under Editing. Reaching them does not need the move.
+
+## Correction, 2026-09-15 — a colour is a schema kind, and its no-choice state carries a title
+
+**Decision 3 left the default style colour with no surface a person can reach
+before a document is open.** `editing.annotation-colour` is set today from the
+comment styles panel, which draws beside an open document only. The owner's
+ruling of 2026-09-15: *"add a colour control to the Settings dialog, as a new
+schema kind, so the default style colour can be set with no document open …
+Build it through the settings registry"*.
+
+Decision 3's reason stands for the kind it named — *"a colour typed as text
+satisfies the schema and offers no colour"* — and is answered by a control that
+offers a colour, not by a text field.
+
+### Corrected decisions
+
+**Decision 2 gains a row.**
+
+| Schema | Control |
+|---|---|
+| colour | a checkbox for the setting's no-choice value, labelled by the entry's **unset title**, and a colour input used while it is off |
+
+- **A colour schema is one the registry built**, with its own colour constructor,
+  and the dialog asks the registry whether a schema is one. It is never
+  recognised from the shape of a union: a literal beside a pattern is not always
+  a colour, and a dialog deciding so would be a second opinion about what a
+  colour setting is (B3a).
+- **The no-choice value is a value, and it needs a word.** `'auto'` means *each
+  tool's own* for this setting; another colour setting's no-choice value would
+  mean something else, which no generic label can say. So the entry carries an
+  **unset title**, and the registry refuses a colour setting without one and an
+  unset title on any other kind — both directions, as it does `optionTitles`.
+- **The colour input starts on the colour the comment styles panel already
+  starts on**, taken from one constant, so the two surfaces of one setting cannot
+  offer two different first colours.
+
+**Decision 3 narrows.** `editing.annotation-colour` moves into the dialog.
+`appearance.accent` stays excluded, for a different reason than before: the
+accent can be **refused when applied** — `applyAccent` answers a refusal when no
+adjustment clears the contrast floor (`BUILD-PROMPT.md`:608, *"auto-adjusted or
+rejected"*) — and a dialog control for it would have to show that refusal where
+the colour is chosen. That is its own piece of work, not a consequence of this
+kind. `editing.personal-dictionary` stays excluded: it is an array.
+
+### Rejected
+
+- **Recognise any union of a literal and a hex pattern.** A partial
+  reimplementation of the registry's own knowledge, and one a future
+  `literal | /id-pattern/` setting would satisfy.
+- **A generic "Default" label on the checkbox.** It names no behaviour; the
+  panel's own label already says what the value does.
+- **A text field with a hex pattern.** Decision 3's own sentence.
+- **Leave the colour on the styles panel alone.** The ruling's reason: with no
+  document open there is no panel.
+- **Bring the accent in with the same control.** The control would accept a
+  colour that is then refused on apply, which is a control that fails on apply —
+  Decision 2's own objection to an unbounded number input.
