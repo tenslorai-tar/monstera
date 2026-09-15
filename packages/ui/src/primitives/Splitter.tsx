@@ -9,7 +9,7 @@ import { pixelsOfRoot } from './splitterSize.js';
 /**
  * A row of panes: an optional fixed-width pane at each side, and one flexible pane between them
  * that takes the rest. Each fixed pane is resizable by dragging or by keyboard (§10.3: *"panels
- * resizable with persisted widths"*).
+ * resizable with persisted widths"*), and each can be shut.
  *
  * `@zag-js/splitter` is ADR-0005's machine for this, and ADR-0005 wraps every Zag machine in a
  * primitive so no feature imports one. This is that wrapper.
@@ -19,6 +19,29 @@ import { pixelsOfRoot } from './splitterSize.js';
  * `start` and `end` are optional and `middle` is not, so a row with two flexible panes, or a
  * handle between two fixed ones, cannot be written. Each handle sits between the flexible pane and
  * one fixed pane, and resizes exactly that pair (`resizeByDelta` pivots on the handle's two panes).
+ *
+ * ## A SHUT SIDE IS STILL A PANE, at zero, and the machine never sees its pane set change
+ *
+ * Measured 2026-09-15 (CI 35002592538, ubuntu-latest): the left pane drew 81.92 px wider right after
+ * the right side shut. The machine re-syncs its size list from props in a React effect
+ * (`@zag-js/react` `track.mjs`, a `useEffect`), and `connect` lays each pane out from that list BY
+ * INDEX (`splitter.connect.mjs`). A commit that renders a different NUMBER of panes before the
+ * re-sync indexes the old list with the new panes: the surviving shares stop summing to 100 and every
+ * pane widens until the effect runs. `Splitter.test.tsx` reproduces it in the commit itself — shares
+ * 24 and 46 after the end pane left, a 0.343 share where 0.24 was stored.
+ *
+ * So `open: false` keeps the pane in the machine, sized, bounded and laid out at `0px`, with no
+ * content and no handle beside it. The pane list keeps its length, so a commit before the re-sync
+ * holds the previous sizes of the SAME panes — the shut side's content already gone and its width
+ * not yet zero until the machine re-syncs — and no other pane's share moves. That the re-sync does
+ * replace the list is read from the source (`utils/fuzzy.mjs` `fuzzySizeEqual` is false for lists
+ * of different lengths); how long the window lasts in a browser is not measured. The rejected routes: a resync
+ * sent from a layout effect (`send` queues a microtask, so nothing puts it before a paint), and
+ * remounting the machine when the set changes (it would remount the flexible pane, which is the
+ * document view).
+ *
+ * The machine's own collapse is still not used: *"is this side open"* has one writer, the caller's
+ * setting (B3), and the machine only ever receives a size.
  *
  * ## HORIZONTAL AND WITHOUT A REGISTRY, and invariant 27 is why
  *
@@ -62,16 +85,19 @@ import { pixelsOfRoot } from './splitterSize.js';
  * back round.
  *
  * So `onResize` keeps the live percentages in state and they are `size` until the resize ends;
- * then each fixed pane whose width changed is written once, and `size` is the stored widths again.
+ * then each open fixed pane whose width changed is written once, and `size` is the stored widths
+ * again. A shut pane is never written: its zero is not a width anybody chose.
  */
 export interface FixedPane {
   readonly content: ReactNode;
   /** The accessible name of the handle between this pane and the flexible one. */
   readonly label: MessageKey;
-  /** CSS pixels. */
+  /** CSS pixels, kept while the pane is shut and drawn again when it opens. */
   readonly width: number;
   readonly minWidth: number;
   readonly maxWidth: number;
+  /** Whether the pane is drawn. Shut, it stays a zero-width pane with no content and no handle. */
+  readonly open: boolean;
   /** A finished resize that changed this pane, in whole CSS pixels within its bounds. */
   readonly onWidthChange: (width: number) => void;
 }
@@ -85,6 +111,9 @@ export interface SplitterProps {
 
 type PaneId = 'start' | 'middle' | 'end';
 
+/** A shut pane's size and both its bounds: the machine lays it out at nothing and cannot resize it. */
+const SHUT = '0px';
+
 export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
   const { i18n } = useLingui();
   // THE MACHINE'S ID IS REQUIRED (`@zag-js/types` `CommonProperties`) and names the elements it
@@ -95,16 +124,18 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
   // when the stored widths are the size. See the header for why the machine needs this handed back.
   const [live, setLive] = useState<number[] | null>(null);
 
-  // In DOCUMENT order, which is the order the machine indexes sizes by.
+  // In DOCUMENT order, which is the order the machine indexes sizes by. A shut side is still listed
+  // (header, "a shut side is still a pane").
   const panes: readonly { readonly id: PaneId; readonly fixed: FixedPane | undefined }[] = [
     ...(start === undefined ? [] : [{ id: 'start' as const, fixed: start }]),
     { id: 'middle' as const, fixed: undefined },
     ...(end === undefined ? [] : [{ id: 'end' as const, fixed: end }]),
   ];
 
-  const stored = panes.map((pane) =>
-    pane.fixed === undefined ? undefined : `${String(pane.fixed.width)}px`,
-  );
+  const stored = panes.map((pane) => {
+    if (pane.fixed === undefined) return undefined;
+    return pane.fixed.open ? `${String(pane.fixed.width)}px` : SHUT;
+  });
 
   const service = useMachine(splitter.machine, {
     id,
@@ -114,8 +145,8 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
         ? { id: pane.id }
         : {
             id: pane.id,
-            minSize: `${String(pane.fixed.minWidth)}px`,
-            maxSize: `${String(pane.fixed.maxWidth)}px`,
+            minSize: pane.fixed.open ? `${String(pane.fixed.minWidth)}px` : SHUT,
+            maxSize: pane.fixed.open ? `${String(pane.fixed.maxWidth)}px` : SHUT,
             resizeBehavior: 'preserve-pixel-size' as const,
           },
     ),
@@ -131,7 +162,7 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
       // leave the panes pinned to their last live sizes and deaf to the stored widths.
       setLive(null);
       panes.forEach((pane, index) => {
-        if (pane.fixed === undefined) return;
+        if (!pane.fixed?.open) return;
         const percent = details.size[index];
         if (percent === undefined) return;
         const pixels = pixelsOfRoot(percent, measured);
@@ -153,9 +184,9 @@ export function Splitter({ start, middle, end }: SplitterProps): ReactElement {
         return (
           <Fragment key={pane.id}>
             <div {...api.getPanelProps({ id: pane.id })} className="m-splitter__pane">
-              {pane.fixed === undefined ? middle : pane.fixed.content}
+              {pane.fixed === undefined ? middle : pane.fixed.open ? pane.fixed.content : null}
             </div>
-            {next === undefined || pairFixed === undefined ? null : (
+            {next === undefined || !pairFixed?.open ? null : (
               <div
                 {...api.getResizeTriggerProps({ id: `${pane.id}:${next.id}` })}
                 aria-label={i18n._(pairFixed.label)}

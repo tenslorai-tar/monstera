@@ -27,12 +27,18 @@ import { useSetting } from '../useSetting.js';
  * surface and each state hands it the panes — three copies of the arrangement would be three
  * places for a width to be forgotten.
  *
- * ## A collapsed side is not a pane, and each open setting stays the one owner
+ * ## A collapsed side is a pane at zero, and each open setting stays the one owner
  *
  * The machine can collapse a panel itself. Using that would be a second writer of *"is the panel
- * open"*, beside each panel's own open setting (B3). So a collapsed side is left out of the splitter
- * — its surface draws its reopen handle beside the row's splitter instead — and nothing about its
- * width changes while it is shut. Both shut leaves a splitter of one pane and no handle.
+ * open"*, beside each panel's own open setting (B3). So the setting decides, and the splitter is told
+ * through `open`: a collapsed side stays in the row as a zero-width pane with no content and no
+ * handle, and its surface draws its reopen handle beside the row instead. Nothing about its width
+ * changes while it is shut.
+ *
+ * It stays IN the row rather than being left out, which is what this did until 2026-09-15: leaving
+ * it out changed the number of panes, and the machine lays panes out by index from a size list it
+ * re-syncs in a later effect. Read once right after the collapse, on CI, the left pane was 81.92 px
+ * wider, on two pushes of three (`Splitter.tsx`, "a shut side is still a pane").
  *
  * ## Each width is a setting, written when a resize at its own handle ends
  *
@@ -74,40 +80,34 @@ export function DocumentBody({ settings, panel, page, contextPanel, quickToolbar
     <div className="m-document-body">
       {focus || panelOpen ? null : panel}
       <Splitter
-        start={
-          !focus && panelOpen
-            ? {
-                content: panel,
-                label: PANEL_RESIZE,
-                width: panelWidth,
-                minWidth: DOCUMENT_PANEL_MIN_WIDTH,
-                maxWidth: DOCUMENT_PANEL_MAX_WIDTH,
-                onWidthChange: (next) => {
-                  settings.set(DOCUMENT_PANEL_WIDTH_SETTING.id, next);
-                },
-              }
-            : undefined
-        }
+        start={{
+          content: panel,
+          label: PANEL_RESIZE,
+          width: panelWidth,
+          minWidth: DOCUMENT_PANEL_MIN_WIDTH,
+          maxWidth: DOCUMENT_PANEL_MAX_WIDTH,
+          open: !focus && panelOpen,
+          onWidthChange: (next) => {
+            settings.set(DOCUMENT_PANEL_WIDTH_SETTING.id, next);
+          },
+        }}
         middle={
           <div className="m-canvas-area">
             {page}
             {quickToolbar}
           </div>
         }
-        end={
-          !focus && contextOpen
-            ? {
-                content: contextPanel,
-                label: CONTEXT_PANEL_RESIZE,
-                width: contextWidth,
-                minWidth: CONTEXT_PANEL_MIN_WIDTH,
-                maxWidth: CONTEXT_PANEL_MAX_WIDTH,
-                onWidthChange: (next) => {
-                  settings.set(CONTEXT_PANEL_WIDTH_SETTING.id, next);
-                },
-              }
-            : undefined
-        }
+        end={{
+          content: contextPanel,
+          label: CONTEXT_PANEL_RESIZE,
+          width: contextWidth,
+          minWidth: CONTEXT_PANEL_MIN_WIDTH,
+          maxWidth: CONTEXT_PANEL_MAX_WIDTH,
+          open: !focus && contextOpen,
+          onWidthChange: (next) => {
+            settings.set(CONTEXT_PANEL_WIDTH_SETTING.id, next);
+          },
+        }}
       />
       {focus || contextOpen ? null : contextPanel}
     </div>

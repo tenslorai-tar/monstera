@@ -892,6 +892,60 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Collapsing a side panel widened the other: a shut side is now a zero-width pane
+
+**Found by CI, not by a local run.** `4359fe4` (design pass I) went red on `ubuntu-latest` only (CI 35002592538): *the
+RIGHT contextual panel resizes on its own handle, persists, and leaves the left alone* read the left pane **81.921875 px**
+wider right after the right panel collapsed, against a 1.5 px bound. The accessibility step was unwrapped, so its text
+reached this session through the owner's screenshot of the log, and `da7ec5e` wrapped it. `da7ec5e`, the same
+application code, was green; `c2de381` was red again with the identical 81.921875, this time in the public annotation.
+An intermittent race, and the case was right each time it failed.
+
+### Mechanism, read from the library's source
+
+`@zag-js/splitter` 1.43.3 re-syncs its size list from props in `watch`, through `@zag-js/react`'s `track.mjs` — a
+`useEffect`. `connect` lays each pane out from that list **by index** (`splitter.connect.mjs`; `panel.mjs`
+`getPanelFlexBoxStyle`, `flexGrow = resolvedSizes[panelIndex]`). `DocumentBody` left a collapsed side out of the
+splitter, so the commit that collapsed the right side rendered two panes against a three-entry list: the surviving
+flex-grow shares summed to about 70 and both panes widened. From the case's stored widths that predicts about +83 px;
+CI measured +81.921875 on both reds, because the same stored widths give the same stale arithmetic whenever the read
+lands in the window.
+
+**What is read and what is measured.** That the window ENDS is read from source: `utils/fuzzy.mjs` `fuzzySizeEqual` is
+false for lists of different lengths, so the re-sync replaces the list. How long the window lasts in a browser is not
+measured — one read per CI run, right after the collapse.
+
+### Control, then fix
+
+`Splitter.test.tsx` renders the row outside `act()`, which flushes every effect and would hide the commit under test,
+stubs the root's width because happy-dom lays nothing out, shuts the end pane under `flushSync`, and reads the panes'
+flex-grow in the same task. **On the unfixed splitter: `24, 46` — a 0.343 share where 0.24 was stored.**
+
+The fix keeps the pane set constant. `FixedPane` gains `open`, and a shut side stays in the machine at size, min and max
+`0px`, with no content and no handle; a finished resize never writes it. `DocumentBody` always passes both sides with
+`open` from their setting and Focus. The machine's own collapse is still unused — the open setting is the one writer
+(B3).
+
+**Rejected:** a resync sent from a layout effect — the machine's `send` queues a microtask, so nothing puts it before a
+paint; remounting the machine when the pane set changes — it remounts the flexible pane, which is the document view.
+
+### Proof
+
+- The control, green after the fix, and a new case: a shut side draws neither content nor handle and is still a pane.
+- Typecheck 0, lint 0; `Splitter`, `App`, `AppTabs`, `SignDocumentBody` and `DocumentBody` tests 82/82.
+- The rendered suite on a fresh build, **twice** because the red was intermittent: 23/23 and 23/23.
+- **Mutation S-1**, a shut end side dropped from the pane set again: the control failed on *"24, 46 … expected
+  0.34285714285714286 to be close to 0.24"* and the shut-side case on *"expected … to have a length of 3 but got 2"*
+  (2 failed / 4 passed) — reverted.
+
+### What this says about the range
+
+Pass I did not cause it; the case had passed on every earlier push. **The red was attributed only once its text was
+readable**, which is why the accessibility step is wrapped now. The Windows leg cannot be read as evidence of absence
+here: it passed on all three pushes.
+
+---
+
 ## 2026-09-15 — Design pass J: the visual baselines, measured before they gate
 
 §10.7: *"Playwright screenshot baselines for the start screen, each ribbon section, one dialog and one panel, in all
