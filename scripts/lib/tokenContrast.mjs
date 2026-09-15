@@ -3,9 +3,10 @@
  * Contrast is ENFORCED, not audited — computed from the token file itself.
  *
  * ARCHITECTURE §10.2 and ADR-0003. Every colour role declares a category and,
- * for foregrounds and boundaries, the set of surfaces it may sit on. This
- * evaluates exactly those declared pairs: 4.5:1 for `text`, 3:1 for
- * `boundary-control`, nothing for the rest.
+ * for foregrounds, boundaries and graphics, the set of surfaces it may sit on.
+ * This evaluates exactly those declared pairs: 4.5:1 for `text`, 3:1 for
+ * `boundary-control` and for `graphic` (a chrome graphic drawn over the document,
+ * ADR-0003 corrected 2026-09-15), nothing for the rest.
  *
  * ## Why declared pairs rather than every combination
  *
@@ -85,11 +86,12 @@ const OBLIGATION = {
   'boundary-control': 3,
   'boundary-decorative': null,
   fill: null,
+  graphic: 3,
   derived: null,
 };
 
 /** Categories that must declare a surface set, and those that must not. */
-const NEEDS_SURFACES = new Set(['text', 'boundary-control']);
+const NEEDS_SURFACES = new Set(['text', 'boundary-control', 'graphic']);
 
 /** @param {string} root */
 export function tokenFile(root) {

@@ -892,6 +892,59 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — D3's owed half: an existing Redact mark is drawn as a solid preview
+
+FEATURES row 131 owed *"the solid preview — how an existing mark is rendered"*, with a trigger — *"the annotations
+layer, which nothing has yet"* — that could not fire: that layer is what the preview is. The owner's order put it next.
+
+### Measured first
+
+A PDF with a Redact mark written by MuPDF the kernel's way (`createAnnotation('Redact')` → `setRect` → `update()`), over a
+drawn grey box, opened in the production build in light and dark: inside the mark the canvas reads the box's grey
+`[153,153,153]`; along a row through it the only colours are paper, grey and two reds. **An outline, and the content under
+it visible.** The probe's first fixture passed PDF user space to MuPDF's y-down `setRect` and put the mark 308 pt below
+the box; the canvas samples, taken in PDF space, read only the box. The screenshot is what showed it.
+
+### Built
+
+- ADR-0003's correction (`18d725d`): a `graphic` category. `--redact-mark` is black in every theme — the burn-in paints
+  MuPDF's black boxes (`pageRedact.ts`, `cover === 'solid'`) — declared `graphic @on page`, and `tokenContrast.mjs` holds
+  the category to 3:1 and requires `@on`.
+- `registries/annotationTypes.tsx`: §7's renderer half, an exhaustive record over `AnnotationKindName`; `null` where the
+  page raster already draws the kind; `redact` draws the opaque box. The geometry adapter and writer mapping are not
+  built — nothing calls them.
+- `usePageAnnotations` (`usePageText`'s shape) and `AnnotationLayer` (`SelectionLayer`'s): inert, per page, over the text
+  layer and under the selection, mounted whether or not a tool is active, gated on the slot's own measurement.
+- `browserShim`'s `document.annotations` can be seeded.
+
+### Proof
+
+- Kernel: `readAnnotations` lists a drawn mark as `redact` at [10,20,110,70].
+- Unit: five `AnnotationLayer` cases, including the CONTROL that a square at the same rectangle draws nothing.
+- `check:tokencontrast`: 51 declared pairs, the three new ones among them; `proof:tokencontrast` 11 cases, 10 and 11 new.
+- Rendered, production build: fill `rgb(0, 0, 0)`; the box within 2 px of the rectangle mapped onto the page canvas; the
+  seeded square draws nothing.
+- **Mutations, each reverted:**
+  - **S-D1**, `redact`'s renderer set to `null`: three unit cases failed (the solid box, both kinds, aria-hidden — no
+    layer is drawn at all), and the rendered case failed on *"toHaveCount … Expected: 1 Received: 0"* after a clean build.
+  - **S-D2**, `graphic` dropped from the categories that must declare surfaces: `proof:tokencontrast` exited 1 with three
+    failures, among them case 11 (*"failures: none"*) and the shipped file (*"may not declare @on surfaces"*).
+  - **S-D3**, the box's top taken from its bottom edge: the unit case failed alone on `"20"` → `"100"`, and the rendered
+    case on position, *"Expected: < 2 Received: 100"*.
+- **Final pass after every revert**: no mutation marker in the 12 changed files; typecheck 0, lint 0; 211 unit cases in
+  the five affected files; the token check and proof as above; **the whole rendered suite, 24 passed**, because the layer
+  mounts on every page slot; **`test:visual` 4 passed**, the control still reporting its planted 319 pixels — the layer
+  draws nothing on the baselines' pages, which carry no marks.
+- Two slips caught before they mattered: the new kernel case first called `.map` on `readAnnotations`'
+  `{ annotations, truncated }` (typecheck), and the first S-D1 plant added a key the exhaustive record refuses, which would
+  have reddened the rendered case for the wrong reason (removed before anything ran).
+
+### Part M
+
+M2: token only, a checked pair. M4: inert layer — nothing focusable, `aria-hidden`, `pointer-events: none`. M6: no motion.
+
+---
+
 ## 2026-09-15 — `main` never cancels, and a queued run on it was still replaced: groups by commit
 
 **A commit on `main` lost its CI verdict with `cancel-in-progress: false` in place.** `a3db070`'s board read answered

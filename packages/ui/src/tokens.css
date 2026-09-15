@@ -34,9 +34,10 @@
  * | `boundary-control` | 3:1 against every surface it may sit on (WCAG 1.4.11) |
  * | `boundary-decorative` | none; lint forbids its use as a control boundary |
  * | `fill` | none itself; if it carries a foreground it is also a `surface` |
+ * | `graphic` | 3:1 against its declared surface set; a chrome graphic drawn over the document, never text |
  * | `derived` | computed at the point of use by `onColor`; never stored |
  *
- * `@on` is required for `text` and `boundary-control` and forbidden elsewhere.
+ * `@on` is required for `text`, `boundary-control` and `graphic`, and forbidden elsewhere.
  * The check evaluates exactly the declared pairs — no more, no fewer. Invariant
  * L16 is what makes that exhaustive rather than narrow: a foreground that is not
  * a token cannot exist, so a pair the check does not evaluate cannot render.
@@ -44,8 +45,15 @@
  * ## Why `--page` is not a surface for chrome text
  *
  * §10.2 defines surfaces per render context. `--page` is the document, and
- * chrome text never sits on it; chrome GRAPHICS drawn over it are checked at
- * 3:1 by the overlay-on-page context, which is the derivation half and is owed.
+ * chrome text never sits on it; chrome GRAPHICS drawn over it are held to 3:1.
+ * A STORED one — `--redact-mark`, the solid preview of what a burn-in removes —
+ * is declared `graphic @on page` and checked like any declared pair (ADR-0003,
+ * corrected 2026-09-15). An accent COMPANION on the page is derived by `onColor`,
+ * and exercising that derivation is still the owed half.
+ *
+ * `--redact-mark` is black in every theme because the burn-in paints MuPDF's black
+ * boxes (`pageRedact.ts`, `cover === 'solid'`), and the preview shows that result;
+ * `--page` is white in every theme, so the pair is the same everywhere.
  */
 
 /* ─── roles ─────────────────────────────────────────────────────────────────
@@ -55,6 +63,7 @@
  * @role surface2 surface
  * @role canvas surface
  * @role page surface
+ * @role redact-mark graphic @on page
  * @role text text @on bg bg2 surface surface2
  * @role muted text @on bg bg2 surface surface2
  * @role faint text @on bg bg2 surface surface2
@@ -77,6 +86,7 @@
   --surface2: #2a2f33;
   --canvas: #141618;
   --page: #ffffff;
+  --redact-mark: #000000;
   --text: #e7eaec;
   --muted: #9aa2a8;
   --faint: #939ba3;
@@ -96,6 +106,7 @@
   --surface2: #f7f8f9;
   --canvas: #e2e4e7;
   --page: #ffffff;
+  --redact-mark: #000000;
   --text: #1d2023;
   --muted: #5d656c;
   --faint: #5f6770;
@@ -115,6 +126,7 @@
   --surface2: #101010;
   --canvas: #000000;
   --page: #ffffff;
+  --redact-mark: #000000;
   --text: #ffffff;
   --muted: #e6e6e6;
   --faint: #bfbfbf;

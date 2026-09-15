@@ -1314,6 +1314,21 @@ describe('applyAddAnnotation writes each annotation type as the format defines i
     expect(stored?.colour).toStrictEqual([1, 0, 0]);
   });
 
+  it('is LISTED as a redact mark at the rectangle it covers, which is what the page preview draws', async () => {
+    // THE KERNEL HALF OF THE PREVIEW'S PAIR. The renderer draws a solid box from what
+    // `document.annotations` answers — kind and rect — so the claim owed here is that a mark this
+    // build writes comes back as `redact` at the rectangle the command named, in PDF user space.
+    // The case above reads the stored `/Rect`; this one reads the channel's own reader, which is
+    // the thing the renderer is handed.
+    const listed = await onSession(
+      await drawnOn(await fixture({ content: true }), command({ annotation: REDACT })),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations.map((entry) => ({ page: entry.page, kind: entry.kind, rect: entry.rect }))).toStrictEqual([
+      { page: 0, kind: 'redact', rect: { x0: 10, y0: 20, x1: 110, y1: 70 } },
+    ]);
+  });
+
   it('leaves the page CONTENT byte-identical, which is what a mark means', async () => {
     // THE ASSERTION THAT SEPARATES A MARK FROM A REDACTION, and it is on the
     // content rather than on the annotation: a burn-in also leaves a `/Redact`

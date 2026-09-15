@@ -4,10 +4,12 @@ import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { TextLayer, type TextLayerLine } from './TextLayer.js';
+import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
@@ -310,6 +312,9 @@ export function PageList({
   // every scroll — a caller owning the fetch would re-render on scroll to hand
   // back a set the scroller already had.
   const pageText = usePageText(client, docId, version, visible);
+  // EVERY PAGE'S MARKS, one read per version: the channel is whole-document, so there is nothing
+  // to narrow to the visible set, and the layer is mounted only on slots that are measured.
+  const pageAnnotations = usePageAnnotations(client, docId, version);
   const scroller = useRef<HTMLDivElement | null>(null);
   /**
    * The scroller's own box, remeasured whenever it changes.
@@ -725,6 +730,9 @@ export function PageList({
           // as long as the page has not been drawn, which is when a reader is
           // most likely to be wondering.
           kind={pageText.get(page)?.kind}
+          // THE SLOT'S OWN MEASUREMENT GATES THIS, for the text layer's reason: a preview placed
+          // with a neighbour's box would cover the wrong region of the page.
+          annotations={sizes.has(page) ? pageAnnotations.get(page) : undefined}
           search={search}
           secondRasteriser={secondRasteriser}
         />
@@ -771,6 +779,7 @@ function PageSlot({
   drawing,
   text,
   kind,
+  annotations,
   search,
   secondRasteriser,
 }: {
@@ -787,6 +796,8 @@ function PageSlot({
   readonly text: readonly TextLayerLine[] | undefined;
   /** What the page is made of, or `undefined` before its text has arrived. */
   readonly kind: PageTextAnswer['kind'] | undefined;
+  /** This page's existing annotations, or `undefined` before they are known or the slot is measured. */
+  readonly annotations: readonly PageAnnotation[] | undefined;
   readonly search: SearchHighlight | undefined;
   /**
    * §6.1's second engine, or `undefined` where the setting is off.
@@ -912,6 +923,16 @@ function PageSlot({
           lines={text}
           page={page}
           search={search}
+        />
+      )}
+      {/* OVER THE TEXT LAYER AND UNDER THE SELECTION: a preview of what a burn-in removes covers
+          the page's content, and a selection box around that mark must still show on top of it.
+          Mounted whether or not a tool is active — a mark is on the page either way. */}
+      {annotations === undefined || size === undefined ? null : (
+        <AnnotationLayer
+          annotations={annotations}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
         />
       )}
       {drawing === undefined || size === undefined ? null : (

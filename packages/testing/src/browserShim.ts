@@ -1,4 +1,5 @@
 import {
+  type AnnotationKindName,
   type ChannelResult,
   type ContractClient,
   type ContractHandlers,
@@ -425,6 +426,20 @@ export interface BrowserShimOptions {
    * common case, and it is the honest empty rather than an invented field.
    */
   readonly formFields?: readonly (readonly ShimFormField[])[];
+
+  /**
+   * What `document.annotations` lists: page, walk index, kind and rect, in PDF user space.
+   *
+   * A single list, for `flatFieldCandidates`' reason — nothing here re-reads it across versions.
+   * Absent is an empty document, which is what every case that is not about existing marks
+   * wants.
+   */
+  readonly annotations?: readonly {
+    readonly page: number;
+    readonly index: number;
+    readonly kind: AnnotationKindName;
+    readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+  }[];
 
   /**
    * What `document.flatFieldCandidates` proposes.
@@ -1511,8 +1526,20 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'document.annotations': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      // SEEDED WHEN A CASE ASKS, empty otherwise: a page layer that draws existing marks is
+      // proven by what it draws for a mark it was handed, which needs a mark. The fields no page
+      // layer reads are filled with a plain value rather than made a case's business.
       return Promise.resolve(
-        ok({ version: asDocVersion(current), annotations: [], truncated: false }),
+        ok({
+          version: asDocVersion(current),
+          annotations: (options.annotations ?? []).map((annotation) => ({
+            ...annotation,
+            style: { colour: [1, 0, 0], opacity: 1, borderWidth: null },
+            contents: '',
+            authored: true,
+          })),
+          truncated: false,
+        }),
       );
     },
 

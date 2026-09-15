@@ -29,7 +29,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 11 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -147,6 +147,38 @@ try {
     empty.blind !== null && empty.failures.length === 0,
     `blind=${String(empty.blind)}. "No roles" and "no failures" produce the same empty failure ` +
       `list, and only one of them is an answer.`,
+  );
+
+  // ---- 10. `graphic` SEPARATES at 3:1 against the surface it declares (ADR-0003, corrected 2026-09-15) ----
+  const graphics = evaluate(
+    fixture([
+      ' * @role page surface',
+      ' * @role dark-mark graphic @on page',
+      ' * @role pale-mark graphic @on page',
+      "[data-theme='probe'] {",
+      '  --page: #ffffff;',
+      '  --dark-mark: #000000;',
+      '  --pale-mark: #dddddd;',
+      '}',
+    ]),
+  );
+  check(
+    'a `graphic` below 3:1 on its page is reported, and one above it beside it is not',
+    graphics.failures.length === 1 && graphics.failures[0]?.includes('--pale-mark') === true,
+    `failures: ${graphics.failures.join('; ') || 'none'}. #dddddd on white is about 1.4:1; a check that ` +
+      `carried no obligation for the new category would report neither, and one that reported both ` +
+      `would separate nothing.`,
+  );
+
+  // ---- 11. and it must say where it is drawn ----
+  const unplaced = evaluate(
+    fixture([' * @role page surface', ' * @role mark graphic', "[data-theme='probe'] {", '  --page: #ffffff;', '  --mark: #000000;', '}']),
+  );
+  check(
+    'a `graphic` that declares no @on surface is reported',
+    unplaced.failures.some((failure) => failure.includes('--mark') && failure.includes('no @on')),
+    `failures: ${unplaced.failures.join('; ') || 'none'}. A graphic with no declared surface is a pair ` +
+      `the check evaluates zero of — the narrowing direction, reported as clean.`,
   );
 
   if (failures.length > 0) {

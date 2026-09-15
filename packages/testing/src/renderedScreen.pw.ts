@@ -895,3 +895,57 @@ test('a DIALOG opened from the keyboard closes on the FIRST Escape', async ({ pa
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 });
+
+test('an existing REDACT mark is drawn as a SOLID preview over the region it covers, and a square beside it is not', async ({
+  page,
+}) => {
+  // FEATURES row 131's owed half. Measured 2026-09-15 in this build: PDF.js paints MuPDF's Redact appearance as a thin
+  // outline and nothing else, so the content a burn-in will remove stayed fully visible. The preview is chrome the
+  // renderer draws — §10.2's overlay-on-page context — in `--redact-mark`.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await onePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000d3');
+  // PDF USER SPACE, off-centre and clear of every edge, so a preview drawn unscaled, unshifted or with the y axis the
+  // wrong way up lands somewhere else and the position assertions below say where.
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'marked.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    annotations: [
+      { page: 0, index: 0, kind: 'redact', rect: { x0: 100, y0: 600, x1: 300, y1: 700 } },
+      { page: 0, index: 1, kind: 'square', rect: { x0: 350, y0: 100, x1: 450, y1: 200 } },
+    ],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const canvas = page.locator('canvas[data-page-canvas="0"]');
+  await expect(canvas).toBeVisible();
+
+  const preview = page.locator('[data-annotation-layer="0"] .m-redact-preview');
+  await expect(preview).toHaveCount(1);
+  // THE CONTROL: a square is drawn by the page raster from its own appearance, so the layer draws nothing for it. A
+  // layer that drew every kind would pass everything above and paint a black box over every square a person drew.
+  await expect(page.locator('[data-annotation-kind="square"]')).toHaveCount(0);
+
+  // THE TOKEN, resolved in the production build: black, which is what the burn-in paints.
+  expect(await preview.evaluate((node) => getComputedStyle(node).fill)).toBe('rgb(0, 0, 0)');
+
+  // WHERE, against the canvas the page is drawn in: 612 pt across the canvas's width is the scale, and the top of the
+  // box is 792 − y1 down from the top of the page.
+  const pageBox = await canvas.boundingBox();
+  const box = await preview.boundingBox();
+  expect(pageBox).not.toBeNull();
+  expect(box).not.toBeNull();
+  const scale = (pageBox?.width ?? 0) / 612;
+  const expected = {
+    x: (pageBox?.x ?? 0) + 100 * scale,
+    y: (pageBox?.y ?? 0) + (792 - 700) * scale,
+    width: 200 * scale,
+    height: 100 * scale,
+  };
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    expect(
+      Math.abs((box?.[key] ?? Number.NaN) - expected[key]),
+      `${key}: drawn ${String(box?.[key])}, expected ${String(expected[key])} at scale ${String(scale)}`,
+    ).toBeLessThan(2);
+  }
+});

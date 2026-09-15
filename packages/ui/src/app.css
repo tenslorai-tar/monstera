@@ -2241,6 +2241,28 @@ textarea {
   vector-effect: non-scaling-stroke;
 }
 
+/*
+ * Existing annotations drawn over their page by their kind's renderer
+ * (`registries/annotationTypes.tsx`). INERT, for `.m-selection-layer`'s reason:
+ * the overlay above owns every gesture.
+ */
+.m-annotation-layer {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  pointer-events: none;
+}
+
+/*
+ * The solid preview of a Redact mark: the region a burn-in removes, filled with
+ * `--redact-mark`, a `graphic` token checked at 3:1 against `--page`. OPAQUE, and
+ * no stroke — the page's own outline from the mark's appearance sits under it.
+ */
+.m-redact-preview {
+  fill: var(--redact-mark);
+}
+
 .m-annotation-overlay {
   position: absolute;
   inset: 0;
