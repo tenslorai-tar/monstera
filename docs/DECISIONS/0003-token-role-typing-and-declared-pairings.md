@@ -241,3 +241,54 @@ the renderer draws, and its colour needs a checked pairing.
 - **The PDF's own appearance.** Outline only, measured; it previews nothing.
 - **Derive it from the accent with `onColor`.** It would read as a selection, and it
   would not be the colour the burn-in produces.
+
+## Correction, 2026-09-16 — text owes 7:1 in the high-contrast theme, derived colours included
+
+**The owner's decision, 2026-09-15**: every text-bearing role in the `hc` theme clears
+**7:1** on every surface it may sit on. Light and dark are unchanged at 4.5:1, which is
+`BUILD-PROMPT.md`:998 for them — *"4.5:1 for every text-bearing role on every surface it
+may sit on"*. High contrast is not a colour preference: `appearance.ts` reaches it from
+`forced-colors: active` or `prefers-contrast: more`, so a reader is telling the platform
+the other themes are hard to read, and WCAG's enhanced floor is the answer to that
+request rather than its minimum.
+
+**Where the change actually lands, measured 2026-09-16** from the shipped token file with
+this check's own parsers: `hc` has twelve declared `text` pairs and **all twelve already
+clear 7:1**. Light has eight below it and dark eight, and those stay at 4.5:1. The colour
+that does not clear 7:1 in `hc` is **derived**: the primary button's label, solved by
+`useOnColor(element, 'color', '--text', ['--accent'], 4.5)`, measured 4.69:1 — a value
+solved to a floor, so it sits just above whichever floor it is given.
+
+### Corrected decision
+
+| Category | Contrast obligation |
+|---|---|
+| `text` | 4.5:1 against its declared surface set — **7:1 where the theme in force is `hc`** |
+
+- **One floor, keyed by the theme, with callers.** *What ratio does text owe here* is a
+  single answer both halves take: the token check reads it per theme block, and every
+  `onColor` caller that carries text reads it from the theme in force at the element. Two
+  spellings of 7 would be a second opinion about the obligation (B3a), and the runtime
+  half is where the failing colour is.
+- **The high-contrast run carries a planted failure.** Nothing in `hc` fails 7:1 today, so
+  a check that silently applied 4.5 there would report exactly what a correct one reports.
+  A fixture whose `hc` text sits between the two floors — passing at 4.5, failing at 7 —
+  is what separates them, and a control asserts the same pair passes in a light or dark
+  block.
+- `boundary-control` and `graphic` are unchanged at 3:1 in every theme: WCAG 1.4.11 has no
+  enhanced level, and inventing one here would be this project's opinion rather than the
+  standard's.
+
+### Rejected
+
+- **Raise the floor in every theme.** It would restate WCAG AAA as this product's baseline
+  for text nobody has asked to be enhanced, and eight pairs in each of light and dark are
+  between the two floors — a redesign of both themes, taken as a side effect of an
+  accessibility mode.
+- **Write 7 into the token check alone.** Measured above: it would report nothing, change
+  nothing, and leave the one colour that fails where it is. The green check that verifies
+  nothing, arriving as an accessibility improvement.
+- **Solve the button's label at 7:1 in every theme.** The label is solved against the
+  brand accent; forcing 7:1 on light and dark would push it to near-black or near-white
+  and discard §10.2's theme-aware pair, which exists so the primary button reads as the
+  brightest accent on screen.

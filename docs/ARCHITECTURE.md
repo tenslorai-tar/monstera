@@ -2217,11 +2217,26 @@ Every role declares a **category** and, for foregrounds and boundaries, the
 | Category | Obligation |
 |---|---|
 | `surface` | none itself; is a background others are checked against |
-| `text` | 4.5:1 against its **declared** surface set |
+| `text` | 4.5:1 against its **declared** surface set — **7:1 in the high-contrast theme** (owner, 2026-09-15) |
 | `boundary-control` | 3:1 against every surface it may sit on (WCAG 1.4.11) |
 | `boundary-decorative` | none; **lint forbids its use as a control boundary** |
 | `fill` | none itself; if it carries a foreground it is also a `surface` |
 | `graphic` | 3:1 against its **declared** surface set — a chrome graphic drawn over the document, never text ([ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md), corrected 2026-09-15) |
+
+**The high-contrast theme holds text to 7:1, and the obligation is per theme**
+(owner, 2026-09-15). Light and dark stay at 4.5:1, which is `BUILD-PROMPT.md`:998
+unchanged for them. High contrast exists because a reader has told the platform
+the other themes are hard to read, so the floor that answers that request is
+WCAG's enhanced one rather than its minimum.
+
+**It binds the derived half as well, and that is what the measurement says it is
+for.** Measured 2026-09-16 from the token file: every declared `text` pair in
+`hc` already clears 7:1 — twelve of twelve — while the colour that does not is
+computed at the point of use, the primary button's label at 4.69:1 (`useOnColor`
+with a 4.5 floor). A target written only into the token check would therefore
+report nothing and change nothing. So the floor a text colour owes is **one
+answer keyed by the theme in force**, taken by the token check and by every
+`onColor` caller that carries text.
 
 **CI checks exactly the declared pairs — no more, no fewer.** Checking every
 role against every surface is over-broad: it fails pairings that never render,
@@ -2516,3 +2531,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-09-15 | **The start screen's placement names a slot** (§7). §10.3's start screen has three places with different presentations — one primary Open button under the hero, a grid of feature shortcuts, a footer — and `{ surface: 'start-screen'; order }` was one ordered list, so the screen could only draw every command alike or name `document.open` itself, the second wiring place. The member gains `slot: 'primary' \| 'shortcut' \| 'footer'`. About, Settings and the diagnostics log take the footer, since with no document the ribbon is not drawn; the hero, the recent list and the footer's text stay the screen's own content. | §7's `start-screen` placement, `{ surface; order }` | [ADR-0068](DECISIONS/0068-the-start-screen-projects-into-three-slots.md) |
 | 2026-09-15 | **A colour is a settings schema kind, and its entry carries an unset title** (§7). The default style colour could be set only from the comment styles panel, which draws beside an open document, and ADR-0056 had excluded it from the Settings dialog because a colour typed as text offers no colour. The owner's ruling: a colour control in the dialog, as a new schema kind, through the registry. A colour schema is one the registry's colour constructor built — never recognised from a union's shape — and the dialog draws it as a checkbox for the no-choice value beside a colour input. The entry gains an **unset title** naming what no choice means for that setting, refused on a colour setting without one and on any other kind with one. The accent stays excluded: it can be refused on apply, and a dialog control would have to show that. | ADR-0056 Decisions 2 and 3; §7's Settings entry | [ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md) |
 | 2026-09-15 | **A sixth token category, `graphic`, for chrome drawn over the document** (§10.2). §10.2's *overlay-on-page* context obliges chrome graphics over the document — redaction marks among them — to 3:1 against `--page`, and ADR-0003's five categories had no way to declare a stored colour with that obligation: `boundary-control` carries the number and means a control's edge. The first caller is the solid redaction preview FEATURES row 131 owes; measured the same day, PDF.js paints a MuPDF Redact mark as an outline only, so the preview is chrome the renderer draws. `graphic` requires `@on`, is checked at 3:1, and never carries text; accent companions on the page stay derived. | ADR-0003 Decision 1's five categories; §10.2's category table | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |
+| 2026-09-16 | **Text in the high-contrast theme is held to 7:1** (§10.2). The owner's decision of 2026-09-15: every text-bearing role in `hc` clears 7:1 on every surface it may sit on, light and dark unchanged at 4.5:1. Measured 2026-09-16, the change is not where it looks: all twelve declared `text` pairs in `hc` already clear 7:1, and the colour that does not is derived — the primary button's label, solved by `useOnColor` against `--accent` at a 4.5 floor, 4.69:1 in `hc`. So the obligation is **one floor keyed by the theme in force**, read by `check:tokencontrast` and by every `onColor` caller carrying text, and a planted failure in the high-contrast run is what proves the check can fail. | `BUILD-PROMPT.md`:998's *"4.5:1 for every text-bearing role on every surface it may sit on"*, for the `hc` theme alone | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) (correction 2026-09-16) |
