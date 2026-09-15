@@ -885,6 +885,54 @@ jobs:
   #
   # `proof:toolchain` keeps this version and `engines.node` the same number, and
   # fails if no job here runs the floor at all.
+  # §10.7'S VISUAL BASELINES: "compared by perceptual diff with a stated tolerance … run in CI".
+  #
+  # ITS OWN JOB ON windows-latest, not a step on the matrix. A baseline is a fact about one platform —
+  # font rasterisation differs between operating systems — and the committed baselines are Windows',
+  # the target platform this workflow's header names. A step with an `if:` selecting the Windows leg
+  # fails in the reassuring direction the build job's accessibility step describes: the day the
+  # expression stops matching, the gate runs nowhere and the job is green. A separate job cannot
+  # silently stop existing.
+  #
+  # A MEASUREMENT UNTIL ITS FIRST READING, and `continue-on-error` says so rather than a comment alone.
+  # The baselines were captured on a Windows 11 machine (spread 0 across three runs, a planted one-word
+  # change 319 pixels, tolerance 100 — docs/JOURNAL.md, design pass J). This runner is a different
+  # Windows image whose rendering nobody has read, and a gate whose first run is red for the
+  # environment is §10.7's "flaky gate gets ignored". EXPIRY: the commit after this job's first run
+  # removes `continue-on-error` if the annotation shows every image within 100 pixels, or re-chooses
+  # the figure from that reading — never raises it to pass. docs/FEATURES.md's visual baselines row
+  # carries the same trigger.
+  #
+  # `--always` publishes the run's tail as a notice, because Actions logs need an authenticated reader
+  # and the figure this job exists to produce is otherwise knowable to nobody outside the org.
+  visual:
+    name: Visual baselines (§10.7, windows-latest) — measuring
+    runs-on: windows-latest
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The build job's exact version, for its reason.
+          node-version: 24.19.0
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Build the renderer the baselines are compared against
+        run: npm run build
+
+      - name: Provision the pinned browser
+        run: node scripts/ci/annotate.mjs scripts/provision/playwright.mjs
+
+      - name: Compare against the committed baselines
+        run: node scripts/ci/annotate.mjs --always --npm test:visual
+
   floor:
     name: The declared Node floor actually runs (22.19.0)
     runs-on: ubuntu-latest
