@@ -892,6 +892,60 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass J: the visual baselines, measured before they gate
+
+§10.7: *"Playwright screenshot baselines for the start screen, each ribbon section, one dialog and one panel, in all
+three themes, compared by perceptual diff with a stated tolerance … regenerated deliberately, in their own commit, never
+as a side effect."* This commit is the spec; the baselines follow in their own commit, then the CI job.
+
+### The binary question, answered from the record
+
+`scripts/hooks/guardFiles.mjs`:52-54 — *"Binary formats this repository legitimately stores: brand artwork, Playwright
+screenshot baselines, the fixture corpus"*. §10.7 mandates the baselines. The owner's *never commit a binary* is a clause
+of the rule about downloads.
+
+### What was built
+
+- `designBaselines.visual.ts`: light, dark and high contrast — the last the platform asking for more contrast, which is
+  how `applyAppearance` reaches it — × the start screen, the keyboard shortcuts dialog, the eight rail sections and the
+  right contextual panel: 33 images. The page canvas is masked, because §6 gives page raster its own perceptual proof. The
+  theme is asserted on the root before any capture, and the rail's sections are an independent list compared with what
+  the rail shows.
+- `scripts/test/visual.config.mjs` imports the accessibility run's config and changes three things: `.visual.ts`, which
+  `test:a11y`'s `.pw.ts` does not match; baselines under `packages/testing/baselines/`, named by platform; the tolerance.
+- `pageBridge.ts`: one bridge for both runs (B3a). `renderedScreen.pw.ts` imports it, 23/23 after the move.
+- `npm run test:visual` compares; `npm run test:visual:regenerate` rewrites every baseline.
+
+### The instability, found by reading the images
+
+The first measurement ran three zero-tolerance comparisons of one build. The first matched all 33; the second failed
+`light-section-comment` (15,453 px) and `dark-dialog-keyboard-shortcuts` (412,343 px); the third `dark-section-comment`
+(426,076 px). That received image held no page, no thumbnail and a status bar still laying out, and a registered dialog's
+body is `lazy`. **Playwright's stability rule is two identical consecutive frames, which a document that has not started
+drawing satisfies.** Captures now wait for two visible canvases and for the dialog's first body row. After that, three
+comparisons at zero tolerance matched all 33 each time.
+
+### The tolerance
+
+Pixelmatch's perceptual threshold 0.2 (Playwright's default) and **at most 100 differing pixels**, between two readings:
+the spread across three runs was **0**, and the control's planted one-word change — *Open PDF…* to *Open PDFs* — moved
+**319**. Absolute rather than a ratio, so the panel image is as sensitive as the window. **Mutation J-1**, the tolerance
+loosened to 400: the control failed on *"a changed word on the start screen passed the comparison"* — reverted.
+
+### Windows only, and measured before it gates
+
+CI runs `windows-latest` and `ubuntu-latest`. A baseline is one platform's rasterisation, this machine has no `gh`, no
+Docker and no WSL distribution, and a runner's artefacts need an authenticated reader. So the baselines are Windows',
+the target platform, and they will run as their own job. That job measures first: the runner is a different Windows image
+whose rendering nobody has read, and a gate whose first run is red for the environment is §10.7's flaky gate.
+
+### Also found
+
+`ci.yml`'s accessibility step said it *cannot* be wrapped. `annotate.mjs --npm` made that false on 2026-09-14, and
+4359fe4's ubuntu failure then arrived with no public text. Wrapped in `da7ec5e`.
+
+---
+
 ## 2026-09-15 — Design pass I: the Settings dialog sets the default style colour, with no document open
 
 The owner's ruling, 2026-09-15: *"add a colour control to the Settings dialog, as a new schema kind, so the default style

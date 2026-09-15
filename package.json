@@ -24,6 +24,8 @@
     "typecheck": "tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty",
     "provision:playwright": "node scripts/provision/playwright.mjs",
     "test:a11y": "playwright test --config scripts/test/playwright.config.mjs",
+    "test:visual": "playwright test --config scripts/test/visual.config.mjs",
+    "test:visual:regenerate": "playwright test --config scripts/test/visual.config.mjs --update-snapshots=all",
     "build:preload": "node scripts/build/preload.mjs",
     "build:renderer": "vite build --config scripts/build/renderer.vite.config.mjs",
     "build": "npm run typecheck && npm run build:preload && npm run build:renderer",

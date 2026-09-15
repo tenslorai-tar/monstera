@@ -3,12 +3,12 @@
 // `verbatimModuleSyntax` the default import resolves to the namespace rather
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
-import { BRIDGE_KEY } from '@monstera/contract';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
-import { createBrowserShim } from './browserShim.js';
+// ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a).
+import { bridge } from './pageBridge.js';
 
 /**
  * §10.4's mandated gate: axe-core on a Playwright-rendered screen.
@@ -46,51 +46,6 @@ import { createBrowserShim } from './browserShim.js';
 /** The impact levels §10.4's threshold covers. */
 const BLOCKING = new Set(['serious', 'critical']);
 
-/**
- * Puts the browser shim behind the page's bridge.
- *
- * A function each test calls rather than a `beforeEach`, because the SCREEN a
- * test renders depends on what the shim answers — a start screen with a recent
- * list and a recovery offer is a different composed screen from an empty one,
- * and §10.4's gate is on every screen rather than on every route. One shim for
- * all of them could only ever produce the first-launch one.
- */
-async function bridge(
-  page: Page,
-  options: Parameters<typeof createBrowserShim>[0] = {},
-): Promise<void> {
-  const shim = createBrowserShim(options);
-
-  // The client is keyed by channel; the bridge is keyed by string. The cast is
-  // that one fact and nothing wider — `any` would also erase the parameter and
-  // return types, which is what B7 is protecting.
-  const client = shim.client as unknown as Record<string, (params: unknown) => Promise<unknown>>;
-
-  await page.exposeFunction('__monsteraInvoke', async (channel: string, params: unknown) => {
-    const handler = client[channel];
-    if (handler === undefined) {
-      // A CHANNEL THE SHIM DOES NOT HAVE IS A DEFECT, not a null answer. The
-      // shim is complete by construction — it fails to compile if the registry
-      // grows — so reaching this means the page asked for something that is not
-      // in the contract at all.
-      throw new Error(`the page invoked an unknown channel: ${channel}`);
-    }
-    return handler(params);
-  });
-
-  await page.addInitScript((key: string) => {
-    Object.defineProperty(window, key, {
-      value: {
-        invoke: (channel: string, params: unknown) =>
-          (
-            window as unknown as {
-              __monsteraInvoke: (c: string, p: unknown) => Promise<unknown>;
-            }
-          ).__monsteraInvoke(channel, params),
-      },
-    });
-  }, BRIDGE_KEY);
-}
 
 test('CONTROL: axe reports a planted violation on this very page', async ({ page }) => {
   await bridge(page);
