@@ -477,6 +477,12 @@ export const KEYBOARD_SHORTCUTS_TITLE = messageKey('dialog.keyboard-shortcuts.ti
 export const KEYBOARD_SHORTCUTS_COMMAND_TITLE = messageKey('command.keyboard-shortcuts.title');
 export const SHORTCUTS_COMMAND_HEADER = messageKey('dialog.keyboard-shortcuts.command');
 export const SHORTCUTS_CHORD_HEADER = messageKey('dialog.keyboard-shortcuts.chord');
+export const FEATURE_ANNOTATE_TITLE = messageKey('command.start-annotate.title');
+export const FEATURE_FORMS_TITLE = messageKey('command.start-forms.title');
+export const FEATURE_OCR_TITLE = messageKey('command.start-ocr.title');
+export const FEATURE_SPLIT_MERGE_TITLE = messageKey('command.start-split-merge.title');
+export const FEATURE_ENCRYPT_SIGN_TITLE = messageKey('command.start-encrypt-sign.title');
+export const FEATURE_EXPORT_TITLE = messageKey('command.start-export.title');
 export const START_ABSENT = messageKey('surface.start.absent');
 export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const RECENT_LABEL = messageKey('surface.recent.label');
@@ -1404,6 +1410,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [KEYBOARD_SHORTCUTS_COMMAND_TITLE]: 'Keyboard shortcuts',
   [SHORTCUTS_COMMAND_HEADER]: 'Command',
   [SHORTCUTS_CHORD_HEADER]: 'Shortcut',
+  // §10.3's six start-screen shortcuts, word for word.
+  [FEATURE_ANNOTATE_TITLE]: 'Annotate & mark up',
+  [FEATURE_FORMS_TITLE]: 'Fill & create forms',
+  [FEATURE_OCR_TITLE]: 'OCR scanned pages',
+  [FEATURE_SPLIT_MERGE_TITLE]: 'Split & merge',
+  [FEATURE_ENCRYPT_SIGN_TITLE]: 'Encrypt & sign',
+  [FEATURE_EXPORT_TITLE]: 'Export anywhere',
   // SAYS WHAT HAPPENED AND WHAT IS LIKELY. A file the picker offered and the
   // service could not read has almost always moved, and naming that is what
   // makes the message actionable rather than a report.

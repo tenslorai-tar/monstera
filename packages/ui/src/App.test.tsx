@@ -1690,6 +1690,8 @@ describe('App', () => {
     // the page: Open is the one primary button, and About, the log and Settings are the footer's.
     expect(container.querySelectorAll('.m-start-primary button')).toHaveLength(1);
     expect(container.querySelectorAll('.m-start-footer button')).toHaveLength(3);
+    // AND THE GRID: §10.3's six feature shortcuts.
+    expect(container.querySelectorAll('.m-start-shortcuts button')).toHaveLength(6);
     expect(screen.getByRole('button', { name: 'Open PDF…' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Reveal diagnostics log' })).toBeDefined();

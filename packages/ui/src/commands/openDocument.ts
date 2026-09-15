@@ -31,7 +31,8 @@ import type { UiCommand } from '../registries/commands.js';
  */
 export type OpenProblem = 'absent' | 'at-capacity';
 
-export function openDocumentCommand(deps: {
+/** What opening needs from the shell: the client, and where each outcome goes. */
+export interface OpenDocumentDeps {
   readonly client: ContractClient;
   /**
    * Called with the document that was opened, and with nothing for every other
@@ -77,7 +78,9 @@ export function openDocumentCommand(deps: {
    * version, page and zoom, and bringing it forward is the whole response.
    */
   readonly onAlreadyOpen: (docId: DocId) => void;
-}): UiCommand {
+}
+
+export function openDocumentCommand(deps: OpenDocumentDeps): UiCommand {
   return {
     id: 'document.open',
     icon: 'FolderOpen',
@@ -108,36 +111,51 @@ export function openDocumentCommand(deps: {
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
     ],
     run: async (): Promise<void> => {
-      const answer = await deps.client['document.open']({});
-      // A failure here is `internal` — the channel declares no codes, because
-      // every way this ends that a user can cause is a variant of the result.
-      if (!answer.ok) return;
-      if (answer.value.kind === 'absent' || answer.value.kind === 'at-capacity') {
-        deps.onProblem(answer.value.kind);
-        return;
-      }
-      // THE READER PICKED A FILE THEY ALREADY HAVE OPEN, and with tabs there
-      // is now somewhere to send them. `already-open` carries only a `docId`
-      // by design (ADR-0009 §2) — no version, no byte length, nothing to
-      // render from — and that is exactly enough to activate the tab whose
-      // state the renderer is already holding.
-      //
-      // It is not a problem and must not be reported as one: the reader asked
-      // for a document and the document is on screen.
-      if (answer.value.kind === 'already-open') {
-        deps.onAlreadyOpen(answer.value.docId);
-        return;
-      }
-      if (answer.value.kind !== 'opened') return;
-      deps.onOpened({
-        docId: answer.value.docId,
-        version: answer.value.version,
-        byteLength: answer.value.byteLength,
-        // CARRIED, not derived. There is no path here to derive it from, which
-        // is invariant L2 doing its job rather than a gap: main states the name
-        // because main is the only side that can.
-        name: answer.value.name,
-      });
+      await openDocument(deps);
     },
   };
+}
+
+/** What an open left on screen: a document — opened, or one already open brought forward — or nothing. */
+export type OpenOutcome = 'shown' | 'none';
+
+/**
+ * Opens a document, and says whether one is now showing.
+ *
+ * THE ONE IMPLEMENTATION `document.open`'s command and the start screen's feature shortcuts share (B3a). A shortcut takes
+ * the reader to its feature only when this answers `shown`, so a dismissed picker, a moved file or a full shell changes
+ * nothing about where they will land next time.
+ */
+export async function openDocument(deps: OpenDocumentDeps): Promise<OpenOutcome> {
+  const answer = await deps.client['document.open']({});
+  // A failure here is `internal` — the channel declares no codes, because
+  // every way this ends that a user can cause is a variant of the result.
+  if (!answer.ok) return 'none';
+  if (answer.value.kind === 'absent' || answer.value.kind === 'at-capacity') {
+    deps.onProblem(answer.value.kind);
+    return 'none';
+  }
+  // THE READER PICKED A FILE THEY ALREADY HAVE OPEN, and with tabs there
+  // is now somewhere to send them. `already-open` carries only a `docId`
+  // by design (ADR-0009 §2) — no version, no byte length, nothing to
+  // render from — and that is exactly enough to activate the tab whose
+  // state the renderer is already holding.
+  //
+  // It is not a problem and must not be reported as one: the reader asked
+  // for a document and the document is on screen.
+  if (answer.value.kind === 'already-open') {
+    deps.onAlreadyOpen(answer.value.docId);
+    return 'shown';
+  }
+  if (answer.value.kind !== 'opened') return 'none';
+  deps.onOpened({
+    docId: answer.value.docId,
+    version: answer.value.version,
+    byteLength: answer.value.byteLength,
+    // CARRIED, not derived. There is no path here to derive it from, which
+    // is invariant L2 doing its job rather than a gap: main states the name
+    // because main is the only side that can.
+    name: answer.value.name,
+  });
+  return 'shown';
 }

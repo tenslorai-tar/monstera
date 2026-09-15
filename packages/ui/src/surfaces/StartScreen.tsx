@@ -11,6 +11,7 @@ import {
   START_TITLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { ToolButton } from '../primitives/ToolButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { startScreenModel } from './projections.js';
 
@@ -107,15 +108,20 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
       )}
       {shortcut.length === 0 ? null : (
         <div className="m-start-shortcuts">
-          {shortcut.map((entry) => (
-            <Button
-              key={entry.command.id}
-              label={entry.command.title}
-              onClick={() => {
-                void entry.command.run(context);
-              }}
-            />
-          ))}
+          {shortcut.map((entry) =>
+            // A GLYPH OVER ITS CAPTION, the ribbon's own button: the registry refuses a start-screen placement with no
+            // icon (`DRAWS_A_GLYPH`), so the `undefined` arm is one the type needs and no registration reaches.
+            entry.command.icon === undefined ? null : (
+              <ToolButton
+                key={entry.command.id}
+                label={entry.command.title}
+                icon={entry.command.icon}
+                onClick={() => {
+                  void entry.command.run(context);
+                }}
+              />
+            ),
+          )}
         </div>
       )}
     </div>

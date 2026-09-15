@@ -114,7 +114,8 @@ import {
   recogniseTextCommand,
 } from './commands/recogniseText.js';
 import { handwritingModelCommands } from './commands/handwritingModel.js';
-import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
+import { featureShortcutCommands } from './commands/featureShortcuts.js';
+import { type OpenProblem, openDocument, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { showSettingsCommand } from './commands/showSettings.js';
@@ -1456,16 +1457,12 @@ export function App({ client, settings }: AppProps): ReactElement {
    * there is one implementation, and the strip holds no opinion about how a
    * document is opened.
    */
-  const openCommand = useMemo(
-    () =>
-      openDocumentCommand({
-        client,
-        onOpened: opened,
-        onProblem: setOpenProblem,
-        onAlreadyOpen: activate,
-      }),
+  // ONE SET OF OPEN DEPENDENCIES, for the Open command and the start screen's feature shortcuts, which run the same open.
+  const openDeps = useMemo(
+    () => ({ client, onOpened: opened, onProblem: setOpenProblem, onAlreadyOpen: activate }),
     [activate, client, opened],
   );
+  const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
 
   const registry = useMemo(() => {
     // THE SHORTCUTS COMMAND LISTS THE REGISTRY THAT CONTAINS IT. The holder is LOCAL to this memo, filled before the
@@ -1478,6 +1475,8 @@ export function App({ client, settings }: AppProps): ReactElement {
           shortcuts: () => (holder.registry === undefined ? [] : shortcutListModel(holder.registry)),
         }),
         openCommand,
+        // §10.3's six start-screen shortcuts: the same open, then the feature's section.
+        ...featureShortcutCommands({ open: () => openDocument(openDeps), settings }),
         showAboutCommand({ client, ask }),
         // RE-ASKS MAIN WHICH SECRETS ARE STORED when a key moved, so the cloud
         // tool appears the moment its key lands rather than on the next launch.
@@ -1695,6 +1694,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       handwritingReady,
       navigator,
       openCommand,
+      openDeps,
       openPalette,
       opened,
       readTool,

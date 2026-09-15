@@ -880,6 +880,20 @@ test('F1 opens the KEYBOARD SHORTCUTS list from the registry, and the start scre
   await expect(dialog).toHaveCount(0);
 });
 
+test('a START SCREEN SHORTCUT opens a document and lands on its feature’s section', async ({ page }) => {
+  // §10.3: six feature shortcuts, "each a real entry point" — BUILD-PROMPT :1106, "opens a file then routes to that
+  // feature". Encrypt & sign is the separating tile: Protect is neither the fallback section nor the first.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+
+  await expect(page.locator('.m-start-shortcuts').getByRole('button')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Encrypt & sign' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+  await expect(page.locator('[data-ribbon-section="protect"]')).toHaveClass(/is-active/u);
+  await expect(page.locator('[data-ribbon-section="home"]')).not.toHaveClass(/is-active/u);
+});
+
 test('a DIALOG opened from the keyboard closes on the FIRST Escape', async ({ page }) => {
   // Found 2026-09-15 by the F1 case above. Base UI puts a dialog's initial focus on its first tabbable — the header's
   // Close icon button — whose tooltip opens on focus, and the tooltip's own dismiss handler, attached to that button,

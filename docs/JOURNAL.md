@@ -892,6 +892,47 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass H2: the start screen's six feature shortcuts open a document and land on their feature
+
+§10.3: *"a grid of six feature shortcuts … each a real entry point"*; `BUILD-PROMPT.md`:1106: *"opens a file then routes
+to that feature — the wired-tools rule applies to these buttons too"*.
+
+### What was built
+
+- **One open.** `openDocument(deps)` holds what `document.open`'s command did and answers `shown` — opened, or an open
+  document brought forward — or `none`. The command runs it, and so do the shortcuts; a second copy of the open for the
+  shortcuts would be the second opinion B3a is about.
+- **Six commands in the shortcut slot** (ADR-0068), each routed by `BUILD-PROMPT.md`'s canonical mapping (:420-423) rather
+  than by a choice made here: Annotate → Comment, forms → Forms, OCR → Tools, split & merge → Organize, encrypt & sign →
+  Protect, export → Home. Each opens and, only when a document is showing, sets the rail's active section — a dismissed
+  picker leaves the section where it was, so the next document does not open onto a feature the reader never reached.
+- `when` hides them once a document is open: beside one, *Annotate & mark up* would open a second document.
+- The grid draws `ToolButton`s — a glyph over its caption, the ribbon's own button.
+
+### Proof
+
+- `featureShortcuts.test.ts`: the six in order, in the shortcut slot; each routes to its section from a start none of the
+  six uses (`review`), so Export's route to Home is visible rather than read off the fallback; the `none` outcome routes
+  nowhere, which is the control; `when` hides them beside a document.
+- `App.test.tsx`: the start screen draws six tiles. The rendered case: *Encrypt & sign* opens a document and Protect is
+  the active section.
+- Chain on this tree: rendered 22/22, typecheck 0, lint 0, `check:secondwiring`, `check:definedtokens`,
+  `check:tokencontrast`, `proof:canvaspixels` (13), `proof:rendererpolicy` (22), `proof:rendergeometry` (8) all 0.
+- **The full test run was 3 failed / 2980 passed, every failure a 5 s timeout**: `csvRead.test.ts`' four-mebibyte field,
+  `AppErrorBoundary.test.tsx`' SHOWS THE PROBLEM, `AppTabs.test.tsx`' second document. Re-run alone, the three files
+  passed 13/13 at 4113 ms, 2233 ms and 1718 ms. `csvRead.test.ts` is kernel code this range does not touch, so the stall
+  is not the start screen's; it is the intermittent class already queued from H1b, now with a kernel member. The timeout
+  was not raised.
+- **Mutations, each reverted:** H2-1 routing regardless of the outcome — the `none` control failed alone (1 failed / 3
+  passed); H2-2 Annotate mapped to Forms — the routing case failed alone (1 / 3); H2-3 the six commands dropped from the
+  registry — App's start-screen case failed on *"expected to have a length of 6 but got +0"* (1 failed / 59 passed).
+
+### Part M
+
+M3 anatomy (the grid of six); M2 tokens only; M4 no new primitive (`ToolButton` reused); M6 no motion.
+
+---
+
 ## 2026-09-15 — Design pass H1b: F1 lists the keyboard shortcuts, the footer names the key, and a dialog closes on the first Escape
 
 §10.3's footer: *"Press F1 for keyboard shortcuts"*. ADR-0068 held the hint back until a command was bound to F1.
