@@ -1363,7 +1363,13 @@ function engineSessionOpener(
   const writers: Required<Omit<WriterRegistry, 'pdfium'>> = {
     mupdf: {
       capture: (session, command) => liveWriter().capture(session, command),
-      apply: (session, command) => liveWriter().apply(session, command),
+      // EVERY PARAMETER IS FORWARDED. A function that ignores a trailing parameter is
+      // assignable to one that passes it, so a delegate stopping at `command` compiles —
+      // and drops the source session of every `sources: 'one'` command before it reaches
+      // the host, where the apply then reads an `undefined` session. The composition-host
+      // case that sends a source is the only check that can see this line.
+      apply: (session, command, source, reads) =>
+        liveWriter().apply(session, command, source, reads),
       // THREE ARGUMENTS, because a recorded inverse does not carry its own
       // kind the way a command does — the asymmetry is `CommandExecution`'s and
       // is the same one the pipe has.
@@ -2259,7 +2265,11 @@ function pdfiumHostBinding(
     // interface changed.
     writer: {
       capture: async (image, command) => (await ensure()).writer.capture(image, command),
-      apply: async (image, command) => (await ensure()).writer.apply(image, command),
+      // EVERY PARAMETER IS FORWARDED, for the MuPDF delegate's reason: a dropped trailing
+      // parameter compiles. No PDFium command declares a pre-read today, so nothing can
+      // observe this one yet; forwarding keeps that from depending on who adds the first.
+      apply: async (image, command, source, reads) =>
+        (await ensure()).writer.apply(image, command, source, reads),
       invert: async (image, kind, inverse) => (await ensure()).writer.invert(image, kind, inverse),
       // NO `ensure()`, AND THAT IS THE POINT. `remotePdfiumWriter.serialise` is
       // the identity and makes no call, so awaiting a host here would make a

@@ -810,6 +810,115 @@ function pdfiumPeer(): PdfiumPeerLog {
   };
 }
 
+/**
+ * A MuPDF peer that issues a DIFFERENT handle per open and records every `engine/apply`.
+ *
+ * {@link SESSION} answers one handle for every open, which is right for one document and blind
+ * for two: a source sent as the target's own handle and a source sent correctly would cross as
+ * the same string. A command that names a second document is the case that needs them apart.
+ *
+ * `capture` refuses for anything but a rotate, because a replaced page has no recordable prior
+ * state and the bus takes a checkpoint instead — so `serialise` writes a real file into the
+ * output directory the product sent for that handle, for {@link serialisingEngine}'s reason.
+ */
+function twoSessionEngine(): {
+  readonly peer: FakePeer;
+  readonly applies: readonly Record<string, unknown>[];
+} {
+  const outputs = new Map<string, string>();
+  const applies: Record<string, unknown>[] = [];
+  const peer: FakePeer = (channel, params) => {
+    switch (channel) {
+      case 'engine/open': {
+        const session = `ab0${String(outputs.size + 1)}`;
+        outputs.set(session, (params as { outputDirectory: string }).outputDirectory);
+        return { ok: true, value: { session, access: 1 } };
+      }
+      case 'engine/capture': {
+        const { command } = params as { command: { kind: string } };
+        if (command.kind === 'rotatePages') return ENGINE(channel, params);
+        return { ok: true, value: { captured: false, reason: 'a replaced page has no recordable prior state' } };
+      }
+      case 'engine/serialise': {
+        const { session, into } = params as { session: string; into: string };
+        const output = outputs.get(session);
+        if (output === undefined) throw new Error(`engine/serialise for a handle never issued: ${session}`);
+        const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
+        writeFileSync(join(output, into), bytes);
+        return { ok: true, value: { bytes: bytes.length } };
+      }
+      case 'engine/apply':
+        applies.push(params as Record<string, unknown>);
+        return ENGINE(channel, params);
+      default:
+        return ENGINE(channel, params);
+    }
+  };
+  return { peer, applies };
+}
+
+/** The recorded apply for one command kind, or `undefined` where the host was never asked. */
+function applyOf(
+  applies: readonly Record<string, unknown>[],
+  kind: string,
+): Record<string, unknown> | undefined {
+  return applies.find((params) => (params['command'] as { kind: string }).kind === kind);
+}
+
+describe('the composition root, a command that names a SECOND document', () => {
+  it('sends the source document’s session to the host, and not the target’s (replacePage)', async () => {
+    // THE WIRING BETWEEN THE BUS AND THE REMOTE WRITER, which no other case crosses with a
+    // source. `remoteEngine.test.ts` calls the remote writer directly and `documentCommands.test.ts`
+    // runs the in-process one, so both were green while the delegate this root registers forwarded
+    // two of the bus's four arguments — and every cross-document command reached the host with no
+    // source (the 2026-09-15 live external-edit run; ADR-0040's three commands).
+    const engine = twoSessionEngine();
+    const spy = platformAnswering(engine.peer);
+    const picks = [aDocument('replace-target.pdf'), aDocument('replace-source.pdf')];
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(picks.shift() ?? null),
+      enginePlatform: spy.platform,
+    });
+
+    const target = await handlers['document.open']({});
+    if (!target.ok || target.value.kind !== 'opened') throw new Error('the target did not open');
+    const source = await handlers['document.open']({});
+    if (!source.ok || source.value.kind !== 'opened') throw new Error('the source did not open');
+
+    // A COMMAND ON THE SOURCE FIRST, and it does two jobs. `open` answers before the session
+    // exists and the replace enters only the TARGET's lane, so this is what makes the source's
+    // session held when the replace reads it. And its own apply names the source's handle, so the
+    // case learns which handle is the source's from the product rather than from the order the
+    // host happened to answer two opens in.
+    const rotated = await handlers['document.execute']({
+      docId: source.value.docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+    expect(rotated.ok).toBe(true);
+    const sourceHandle = applyOf(engine.applies, 'rotatePages')?.['session'];
+    expect(typeof sourceHandle).toBe('string');
+
+    const replaced = await handlers['document.execute']({
+      docId: target.value.docId,
+      command: { kind: 'replacePage', source: source.value.docId, at: 0, version: target.value.version },
+    });
+    expect(replaced.ok).toBe(true);
+
+    const replace = applyOf(engine.applies, 'replacePage');
+    expect(replace?.['source']).toBe(sourceHandle);
+    // AND NOT THE TARGET'S OWN, which is the transposition `Apply`'s note says no type can catch:
+    // both are `MupdfSession`.
+    expect(replace?.['session']).not.toBe(sourceHandle);
+
+    // CONTROL FOR THE RECORD: a command naming no second document crosses with no `source` at all,
+    // so a peer that stored every apply with some `source` could not pass the assertion above.
+    const rotate = applyOf(engine.applies, 'rotatePages');
+    expect(rotate !== undefined && 'source' in rotate).toBe(false);
+  });
+});
+
 describe('the composition root, with BOTH engine hosts', () => {
   it('routes replaceTextObject to the PDFium host and installs the bytes it answered', async () => {
     // TWO PLATFORMS, TWO HARNESSES. Handing one platform to both fields would

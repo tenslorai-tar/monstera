@@ -892,6 +892,54 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — The live external-edit failure: the root's MuPDF delegate dropped the source session
+
+**The mechanism.** The bus calls a writer as `apply(session, command, source, reads)`. The delegate `composition.ts`
+registered for `mupdf` was `(session, command) => liveWriter().apply(session, command)`, so a command's source session
+was dropped before the remote writer saw it. `engine/apply` crossed with no `source`, the host handed `undefined` to
+`applyReplacePage`, and `withDocuments` refused it at `documentFor(source)` with *"not produced by this adapter, or it
+has already been closed"*. It compiled because a function ignoring a trailing parameter is assignable to one that passes
+it — the property `commandRouting.ts` records and relied on.
+
+**The owner's question, answered from the code.** A legitimate reimport carries the version recorded at send-out, and
+that check is sound: the bus compares inside the lane before any host call, so a moved document is `StaleTargetError`
+and never a host refusal. The version was not the fault.
+
+**Ruled out first, by reading:** two copies of the writer module (one built `mupdfWriter.js`, one specifier); a close
+inside the host (only `engine/close`, which forgets the handle first); an `await` between the host's source lookup and
+its use (none, and that order predates the run). The live logs held one stack each.
+
+**Reproduced without a window.** A scratch harness modelled on `scripts/research/hostRecoveryHost.mjs` — the real shell
+graph and a real contained host under `electron.exe` in Node mode — sent a page out, rewrote it, and put it back: the
+live refusal, word for word. Handle logging in the built output, removed afterwards, showed the host issue both handles
+and never reach `engine/apply`'s source branch, which runs only when a source arrives.
+
+**The class, measured rather than assumed.** Every `sources: 'one'` command is MuPDF's and goes through this delegate:
+`replacePage`, `mergeDocument`, `importPageAsLayer`. Through the real host before the fix, merge and layer import failed
+with the same incident. The delegate has had two parameters since `9c53f05` (2026-08-31), before the first source command
+landed (`238cf2f`, 2026-09-05) — so **Merge PDFs, Insert from PDF, Replace page and Import page as OCG layer** (FEATURES
+rows 94, 90, 98, 225) never worked in the running application, while every test was green: `pageMerge.test.ts` and
+`documentCommands.test.ts` run the in-process writer and `remoteEngine.test.ts` calls the remote writer directly. None
+crossed the delegate. The two pre-read commands, `generateToc` and `ocrPage`, are pdf-lib's and registered without one.
+The PDFium delegate dropped the same two parameters; it is fixed alike, and nothing can observe it yet.
+
+**The fix and its proof.** Both delegates forward all four parameters. `compositionHost.test.ts` gains *a command that
+names a SECOND document*: a fake host issuing a different handle per open, a rotate on the source whose apply names its
+handle, then a replace on the target asserting `engine/apply` carried that handle as `source` and not the target's.
+**Mutation M-1**, the delegate back to two parameters: red at the source assertion, *expected undefined to be 'ab02'* —
+the live failure's shape. Restored: green. **After the fix, through the real host:** reimport `reimported`, merge `ok`,
+layer import `ok`.
+
+**Owed.** D9's row closes only on a passing live run with an installed editor; that run is next. The remote writer's
+`apply` takes no pre-read and `engine/apply` has no field for one: no MuPDF command declares a pre-read, so this is an
+unbuilt path rather than a defect, and the first MuPDF command to declare one owes it.
+
+**The reading `4c50a99`'s entry owed.** `c964f13` and `4c50a99`, pushed about seven minutes apart with `main` grouped by
+commit, both completed green: CI 35023856453 and Guards 35023856254; CI 35024570826 and Guards 35024570731. Neither was
+cancelled. Weak evidence for `d3f4bbf`: the overlap was not read, and the old defect needed a queued run.
+
+---
+
 ## 2026-09-15 — The visual baselines gate, now that the runner has been read
 
 `e67988c` added the `windows-latest` `visual` job with `continue-on-error` and an expiry: *"the commit after this job's
