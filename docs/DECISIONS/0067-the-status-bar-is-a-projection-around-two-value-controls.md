@@ -62,3 +62,47 @@ is added before the field.
   `view.toggle-quick-toolbar` does not exist as a product command — §7 names it, and it appears only in two test
   fixtures — and a button bound to a command that does not exist renders and does nothing. It lands with the quick
   toolbar's own pass, as a command placed on this surface.
+
+## Correction, 2026-09-15 — the zoom cluster had a third position, and the toggle had no cluster
+
+**The decision above could not express the approved zoom order, and the feature commit built a different one.**
+§10.3 (`docs/ARCHITECTURE.md`:2302-2304) and `BUILD-PROMPT.md`:1075-1077 give the order as *"zoom-out button · slider ·
+zoom-in button · current percentage · fit mode"*. That has **two** things of the bar's own in it — the slider and the
+percentage readout — with a command between them. `side: 'before' | 'after'` names one gap on each side of one control,
+so zoom-in and fit mode could only both be *after the slider*, and `3f6c67b` rendered zoom-out · slider · percentage ·
+zoom-in · fit and stated the deviation in a comment. The owner's ruling of 2026-09-15: follow the approved design, do not
+edit §10.3 to match the build; if this ADR cannot express it, the placement type changes.
+
+The mistake in the decision was the sentence *"The percentage is a readout, which the bar already renders"*: true, and it
+treated a readout as having no position. Anything the bar renders between two projected commands is a position a
+command has to be able to name.
+
+**And the quick-toolbar toggle had nowhere to go.** The consequence above says it lands *"as a command placed on this
+surface"*; §10.3 asks for it *"as a status-bar toggle"*. Neither `navigation` nor `zoom` is what it is, and putting it in
+either would give a screen reader a group named *Zoom* holding a control that shows a toolbar.
+
+### Corrected decision
+
+The `status-bar` placement is discriminated by cluster, so each cluster's positions are exactly its own gaps:
+
+```ts
+  | { surface: 'status-bar'; cluster: 'navigation'; side: 'before' | 'after'; order: number }
+  | { surface: 'status-bar'; cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
+  | { surface: 'status-bar'; cluster: 'chrome'; order: number }
+```
+
+- **`navigation`** is unchanged: before or after the page field (with its *⁄ total*).
+- **`zoom`**: `before` the slider, `between` the slider and the percentage, `after` the percentage. §10.3's order is then
+  zoom-out `before`, zoom-in `between`, fit width and fit page `after`.
+- **`chrome`** holds the bar's commands about the chrome itself — the quick-toolbar toggle first. It has no value
+  control, so it has no `side`, and a `side` written on it is a compile error rather than a value nothing reads.
+
+A `between` on `navigation` is unrepresentable too: the page field is one control, and a gap that does not exist should
+not be spellable (B5).
+
+### Rejected
+
+- **Edit §10.3 to the built order.** The owner's ruling; and §10.3 is the approved design, not a description of a build.
+- **Make the percentage a command.** It takes no action; a command that does nothing when run is the wired-tools defect.
+- **One `position` index across the whole bar.** The fixed-index alternative this ADR already rejected, for its reason.
+- **Keep `side` two-valued and move the percentage after fit.** A second deviation from the same sentence.

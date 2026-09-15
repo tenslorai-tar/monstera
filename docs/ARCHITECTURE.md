@@ -1274,7 +1274,9 @@ type Placement =
   | { surface: 'quick-toolbar'; order: number }
   | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab'; order: number }
   | { surface: 'start-screen';  order: number }
-  | { surface: 'status-bar';    cluster: 'navigation' | 'zoom'; side: 'before' | 'after'; order: number }
+  | { surface: 'status-bar';    cluster: 'navigation'; side: 'before' | 'after'; order: number }
+  | { surface: 'status-bar';    cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
+  | { surface: 'status-bar';    cluster: 'chrome'; order: number }
 ```
 
 A command may carry several placements — Highlight legitimately lives in
@@ -1285,21 +1287,24 @@ toolbar, context menus, start-screen shortcuts and the status bar's command
 buttons are all **derived** from placements. **A hand-maintained layout file for
 any of them is the second wiring place this registry exists to forbid.**
 
-**The status bar projects commands into two clusters, around one value control
-each** (amended 2026-09-14,
+**The status bar projects commands into three clusters, and each cluster's
+positions are exactly the gaps between the bar's own controls** (amended
+2026-09-14 and corrected 2026-09-15,
 [ADR-0067](DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md)).
 §10.3 gives it page navigation — first / previous / an editable page field /
-next / last — and a zoom cluster — zoom-out · slider · zoom-in · percentage · fit
-mode. The buttons are commands and are projected: `cluster` names which group,
-and `side` says whether a command sits before or after that group's value
-control. **The page field and the zoom slider are not commands**, because each
-takes a value: they are the bar's own controls, and they write the same state
-the commands change (the page through `jumpTo`, the zoom through the zoom
-state), so there is still one owner of each. The percentage is a readout.
-Writing the navigation buttons into the bar by hand would be the second wiring
-place above. **`check:secondwiring` cannot see it today**: it scans
-`packages/ui/src/surfaces`, and `StatusBar.tsx` sits one directory up, so the
-feature commit that projects the bar moves it into the scanned directory.
+next / last — a zoom cluster — zoom-out · slider · zoom-in · percentage · fit
+mode — and a toggle for the quick toolbar. The buttons are commands and are
+projected. `navigation` places a command `before` or `after` the page field;
+`zoom` places it `before` the slider, `between` the slider and the percentage,
+or `after` the percentage, which is what renders §10.3's order exactly; `chrome`
+holds the commands about the chrome and has no value control, so no `side`.
+**The page field and the zoom slider are not commands**, because each takes a
+value: they are the bar's own controls, and they write the same state the
+commands change (the page through `jumpTo`, the zoom through the zoom state), so
+there is still one owner of each. The percentage is a readout, and a readout
+still has a position. Writing the buttons into the bar by hand would be the
+second wiring place above; `StatusBar.tsx` lives in `packages/ui/src/surfaces`,
+where `check:secondwiring` scans.
 
 Chrome visibility is itself commanded: `view.toggle-quick-toolbar`,
 `view.toggle-panel` and the layout-mode switch are registry commands, which is
@@ -2493,3 +2498,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-09-09 | **The MuPDF migration's size is 117 members, not 19 imports, and it does not gate Stage 5's editing rows** (§3). *"Nineteen non-test kernel modules import the bare specifier"* was written as what is not yet settled and was then read as the size of the work. Measured through `npm run proof:enginesurface`: the nineteen call **117 distinct MuPDF members** — `PDFAnnotation` 41, `PDFDocument` 20, `PDFObject` 20, `PDFWidget` 15 — against **24** C functions the shim exports, and the shim hands back an opaque handle representing no object model, by design. **Only four of the nineteen load an engine**; fifteen spell `import type` and are erased, so the count that reads like the work is a count of the lines that do not have to change, and what moves is nineteen module bodies against an ABI nobody has designed. The second half is the ordering: the editing rows are PDFium's by `BUILD-PROMPT.md`:257, PDFium's API is flat C needing no shim, and koffi drives it in research today — so they sit behind `pdfiumFfi.ts` and the second host, not behind this. Sequencing them after it would have parked five rows behind unrelated work. | Nothing decided. The reach ruling of 2026-09-08 stands unaltered; what is corrected is a size inferred from a sentence that was explicitly not settling it, and a dependency nothing had checked | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md), corrected 2026-09-09 |
 | 2026-09-14 | **`style-src` admits three hashes: the resizable-panel library's drag cursor** (§9 invariant 27). `@zag-js/splitter` 1.43.3 appends `<style>* { cursor: X !important; }</style>` on every drag, in every configuration, and `'self'` alone refused it — measured by `proof:rendererpolicy`. The line now carries the SHA-256 of exactly the three horizontal texts. Measured in Electron's Chromium: the hashed text is admitted and applies; the same text one space longer is refused; removing the `col-resize` source fails the admission case alone. | `style-src 'self'` alone (pinned 2026-08-21, ADR-0019) | [ADR-0066](DECISIONS/0066-the-splitters-drag-cursor-is-admitted-by-hash.md) |
 | 2026-09-14 | **The status bar is a placement surface** (§7). §10.3 puts page navigation and a zoom cluster in the status bar, and §7's `Placement` had no surface for it, so its buttons could only be written into the bar by hand — the second wiring place. `status-bar` joins the union with a `cluster` (`navigation` or `zoom`) and a `side` (`before` or `after` that cluster's value control). The page field and the zoom slider take values and stay the bar's own controls, writing the state the commands change. | §7's `Placement`, four surfaces | [ADR-0067](DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md) |
+| 2026-09-15 | **The status bar's placement is discriminated by cluster, and gains `chrome`** (§7). §10.3's zoom order — zoom-out · slider · zoom-in · percentage · fit mode — has two of the bar's own controls with a command between them, which a two-valued `side` could not name, so the built bar deviated from the approved design. `zoom` now places `before` the slider, `between` it and the percentage, or `after` the percentage; `navigation` keeps `before` and `after`; `chrome` has no value control and no `side`, and holds §10.3's quick-toolbar toggle. The owner ruled the design stands and the type changes. | the 2026-09-14 row's `cluster`/`side` shape | [ADR-0067](DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md) (correction 2026-09-15) |
