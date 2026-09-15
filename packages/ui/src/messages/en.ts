@@ -472,6 +472,11 @@ export const START_PRODUCT = messageKey('surface.start.product');
 export const START_TAGLINE = messageKey('surface.start.tagline');
 export const START_VERSION = messageKey('surface.start.version');
 export const START_COPYRIGHT = messageKey('surface.start.copyright');
+export const START_F1_HINT = messageKey('surface.start.shortcuts-hint');
+export const KEYBOARD_SHORTCUTS_TITLE = messageKey('dialog.keyboard-shortcuts.title');
+export const KEYBOARD_SHORTCUTS_COMMAND_TITLE = messageKey('command.keyboard-shortcuts.title');
+export const SHORTCUTS_COMMAND_HEADER = messageKey('dialog.keyboard-shortcuts.command');
+export const SHORTCUTS_CHORD_HEADER = messageKey('dialog.keyboard-shortcuts.chord');
 export const START_ABSENT = messageKey('surface.start.absent');
 export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const RECENT_LABEL = messageKey('surface.recent.label');
@@ -1392,6 +1397,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [START_TAGLINE]: 'Built For The Way You Work',
   [START_VERSION]: 'Version {version}',
   [START_COPYRIGHT]: '© Tenslor Inc.',
+  // THE CHORD IS A VALUE, not part of the sentence: it is read off the shortcut map, so the hint cannot name a key
+  // the registry does not bind.
+  [START_F1_HINT]: 'Press {chord} for keyboard shortcuts',
+  [KEYBOARD_SHORTCUTS_TITLE]: 'Keyboard shortcuts',
+  [KEYBOARD_SHORTCUTS_COMMAND_TITLE]: 'Keyboard shortcuts',
+  [SHORTCUTS_COMMAND_HEADER]: 'Command',
+  [SHORTCUTS_CHORD_HEADER]: 'Shortcut',
   // SAYS WHAT HAPPENED AND WHAT IS LIKELY. A file the picker offered and the
   // service could not read has almost always moved, and naming that is what
   // makes the message actionable rather than a report.

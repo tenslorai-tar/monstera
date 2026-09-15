@@ -10,6 +10,7 @@ import {
   paletteModel,
   quickToolbarModel,
   ribbonModel,
+  shortcutListModel,
   shortcutMapOf,
   startScreenModel,
   statusBarModel,
@@ -212,6 +213,26 @@ describe('the other placement surfaces', () => {
       { surface: 'start-screen', order: 1 },
     ];
     expect(unslotted).toHaveLength(1);
+  });
+});
+
+describe('shortcutListModel', () => {
+  it('lists every BOUND chord with its command’s title, in chord order — including a command unavailable right now', () => {
+    const OPEN = messageKey('command.open-test.title');
+    const HIDDEN = messageKey('command.hidden-test.title');
+    const registry = new CommandRegistry([
+      // REGISTERED OUT OF ORDER, and one command hidden by `when`: the list is the map's, and the map is built over all
+      // commands, so a chord that works only with a document open is still a chord a person should be able to look up.
+      command('a.zeta', [], { shortcut: 'Ctrl+Z', title: HIDDEN, when: () => false }),
+      command('a.alpha', [], { shortcut: 'Alt+A', title: OPEN }),
+      // THE CONTROL: a command with no chord has no row.
+      command('a.unbound', []),
+    ]);
+
+    expect(shortcutListModel(registry)).toStrictEqual([
+      { chord: 'Alt+A', title: OPEN },
+      { chord: 'Ctrl+Z', title: HIDDEN },
+    ]);
   });
 });
 

@@ -858,3 +858,42 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   await expect(footer).toContainText('© Tenslor Inc.');
   await expect(footer).toContainText('Version ');
 });
+
+test('F1 opens the KEYBOARD SHORTCUTS list from the registry, and the start screen footer names the key', async ({
+  page,
+}) => {
+  // §10.3's footer: "Press F1 for keyboard shortcuts". In Chromium, because a browser may claim F1 for itself before a
+  // page's listener sees it — the production build is where that would show.
+  await bridge(page);
+  await page.goto('/');
+
+  await expect(page.locator('.m-start-footer')).toContainText('Press F1 for keyboard shortcuts');
+
+  await page.keyboard.press('F1');
+  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(dialog).toBeVisible();
+  const table = dialog.getByRole('table');
+  await expect(table.getByRole('row').filter({ hasText: 'Open PDF…' })).toContainText('Ctrl+O');
+  await expect(table.getByRole('row').filter({ hasText: 'Keyboard shortcuts' })).toContainText('F1');
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});
+
+test('a DIALOG opened from the keyboard closes on the FIRST Escape', async ({ page }) => {
+  // Found 2026-09-15 by the F1 case above. Base UI puts a dialog's initial focus on its first tabbable — the header's
+  // Close icon button — whose tooltip opens on focus, and the tooltip's own dismiss handler, attached to that button,
+  // closes the tooltip and stops the key. The first Escape closed an invisible tooltip; the dialog needed a second.
+  // OPENED FROM THE KEYBOARD, the path the defect is on, and a different dialog from the F1 case's, so the finding is
+  // about the one mount point rather than about one dialog.
+  await bridge(page);
+  await page.goto('/');
+  const about = page.locator('.m-start-footer').getByRole('button', { name: 'About' });
+  await about.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});

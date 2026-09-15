@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
-import type { ReactElement, ReactNode } from 'react';
+import { type ReactElement, type ReactNode, useRef } from 'react';
 
 import { IconButton } from './IconButton.js';
 
@@ -23,6 +23,24 @@ import { IconButton } from './IconButton.js';
  * dialogs are decisions about the document; leaving the page scrollable and
  * clickable behind one invites an edit the dialog is mid-way through deciding
  * about.
+ *
+ * ## Focus opens ON THE DIALOG, not on its first control
+ *
+ * Base UI's default initial focus is the popup's first tabbable element
+ * (`dialog/popup/DialogPopup.js`, 1.7.0), which here is the header's Close icon
+ * button — and that button is a tooltip trigger that opens on focus
+ * (`tooltip/trigger/TooltipTrigger.js`). The tooltip's dismiss handler sits on the
+ * button itself and, after closing the tooltip, stops the key
+ * (`floating-ui-react/hooks/useDismiss.js`). So the first Escape a person pressed
+ * closed a tooltip they never asked for, and the dialog needed a second.
+ * Measured 2026-09-15 in Chromium on two dialogs opened two ways; the live run's
+ * *"Escape did not close the problem dialog"* the day before was this.
+ *
+ * Focusing the popup instead puts a screen reader on the dialog's name — its title
+ * — and opens no tooltip, so the first Escape reaches the dialog. Tab still moves
+ * into the controls; a Close button a person tabs to shows its tooltip, and
+ * Escape there closes the tooltip first, which is the innermost-first order a
+ * person who focused it can see happening.
  *
  * ## The CSP question, answered by measurement rather than by caution
  *
@@ -72,6 +90,7 @@ export function Dialog({
   // to one question — and passing an already-resolved string would need
   // `IconButton` to accept one, which is the prop type this commit removes.
   const { _ } = useLingui();
+  const popup = useRef<HTMLDivElement>(null);
 
   return (
     <BaseDialog.Root
@@ -83,7 +102,7 @@ export function Dialog({
     >
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className="m-dialog__backdrop" />
-        <BaseDialog.Popup className="m-dialog">
+        <BaseDialog.Popup className="m-dialog" initialFocus={popup} ref={popup}>
           <div className="m-dialog__header">
             <BaseDialog.Title className="m-dialog__title">{_(title)}</BaseDialog.Title>
             {/* Inside the popup, per Base UI's own requirement for a modal

@@ -280,8 +280,35 @@ textarea {
 
 .m-start-footer__text {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-8);
   margin: 0;
+}
+
+/* The F1 list: a table because the content is one — a command against its chord — so the pairing is announced. */
+.m-shortcuts {
+  border-collapse: collapse;
+  inline-size: 100%;
+  font-size: var(--font-chrome-13);
+}
+
+.m-shortcuts th,
+.m-shortcuts td {
+  padding: var(--space-4) var(--space-8);
+  text-align: start;
+}
+
+.m-shortcuts thead th {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-weight: 600;
+  border-block-end: 1px solid var(--border); /* decorative: separates the header row from the rows; nothing in it is operable */
+}
+
+.m-shortcuts kbd {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
 /*

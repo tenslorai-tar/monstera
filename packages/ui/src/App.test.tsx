@@ -1698,6 +1698,26 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined();
   });
 
+  it('F1 lists the REGISTRY’s shortcuts, and the footer names the key only because the registry binds it', async () => {
+    // §10.3's footer: "Press F1 for keyboard shortcuts". The separating rows are ones only the finished registry can
+    // supply — Open's Ctrl+O, and F1 itself, which is the command that lists them — so a list captured before the
+    // registry existed, or a hard-coded one, cannot pass.
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} />);
+
+    expect(screen.getByText('Press F1 for keyboard shortcuts')).toBeDefined();
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    const table = await screen.findByRole('table', {}, { timeout: 2000 });
+    const rows = [...table.querySelectorAll('tbody tr')].map((row) => row.textContent);
+    expect(rows).toContain('Open PDF…Ctrl+O');
+    expect(rows).toContain('Keyboard shortcutsF1');
+  });
+
   describe('the start screen reports an open that produced no document', () => {
     /** A client whose `document.open` answers one outcome. */
     function openAnswering(outcome: unknown): ContractClient {

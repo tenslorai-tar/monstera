@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
-import { render as renderBare, screen } from '@testing-library/react';
+import { render as renderBare, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -86,6 +86,21 @@ describe('Dialog', () => {
     dialog.dispatchEvent(
       new globalThis.KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
     );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('closes on the FIRST Escape pressed WHERE FOCUS LANDS when it opens', async () => {
+    // THE SEPARATING FIXTURE is the element focus actually moved to, read back — not one the case chose. The case above
+    // focuses the popup and fires at it, which a real open never did before 2026-09-15: focus landed on the Close
+    // button, whose tooltip swallowed the first Escape, and that case passed throughout.
+    const onOpenChange = vi.fn();
+    render(<Harness onOpenChange={onOpenChange} />);
+    await waitFor(() => {
+      expect(document.activeElement).not.toBe(document.body);
+    });
+    const landed = document.activeElement;
+    if (!(landed instanceof HTMLElement)) throw new Error('focus landed on an element');
+    landed.dispatchEvent(new globalThis.KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 

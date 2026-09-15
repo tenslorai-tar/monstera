@@ -122,6 +122,7 @@ import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
 import { inspectPageStructureCommand } from './commands/inspectPageStructure.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
+import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
 import { PAGE_STRUCTURE_DIALOG } from './dialogs/pageStructure.js';
 import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
@@ -252,6 +253,8 @@ import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
+import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
+import { shortcutListModel } from './surfaces/projections.js';
 import { StartFooter } from './surfaces/StartFooter.js';
 import { TitleBar } from './surfaces/TitleBar.js';
 import { useWindowControlsOverlay } from './windowControlsOverlay.js';
@@ -398,6 +401,7 @@ export function App({ client, settings }: AppProps): ReactElement {
     () =>
       new DialogRegistry([
         ABOUT_DIALOG,
+        KEYBOARD_SHORTCUTS_DIALOG,
         WORD_COUNT_DIALOG,
         PAGE_STRUCTURE_DIALOG,
         SPELL_CHECK_DIALOG,
@@ -1463,9 +1467,16 @@ export function App({ client, settings }: AppProps): ReactElement {
     [activate, client, opened],
   );
 
-  const registry = useMemo(
-    () =>
-      new CommandRegistry([
+  const registry = useMemo(() => {
+    // THE SHORTCUTS COMMAND LISTS THE REGISTRY THAT CONTAINS IT. The holder is LOCAL to this memo, filled before the
+    // memo returns, and read only when the command runs — never during render (the refs rule that refused G1's first
+    // layout memory) and never from module state two mounted shells would share.
+    const holder: { registry?: CommandRegistry } = {};
+    const built = new CommandRegistry([
+        keyboardShortcutsCommand({
+          ask,
+          shortcuts: () => (holder.registry === undefined ? [] : shortcutListModel(holder.registry)),
+        }),
         openCommand,
         showAboutCommand({ client, ask }),
         // RE-ASKS MAIN WHICH SECRETS ARE STORED when a key moved, so the cloud
@@ -1659,8 +1670,10 @@ export function App({ client, settings }: AppProps): ReactElement {
         historyCommand('back', { navigator }),
         historyCommand('forward', { navigator }),
         goToCommand(),
-      ]),
-    [
+      ]);
+    holder.registry = built;
+    return built;
+  }, [
       activate,
       applied,
       ask,
@@ -1693,8 +1706,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       settings,
       track,
       trocrSize,
-    ],
-  );
+    ]);
 
   /**
    * What the scroller needs to let a reader draw: the active tool, and where a

@@ -892,6 +892,68 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass H1b: F1 lists the keyboard shortcuts, the footer names the key, and a dialog closes on the first Escape
+
+§10.3's footer: *"Press F1 for keyboard shortcuts"*. ADR-0068 held the hint back until a command was bound to F1.
+
+### What was built
+
+- `app.keyboard-shortcuts`, F1, in Tools › Application beside About, opening `dialog.keyboard-shortcuts` — a table of
+  every bound chord against its command's title. The list is `shortcutListModel`, read off `shortcutMapOf` because the map
+  is where a chord is decided: a list walking the registry itself would show two rows for a conflict the map refuses.
+- **The command lists the registry that contains it.** The registry memo keeps a holder local to itself, fills it before
+  it returns, and the command reads it only when it runs. Not a React ref — `react-hooks` refused a ref read through
+  render-time deps in G1 — and not module state, which two mounted shells would share.
+- The footer's hint is drawn only while the shortcut map binds F1, and prints the bound command's own spelling of the
+  chord. It looks up the chord, never a command id, which is what `check:secondwiring` refuses in a surface.
+
+### A defect the F1 case found: a dialog did not close on the first Escape
+
+The F1 case's last line failed in Chromium: after Escape the dialog was still open, and the page snapshot had focus on the
+dialog's Close button. Read from Base UI 1.7.0: a dialog's initial focus defaults to its first tabbable
+(`dialog/popup/DialogPopup.js`, `utils/popups/popupStoreUtils.js`), which is our header's Close icon button; that button is
+a tooltip trigger that opens on focus (`tooltip/trigger/TooltipTrigger.js`); and the tooltip's dismiss handler sits on the
+button itself and, with `bubbles` unset, stops the key after closing the tooltip (`floating-ui-react/hooks/useDismiss.js`).
+So the first Escape closed a tooltip nobody had asked for, and the dialog's own handler never ran. **This is the live run's
+*"Escape did not close … the problem dialog"*** (2026-09-14), recorded then as focus. `Dialog.test.tsx`' Escape case
+focused the popup and fired at it — a fixture the defect also satisfied.
+
+**Control first.** A second rendered case — About, opened from the keyboard — was added and both ran on a rebuilt,
+unfixed tree: both failed at the line asserting the dialog is gone. Two dialogs opened two ways, so the finding is about
+the one mount point. **Fix:** `Dialog` opens focus on the popup itself, which a screen reader announces by its title.
+After it both rendered cases pass. The new unit case — Escape pressed where focus actually lands — failed alone with
+`initialFocus` removed (**ESC-1**, 1 failed / 9 passed), while the old Escape case stayed green, which is the evidence it
+was blind to the path.
+
+### The timeouts, measured rather than waved at
+
+The first full chain had three `App.test`/`AppTabs.test` cases time out at 5000 ms. In isolation on the same tree the
+rotations case ran 1435 and 830 ms and delete-pages 1055 and 831 ms, against 1003 and 998 ms at the G2a tree, so H1b does
+not push them toward the bound. The second isolated run then timed out a fourth case, SAVE, which ran **209 ms** at G2a,
+**304 ms** in the first isolated run and **8607 ms** in the next, on identical code. An intermittent stall, not a
+regression; the investigation already queued owns it, and the timeout is not raised.
+
+### Proof
+
+- `keyboardShortcuts.test.ts` (F1; the list read when the command runs), `projections.test.ts` (every bound chord in chord
+  order, a `when`-hidden command included, an unbound one absent), `StartFooter.test.tsx` (the hint with F1 bound; none
+  without — the control), `App.test.tsx` (F1 through the real registry lists *Open PDF…* with Ctrl+O and itself), and
+  `Dialog.test.tsx`' new Escape case.
+- Rendered on the production build: the F1 case and the About-from-keyboard Escape case.
+- The final chain, rebuilt after every revert: build, rendered 21 of 21, typecheck, lint, the full suite (no timeout on
+  this run), `check:secondwiring`, `check:definedtokens`, `check:tokencontrast`, `proof:canvaspixels` 13,
+  `proof:rendererpolicy` 22, `proof:rendergeometry` 8.
+- Mutations: **H1b-1** (the list never reads the registry) failed only App's F1 case; **H1b-2** (the hint drawn whatever
+  the map binds) failed only StartFooter's control; **H1b-3** (the list keeps only commands with no `when`) failed only the
+  projection case — one run, 3 failed / 98 passed; **ESC-1** above. All reverted and rebuilt before the final chain.
+
+### Part M
+
+M3 anatomy (the footer complete but for drop-to-open and the shortcut grid); M2 tokens only; M4 no new primitive; M5 the
+dialog's keyboard state corrected; M6 no motion.
+
+---
+
 ## 2026-09-15 — Design pass H1a: the start screen's hero, its three slots and a footer; the title bar's logo
 
 §10.3's start screen; ADR-0002 (the supplied logo, scaled, in a portrait box, no text wordmark); ADR-0068 (`fb3c16f`, a
