@@ -245,6 +245,7 @@ describe('browser shim', () => {
       'settings.save',
       'settings.saveSecret',
       'spelling.dictionary',
+      'window.titleBarOverlay',
     ]);
   });
 

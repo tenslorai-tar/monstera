@@ -314,6 +314,7 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ stored: [AZURE_KEY_SETTING_ID], available: true })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({
@@ -564,5 +565,28 @@ describe('the shipping contract, exercised through its own map', () => {
     // which would take the whole feature out at the boundary with three green
     // refusals reading as rigour.
     expect(await scaled(0.5)).toBe(true);
+  });
+});
+
+describe('window.titleBarOverlay', () => {
+  const params = channels['window.titleBarOverlay'].params;
+  const valid = { color: '#141618', symbolColor: '#e6e8e6', height: 33 };
+
+  it('CONTROL: a lower-case #rrggbb pair and a whole height inside the bound is accepted, at both ends', () => {
+    // Without this the refusals below pass for a schema that refuses everything, which is also what a mistyped
+    // field name produces.
+    expect(params.safeParse(valid).success).toBe(true);
+    expect(params.safeParse({ ...valid, height: 24 }).success).toBe(true);
+    expect(params.safeParse({ ...valid, height: 64 }).success).toBe(true);
+  });
+
+  it('refuses any colour main would have to interpret, and any height off the bound or between pixels', () => {
+    for (const color of ['red', '#fff', '#FFFFFF', '#14161880', 'rgb(20, 22, 24)', '#14161g', '']) {
+      expect(params.safeParse({ ...valid, color }).success, color).toBe(false);
+    }
+    expect(params.safeParse({ ...valid, symbolColor: 'white' }).success).toBe(false);
+    for (const height of [23, 65, 33.5, Number.NaN]) {
+      expect(params.safeParse({ ...valid, height }).success, String(height)).toBe(false);
+    }
   });
 });

@@ -118,6 +118,14 @@ export function controlName(key) {
  *     painted: number,
  *     devicePixelRatio: number,
  *   },
+ *   overlay: {
+ *     visible: boolean | null,
+ *     areaWidth: number | null,
+ *     innerWidth: number,
+ *     barBackground: string | null,
+ *     barHeight: number | null,
+ *     painted: { color: string, symbolColor: string, height: number }[],
+ *   },
  * }}
  */
 export function readback(binary, name, fixture, zoomName, pixelPath) {

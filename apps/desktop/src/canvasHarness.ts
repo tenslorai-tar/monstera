@@ -6,6 +6,7 @@ import { app, ipcMain, nativeImage, session } from 'electron';
 import { createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
 import { createMainWindow, senderCheckFor } from './window.js';
+import type { TitleBarOverlay } from './contractHandlers.js';
 import { registerContractHandlers } from './registerHandlers.js';
 
 /**
@@ -144,6 +145,25 @@ export interface CanvasReadback {
    * it, in real Chromium, and the two together are the property.
    */
   readonly zoomed: ZoomedReadback;
+  /**
+   * The title bar's Window Controls Overlay, as Chromium reports it and as main painted it.
+   *
+   * `visible` and `areaWidth` come from `navigator.windowControlsOverlay` in the page; `painted` is every overlay
+   * the shell's attached window was asked to paint, recorded on the way through — so the proof compares what main
+   * applied with what the bar computed, in one run, rather than trusting either half.
+   */
+  readonly overlay: OverlayReadback;
+}
+
+/** The overlay half of a readback. `null` where the page has no `windowControlsOverlay` or no title bar. */
+export interface OverlayReadback {
+  readonly visible: boolean | null;
+  readonly areaWidth: number | null;
+  readonly innerWidth: number;
+  readonly barBackground: string | null;
+  /** The bar's laid-out height in CSS pixels, unrounded — what the overlay's height has to settle on. */
+  readonly barHeight: number | null;
+  readonly painted: readonly TitleBarOverlay[];
 }
 
 /** A canvas reading taken after the zoom control was driven. */
@@ -564,6 +584,15 @@ export async function reportCanvasPixels(
     pickDocument: () => Promise.resolve(fixture),
   });
   const window = createMainWindow(session.defaultSession, deps.failures);
+  // THE SHIPPED ORDER includes the attach, so the overlay this harness reads is the one the product paints —
+  // recorded on the way through and passed to the real window unchanged.
+  const overlaysPainted: TitleBarOverlay[] = [];
+  deps.attachWindow({
+    setTitleBarOverlay: (overlay) => {
+      overlaysPainted.push(overlay);
+      window.setTitleBarOverlay(overlay);
+    },
+  });
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 
   const contents = window.webContents;
@@ -627,9 +656,30 @@ export async function reportCanvasPixels(
   const zoomed = await readZoomed(contents, zoomControlName, settled.width);
   const pixelsTo = pixelPath === undefined ? null : await writePixels(contents, pixelPath);
 
+  // READ LAST, long after the renderer's first report: the title bar mounts with the start screen and a document
+  // has opened and zoomed since.
+  const overlayPage = await evaluate(
+    contents,
+    `(() => {
+       const controls = navigator.windowControlsOverlay;
+       const bar = document.querySelector('.m-title-bar');
+       return {
+         visible: controls === undefined ? null : controls.visible,
+         areaWidth: controls === undefined ? null : controls.getTitlebarAreaRect().width,
+         innerWidth: window.innerWidth,
+         barBackground: bar === null ? null : getComputedStyle(bar).backgroundColor,
+         barHeight: bar === null ? null : bar.getBoundingClientRect().height,
+       };
+     })()`,
+    (value): value is Omit<OverlayReadback, 'painted'> =>
+      typeof value === 'object' && value !== null && 'innerWidth' in value,
+    'overlay',
+  );
+
   const readback: CanvasReadback = {
     dispatched,
     zoomed,
+    overlay: { ...overlayPage, painted: overlaysPainted },
     settledBy: settled.settledBy,
     width: settled.width,
     height: settled.height,

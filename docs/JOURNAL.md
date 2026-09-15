@@ -892,6 +892,83 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass G2b: the window's own controls sit over the title bar, painted from what it computed
+
+§10.3: *"Title bar: integrated document tabs (Window Controls Overlay)"*.
+
+### No amendment, and why that was checked rather than assumed
+
+The handler needs the window, and `startShell` builds every handler before the window exists — while `main.ts`'s
+header refuses *"a mutable 'the window, once we have one'"*. That looked like B4. It is not, on three readings: §5
+already takes a renderer-facing channel as a registration; no invariant or section pins the window's chrome or its
+options; and the refusal in `main.ts` is about the **sender check**, which is consulted at registration, while this value
+is needed only when the renderer asks — and the renderer lives inside that window. `composition.ts`' writer and geometry
+holders are the same shape, and `ShellDependencies` grew `shutdown` the same way.
+
+### What was built
+
+- `window.titleBarOverlay`: two lower-case `#rrggbb` colours and a whole-pixel height, 24–64 (a stated bound) →
+  `{ applied }`. Main interprets nothing; `applied: false` is a state — no window attached.
+- `composition.ts` holds the window; `main.ts` attaches it straight after creating it (`attachWindow`, a structural
+  `ShellWindow`). An unattached window answers `false`, **not** the writer holder's thrown defect, because a harness
+  with no window is a real configuration: `rendererHarness.ts` registers no handlers, and `pickerProbe.ts` is digested by
+  a person's observation and was not edited.
+- `window.ts`: `titleBarStyle: 'hidden'`, `titleBarOverlay: true` — the system's colours for the frames before the
+  renderer's first report.
+- `windowControlsOverlay.ts` reads the bar's computed background, text colour and height on mount, on any root attribute
+  change — how theme, accent and high contrast are applied — and on resize, sending only a changed request. A refused
+  call is dropped on purpose: the bar is right either way.
+- CSS: the row is a drag region and its buttons are not; `env(titlebar-area-*)` sets its minimum height and the end
+  padding that clears the controls, reducing to the plain values in a browser.
+- `rgbToHex` moved from `rendererPolicy.proof.mjs` to `scripts/lib/cssColour.mjs`, the canvas proof being its second
+  caller.
+
+**Rejected:** main deriving the colours from the stored theme — a copy of the palette in main, wrong the first time a
+person picks an accent (B3); a thrown defect for an unattached window, an incident in every harness without one;
+`BrowserWindow.getAllWindows()[0]` in the handler, a guess at which window instead of being told.
+
+### A defect a mutation's OUTPUT showed, which no check was looking for
+
+Mutation G2b-1 (the renderer sends a constant colour) failed the colour case as designed — and its message said the
+attached window had been asked to paint **six** overlays, the last **61 px** tall. The colour case had passed through it
+on every green run.
+
+**Mechanism:** `.m-title-bar`'s `min-block-size: env(titlebar-area-height)` sized the CONTENT box — no rule here sets
+`box-sizing` globally — while the renderer measures the laid-out border box, padding and border included. Every report
+came back a few pixels taller than the area it was measured from, the area grew, the bar grew, and the next report grew
+it again, until the channel's 64 px bound refused the one after. A runaway that stops at a bound reads as a working
+overlay.
+
+**Control first, then the fix.** A settle case — the last painted height equals the bar's own — was written and run on a
+rebuilt, unfixed tree. It was the only failure: *"the last overlay painted was 61 px tall and the title bar measures
+66 px, after 6 report(s) at heights 36, 41, 46, 51, 56, 61"*, five pixels a step, which is 2 + 2 px of padding and the
+1 px border exactly. The fix is `box-sizing: border-box` on the bar. After it: **1 report at 33 px; the bar measures
+33 px**, its area 663 of an 800 px window — a line the canvas proof now prints on every run.
+
+**Why no check saw it:** every overlay assertion compared a value the renderer sent with a value the page showed, and
+the loop keeps those equal at every step. What fails is a fixed point, so that is what the new case asserts.
+
+### Proof
+
+- `channels.test.ts`: a control accepting both ends of the bound, and refusals of named, short, upper-case, alpha and
+  `rgb()` colours and of heights off the bound or between pixels.
+- `composition.test.ts`: `applied: false` before an attach, then `applied: true` with the call the window received equal
+  to what crossed.
+- `windowControlsOverlay.test.tsx`: `hexOf`, `overlayOf`, a send on mount and again on a theme change, none for an
+  unchanged root, and a refused call not surfaced.
+- `proof:canvaspixels` 13: the overlay is visible with a title-bar area narrower than the window; main painted the
+  colour the bar computed; the overlay settles at the bar's height. Build, rendered 18 of 18, typecheck, lint, the full
+  suite, `proof:contract` 49, `proof:rendererpolicy` 22, `proof:rendergeometry` 8, `proof:shell` 14, `check:handlers`.
+- Mutations: **G2b-2** (the handler never reads the holder) failed exactly the composition case; **G2b-3** (any string is
+  a colour) failed exactly the refusal case; **G2b-1** failed exactly the canvas colour check and the two unit cases that
+  read the bar. All reverted and rebuilt before the final window proofs.
+
+### Not proven
+
+The drag region: nothing here moves a window. A person dragging it by the title bar is the observation that would.
+
+---
+
 ## 2026-09-15 — Design pass G2a: the title bar holds the tabs, the command search and the layout switcher
 
 §10.3: *"Title bar: integrated document tabs (Window Controls Overlay), the Ctrl+K command search, and the layout

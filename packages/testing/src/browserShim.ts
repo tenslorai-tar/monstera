@@ -126,6 +126,8 @@ export interface BrowserShim {
    * boolean perfectly.
    */
   revealedLog: () => number;
+  /** Every overlay the renderer asked main to paint, in order — the title bar's colours as it computed them. */
+  titleBarOverlays: () => readonly { readonly color: string; readonly symbolColor: string; readonly height: number }[];
 }
 
 /**
@@ -678,6 +680,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // settings object has something to assert against.
   const secrets: Record<string, string> = { ...(options.secrets ?? {}) };
   let revealedLog = 0;
+  const titleBarOverlays: { readonly color: string; readonly symbolColor: string; readonly height: number }[] = [];
 
   /**
    * What a command reports the document's new size as.
@@ -1660,6 +1663,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       revealedLog += 1;
       return Promise.resolve(ok({ revealed: false }));
     },
+    // RECORDED, and answered `applied: true` as a window would: a browser has no window controls to paint, and
+    // what a UI test can assert is what the renderer SENT — its computed colours — which is the half this side owns.
+    'window.titleBarOverlay': (overlay) => {
+      titleBarOverlays.push(overlay);
+      return Promise.resolve(ok({ applied: true }));
+    },
     // A REAL DICTIONARY, three words long. The shim runs in a browser and
     // cannot read `dictionary-en` off disk, and the two obvious answers are
     // both worse than a fixture: `unknown-dictionary` would make every spelling
@@ -1707,5 +1716,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     },
     incidents,
     revealedLog: () => revealedLog,
+    titleBarOverlays: () => [...titleBarOverlays],
   };
 }

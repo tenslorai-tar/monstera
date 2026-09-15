@@ -90,9 +90,28 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  padding: var(--space-2) var(--space-8);
+  /* WINDOW CONTROLS OVERLAY. In the desktop build the native caption is gone and Windows paints its three
+     controls over this row's end; `titlebar-area-*` is the part of the row they leave. The row is at least as
+     tall as that area, and its end padding clears the controls. In a browser the variables are undefined and
+     the fallbacks reduce both to the plain values.
+
+     BORDER-BOX, AND IT IS WHAT KEEPS THE TWO HEIGHTS FROM GROWING EACH OTHER. The renderer reports the bar's laid-out
+     height as the overlay's, and the overlay's area is this minimum. Under the default content box the minimum
+     excluded the 2 + 2 px padding and the 1 px border, so every report came back 5 px taller than it was measured
+     from: measured 36, 41, 46, 51, 56, 61, stopping only where the channel's 64 px bound refused the next. */
+  box-sizing: border-box;
+  min-block-size: env(titlebar-area-height, 0px);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-8)
+    calc(var(--space-8) + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
   background: var(--bg2);
   border-block-end: 1px solid var(--border); /* decorative: separates the title bar from the chrome under it; each control draws its own focus ring */
+  /* The row moves the window, as the caption it replaces did; every control inside it stays a control. */
+  -webkit-app-region: drag;
+}
+
+.m-title-bar button {
+  -webkit-app-region: no-drag;
 }
 
 /* The command search looks like the field it opens, and is a button: the palette is where the

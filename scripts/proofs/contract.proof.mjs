@@ -1227,6 +1227,7 @@ export const handlers: ContractHandlers = {
   'settings.loadSecrets': () => Promise.resolve(ok({ stored: [], available: false })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({
@@ -1344,6 +1345,7 @@ export const handlers: ContractHandlers = {
   'settings.loadSecrets': () => Promise.resolve(ok({ stored: [], available: false })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({
@@ -1536,6 +1538,7 @@ export const shim: ContractClient = {
   'settings.loadSecrets': () => Promise.resolve(ok({ stored: [], available: false })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
+  'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({

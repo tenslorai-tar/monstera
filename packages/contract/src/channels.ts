@@ -3762,6 +3762,40 @@ export const channels = {
     z.object({}),
     z.object({ revealed: z.boolean() }),
   ),
+
+  /**
+   * Paints the window's own controls — minimise, maximise, close — to match the title bar they sit over
+   * (§10.3: *"integrated document tabs (Window Controls Overlay)"*).
+   *
+   * ## The renderer states the colours, because the renderer is where they are
+   *
+   * The title bar's background and text are tokens resolved against the theme, the user's accent and the
+   * platform's high-contrast state, all in the renderer. Main holding its own copies would be a second writer
+   * of the palette (B3), wrong the first time a person picked an accent. So the renderer reads what it
+   * **computed** for the bar and sends that; main only applies it.
+   *
+   * ## Bounded to exactly what Electron's overlay takes
+   *
+   * `#rrggbb` in lower case, which is what the renderer's conversion produces and all `setTitleBarOverlay`
+   * needs — no named colours, no alpha, nothing a CSS parser in main would have to interpret. The height is
+   * a whole CSS pixel between 24 and 64: a stated bound, not a measurement — below it the controls do not
+   * fit, and above it the bar would be taller than any row this design has.
+   *
+   * ## `applied: false` is a state
+   *
+   * `log.reveal`'s shape: a harness that created no window, or a shell with no window attached yet, answers
+   * that nothing was painted rather than failing. A compromised renderer can choose these colours; what it
+   * gains is the look of three buttons it already sits beside.
+   */
+  'window.titleBarOverlay': channel(
+    'The colours and height of the window controls painted over the title bar.',
+    z.object({
+      color: z.string().regex(/^#[0-9a-f]{6}$/u, 'a colour is #rrggbb in lower case'),
+      symbolColor: z.string().regex(/^#[0-9a-f]{6}$/u, 'a colour is #rrggbb in lower case'),
+      height: z.number().int().min(24).max(64),
+    }),
+    z.object({ applied: z.boolean() }),
+  ),
 } as const;
 
 export type Channels = typeof channels;

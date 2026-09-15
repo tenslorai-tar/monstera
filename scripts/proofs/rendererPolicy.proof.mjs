@@ -54,6 +54,7 @@ import {
   RENDERER_POLICY_RUNTIME,
   refuseStaleBuild as refuseStaleBuildIn,
 } from '../lib/buildFreshness.mjs';
+import { rgbToHex } from '../lib/cssColour.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
@@ -138,25 +139,7 @@ const roster = createRoster(failures, {
 /** @type {string[]} */
 const recorded = [];
 
-/**
- * `rgb(r, g, b)` as lower-case `#rrggbb`, or the input when it is not one.
- *
- * The two sides of the window/surface comparison are reported in different
- * notations by different subsystems — `getBackgroundColor()` answers hex,
- * `getComputedStyle` answers `rgb()` — and a comparison that normalised neither
- * would report a difference that is only a spelling. Anything unparseable is
- * returned unchanged so it cannot silently become a match.
- *
- * @param {string} value
- * @returns {string}
- */
-function rgbToHex(value) {
-  const match = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,[^)]*)?\)$/u.exec(value.trim());
-  if (match === null) return value.toLowerCase();
-  return `#${[1, 2, 3]
-    .map((index) => Number(match[index]).toString(16).padStart(2, '0'))
-    .join('')}`;
-}
+// `rgbToHex` moved to `scripts/lib/cssColour.mjs` when the canvas proof became its second caller (B3a).
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {

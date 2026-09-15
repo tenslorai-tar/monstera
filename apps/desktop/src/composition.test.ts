@@ -54,6 +54,29 @@ function aDocument(name: string): string {
   return path;
 }
 
+describe('the title bar overlay, through the assembled handlers', () => {
+  it('answers applied:false before a window is attached, then paints the attached window with exactly what crossed', async () => {
+    // The join only this root makes: the handler's surface reads the holder `attachWindow` writes. Asserted as the
+    // CALL the window received, not the answer alone — an answer of `true` from a surface that painted nothing
+    // is what a holder read at the wrong moment would produce.
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    const overlay = { color: '#141618', symbolColor: '#e6e8e6', height: 33 };
+
+    const before = await deps.handlers['window.titleBarOverlay'](overlay);
+    expect(before).toStrictEqual({ ok: true, value: { applied: false } });
+
+    const painted: unknown[] = [];
+    deps.attachWindow({
+      setTitleBarOverlay: (given) => {
+        painted.push(given);
+      },
+    });
+    const after = await deps.handlers['window.titleBarOverlay'](overlay);
+    expect(after).toStrictEqual({ ok: true, value: { applied: true } });
+    expect(painted).toStrictEqual([overlay]);
+  });
+});
+
 describe('the composition root, with no engine host platform', () => {
   it('leaves an opened document POISONED rather than sessionless', async () => {
     const { handlers } = createShellDependencies({

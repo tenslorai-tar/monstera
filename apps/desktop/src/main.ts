@@ -1,6 +1,7 @@
 import type { ContractHandlers, IncidentSink } from '@monstera/contract';
 import { app, ipcMain, session } from 'electron';
 
+import type { TitleBarOverlay } from './contractHandlers.js';
 import { registerContractHandlers } from './registerHandlers.js';
 import { type ShellFailureSink, reportProcessFailures } from './shellFailure.js';
 import { quitAfterShutdown } from './shellShutdown.js';
@@ -35,7 +36,8 @@ import { createMainWindow, senderCheckFor } from './window.js';
  * The sender check needs something true to compare against — the window's
  * `WebContents` id — so the order is window first, handlers second. Registering
  * first would mean either an optional check or a mutable "the window, once we
- * have one", and both are the default nobody revisits.
+ * have one", and both are the default nobody revisits. (`attachWindow` below is
+ * a holder, and not this: see it for why a later value is sound there.)
  *
  * ## Single instance
  *
@@ -74,6 +76,24 @@ export interface ShellDependencies {
    * the application's rather than any document's.
    */
   readonly shutdown: () => Promise<void>;
+  /**
+   * Hands the shell its window, once the window exists.
+   *
+   * ## LATE, and not the sender check's kind of late
+   *
+   * The header refuses *"the window, once we have one"* for the sender check, and that refusal stands: the
+   * check is consulted at REGISTRATION, so it needs a true value then. The title bar overlay needs the window
+   * only when the renderer asks to be painted — and the renderer lives inside that window, so no request can
+   * arrive before it exists. `composition.ts`' writer and geometry holders are the same shape for the same
+   * reason. The one state a holder adds is a harness that never attaches, and `window.titleBarOverlay` answers
+   * `applied: false` there by declaration.
+   */
+  readonly attachWindow: (window: ShellWindow) => void;
+}
+
+/** The part of a `BrowserWindow` the shell's handlers use — structural, so `composition.ts` imports no Electron. */
+export interface ShellWindow {
+  readonly setTitleBarOverlay: (overlay: TitleBarOverlay) => void;
 }
 
 /**
@@ -110,6 +130,7 @@ export function startShell(build: () => ShellDependencies): void {
 
   void app.whenReady().then(() => {
     const window = createMainWindow(session.defaultSession, deps.failures);
+    deps.attachWindow(window);
     registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 
     app.on('second-instance', () => {

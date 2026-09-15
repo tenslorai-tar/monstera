@@ -51,6 +51,7 @@ import { fileURLToPath } from 'node:url';
 
 import { CANVAS_PIXELS_RUNTIME, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { controlName, readback } from '../lib/canvasReadback.mjs';
+import { rgbToHex } from '../lib/cssColour.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
@@ -180,6 +181,9 @@ const RUNTIME_CASES = [
   'the shipped zoom-in control was found and clicked, so the zoom reading means something',
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
+  'the window shows the CONTROLS OVERLAY, and leaves the title bar a narrower area than the window',
+  'main PAINTED the overlay in the colour the title bar computed, read off the same running window',
+  "the overlay SETTLES at the title bar's own height, so the two do not grow each other",
 ];
 
 /** Cases decidable without a runtime. These run on every machine. */
@@ -390,6 +394,46 @@ try {
         `arriving inside the mechanism that measures it.`,
     );
 
+    // §10.3's WINDOW CONTROLS OVERLAY, on the window this harness created the shipped way — the attach included.
+    const { overlay } = seen;
+    check(
+      'the window shows the CONTROLS OVERLAY, and leaves the title bar a narrower area than the window',
+      overlay.visible === true &&
+        overlay.areaWidth !== null &&
+        overlay.areaWidth > 0 &&
+        overlay.areaWidth < overlay.innerWidth,
+      `navigator.windowControlsOverlay reported visible=${String(overlay.visible)}, title bar area ` +
+        `${String(overlay.areaWidth)} px of a ${String(overlay.innerWidth)} px window.\n      ` +
+        `\`null\` is a window created without \`titleBarOverlay\`, where the API reports nothing; an area as wide as ` +
+        `the window is one whose native caption is still there, so the controls sit above the row rather than ` +
+        `over its end.`,
+    );
+
+    const last = overlay.painted.at(-1);
+    check(
+      'main PAINTED the overlay in the colour the title bar computed, read off the same running window',
+      last !== undefined &&
+        overlay.barBackground !== null &&
+        last.color === rgbToHex(overlay.barBackground),
+      `the attached window was asked to paint ${String(overlay.painted.length)} overlay(s), the last ` +
+        `${JSON.stringify(last ?? null)}; the title bar computes ${String(overlay.barBackground)}.\n      ` +
+        `NONE means the renderer never reported, or the shell never attached — the channel answers \`applied: false\` ` +
+        `for the second, which the renderer does not surface. A DIFFERENT colour means the renderer read something ` +
+        `other than the bar, or reported before the theme applied and never again.`,
+    );
+
+    check(
+      "the overlay SETTLES at the title bar's own height, so the two do not grow each other",
+      last !== undefined && overlay.barHeight !== null && last.height === Math.round(overlay.barHeight),
+      `the last overlay painted was ${String(last?.height)} px tall and the title bar measures ` +
+        `${String(overlay.barHeight)} px, after ${String(overlay.painted.length)} report(s) at heights ` +
+        `${overlay.painted.map((each) => String(each.height)).join(', ')}.\n      ` +
+        `THE LOOP THIS GUARDS, found by reading mutation G2b-1's output: the bar's minimum height is the overlay's ` +
+        `area, and the overlay's height is what the bar measures. If those two are different boxes, each report ` +
+        `grows the other by the difference until the channel's bound refuses the next one — which the colour case ` +
+        `above passes, because the colour is right at every step.`,
+    );
+
     // The list and the branch, compared rather than trusted to match. The count
     // already comes from RUNTIME_CASES, so a case added without a line fails the
     // roster; this catches the other half, where four lines describe four
@@ -421,7 +465,12 @@ try {
             `${String(zoomed.painted)} of ${String(zoomedPixels)} pixels ` +
             `(${((zoomed.painted / zoomedPixels) * 100).toFixed(2)}%) at ` +
             `${String(zoomed.width)}x${String(zoomed.height)} at devicePixelRatio ` +
-            `${String(zoomed.devicePixelRatio)}\n`,
+            `${String(zoomed.devicePixelRatio)}\n` +
+            // REPORTED ON EVERY RUN for the loop the settle case guards: a count of reports creeping up is visible
+            // here before a height reaches the bound.
+            `  title bar overlay: ${String(overlay.painted.length)} report(s) at heights ` +
+            `${overlay.painted.map((each) => String(each.height)).join(', ')}; the bar measures ` +
+            `${String(overlay.barHeight)} px, its area ${String(overlay.areaWidth)} of ${String(overlay.innerWidth)} px\n`,
     );
   }
 } catch (error) {

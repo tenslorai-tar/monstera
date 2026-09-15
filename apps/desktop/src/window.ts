@@ -133,6 +133,12 @@ export function createMainWindow(target: Session, failures: ShellFailureSink): B
   const window = new BrowserWindow({
     show: false,
     backgroundColor: WINDOW_BACKGROUND,
+    // §10.3's title bar is the application's own row, so the native caption goes and Windows keeps only its
+    // controls, painted over the row's end (Window Controls Overlay). `true` gives the system's colours until the
+    // renderer reports the bar's computed ones through `window.titleBarOverlay` — the frames before that report
+    // are the one moment the two can differ.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: true,
     webPreferences: { ...RENDERER_WEB_PREFERENCES, preload: PRELOAD, session: target },
   });
 

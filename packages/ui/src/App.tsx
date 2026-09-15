@@ -253,6 +253,7 @@ import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { TitleBar } from './surfaces/TitleBar.js';
+import { useWindowControlsOverlay } from './windowControlsOverlay.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 import { ViewProblem } from './surfaces/ViewProblem.js';
 
@@ -1731,6 +1732,8 @@ export function App({ client, settings }: AppProps): ReactElement {
 
   useShortcuts(registry, context);
   useTheme(settings);
+  // THE WINDOW'S OWN CONTROLS, painted like the title bar they sit over, from what the bar computed.
+  useWindowControlsOverlay(client);
 
   // A SEPARATE ATTRIBUTE AND A SEPARATE EFFECT, because it is a separate
   // concern: the theme paints the shell and this paints the document. Folding

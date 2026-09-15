@@ -81,6 +81,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     secrets,
     // COUNTED, so a case can assert the handler asked exactly once rather than
     // that it answered something.
+    titleBarOverlay: () => false,
     revealLog: () => {
       revealed.push(true);
       return Promise.resolve(true);
@@ -310,6 +311,7 @@ describe('document.open', () => {
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
           revealLog: () => Promise.resolve(false),
+      titleBarOverlay: () => false,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
         }),
@@ -490,6 +492,7 @@ describe('the recent list', () => {
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       revealLog: () => Promise.resolve(false),
+      titleBarOverlay: () => false,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
     });
@@ -537,6 +540,7 @@ describe('log.reveal', () => {
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       revealLog: () => Promise.resolve(false),
+      titleBarOverlay: () => false,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
     });

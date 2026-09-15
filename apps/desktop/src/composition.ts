@@ -166,7 +166,7 @@ import type { ShellLog } from './shellLog.js';
 import type { HandwritingCache } from './handwritingCache.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
-import type { ShellDependencies } from './main.js';
+import type { ShellDependencies, ShellWindow } from './main.js';
 
 /**
  * Everything creating a contained engine host needs that this file may not hold.
@@ -1107,6 +1107,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   const openedDocument = engineHost.openedDocument;
   const unlockDocument = engineHost.unlockDocument;
 
+  /**
+   * The window the title bar overlay is painted on, attached by the shell once it exists.
+   *
+   * Late-bound for the writer holder's reason — it cannot exist at composition — and `null` is NOT that holder's
+   * defect: a harness that created no window, or attached none, is a real state, answered `applied: false`.
+   */
+  let shellWindow: ShellWindow | null = null;
+
   return {
     // `pickDocument` is a PARAMETER, not an import, and that is what keeps this
     // file's stated property true: nothing here imports Electron, so the whole
@@ -1144,9 +1152,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // separates an absent key from a present `undefined` — and here the two
       // mean different things to the handler.
       ...(handwritingCache === undefined ? {} : { handwriting: handwritingCache }),
+      titleBarOverlay: (overlay) => {
+        if (shellWindow === null) return false;
+        shellWindow.setTitleBarOverlay(overlay);
+        return true;
+      },
     }),
     incidents: log?.incidents ?? reportIncident,
     failures,
+    attachWindow: (window) => {
+      shellWindow = window;
+    },
 
     /**
      * DOCUMENTS FIRST, THEN THE HOST, and the order is the whole of it.

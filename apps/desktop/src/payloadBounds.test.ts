@@ -146,6 +146,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
     revealLog: () => Promise.resolve(false),
+    titleBarOverlay: () => false,
     readDictionary: () => Promise.resolve(null),
     ocrLanguages: () => Promise.resolve([]),
   });
@@ -194,6 +195,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'settings.loadSecrets': 'answers which declared secret ids are stored, never a value; no document contributes',
   'settings.saveSecret': 'answers a boolean',
   'log.reveal': 'answers a boolean',
+  'window.titleBarOverlay': 'answers a boolean; two colours and a height go in, and no document contributes',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its
   // size is the language's, fixed at build time, bounded by MAX_AFFIX_BYTES and
   // MAX_DICTIONARY_BYTES at both the read and the schema — which is L11's

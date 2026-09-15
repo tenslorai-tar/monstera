@@ -126,6 +126,13 @@ export interface AppInfo {
   readonly installChannel: 'store' | 'web' | 'development';
 }
 
+/** What `window.titleBarOverlay` carries, already validated: two `#rrggbb` colours and a whole-pixel height. */
+export interface TitleBarOverlay {
+  readonly color: string;
+  readonly symbolColor: string;
+  readonly height: number;
+}
+
 /**
  * The main-process side of the contract, assembled once and completely.
  *
@@ -212,6 +219,14 @@ export function createContractHandlers(deps: {
    * machine with no keyring.
    */
   readonly handwriting?: HandwritingCache;
+  /**
+   * Paints the window controls over the title bar, answering whether a window took it.
+   *
+   * Injected for the file's reason — `setTitleBarOverlay` is Electron's — and REQUIRED, so an assembly that
+   * forgot it is a compile error rather than a title bar whose buttons keep the system's colours. `false` is
+   * the declared answer where no window is attached.
+   */
+  readonly titleBarOverlay: (overlay: TitleBarOverlay) => boolean;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
@@ -368,6 +383,7 @@ export function createContractHandlers(deps: {
       } as const);
     },
     'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
+    'window.titleBarOverlay': (overlay) => Promise.resolve(ok({ applied: deps.titleBarOverlay(overlay) })),
   };
 }
 
