@@ -1,10 +1,10 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, realpathSync, rmSync, symlinkSync, watch as nodeWatch } from 'node:fs';
 import { rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import koffi from 'koffi';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { watchEdits, type EditWatch, type EditWatchSurface } from './externalEditWatch.js';
@@ -140,17 +140,33 @@ describe('nodeEditWatchSurface — the directory is watched by its real, long pa
     expect(watched[0]).not.toBe(link);
   });
 
-  const shortPathOf = (directory: string): string =>
-    execFileSync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${directory.replaceAll("'", "''")}').ShortPath`,
-      ],
-      { encoding: 'utf8' },
-    ).trim();
+  /**
+   * A directory's 8.3 short form, from the operating system's own call.
+   *
+   * `GetShortPathNameW` through koffi, as `win32DirectorySurface.ts` binds kernel32. Until
+   * 2026-09-15 this started PowerShell and asked a COM object, which took 4,177–5,295 ms here
+   * (three runs) and once exceeded the case's 20 s bound on a GitHub Windows runner, reddening
+   * CI on a change that touched nothing this file tests. The fixture's cost was the whole of
+   * that run; the call under test takes milliseconds.
+   */
+  const shortPathOf = (directory: string): string => {
+    const kernel = koffi.load('kernel32.dll');
+    // C prototype: DWORD GetShortPathNameW(LPCWSTR lpszLongPath, LPWSTR lpszShortPath, DWORD cchBuffer).
+    const getShortPathName = kernel.func('uint32 GetShortPathNameW(const char16_t *longPath, void *shortPath, uint32 length)') as (
+      longPath: string,
+      shortPath: Buffer,
+      length: number,
+    ) => number;
+    const capacity = 1024;
+    const buffer = Buffer.alloc(capacity * 2);
+    const written = getShortPathName(directory, buffer, capacity);
+    // Zero is failure, and a figure at or past the capacity is the size the call NEEDED: both
+    // are a broken read, never a short form, so neither is handed to the case as one.
+    if (written === 0 || written >= capacity) {
+      throw new Error(`GetShortPathNameW answered ${String(written)} for ${directory}`);
+    }
+    return buffer.toString('utf16le', 0, written * 2);
+  };
 
   it.skipIf(process.platform !== 'win32')(
     'a directory named through an 8.3 SHORT path is watched in its long form (Windows)',
@@ -175,10 +191,6 @@ describe('nodeEditWatchSurface — the directory is watched by its real, long pa
       expect(watched[0]?.toLowerCase()).toBe(realpathSync.native(directory).toLowerCase());
       expect(watched[0]?.toLowerCase()).not.toBe(short.toLowerCase());
     },
-    // A bound on the FIXTURE, not on what is under test: asking PowerShell for the short path
-    // took 3,860 ms of this case's run on 2026-09-14, against vitest's 5,000 ms default, and
-    // Node has no call that answers it directly.
-    20_000,
   );
 
   it('CONTROL: a directory that cannot be resolved is refused as null, and nothing is watched', () => {

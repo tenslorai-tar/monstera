@@ -892,6 +892,35 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — CI red on `e64336e`: a test fixture that started PowerShell, not the code it tested
+
+**The board.** `e64336e` (design pass F): Guards success (34935200826), CI **failure** (34935200839), read once at
+08:22:45. The failed job is *Typecheck, lint, and proofs (windows-latest)*, step 70 *Unit tests*. The test log needs a
+login this machine does not have; the failing case was read from the job's public check-run annotations instead:
+
+> `apps/desktop/src/nodeEditWatch.test.ts` › *a directory named through an 8.3 SHORT path is watched in its long form
+> (Windows)* — "Test timed out in 20000ms."
+
+Pass F touched nothing that file tests, and CI passed the same case on `4621744` an hour earlier.
+
+**Mechanism.** The case's fixture asked for the directory's 8.3 short path by starting PowerShell and a COM
+`Scripting.FileSystemObject`. Timed here on 2026-09-15, three runs: **5,295 ms, 4,189 ms, 4,177 ms** (the case's own
+comment recorded 3,860 ms on 2026-09-14). The call under test — `realpathSync.native` and one `fs.watch` — takes
+milliseconds, so the case's run time was the fixture's, and a runner cold start put PowerShell past the 20 s bound the
+case carried for that fixture.
+
+**Fix.** The fixture calls `GetShortPathNameW` through koffi, the way `win32DirectorySurface.ts` binds kernel32, and
+refuses a zero or over-capacity answer as a broken read rather than handing it to the case. The 20 s bound is removed
+with the cost it existed for; it was not raised. The case's could-not-look guard — no short form on this volume — is
+unchanged. `nodeEditWatch.test.ts` locally: 8 passed. `rg` over every test and proof for `powershell.exe`: this file
+was the only one, so the class is this instance.
+
+**Why this machine did not see it.** The pass-F sweep ran `npm run test -- packages/ui`, which is not CI's step — CI runs
+`npm run test` over every package. That sweep would have passed this case anyway (4 s is under 20 s here), so the
+scope was not what hid it; it is still the wrong scope, and the check before this fix's push runs the full suite.
+
+---
+
 ## 2026-09-15 — Design pass F: the floating toolbar is a pill on the canvas, and chrome visibility is commanded
 
 §10.3: *"Floating quick toolbar: a vertical pill on the canvas edge … repositionable and hideable. Hiding and restoring
