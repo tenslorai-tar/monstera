@@ -901,21 +901,19 @@ jobs:
   # expression stops matching, the gate runs nowhere and the job is green. A separate job cannot
   # silently stop existing.
   #
-  # A MEASUREMENT UNTIL ITS FIRST READING, and `continue-on-error` says so rather than a comment alone.
-  # The baselines were captured on a Windows 11 machine (spread 0 across three runs, a planted one-word
-  # change 319 pixels, tolerance 100 — docs/JOURNAL.md, design pass J). This runner is a different
-  # Windows image whose rendering nobody has read, and a gate whose first run is red for the
-  # environment is §10.7's "flaky gate gets ignored". EXPIRY: the commit after this job's first run
-  # removes `continue-on-error` if the annotation shows every image within 100 pixels, or re-chooses
-  # the figure from that reading — never raises it to pass. docs/FEATURES.md's visual baselines row
-  # carries the same trigger.
+  # A GATE SINCE ITS FIRST READING. The baselines were captured on a Windows 11 machine (spread 0
+  # across three runs, a planted one-word change 319 pixels, tolerance 100 — docs/JOURNAL.md, design
+  # pass J), and this job measured first because this runner's rendering was unread. Read 2026-09-15:
+  # CI run 35015749763, check-run 104540480355 — all four cases within tolerance, the control still
+  # reporting 319 pixels; again on run 35017312561. So `continue-on-error` is gone and visual drift is
+  # a red build, as §10.7 asks. A figure that starts failing is re-chosen from a new reading, never
+  # raised to pass.
   #
   # `--always` publishes the run's tail as a notice, because Actions logs need an authenticated reader
   # and the figure this job exists to produce is otherwise knowable to nobody outside the org.
   visual:
-    name: Visual baselines (§10.7, windows-latest) — measuring
+    name: Visual baselines (§10.7, windows-latest)
     runs-on: windows-latest
-    continue-on-error: true
     defaults:
       run:
         shell: bash -euo pipefail {0}

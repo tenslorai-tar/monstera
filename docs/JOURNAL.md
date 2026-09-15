@@ -892,6 +892,26 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — The visual baselines gate, now that the runner has been read
+
+`e67988c` added the `windows-latest` `visual` job with `continue-on-error` and an expiry: *"the commit after this job's
+first run removes `continue-on-error` if the annotation shows every image within 100 pixels, or re-chooses the figure from
+that reading — never raises it to pass."*
+
+**The reading.** CI run 35015749763 (`e67988c`), visual job check-run 104540480355, its public notice: all four cases
+passed on the runner at threshold 0.2 and 100 differing pixels, and the control still reported its planted one-word
+change at 319 pixels. The job passed again on `18d725d`'s run (35017312561). The runner renders the committed baselines
+within tolerance, so the figure stands and the job is a gate: visual drift is a red build, as §10.7 asks.
+
+**What is not covered, stated:** Linux. A baseline is one platform's rasterisation, and none was captured for it.
+
+**And this push can be the reading `d3f4bbf` owed.** It lands within one CI run of `c964f13`'s push, with `main` grouped
+by commit, so both should carry a completed verdict. **Not yet read**: both runs' conclusions are taken at this commit's
+board read and recorded in the next entry that touches CI — a sentence here claiming them before they exist would be the
+reading, invented.
+
+---
+
 ## 2026-09-15 — D3's owed half: an existing Redact mark is drawn as a solid preview
 
 FEATURES row 131 owed *"the solid preview — how an existing mark is rendered"*, with a trigger — *"the annotations
