@@ -892,6 +892,42 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — A dialog is bounded by the window, and the palette's Escape is proven from the field
+
+Two findings from the live-runs entry below, taken in order.
+
+### The dialog primitive had no bound — fixed for the class
+
+**Mechanism** (read, and measured live): `.m-dialog` is `position: fixed`, centred with `translate(-50%, -50%)`, with no
+maximum size and no overflow, so content larger than the window pushes both edges past it and a fixed box cannot be
+scrolled to. The camera dialog met it through a `<video>` with no rule, which lays out at the stream's native frame.
+
+**Fix, in the primitive** so every dialog inherits it rather than the camera's alone: `max-inline-size` and
+`max-block-size` of the window less `--space-32` a side, and `.m-dialog__body` takes `flex: 1 1 auto`,
+`min-block-size: 0` and `overflow: auto` — the zero minimum because a flex item's default minimum is its content, which
+would grow the popup past its bound instead of scrolling the body. The camera preview gets sizing only (`inline-size:
+100%`, `max-block-size: 50vh`, `object-fit: contain`) and **no `display`**: nothing in these stylesheets restates
+`[hidden]`, so a display rule would override the attribute that hides the preview until the camera is live.
+
+**Proof.** The camera is not reachable in the rendered harness (no fake device is configured, and adding one would be
+the first per-test launch option in the suite), so the case uses the Settings dialog at 1280 × 420 against the same
+primitive: its box lies inside the window, its body scrolls, *Save* scrolls into view, the title stays in view.
+- **The first run failed for the wrong reason**, at the scroll assertion: the failure's page snapshot showed a header
+  and no body — `SETTINGS_DIALOG` is lazy, and the body's chunk had not arrived when the case measured. The case now
+  waits for *Save* to be attached before measuring. The containment assertions before it had passed.
+- **Mutation D1**, the popup's `max-block-size` removed and rebuilt: the case failed at its first containment assertion,
+  the dialog's top at −320.18 px.
+
+### The palette closes on Escape pressed in its field
+
+`CommandPalette.test.tsx`' *closes on Escape* fired the key at the palette's root, which no key press does — focus is
+in the query field from the moment it opens. A case now fires it in the field, and passes: the handler receives a key
+from the field. So the live session's palette that stayed open is explained by focus having left it — screen-control
+clicks had just gone to another window — and it is recorded as that, not as a defect. **Mutation P1**, the handler
+matching `'Esc'`: exactly the two Escape cases failed, five passed.
+
+---
+
 ## 2026-09-15 — Live runs: webcam PASSED; external edit FAILED at the reimport; four findings
 
 Both runs used screen control, which the owner approved on 2026-09-14, against the development build (`npm start`,

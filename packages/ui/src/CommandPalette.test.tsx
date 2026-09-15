@@ -164,4 +164,15 @@ describe('CommandPalette', () => {
     fireEvent.keyDown(palette(container), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('closes on Escape pressed IN THE QUERY FIELD, where a person is typing when they press it', () => {
+    // The case above dispatches at the palette's root, which no key press does: focus is in the field from the moment
+    // the palette opens. Added 2026-09-15 after Escape did not close the palette in a live session — this case is what
+    // separates "the handler does not receive a key from the field" from "focus had left the palette".
+    const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+    const { container, onClose } = open(registry);
+
+    fireEvent.keyDown(queryField(container), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

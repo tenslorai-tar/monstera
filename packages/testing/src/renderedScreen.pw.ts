@@ -683,3 +683,36 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
   await page.keyboard.press('Control+Shift+Q');
   await expect(toolbar).toBeVisible();
 });
+
+test('a DIALOG taller than the window stays inside it, and its body scrolls to the last control', async ({ page }) => {
+  // THE CLASS, found live on 2026-09-15: the camera dialog grew to its stream's native frame and put its buttons
+  // outside the window, where a fixed, centred box cannot be scrolled to. The camera itself is not reachable in this
+  // harness, so the case uses the Settings dialog — a real dialog whose list is taller than a short window — against the
+  // same primitive. A 420 px window is shorter than that list on every theme.
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await bridge(page, {});
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  await expect(dialog).toBeVisible();
+  // THE BODY ARRIVES WITH ITS CHUNK, after the title: `SETTINGS_DIALOG` is `lazy`, so measuring on the dialog's first
+  // frame measures a header and an empty body — which fits any window and made the first version of this case fail
+  // on the scroll assertion for the wrong reason. `toBeAttached`, not `toBeVisible`: the button may sit below the
+  // body's scroll edge, which is the state under test.
+  const save = dialog.getByRole('button', { name: 'Save' });
+  await expect(save).toBeAttached();
+  const box = await dialog.boundingBox();
+  expect(box).not.toBeNull();
+  // INSIDE THE WINDOW, top and bottom: the defect put both edges past it.
+  expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
+  expect((box?.y ?? 0) + (box?.height ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(420);
+
+  // THE BODY SCROLLS — the property that makes the bound usable rather than a clip — and the title stays put.
+  const scrolls = await dialog.locator('.m-dialog__body').evaluate((body) => body.scrollHeight > body.clientHeight);
+  expect(scrolls).toBe(true);
+  await save.scrollIntoViewIfNeeded();
+  const saveBox = await save.boundingBox();
+  expect((saveBox?.y ?? -1) >= 0 && (saveBox?.y ?? 0) + (saveBox?.height ?? 0) <= 420).toBe(true);
+  await expect(dialog.getByRole('heading', { name: 'Settings' })).toBeInViewport();
+});

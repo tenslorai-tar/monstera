@@ -311,6 +311,12 @@
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--elevation-3);
+  /* BOUNDED BY THE WINDOW, and the reason is that nothing else can be. The popup is fixed and centred by translate,
+     so content wider or taller than the window pushes both edges past it, and a fixed box cannot be scrolled to:
+     measured live 2026-09-15, the camera dialog grew to its stream's native frame and put Take picture and Make PDF
+     outside the window. The body below scrolls instead, so the title and close button stay reachable. */
+  max-inline-size: calc(100vw - 2 * var(--space-32));
+  max-block-size: calc(100vh - 2 * var(--space-32));
 }
 
 .m-dialog__header {
@@ -332,4 +338,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+  /* The part that yields when the popup meets its bound: `min-block-size: 0` because a flex item's default minimum
+     is its content, which would grow the popup past `max-block-size` instead of scrolling here. */
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: auto;
 }
