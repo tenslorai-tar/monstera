@@ -1273,7 +1273,7 @@ type Placement =
   | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number }
   | { surface: 'quick-toolbar'; order: number }
   | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab'; order: number }
-  | { surface: 'start-screen';  order: number }
+  | { surface: 'start-screen';  slot: 'primary' | 'shortcut' | 'footer'; order: number }
   | { surface: 'status-bar';    cluster: 'navigation'; side: 'before' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'chrome'; order: number }
@@ -1305,6 +1305,16 @@ there is still one owner of each. The percentage is a readout, and a readout
 still has a position. Writing the buttons into the bar by hand would be the
 second wiring place above; `StatusBar.tsx` lives in `packages/ui/src/surfaces`,
 where `check:secondwiring` scans.
+
+**The start screen projects commands into three slots** (amended 2026-09-15,
+[ADR-0068](DECISIONS/0068-the-start-screen-projects-into-three-slots.md)).
+§10.3 gives it one primary button under the hero, a grid of feature shortcuts
+and a footer, so a placement names its `slot`: `primary`, `shortcut` or
+`footer`. The footer's commands are the application's own — About, Settings,
+the diagnostics log — which with no document open are otherwise reachable from
+the palette alone. **The hero, the recent list and the footer's text are not
+commands**: the logo, "PDF EDITOR" and the tagline, the recent files, and the
+F1 hint, version and copyright are the screen's own content.
 
 Chrome visibility is itself commanded: `view.toggle-quick-toolbar`,
 `view.toggle-panel` and the layout-mode switch are registry commands, which is
@@ -2499,3 +2509,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-09-14 | **`style-src` admits three hashes: the resizable-panel library's drag cursor** (§9 invariant 27). `@zag-js/splitter` 1.43.3 appends `<style>* { cursor: X !important; }</style>` on every drag, in every configuration, and `'self'` alone refused it — measured by `proof:rendererpolicy`. The line now carries the SHA-256 of exactly the three horizontal texts. Measured in Electron's Chromium: the hashed text is admitted and applies; the same text one space longer is refused; removing the `col-resize` source fails the admission case alone. | `style-src 'self'` alone (pinned 2026-08-21, ADR-0019) | [ADR-0066](DECISIONS/0066-the-splitters-drag-cursor-is-admitted-by-hash.md) |
 | 2026-09-14 | **The status bar is a placement surface** (§7). §10.3 puts page navigation and a zoom cluster in the status bar, and §7's `Placement` had no surface for it, so its buttons could only be written into the bar by hand — the second wiring place. `status-bar` joins the union with a `cluster` (`navigation` or `zoom`) and a `side` (`before` or `after` that cluster's value control). The page field and the zoom slider take values and stay the bar's own controls, writing the state the commands change. | §7's `Placement`, four surfaces | [ADR-0067](DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md) |
 | 2026-09-15 | **The status bar's placement is discriminated by cluster, and gains `chrome`** (§7). §10.3's zoom order — zoom-out · slider · zoom-in · percentage · fit mode — has two of the bar's own controls with a command between them, which a two-valued `side` could not name, so the built bar deviated from the approved design. `zoom` now places `before` the slider, `between` it and the percentage, or `after` the percentage; `navigation` keeps `before` and `after`; `chrome` has no value control and no `side`, and holds §10.3's quick-toolbar toggle. The owner ruled the design stands and the type changes. | the 2026-09-14 row's `cluster`/`side` shape | [ADR-0067](DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md) (correction 2026-09-15) |
+| 2026-09-15 | **The start screen's placement names a slot** (§7). §10.3's start screen has three places with different presentations — one primary Open button under the hero, a grid of feature shortcuts, a footer — and `{ surface: 'start-screen'; order }` was one ordered list, so the screen could only draw every command alike or name `document.open` itself, the second wiring place. The member gains `slot: 'primary' \| 'shortcut' \| 'footer'`. About, Settings and the diagnostics log take the footer, since with no document the ribbon is not drawn; the hero, the recent list and the footer's text stay the screen's own content. | §7's `start-screen` placement, `{ surface; order }` | [ADR-0068](DECISIONS/0068-the-start-screen-projects-into-three-slots.md) |
