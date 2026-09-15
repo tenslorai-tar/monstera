@@ -892,6 +892,53 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — `main` never cancels, and a queued run on it was still replaced: groups by commit
+
+**A commit on `main` lost its CI verdict with `cancel-in-progress: false` in place.** `a3db070`'s board read answered
+`CI cancelled` (run 35015212019; Guards 35015212106 success). Read from the runs API: the run was created at 19:42:22Z,
+two seconds after its push, behind `bc524eb`'s run (35014333286, 19:33:26Z to 19:53:24Z), and was cancelled at 19:47:44Z
+— three seconds after `e67988c` was pushed.
+
+### Mechanism
+
+GitHub runs one run per concurrency group and queues one more; a later push to the same group cancels the queued run.
+`cancel-in-progress` governs only the running one. Both workflows grouped by ref, so on `main` a push landing while an
+earlier run was still going queued behind it, and the next push replaced it. `ci.yml` and `guards.yml` both said
+*"`main` NEVER CANCELS"*, true of a running run and false of a queued one — a compound claim with one clause dead.
+
+**And the scan written to hold that rule could not see it**: `mainNeverCancels.mjs` read `cancel-in-progress` alone, so it
+reported the tree clean throughout. The instrument had the blind spot of the setting it checked.
+
+### Fix
+
+- Both workflows: `group: <name>-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}` — one group per
+  commit on `main`, so nothing queues behind another commit's run; branches keep grouping by ref and cancelling.
+- The scan reads the group too, reports a group pushes to `main` share, one it cannot read and a block with none, and
+  carries a second positive control: a shared group with a `cancel-in-progress` that protects `main`.
+- The proof: the defect as a case; the per-commit spelling accepted; the inverted `!=` spelling and an unreadable group
+  refused; the shipped-tree control for the group. Fixtures default to the per-commit group, so a case about the cancel
+  setting cannot pass or fail because of the group.
+
+### Proof
+
+- `node scripts/lib/mainNeverCancels.mjs` on the fixed tree: exit 0 — *"2 workflow(s) scanned; none cancels or queues
+  away a run on main"* and *"the scan located both positive controls"*.
+- `node scripts/proofs/mainNeverCancels.proof.mjs`: 19 cases passed.
+- **Mutation M-1**, `guards.yml`'s group put back to `guards-${{ github.ref }}`: the scan exited 1 naming
+  *".github/workflows/guards.yml:71 group: guards-${{ github.ref }} … (shared by pushes to main)"*; reverted, the scan
+  exited 0 again and no marker remained in either workflow.
+- `npm run typecheck` 0 (the scripts half reads this module's JSDoc) and `npm run lint` 0.
+
+### Owed
+
+**The effect is not yet observed on a runner.** The reading that settles it: two pushes to `main` closer together than one
+CI run, both carrying a completed verdict.
+
+**Cost:** every push to `main` now runs to completion, so a burst of pushes runs every one of them — the trade the
+original fix accepted for running runs, extended to queued ones.
+
+---
+
 ## 2026-09-15 — Collapsing a side panel widened the other: a shut side is now a zero-width pane
 
 **Found by CI, not by a local run.** `4359fe4` (design pass I) went red on `ubuntu-latest` only (CI 35002592538): *the

@@ -58,8 +58,17 @@ permissions:
 # Two runs coexisting on `main`, with the pre-fix cancellation visible in the
 # same payload as the control. `8b99118` then completed `success`, so the verdict
 # a push used to destroy is the verdict it now keeps.
+#
+# AND "NEVER CANCELS" WAS HALF TRUE, measured 2026-09-15. `cancel-in-progress`
+# governs the RUNNING run; GitHub also queues one run per group, and the next push
+# cancels that queued one regardless. CI run 35015212019 (`a3db070`) was created
+# at 19:42:22Z behind a still-running `bc524eb` and cancelled at 19:47:44Z, three
+# seconds after `e67988c` was pushed — no verdict for that commit, while the scan
+# below read `cancel-in-progress` alone and reported the tree clean. So `main`
+# groups by COMMIT, and the scan now reads the group too. Branches keep grouping
+# by ref, where superseding is the point.
 concurrency:
-  group: guards-${{ github.ref }}
+  group: guards-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

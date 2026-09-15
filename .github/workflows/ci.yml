@@ -23,8 +23,15 @@ permissions:
 # `cancel-in-progress: true` meant every rapid push destroyed the previous
 # commit's verdict — `9292d1f`, `142a2d6`, `53eafae` — and left a bisect landing
 # on commits CI never evaluated.
+#
+# AND A QUEUED RUN IS REPLACED, whatever `cancel-in-progress` says: GitHub runs
+# one run per group and queues one more, and the next push cancels the queued
+# one. `a3db070`'s run was cancelled three seconds after `e67988c` was pushed,
+# while `bc524eb`'s was still running (2026-09-15). So `main` groups by COMMIT —
+# nothing waits behind another commit's run — and branches keep grouping by ref.
+# `scripts/lib/mainNeverCancels.mjs` reads both settings.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
