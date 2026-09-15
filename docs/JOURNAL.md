@@ -892,6 +892,36 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — Edit page in another app: the live run passes
+
+Screen control, owner-approved, against the development build (`npm start`) at `631ff46`, with PDF-XChange Editor as
+the operating system's PDF handler.
+
+**The run.** A three-page test document (widths 400, 500 and 600 points), opened by path. Page 2 sent out with *Edit
+page in another app…* from the command search, to a file under the system temp folder. PDF-XChange opened it at 500 ×
+600; *Rotate Pages*, 90° counterclockwise, then Ctrl+S — the file changed at 01:00:06. Monstera offered *"Put the edited
+page back? Page 2 was saved in the other app."*; *Put it back* gave no refusal and opened the edited file as a tab, as
+ADR-0062 Decision 5 says. Ctrl+S saved the document at 01:00:58. `shell.log` gained no entry.
+
+**Read back with a different parser.** pdf-lib on the saved document: page 1 400 × 600 rotate 0, **page 2 500 × 600
+rotate 270**, page 3 600 × 600 rotate 0 — page 2 carries the edited page's rotation (the page file itself reads 500 ×
+600 rotate 270) and the neighbours are unchanged. D9's row is done.
+
+**Defect found, queued: the thumbnail strip and the loupe draw a page at the rotation it was OPENED with.** After the
+reimport the main view drew page 2 turned and its thumbnail did not. Read from the code: `Thumbnails.tsx` and
+`Loupe.tsx:73` call `renderPage` with no rotation, so PDF.js falls back to the page's `/Rotate` in the bytes it opened —
+which `renderPage.ts`' own note calls stale the moment anything rotates a page. `PageList.tsx` is the one caller passing
+the view model's rotation. **One live observation and a mechanism read, not a reproduction**: owed is a case that
+rotates a page and asserts the thumbnail's drawn rotation, with the fix passing the view model's rotation to both
+callers.
+
+**Not clean, stated.** Two *Rotate page* clicks after the save — part of looking at the thumbnail — landed on pages this
+run could not identify from the screen, so the document on screen afterwards is not evidence of anything. The reading
+above was taken from the file saved before them. The clipboard was never written: the first attempt to type a path pasted
+what was already on it, and every path after was entered as key presses.
+
+---
+
 ## 2026-09-16 — The live external-edit failure: the root's MuPDF delegate dropped the source session
 
 **The mechanism.** The bus calls a writer as `apply(session, command, source, reads)`. The delegate `composition.ts`
