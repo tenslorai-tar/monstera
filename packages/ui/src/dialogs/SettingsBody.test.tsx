@@ -6,11 +6,16 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
+import { STARTING_STYLE_COLOUR } from '../annotations/annotationStyle.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN } from '../messages/en.js';
+import { EN, STYLE_COLOUR_AUTO } from '../messages/en.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { THEME_SETTING } from '../settings/appearance.js';
-import { ANNOTATION_OPACITY_SETTING, AZURE_DI_KEY_SETTING } from '../settings/editing.js';
+import {
+  ANNOTATION_COLOUR_SETTING,
+  ANNOTATION_OPACITY_SETTING,
+  AZURE_DI_KEY_SETTING,
+} from '../settings/editing.js';
 import type { SettingsAnswer } from './settings.js';
 import { controlFor, DIALOG_SETTINGS } from './settings.js';
 import SettingsBody from './SettingsBody.js';
@@ -55,6 +60,7 @@ const DEFAULTS = Object.fromEntries(
 function opened(options: {
   readonly storedSecrets?: readonly (typeof AZURE_KEY_SETTING_ID)[];
   readonly secretsAvailable?: boolean;
+  readonly values?: Readonly<Record<string, unknown>>;
 }): { readonly answers: SettingsAnswer[] } {
   const answers: SettingsAnswer[] = [];
   render(
@@ -65,7 +71,7 @@ function opened(options: {
         }}
         secretsAvailable={options.secretsAvailable ?? true}
         storedSecrets={options.storedSecrets ?? []}
-        values={DEFAULTS}
+        values={{ ...DEFAULTS, ...options.values }}
       />
     </Wrapped>,
   );
@@ -110,6 +116,49 @@ describe('SettingsBody', () => {
     );
     fireEvent.click(SAVE());
     expect(answers).toStrictEqual([]);
+  });
+
+  it('a COLOUR is a pair: unticking the no-choice box offers the starting colour, and a chosen colour is answered', () => {
+    const { answers } = opened({});
+    const auto = screen.getByLabelText<HTMLInputElement>(english(STYLE_COLOUR_AUTO));
+    const swatch = control(ANNOTATION_COLOUR_SETTING.title) as HTMLInputElement;
+
+    // NO CHOICE: ticked, and the input cannot be operated.
+    expect(auto.checked).toBe(true);
+    expect(swatch.disabled).toBe(true);
+
+    fireEvent.click(auto);
+    expect(swatch.disabled).toBe(false);
+    expect(swatch.value).toBe(STARTING_STYLE_COLOUR);
+    fireEvent.change(swatch, { target: { value: '#0000ff' } });
+    fireEvent.click(SAVE());
+
+    expect(answers).toStrictEqual([
+      { values: { [ANNOTATION_COLOUR_SETTING.id]: '#0000ff' }, secrets: {} },
+    ]);
+  });
+
+  it('a chosen colour ticked back answers the no-choice value', () => {
+    // FROM A STORED CHOICE, so the answer is a change: from the fallback the same
+    // clicks would answer nothing, which is the control below.
+    const { answers } = opened({ values: { [ANNOTATION_COLOUR_SETTING.id]: '#0000ff' } });
+    const swatch = control(ANNOTATION_COLOUR_SETTING.title) as HTMLInputElement;
+    expect(swatch.disabled).toBe(false);
+    expect(swatch.value).toBe('#0000ff');
+
+    fireEvent.click(screen.getByLabelText(english(STYLE_COLOUR_AUTO)));
+    fireEvent.click(SAVE());
+
+    expect(answers).toStrictEqual([{ values: { [ANNOTATION_COLOUR_SETTING.id]: 'auto' }, secrets: {} }]);
+  });
+
+  it('CONTROL: unticking and ticking back from no choice answers nothing', () => {
+    const { answers } = opened({});
+    const auto = screen.getByLabelText(english(STYLE_COLOUR_AUTO));
+    fireEvent.click(auto);
+    fireEvent.click(auto);
+    fireEvent.click(SAVE());
+    expect(answers).toStrictEqual([{ values: {}, secrets: {} }]);
   });
 
   it('the key field is WRITE-ONLY: empty with a placeholder when a key is stored, and typing replaces it', () => {

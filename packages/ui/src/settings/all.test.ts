@@ -43,11 +43,9 @@ describe('the registered settings', () => {
     const excluded = ALL_SETTINGS.filter((setting) => controlFor(setting) === undefined)
       .map((setting) => setting.id)
       .sort();
-    expect(excluded).toStrictEqual([
-      'appearance.accent',
-      'editing.annotation-colour',
-      'editing.personal-dictionary',
-    ]);
+    // THE ANNOTATION COLOUR LEFT THIS LIST 2026-09-15 (ADR-0056's correction): it is
+    // a colour kind now. The accent stays, because it can be refused on apply.
+    expect(excluded).toStrictEqual(['appearance.accent', 'editing.personal-dictionary']);
     // AND NOTHING ELSE IS LOST: every setting is either in the dialog or named above.
     expect(DIALOG_SETTINGS.length + excluded.length).toBe(ALL_SETTINGS.length);
   });

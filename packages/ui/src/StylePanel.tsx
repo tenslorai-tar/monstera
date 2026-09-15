@@ -11,21 +11,8 @@ import {
   STYLE_COLOUR_CHOOSE,
   STYLE_PANEL_LABEL,
 } from './messages/en.js';
-import { hexFromColour } from './annotations/annotationStyle.js';
-import { STROKE } from './annotations/shapeTools.js';
+import { STARTING_STYLE_COLOUR as STARTING_COLOUR } from './annotations/annotationStyle.js';
 import type { SettingsStore } from './settingsStore.js';
-
-/**
- * What the colour input shows before a person has chosen anything.
- *
- * **The shape tools' own red, converted rather than retyped.** A hex literal
- * here is refused by `monstera/no-raw-hex` and the refusal is right: this is not
- * a design token, it is another module's constant, and a copy would drift the
- * day that constant moved. Black — what an empty colour input answers — would
- * be worse still: a person who has just said *I want to choose* has not chosen
- * black.
- */
-const STARTING_COLOUR = hexFromColour(STROKE);
 import {
   ANNOTATION_COLOUR_SETTING,
   ANNOTATION_FONT_SIZE_SETTING,

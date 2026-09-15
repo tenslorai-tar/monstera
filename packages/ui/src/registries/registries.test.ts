@@ -13,7 +13,7 @@ import {
   DialogRegistry,
   declareDialog,
 } from './dialogs.js';
-import { SettingsRegistry, type SettingDefinition } from './settings.js';
+import { SettingsRegistry, type SettingDefinition, colourKindOf, colourSchema } from './settings.js';
 import { ToolRegistry, type UiTool, pointerPath } from './tools.js';
 
 const context: CommandContext = {
@@ -292,6 +292,66 @@ describe('SettingsRegistry', () => {
           },
         ]),
     ).not.toThrow();
+  });
+
+  /** A union with the colour kind's exact SHAPE, which `colourSchema` did not build. */
+  const lookalike = (): z.ZodType => z.union([z.literal('auto'), z.string().regex(/^#[0-9a-f]{6}$/u)]);
+
+  it('refuses a colour setting with no unset title', () => {
+    expect(
+      () =>
+        new SettingsRegistry([
+          {
+            id: 'editing.colour',
+            title: messageKey('setting.colour.label'),
+            schema: colourSchema({ unset: 'auto', starting: '#d92626' }),
+            fallback: 'auto',
+            category: 'editing',
+          },
+        ]),
+    ).toThrow(/"editing\.colour" is a colour setting with no unset title/u);
+  });
+
+  it('refuses an unset title on a setting colourSchema did not build, whatever its shape', () => {
+    // THE OTHER DIRECTION, on the input a shape test would take for a colour: the
+    // registry's record decides, so a lookalike union is not one.
+    expect(
+      () =>
+        new SettingsRegistry([
+          {
+            id: 'editing.lookalike',
+            title: messageKey('setting.colour.label'),
+            schema: lookalike(),
+            fallback: 'auto',
+            category: 'editing',
+            unsetTitle: messageKey('setting.colour.auto'),
+          },
+        ]),
+    ).toThrow(/"editing\.lookalike" has an unset title/u);
+  });
+
+  it('CONTROL: a colour setting with its unset title constructs, and only a built schema is a colour', () => {
+    const schema = colourSchema({ unset: 'auto', starting: '#d92626' });
+    expect(
+      new SettingsRegistry([
+        {
+          id: 'editing.colour',
+          title: messageKey('setting.colour.label'),
+          schema,
+          fallback: 'auto',
+          category: 'editing',
+          unsetTitle: messageKey('setting.colour.auto'),
+        },
+      ]).size,
+    ).toBe(1);
+    expect(colourKindOf(schema)).toStrictEqual({ unset: 'auto', starting: '#d92626' });
+    expect(colourKindOf(lookalike())).toBeUndefined();
+  });
+
+  it('colourSchema refuses a starting colour an input cannot take, and a no-choice value that is a colour', () => {
+    expect(() => colourSchema({ unset: 'auto', starting: '#D92626' })).toThrow(/starting colour/u);
+    expect(() => colourSchema({ unset: 'auto', starting: 'red' })).toThrow(/starting colour/u);
+    expect(() => colourSchema({ unset: '#000000', starting: '#d92626' })).toThrow(/itself a colour/u);
   });
 
   it('refuses a fallback its own schema refuses', () => {

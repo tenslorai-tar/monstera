@@ -2,7 +2,9 @@ import type { AnnotationColour } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { overlayTransform } from './annotationSpace.js';
-import { PLAIN_STYLE, colourFromHex, hexFromColour } from './annotationStyle.js';
+import { colourKindOf } from '../registries/settings.js';
+import { ANNOTATION_COLOUR_SETTING } from '../settings/editing.js';
+import { PLAIN_STYLE, STARTING_STYLE_COLOUR, colourFromHex, hexFromColour, styleFrom } from './annotationStyle.js';
 import type { AnnotationStyle } from './annotationStyle.js';
 import { STROKE, rectangleTool } from './shapeTools.js';
 import { textMarkupTools } from './textMarkupTools.js';
@@ -59,6 +61,40 @@ describe('hexFromColour and colourFromHex', () => {
     expect(colourFromHex('red')).toBeUndefined();
     expect(colourFromHex('#abc')).toBeUndefined();
     expect(colourFromHex('')).toBeUndefined();
+  });
+});
+
+describe('styleFrom — the stored settings, as the style the tools draw in', () => {
+  // EVERY NUMBER OFF ITS DEFAULT, so a resolver that answered `PLAIN_STYLE` is seen.
+  const stored = { opacity: 0.4, lineWidth: 5, fontSize: 20 };
+  const HIGHLIGHT_OWN: AnnotationColour = [1, 0.9, 0.2];
+
+  it('a stored colour is EVERY tool’s colour, and the numbers pass through', () => {
+    const style = styleFrom({ ...stored, colour: '#0000ff' });
+    expect(style.colour(STROKE)).toStrictEqual([0, 0, 1]);
+    expect(style.colour(HIGHLIGHT_OWN)).toStrictEqual([0, 0, 1]);
+    expect([style.opacity, style.lineWidth, style.fontSize]).toStrictEqual([0.4, 5, 20]);
+  });
+
+  it('CONTROL: the setting’s own no-choice value hands each tool its OWN colour', () => {
+    // READ OFF THE SETTING, not typed here: the correspondence between what the
+    // dialog stores for *no choice* and what the resolver treats as one is the
+    // thing a literal on each side would leave unchecked.
+    const unset = colourKindOf(ANNOTATION_COLOUR_SETTING.schema)?.unset;
+    expect(unset).toBeDefined();
+    const style = styleFrom({ ...stored, colour: unset ?? '#0000ff' });
+    expect(style.colour(STROKE)).toStrictEqual(STROKE);
+    expect(style.colour(HIGHLIGHT_OWN)).toStrictEqual(HIGHLIGHT_OWN);
+  });
+
+  it('a stored value it cannot read is no choice too — never black', () => {
+    const style = styleFrom({ ...stored, colour: '#abc' });
+    expect(style.colour(HIGHLIGHT_OWN)).toStrictEqual(HIGHLIGHT_OWN);
+  });
+
+  it('the starting colour a control offers is the shapes’ own red', () => {
+    expect(colourKindOf(ANNOTATION_COLOUR_SETTING.schema)?.starting).toBe(STARTING_STYLE_COLOUR);
+    expect(colourFromHex(STARTING_STYLE_COLOUR)?.[0]).toBeCloseTo(STROKE[0], 2);
   });
 });
 

@@ -26,10 +26,13 @@ import {
   MEASURE_UNIT_TITLE,
   IMAGE_PAGES_TITLES,
   OCR_LANGUAGE_NAMES,
+  STYLE_COLOUR_AUTO,
   TROCR_SIZE_TITLES,
   UNIT_TITLES,
 } from '../messages/en.js';
+import { STARTING_STYLE_COLOUR } from '../annotations/annotationStyle.js';
 import type { SettingDefinition } from '../registries/settings.js';
+import { colourSchema } from '../registries/settings.js';
 
 /**
  * The style a new annotation is drawn in — `BUILD-PROMPT.md`:614's *editing
@@ -74,13 +77,16 @@ import type { SettingDefinition } from '../registries/settings.js';
  * genuinely dynamic case. This is not a component and the value is the person's.
  */
 export const ANNOTATION_COLOUR_SETTING: SettingDefinition<
-  z.ZodUnion<[z.ZodLiteral<'auto'>, z.ZodString]>
+  z.ZodUnion<readonly [z.ZodLiteral<'auto'>, z.ZodString]>
 > = {
   id: 'editing.annotation-colour',
   title: EDITING_COLOUR_TITLE,
-  schema: z.union([z.literal('auto'), z.string().regex(/^#[0-9a-f]{6}$/u)]),
+  // BUILT BY THE REGISTRY'S COLOUR CONSTRUCTOR, which is what puts it in the
+  // Settings dialog as a colour pair (ADR-0056, corrected 2026-09-15).
+  schema: colourSchema({ unset: 'auto', starting: STARTING_STYLE_COLOUR }),
   fallback: 'auto',
   category: 'editing',
+  unsetTitle: STYLE_COLOUR_AUTO,
 };
 
 /**

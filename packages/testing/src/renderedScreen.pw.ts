@@ -717,6 +717,35 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   await expect(dialog.getByRole('heading', { name: 'Settings' })).toBeInViewport();
 });
 
+test('the SETTINGS dialog sets the default annotation colour with NO DOCUMENT open, and it holds when reopened', async ({
+  page,
+}) => {
+  // THE OWNER'S REASON FOR THE CONTROL (ADR-0056, corrected 2026-09-15): the styles panel draws beside a document
+  // only, so this runs on the start screen.
+  await bridge(page, {});
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  const auto = dialog.getByRole('checkbox', { name: 'Each tool’s own' });
+  const swatch = dialog.getByLabel('Annotation colour');
+  await expect(auto).toBeChecked();
+  await expect(swatch).toBeDisabled();
+
+  await auto.uncheck();
+  await expect(swatch).toBeEnabled();
+  // THE SHAPES' RED, never black — what an empty colour input would answer.
+  await expect(swatch).toHaveValue('#d92626');
+  await swatch.fill('#0000ff');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+
+  // REOPENED, it reads the store the command wrote — not the dialog's own draft, which closed with it.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const again = page.getByRole('dialog', { name: 'Settings' });
+  await expect(again.getByRole('checkbox', { name: 'Each tool’s own' })).not.toBeChecked();
+  await expect(again.getByLabel('Annotation colour')).toHaveValue('#0000ff');
+});
+
 test('FOCUS hides the rail, the ribbon and both side panels, and keeps the status bar and the floating toolbar', async ({
   page,
 }) => {

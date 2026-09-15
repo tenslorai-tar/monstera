@@ -1,5 +1,9 @@
 import type { AnnotationColour, AnnotationOpacity } from '@monstera/contract';
 
+// A VALUE IMPORT FROM A TOOL MODULE, and not a cycle: `shapeTools.ts` takes
+// `AnnotationStyle` from here as a type only, which the compiler erases.
+import { STROKE } from './shapeTools.js';
+
 /**
  * The style a new annotation is drawn in, as a tool reads it.
  *
@@ -88,4 +92,44 @@ export function colourFromHex(hex: string): AnnotationColour | undefined {
   // 0.8509803921568627 — the annotation is a colour, not a measurement.
   const part = (value: string): number => Math.round((Number.parseInt(value, 16) / 255) * 1e4) / 1e4;
   return [part(r), part(g), part(b)];
+}
+
+/**
+ * What a colour input offers before a person has chosen a colour.
+ *
+ * **The shape tools' own red, converted rather than retyped.** A hex literal in a
+ * component is refused by `monstera/no-raw-hex` and the refusal is right: this is
+ * not a design token, it is another module's constant, and a copy would drift the
+ * day that constant moved. Black — what an empty colour input answers — would be
+ * worse still: a person who has just said *I want to choose* has not chosen black.
+ *
+ * One constant for every surface of the setting: the styles panel and the Settings
+ * dialog both offer it, through the setting's colour schema.
+ */
+export const STARTING_STYLE_COLOUR = hexFromColour(STROKE);
+
+/**
+ * The style the tools draw in, from the four stored editing settings.
+ *
+ * ## A stored colour this cannot read is NO CHOICE, and `'auto'` is one of those
+ *
+ * `colourFromHex` answers `undefined` for anything that is not `#rrggbb`, and
+ * `undefined` hands the tool its own colour. So `'auto'` needs no case of its own,
+ * and a stored value from a build whose pattern was different falls back to each
+ * tool's own colour too — a mark a person recognises, where black would be a silent
+ * restyle.
+ */
+export function styleFrom(stored: {
+  readonly colour: string;
+  readonly opacity: AnnotationOpacity;
+  readonly lineWidth: number;
+  readonly fontSize: number;
+}): AnnotationStyle {
+  const chosen = colourFromHex(stored.colour);
+  return {
+    colour: (own) => chosen ?? own,
+    opacity: stored.opacity,
+    lineWidth: stored.lineWidth,
+    fontSize: stored.fontSize,
+  };
 }

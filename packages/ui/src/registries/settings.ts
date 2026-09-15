@@ -10,6 +10,64 @@ import { z } from 'zod';
  * are the two failures a second wiring place produces here.
  */
 
+/** A stored colour: six lower-case hex digits, which is the spelling a colour input answers. */
+const COLOUR_PATTERN = /^#[0-9a-f]{6}$/u;
+
+/** What the colour constructor recorded about a schema it built. */
+export interface ColourKind {
+  /** The stored value that means *no colour was chosen*. */
+  readonly unset: string;
+  /** The `#rrggbb` a colour input offers when a person moves off `unset`. */
+  readonly starting: string;
+}
+
+const COLOUR_KINDS = new WeakMap<z.ZodType, ColourKind>();
+
+/**
+ * A colour setting's schema: its no-choice value, or `#rrggbb`
+ * ([ADR-0056](../../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md),
+ * corrected 2026-09-15).
+ *
+ * ## Recognised because it was BUILT here, never by its shape
+ *
+ * A union of a literal and a pattern is not always a colour — the next one may be
+ * a literal beside an id pattern — so the Settings dialog asks
+ * {@link colourKindOf} rather than inspecting the union. Deciding from the shape
+ * would be a second opinion about what a colour setting is, and one that agrees
+ * with this until the day it does not (B3a).
+ *
+ * ## The starting colour travels with the schema
+ *
+ * A colour input cannot show *no colour*, so every surface of a colour setting has
+ * to offer something when a person moves off `unset`. Holding it here is what keeps
+ * two surfaces of one setting offering the same first colour.
+ */
+export function colourSchema<Unset extends string>(kind: {
+  readonly unset: Unset;
+  readonly starting: string;
+}): z.ZodUnion<readonly [z.ZodLiteral<Unset>, z.ZodString]> {
+  if (!COLOUR_PATTERN.test(kind.starting)) {
+    throw new Error(
+      `A colour setting's starting colour must be #rrggbb in lower case; "${kind.starting}" is not, ` +
+        'and a colour input handed it would show black.',
+    );
+  }
+  if (COLOUR_PATTERN.test(kind.unset)) {
+    throw new Error(
+      `A colour setting's no-choice value "${kind.unset}" is itself a colour, so a stored value could ` +
+        'not say whether a person chose it.',
+    );
+  }
+  const schema = z.union([z.literal(kind.unset), z.string().regex(COLOUR_PATTERN)]);
+  COLOUR_KINDS.set(schema, { unset: kind.unset, starting: kind.starting });
+  return schema;
+}
+
+/** The colour constructor's record for `schema`, or `undefined` for a schema it did not build. */
+export function colourKindOf(schema: z.ZodType): ColourKind | undefined {
+  return COLOUR_KINDS.get(schema);
+}
+
 /** Which group of the Settings dialog a setting appears under. */
 export type SettingCategory =
   | 'general'
@@ -76,6 +134,15 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
    * naming the setting.
    */
   readonly optionTitles?: Readonly<Record<string, MessageKey>>;
+  /**
+   * What *no choice* means for a COLOUR setting, and absent for every other kind
+   * (ADR-0056, corrected 2026-09-15).
+   *
+   * A colour setting's no-choice value is a value — `'auto'` is *each tool's own* —
+   * and what it means differs per setting, so no generic label can name it. Checked
+   * at construction in both directions, as `optionTitles` is.
+   */
+  readonly unsetTitle?: MessageKey;
   /** Reads a stored value written by an older build. */
   readonly migrate?: (stored: unknown) => unknown;
 }
@@ -136,6 +203,21 @@ export class SettingsRegistry {
               '. A derived dialog cannot show a value as a word (ADR-0056).',
           );
         }
+      }
+      // A COLOUR'S NO-CHOICE VALUE NEEDS A WORD, and nothing else may carry one:
+      // both directions, for the reason the enum check above gives.
+      const colour = colourKindOf(setting.schema);
+      if (colour !== undefined && setting.unsetTitle === undefined) {
+        throw new Error(
+          `Setting "${setting.id}" is a colour setting with no unset title, so the Settings dialog ` +
+            `could not say what "${colour.unset}" means (ADR-0056).`,
+        );
+      }
+      if (colour === undefined && setting.unsetTitle !== undefined) {
+        throw new Error(
+          `Setting "${setting.id}" has an unset title and is not a colour setting built by ` +
+            'colourSchema, so there is no no-choice state for it to name (ADR-0056).',
+        );
       }
       this.#byId.set(setting.id, setting);
     }

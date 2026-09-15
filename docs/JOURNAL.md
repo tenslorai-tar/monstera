@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass I: the Settings dialog sets the default style colour, with no document open
+
+The owner's ruling, 2026-09-15: *"add a colour control to the Settings dialog, as a new schema kind, so the default style
+colour can be set with no document open … Build it through the settings registry, prove it with the pair of tests, and
+check it against Part M in the same commit."* The amendment is `88dec39`, ADR-0056's correction.
+
+### What was built
+
+- **The registry builds a colour schema and remembers it.** `colourSchema({ unset, starting })` returns the union and
+  records it; `colourKindOf(schema)` answers that record or nothing. The dialog asks it before any other kind, so a union
+  of the same shape the constructor did not build is not a colour — a lookalike case says so.
+- **`unsetTitle` on the entry**, refused on a colour setting without one and on any other setting with one.
+- **`controlFor` answers `colour`**, and `SettingsBody` draws the styles panel's pair: a checkbox titled by the unset
+  title, and a colour input, disabled while the box is ticked, starting on the kind's starting colour.
+- **One starting colour.** `STARTING_STYLE_COLOUR` moved from `StylePanel.tsx` to `annotationStyle.ts`; the setting's
+  schema carries it and the panel imports it, so two surfaces of one setting cannot offer two first colours.
+- **The effect half had no test, found while planning this.** The setting → tool colour resolution lived inline in
+  `App.tsx`'s style memo and no case named it; `StylePanel`'s case covers the store write and `all.test.ts` only the
+  exclusion. It is `styleFrom` now, App calls it, and its cases read the no-choice value off the setting rather than
+  typing `'auto'`, so what the dialog stores and what the resolver treats as no choice are compared in one place. The tool
+  half — a tool draws in `style.colour(own)` — was already proven by this file's *a chosen style reaches the tools*.
+
+### Proof
+
+- `registries.test.ts`: a colour setting with no unset title is refused; an unset title on a lookalike union is refused;
+  the control — a colour setting with its title constructs, and only a built schema answers a kind; `colourSchema`
+  refuses an upper-case or named starting colour and a no-choice value that is itself a colour.
+- `SettingsBody.test.tsx`: unticking offers the starting colour and a chosen colour is answered; a stored colour ticked
+  back answers `'auto'`; the control — untick and tick from no choice answers nothing.
+- `annotationStyle.test.ts`: a stored colour is every tool's; the setting's own no-choice value hands each tool its own
+  colour; an unreadable value is no choice, never black; the kind's starting colour is the shapes' red.
+- `all.test.ts`: the excluded ids are now the accent and the personal dictionary.
+- Rendered, the production build on the start screen: Settings opened with no document, the box ticked and the input
+  disabled, unticked to the shapes' red, `#0000ff` chosen and saved, and the reopened dialog reads it back from the store.
+- **Mutations, each reverted:** I-1 `controlFor` never answering `colour` — the three pair cases and the exclusion pin
+  failed (4 failed / 9 passed); I-2 the missing-title refusal disabled — that case alone failed; I-3 `styleFrom` preferring
+  the tool's own colour — the stored-colour case alone failed; I-4 the colour input's change dropped — the pair case failed
+  (1 / 9) and the rendered case failed at the reopened dialog, *Expected "#0000ff", Received "#d92626"*.
+
+### Part M
+
+M4: the checkbox and the colour input are native controls with the user agent's focus ring — the Settings dialog has no
+stylesheet of its own, its `m-settings__*` classes are bare hooks, and nothing sets `outline: none` on them. M5: the input
+is disabled while no colour is chosen, as in the styles panel. M2: no hex in a component; the starting colour is converted
+from `STROKE`. M6: no motion. **Dialog polish beyond this control is not in this commit** — the dialog's own layout is
+still unstyled, and that is owed to the rest of pass I.
+
+---
+
 ## 2026-09-15 — Design pass H2: the start screen's six feature shortcuts open a document and land on their feature
 
 §10.3: *"a grid of six feature shortcuts … each a real entry point"*; `BUILD-PROMPT.md`:1106: *"opens a file then routes

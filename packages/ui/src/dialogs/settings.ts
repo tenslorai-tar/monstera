@@ -5,13 +5,14 @@ import { z } from 'zod';
 import { SETTINGS_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 import type { SettingDefinition } from '../registries/settings.js';
+import { colourKindOf } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 
 /** The id the Settings command opens. */
 export const SETTINGS_DIALOG_ID = 'dialog.settings';
 
 /** The control a setting's schema derives ([ADR-0056](../../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md) Decision 2). */
-export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret';
+export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret' | 'colour';
 
 /**
  * Which control a setting gets, or `undefined` for a kind with none.
@@ -21,12 +22,15 @@ export type SettingControl = 'boolean' | 'enum' | 'number' | 'text' | 'secret';
  * edit here — or, being a kind this does not know, is visibly absent from
  * {@link DIALOG_SETTINGS}, which `settings/all.test.ts` pins.
  *
- * A union with a pattern and an array are the kinds with no honest generic
- * control (ADR-0056 Decision 3): a colour typed into a text box satisfies the
- * schema and offers no colour.
+ * **A colour is the registry's answer, asked first**: a schema `colourSchema`
+ * built, never a union recognised by its shape (ADR-0056, corrected 2026-09-15).
+ * Any other union with a pattern, and an array, have no honest generic control
+ * (Decision 3): a colour typed into a text box satisfies the schema and offers no
+ * colour.
  */
 export function controlFor(setting: SettingDefinition): SettingControl | undefined {
   const { schema } = setting;
+  if (colourKindOf(schema) !== undefined) return 'colour';
   if (schema instanceof z.ZodBoolean) return 'boolean';
   if (schema instanceof z.ZodEnum) return 'enum';
   if (schema instanceof z.ZodNumber) return 'number';

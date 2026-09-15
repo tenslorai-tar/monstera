@@ -197,7 +197,7 @@ import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
-import { colourFromHex } from './annotations/annotationStyle.js';
+import { styleFrom } from './annotations/annotationStyle.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID } from './annotations/selectTool.js';
 import {
@@ -1149,20 +1149,18 @@ export function App({ client, settings }: AppProps): ReactElement {
   const styleOpacity = useSetting(settings, ANNOTATION_OPACITY_SETTING);
   const styleLineWidth = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
   const styleFontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
-  const style = useMemo<AnnotationStyle>(() => {
-    // A STORED VALUE THIS CANNOT PARSE FALLS BACK TO THE TOOL'S OWN, which is
-    // the same outcome as `'auto'`. The setting's schema refuses a malformed
-    // hex on the way in, so reaching this means a stored value from a build
-    // whose regex was different — and each tool's own colour is a mark a person
-    // recognises, where black would be a silent restyle.
-    const chosen = styleColour === 'auto' ? undefined : colourFromHex(styleColour);
-    return {
-      colour: (own) => chosen ?? own,
-      opacity: styleOpacity,
-      lineWidth: styleLineWidth,
-      fontSize: styleFontSize,
-    };
-  }, [styleColour, styleFontSize, styleLineWidth, styleOpacity]);
+  // THE RESOLUTION IS `styleFrom`'s, where its cases are — a stored value it cannot
+  // read, `'auto'` among them, hands each tool its own colour.
+  const style = useMemo<AnnotationStyle>(
+    () =>
+      styleFrom({
+        colour: styleColour,
+        opacity: styleOpacity,
+        lineWidth: styleLineWidth,
+        fontSize: styleFontSize,
+      }),
+    [styleColour, styleFontSize, styleLineWidth, styleOpacity],
+  );
 
   /**
    * What one PDF point measures on this drawing.

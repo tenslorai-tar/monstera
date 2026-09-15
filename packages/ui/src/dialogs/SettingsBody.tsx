@@ -18,6 +18,7 @@ import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { SettingCategory, SettingDefinition } from '../registries/settings.js';
+import { colourKindOf } from '../registries/settings.js';
 import type { SettingsAnswer } from './settings.js';
 import { controlFor, DIALOG_SETTINGS } from './settings.js';
 
@@ -148,6 +149,48 @@ function SettingField({
           value={String(draft)}
         />
       </label>
+    );
+  }
+
+  if (control === 'colour') {
+    const kind = colourKindOf(setting.schema);
+    if (kind === undefined || setting.unsetTitle === undefined) {
+      throw new Error(
+        `Setting "${setting.id}" reached the colour control without a colour kind and an unset title, ` +
+          'which SettingsRegistry refuses at construction — this definition never went through one.',
+      );
+    }
+    const chosen = typeof draft === 'string' && draft !== kind.unset;
+    // THE STYLES PANEL'S PAIR (ADR-0056, corrected 2026-09-15). A colour input
+    // cannot show *no colour*, so the checkbox says which state the setting is in
+    // and the input, disabled while it is ticked, supplies the colour otherwise.
+    // Ticking back keeps nothing, for `StylePanel`'s reason.
+    return (
+      <div className="m-settings__colour">
+        <label className="m-settings__check">
+          <input
+            checked={!chosen}
+            data-setting={setting.id}
+            onChange={(event) => {
+              onDraft(event.target.checked ? kind.unset : kind.starting);
+            }}
+            type="checkbox"
+          />
+          {_(setting.unsetTitle)}
+        </label>
+        <label className="m-field" htmlFor={fieldId}>
+          <span className="m-field__label">{_(setting.title)}</span>
+          <input
+            disabled={!chosen}
+            id={fieldId}
+            onChange={(event) => {
+              onDraft(event.target.value);
+            }}
+            type="color"
+            value={chosen ? draft : kind.starting}
+          />
+        </label>
+      </div>
     );
   }
 
