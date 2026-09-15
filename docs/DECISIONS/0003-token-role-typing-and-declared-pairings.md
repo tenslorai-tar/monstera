@@ -193,3 +193,51 @@ tree produce identical output. `proof:bordertokens` is what says it can see, and
 it caught two real defects on its first two runs: the property pattern was
 anchored at line start and examined nothing in its own fixture, and the marker
 accepted an empty reason because a CSS comment's terminator satisfies `\S+`.
+
+---
+
+## Correction, 2026-09-15 — a sixth category, `graphic`, for chrome drawn over the document
+
+**Decision 1's five categories have no place for a colour §10.2 already obliges.**
+§10.2's coverage rules name an *overlay-on-page* render context — *"chrome graphics
+drawn over the document: selection rectangles and handles, marquee, redaction marks,
+field outlines, edit covers — checked at 3:1 against `--page`"* (`BUILD-PROMPT.md`
+says the same at :1031-1034). The first such colour that is not derived from the
+accent is the solid redaction preview FEATURES row 131 owes, and none of the five
+categories can declare it honestly.
+
+Measured the same day, in the production build: a Redact mark written by MuPDF the
+way `pageRedact.ts` writes one is painted by PDF.js as a thin red outline and
+nothing else — the content inside it stays fully visible. So the preview is chrome
+the renderer draws, and its colour needs a checked pairing.
+
+### Corrected decision
+
+| Category | Contrast obligation |
+|---|---|
+| `graphic` | 3:1 against **its declared surface set** — a chrome graphic drawn over the document, never text |
+
+- `@on` is **required**, as for `text` and `boundary-control`, and the check
+  evaluates exactly the declared pairs.
+- Its surface is `page` today. `page` is already a declared `surface` role and was
+  a surface for nothing: §10.2 says it is *"never a surface for chrome text but
+  always one for chrome graphics"*, and until this category nothing could declare
+  that second half.
+- **Stored, not derived.** A redaction mark is not a companion of the brand accent:
+  in the accent's colour it would read as a selection, and the burn-in it previews
+  paints MuPDF's black boxes. Like `--border-control`, the value is stored and the
+  pairing is what the check holds. Graphics that ARE accent companions — §10.2's
+  *selection chrome on the page* — stay derived by `onColor`, and this category does
+  not replace that.
+
+### Rejected
+
+- **Reuse `boundary-control`.** It has the right number and the wrong meaning: a
+  control's edge, which the border rule and the UI guide's list of controls read
+  it as. A redaction fill declared as a control boundary is a label that lies to the
+  next reader of the token file.
+- **A literal colour in the component.** Invariant L16, and a foreground that is not
+  a token is a pair the check cannot evaluate.
+- **The PDF's own appearance.** Outline only, measured; it previews nothing.
+- **Derive it from the accent with `onColor`.** It would read as a selection, and it
+  would not be the colour the burn-in produces.

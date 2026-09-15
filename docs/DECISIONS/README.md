@@ -60,7 +60,7 @@ Each contains:
 |---|---|---|
 | [0001](0001-agpl-on-the-microsoft-store.md) | AGPL-3.0 on the Microsoft Store | Accepted; mechanism corrected 2026-08-17 |
 | [0002](0002-brand-mark-treatment.md) | Brand mark treatment — composite logo used as supplied | Accepted |
-| [0003](0003-token-role-typing-and-declared-pairings.md) | Token role typing: five categories and declared pairings | Accepted |
+| [0003](0003-token-role-typing-and-declared-pairings.md) | Token role typing: five categories and declared pairings | Accepted; corrected 2026-09-15 — **a sixth category, `graphic`**: a stored chrome graphic drawn over the document, 3:1 against its declared surfaces, `@on page` first, for the solid redaction preview; `boundary-control` was rejected because it means a control's edge |
 | [0004](0004-toolchain-versions.md) | Toolchain versions, and two deliberate steps back from "latest" | Accepted; `lucide-react`'s licence corrected 2026-08-28, and the component-test vehicle added the same day |
 | [0005](0005-ui-foundation-libraries.md) | UI foundation: Base UI, Zag machines, Lingui, zustand | Accepted |
 | [0006](0006-engine-capability-spike-results.md) | Engine capability spike results, and the matrix amended to match | Accepted; corrected 2026-08-16, the same day |
