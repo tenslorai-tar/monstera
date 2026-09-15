@@ -92,19 +92,30 @@ is honest is what a reviewer reads. If you find yourself writing
 `decorative: because the design says so` on something a user can click, that is
 the defect the rule exists for.
 
-**It examines nothing today** — there is no component stylesheet yet — and it
-says `NOTHING TO SCAN` rather than reporting clean, because an empty tree and a
-broken walker print the same thing otherwise. `npm run proof:bordertokens` is
-what says it can see. The first `.css` file added to `packages/ui` puts it to
-work.
+**It scans the component stylesheets, `app.css` and `primitives.css`.** Read
+2026-09-15 with `npm run check:bordertokens`, exit 0: *"2 CSS file(s), 103 boundary
+declaration(s), 22 marked decorative."* Nothing re-reads those figures, so run the
+command rather than trusting them. On a tree with no stylesheet it says `NOTHING TO
+SCAN` rather than reporting clean, because an empty tree and a broken walker print
+the same thing otherwise; `npm run proof:bordertokens` is what says it can see.
+
+*Corrected 2026-09-15:* this paragraph said the check examined nothing because no
+component stylesheet existed. Both files had been tracked for weeks.
 
 ---
 
 ## Colour: what you may write, and what you must not store
 
-**No raw hex, anywhere, outside `packages/ui/src/tokens.css`.** Not in a
-component, not in a style module, not as a "just this once" default. §10 forbids
-it and the token file is the single writer of colour values.
+**No raw hex in a component.** §10.2 says *in a component*, and
+`monstera/no-raw-hex` is scoped to component `.tsx`; `packages/ui/src/tokens.css`
+is the single writer of the colour values components use. A colour that is
+genuinely the person's — a stored annotation colour — is a value, not a literal,
+and needs no exemption. A default that stands in for one is converted from the
+module that owns it (`STARTING_STYLE_COLOUR` from the shape tools' red), never
+retyped.
+
+*Corrected 2026-09-15:* this read *"No raw hex, anywhere"*, wider than the law —
+the same misreading `CLAUDE.md` carried until 2026-08-31.
 
 **A contrast-bearing colour is computed at the point of use**, via
 `onColor(brand, background, minRatio)`. **Storing a derived colour is a defect** —
@@ -174,23 +185,35 @@ attribute on the root.
 
 ## Strings, dialogs, icons
 
-**Three of the four rules below still have no mechanism**, and every one of them
-is substrate rather than a feature — B9's whole point is that they cannot be
-retrofitted across tens of thousands of lines. They are listed here so the first
-component written obeys them, and each names what is owed:
+Every one of these is substrate rather than a feature — B9's whole point is that
+they cannot be retrofitted across tens of thousands of lines.
 
 - **No literal user-facing string in JSX.** Strings are i18n keys from the first
-  line. *Owed: the lint rule. `eslint.config.js` registers no such rule today.*
-  The primitives take their text as **props rather than children**, which puts
-  the ban at that boundary in the meantime; it is not a substitute, because a
-  feature composing its own JSX is not covered by it.
-- **Every dialog uses the one `<Dialog>` primitive.** Not a div with a role, not
-  a second modal — the primitive is where focus trapping, escape handling and the
-  a11y contract live once. **Landed 2026-08-28**:
-  `packages/ui/src/primitives/Dialog.tsx`, on Base UI, with `Button`,
-  `IconButton` and `Input` beside it. *Still owed: a check that no second modal
-  is written — the rule is a rule, and nothing looks for a `div` with
-  `role="dialog"`.*
+  line. `monstera/no-jsx-literals` is an **error** over both `.tsx` trees
+  (`eslint.config.js`), and `proof:lintrules` drives a planted offender through
+  the real config. What a lint rule cannot see is a literal passed to a
+  text-bearing **prop**; that half is `MessageKey`'s, whose minter refuses a
+  sentence. *Corrected 2026-09-15:* this said the rule was owed; it has existed
+  since 2026-08-28.
+- **Every dialog uses the one `<Dialog>` primitive**, registered through
+  `declareDialog`. Not a div with a role, not a second modal — the primitive is
+  where focus trapping, escape handling and the a11y contract live once.
+  **A dialog opens with focus on its popup**, which a screen reader announces by
+  its title. Focus on the first tabbable lands on the header's Close button, whose
+  tooltip opens on focus and swallows the first Escape (design pass H1b,
+  `Dialog.test.tsx`). *Still owed: a check that no second modal is written —
+  nothing looks for a `div` with `role="dialog"`.*
+- **The primitives** are in `packages/ui/src/primitives/`: `Button`,
+  `IconButton`, `Input`, `Dialog`, `Tooltip`, `ToolButton`, `SegmentedControl`,
+  `Splitter` and `Icon`. A control a feature needs that is not one of these is a
+  primitive to add, not a one-off in the feature. Two rules that are not obvious
+  from the markup: **a `Splitter` side that shuts stays a pane at zero width**,
+  because the machine lays panes out by index and a changed pane count widened the
+  other side (2026-09-15); and **a title bar control is `no-drag`**, or the window
+  drag region swallows its click.
+- **A colour setting is built with `colourSchema({ unset, starting })`** and
+  carries `unsetTitle`; the Settings dialog draws it as a no-choice checkbox beside
+  a colour input. Never recognise a colour setting by the shape of its union.
 - **No emoji as icons.** Emoji render differently per platform and carry no
   accessible name. **Every named glyph comes from `primitives/icons.ts`**, one
   closed map over lucide. A command's `icon` is an `IconName`, so a misspelt glyph
@@ -217,27 +240,44 @@ users.
 So a new primitive is done when a screen containing it passes the axe run — not
 when its markup looks right.
 
-> **Neither axe-core nor Playwright is installed.** This paragraph is the
-> specification the primitives must eventually meet, not a suite you can run
-> today. It is written down because the alternative — build the primitives, then
-> decide how they are checked — is how a project ends up with a source-level
-> linter standing in for a real screen.
->
-> **Corrected 2026-08-28.** This paragraph used to end *"and React is not
-> installed either"*. React went in at `3e25b74`, a range before that was
-> noticed, and the sentence stayed true about axe and Playwright the whole time
-> — a compound claim with one clause dead and one alive, which is the shape a
-> reader checks the living half of and passes over. Recorded as audit finding
-> EEEE-2 rather than quietly fixed, because nothing in this repository could have
-> caught it: no check reads this file, and no commit ever touched both this
-> sentence and the code that falsified it.
->
-> **What IS runnable today**, and it is less than this section requires: 29
-> component cases over `happy-dom` and `@testing-library/react`, querying by
-> accessible role and label so a control that loses its name goes red. That is
-> not the axe gate. A screen composed of correct parts can still fail on focus
-> order and post-composition contrast, which is the whole reason §10.4 puts the
-> mechanism at runtime.
+**The gate runs.** `npm run test:a11y` drives the BUILT renderer against the
+browser shim on both CI legs, fails on any `serious` or `critical` violation, and
+carries a planted `image-alt` offender as its positive control — *no violations*
+is also what an axe that never ran reports. Each case asserts a string only its
+own screen shows, because an empty page scores clean. Component tests over
+`happy-dom` and `@testing-library/react` still query by role and label, so a
+control that loses its name goes red before a screen is composed; they are not
+the gate, because a screen of correct parts can still fail on focus order and
+post-composition contrast.
+
+**Anything that measures layout belongs to the rendered cases**, because happy-dom
+lays nothing out and every element measures 0. A unit case may stub a single
+measurement when the property under test is a commit's arithmetic rather than a
+drawn size — `Splitter.test.tsx` does, and says why.
+
+*Corrected 2026-09-15:* this section said neither axe-core nor Playwright was
+installed and counted 29 component cases. The gate has run in CI since
+2026-09-01; the count is not given, because nothing re-reads it.
+
+---
+
+## Visual baselines (§10.7)
+
+`npm run test:visual` compares the start screen, the keyboard shortcuts dialog,
+the eight rail sections and the right contextual panel, in light, dark and high
+contrast, against `packages/testing/baselines/`. `npm run test:visual:regenerate`
+rewrites them, **in a commit that carries nothing else** — §10.7's own rule, and
+the only way a reviewer can tell a deliberate visual change from drift.
+
+- **The tolerance is stated in `scripts/test/visual.config.mjs` with its readings**:
+  pixelmatch threshold 0.2, at most 100 differing pixels, chosen between a spread of
+  0 across three runs and 319 pixels for a planted one-word change. A figure that
+  starts failing is re-chosen from a new reading, never raised to pass.
+- **A capture waits for what is late, never for time**: the page drawn, a lazy
+  dialog's body. Playwright's stability rule is two identical frames, and a document
+  that has not started drawing is two identical frames.
+- **The baselines are Windows'**, named by platform. A baseline is one platform's
+  rasterisation.
 
 ---
 
