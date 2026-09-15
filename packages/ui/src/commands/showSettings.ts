@@ -38,7 +38,7 @@ export function showSettingsCommand(deps: {
     icon: 'Settings',
     title: SETTINGS_COMMAND_TITLE,
     placements: [
-      { surface: 'start-screen', order: 3 },
+      { surface: 'start-screen', slot: 'footer', order: 3 },
       { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 5 },
     ],
     run: async (): Promise<void> => {

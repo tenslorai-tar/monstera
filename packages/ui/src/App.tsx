@@ -252,6 +252,7 @@ import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
+import { StartFooter } from './surfaces/StartFooter.js';
 import { TitleBar } from './surfaces/TitleBar.js';
 import { useWindowControlsOverlay } from './windowControlsOverlay.js';
 import { StartScreen } from './surfaces/StartScreen.js';
@@ -1118,6 +1119,28 @@ export function App({ client, settings }: AppProps): ReactElement {
   const styleColour = useSetting(settings, ANNOTATION_COLOUR_SETTING);
   // §10.3'S CHROME MODE, read here because the surface is marked with it.
   const layoutMode = useSetting(settings, LAYOUT_MODE_SETTING);
+
+  // THE RUNNING BUILD'S VERSION, for the start screen's footer (§10.3). Asked once per client.
+  const [appVersion, setAppVersion] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    // `RecentFiles`' shape: a flag read inside the answer's callback, and a rejection handled rather than thrown —
+    // `createClient`'s methods are `async`, so even a transport that throws arrives here as a rejection.
+    let cancelled = false;
+    client['app.info']({}).then(
+      (answer) => {
+        if (cancelled || !answer.ok) return;
+        setAppVersion(answer.value.version);
+      },
+      () => {
+        // SWALLOWED ON PURPOSE: a version that cannot be read leaves the footer without its version line, which
+        // `StartFooter` draws as no line at all. Nothing else reads it, and an error on the first screen a reader sees
+        // over a courtesy line would be worse than the line's absence.
+      },
+    );
+    return (): void => {
+      cancelled = true;
+    };
+  }, [client]);
   const styleOpacity = useSetting(settings, ANNOTATION_OPACITY_SETTING);
   const styleLineWidth = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
   const styleFontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
@@ -1793,6 +1816,8 @@ export function App({ client, settings }: AppProps): ReactElement {
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
           <RecentFiles client={client} onOpened={opened} />
+          {/* THE FOOTER, after the recent list because §10.3 puts it there (see `StartFooter`). */}
+          <StartFooter registry={registry} context={context} version={appVersion} />
         </div>
       ) : (
         // THE ERROR BOUNDARY, AND ITS POSITION IS THE GUARANTEE (§10.5a).

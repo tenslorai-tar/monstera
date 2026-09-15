@@ -156,8 +156,9 @@
   --font-content-14: 14px;
   --font-content-16: 16px;
   --font-content-20: 20px;
-  /* One display size: the start-screen wordmark. */
-  --font-display: 40px;
+  /* §10.3: "PDF EDITOR" letterspaced beneath the start screen's logo. In `em`, so the spacing follows the size the
+     text is set at rather than being a second size to keep in step with it. */
+  --tracking-wide: 0.2em;
 
   /* Icons. Each size has a stated use (§10.4): inline chrome · status bar, dense
      controls and the document panel's tabs (§10.3) · primary controls · ribbon
@@ -174,6 +175,10 @@
   --control-ribbon: 52px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;
+  /* The brand artwork's heights, which `assets/brand/README.md` names beside ADR-0002: *"the start-screen hero is 84 px
+     and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. */
+  --logo-title: 26px;
+  --logo-hero: 84px;
 
   --radius-4: 4px;
   --radius-6: 6px;

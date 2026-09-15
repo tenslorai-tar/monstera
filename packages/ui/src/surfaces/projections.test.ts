@@ -137,7 +137,11 @@ describe('the other placement surfaces', () => {
     command('a.quick-first', [{ surface: 'quick-toolbar', order: 1 }]),
     command('a.page', [{ surface: 'context-menu', context: 'page', order: 1 }]),
     command('a.annotation', [{ surface: 'context-menu', context: 'annotation', order: 1 }]),
-    command('a.start', [{ surface: 'start-screen', order: 1 }]),
+    // THE START SCREEN'S THREE SLOTS (ADR-0068), each holding something, the shortcuts registered out of order.
+    command('a.start-footer', [{ surface: 'start-screen', slot: 'footer', order: 1 }]),
+    command('a.start-shortcut-2', [{ surface: 'start-screen', slot: 'shortcut', order: 2 }]),
+    command('a.start-shortcut-1', [{ surface: 'start-screen', slot: 'shortcut', order: 1 }]),
+    command('a.start-primary', [{ surface: 'start-screen', slot: 'primary', order: 1 }]),
     command('a.ribbon', [
       { surface: 'ribbon', section: 'home', group: messageKey('group.g'), order: 1 },
     ]),
@@ -191,8 +195,23 @@ describe('the other placement surfaces', () => {
     expect(contextMenuModel(registry, context, 'tab')).toStrictEqual([]);
   });
 
-  it('the start screen takes its own placements only', () => {
-    expect(ids(startScreenModel(registry, context))).toStrictEqual(['a.start']);
+  it('the start screen sorts each command into its SLOT, in order, and takes nothing else (ADR-0068)', () => {
+    const model = startScreenModel(registry, context);
+    // All three slots are asserted, because a projection that ignored `slot` would put every command in one list and
+    // pass a check of any one of them.
+    expect(ids(model.primary)).toStrictEqual(['a.start-primary']);
+    expect(ids(model.shortcut)).toStrictEqual(['a.start-shortcut-1', 'a.start-shortcut-2']);
+    expect(ids(model.footer)).toStrictEqual(['a.start-footer']);
+  });
+
+  it('a start-screen placement cannot be written WITHOUT a slot', () => {
+    // Compile-time, run by `npm run typecheck`: an unused `@ts-expect-error` is itself an error, so a type that made
+    // the slot optional again reddens the build.
+    const unslotted: Placement[] = [
+      // @ts-expect-error — the screen has three places, and a placement must say which.
+      { surface: 'start-screen', order: 1 },
+    ];
+    expect(unslotted).toHaveLength(1);
   });
 });
 
@@ -290,7 +309,7 @@ describe('ONE registration, and every surface follows it', () => {
     command('a.fixed', [{ surface: 'quick-toolbar', order: 20 }], { shortcut: 'Ctrl+F' }),
   ]);
   const after = new CommandRegistry([
-    command('a.mover', [{ surface: 'start-screen', order: 1 }], { shortcut: 'Ctrl+Shift+M' }),
+    command('a.mover', [{ surface: 'start-screen', slot: 'footer', order: 1 }], { shortcut: 'Ctrl+Shift+M' }),
     command('a.fixed', [{ surface: 'quick-toolbar', order: 20 }], { shortcut: 'Ctrl+F' }),
   ]);
 
@@ -312,8 +331,8 @@ describe('ONE registration, and every surface follows it', () => {
     // Without this the pair above is satisfied by deleting the placement. The
     // claim is that ONE declaration feeds every surface, so the command has to
     // arrive where it was re-declared.
-    expect(ids(startScreenModel(before, context))).toStrictEqual([]);
-    expect(ids(startScreenModel(after, context))).toStrictEqual(['a.mover']);
+    expect(ids(startScreenModel(before, context).footer)).toStrictEqual([]);
+    expect(ids(startScreenModel(after, context).footer)).toStrictEqual(['a.mover']);
   });
 
   it('...and the PALETTE carries both throughout, because it is placement-blind', () => {

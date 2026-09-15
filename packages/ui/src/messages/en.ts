@@ -468,7 +468,10 @@ export const VIEW_PROBLEM_TITLE = messageKey('surface.view-problem.title');
 export const VIEW_PROBLEM_BODY = messageKey('surface.view-problem.body');
 export const VIEW_PROBLEM_RETRY = messageKey('surface.view-problem.retry');
 export const START_TITLE = messageKey('surface.start.title');
-export const START_INVITATION = messageKey('surface.start.invitation');
+export const START_PRODUCT = messageKey('surface.start.product');
+export const START_TAGLINE = messageKey('surface.start.tagline');
+export const START_VERSION = messageKey('surface.start.version');
+export const START_COPYRIGHT = messageKey('surface.start.copyright');
 export const START_ABSENT = messageKey('surface.start.absent');
 export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const RECENT_LABEL = messageKey('surface.recent.label');
@@ -1131,7 +1134,7 @@ export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.refere
  * check is only worth writing once both sides are the same type.
  */
 export const EN: Readonly<Record<MessageKey, string>> = {
-  [OPEN_DOCUMENT_TITLE]: 'Open a document',
+  [OPEN_DOCUMENT_TITLE]: 'Open PDF…',
   [CLOSE_LABEL]: 'Close',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
@@ -1384,7 +1387,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [VIEW_PROBLEM_BODY]: 'Your file is unchanged. Trying again returns to the same page.',
   [VIEW_PROBLEM_RETRY]: 'Try again',
   [START_TITLE]: 'Monstera',
-  [START_INVITATION]: 'Open a PDF to begin.',
+  // §10.3's hero, word for word, and ADR-0002 keeps both lines beneath the supplied artwork.
+  [START_PRODUCT]: 'PDF EDITOR',
+  [START_TAGLINE]: 'Built For The Way You Work',
+  [START_VERSION]: 'Version {version}',
+  [START_COPYRIGHT]: '© Tenslor Inc.',
   // SAYS WHAT HAPPENED AND WHAT IS LIKELY. A file the picker offered and the
   // service could not read has almost always moved, and naming that is what
   // makes the message actionable rather than a report.

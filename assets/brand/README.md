@@ -14,6 +14,8 @@ protects users rather than the project.
 |---|---|---|---|
 | `logo.png` | 1652 × 2050, RGBA | **master — supplied by the owner** | the source every other asset is derived from |
 | `logo-256.png` | 206 × 256 | generated | `README.md` and docs |
+| `logo-title.png` | 42 × 52 | generated | the title bar, drawn at 26 px |
+| `logo-hero.png` | 135 × 168 | generated | the start screen's hero, drawn at 84 px |
 | `logo.ico` | 16/24/32/48/64/128/256 px | generated | packaged app icon, file association |
 
 ## Rules

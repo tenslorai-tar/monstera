@@ -58,6 +58,13 @@ export interface ButtonProps {
   onClick?: (() => void) | undefined;
   /** Defaults to `button`, never to a form's implicit `submit`. */
   type?: 'button' | 'submit';
+  /**
+   * A chord drawn after the label — the command's own `shortcut`, e.g. `Ctrl+O` (§10.3: *"Open PDF… (Ctrl+O)"*).
+   *
+   * Hidden from the accessibility tree, so the control's name stays its label: a name that read the chord would change
+   * the day the chord did, and the palette is where a screen-reader user meets chords.
+   */
+  chord?: string | undefined;
 }
 
 export function Button({
@@ -67,6 +74,7 @@ export function Button({
   disabled = false,
   onClick,
   type = 'button',
+  chord,
 }: ButtonProps): ReactElement {
   const element = useRef<HTMLElement>(null);
   // `useLingui` rather than the module-level `resolve`, so a locale change
@@ -91,6 +99,11 @@ export function Button({
       type={type}
     >
       {values === undefined ? _(label) : _(label, values)}
+      {chord === undefined ? null : (
+        <kbd aria-hidden className="m-button__chord">
+          {chord}
+        </kbd>
+      )}
     </BaseButton>
   );
 }

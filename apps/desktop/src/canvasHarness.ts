@@ -373,6 +373,13 @@ function settle(ms: number): Promise<void> {
  * carried visible text; design pass F made the quick toolbar's zoom control an
  * icon button whose name lives only in `aria-label`, and the harness then found
  * it zero times.
+ *
+ * ## And the text is the text a screen reader reads — `aria-hidden` subtrees excluded
+ *
+ * The same computation leaves out a descendant hidden from the accessibility tree. `textContent` does not, so on
+ * 2026-09-15 the start screen's Open button, which gained its chord as an `aria-hidden` `<kbd>` (design pass H1a),
+ * read "Open PDF…Ctrl+O" here while its name stayed "Open PDF…", and the harness found it zero times — the canvas
+ * proof's first case reported *no button named "Open PDF…"*, which is the control for this clause.
  */
 async function clickControl(
   contents: Electron.WebContents,
@@ -384,7 +391,12 @@ async function clickControl(
     `(() => {
        const wanted = ${JSON.stringify(name)};
        const controls = Array.from(document.querySelectorAll('button'));
-       const nameOf = (entry) => (entry.getAttribute('aria-label') ?? entry.textContent ?? '').trim();
+       const visibleText = (entry) => {
+         const copy = entry.cloneNode(true);
+         for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+         return copy.textContent ?? '';
+       };
+       const nameOf = (entry) => (entry.getAttribute('aria-label') ?? visibleText(entry)).trim();
        const target = controls.find((entry) => nameOf(entry) === wanted);
        if (target === undefined) return false;
        target.click();

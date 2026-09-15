@@ -189,7 +189,7 @@ function scrolledTo(page: number): void {
 /** Dispatches the open command and settles it. */
 async function openOne(): Promise<void> {
   await act(async () => {
-    screen.getByRole('button', { name: 'Open a document' }).click();
+    screen.getByRole('button', { name: 'Open PDF…' }).click();
     await Promise.resolve();
   });
   await act(async () => {

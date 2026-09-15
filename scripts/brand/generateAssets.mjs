@@ -43,9 +43,20 @@ const MASTER = join(BRAND, 'logo.png');
  * edge keeps a 132 px render crisp on a 2x display without shipping a
  * multi-megabyte image to every reader of the repository front page.
  *
+ * `logo-title.png` and `logo-hero.png` are what the RENDERER displays — the
+ * title bar at 26 px tall and the start screen's hero at 84 px (`README.md` in
+ * this directory, ADR-0002) — each at twice that height so a 2x display draws
+ * them from real pixels. Width is what `sharp` is given; the height follows the
+ * 1652 × 2050 master: 42 wide is 52 tall, 135 wide is 168. The renderer imports
+ * them from here, so the bundle carries these and never the 4.4 MB master.
+ *
  * @type {readonly {file: string, width: number}[]}
  */
-const DERIVATIVES = [{ file: 'logo-256.png', width: 206 }];
+const DERIVATIVES = [
+  { file: 'logo-256.png', width: 206 },
+  { file: 'logo-title.png', width: 42 },
+  { file: 'logo-hero.png', width: 135 },
+];
 
 /** Square sizes packed into the Windows .ico used by the packaged app. */
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];

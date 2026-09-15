@@ -56,6 +56,13 @@ export const SECTION_IDS: readonly SectionId[] = [
   'tools',
 ];
 
+/**
+ * Where on the start screen a command sits (ARCHITECTURE §7, ADR-0068): the button under the hero, the grid of
+ * feature shortcuts, or the footer beside the screen's own text. A slot and not an `order` range, because a range is a
+ * convention in numbers that no type and no single placement shows.
+ */
+export type StartScreenSlot = 'primary' | 'shortcut' | 'footer';
+
 /** Where a context menu was opened. §7's four contexts. */
 export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab';
 
@@ -88,7 +95,7 @@ export type Placement =
     }
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }
-  | { readonly surface: 'start-screen'; readonly order: number }
+  | { readonly surface: 'start-screen'; readonly slot: StartScreenSlot; readonly order: number }
   | StatusBarPlacement;
 
 /**

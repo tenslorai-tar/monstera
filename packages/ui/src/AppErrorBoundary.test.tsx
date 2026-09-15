@@ -219,7 +219,7 @@ function scrolledTo(page: number): void {
 /** Opens the fixture document and settles the effects. */
 async function open(): Promise<void> {
   await act(async () => {
-    screen.getByRole('button', { name: 'Open a document' }).click();
+    screen.getByRole('button', { name: 'Open PDF…' }).click();
     await Promise.resolve();
   });
   await act(async () => {
@@ -288,7 +288,7 @@ describe('the error boundary around the document view, in App', () => {
     // back.
     expect(container.querySelector('.m-thumbnails')).not.toBeNull();
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
-    // THE START SCREEN ITSELF. `Open a document` was the proxy for it and
+    // THE START SCREEN ITSELF. The Open control (then labelled `Open a document`) was the proxy for it and
     // stopped being one on 2026-09-08, when the ribbon gained Home › File: the
     // control is correctly present with a document open, so the old assertion
     // would fail for a build that is right.

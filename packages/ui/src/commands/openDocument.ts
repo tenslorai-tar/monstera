@@ -99,7 +99,8 @@ export function openDocumentCommand(deps: {
     // implementation with two triggers, which is not a second wiring place —
     // there is still exactly one thing that opens a document.
     placements: [
-      { surface: 'start-screen', order: 0 },
+      // THE PRIMARY SLOT (ADR-0068): §10.3's one green button under the hero.
+      { surface: 'start-screen', slot: 'primary', order: 0 },
       // AND HOME › FILE. §7's own example is a command living on several
       // surfaces at once; opening a document is reachable before there is one
       // (the start screen) and after there is one (the ribbon), and those are

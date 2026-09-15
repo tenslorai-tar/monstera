@@ -180,7 +180,7 @@ test('the start screen renders through the contract and has no serious a11y viol
 }) => {
   await bridge(page);
 
-  await expectNoSeriousViolations(page, 'Open a PDF to begin.');
+  await expectNoSeriousViolations(page, 'Built For The Way You Work');
 });
 
 test('the PRIMITIVES are styled in the production build, not left as browser controls', async ({
@@ -198,7 +198,7 @@ test('the PRIMITIVES are styled in the production build, not left as browser con
   await bridge(page);
   await page.goto('/');
 
-  const open = page.getByRole('button', { name: 'Open a document' });
+  const open = page.getByRole('button', { name: 'Open PDF…' });
   await expect(open).toBeVisible();
   const padding = await open.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -225,7 +225,7 @@ test('the UI FONT is the system stack, on text and on controls, in the productio
   expect(expected.startsWith("'Segoe UI'") || expected.startsWith('"Segoe UI"')).toBe(true);
 
   const body = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
-  const open = page.getByRole('button', { name: 'Open a document' });
+  const open = page.getByRole('button', { name: 'Open PDF…' });
   await expect(open).toBeVisible();
   const control = await open.evaluate((element) => getComputedStyle(element).fontFamily);
 
@@ -343,7 +343,7 @@ test('the document panel is RESIZABLE, and its width is the stored setting, acro
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, { 'appearance.document-panel-width': 256 }, 2);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const handle = page.getByRole('separator', { name: 'Resize the document panel' });
   await expect(handle).toBeVisible();
@@ -371,7 +371,7 @@ test('the document panel is RESIZABLE, and its width is the stored setting, acro
   // ACROSS A RELOAD, which is what PERSISTED means: a fresh renderer reads the settings the shim
   // saved, and the width it lays out is the resized one, not 256 and not the fallback.
   await page.reload();
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.getByRole('separator', { name: 'Resize the document panel' })).toBeVisible();
   await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(262);
   expect(Math.abs((await panelPaneWidth(page)) - resized)).toBeLessThan(1.5);
@@ -387,7 +387,7 @@ test('dragging the handle moves the document panel WHILE the pointer moves, not 
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, { 'appearance.document-panel-width': 256 }, 1);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const handle = page.getByRole('separator', { name: 'Resize the document panel' });
   await expect(handle).toBeVisible();
@@ -433,7 +433,7 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
     2,
   );
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const right = page.getByRole('separator', { name: 'Resize the properties panel' });
   await expect(right).toBeVisible();
@@ -459,7 +459,7 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
 
   // ACROSS A RELOAD, both widths as they were left.
   await page.reload();
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.getByRole('separator', { name: 'Resize the properties panel' })).toBeVisible();
   await expect.poll(() => contextPaneWidth(page)).toBeGreaterThan(306);
   expect(Math.abs((await contextPaneWidth(page)) - rightResized)).toBeLessThan(1.5);
@@ -480,7 +480,7 @@ test('at its MINIMUM width the right contextual panel still holds the widest sty
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, { 'appearance.context-panel-width': 216 }, 1);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const region = page.getByRole('complementary', { name: 'Properties' });
   await expect(region.locator('.m-style-panel')).toBeVisible();
@@ -516,7 +516,7 @@ test('the page list FITS its pane: nothing of it sits above the pane or under th
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, {}, 1);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
 
   const fit = await page.evaluate(() => {
@@ -567,7 +567,7 @@ test('the STATUS BAR projects page navigation and zoom, and each control changes
     documentBytes: new Map([[docId, bytes]]),
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const bar = page.getByRole('status', { name: 'Document status' });
   const field = bar.locator('[data-goto-input]');
@@ -624,7 +624,7 @@ test("at its MINIMUM width the document panel's strip still holds every tab and 
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, { 'appearance.document-panel-width': 192 }, 1);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   await expect.poll(() => panelPaneWidth(page)).toBeGreaterThan(191);
   const pane = await page.locator('.m-splitter__pane').first().boundingBox();
@@ -649,7 +649,7 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, {}, 1);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const toolbar = page.getByRole('toolbar', { name: 'Document tools' });
   await expect(toolbar).toBeVisible();
@@ -725,7 +725,7 @@ test('FOCUS hides the rail, the ribbon and both side panels, and keeps the statu
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, { 'appearance.layout-mode': 'focus' }, 1);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
 
   await expect(page.locator('.m-ribbon__rail')).toHaveCount(0);
@@ -747,7 +747,7 @@ test('STUDIO opens the tool strip as an OVERLAY on a rail selection, moves nothi
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, { 'appearance.layout-mode': 'studio' }, 1);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
 
   await expect(page.locator('.m-ribbon__rail')).toBeVisible();
@@ -783,7 +783,7 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
   await expect(switcher).toBeVisible();
   await expect(bar.getByRole('navigation', { name: 'Open documents' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Open a document' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
 
   // ONE ROW: each part's vertical middle lies inside the bar's box.
@@ -816,4 +816,45 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
   if (overlay === null) throw new Error('the Studio overlay opened');
   // BELOW THE TITLE BAR, never over it.
   expect(overlay.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 0.5);
+});
+
+test('the START SCREEN draws the supplied logo, the hero lines, one primary Open with its chord, and a footer', async ({
+  page,
+}) => {
+  // §10.3's start screen; ADR-0002: the supplied artwork, in a portrait box, never stretched. The production build is
+  // the subject — an asset route is proven only where the bundle and its CSP load it.
+  await bridge(page);
+  await page.goto('/');
+
+  const measure = async (image: import('@playwright/test').Locator): Promise<{ natural: number; width: number; height: number }> =>
+    image.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { natural: (element as HTMLImageElement).naturalWidth, width: box.width, height: box.height };
+    });
+
+  const hero = page.getByRole('img', { name: 'Monstera' });
+  await expect(hero).toBeVisible();
+  const drawn = await measure(hero);
+  // DECODED — a broken source is still a laid-out box, with a natural width of zero.
+  expect(drawn.natural).toBeGreaterThan(0);
+  expect(drawn.height).toBeCloseTo(84, 0);
+  // PORTRAIT AND UNSTRETCHED: the master is 1652 × 2050.
+  expect(drawn.width / drawn.height).toBeCloseTo(1652 / 2050, 1);
+
+  const title = await measure(page.locator('.m-title-bar__logo'));
+  expect(title.natural).toBeGreaterThan(0);
+  expect(title.height).toBeCloseTo(26, 0);
+
+  await expect(page.getByText('PDF EDITOR')).toBeVisible();
+  await expect(page.getByText('Built For The Way You Work')).toBeVisible();
+
+  // ONE PRIMARY BUTTON, carrying its chord, and still named by its label alone.
+  await expect(page.locator('.m-start-primary').getByRole('button')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Open PDF…', exact: true })).toContainText('Ctrl+O');
+
+  const footer = page.locator('.m-start-footer');
+  await expect(footer.getByRole('button', { name: 'Settings' })).toBeVisible();
+  await expect(footer.getByRole('button', { name: 'About' })).toBeVisible();
+  await expect(footer).toContainText('© Tenslor Inc.');
+  await expect(footer).toContainText('Version ');
 });

@@ -75,6 +75,15 @@
   outline-offset: 2px;
 }
 
+/* The chord a button carries (§10.3: "Open PDF… (Ctrl+O)"). Smaller than the label and in the SAME colour, so the
+   foreground `useOnColor` solves for the fill covers it too; a dimmed chord would be the one text on the fill nobody
+   checked. */
+.m-button__chord {
+  font-family: inherit;
+  font-size: var(--font-chrome-11);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ─── IconButton ─────────────────────────────────────────────────────────── */
 
 .m-icon-button {

@@ -892,6 +892,71 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass H1a: the start screen's hero, its three slots and a footer; the title bar's logo
+
+§10.3's start screen; ADR-0002 (the supplied logo, scaled, in a portrait box, no text wordmark); ADR-0068 (`fb3c16f`, a
+placement names its slot — the amendment went in first, on its own).
+
+### What was built
+
+- `StartScreenSlot` on the placement; `startScreenModel` answers `{ primary, shortcut, footer }`. `document.open` →
+  `primary`; `app.about`, `log.reveal`, `app.settings` → `footer`.
+- The hero: `logo-hero.png` as the heading's image, named *Monstera*; "PDF EDITOR" in `--tracking-wide`; the tagline.
+  The primary button carries its command's chord through `Button`'s new `chord`, hidden from the accessibility tree so
+  the name stays *Open PDF…*.
+- `StartFooter`: the footer slot's commands, `app.info`'s version, © Tenslor Inc. — after the recent list, where §10.3
+  puts it. A refused `app.info` leaves the version line out rather than drawing *Version* with nothing after it.
+- The title bar draws `logo-title.png` at 26 px, decorative: the tabs carry the identifying text (ADR-0002).
+- `generateAssets.mjs` derives both at twice the drawn height; `brand:check` holds them to the master. The bundle carries
+  5 KB and 35 KB, never the 4.4 MB master. `--logo-title` and `--logo-hero` carry the brand README's two heights;
+  `--font-display` is removed, its only use having been the wordmark ADR-0002 withdrew.
+- The Open command is titled *Open PDF…*, as §10.3 names it.
+
+### Not done here, and why
+
+- **The F1 hint** needs a command bound to F1 (H1b) — a sentence naming a key that does nothing is the wired-tools
+  defect in a line of text.
+- **`apps/desktop/src/pickerProbe.ts` still prints *Click "Open a document"***. It is one of the two files the picker
+  observation's digest covers (`scripts/lib/pickerProbe.mjs`' `PROBE_INPUTS`), so correcting it expires a person's
+  observation and `check:docs`' open-clause rule. `recordPickerProbe.mjs`, which is not digested, is corrected. Owed at the
+  next re-record.
+- The six shortcuts (H2) and drop-to-open (H3).
+
+### Found on the way
+
+- **The canvas harness named a control by a text a screen reader does not read.** `clickControl` took `aria-label ??
+  textContent`; the Open button's chord is an `aria-hidden` `<kbd>`, so the harness read *Open PDF…Ctrl+O*, found no
+  *Open PDF…*, and every later case ran with no canvas — the render-geometry proof the same. The function's own header
+  claims the accessible-name order, which excludes `aria-hidden` subtrees; it now removes them before reading. Its first
+  case, red for exactly this reason, is the control. No other harness matches by text.
+- **Four `App.test.tsx` cases** saw `app.info` beside the command they dispatched. `commandCalls` already strips a
+  surface's own mount reads, each with its reason; the footer's version read is that class and joins them.
+- **Lint** refused `current && …` inside the version effect's async block, which TypeScript narrows to always true. The
+  effect now has `RecentFiles`' shape: a flag read in the answer's callback, the rejection handled.
+- `projections.ts`' `quickToolbarModel` header said `view.toggle-quick-toolbar` did not exist; pass F registered it.
+- The escape guard denied one of my own commands: a stray `node -e "0"` on a line that ran `brand:generate`. Nothing
+  ran; the command was re-issued without it.
+
+### Proof
+
+- `projections.test.ts`: each command sorted into its slot, in order; an unslotted placement is a `@ts-expect-error`.
+- `App.test.tsx`: one primary button and three footer buttons, by name.
+- The rendered START SCREEN case on the production build: the hero **decoded** — natural width above zero — at 84 px and
+  the master's ratio; the title bar's at 26 px; the two lines; one primary button carrying its chord; the footer's
+  commands, version and ©.
+- brand:check, build, rendered 19 of 19, typecheck, lint, the full suite, `check:secondwiring`, `check:definedtokens`,
+  `check:tokencontrast`, `proof:canvaspixels` 13, `proof:rendererpolicy` 22, `proof:rendergeometry` 8, `proof:shell` 14.
+- Mutations: **H1a-1** (the projection ignores the slot) failed exactly the three slot cases — the projection's, the move
+  case's and App's per-slot count; **H1a-2** (no footer drawn) failed App's footer count and the About and log cases whose
+  buttons live only there; **H1a-3** (the hero's source does not resolve) failed exactly the rendered start-screen case,
+  at its natural-width line. All reverted and rebuilt before the final window proofs.
+
+### Part M
+
+M3 anatomy; M2 tokens only; M4 no new primitive (a prop on `Button`); M6 no motion.
+
+---
+
 ## 2026-09-15 — Design pass G2b: the window's own controls sit over the title bar, painted from what it computed
 
 §10.3: *"Title bar: integrated document tabs (Window Controls Overlay)"*.

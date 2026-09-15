@@ -72,7 +72,7 @@ try {
 
   process.stdout.write(
     `Opening the shipped shell with the REAL file dialog.\n\n` +
-      `  1. Click "Open a document" on the start screen.\n` +
+      `  1. Click "Open PDF…" on the start screen.\n` +
       `  2. Choose any PDF.\n` +
       `  3. Wait for the page to appear, then leave the window alone.\n\n` +
       `Dismissing the dialog is recorded honestly and satisfies no gate.\n` +

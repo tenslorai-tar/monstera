@@ -4,6 +4,7 @@ import {
   type MenuContext,
   type Placement,
   type SectionId,
+  type StartScreenSlot,
   type StatusBarPlacement,
 } from '../registries/placement.js';
 
@@ -149,11 +150,11 @@ export interface OrderedEntry {
 /**
  * The floating quick toolbar — §10.3's vertical pill on the canvas edge.
  *
- * Its visibility is meant to be a command, `view.toggle-quick-toolbar` (§7), which
- * is what would guarantee a hidden toolbar can be restored from the palette. That
- * command does NOT exist yet — it appears only in test fixtures — and is owed with
- * the quick toolbar's own pass. *Corrected 2026-09-14:* this spelt the id in the
- * camelCase §7 withdrew on 2026-08-30 and described the command as existing.
+ * Its visibility is a command, `view.toggle-quick-toolbar` (§7), registered since
+ * design pass F (2026-09-15) — which is what guarantees a hidden toolbar can be
+ * restored from the palette, its chord and the status bar. *Corrected 2026-09-15:*
+ * this said the command did not exist yet, which stopped being true when pass F
+ * registered it.
  */
 export function quickToolbarModel(
   registry: CommandRegistry,
@@ -225,32 +226,37 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
   }
 }
 
-/**
- * The start screen's feature shortcuts — §10.3's grid of six, *"each a real
- * entry point"*.
- *
- * Six is the layout's number and is not enforced here: a projection that
- * refused a seventh would be the layout deciding what the registry may contain,
- * which is the direction this whole seam runs the other way.
- */
-export function startScreenModel(
-  registry: CommandRegistry,
-  context: CommandContext,
-): readonly OrderedEntry[] {
-  const entries: OrderedEntry[] = [];
-  for (const command of registry.available(context)) {
-    for (const placement of command.placements) {
-      const order = startScreenOrder(placement);
-      if (order !== undefined) entries.push({ command, order });
-    }
-  }
-  return ordered(entries);
+/** The start screen's three slots, each in its own order (ARCHITECTURE §7, ADR-0068). */
+export interface StartScreenModel {
+  readonly primary: readonly OrderedEntry[];
+  readonly shortcut: readonly OrderedEntry[];
+  readonly footer: readonly OrderedEntry[];
 }
 
-function startScreenOrder(placement: Placement): number | undefined {
+/**
+ * The start screen's commands, by slot — §10.3's one primary button, its grid of six feature shortcuts *"each a real
+ * entry point"*, and the footer.
+ *
+ * No slot is capped: a projection that refused a second primary button or a seventh shortcut would be the layout
+ * deciding what the registry may contain, which is the direction this whole seam runs the other way.
+ */
+export function startScreenModel(registry: CommandRegistry, context: CommandContext): StartScreenModel {
+  const slots: Record<StartScreenSlot, OrderedEntry[]> = { primary: [], shortcut: [], footer: [] };
+  for (const command of registry.available(context)) {
+    for (const placement of command.placements) {
+      const at = startScreenSlot(placement);
+      if (at !== undefined) slots[at.slot].push({ command, order: at.order });
+    }
+  }
+  return { primary: ordered(slots.primary), shortcut: ordered(slots.shortcut), footer: ordered(slots.footer) };
+}
+
+function startScreenSlot(
+  placement: Placement,
+): { readonly slot: StartScreenSlot; readonly order: number } | undefined {
   switch (placement.surface) {
     case 'start-screen':
-      return placement.order;
+      return { slot: placement.slot, order: placement.order };
     case 'ribbon':
     case 'quick-toolbar':
     case 'context-menu':

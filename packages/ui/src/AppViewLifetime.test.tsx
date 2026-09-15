@@ -153,7 +153,7 @@ describe('a document view that arrives after its effect was cleaned up', () => {
     const { unmount } = render(<App client={answeringClient()} settings={freshSettings()} />);
 
     await act(async () => {
-      screen.getByRole('button', { name: 'Open a document' }).click();
+      screen.getByRole('button', { name: 'Open PDF…' }).click();
       await Promise.resolve();
     });
     // Settles the view-model read, which is the first suspension point. The open
@@ -182,7 +182,7 @@ describe('a document view that arrives after its effect was cleaned up', () => {
     render(<App client={answeringClient()} settings={freshSettings()} />);
 
     await act(async () => {
-      screen.getByRole('button', { name: 'Open a document' }).click();
+      screen.getByRole('button', { name: 'Open PDF…' }).click();
       await Promise.resolve();
     });
     await act(async () => {
@@ -203,7 +203,7 @@ describe('a view model that describes a different version than the view is opene
   async function drawWith(model?: Readonly<Record<string, unknown>>): Promise<void> {
     render(<App client={answeringClient(model)} settings={freshSettings()} />);
     await act(async () => {
-      screen.getByRole('button', { name: 'Open a document' }).click();
+      screen.getByRole('button', { name: 'Open PDF…' }).click();
       await Promise.resolve();
     });
     await act(async () => {

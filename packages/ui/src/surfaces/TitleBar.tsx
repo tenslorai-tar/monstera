@@ -1,6 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement, ReactNode } from 'react';
 
+import titleLogo from '../../../../assets/brand/logo-title.png';
 import { LAYOUT_MODE_OPTION_TITLES, LAYOUT_MODE_TITLE, PALETTE_PLACEHOLDER } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
@@ -60,6 +61,9 @@ export function TitleBar({
 
   return (
     <header className="m-title-bar">
+      {/* ADR-0002: the supplied artwork, scaled. Decorative — at 26 px it reads as a shape, and the tabs beside it carry
+          the identifying text — so it has an empty name rather than a second "Monstera" for a screen reader. */}
+      <img className="m-title-bar__logo" src={titleLogo} alt="" />
       {children}
       {palette === undefined ? null : (
         <button

@@ -30,7 +30,7 @@ export function showAboutCommand(deps: {
     icon: 'Info',
     title: ABOUT_COMMAND_TITLE,
     placements: [
-      { surface: 'start-screen', order: 1 },
+      { surface: 'start-screen', slot: 'footer', order: 1 },
       { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 20 },
     ],
     run: async (): Promise<void> => {

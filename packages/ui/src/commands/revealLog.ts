@@ -34,7 +34,7 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     // document goes looking. A document-scoped placement would put the
     // diagnostics behind the thing that is failing.
     placements: [
-      { surface: 'start-screen', order: 2 },
+      { surface: 'start-screen', slot: 'footer', order: 2 },
       { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 10 },
     ],
     run: async (): Promise<void> => {

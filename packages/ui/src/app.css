@@ -114,6 +114,13 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
+/* ADR-0002's portrait box: the brand's height, and the width the image's own ratio gives it — never stretched. */
+.m-title-bar__logo {
+  flex: none;
+  block-size: var(--logo-title);
+  inline-size: auto;
+}
+
 /* The command search looks like the field it opens, and is a button: the palette is where the
    typing happens. `--border-control`, because §10.2 names the command search among the controls
    held to 3:1. The width is a stated choice — room for the placeholder and the chord. */
@@ -193,38 +200,88 @@ textarea {
 }
 
 /*
- * `--font-display`, whose own comment in `tokens.css` says what it is for: *one
- * display size: the start-screen wordmark*. It has had no caller until now, so
- * this is the token being used for the thing it was declared for rather than a
- * size chosen here.
+ * §10.3's hero: the supplied artwork, "PDF EDITOR" letterspaced beneath, and the
+ * tagline. ADR-0002 withdrew the text wordmark — the artwork carries the name.
  */
-.m-start-title {
-  margin: 0;
-  color: var(--text);
-  font-size: var(--font-display);
-  font-weight: 600;
+.m-start-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
 }
 
-.m-start-invitation {
+/* The heading holds only the artwork, so a text line box would add its height under the image. */
+.m-start-title {
+  margin: 0;
+  line-height: 0;
+}
+
+/* ADR-0002's portrait box: the brand's height, and the width the image's own ratio gives it — never stretched. */
+.m-start-logo {
+  block-size: var(--logo-hero);
+  inline-size: auto;
+}
+
+.m-start-product {
   margin: 0;
   color: var(--muted);
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+}
+
+.m-start-tagline {
+  margin: 0;
+  color: var(--text);
   font-size: var(--font-content-16);
 }
 
+/* The primary slot (ADR-0068): §10.3's one button, centred under the hero. */
+.m-start-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  justify-content: center;
+  margin-block-start: var(--space-8);
+}
+
 /*
- * The controls, as a grid rather than a row.
+ * The shortcut slot, as a grid rather than a row.
  *
- * `auto-fit` with a `minmax` track: the buttons wrap into as many columns as the
+ * `auto-fit` with a `minmax` track: the tiles wrap into as many columns as the
  * window allows and none of them stretches to fill a wide one. A fixed column
  * count would be a number that is wrong at some width, and this screen is the
  * first thing a reader sees at whatever size they happen to have.
  */
-.m-start-actions {
+.m-start-shortcuts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, max-content));
   gap: var(--space-8);
   justify-content: center;
-  margin-block-start: var(--space-8);
+}
+
+/* The footer slot's commands and the screen's own line beneath them, quieter than everything above. */
+.m-start-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  padding-block: var(--space-16);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-start-footer__commands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  justify-content: center;
+}
+
+.m-start-footer__text {
+  display: flex;
+  gap: var(--space-8);
+  margin: 0;
 }
 
 /*

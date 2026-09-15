@@ -162,9 +162,17 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // (ADR-0056): the cloud tool is hidden until a key is stored, so the registry
   // asks which secrets are stored when the surface loads — an id list, and never
   // something a reader did.
+  //
+  // `app.info` joins them for the recent list's own reason (design pass H1a):
+  // the start screen's footer shows the running build's version, so the shell
+  // asks once when it mounts — a surface loading its own data, never a reader
+  // using a control.
   return calls.filter(
     (id) =>
-      id !== 'document.recent' && id !== 'app.handwritingCache' && id !== 'settings.loadSecrets',
+      id !== 'document.recent' &&
+      id !== 'app.handwritingCache' &&
+      id !== 'settings.loadSecrets' &&
+      id !== 'app.info',
   );
 }
 
@@ -243,7 +251,7 @@ const OPEN_DOCUMENT_ANSWERS = {
 /** Opens a document and settles the effects, leaving the toolbar rendered. */
 async function withDocumentOpen(): Promise<void> {
   await act(async () => {
-    screen.getByRole('button', { name: 'Open a document' }).click();
+    screen.getByRole('button', { name: 'Open PDF…' }).click();
     await Promise.resolve();
   });
   await act(async () => {
@@ -395,7 +403,7 @@ describe('App', () => {
 
     render(<App client={client} settings={freshSettings()} />);
 
-    expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Open PDF…' })).toBeDefined();
   });
 
   it('the control DISPATCHES document.open, and nothing else', async () => {
@@ -406,7 +414,7 @@ describe('App', () => {
     render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
-      screen.getByRole('button', { name: 'Open a document' }).click();
+      screen.getByRole('button', { name: 'Open PDF…' }).click();
       await Promise.resolve();
     });
 
@@ -468,11 +476,11 @@ describe('App', () => {
     const { container } = render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
-      screen.getByRole('button', { name: 'Open a document' }).click();
+      screen.getByRole('button', { name: 'Open PDF…' }).click();
       await Promise.resolve();
     });
 
-    expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Open PDF…' })).toBeDefined();
     expect(container.querySelector('canvas.m-page')).toBeNull();
   });
 
@@ -1678,11 +1686,11 @@ describe('App', () => {
     const { client } = recordingClient({ kind: 'cancelled' });
     const { container } = render(<App client={client} settings={freshSettings()} />);
 
-    // `.m-start-actions`, not `.m-start-screen`: the screen now holds a
-    // problem region as well, and scoping to the projection's own container is
-    // what keeps this counting COMMANDS rather than every control on the page.
-    expect(container.querySelectorAll('.m-start-actions button')).toHaveLength(4);
-    expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
+    // BY SLOT (ADR-0068), each counted inside its own container so it counts COMMANDS rather than every control on
+    // the page: Open is the one primary button, and About, the log and Settings are the footer's.
+    expect(container.querySelectorAll('.m-start-primary button')).toHaveLength(1);
+    expect(container.querySelectorAll('.m-start-footer button')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Open PDF…' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Reveal diagnostics log' })).toBeDefined();
     // SETTINGS, the fourth (ADR-0056): wanted before anything is open, and where a
@@ -1704,7 +1712,7 @@ describe('App', () => {
     /** Picks a document and settles, returning nothing. */
     async function pick(): Promise<void> {
       await act(async () => {
-        screen.getByRole('button', { name: 'Open a document' }).click();
+        screen.getByRole('button', { name: 'Open PDF…' }).click();
         await Promise.resolve();
       });
     }
