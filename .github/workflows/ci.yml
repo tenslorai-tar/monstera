@@ -815,13 +815,15 @@ jobs:
       - name: Provision the pinned browser for the accessibility gate
         run: node scripts/ci/annotate.mjs scripts/provision/playwright.mjs
 
-      # NOT wrapped, and it cannot be: `annotate.mjs` spawns a node SCRIPT, and
-      # this is Playwright's own runner. Its reporter writes the violation text
-      # to stdout, which is the step's log — so a failure here is one of the
-      # few whose evidence still needs an authenticated reader. Recorded rather
-      # than left for whoever next finds a red gate with nothing public on it.
+      # WRAPPED, through the wrapper's --npm form. This read "NOT wrapped, and it
+      # cannot be: `annotate.mjs` spawns a node SCRIPT" — true when written, and
+      # false from 2026-09-14, when --npm arrived for the unit-test step's own
+      # version of this gap. Nobody reopened this comment, and on 4359fe4 the
+      # ubuntu leg failed here with no public word of which case or why: the
+      # founding gap annotate.mjs exists for, left open by a sentence one range
+      # stale.
       - name: Accessibility gate — axe on the rendered screen
-        run: npm run test:a11y
+        run: node scripts/ci/annotate.mjs --npm test:a11y
 
       # `npm test` used to resolve every @monstera/* specifier through the
       # package's dist build, so the suite could read the last build while a
