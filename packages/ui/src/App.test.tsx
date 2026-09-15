@@ -699,6 +699,52 @@ describe('App', () => {
       expect(settings.get('appearance.layout-mode')).toBe('studio');
     });
 
+    it('the TITLE BAR: its search opens the palette, and Focus chosen on its switcher still returns to the mode left', async () => {
+      // §10.3: the title bar holds "the Ctrl+K command search, and the layout switcher". The Escape line is the one only
+      // the composed application can separate: a switcher writing the setting itself would also reach Focus, and would
+      // leave nothing remembered, so Escape would land on Ribbon.
+      const settings = freshSettings();
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+      await act(async () => {
+        settings.set('appearance.layout-mode', 'studio');
+        await Promise.resolve();
+      });
+
+      const bar = document.querySelector('.m-title-bar');
+      if (bar === null) throw new Error('the title bar is drawn');
+      const search = [...bar.querySelectorAll('button')].find((button) => button.textContent.includes('Search commands'));
+      if (search === undefined) throw new Error('the title bar carries the command search');
+      await act(async () => {
+        search.click();
+        await Promise.resolve();
+      });
+      const field = document.querySelector('.m-palette-query');
+      if (!(field instanceof HTMLInputElement)) throw new Error('the search opened the palette');
+      await act(async () => {
+        field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        await Promise.resolve();
+      });
+      expect(document.querySelector('.m-palette-query')).toBeNull();
+
+      const focus = [...bar.querySelectorAll('[role="group"] button')].find((button) => button.textContent === 'Focus');
+      if (!(focus instanceof HTMLButtonElement)) throw new Error('the switcher offers Focus');
+      await act(async () => {
+        focus.click();
+        await Promise.resolve();
+      });
+      expect(settings.get('appearance.layout-mode')).toBe('focus');
+      // THE TITLE BAR STAYS IN FOCUS — it holds the tabs and the way out.
+      expect(document.querySelector('.m-title-bar')).not.toBeNull();
+
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        await Promise.resolve();
+      });
+      expect(settings.get('appearance.layout-mode')).toBe('studio');
+    });
+
     it('the ROTATE control names the SAME page the renderer asked the model about', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,

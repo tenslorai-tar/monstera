@@ -227,6 +227,48 @@
   box-shadow: var(--elevation-2);
 }
 
+/* ─── SegmentedControl ───────────────────────────────────────────────────── */
+
+/* §10.3's segmented control. The group's outline is `--border-control`, because §10.2 names the layout
+   switcher among the controls held to 3:1. The pressed segment is `--accent-soft` with `--text`, the
+   state surface and its one permitted foreground, and a boundary as well, so `forced-colors` — which
+   discards the background — still shows which segment is pressed. */
+.m-segmented {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--bg2);
+}
+
+.m-segmented__item {
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid transparent;
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  cursor: pointer;
+}
+
+.m-segmented__item:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.m-segmented__item[data-pressed] {
+  background: var(--accent-soft);
+  border-color: var(--border-control);
+  color: var(--text);
+}
+
+.m-segmented__item:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
+}
+
 /* ─── Icon ───────────────────────────────────────────────────────────────── */
 
 /* A glyph drawn beside text rather than alone in a button: a ribbon button's

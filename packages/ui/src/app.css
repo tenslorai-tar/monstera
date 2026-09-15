@@ -71,7 +71,7 @@ textarea {
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
-    'tabs tabs'
+    'title title'
     'ribbon ribbon'
     'rail body'
     'status status';
@@ -80,8 +80,55 @@ textarea {
   background: var(--canvas);
 }
 
-.m-tabs {
-  grid-area: tabs;
+/*
+ * §10.3's title bar, one row in every mode: the tabs take what the row has left, and the command
+ * search and the switcher keep their size at its end. `margin-inline-start: auto` on the search
+ * rather than a spacer, so with no document open — no tabs — the two still sit at the end.
+ */
+.m-title-bar {
+  grid-area: title;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-2) var(--space-8);
+  background: var(--bg2);
+  border-block-end: 1px solid var(--border); /* decorative: separates the title bar from the chrome under it; each control draws its own focus ring */
+}
+
+/* The command search looks like the field it opens, and is a button: the palette is where the
+   typing happens. `--border-control`, because §10.2 names the command search among the controls
+   held to 3:1. The width is a stated choice — room for the placeholder and the chord. */
+.m-command-search {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+  min-inline-size: 16rem;
+  margin-inline-start: auto;
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--bg2);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  cursor: pointer;
+}
+
+.m-command-search:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.m-command-search:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
+}
+
+.m-command-search__chord {
+  margin-inline-start: auto;
+  font-family: inherit;
+  font-size: var(--font-chrome-11);
+  font-variant-numeric: tabular-nums;
 }
 
 .m-body-area {
@@ -1863,14 +1910,15 @@ textarea {
  * below it down as documents open, and a document surface whose top edge
  * depends on how many files are open is one nothing can be measured against.
  */
+/* Inside the title bar, which draws the surface and the seam: the strip takes the row's remaining
+   width and scrolls within it, so a seventh document never pushes the search off the end. */
 .m-tabs {
   display: flex;
+  flex: 1 1 auto;
   gap: var(--space-2);
   align-items: center;
+  min-inline-size: 0;
   overflow-x: auto;
-  padding: var(--space-2) var(--space-4);
-  background: var(--bg2);
-  border-block-end: 1px solid var(--border); /* decorative: separates the strip from the document area; each tab carries its own focus ring */
 }
 
 .m-tab-list {

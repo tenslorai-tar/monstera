@@ -252,6 +252,7 @@ import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
+import { TitleBar } from './surfaces/TitleBar.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 import { ViewProblem } from './surfaces/ViewProblem.js';
 
@@ -1747,25 +1748,29 @@ export function App({ client, settings }: AppProps): ReactElement {
 
   return (
     <main className="m-document-surface" data-layout={layoutMode}>
-      {/* THE OPEN DOCUMENTS. First in the surface because it is what the rest
-          of it is about — the strip names which document every panel, the
+      {/* THE TITLE BAR, drawn in every mode and with no document too: the
+          command search and the layout switcher are the application's, not a
+          document's. It carries the open documents, which is what the rest of
+          the surface is about — the strip names which document every panel, the
           status bar and every command below refer to. */}
-      <DocumentTabs
-        tabs={tabs}
-        activeId={activeId}
-        onSelect={activate}
-        onClose={(docId) => {
-          void closeTab(docId);
-        }}
-        // THE REGISTERED COMMAND'S OWN `run`, not a second way to open a
-        // document. The strip is where *open another* belongs — it exists
-        // exactly when a document is open, which is exactly when the start
-        // screen's copy is gone.
-        onOpen={() => {
-          void openCommand.run(context);
-        }}
-      />
-      {/* THE RAIL AND THE RIBBON, directly under the tabs, which is §10.3's
+      <TitleBar registry={registry} context={context} settings={settings}>
+        <DocumentTabs
+          tabs={tabs}
+          activeId={activeId}
+          onSelect={activate}
+          onClose={(docId) => {
+            void closeTab(docId);
+          }}
+          // THE REGISTERED COMMAND'S OWN `run`, not a second way to open a
+          // document. The strip is where *open another* belongs — it exists
+          // exactly when a document is open, which is exactly when the start
+          // screen's copy is gone.
+          onOpen={() => {
+            void openCommand.run(context);
+          }}
+        />
+      </TitleBar>
+      {/* THE RAIL AND THE RIBBON, directly under the title bar, which is §10.3's
           order — and INSIDE the document branch, not above it.
 
           Above it, the ribbon rendered beside the start screen, and `Open a

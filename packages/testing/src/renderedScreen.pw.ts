@@ -765,3 +765,55 @@ test('STUDIO opens the tool strip as an OVERLAY on a rail selection, moves nothi
   await page.keyboard.press('Escape');
   await expect(page.locator('.m-ribbon__tools')).toHaveCount(0);
 });
+
+test('the TITLE BAR holds the tabs, the command search and the switcher on one row, stays in Focus, and Studio opens below it', async ({
+  page,
+}) => {
+  // §10.3: "Title bar: integrated document tabs …, the Ctrl+K command search, and the layout switcher"; Studio's overlay
+  // opens "below the title bar"; Focus keeps "the title bar". Painted geometry, which happy-dom cannot lay out.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+
+  // WITH NO DOCUMENT the bar is there with both controls and no tabs.
+  const bar = page.locator('.m-title-bar');
+  const search = bar.getByRole('button', { name: /Search commands/u });
+  const switcher = bar.getByRole('group', { name: 'Layout' });
+  await expect(search).toBeVisible();
+  await expect(switcher).toBeVisible();
+  await expect(bar.getByRole('navigation', { name: 'Open documents' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Open a document' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+
+  // ONE ROW: each part's vertical middle lies inside the bar's box.
+  const barBox = await bar.boundingBox();
+  if (barBox === null) throw new Error('the title bar has a box');
+  for (const part of [bar.getByRole('navigation', { name: 'Open documents' }), search, switcher]) {
+    const box = await part.boundingBox();
+    if (box === null) throw new Error('each part of the title bar has a box');
+    const middle = box.y + box.height / 2;
+    expect(middle).toBeGreaterThan(barBox.y);
+    expect(middle).toBeLessThan(barBox.y + barBox.height);
+  }
+  // ABOVE THE RAIL, which is where the tabs' own row used to be.
+  const rail = await page.locator('.m-ribbon__rail').boundingBox();
+  expect(barBox.y + barBox.height).toBeLessThanOrEqual((rail?.y ?? 0) + 0.5);
+
+  await search.click();
+  await expect(page.locator('.m-palette-query')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.m-palette-query')).toHaveCount(0);
+
+  await switcher.getByRole('button', { name: 'Focus' }).click();
+  await expect(page.locator('.m-ribbon__rail')).toHaveCount(0);
+  await expect(bar).toBeVisible();
+  await expect(switcher.getByRole('button', { name: 'Focus' })).toHaveAttribute('aria-pressed', 'true');
+
+  await switcher.getByRole('button', { name: 'Studio' }).click();
+  await page.locator('[data-ribbon-section="home"]').click();
+  const overlay = await page.locator('.m-ribbon__tools--overlay').boundingBox();
+  if (overlay === null) throw new Error('the Studio overlay opened');
+  // BELOW THE TITLE BAR, never over it.
+  expect(overlay.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 0.5);
+});

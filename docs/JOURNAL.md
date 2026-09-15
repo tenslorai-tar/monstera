@@ -892,6 +892,59 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-15 — Design pass G2a: the title bar holds the tabs, the command search and the layout switcher
+
+§10.3: *"Title bar: integrated document tabs (Window Controls Overlay), the Ctrl+K command search, and the layout
+switcher"*; Focus keeps it because *"it holds the tabs and the way out"*. §10.2 names the command search and the layout
+switcher among the controls bounded by `--border-control`.
+
+**Pass G2 is split again.** G2a is the row and its two controls, all renderer. G2b is Window Controls Overlay, which
+needs main to hide the native caption and a channel for the overlay buttons' colours. The 26 px logo lands with the
+start screen's 84 px hero, because both need the same thing nobody has built: a derived size in `generateAssets.mjs`'
+`DERIVATIVES` and a route by which the renderer loads it.
+
+### What was built
+
+- `primitives/SegmentedControl.tsx`, on Base UI's toggle group: one tab stop, arrow keys, `aria-pressed`. The group
+  lets a person press the pressed segment and leave **no** value; a segmented control always holds one, so the empty
+  change is refused and the lit segment stays lit. A same-value change is not reported either.
+- `surfaces/TitleBar.tsx`: the strip, the command search (a field-shaped button running `view.command-palette`, showing
+  the command's own chord), and the switcher. **The switcher runs `view.layout-*` and writes no setting.** That is the
+  load-bearing choice: `layoutModeCommands` remembers the mode left only when Focus is entered through a command, so a
+  switcher writing `appearance.layout-mode` would reach Focus too and leave Escape landing on Ribbon. Neither control is
+  drawn when its commands are not registered.
+- The shell's grid: `title` replaces the tabs' own row; the strip takes the row's remaining width and scrolls inside it.
+  Studio's overlay already carried `.m-ribbon__tools`' grid area (`Ribbon.tsx` renders both classes), so it opens below
+  the bar with no change — the rendered case measures that rather than assuming it.
+
+### Found on the way
+
+- Typecheck and lint refused my own test code on the first run: a `Record<string, …>` for four named stand-ins, which
+  `noUncheckedIndexedAccess` makes possibly absent, and three `textContent ?? ''` guards on a value typed as a string.
+  95 of 95 unit cases had passed; the refusals were right.
+- **Two unrelated `App.test.tsx` cases timed out once.** During mutation G2a-2, *"an UNPARSEABLE pattern says so"* took
+  11299 ms and *"CONTROL: an empty query dispatches NOTHING"* 5129 ms, both past the 5000 ms default; neither touches the
+  title bar, and the mutation cannot reach the find bar. On a clean re-run, verbose, they took 254 ms and 293 ms. **It is
+  not the first**: pass E recorded a delete-pages case in the same file timing out once in a full run and taking 759 ms
+  alone. Three cases, two sessions, one shape — a class, not noise. The cause is not established here, the timeout is not
+  raised, and it is queued as its own investigation.
+
+### Proof
+
+- Unit: `SegmentedControl.test.tsx` (4), `TitleBar.test.tsx` (6), `App.test.tsx`'s title-bar case.
+- Rendered, production build: 18 of 18, the new title-bar case among them — one row above the rail, the search opening
+  the palette, Focus keeping the bar with its segment pressed, and Studio's overlay below the bar.
+- Mutations: **G2a-1** (the switcher writes the setting itself) failed exactly the TitleBar *runs `view.layout-focus`*
+  case and the App title-bar case, 63 passing. **G2a-2** (the segmented control passes the empty value on) failed its
+  *pressed segment* case; the two timeouts above were in the same run and are not its effect. Both reverted.
+
+### Part M
+
+M3 anatomy (the title bar row); M2 tokens only; M4 a primitive added where first needed; M5 hover, pressed and
+focus-visible on both controls; M6 no motion.
+
+---
+
 ## 2026-09-15 — Design pass G1: the three layout modes, commanded, with the rail's section persisted
 
 §10.3: *"Layout switcher: a segmented control in the title bar toggling three chrome modes, persisted per user —
