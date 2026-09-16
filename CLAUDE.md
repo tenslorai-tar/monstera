@@ -607,6 +607,39 @@ time.** Whenever a feature's two halves live either side of a boundary, ask what
 changes across it and where that change is written down. If the answer is *a
 literal at the call site*, the pair is green and the feature is wrong.
 
+**AND THE PAIR HAS A SECOND BLIND SPOT, WHICH IS NOT A DISAGREEMENT BUT A GAP:
+THE CODE BETWEEN THE TWO HALVES IS CROSSED BY NEITHER.** The kernel proof runs
+the command against a **local** writer; the UI test dispatches against a
+**stubbed** kernel. Everything on the path from the dispatch to the engine —
+the composition root, the registration, the remote half, the host's dispatch —
+is below one and above the other, and a defect living there passes both.
+
+Measured 2026-09-16, and it cost four rows. `CommandExecution.apply` took
+`(session, command, source?, reads?)`, and `composition.ts`' delegate forwarded
+`(session, command)`. It compiled, because **a function that ignores trailing
+parameters is assignable to one that passes them**. From 2026-09-05 every
+command that copies from a second open document — Merge PDFs, Insert from PDF,
+Replace page, Import page as OCG layer — reached the engine host with no source
+document. All four read *done* in `docs/FEATURES.md`. The kernel proofs asserted
+the merge grafts the source's pages, correctly, against a writer in the same
+process; the UI tests asserted the buttons dispatch `mergeDocument`, correctly,
+against a kernel that never ran. **A live run of the packaged application is
+what found it**, which is the only instrument that holds both ends at once.
+
+Two things transfer, and the second is the one worth keeping:
+
+- **Ask what sits between the pair's two ends, and whether any case names both
+  ends of it.** A composition root is the usual answer, and it is usually the
+  file with no test of its own because it *only wires*.
+- **The remedy is the seam's shape, not a third test.** `ApplyRequest` makes
+  every field required ([ADR-0069](docs/DECISIONS/0069-a-writers-apply-takes-one-named-request.md)),
+  so a dropped one is a compile error rather than a silent pass — B5 again, and
+  the same move `SHOWN_PAGE` is above. Where the compiler's own rule is what
+  lets the bug through, a *convenience* is what the rule is called in the
+  comment beside it: `commandRouting.ts` cited this exact assignability as
+  making a change *"a one-line change rather than four"*. **Read a comment that
+  celebrates a type system permitting less checking as a place to look.**
+
 ---
 
 ## Standing rules from the project owner
