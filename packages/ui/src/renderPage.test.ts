@@ -90,7 +90,7 @@ describe('renderPage', () => {
     const { document, sizeAtRender } = documentWithViewport(300.2, 400.8);
     const canvas = canvasWithContext();
 
-    await renderPage(document, 1, canvas, 1);
+    await renderPage(document, 1, canvas, 1, undefined);
 
     expect(sizeAtRender).toStrictEqual([{ width: 301, height: 401 }]);
   });
@@ -101,7 +101,7 @@ describe('renderPage', () => {
     const { document } = documentWithViewport(300.2, 400.8);
     const canvas = canvasWithContext();
 
-    const raster = await renderPage(document, 1, canvas, 1);
+    const raster = await renderPage(document, 1, canvas, 1, undefined);
 
     expect(raster.width).toBe(301);
     expect(raster.height).toBe(401);
@@ -114,7 +114,7 @@ describe('renderPage', () => {
     const { document } = documentWithViewport(300, 400);
     const canvas = canvasWithContext();
 
-    const raster = await renderPage(document, 1, canvas, 1);
+    const raster = await renderPage(document, 1, canvas, 1, undefined);
 
     expect(raster.width).toBe(300);
     expect(raster.height).toBe(400);
@@ -129,7 +129,7 @@ describe('renderPage', () => {
     // was drawn.
     const { document } = documentWithViewport(300, 400);
 
-    const raster = await renderPage(document, 1, canvasWithContext(), 1);
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined);
 
     expect(raster.crop).toStrictEqual([12, 24, 312, 424]);
   });
@@ -142,7 +142,7 @@ describe('renderPage', () => {
     // than one that cannot be annotated.
     const { document } = documentWithViewport(300, 400, [5]);
 
-    const raster = await renderPage(document, 1, canvasWithContext(), 1);
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined);
 
     expect(raster.crop).toStrictEqual([5, 0, 0, 0]);
   });
@@ -156,7 +156,7 @@ describe('renderPage', () => {
     // could have produced.
     const { document } = documentWithViewport(300, 400);
 
-    const raster = await renderPage(document, 1, canvasWithContext(), 1);
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined);
 
     expect(raster.rotation).toBe(270);
   });
@@ -192,7 +192,7 @@ describe('renderPage', () => {
     // which is every fixture anyone reaches for first.
     const { document, asked } = documentWithViewport(300, 400);
 
-    await renderPage(document, 1, canvasWithContext(), 1);
+    await renderPage(document, 1, canvasWithContext(), 1, undefined);
 
     expect(asked).toStrictEqual([{ scale: 1 }]);
   });
@@ -259,7 +259,7 @@ describe('renderPage', () => {
     const canvas = window.document.createElement('canvas');
     vi.spyOn(canvas, 'getContext').mockReturnValue(null);
 
-    await expect(renderPage(document, 1, canvas, 1)).rejects.toThrow(/2d context/u);
+    await expect(renderPage(document, 1, canvas, 1, undefined)).rejects.toThrow(/2d context/u);
     // ASSERT THE CALL THAT WAS NOT MADE. A throw that happened after handing the
     // page to PDF.js would leave a render running against a canvas nobody can
     // draw on, and the rejection alone cannot tell the two apart.

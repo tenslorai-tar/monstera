@@ -1,10 +1,13 @@
 import { useLingui } from '@lingui/react';
+import type { ContractClient } from '@monstera/contract';
+import type { DocId, DocVersion } from '@monstera/shared';
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { renderPage } from './renderPage.js';
+import { usePageRotations } from './usePageRotations.js';
 import { useVisiblePages } from './useVisiblePages.js';
 
 /**
@@ -50,6 +53,9 @@ import { useVisiblePages } from './useVisiblePages.js';
  * Shift+Arrow is selection; Alt is the modifier no reading gesture claims here.
  */
 export function Thumbnails({
+  client,
+  docId,
+  version,
   view,
   pageCount,
   current,
@@ -57,6 +63,13 @@ export function Thumbnails({
   onMove,
   onSwap,
 }: {
+  /**
+   * Where the strip reads each page's rotation — the same read the spine takes
+   * ({@link usePageRotations}), so a page turned in the document is turned here.
+   */
+  readonly client: ContractClient;
+  readonly docId: DocId;
+  readonly version: DocVersion;
   readonly view: DocumentView | undefined;
   readonly pageCount: number;
   /** The page the reader is on, so the strip can mark it. */
@@ -95,6 +108,7 @@ export function Thumbnails({
 }): ReactElement {
   const { i18n } = useLingui();
   const { visible, slotRef } = useVisiblePages('50%');
+  const rotations = usePageRotations(client, docId, version, visible);
   // A REF, not state: the source index is read once by the drop that follows,
   // and re-rendering the whole strip mid-drag would replace the element the
   // browser is dragging.
@@ -159,7 +173,14 @@ export function Thumbnails({
             onMove(page, to);
           }}
         >
-          <ThumbCanvas view={view} page={page} draw={visible.has(page)} />
+          {/* NOT BEFORE THE MODEL ANSWERS, which is the spine's rule: a page
+              drawn first at its stored rotation repaints a frame later turned. */}
+          <ThumbCanvas
+            view={view}
+            page={page}
+            draw={visible.has(page) && rotations.has(page)}
+            rotation={rotations.get(page)}
+          />
         </button>
       ))}
     </nav>
@@ -181,10 +202,13 @@ function ThumbCanvas({
   view,
   page,
   draw,
+  rotation,
 }: {
   readonly view: DocumentView | undefined;
   readonly page: number;
   readonly draw: boolean;
+  /** The view model's rotation, or `undefined` where it did not answer for this version. */
+  readonly rotation: number | undefined;
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | undefined>(undefined);
@@ -198,10 +222,10 @@ function ThumbCanvas({
     // reports the page's own size; the width this strip wants divided by that
     // is the scale that fills the column. `renderPage` answers with what it
     // drew, so the second call is the one whose result is kept.
-    void renderPage(view.document, pdfjsPageOf(page), element, 1)
+    void renderPage(view.document, pdfjsPageOf(page), element, 1, rotation)
       .then((drawn) => {
         if (cancelled || drawn.width === 0) return undefined;
-        return renderPage(view.document, pdfjsPageOf(page), element, THUMB_WIDTH / drawn.width);
+        return renderPage(view.document, pdfjsPageOf(page), element, THUMB_WIDTH / drawn.width, rotation);
       })
       .then((drawn) => {
         if (cancelled || drawn === undefined) return;
@@ -218,7 +242,7 @@ function ThumbCanvas({
     return (): void => {
       cancelled = true;
     };
-  }, [draw, page, view]);
+  }, [draw, page, rotation, view]);
 
   return (
     <canvas

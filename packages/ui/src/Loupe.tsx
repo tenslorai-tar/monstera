@@ -42,6 +42,7 @@ export function Loupe({
   view,
   page,
   zoom,
+  rotation,
   at,
 }: {
   readonly view: DocumentView | undefined;
@@ -49,6 +50,14 @@ export function Loupe({
   readonly page: number;
   /** The scale the page is shown at, so the loupe magnifies from what is seen. */
   readonly zoom: number;
+  /**
+   * The rotation the page under the pointer is DRAWN at, from the view model.
+   *
+   * Required, and `undefined` only where the model has not said: a magnifier
+   * that drew the stored `/Rotate` over a page the document has turned shows a
+   * different orientation from the page it sits on, and so a different region.
+   */
+  readonly rotation: number | undefined;
   /**
    * Where the pointer is **within the page element**, in CSS pixels at the
    * shown zoom — so the same units the reader's screen is in.
@@ -70,7 +79,7 @@ export function Loupe({
     let cancelled = false;
 
     const ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio;
-    void renderPage(view.document, pdfjsPageOf(page), element, ratio * zoom * MAGNIFICATION)
+    void renderPage(view.document, pdfjsPageOf(page), element, ratio * zoom * MAGNIFICATION, rotation)
       .then((size) => {
         if (!cancelled) setDrawn(size);
       })
@@ -86,7 +95,7 @@ export function Loupe({
     // NOT keyed on `at`: moving the pointer must not re-rasterise. The bitmap
     // is the page at this magnification, and where the window sits on it is a
     // transform below.
-  }, [page, view, zoom]);
+  }, [page, rotation, view, zoom]);
 
   // WHERE THE BITMAP SITS under the window, so the point the reader is over
   // lands in the middle. In the bitmap's own CSS pixels, which are the page's

@@ -10,6 +10,7 @@ import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { TextLayer, type TextLayerLine } from './TextLayer.js';
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
+import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
@@ -553,71 +554,9 @@ export function PageList({
     },
     [onZoom],
   );
-  /**
-   * What is known about each visible page's rotation.
-   *
-   * **Presence means ANSWERED, and the value may still be `undefined`** — which
-   * is three states in a shape that looks like two, and each one is load-bearing:
-   *
-   * - absent: not asked yet, or in flight. **The page does not draw.**
-   * - present and a number: the model said so; draw with it.
-   * - present and `undefined`: the model was refused, or described another
-   *   version. Draw with the page's own `/Rotate`, which is what this renderer
-   *   actually knows — never a flat `0`.
-   *
-   * The first state is the one that matters and it is finding RRRRR-2 arriving
-   * in a scroller. Drawing before the answer paints the page at its stored
-   * rotation and repaints it a frame later at the real one, which is the *frame
-   * of wrong geometry* the single-page version read the model first to avoid.
-   * A `Map<number, number>` cannot express *answered, and the answer is nothing*,
-   * so it would have made that flash unavoidable.
-   */
-  const [rotations, setRotations] = useState<ReadonlyMap<number, number | undefined>>(new Map());
-
-  /**
-   * The rotations for the pages about to be drawn.
-   *
-   * **Named rather than *all*, which is invariant L11**: one rotation per page
-   * scales with the document, so a read of the whole vector would put a
-   * document-sized payload on the path a renderer takes after every command.
-   * The window is what is visible, which is what the channel was built to be
-   * asked for.
-   */
-  useEffect(() => {
-    let cancelled = false;
-    const wanted = [...visible].filter((page) => !rotations.has(page)).sort((a, b) => a - b);
-    if (wanted.length === 0) return;
-
-    const read = async (): Promise<void> => {
-      const answer = await client['document.viewModel']({ docId, pages: wanted });
-      if (cancelled) return;
-
-      // A MODEL FROM ANOTHER VERSION IS NOT DRAWN WITH, and neither is a refused
-      // one. A command can bump the version while this read is in flight, and a
-      // stale rotation over a current page is the class of defect
-      // `document.readRange` refuses a range for (ADR-0031) — with nothing
-      // thrown, so the comparison is the whole guard.
-      //
-      // **Both still mark the page ANSWERED.** The page must draw: what this
-      // renderer knows in that case is *nothing about the rotation*, and PDF.js
-      // falling back to the page's own `/Rotate` is that stated correctly.
-      // Leaving them absent would hold the page blank for ever on any document
-      // whose model cannot be read.
-      const usable = answer.ok && answer.value.version === version;
-      setRotations((current) => {
-        const next = new Map(current);
-        for (const [index, page] of wanted.entries()) {
-          next.set(page, usable ? answer.value.rotations[index] : undefined);
-        }
-        return next;
-      });
-    };
-    void read();
-
-    return (): void => {
-      cancelled = true;
-    };
-  }, [client, docId, rotations, version, visible]);
+  // THE SHARED READ, which the strip and the loupe take too. Presence means
+  // answered for THIS version; see `usePageRotations` for the three states.
+  const rotations = usePageRotations(client, docId, version, visible);
 
   /**
    * What a slot reports after drawing, as ONE stable callback.
@@ -693,7 +632,7 @@ export function PageList({
           className="m-loupe-at"
           style={{ insetInlineStart: `${String(lens.screen.x)}px`, insetBlockStart: `${String(lens.screen.y)}px` }}
         >
-          <Loupe view={view} page={lens.page} zoom={shown} at={lens.at} />
+          <Loupe view={view} page={lens.page} zoom={shown} rotation={rotations.get(lens.page)} at={lens.at} />
         </div>
       ) : null}
       {rulers && viewport !== undefined ? (

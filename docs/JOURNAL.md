@@ -892,7 +892,65 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
-## 2026-09-16 — The contained surface takes a program kind, and ADR-0063 item 3 is read for the first time
+## 2026-09-16 — IIIIII-3 closed: every surface that draws a page names its rotation, and reads it per version
+
+The third block of the day ordered this after re-checking the four repaired rows in the running app. **That re-check did
+not reach its subject**, and why is recorded first, because it is not this commit's fix and it is not a defect of ours.
+
+### The four rows' live re-check: blocked on the machine, not on the rows
+
+The development app opened both test documents and *Merge a document…* answered *"Monstera can no longer work on this
+document"*. `shell.log` said why, twice, in two different ways:
+
+- 14:44:44Z and 14:45:34Z: *"no connection within 10000ms … The host said: … icu_util.cc:232 Invalid file descriptor to
+  ICU data received"*. `containerGrants.mjs --check`: `.tools/electron/43.4.1` **not granted**, twelve others granted.
+  The directory's mtime is 13:15:17 local today, inside the full sweep that ran 13:12–14:47 — something in that run
+  re-extracted the runtime, and an extraction carries no grant. Which script did it is **not identified**; the report
+  carries it as a tooling defect, unworked under the block's *"No tooling work"*. `npm run provision:grants` restored it.
+- 15:07:01Z, after the grant: *"no connection within 10000ms"* with no host text. `roleMupdfHost.mjs --no-document` then
+  read connects of **9,248 · 10,614 · 10,038 · 8,911 ms** with the app closed. A PowerShell sampler over one connect read
+  the host process at **10,125 ms wall and 2,719 ms CPU** — the CPU is the 1.6–3.5 s the 2026-09-15 decomposition
+  measured, so seven seconds were spent runnable and not running. The machine's four logical cores read 100% across
+  three samples; the busiest processes over ten seconds were the Claude desktop app (11.6 core-seconds) and
+  `TextInputHost` (10.2), both outside this repository.
+
+So the bound was exceeded by contention, measured as CPU-versus-wall on the process itself. **The bound did not move and
+no code changed on it.** What this does leave standing is a question the report carries: 10 s was set from quiet
+readings of 698–1,370 ms, and a user's four-core laptop under load is where a document is poisoned at open.
+
+### The defect
+
+`Thumbnails.tsx` and `Loupe.tsx` called `renderPage` with no rotation. PDF.js then drew each page's stored `/Rotate`,
+which is the rotation the document was **opened** at. Reproduced before any fix, in three files:
+
+- `Thumbnails.test.tsx` *DRAWS AT THE VIEW MODEL'S ROTATION*: failed, `expected [] to strictly equal [ { …(2) } ]` —
+  the strip never asked the model at all.
+- `Loupe.test.tsx` *MAGNIFIES THE PAGE AT THE ROTATION THE SPINE DREW IT AT*: failed, `expected [ undefined ] to
+  strictly equal [ 90, 270 ]`.
+- `PageList.test.tsx` *RE-READS the rotation when the version moves*: **failed too**, `expected [ { …(2) } ] to
+  strictly equal [ { …(2) }, { …(2) } ]`. The finding named two surfaces and the class had a third half: the spine
+  marked a page answered once and never cleared the map, so a page rotated after opening kept the rotation it had
+  before the command. The effect's dependencies named `version` and its filter skipped every page already answered.
+
+### The fix is the shape, twice
+
+- **`renderPage`'s `rotation` is required, typed `number | undefined`.** It was optional, and optional is what let two
+  callers forget it in silence. With it required, `npm run typecheck` named every call site that did not pass one —
+  the loupe's eight test renders and the strip's nine — before anything ran. ADR-0069's move on the writer seam, for
+  the same reason.
+- **`usePageRotations(client, docId, version, visible)` is the one reader** of the view model's rotations, and the
+  spine, the strip and the loupe all take it (B3a); the loupe takes it through the spine, which already holds the map.
+  Its state is keyed `docId@version`, so a new version starts empty and the pages on screen are asked again, and each
+  read still names only the visible pages not yet answered (L11). The three states — absent, a number, `undefined` —
+  and the version guard moved with it unchanged. The strip also stopped drawing before the model answers, which is the
+  spine's RRRRR-2 rule.
+
+**Mutations, each reverted:** keying the hook on `docId` alone reddens the spine's and the strip's version cases; the
+strip passing `undefined` reddens its two rotation cases. The strip's *model from another version is not drawn with*
+case is a control and passes under that mutation by design — it asserts the fallback, which the mutation also produces.
+
+**Would CI have caught it?** Now yes: all four files are in `npm run test`, and the typecheck gate refuses a caller
+that omits the rotation. Before, no — every case asserted the page and the scale, and none the rotation.
 
 The owner's block: *"Generalise it so the containment carries any program, then take ADR-0063's items 3 and 4. B4
 first if the seam changes."* Decision 2 already decided the generalisation — *"a named executable with arguments …

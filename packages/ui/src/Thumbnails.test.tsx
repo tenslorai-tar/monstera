@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { fireEvent, render } from '@testing-library/react';
+import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,16 +26,70 @@ import { EN } from './messages/en.js';
 
 /** Every rasterisation, as `[pdfjsPage, scale]`. */
 const rasterised: [number, number][] = [];
+/** The rotation each rasterisation was handed, in the same order. */
+const drawnAt: (number | undefined)[] = [];
 
 vi.mock('./renderPage.js', () => ({
-  renderPage: (_document: unknown, pdfjsPage: number, _canvas: unknown, scale: number) => {
+  renderPage: (
+    _document: unknown,
+    pdfjsPage: number,
+    _canvas: unknown,
+    scale: number,
+    rotation: number | undefined,
+  ) => {
     rasterised.push([pdfjsPage, scale]);
+    drawnAt.push(rotation);
     return Promise.resolve({ width: 600 * scale, height: 800 * scale });
   },
 }));
 
+const DOC = asDocId('00000000-0000-4000-8000-0000000000ee');
+const VERSION = asDocVersion(1);
+
+/**
+ * A client whose view model answers `turns[version]` for every page asked.
+ *
+ * Keyed by VERSION because the defect has two halves: a strip that never asks
+ * draws the page's stored `/Rotate`, and a strip that asks once draws the
+ * rotation the page had before the last command.
+ */
+function clientAnswering(turns: Readonly<Record<number, number>>): {
+  readonly client: ContractClient;
+  readonly asked: unknown[];
+} {
+  const asked: unknown[] = [];
+  const client = createClient(channels, (id, params) => {
+    if (id !== 'document.viewModel') throw new Error(`unexpected channel ${id}`);
+    asked.push(params);
+    const pages = (params as { pages: readonly number[] }).pages;
+    const version = latestVersion;
+    return Promise.resolve(
+      ok({ version, pageCount: 4, rotations: pages.map(() => turns[version] ?? 0) }),
+    );
+  });
+  return { client, asked };
+}
+
+/** The version the double answers as, moved by a case that bumps the document. */
+let latestVersion = VERSION;
+
+/** The props every strip needs to read the model, for cases not about it. */
+function reads(): { client: ContractClient; docId: typeof DOC; version: typeof VERSION } {
+  return { client: clientAnswering({}).client, docId: DOC, version: VERSION };
+}
+
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 beforeEach(() => {
   rasterised.length = 0;
+  drawnAt.length = 0;
+  latestVersion = VERSION;
   const target: { IntersectionObserver: typeof IntersectionObserver } = globalThis;
   target.IntersectionObserver = class {
     observe(): void {
@@ -61,7 +117,7 @@ describe('Thumbnails', () => {
   it('renders a control per page, named by the number a person reads', () => {
     const { container } = render(
       <Wrapped>
-        <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} />
+        <Thumbnails {...reads()} view={view()} pageCount={4} current={0} onJump={vi.fn()} />
       </Wrapped>,
     );
 
@@ -86,7 +142,7 @@ describe('Thumbnails', () => {
     const jump = vi.fn();
     const { container } = render(
       <Wrapped>
-        <Thumbnails view={view()} pageCount={4} current={0} onJump={jump} />
+        <Thumbnails {...reads()} view={view()} pageCount={4} current={0} onJump={jump} />
       </Wrapped>,
     );
 
@@ -97,7 +153,7 @@ describe('Thumbnails', () => {
   it('marks the page the reader is on, and marks only that one', () => {
     const { container } = render(
       <Wrapped>
-        <Thumbnails view={view()} pageCount={4} current={2} onJump={vi.fn()} />
+        <Thumbnails {...reads()} view={view()} pageCount={4} current={2} onJump={vi.fn()} />
       </Wrapped>,
     );
 
@@ -110,17 +166,21 @@ describe('Thumbnails', () => {
     expect(marked[0]?.getAttribute('aria-label')).toBe('Page 3');
   });
 
-  it('draws only what is visible, and at a scale that fits the column', () => {
+  it('draws only what is visible, and at a scale that fits the column', async () => {
     render(
       <Wrapped>
-        <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} />
+        <Thumbnails {...reads()} view={view()} pageCount={4} current={0} onJump={vi.fn()} />
       </Wrapped>,
     );
+    // Nothing draws before the view model answers for the page — the rotation
+    // cases below are why.
+    expect(rasterised).toStrictEqual([]);
+    await settle();
 
     // ONE PAGE, not four. A strip that rasterised its whole document at open is
     // the cost lazy rendering exists to prevent, and with four pages the
     // difference is visible in this list.
-    expect(rasterised.map(([page]) => page)).toStrictEqual([1]);
+    expect(new Set(rasterised.map(([page]) => page))).toStrictEqual(new Set([1]));
     // Scale 1 first, because the page's own size is what the fitting scale is
     // computed from — a strip that assumed a size would be wrong for every
     // document that is not the one it was written against.
@@ -132,7 +192,7 @@ describe('Thumbnails', () => {
     // no view produces `[]` rather than the same list for a different reason.
     render(
       <Wrapped>
-        <Thumbnails view={undefined} pageCount={4} current={0} onJump={vi.fn()} />
+        <Thumbnails {...reads()} view={undefined} pageCount={4} current={0} onJump={vi.fn()} />
       </Wrapped>,
     );
 
@@ -153,7 +213,7 @@ describe('Thumbnails', () => {
       const move = vi.fn();
       const { container } = render(
         <Wrapped>
-          <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} onMove={move} />
+          <Thumbnails {...reads()} view={view()} pageCount={4} current={0} onJump={vi.fn()} onMove={move} />
         </Wrapped>,
       );
       const buttons = [...container.querySelectorAll('button')];
@@ -237,7 +297,7 @@ describe('Thumbnails', () => {
       // this exists for.
       const { container } = render(
         <Wrapped>
-          <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} />
+          <Thumbnails {...reads()} view={view()} pageCount={4} current={0} onJump={vi.fn()} />
         </Wrapped>,
       );
 
@@ -260,7 +320,7 @@ describe('Thumbnails', () => {
               that sent `(page, page)` or `(0, page)` would pass every case
               below — the same reason the command fixtures do not sit on the
               first page. */}
-          <Thumbnails view={view()} pageCount={4} current={1} onJump={jump} onSwap={swap} />
+          <Thumbnails {...reads()} view={view()} pageCount={4} current={1} onJump={jump} onSwap={swap} />
         </Wrapped>,
       );
       const buttons = [...container.querySelectorAll('button')];
@@ -332,7 +392,7 @@ describe('Thumbnails', () => {
       const jump = vi.fn();
       const { container } = render(
         <Wrapped>
-          <Thumbnails view={view()} pageCount={4} current={1} onJump={jump} />
+          <Thumbnails {...reads()} view={view()} pageCount={4} current={1} onJump={jump} />
         </Wrapped>,
       );
       const third = [...container.querySelectorAll('button')][3];
@@ -341,6 +401,68 @@ describe('Thumbnails', () => {
       fireEvent.click(third, { shiftKey: true });
 
       expect(jump).toHaveBeenCalledWith(3);
+    });
+  });
+
+  describe('rotation', () => {
+    it('DRAWS AT THE VIEW MODEL’S ROTATION, not at the rotation the file opened with', async () => {
+      // THE DEFECT, found in a live run: a page rotated in the document showed
+      // turned in the spine and upright in this strip. The strip handed the
+      // rasteriser no rotation, so PDF.js drew the page's stored `/Rotate` —
+      // which is the rotation the document was OPENED at, not the one it has.
+      const { client, asked } = clientAnswering({ 1: 90 });
+      render(
+        <Wrapped>
+          <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} client={client} docId={DOC} version={VERSION} />
+        </Wrapped>,
+      );
+      await settle();
+
+      // The model was asked for the page the strip draws, and only that one (L11).
+      expect(asked).toStrictEqual([{ docId: DOC, pages: [0] }]);
+      expect(drawnAt.length).toBeGreaterThan(0);
+      expect(drawnAt.every((turns) => turns === 90)).toBe(true);
+    });
+
+    it('RE-READS when the version moves, so a rotate after opening is drawn', async () => {
+      // The second half of the defect: a strip that asked once would draw the
+      // page at the rotation it had BEFORE the command, which is the same
+      // symptom one command later.
+      const { client } = clientAnswering({ 1: 0, 2: 180 });
+      const held = view();
+      const { rerender } = render(
+        <Wrapped>
+          <Thumbnails view={held} pageCount={4} current={0} onJump={vi.fn()} client={client} docId={DOC} version={VERSION} />
+        </Wrapped>,
+      );
+      await settle();
+      expect(drawnAt.at(-1)).toBe(0);
+
+      latestVersion = asDocVersion(2);
+      rerender(
+        <Wrapped>
+          <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} client={client} docId={DOC} version={latestVersion} />
+        </Wrapped>,
+      );
+      await settle();
+      expect(drawnAt.at(-1)).toBe(180);
+    });
+
+    it('CONTROL: a model from ANOTHER version is not drawn with', async () => {
+      // A command can bump the version while the read is in flight. The page
+      // still draws — at its own `/Rotate`, which is what the renderer then
+      // knows — and never at a rotation that belongs to other bytes.
+      const { client } = clientAnswering({ 1: 90, 7: 270 });
+      latestVersion = asDocVersion(7);
+      render(
+        <Wrapped>
+          <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} client={client} docId={DOC} version={VERSION} />
+        </Wrapped>,
+      );
+      await settle();
+
+      expect(drawnAt.length).toBeGreaterThan(0);
+      expect(drawnAt.every((turns) => turns === undefined)).toBe(true);
     });
   });
 });

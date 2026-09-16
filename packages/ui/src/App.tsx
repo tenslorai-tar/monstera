@@ -2374,6 +2374,9 @@ function PageCanvas({
         panels={panels}
         pages={
           <Thumbnails
+            client={client}
+            docId={open.docId}
+            version={open.version}
             view={ready}
             pageCount={ready.document.numPages}
             current={current}

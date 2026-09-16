@@ -68,6 +68,8 @@ const SCALE_2: ZoomMode = { kind: 'scale', scale: 2 };
 
 /** Every rasterisation, as `[pdfjsPage, scale]`. */
 const rasterised: [number, number][] = [];
+/** The rotation each rasterisation was handed, in the same order. */
+const drawnAt: (number | undefined)[] = [];
 
 /**
  * MOCKED, because happy-dom implements no 2d context.
@@ -82,8 +84,15 @@ const rasterised: [number, number][] = [];
  * twice the bitmap — which is what makes the CSS ratio meaningful.
  */
 vi.mock('./renderPage.js', () => ({
-  renderPage: (_document: unknown, pdfjsPage: number, _canvas: unknown, scale: number) => {
+  renderPage: (
+    _document: unknown,
+    pdfjsPage: number,
+    _canvas: unknown,
+    scale: number,
+    rotation: number | undefined,
+  ) => {
     rasterised.push([pdfjsPage, scale]);
+    drawnAt.push(rotation);
     return Promise.resolve({
       width: 100 * scale,
       height: 200 * scale,
@@ -109,6 +118,7 @@ let observers: { callback: IntersectionObserverCallback; observed: Element[] }[]
 beforeEach(() => {
   observers = [];
   rasterised.length = 0;
+  drawnAt.length = 0;
   // A browser API happy-dom exposes and never fires. Typed through the global's
   // own declaration rather than `any`, so a signature this stub gets wrong is a
   // compile error here instead of a case that passes against a double the real
@@ -656,6 +666,57 @@ describe('PageList', () => {
       { docId: DOC, pages: [0] },
       { docId: DOC, pages: [2] },
     ]);
+  });
+
+  it('RE-READS the rotation when the version moves, so a rotate after opening is drawn', async () => {
+    // A map that marks a page ANSWERED and is never cleared draws the rotation
+    // a page had before the last command. The version is what says the model
+    // moved, so a new version must re-ask for the pages on screen.
+    let answering = VERSION;
+    const turns = new Map([[1, 0], [2, 90]]);
+    const asked: unknown[] = [];
+    const client = createClient(channels, (id, params) => {
+      if (id === 'document.pageTextLayer') {
+        return Promise.resolve(ok({ version: answering, lines: [], truncated: false, kind: 'text' as const }));
+      }
+      if (id !== 'document.viewModel') throw new Error(`unexpected channel ${id}`);
+      asked.push(params);
+      const pages = (params as { pages: readonly number[] }).pages;
+      return Promise.resolve(
+        ok({ version: answering, pageCount: 5, rotations: pages.map(() => turns.get(answering) ?? 0) }),
+      );
+    });
+    const props = {
+      client,
+      pageCount: 5,
+      docId: DOC,
+      onCurrentPage: vi.fn(),
+      mode: SCALE_1,
+      onZoom: vi.fn(),
+      onShownZoom: vi.fn(),
+      goTo: undefined,
+      startAt: FIRST_PAGE.kernel,
+      onWentTo: vi.fn(),
+      loupe: false,
+      rulers: false,
+      showGrid: false,
+      unit: 'in' as const,
+      search: undefined,
+      secondRasteriser: undefined,
+    };
+    const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
+    await settle();
+    expect(drawnAt.at(-1)).toBe(0);
+
+    answering = asDocVersion(2);
+    rerender(<PageList {...props} view={viewDrawing()} version={answering} />);
+    await settle();
+
+    expect(asked).toStrictEqual([
+      { docId: DOC, pages: [0] },
+      { docId: DOC, pages: [0] },
+    ]);
+    expect(drawnAt.at(-1)).toBe(90);
   });
 
   it('SCROLLS TO a requested page, and reports the request consumed', async () => {

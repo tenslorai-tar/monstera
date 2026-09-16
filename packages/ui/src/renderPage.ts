@@ -100,15 +100,24 @@ export interface RasterisedPage {
  * nothing.
  *
  * @param rotation the page's ABSOLUTE rotation from the view model, in degrees.
- *   Omitted where the caller has no model, in which case the page's own
- *   `/Rotate` decides — see the note above on why that is not the same as `0`.
+ *   `undefined` where the model has not answered for this version, in which
+ *   case the page's own `/Rotate` decides — see the note above on why that is
+ *   not the same as `0`.
+ *
+ *   **REQUIRED, and `undefined` must be written.** It was optional, and two of
+ *   the three surfaces that draw a page — the thumbnail strip and the loupe —
+ *   omitted it. Both compiled, both drew the rotation the file OPENED at, and
+ *   every case on both was green because each asserted the page and the scale.
+ *   A parameter that may be left out is one a caller can forget in silence;
+ *   one that must be named makes the forgetting a compile error (B5, the shape
+ *   ADR-0069 gave the writer seam for the same reason).
  */
 export async function renderPage(
   document: PDFDocumentProxy,
   pageNumber: number,
   canvas: HTMLCanvasElement,
   scale: number,
-  rotation?: number,
+  rotation: number | undefined,
   raster?: SecondRasteriser,
 ): Promise<RasterisedPage> {
   const page = await document.getPage(pageNumber);
