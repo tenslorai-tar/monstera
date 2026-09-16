@@ -1363,13 +1363,16 @@ function engineSessionOpener(
   const writers: Required<Omit<WriterRegistry, 'pdfium'>> = {
     mupdf: {
       capture: (session, command) => liveWriter().capture(session, command),
-      // EVERY PARAMETER IS FORWARDED. A function that ignores a trailing parameter is
-      // assignable to one that passes it, so a delegate stopping at `command` compiles —
-      // and drops the source session of every `sources: 'one'` command before it reaches
-      // the host, where the apply then reads an `undefined` session. The composition-host
-      // case that sends a source is the only check that can see this line.
-      apply: (session, command, source, reads) =>
-        liveWriter().apply(session, command, source, reads),
+      // ONE REQUEST, FORWARDED WHOLE — there is nothing here to drop
+      // ([ADR-0069](../../../docs/DECISIONS/0069-a-writers-apply-takes-one-named-request.md)).
+      // This line read `(session, command) => liveWriter().apply(session, command)` from
+      // 2026-08-31 to 2026-09-16 and compiled, because a function that ignores trailing
+      // parameters is assignable to one that passes them; the source session of every
+      // `sources: 'one'` command was dropped here before it reached the host. Four rows
+      // read *done* and had never worked. The composition-host case that sends a source is
+      // still the only check that can see a `session`/`source` SWAP, which naming does not
+      // close.
+      apply: (request) => liveWriter().apply(request),
       // THREE ARGUMENTS, because a recorded inverse does not carry its own
       // kind the way a command does — the asymmetry is `CommandExecution`'s and
       // is the same one the pipe has.
@@ -2265,11 +2268,11 @@ function pdfiumHostBinding(
     // interface changed.
     writer: {
       capture: async (image, command) => (await ensure()).writer.capture(image, command),
-      // EVERY PARAMETER IS FORWARDED, for the MuPDF delegate's reason: a dropped trailing
-      // parameter compiles. No PDFium command declares a pre-read today, so nothing can
-      // observe this one yet; forwarding keeps that from depending on who adds the first.
-      apply: async (image, command, source, reads) =>
-        (await ensure()).writer.apply(image, command, source, reads),
+      // ONE REQUEST, FORWARDED WHOLE, for the MuPDF delegate's reason (ADR-0069). No
+      // PDFium command declares a pre-read or takes a source today, so nothing could
+      // observe a drop here yet; forwarding the request keeps that from depending on who
+      // adds the first.
+      apply: async (request) => (await ensure()).writer.apply(request),
       invert: async (image, kind, inverse) => (await ensure()).writer.invert(image, kind, inverse),
       // NO `ensure()`, AND THAT IS THE POINT. `remotePdfiumWriter.serialise` is
       // the identity and makes no call, so awaiting a host here would make a

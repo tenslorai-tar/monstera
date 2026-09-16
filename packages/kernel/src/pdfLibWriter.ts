@@ -2,7 +2,12 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
-import type { CommandExecution, RegisteredWriter } from './commandRouting.js';
+import type {
+  ApplyRequest,
+  CommandExecution,
+  KindsRoutedTo,
+  RegisteredWriter,
+} from './commandRouting.js';
 import type {
   ByteImage,
   Capture,
@@ -271,17 +276,16 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
   // is assignable to a signature that passes it, which is the bivariance
   // ADR-0040's correction records — so the four `reads: 'none'` commands here
   // are called with `undefined` and never look.
-  apply<K extends CommandKind>(
-    image: ByteImage,
-    command: CommandOfKind<K>,
-    // `never`, WHICH IS THE DECLARATION AND NOT A PLACEHOLDER. `Apply` resolves
-    // byte-image × `sources: 'one'` to `never`, so no pdf-lib command can ever
-    // be handed a source — and typing the parameter `never` here says the bus
-    // has nothing to pass rather than that this writer ignores what it gets.
-    // The bus still passes positionally, so the slot has to exist.
-    _source: never,
-    reads?: PreReadValue,
-  ): Promise<ByteImage> {
+  // NO SOURCE IN THIS DESTRUCTURE, and the `_source: never` placeholder that
+  // used to sit here is gone with the positional call (ADR-0069). `Apply`
+  // resolves byte-image × `sources: 'one'` to `never`, so no pdf-lib command
+  // can be handed one; the request still carries the field, because the bus
+  // must decide it rather than omit it, and this writer simply does not name it.
+  apply<K extends KindsRoutedTo<'pdf-lib'>>({
+    session: image,
+    command,
+    reads,
+  }: ApplyRequest<'pdf-lib', K>): Promise<ByteImage> {
     // THE CAST NAMES AN OPTIONAL THIRD PARAMETER, and that spelling is the
     // whole of this line's design rather than a convenience.
     //
@@ -300,22 +304,23 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
     // already says. The obligation to supply it stays where the knowledge is:
     // the bus reads `spec.reads` and resolves precisely when the declaration
     // says to.
-    // THE OUTLINE IS THIRD HERE AND FOURTH ON `CommandExecution`, and that is
-    // not an inconsistency — it is the byte-image branch of `Apply` having no
-    // source parameter AT ALL. `Apply` resolves byte-image × `sources: 'one'`
-    // to `never`, so a pdf-lib apply's third parameter is its outline, while
-    // the execution interface has to carry a slot for writers that do take a
-    // source. This is the one place the two shapes meet, and it is why the
-    // parameter is dropped rather than forwarded.
+    // THE OUTLINE IS THIRD HERE AND NAMED ON THE REQUEST, and that is not an
+    // inconsistency — it is the byte-image branch of `Apply` having no source
+    // parameter AT ALL. `Apply` resolves byte-image × `sources: 'one'` to
+    // `never`, so a pdf-lib apply's third parameter is its outline, while the
+    // request carries a `source` field for writers that do take one. This is
+    // the one place the two shapes meet.
     //
-    // THIS LINE WAS WRONG FOR ONE RUN, in exactly the way the comment on
-    // `CommandExecution.apply` predicts: it forwarded `(image, command,
-    // undefined, reads)`, so the outline landed in a slot that does not exist
-    // and `generateToc` received `undefined`. Two bus cases caught it —
-    // `resolves the outline for a command that declares it, exactly once` and
-    // its redo sibling — because both assert the VALUE reaching the apply
-    // rather than only that a resolver was called. A case asserting the call
-    // count alone would have stayed green.
+    // THIS LINE WAS WRONG FOR ONE RUN, and it is the same class ADR-0069 closed
+    // one position along: it forwarded `(image, command, undefined, reads)`, so
+    // the outline landed in a slot that does not exist and `generateToc`
+    // received `undefined`. Two bus cases caught it — `resolves the outline for
+    // a command that declares it, exactly once` and its redo sibling — because
+    // both assert the VALUE reaching the apply rather than only that a resolver
+    // was called. A case asserting the call count alone would have stayed
+    // green. The request removes the *arrival* half of that failure and leaves
+    // this one, which is a cast to a three-parameter `Apply`: the two bus cases
+    // are still the only thing between the outline and the floor.
     return (specFor(command).apply as PdfLibApply<K>)(image, command, reads);
   },
   capture<K extends CommandKind>(

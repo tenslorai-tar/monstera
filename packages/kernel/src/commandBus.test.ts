@@ -1089,7 +1089,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const bus = new CommandBus({
       mupdf: {
         ...localMupdfWriter,
-        apply: (_session, command) => {
+        apply: ({ command }) => {
           applied.push(command);
           return Promise.resolve();
         },
@@ -1185,7 +1185,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const substituted = new CommandBus({
       mupdf: {
         ...localMupdfWriter,
-        apply: (_session, command) => {
+        apply: ({ command }) => {
           applied.push(command);
           return Promise.resolve();
         },

@@ -222,7 +222,12 @@ async function main() {
       ? `matrix a=${String(placedPrior.prior.matrix.a)} e=${String(placedPrior.prior.matrix.e)}`
       : `it refused: ${placedPrior.reason}`,
   );
-  const placed = await localPdfiumExecution.apply(original, place);
+  const placed = await localPdfiumExecution.apply({
+    session: original,
+    command: place,
+    source: undefined,
+    reads: undefined,
+  });
   const placedBox = (await objectsOf(placed))[box.index] ?? box;
   record(
     'apply moves AND resizes, and the object keeps its own left edge',
@@ -270,7 +275,12 @@ async function main() {
       ? `${String(colourPrior.prior.objects.length)} prior fill(s)`
       : `it refused: ${colourPrior.reason}`,
   );
-  const recoloured = await localPdfiumExecution.apply(original, recolor);
+  const recoloured = await localPdfiumExecution.apply({
+    session: original,
+    command: recolor,
+    source: undefined,
+    reads: undefined,
+  });
   const recolouredObjects = await objectsOf(recoloured);
   record(
     'apply recolours a PATH and a TEXT object in one command',
@@ -321,7 +331,12 @@ async function main() {
     removalPrior.captured === false && removalPrior.reason.includes('cannot rebuild one'),
     removalPrior.captured === false ? removalPrior.reason : 'it claimed to capture something',
   );
-  const removed = await localPdfiumExecution.apply(original, remove);
+  const removed = await localPdfiumExecution.apply({
+    session: original,
+    command: remove,
+    source: undefined,
+    reads: undefined,
+  });
   const removedObjects = await objectsOf(removed);
   const removedText = await textOf(removed);
   record(
@@ -379,7 +394,12 @@ async function main() {
   // `undefined.apply`, whose TypeError names neither the command nor the writer.
   let refusal = null;
   try {
-    await localPdfiumExecution.apply(original, /** @type {never} */ ({ kind: 'rotatePages' }));
+    await localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {never} */ ({ kind: 'rotatePages' }),
+      source: undefined,
+      reads: undefined,
+    });
   } catch (error) {
     refusal = error instanceof Error ? error.message : String(error);
   }

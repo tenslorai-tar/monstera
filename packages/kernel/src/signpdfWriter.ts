@@ -2,7 +2,12 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
-import type { CommandExecution, RegisteredWriter } from './commandRouting.js';
+import type {
+  ApplyRequest,
+  CommandExecution,
+  KindsRoutedTo,
+  RegisteredWriter,
+} from './commandRouting.js';
 import type { Apply, ByteImage, Capture, EngineWriter, Invert } from './engineSeam.js';
 import {
   applySignDocument,
@@ -79,12 +84,15 @@ function specFor(command: Command): (typeof signpdfSpecs)[SignpdfKind] {
 /**
  * The signpdf writer's execution half.
  *
- * `localPdfLibExecution`'s shape with the pre-read parameter dropped: no
- * command routed here declares `reads`, so forwarding a slot nothing fills
- * would be a parameter with no caller.
+ * `localPdfLibExecution`'s shape naming neither `source` nor `reads`: no
+ * command routed here declares either, so a destructure that named them would
+ * bind two values nothing here can use.
  */
 export const localSignpdfExecution: CommandExecution<'signpdf'> = {
-  apply<K extends CommandKind>(image: ByteImage, command: CommandOfKind<K>): Promise<ByteImage> {
+  apply<K extends KindsRoutedTo<'signpdf'>>({
+    session: image,
+    command,
+  }: ApplyRequest<'signpdf', K>): Promise<ByteImage> {
     return (specFor(command).apply as Apply<'signpdf', K>)(image, command);
   },
   capture<K extends CommandKind>(
@@ -127,7 +135,10 @@ export function signpdfWriterWith(requestTimestamp: RequestTimestamp): Registere
   const signDocument = signDocumentWith(requestTimestamp);
   return {
     ...localSignpdfWriter,
-    apply<K extends CommandKind>(image: ByteImage, command: CommandOfKind<K>): Promise<ByteImage> {
+    apply<K extends KindsRoutedTo<'signpdf'>>({
+      session: image,
+      command,
+    }: ApplyRequest<'signpdf', K>): Promise<ByteImage> {
       specFor(command);
       // SOUND BY `routedHere`: `signDocument` is the one kind routed to this
       // writer, so a command that passed `specFor` is one.

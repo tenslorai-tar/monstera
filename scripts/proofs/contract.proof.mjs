@@ -2507,6 +2507,84 @@ export const spec: CommandSpec<'generateToc'> = {
 `,
   },
   {
+    name: 'A FORWARDING WRITER DELEGATE PASSES THE REQUEST WHOLE, and that compiles',
+    expect: 'allow',
+    // The control for the rejection below, and it separates *a dropped field is
+    // refused* from *no delegate typechecks any more*. `composition.ts`' two
+    // delegates are exactly this shape.
+    source: `
+import type { CommandExecution } from '@monstera/kernel';
+declare const inner: CommandExecution<'mupdf'>;
+export const outer: CommandExecution<'mupdf'> = {
+  apply: (request) => inner.apply(request),
+  capture: (session, command) => inner.capture(session, command),
+  invert: (session, kind, inverse) => inner.invert(session, kind, inverse),
+};
+`,
+  },
+  {
+    name: 'THE CLASS ADR-0069 CLOSED: a delegate that drops source and reads does NOT compile',
+    expect: 'reject',
+    code: 'TS2345',
+    // THE WHOLE POINT OF THE REQUEST, and the case that separates it from the
+    // signature it replaced. Written positionally — `(session, command) =>
+    // inner.apply(session, command)` — this compiled, because a function that
+    // ignores trailing parameters is assignable to one that passes them. It is
+    // what `composition.ts` did from 2026-08-31 to 2026-09-16, and what left
+    // four FEATURES rows reading *done* having never worked in the running
+    // application: every `sources: 'one'` command reached the engine host with
+    // no source.
+    //
+    // THE FIXTURE IS BUILT FROM SOMETHING THE ABSENT GUARD WOULD LET THROUGH,
+    // which is the rule for a negative probe: the delegate below is a complete,
+    // correctly typed `CommandExecution` in every other respect, so the only
+    // thing that can reject it is the request's required fields. A fixture that
+    // was broken for some other reason would be refused on a tree where this
+    // change had been reverted, and the case would read as coverage.
+    //
+    // Anchored on the two missing property NAMES, which is text no other case
+    // in this file produces — the byte-image and axis cases below and above are
+    // TS2322 on an `Apply` instantiation.
+    because: /missing the following properties[^\n]*source, reads/u,
+    notBecause: null,
+    source: `
+import type { CommandExecution } from '@monstera/kernel';
+declare const inner: CommandExecution<'mupdf'>;
+export const outer: CommandExecution<'mupdf'> = {
+  apply: ({ session, command }) => inner.apply({ session, command }),
+  capture: (session, command) => inner.capture(session, command),
+  invert: (session, kind, inverse) => inner.invert(session, kind, inverse),
+};
+`,
+  },
+  {
+    name: 'LIMIT: naming the fields does not stop a delegate WRITING undefined over a real source',
+    expect: 'allow',
+    // THE HALF ADR-0069 DOES NOT CLOSE, recorded here rather than left for a
+    // reader to assume closed. A delegate may still destructure the request and
+    // hand the inner writer `source: undefined` — and a literal that names both
+    // `session` and `source` may swap them, since both are `MupdfSession`.
+    //
+    // What changed is that either is now an edit somebody had to write down: a
+    // dropped field was the ABSENCE of an edit, which is what made it invisible
+    // in review for six weeks.
+    //
+    // **The guard is `apps/desktop/src/compositionHost.test.ts`**, whose case
+    // *sends the source document's session to the host, and not the target's
+    // (replacePage)* mints a different handle per open and asserts which one
+    // arrived — the same shape `pageMerge.test.ts` is for the `sources` axis's
+    // own one-way binding.
+    source: `
+import type { CommandExecution } from '@monstera/kernel';
+declare const inner: CommandExecution<'mupdf'>;
+export const outer: CommandExecution<'mupdf'> = {
+  apply: ({ session, command, reads }) => inner.apply({ session, command, source: undefined, reads }),
+  capture: (session, command) => inner.capture(session, command),
+  invert: (session, kind, inverse) => inner.invert(session, kind, inverse),
+};
+`,
+  },
+  {
     name: 'A BYTE-IMAGE WRITER CANNOT NAME A SECOND DOCUMENT, because its apply is never',
     expect: 'reject',
     code: 'TS2322',
@@ -2699,7 +2777,10 @@ export const execution: CommandExecution<'pdf-lib'> = {
   // Each step is the correlated-union limit tightening as the type gets more
   // precise, and none of them weakens this case: what it proves is that a
   // byte-image apply CONSUMES an image and PRODUCES one, with no assertion.
-  apply: (image, _command) => Promise.resolve(new Uint8Array(image)),
+  //
+  // THE IMAGE ARRIVES AS THE REQUEST'S session FIELD SINCE ADR-0069: the
+  // execution takes one named request, and this writer's session IS the bytes.
+  apply: ({ session }) => Promise.resolve(new Uint8Array(session)),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
   invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image)),
 };
@@ -2714,16 +2795,26 @@ export const execution: CommandExecution<'pdf-lib'> = {
     // ignored the writer would leave the allow-case passing while
     // distinguishing nothing.
     //
-    // Anchored on `session:` where the seam's pair anchors on `image:` — the
-    // two diagnostics agree line for line otherwise, and the harness refuses to
-    // certify either verdict while one matcher accepts the other's reason.
-    because: /\(session: ByteImage, command: [\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    // THE PARAMETER LIST IS EMPTY ON PURPOSE, since ADR-0069. This fixture used
+    // to spell `(_image: ByteImage)`, which was the request's predecessor's
+    // first parameter; against a one-request signature that same spelling is
+    // rejected for the PARAMETER being wrong, and the case would certify a
+    // claim about the return type using a diagnostic about the argument. A
+    // function taking nothing is assignable parameter-wise to any signature, so
+    // the only thing left to reject is the return type — which is this case's
+    // whole subject.
+    //
+    // Anchored on the request parameter, where the seam's pair anchors on
+    // `(image: ByteImage, command:` — the two diagnostics agree line for line
+    // otherwise, and the harness refuses to certify either verdict while one
+    // matcher accepts the other's reason.
+    because: /request: ApplyRequest<"pdf-lib", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
     notBecause: null,
     source: `
-import type { ByteImage, CommandExecution } from '@monstera/kernel';
+import type { CommandExecution } from '@monstera/kernel';
 
 export const execution: Pick<CommandExecution<'pdf-lib'>, 'apply'> = {
-  apply: (_image: ByteImage) => {},
+  apply: () => {},
 };
 `,
   },

@@ -319,11 +319,12 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     );
     if (sourceSession === undefined || sourceToken === undefined) throw new Error('joined was given a source');
     try {
-      await remote.apply(
-        token,
-        { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 1 },
-        sourceToken,
-      );
+      await remote.apply({
+        session: token,
+        command: { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 1 },
+        source: sourceToken,
+        reads: undefined,
+      });
       expect(await widthsOf(session)).toStrictEqual([100, 200, 210, 120]);
     } finally {
       await mupdfWriter.close(session);
@@ -336,7 +337,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     try {
       expect(await rotationOf(session)).toBeNull();
 
-      await remote.apply(token, rotateFirst);
+      await remote.apply({ session: token, command: rotateFirst, source: undefined, reads: undefined });
 
       // The claim, and it is about the host's copy of `declaredSpecs` rather
       // than about the wire: nothing main-side touched this document.
@@ -412,7 +413,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         rotations: [0, 0, 0],
       });
 
-      await remote.apply(token, rotateFirst);
+      await remote.apply({ session: token, command: rotateFirst, source: undefined, reads: undefined });
 
       // FINDING OOOOO-1 ANSWERED. Main's canonical image is unchanged by that
       // apply — a `DocumentRecord`'s bytes are `readonly` — so this is the only
@@ -431,7 +432,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
   it('the PAGE LIST crosses, so the answer describes the pages this side asked about', async () => {
     const { session, token, remote, geometry } = await joined();
     try {
-      await remote.apply(token, rotateFirst);
+      await remote.apply({ session: token, command: rotateFirst, source: undefined, reads: undefined });
 
       // EVERY OTHER GEOMETRY CASE HERE NAMES ALL THREE PAGES IN ORDER, which is
       // the one request an adapter that ignored the list would also produce. So
@@ -485,7 +486,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     try {
       const captured = await remote.capture(token, rotateFirst);
       if (!captured.captured) throw new Error('the fixture must capture');
-      await remote.apply(token, rotateFirst);
+      await remote.apply({ session: token, command: rotateFirst, source: undefined, reads: undefined });
       expect(await rotationOf(session)).toBe(90);
 
       await remote.invert(token, 'rotatePages', captured.prior);
@@ -505,7 +506,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     try {
       const stranger = sessions.adopt('h-does-not-exist', AREA);
 
-      await expect(remote.apply(stranger, rotateFirst)).rejects.toThrow(EngineSessionGone);
+      await expect(
+        remote.apply({ session: stranger, command: rotateFirst, source: undefined, reads: undefined }),
+      ).rejects.toThrow(EngineSessionGone);
 
       // Declared, not `internal`: the supervisor rebuilds on this and cannot
       // decide that from an opaque code. Asserting the CLASS is what separates
@@ -522,7 +525,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       const forged = { engine: 'mupdf' } as MupdfSession;
       const before = requests();
 
-      await expect(remote.apply(forged, rotateFirst)).rejects.toThrow(UnknownRemoteSession);
+      await expect(
+        remote.apply({ session: forged, command: rotateFirst, source: undefined, reads: undefined }),
+      ).rejects.toThrow(UnknownRemoteSession);
 
       // The count is the whole assertion. A forged token refused by the HOST
       // and one refused HERE both reject, and only the request count tells them
@@ -542,7 +547,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // What a brand cannot express: this object was minted by the registry and
       // is still structurally a `MupdfSession`. Only map membership separates a
       // live token from a spent one.
-      await expect(remote.apply(token, rotateFirst)).rejects.toThrow(UnknownRemoteSession);
+      await expect(
+        remote.apply({ session: token, command: rotateFirst, source: undefined, reads: undefined }),
+      ).rejects.toThrow(UnknownRemoteSession);
       expect(await rotationOf(session)).toBeNull();
     } finally {
       await mupdfWriter.close(session);
@@ -649,7 +656,14 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     const remote = remoteMupdfExecution(client, sessions, NO_ASSETS);
 
     try {
-      await expect(remote.apply(sessions.adopt('h1', AREA), rotateFirst)).rejects.toThrow(
+      await expect(
+        remote.apply({
+          session: sessions.adopt('h1', AREA),
+          command: rotateFirst,
+          source: undefined,
+          reads: undefined,
+        }),
+      ).rejects.toThrow(
         /engine\/apply/u,
       );
 

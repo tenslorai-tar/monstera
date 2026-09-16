@@ -240,7 +240,7 @@ describe('a command whose bytes cannot cross the wire', () => {
   it('REACHES THE APPLY ANYWAY, having travelled the granted directory', async () => {
     const { remote, token, session, written, incidents } = await joined();
 
-    await remote.apply(token, placement(png));
+    await remote.apply({ session: token, command: placement(png), source: undefined, reads: undefined });
 
     // THE EFFECT, at the far end of a real JSON round trip.
     expect(await stampsOnFirstPage(session)).toBe(1);
@@ -269,7 +269,7 @@ describe('a command whose bytes cannot cross the wire', () => {
 
   it('REMOVES THE ASSET when the call returns', async () => {
     const { remote, token, directory, written } = await joined();
-    await remote.apply(token, placement(png));
+    await remote.apply({ session: token, command: placement(png), source: undefined, reads: undefined });
     // THE PAIR, and the second half is what makes the first mean anything:
     // an empty directory is also what *never wrote it* produces.
     expect(written.length).toBeGreaterThan(0);
@@ -281,7 +281,12 @@ describe('a command whose bytes cannot cross the wire', () => {
     // directory whose other occupant is the user's document.
     const { remote, token, directory, written } = await joined();
     await expect(
-      remote.apply(token, { ...placement(png), pages: [0, 9] }),
+      remote.apply({
+        session: token,
+        command: { ...placement(png), pages: [0, 9] },
+        source: undefined,
+        reads: undefined,
+      }),
     ).rejects.toThrow();
     expect(written.length).toBeGreaterThan(0);
     expect([...directory.keys()]).toStrictEqual([]);
@@ -291,7 +296,12 @@ describe('a command whose bytes cannot cross the wire', () => {
     // Without this, every assertion above would pass for a transport that
     // wrote a file for every command that crossed.
     const { remote, token, written } = await joined();
-    await remote.apply(token, { kind: 'rotatePages', pages: [0], quarterTurns: 1 });
+    await remote.apply({
+      session: token,
+      command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+      source: undefined,
+      reads: undefined,
+    });
     expect(written).toStrictEqual([]);
   });
 

@@ -141,7 +141,14 @@ describe('main’s PDFium writer', () => {
     };
     const { writer } = harness(peer, transfer);
 
-    expect(await writer.apply(new Uint8Array([1, 2]), COMMAND)).toStrictEqual(result);
+    expect(
+      await writer.apply({
+        session: new Uint8Array([1, 2]),
+        command: COMMAND,
+        source: undefined,
+        reads: undefined,
+      }),
+    ).toStrictEqual(result);
     // AND THE INPUT IS GONE. A file that outlives the call is one nothing holds
     // a name for, in a directory nothing sweeps until the host ends.
     expect(transfer.snapshots.size).toBe(0);
@@ -156,9 +163,14 @@ describe('main’s PDFium writer', () => {
     };
     const { writer } = harness(peer, transfer);
 
-    await expect(writer.apply(new Uint8Array([1, 2]), COMMAND)).rejects.toBeInstanceOf(
-      EngineCallFailed,
-    );
+    await expect(
+      writer.apply({
+        session: new Uint8Array([1, 2]),
+        command: COMMAND,
+        source: undefined,
+        reads: undefined,
+      }),
+    ).rejects.toBeInstanceOf(EngineCallFailed);
     // THE `finally` IS THE WHOLE OF THE LIFETIME, and this is the case that
     // says so: the happy path removes the file too, so only a refusal
     // separates a `finally` from a line at the end of the body.
@@ -172,15 +184,25 @@ describe('main’s PDFium writer', () => {
     const peer: Peer = { asked: [], answer: () => ({ ok: false, error: { code } }) };
     const { writer } = harness(peer, transfer);
 
-    await expect(writer.apply(new Uint8Array([1]), COMMAND)).rejects.toBeInstanceOf(
-      EngineSessionGone,
-    );
+    await expect(
+      writer.apply({
+        session: new Uint8Array([1]),
+        command: COMMAND,
+        source: undefined,
+        reads: undefined,
+      }),
+    ).rejects.toBeInstanceOf(EngineSessionGone);
     // THE PAIR IS THE POINT. `EngineSessionGone` is what the supervisor answers
     // with a rebuild; a document this engine will refuse just as firmly next
     // time must NOT take that path, or a request that cannot succeed drives the
     // runaway ADR-0023 Decision 9a bounds.
     code = 'engine-refused';
-    const refused = writer.apply(new Uint8Array([1]), COMMAND);
+    const refused = writer.apply({
+      session: new Uint8Array([1]),
+      command: COMMAND,
+      source: undefined,
+      reads: undefined,
+    });
     await expect(refused).rejects.toBeInstanceOf(EngineCallFailed);
     await expect(refused).rejects.not.toBeInstanceOf(EngineSessionGone);
   });
@@ -200,9 +222,14 @@ describe('main’s PDFium writer', () => {
     };
     const { writer } = harness(peer, transfer);
 
-    await expect(writer.apply(new Uint8Array([1]), COMMAND)).rejects.toBeInstanceOf(
-      EngineSerialiseMismatch,
-    );
+    await expect(
+      writer.apply({
+        session: new Uint8Array([1]),
+        command: COMMAND,
+        source: undefined,
+        reads: undefined,
+      }),
+    ).rejects.toBeInstanceOf(EngineSerialiseMismatch);
   });
 
   it('captures a prior, and refuses one tagged for a different command', async () => {

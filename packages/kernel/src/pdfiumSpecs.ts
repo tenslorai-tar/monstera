@@ -2,7 +2,7 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
-import type { CommandExecution } from './commandRouting.js';
+import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
 import type { ByteImage, Capture, Invert } from './engineSeam.js';
 import {
   applyDeletePageObjects,
@@ -194,15 +194,15 @@ export const localPdfiumExecution: CommandExecution<'pdfium'> = {
   // METHOD SYNTAX, so `K` is in scope for the assertion — an arrow would put
   // the cast at `CommandKind`, the whole union, which widens `capture`'s prior
   // state to a union too and stops it being assignable to `CommandPrior[K]`.
-  apply<K extends CommandKind>(
-    image: ByteImage,
-    command: CommandOfKind<K>,
-    // `never`, WHICH IS THE DECLARATION AND NOT A PLACEHOLDER, exactly as
-    // `localPdfLibExecution`'s is: `Apply` resolves byte-image × `sources:
-    // 'one'` to `never`, so the bus has nothing to pass here. The slot exists
-    // because the bus passes positionally.
-    _source?: never,
-  ): Promise<ByteImage> {
+  // NEITHER `source` NOR `reads` IS NAMED, and both facts are the table's
+  // rather than this writer's: `Apply` resolves byte-image × `sources: 'one'`
+  // to `never`, and no PDFium command declares `reads`. The `_source?: never`
+  // placeholder that stood here existed only because the bus passed
+  // positionally, and went with it (ADR-0069).
+  apply<K extends KindsRoutedTo<'pdfium'>>({
+    session: image,
+    command,
+  }: ApplyRequest<'pdfium', K>): Promise<ByteImage> {
     return (specFor(command).apply as PdfiumApply<K>)(image, command);
   },
   capture<K extends CommandKind>(

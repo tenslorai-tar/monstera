@@ -268,7 +268,12 @@ async function main() {
       : `it captured ${String(partly.prior.objects.length)} object(s) of two`,
   );
 
-  const applied = await localPdfiumExecution.apply(original, command);
+  const applied = await localPdfiumExecution.apply({
+    session: original,
+    command,
+    source: undefined,
+    reads: undefined,
+  });
   record(
     'apply answers NEW bytes rather than mutating the caller’s image',
     applied !== original && (await textOf(original)) === originalText,
@@ -336,7 +341,12 @@ async function main() {
     version: 1,
   });
   const bothPrior = await localPdfiumExecution.capture(original, bothCommand);
-  const bothApplied = await localPdfiumExecution.apply(original, bothCommand);
+  const bothApplied = await localPdfiumExecution.apply({
+    session: original,
+    command: bothCommand,
+    source: undefined,
+    reads: undefined,
+  });
   const bothText = await textOf(bothApplied);
   record(
     'one command replaces BOTH named objects, which is what a line edit is',
@@ -373,7 +383,12 @@ async function main() {
   // the writer.
   let refusal = null;
   try {
-    await localPdfiumExecution.apply(original, /** @type {never} */ ({ kind: 'rotatePages' }));
+    await localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {never} */ ({ kind: 'rotatePages' }),
+      source: undefined,
+      reads: undefined,
+    });
   } catch (error) {
     refusal = error instanceof Error ? error.message : String(error);
   }
@@ -454,7 +469,12 @@ async function replaceAllCases() {
     });
 
   const command = replaceAll({ find: 'WIDGET', replace: 'GADGET' });
-  const applied = await localPdfiumExecution.apply(original, command);
+  const applied = await localPdfiumExecution.apply({
+    session: original,
+    command,
+    source: undefined,
+    reads: undefined,
+  });
   const firstPage = await pageOf(applied, 0);
   const secondPage = await pageOf(applied, 1);
   const thirdPage = await pageOf(applied, 2);
@@ -513,10 +533,12 @@ async function replaceAllCases() {
     thirdPage.includes('GADGET') && !thirdPage.includes('widget'),
     `page 2 reads ${JSON.stringify(thirdPage)}`,
   );
-  const sensitive = await localPdfiumExecution.apply(
-    original,
-    replaceAll({ find: 'WIDGET', replace: 'GADGET', caseSensitive: true }),
-  );
+  const sensitive = await localPdfiumExecution.apply({
+    session: original,
+    command: replaceAll({ find: 'WIDGET', replace: 'GADGET', caseSensitive: true }),
+    source: undefined,
+    reads: undefined,
+  });
   record(
     'and caseSensitive REACHES the matcher, so the lower-case one survives',
     (await pageOf(sensitive, 2)).includes('widget'),
@@ -526,10 +548,12 @@ async function replaceAllCases() {
   // A PATTERN, for the same reason: the flag has to reach `compileQuery` rather
   // than being accepted and dropped. `W.DGET` matches the whole word and not
   // the split pair, so this also cannot pass by matching everything.
-  const patterned = await localPdfiumExecution.apply(
-    original,
-    replaceAll({ find: 'W.DGET', replace: 'GADGET', regex: true }),
-  );
+  const patterned = await localPdfiumExecution.apply({
+    session: original,
+    command: replaceAll({ find: 'W.DGET', replace: 'GADGET', regex: true }),
+    source: undefined,
+    reads: undefined,
+  });
   record(
     'a regex pattern reaches the matcher too',
     (await pageOf(patterned, 0)).includes('GADGET'),
@@ -541,7 +565,12 @@ async function replaceAllCases() {
   // so this is the layer that answers for it.
   let refused = null;
   try {
-    await localPdfiumExecution.apply(original, replaceAll({ find: '(', replace: 'x', regex: true }));
+    await localPdfiumExecution.apply({
+      session: original,
+      command: replaceAll({ find: '(', replace: 'x', regex: true }),
+      source: undefined,
+      reads: undefined,
+    });
   } catch (error) {
     refused = error instanceof Error ? error.message : String(error);
   }
@@ -554,10 +583,12 @@ async function replaceAllCases() {
   // A REPLACEMENT THAT PRODUCES THE ORIGINAL CHANGES NOTHING. Replacing a word
   // with itself matches everywhere, and regenerating every page for it would be
   // the whole cost of an edit paid for no change.
-  const identity = await localPdfiumExecution.apply(
-    original,
-    replaceAll({ find: 'WIDGET', replace: 'WIDGET' }),
-  );
+  const identity = await localPdfiumExecution.apply({
+    session: original,
+    command: replaceAll({ find: 'WIDGET', replace: 'WIDGET' }),
+    source: undefined,
+    reads: undefined,
+  });
   record(
     'replacing a word with itself leaves every page’s text as it was',
     (await pageOf(identity, 0)) === (await pageOf(original, 0)),
@@ -618,7 +649,12 @@ async function promotionCases() {
       'object(s) against three runs on the page — which is the gap this command closes',
   );
 
-  const promoted = await localPdfiumExecution.apply(original, command);
+  const promoted = await localPdfiumExecution.apply({
+    session: original,
+    command,
+    source: undefined,
+    reads: undefined,
+  });
   const after = await textOf(promoted);
   const indicesAfter = await textIndicesOf(promoted);
 
@@ -644,15 +680,17 @@ async function promotionCases() {
   // bytes. So this case is the difference between the two states, asserted
   // through the ordinary editing command rather than through the adapter.
   const target = indicesAfter.find((index) => !indicesBefore.includes(index)) ?? indicesAfter[1];
-  const edited = await localPdfiumExecution.apply(
-    promoted,
-    /** @type {never} */ ({
+  const edited = await localPdfiumExecution.apply({
+    session: promoted,
+    command: /** @type {never} */ ({
       kind: 'replaceTextObject',
       page: 0,
       replacements: [{ index: target, text: PROMOTED_EDIT }],
       version: 1,
     }),
-  );
+    source: undefined,
+    reads: undefined,
+  });
   record(
     'a promoted object can then be EDITED, and the edit survives the save',
     (await textOf(edited)).includes(PROMOTED_EDIT),
@@ -664,10 +702,12 @@ async function promotionCases() {
   // pass — the reassuring answer for a promotion is that the text is the same,
   // which is also what an untouched page produces.
   const plain = await threeRunsAndARectangle();
-  const untouched = await localPdfiumExecution.apply(
-    plain,
-    /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
-  );
+  const untouched = await localPdfiumExecution.apply({
+    session: plain,
+    command: /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
+    source: undefined,
+    reads: undefined,
+  });
   record(
     'CONTROL: a page carrying no form is left with the same text and the same objects',
     (await textOf(untouched)) === (await textOf(plain)) &&

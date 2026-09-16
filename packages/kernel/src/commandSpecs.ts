@@ -115,7 +115,7 @@ import {
   captureSetPageTransition,
   invertSetPageTransition,
 } from './pageTransition.js';
-import type { CommandExecution } from './commandRouting.js';
+import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
 import { pdfLibSpecs } from './pdfLibWriter.js';
 import { signpdfSpecs } from './signpdfWriter.js';
 import { pdfiumSpecs } from './pdfiumSpecs.js';
@@ -525,7 +525,12 @@ export const declaredSpecs: DeclaredSpecs = declared;
  * habit ADR-0026 was written about, so it is spelt the way that stays right
  * when the module it names stops being types-only.
  */
-export type { CommandExecution, KindsRoutedTo, RegisteredWriter } from './commandRouting.js';
+export type {
+  ApplyRequest,
+  CommandExecution,
+  KindsRoutedTo,
+  RegisteredWriter,
+} from './commandRouting.js';
 
 /**
  * Executing MuPDF commands **in this process**.
@@ -592,22 +597,24 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
   // cast at `CommandKind` — the whole union — which widens `capture`'s prior
   // state to a union too and stops being assignable to `CommandPrior[K]`. The
   // narrowing has to name the instantiation it is claiming.
-  apply<K extends CommandKind>(
-    session: MupdfSession,
-    command: CommandOfKind<K>,
-    source?: MupdfSession,
-  ): Promise<void> {
+  apply<K extends KindsRoutedTo<'mupdf'>>({
+    session,
+    command,
+    // DESTRUCTURED RATHER THAN NAMED WHOLE, and `reads` is deliberately absent
+    // from this list: that is a fact about MuPDF rather than an omission.
+    // `reads: 'outline'` is pdf-lib's, because ADR-0040's extension exists
+    // precisely for a writer with no session to read an outline through, and a
+    // MuPDF apply that wanted one already holds the session `readDestinations`
+    // takes. Under ADR-0069 the request still CARRIES the field — what it
+    // cannot do is arrive without one.
+    source,
+  }: ApplyRequest<'mupdf', K>): Promise<void> {
     // THE CAST NAMES THE `sources: 'one'` INSTANTIATION, which is the widest of
     // the two shapes this table holds, and the call passes `source` through
     // whatever the command declared. `pdfLibWriter.ts` explains why this is not
     // a guard: an apply that ignores the argument satisfies the signature, so
     // what makes a merge actually use its source is `pageMerge.test.ts`.
     //
-    // No `reads` parameter, and that is a fact about MuPDF rather than an
-    // omission: `reads: 'outline'` is pdf-lib's, because ADR-0040's extension
-    // exists precisely for a writer that has no session to read an outline
-    // through. A MuPDF apply that wanted one would already hold the session
-    // `readDestinations` takes.
     // THE CAST NAMES AN OPTIONAL THIRD PARAMETER, for `pdfLibWriter.ts`'
     // reason: narrowing `source` from `MupdfSession | undefined` needs either
     // `as MupdfSession` or `source!`, and lint bans both —

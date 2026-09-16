@@ -34,6 +34,11 @@ import {
 // `import type`, NOT `import { type … }` — the second keeps the statement and
 // emits `import {} from './commandSpecs.js'`, which loads the spec table and
 // with it the native library this whole change exists to keep out of `main`.
+// From the routing types directly rather than through `commandSpecs.ts`'
+// re-export: `commandRouting.ts` is the definition site and imports nothing but
+// types, so this edge costs nothing at all — where the line above is a re-export
+// whose module would load the spec table if the `type` keyword ever slipped.
+import type { ApplyRequest } from './commandRouting.js';
 import type { RegisteredWriter } from './commandSpecs.js';
 import type { CommandWriter, DocumentContext } from './documentService.js';
 // A VALUE IMPORT, and the only one in this file that is not the declarations
@@ -139,23 +144,16 @@ function asCheckpoint(bytes: ByteImage): Checkpoint {
  */
 interface WriterFor<K extends CommandKind> {
   serialise(session: WriterSession[WriterOf<K>]): Promise<ByteImage>;
-  apply(
-    session: WriterSession[WriterOf<K>],
-    command: CommandOfKind<K>,
-    // BOTH OPTIONAL AND IN `Apply`'S ORDER, mirroring `CommandExecution.apply`
-    // — this type is the narrowed view of the same member and cannot be
-    // narrower than it. What the bus is obliged to pass is decided by
-    // `spec.sources` and `spec.reads` at the call site, not here: `K` is
-    // generic in this interface, so the declaration a command made is not
-    // available to the signature.
-    //
-    // The order matters more than the optionality does. Two optional parameters
-    // of different types, absent for almost every command, are exactly the pair
-    // a transposition hides in — so every declaration of this member spells
-    // them `(source, reads)` and nothing anywhere reorders them.
-    source?: WriterSession[WriterOf<K>],
-    reads?: PreReadValue,
-  ): Promise<ByteImage | undefined>;
+  // ONE NAMED REQUEST, mirroring `CommandExecution.apply` — this type is the
+  // narrowed view of the same member and cannot be narrower than it. What the
+  // bus is obliged to put in it is still decided by `spec.sources` and
+  // `spec.reads` at the call site, because `K` is generic in this interface and
+  // the declaration a command made is not available to the signature.
+  //
+  // What the request removed is the bus's ability to leave a field out
+  // (ADR-0069): every key is required, so `source` and `reads` are decisions
+  // taken here rather than arguments that may go unwritten.
+  apply(request: ApplyRequest<WriterOf<K>, K>): Promise<ByteImage | undefined>;
   capture(
     session: WriterSession[WriterOf<K>],
     command: CommandOfKind<K>,
@@ -873,7 +871,7 @@ export class CommandBus {
     // between here and the call.
     const source = this.#sourceSessionFor(command, inputs.sources);
 
-    const applied = await writer.apply(session, command, source, preRead);
+    const applied = await writer.apply({ session, command, source, reads: preRead });
 
     // A BYTE-IMAGE WRITER'S RESULT IS THE DOCUMENT, so installing it is part of
     // applying rather than something a caller does afterwards — and it happens
@@ -1100,7 +1098,7 @@ export class CommandBus {
     // to avoid.
     const source = this.#sourceSessionFor(entry.command, inputs.sources);
 
-    const applied = await writer.apply(session, entry.command, source, preRead);
+    const applied = await writer.apply({ session, command: entry.command, source, reads: preRead });
     // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
     // `replay: 'reapply-intent'` above has just been checked to mean — and the
     // document it produces has to be installed exactly as `execute` installs

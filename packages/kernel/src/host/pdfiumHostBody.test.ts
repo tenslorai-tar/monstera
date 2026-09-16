@@ -116,7 +116,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
   const handlers = createPdfiumHandlers({
     areas: createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7)),
     execution: {
-      apply: (image) => {
+      apply: ({ session: image }) => {
         // THE IMAGE THIS HANDLER READ, recorded so a case can assert the
         // handler passed the file's bytes rather than something else. A case
         // asserting only that `apply` ran would pass on a handler that read the

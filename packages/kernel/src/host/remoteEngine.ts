@@ -537,7 +537,14 @@ export function remoteMupdfExecution(
   };
 
   return {
-    apply: async (session, command, source) => {
+    // `reads` IS NOT NAMED AND THE CHANNEL CARRIES NO SLOT FOR IT, which is a
+    // fact about this table rather than a drop: no MuPDF command declares
+    // `reads`, because ADR-0040's extension exists for a writer with no session
+    // to read an outline through and this writer holds one. The day a MuPDF
+    // command declares it, `engine/apply`'s schema is what has to grow — the
+    // request makes that a visible edit here rather than a value that silently
+    // fails to cross (ADR-0069).
+    apply: async ({ session, command, source }) => {
       await withAsset(session, command, async (wire, asset) => {
         answered(
           'engine/apply',

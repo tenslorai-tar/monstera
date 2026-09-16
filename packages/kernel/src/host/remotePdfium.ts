@@ -1,6 +1,11 @@
 import type { ClientApi, Command, CommandOfKind } from '@monstera/contract';
 
-import type { CommandExecution, KindsRoutedTo, RegisteredWriter } from '../commandRouting.js';
+import type {
+  ApplyRequest,
+  CommandExecution,
+  KindsRoutedTo,
+  RegisteredWriter,
+} from '../commandRouting.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
@@ -156,10 +161,14 @@ export function remotePdfiumExecution(
     });
 
   return {
-    apply: async <K extends KindsRoutedTo<'pdfium'>>(
-      image: ByteImage,
-      command: CommandOfKind<K>,
-    ): Promise<ByteImage> =>
+    // NEITHER `source` NOR `reads` IS NAMED, for `pdfiumSpecs.ts`' reason: no
+    // PDFium command can be handed a source, and none declares `reads`. The
+    // remote half is where that mattered most — a value that never crossed the
+    // pipe fails in the host rather than at the call (ADR-0069).
+    apply: async <K extends KindsRoutedTo<'pdfium'>>({
+      session: image,
+      command,
+    }: ApplyRequest<'pdfium', K>): Promise<ByteImage> =>
       wrote(image, async (from, into, session) =>
         answered('engine/apply', await client['engine/apply']({ session, command, from, into })),
       ),

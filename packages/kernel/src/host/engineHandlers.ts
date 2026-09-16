@@ -923,7 +923,12 @@ export function createEngineHandlers({
         from = heldSource.session;
       }
 
-      await execution.apply(held.session, whole, from);
+      // `reads: undefined` IS WRITTEN RATHER THAN OMITTED, and that is the
+      // point of the request (ADR-0069): `engine/apply`'s payload carries no
+      // pre-read field, because no MuPDF command declares `reads`. Before this
+      // the same fact was expressed by a call that simply stopped at three
+      // arguments — indistinguishable from the drop that cost four rows.
+      await execution.apply({ session: held.session, command: whole, source: from, reads: undefined });
       return { ok: true, value: {} };
     },
 

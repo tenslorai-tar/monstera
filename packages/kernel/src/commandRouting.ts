@@ -61,6 +61,89 @@ export type KindsRoutedTo<W extends WriterOfRecord> = {
 }[CommandKind];
 
 /**
+ * Everything a writer needs to run one command
+ * ([ADR-0069](../../../docs/DECISIONS/0069-a-writers-apply-takes-one-named-request.md)).
+ *
+ * ## Every field is REQUIRED, and `source` and `reads` are `| undefined`
+ *
+ * That spelling is the whole of this type. `exactOptionalPropertyTypes` is set
+ * repository-wide, so a property declared `X | undefined` without `?` must be
+ * **written** — an object literal that omits it fails with *property is
+ * missing*. Declared `source?: X` instead, omitting it would compile, and this
+ * interface would be the positional signature with names on it.
+ *
+ * ## What it replaced, and why the replacement is a shape rather than a check
+ *
+ * `apply(session, command, source?, reads?)`, from ADR-0023 Decision 10 until
+ * 2026-09-16. The optionality was correct at the seam — this interface is
+ * generic over the *kinds routed to `W`*, so it cannot say which commands
+ * declare `sources: 'one'` or `reads: 'outline'`, and only the bus knows — and
+ * it made every forwarding site along the chain able to drop a parameter
+ * silently, because a function that ignores trailing parameters is assignable
+ * to one that passes them.
+ *
+ * `composition.ts`' live MuPDF writer did, for six weeks: every command copying
+ * from a second open document reached the engine host with no source, and four
+ * FEATURES rows read *done* having never worked in the running application. The
+ * wired-tools pair could not see it — the kernel half runs against a local
+ * writer and the UI half against a stubbed kernel, and the delegate is between
+ * them.
+ *
+ * So a forwarding delegate is now `(request) => other.apply(request)`: it names
+ * nothing and therefore drops nothing.
+ *
+ * ## What this does NOT close
+ *
+ * {@link ApplyRequest.session} and {@link ApplyRequest.source} are the same
+ * type, so a literal that names both and swaps them compiles exactly as the
+ * positional pair did. Naming removes the *dropped* field, never the *wrong*
+ * value. The guard is `apps/desktop/src/compositionHost.test.ts`' case asserting
+ * which handle reached the host — the same kind of guard `pageMerge.test.ts` is
+ * for the `sources` axis's own one-way binding.
+ *
+ * ## `K` IS CONSTRAINED TO `CommandKind` HERE AND TO `KindsRoutedTo<W>` ON THE
+ * METHOD, which is not a loosening
+ *
+ * The binding of a command's kinds to its writer is
+ * {@link CommandExecution.apply}'s and stays there — a `pdf-lib` command still
+ * cannot be executed through the MuPDF writer. This type carries **values**,
+ * and constraining it to `KindsRoutedTo<W>` makes it unusable at the one place
+ * that has to name both halves generically: `commandBus.ts`' `WriterFor<K>`
+ * spells `ApplyRequest<WriterOf<K>, K>`, where `K ∈ KindsRoutedTo<WriterOf<K>>`
+ * is true by construction and not provable to the checker for a generic `K` —
+ * the correlated-union limit every writer file in this package already casts
+ * around.
+ *
+ * @template W the writer of record.
+ * @template K the kind being applied.
+ */
+export interface ApplyRequest<W extends WriterOfRecord, K extends CommandKind> {
+  /** The session the command runs against — for a byte-image writer, its bytes. */
+  readonly session: WriterSession[W];
+
+  /** The command, whole: a `capture` takes the same value and half a command is not one. */
+  readonly command: CommandOfKind<K>;
+
+  /**
+   * The **second** document, for a command whose spec declares `sources: 'one'`,
+   * and `undefined` for every other.
+   *
+   * Resolved by the bus from `spec.sources`, which is the one place that knows.
+   * A writer whose table declares no such command never reads it; that it is
+   * still named here is the point, because *never read* and *never passed* were
+   * the same observation before this type existed.
+   */
+  readonly source: WriterSession[W] | undefined;
+
+  /**
+   * The value the command's spec declared `reads`, resolved before the apply,
+   * and `undefined` where it declared `'none'` (ADR-0040's 2026-09-05
+   * extension).
+   */
+  readonly reads: PreReadValue | undefined;
+}
+
+/**
  * How a command is executed **against a writer**, rather than by the bus
  * itself (ADR-0023 Decision 10).
  *
@@ -98,46 +181,35 @@ export interface CommandExecution<W extends WriterOfRecord> {
    * byte-image writer produces a new image where a live-session writer mutates
    * in place and returns nothing.
    *
-   * ## THE ORDER IS `Apply`'S, and that is load-bearing rather than tidy
+   * ## ONE NAMED REQUEST, and there is no order left to keep
    *
-   * `(session, command, source, reads)` — the same positions `Apply` gives
-   * them, so an execution forwards its arguments straight through. `reads`
-   * landed first and sat third; `source` arriving one commit later moved it,
-   * because the alternative was an execution that TRANSPOSES two optional
-   * parameters on the way past.
+   * This took `(session, command, source?, reads?)` until 2026-09-16, and the
+   * order was load-bearing: two optional parameters of different types, absent
+   * for almost every command, are exactly the pair a transposition hides in, so
+   * every declaration spelt them `(source, reads)` and nothing reordered them.
    *
-   * That transposition would have been the one place a silent swap could live.
-   * Both values are optional, both are absent for eleven of thirteen commands,
-   * and for the twelfth a swapped pair is `undefined` reaching an apply that
-   * declared it needed something — a runtime failure a long way from its cause.
-   * Keeping one order everywhere makes the question unaskable (B5).
+   * {@link ApplyRequest} ends that question rather than answering it again, and
+   * closes the one the order could not reach. The optionality was correct —
+   * `K` is the kinds routed to `W` rather than one kind, so this interface
+   * cannot say which commands declare `sources: 'one'` or `reads: 'outline'`,
+   * and the obligation stays with the bus, which reads `spec.sources` and
+   * `spec.reads`. What it also did was let every forwarding site drop a
+   * parameter in silence, which `composition.ts` did for six weeks
+   * ([ADR-0069](../../../docs/DECISIONS/0069-a-writers-apply-takes-one-named-request.md)).
    *
-   * ## `reads` and `source` are OPTIONAL here and required by the `Apply` they
-   * reach
+   * The obligation has not moved: the bus still decides what goes in the
+   * request. What changed is that **not deciding is no longer expressible.**
    *
-   * ADR-0040's 2026-09-05 extension: a command declaring `reads: 'outline'`
-   * has a three-parameter `Apply`, and the bus resolves the value before
-   * calling. This interface cannot say *which* commands those are — `K` is the
-   * kinds routed to `W`, not one kind — so the parameter is optional and the
-   * obligation to supply it lives at the one place that knows: the bus reads
-   * `spec.reads` and resolves exactly when the declaration says to.
+   * ## This is still not a guard on whether the writer READS what it was handed
    *
-   * **The optionality is what makes this a one-line change rather than four.**
-   * A function that ignores a parameter is assignable to a signature that
-   * passes one, so `remoteMupdfExecution`, the host's dispatch and
-   * `composition.ts`' live writer keep compiling untouched — the same
-   * bivariance ADR-0040's correction records as the `sources` axis's limit,
-   * here working for us rather than against us.
-   *
-   * It is also why this parameter is **not** a guard. Nothing stops a writer
-   * dropping it; what makes a TOC's numbers right is `pageToc.test.ts`, which
-   * is where the wired-tools rule already puts the burden.
+   * A destructure that ignores `source` satisfies this signature, as a dropped
+   * parameter did. What makes a merge use its second document is
+   * `pageMerge.test.ts` and what makes a TOC's numbers right is
+   * `pageToc.test.ts` — the wired-tools rule's own burden, unchanged. The
+   * difference is that the value now arrives.
    */
   apply<K extends KindsRoutedTo<W>>(
-    session: WriterSession[W],
-    command: CommandOfKind<K>,
-    source?: WriterSession[W],
-    reads?: PreReadValue,
+    request: ApplyRequest<W, K>,
   ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
 
   /** Runs the declared `capture` for `command.kind`, before any apply. */

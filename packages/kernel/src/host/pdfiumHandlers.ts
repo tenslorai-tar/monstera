@@ -286,7 +286,11 @@ export function createPdfiumHandlers({
       // touched the target* rule exists to prevent, one layer out.
       let applied;
       try {
-        applied = await execution.apply(image, command);
+        // BOTH `undefined`S ARE WRITTEN DOWN (ADR-0069). No PDFium command can
+        // be handed a source and none declares `reads`, so this channel carries
+        // neither; the request makes that a statement rather than the absence
+        // of one.
+        applied = await execution.apply({ session: image, command, source: undefined, reads: undefined });
       } catch (error) {
         return failed('engine-refused', error);
       }
