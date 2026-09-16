@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — IIIIII-2 closed: the accessibility gate runs in all three themes
+
+The owner's ruling of 2026-09-16, and the record settles what it has to hold: Part M7 names *"all three themes (dark,
+light, high-contrast)"*, and `BUILD-PROMPT.md`:998 holds *"4.5:1 for every text-bearing role on every surface it may
+sit on"* — with §10.2 now asking 7:1 of the high-contrast theme. None of that could ever have been reported on by a
+gate that only rendered the default.
+
+**The list of themes moved to the bridge, because two lists is the defect one layer up.** `LOOKS`, `Look` and
+`bridgeUnder` now live in `pageBridge.ts`, which §10.4's gate and §10.7's baselines already share; `designBaselines`
+imports them instead of declaring its own. A fourth theme is then one edit rather than two that drift (B3a). The helper
+applies **both halves together** — the `appearance.theme` setting and the contrast media query — because `hc` is
+reached only by the platform asking for it (`appearance.ts`), never by the setting.
+
+**Each case asserts the theme is in force before axe analyses anything.** That is §10.7's own rule arriving in §10.4:
+a clean result reported about a screen that never got the theme is the reassuring answer, and the two halves are
+applied by two different mechanisms, so either failing quietly would leave the other's screen on the page.
+
+**One planted control per theme.** A control certifies the scan beside it; the gate now runs three times, and a single
+control under the default theme would certify one of the three while reading as certifying all of them.
+
+`npm run test:a11y`: **24 → 30 passed** (1.1 m), the three screens becoming nine.
+
+**Mutation.** The contrast emulation removed from `bridgeUnder` — the shape where the setting is applied and the
+platform request is not: the three `hc` cases failed, each on `data-theme`, resolving to `<html lang="en"
+data-theme="dark">`, and light and dark stayed green. 3 of 30. Reverted; 30 pass again and the module's diff carries no
+deletion.
+
+Verified: `npm run typecheck` 0, `npm run lint` 0, `test:a11y` 30 passed. FEATURES row 363 records the three themes
+(249 words).
+
+---
+
 ## 2026-09-16 — IIIIII-1 closed: the colour normaliser is proven to SEPARATE
 
 The audit's own finding, fixed in the commit after it. `rgbToHex` moved from `rendererPolicy.proof.mjs` into

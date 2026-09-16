@@ -4,7 +4,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
-import { bridge } from './pageBridge.js';
+import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 
 /**
  * §10.7's visual baselines: the start screen, each ribbon section, one dialog and
@@ -34,13 +34,8 @@ import { bridge } from './pageBridge.js';
  */
 const SECTIONS = ['home', 'comment', 'edit', 'organize', 'forms', 'review', 'protect', 'tools'] as const;
 
-const LOOKS = [
-  { name: 'light', theme: 'light', contrast: 'no-preference' },
-  { name: 'dark', theme: 'dark', contrast: 'no-preference' },
-  { name: 'hc', theme: 'dark', contrast: 'more' },
-] as const;
-
-type Look = (typeof LOOKS)[number];
+// THE LOOKS ARE THE BRIDGE'S, not this file's. §10.4's gate checks the same three, and two lists
+// would drift the day one gains a fourth — the second-opinion shape B3a forbids (audit IIIIII-2).
 
 async function blankPdf(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
@@ -51,11 +46,9 @@ async function blankPdf(): Promise<Uint8Array> {
 /** The start screen under `look`, with one document the Open command yields. */
 async function openedOn(page: Page, look: Look): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.emulateMedia({ contrast: look.contrast, reducedMotion: 'reduce' });
   const bytes = await blankPdf();
   const docId = asDocId('00000000-0000-4000-8000-0000000000b7');
-  await bridge(page, {
-    settings: { 'appearance.theme': look.theme },
+  await bridgeUnder(page, look, {
     opens: [
       { kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Baseline.pdf' },
     ],

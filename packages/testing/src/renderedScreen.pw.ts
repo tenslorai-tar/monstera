@@ -7,8 +7,10 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
-// ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a).
-import { bridge } from './pageBridge.js';
+// ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a),
+// and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
+// two lists would drift the day one gains a fourth (audit finding IIIIII-2).
+import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
 
 /**
  * §10.4's mandated gate: axe-core on a Playwright-rendered screen.
@@ -47,41 +49,48 @@ import { bridge } from './pageBridge.js';
 const BLOCKING = new Set(['serious', 'critical']);
 
 
-test('CONTROL: axe reports a planted violation on this very page', async ({ page }) => {
-  await bridge(page);
+// ONE CONTROL PER THEME, which is the owner's ruling of 2026-09-16 and not a flourish: a control
+// certifies the scan that ran beside it, and the gate now runs three times. A single control under
+// the default theme would certify one of the three and read as certifying all of them — the shape
+// audit finding IIIIII-2 is about, one layer along.
+for (const look of LOOKS) {
+  test(`${look.name}: CONTROL: axe reports a planted violation on this very page`, async ({ page }) => {
+    await bridgeUnder(page, look);
 
-  // WITHOUT THIS, THE GATE IS UNFALSIFIABLE. *No serious violations* is what a
-  // clean screen reports, what an empty document reports, and what an axe that
-  // never ran reports — three states with one output, and the one everybody
-  // hopes for. Checklist 4b: a search needs a positive control that finds
-  // something known-present, on every run.
-  //
-  // Planted on the REAL page rather than a fixture document, so the control
-  // exercises the same navigation, the same bridge and the same analyze() call
-  // as the gate it certifies. A control on a different page would prove axe
-  // works somewhere else.
-  await page.goto('/');
-  await page.evaluate(() => {
-    const img = document.createElement('img');
-    img.setAttribute('src', 'data:,');
-    document.body.append(img);
+    // WITHOUT THIS, THE GATE IS UNFALSIFIABLE. *No serious violations* is what a
+    // clean screen reports, what an empty document reports, and what an axe that
+    // never ran reports — three states with one output, and the one everybody
+    // hopes for. Checklist 4b: a search needs a positive control that finds
+    // something known-present, on every run.
+    //
+    // Planted on the REAL page rather than a fixture document, so the control
+    // exercises the same navigation, the same bridge and the same analyze() call
+    // as the gate it certifies. A control on a different page would prove axe
+    // works somewhere else.
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.evaluate(() => {
+      const img = document.createElement('img');
+      img.setAttribute('src', 'data:,');
+      document.body.append(img);
+    });
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const planted = results.violations.filter((violation) => violation.id === 'image-alt');
+
+    expect(
+      planted.length,
+      `axe found no image-alt violation for an <img> with no alt text under ${look.name}. It reported: ${
+        results.violations.map((v) => v.id).join(', ') || 'nothing at all'
+      }. Until this passes, the gate below cannot tell a clean screen from an axe that did not run.`,
+    ).toBeGreaterThan(0);
+
+    // AND AT A BLOCKING IMPACT, because the gate filters on impact and a control
+    // that ignored the filter would certify a scan whose findings the gate then
+    // discards.
+    expect(planted.every((violation) => BLOCKING.has(String(violation.impact)))).toBe(true);
   });
-
-  const results = await new AxeBuilder({ page }).analyze();
-  const planted = results.violations.filter((violation) => violation.id === 'image-alt');
-
-  expect(
-    planted.length,
-    `axe found no image-alt violation for an <img> with no alt text. It reported: ${
-      results.violations.map((v) => v.id).join(', ') || 'nothing at all'
-    }. Until this passes, the gate below cannot tell a clean screen from an axe that did not run.`,
-  ).toBeGreaterThan(0);
-
-  // AND AT A BLOCKING IMPACT, because the gate filters on impact and a control
-  // that ignored the filter would certify a scan whose findings the gate then
-  // discards.
-  expect(planted.every((violation) => BLOCKING.has(String(violation.impact)))).toBe(true);
-});
+}
 
 /**
  * Renders the screen the shim describes and asserts §10.4's threshold on it.
@@ -93,6 +102,7 @@ test('CONTROL: axe reports a planted violation on this very page', async ({ page
  */
 async function expectNoSeriousViolations(
   page: Page,
+  look: Look,
   present: string,
 ): Promise<void> {
   const failures: string[] = [];
@@ -101,6 +111,13 @@ async function expectNoSeriousViolations(
   });
 
   await page.goto('/');
+
+  // THE THEME IS ASSERTED BEFORE ANYTHING IS ANALYSED, which is §10.7's rule for a capture
+  // arriving in §10.4's gate: a clean result reported about the theme the case did not mean to
+  // render is the reassuring answer, and the setting and the media query are applied by two
+  // different mechanisms (`bridgeUnder`), so either half failing silently leaves the other's
+  // screen on the page.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
 
   await expect(page.locator('#root')).not.toBeEmpty();
   // AND THE SCREEN THIS CASE IS ABOUT IS THE ONE ON SCREEN. `#root` is
@@ -130,13 +147,19 @@ async function expectNoSeriousViolations(
   ).toEqual([]);
 }
 
-test('the start screen renders through the contract and has no serious a11y violations', async ({
-  page,
-}) => {
-  await bridge(page);
+// EVERY THEME, because contrast is what a static rule cannot see and it is exactly what a theme
+// changes. Part M7 names all three; `BUILD-PROMPT.md`:998 holds text to 4.5:1 on every surface it
+// may sit on, and §10.2 now asks 7:1 of the high-contrast theme — none of which the default-theme
+// run could ever have reported on (audit finding IIIIII-2).
+for (const look of LOOKS) {
+  test(`${look.name}: the start screen renders through the contract and has no serious a11y violations`, async ({
+    page,
+  }) => {
+    await bridgeUnder(page, look);
 
-  await expectNoSeriousViolations(page, 'Built For The Way You Work');
-});
+    await expectNoSeriousViolations(page, look, 'Built For The Way You Work');
+  });
+}
 
 test('the PRIMITIVES are styled in the production build, not left as browser controls', async ({
   page,
@@ -222,28 +245,30 @@ test('a message with a PLACEHOLDER renders its value, in the production build', 
   await expect(page.getByText('{name}')).toHaveCount(0);
 });
 
-test('the start screen WITH a recent list and a recovery offer is clean too', async ({ page }) => {
-  // A DIFFERENT COMPOSED SCREEN, which is what §10.4's *every* is about: the
-  // offer, the list and the controls together are what a reader meets after a
-  // run that did not finish, and nothing about the empty screen's result says
-  // anything about this one's contrast, focus order or naming.
-  // TWO DOCUMENTS IN THE SESSION, which is the screen tabs made possible: the
-  // offer is a list of controls now, and a screen with one row would not
-  // exercise the arrangement a reader meets after losing several.
-  await bridge(page, {
-    recent: [
-      { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
-      { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
-    ],
-    lastExitClean: false,
-    lastSession: [
-      { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
-      { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
-    ],
-  });
+for (const look of LOOKS) {
+  test(`${look.name}: the start screen WITH a recent list and a recovery offer is clean too`, async ({ page }) => {
+    // A DIFFERENT COMPOSED SCREEN, which is what §10.4's *every* is about: the
+    // offer, the list and the controls together are what a reader meets after a
+    // run that did not finish, and nothing about the empty screen's result says
+    // anything about this one's contrast, focus order or naming.
+    // TWO DOCUMENTS IN THE SESSION, which is the screen tabs made possible: the
+    // offer is a list of controls now, and a screen with one row would not
+    // exercise the arrangement a reader meets after losing several.
+    await bridgeUnder(page, look, {
+      recent: [
+        { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
+        { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
+      ],
+      lastExitClean: false,
+      lastSession: [
+        { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
+        { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
+      ],
+    });
 
-  await expectNoSeriousViolations(page, 'Monstera closed unexpectedly. These documents were open:');
-});
+    await expectNoSeriousViolations(page, look, 'Monstera closed unexpectedly. These documents were open:');
+  });
+}
 
 /** A one-page document built here, so the case needs no fixture from the corpus (B10). */
 async function onePagePdf(): Promise<Uint8Array> {
