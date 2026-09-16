@@ -44,8 +44,8 @@ import {
   PAGE_IMAGE_FORMATS,
   MIN_PAGE_IMAGE_DPI,
   MAX_PAGE_IMAGE_DPI,
-  MIN_JPEG_QUALITY,
-  MAX_JPEG_QUALITY,
+  MIN_IMAGE_QUALITY,
+  MAX_IMAGE_QUALITY,
 } from './schemas.js';
 
 /**
@@ -1772,7 +1772,7 @@ export const channels = {
         pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_SPLIT_PARTS),
         format: z.enum(PAGE_IMAGE_FORMATS),
         dpi: z.number().int().min(MIN_PAGE_IMAGE_DPI).max(MAX_PAGE_IMAGE_DPI),
-        quality: z.number().int().min(MIN_JPEG_QUALITY).max(MAX_JPEG_QUALITY),
+        quality: z.number().int().min(MIN_IMAGE_QUALITY).max(MAX_IMAGE_QUALITY),
       })
       .strict(),
     z.discriminatedUnion('kind', [

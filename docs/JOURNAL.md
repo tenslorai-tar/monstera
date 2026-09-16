@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — D10 Pages → WebP: built, in three commits, and the naming ternary it would have broken
+
+The owner's answer to Q1: *"use `@jsquash/webp` (WASM) … Research the version from the registry at the moment you adopt
+it."* Three commits, in B4's order: the matrix row and ADR-0070 (`04d53f6`), the dependency with its licence check and
+audit (`6111a4d`), and the feature (this one).
+
+**Measured before the amendment, in a scratch tree:** the package's default loader throws `fetch failed` under Node,
+because its Emscripten glue fetches the `.wasm` by URL. Handing `init` the bytes as `wasmBinary` works, and so does a
+compiled `WebAssembly.Module` — which could not be written here, since the kernel's libraries are ES2023 and Node's and
+declare no `WebAssembly` value. The first draft of ADR-0070 named the module route; it was corrected to the bytes route
+before its commit was pushed. `scripts/research/webpEncode.mjs` carries both measurements.
+
+**The version was read at adoption, not taken from the block:** the registry's latest is 1.5.0 (2025-05-12), the same
+figure the block carried, with one dependency, `wasm-feature-detect` 1.9.0 — both Apache-2.0 with licence text, and
+`npm audit --omit=dev` reads 0 vulnerabilities.
+
+**One licence finding is not closed by the adoption, and the commit says so.** The WASM carries libwebp, whose
+BSD-3-Clause text ships at `codec/LICENSE.codec.md`; `generateNotice.mjs` reads a package's top-level licence file only,
+so libwebp's terms are not in `NOTICE`. `tesseract.js-core` carries Tesseract and Leptonica the same way. That is the
+licence-notice correction already ordered in the block's section E, where it is taken for every package at once.
+
+### The feature
+
+- `PAGE_IMAGE_FORMATS` gains `webp`, and the quality bounds are renamed `MIN_IMAGE_QUALITY`/`MAX_IMAGE_QUALITY`, since
+  libwebp takes the same 1–100 scale as `asJPEG`.
+- `pageImages.ts` rasterises exactly as before; for WebP it copies the pixmap's RGB out of MuPDF's heap as RGBA before
+  `destroy` frees it — reading the component count and the stride rather than assuming them — and hands it to
+  `webpEncoder.ts`. A first draft imported that module on demand "so `main` does not load it"; `proof:kernelload`'s
+  own walk says `main`'s barrel never reaches `pageImages.ts` at all (it binds `mupdfWriter.js`), and the package
+  already defers its Emscripten glue to `init`, so the import is static and the false reason is gone.
+- **`pageImageName` was a ternary, `format === 'jpeg' ? 'jpg' : 'png'`**, which would have written WebP bytes under
+  `.png` and compiled. It is now a record keyed by the format union, so a format without an extension does not compile.
+- The dialog offers WebP and asks a quality for both lossy formats.
+
+**Cases, and what separates them.** The kernel case decodes the WebP with `sharp`, a development dependency whose
+libvips is not the code that wrote it: 400×200 for a 200×100 page at scale 2, and the blue square's pixel count between
+115² and 125², since the codec is lossy at its edge. MuPDF could not be the reader — `unknown image file format`. The
+lifecycle case carries a WebP through `engine/pageImage` beside the PNG and JPEG. `ExportPageImagesBody.test.tsx` is the
+dialog's first case file: choosing WebP answers `format: 'webp'` with the quality typed, and its control asserts a PNG
+asks no quality.
+
+**Mutations, each reverted:** walking the pixmap four bytes a pixel reddens the decode case; showing the quality field
+for JPEG only reddens the dialog case. The naming line is the case the old ternary fails.
+
+**Not done:** the row's live export per format, for the reason the entry below records — engine hosts could not start
+on this machine this afternoon.
+
+---
+
 ## 2026-09-16 — IIIIII-3 closed: every surface that draws a page names its rotation, and reads it per version
 
 The third block of the day ordered this after re-checking the four repaired rows in the running app. **That re-check did

@@ -1806,7 +1806,7 @@ export const engineChannels = {
    * document-scaled allocation `writeDocumentSplit` exists to avoid.
    */
   'engine/pageImage': channel(
-    'Rasterises one page to a PNG or JPEG in the output directory.',
+    'Rasterises one page to a PNG, JPEG or WebP in the output directory.',
     z
       .object({
         session: sessionSchema,

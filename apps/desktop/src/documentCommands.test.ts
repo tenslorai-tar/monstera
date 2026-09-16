@@ -1539,6 +1539,9 @@ describe('pageImageName — the file a page is exported under', () => {
   it('replaces the document’s extension, counts from 1, and spells JPEG as .jpg', () => {
     expect(pageImageName('report.pdf', 0, 'png')).toBe('report 1.png');
     expect(pageImageName('report.pdf', 2, 'jpeg')).toBe('report 3.jpg');
+    // A WEBP IS NOT A PNG. The name was a ternary that called every non-JPEG a
+    // PNG, so this line is the case that ternary fails.
+    expect(pageImageName('report.pdf', 4, 'webp')).toBe('report 5.webp');
     // THE LAST DOT, so a dotted stem survives whole.
     expect(pageImageName('a.b.pdf', 9, 'png')).toBe('a.b 10.png');
     // A DOTFILE has no extension to replace.

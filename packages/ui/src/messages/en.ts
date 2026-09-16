@@ -201,6 +201,7 @@ export const EXPORT_PAGE_IMAGES_EMPTY = messageKey('dialog.export-page-images.em
 export const EXPORT_PAGE_IMAGES_FORMAT = messageKey('dialog.export-page-images.format');
 export const EXPORT_PAGE_IMAGES_PNG = messageKey('dialog.export-page-images.png');
 export const EXPORT_PAGE_IMAGES_JPEG = messageKey('dialog.export-page-images.jpeg');
+export const EXPORT_PAGE_IMAGES_WEBP = messageKey('dialog.export-page-images.webp');
 export const EXPORT_PAGE_IMAGES_DPI = messageKey('dialog.export-page-images.dpi');
 export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.quality');
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
@@ -2100,8 +2101,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_PAGE_IMAGES_FORMAT]: 'Format',
   [EXPORT_PAGE_IMAGES_PNG]: 'PNG — exact, larger files',
   [EXPORT_PAGE_IMAGES_JPEG]: 'JPEG — smaller files, some detail lost',
+  [EXPORT_PAGE_IMAGES_WEBP]: 'WebP — smaller still, some detail lost',
   [EXPORT_PAGE_IMAGES_DPI]: 'Resolution (dots per inch)',
-  [EXPORT_PAGE_IMAGES_QUALITY]: 'JPEG quality (1–100)',
+  [EXPORT_PAGE_IMAGES_QUALITY]: 'Quality (1–100)',
   // THE BOUNDS ARE IN THE MESSAGE, because a disabled button with no reason is a
   // control that looks broken.
   [EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS]:

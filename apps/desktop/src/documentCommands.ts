@@ -1094,8 +1094,22 @@ export function pageImageName(name: string, page: number, format: PageImageForma
   const dot = name.lastIndexOf('.');
   // `dot <= 0` for `suffixed`'s reason: a dotfile has no extension to replace.
   const stem = dot <= 0 ? name : name.slice(0, dot);
-  return `${stem} ${String(page + 1)}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+  return `${stem} ${String(page + 1)}.${PAGE_IMAGE_EXTENSIONS[format]}`;
 }
+
+/**
+ * Each format's file extension, as a RECORD over the format union.
+ *
+ * This was a ternary, `format === 'jpeg' ? 'jpg' : 'png'`, which named every
+ * format that is not JPEG a PNG — correct while there were two, and the day WebP
+ * joined the union it would have written WebP bytes under `.png` and compiled.
+ * A record keyed by the union is a compile error for a format with no extension.
+ */
+const PAGE_IMAGE_EXTENSIONS: Readonly<Record<PageImageFormat, string>> = {
+  png: 'png',
+  jpeg: 'jpg',
+  webp: 'webp',
+};
 
 /**
  * Rasterises a region of a page, through whichever host is live.

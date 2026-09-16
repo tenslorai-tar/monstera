@@ -1,8 +1,8 @@
 import { useLingui } from '@lingui/react';
 import {
-  MAX_JPEG_QUALITY,
+  MAX_IMAGE_QUALITY,
   MAX_PAGE_IMAGE_DPI,
-  MIN_JPEG_QUALITY,
+  MIN_IMAGE_QUALITY,
   MIN_PAGE_IMAGE_DPI,
   type PageImageFormat,
 } from '@monstera/contract';
@@ -22,6 +22,7 @@ import {
   EXPORT_PAGE_IMAGES_PNG,
   EXPORT_PAGE_IMAGES_QUALITY,
   EXPORT_PAGE_IMAGES_RANGES,
+  EXPORT_PAGE_IMAGES_WEBP,
   SPLIT_DOCUMENT_APPLY,
 } from '../messages/en.js';
 import { parsePageRanges } from '../pageRanges.js';
@@ -58,10 +59,10 @@ function wholeWithin(text: string, min: number, max: number): number | null {
  * this component. The count is shown before the button, computed from the list
  * that will actually be sent.
  *
- * ## Quality is asked for JPEG only
+ * ## Quality is asked for the lossy formats only
  *
- * A PNG is lossless, so the field is hidden for it and the answer carries the
- * default — the channel's shape is one request for both formats, and the host
+ * JPEG and WebP take it; a PNG is lossless, so the field is hidden for it and
+ * the answer carries the default — the channel's shape is one request for both formats, and the host
  * ignores quality for a PNG.
  *
  * ## The folder is main's, picked after this
@@ -92,7 +93,7 @@ export default function ExportPageImagesBody({
   const quality =
     format === 'png'
       ? Number(DEFAULT_QUALITY)
-      : wholeWithin(qualityText, MIN_JPEG_QUALITY, MAX_JPEG_QUALITY);
+      : wholeWithin(qualityText, MIN_IMAGE_QUALITY, MAX_IMAGE_QUALITY);
   const inBounds = dpi !== null && quality !== null;
   const usable = pages.length > 0 && inBounds;
 
@@ -154,9 +155,20 @@ export default function ExportPageImagesBody({
           />
           {_(EXPORT_PAGE_IMAGES_JPEG)}
         </label>
+        <label>
+          <input
+            type="radio"
+            name="export-format"
+            checked={format === 'webp'}
+            onChange={() => {
+              setFormat('webp');
+            }}
+          />
+          {_(EXPORT_PAGE_IMAGES_WEBP)}
+        </label>
       </fieldset>
       <Input label={EXPORT_PAGE_IMAGES_DPI} value={dpiText} onValueChange={setDpiText} />
-      {format === 'jpeg' ? (
+      {format !== 'png' ? (
         <Input
           label={EXPORT_PAGE_IMAGES_QUALITY}
           value={qualityText}
@@ -168,8 +180,8 @@ export default function ExportPageImagesBody({
           ? _(EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS, {
               minDpi: MIN_PAGE_IMAGE_DPI,
               maxDpi: MAX_PAGE_IMAGE_DPI,
-              minQuality: MIN_JPEG_QUALITY,
-              maxQuality: MAX_JPEG_QUALITY,
+              minQuality: MIN_IMAGE_QUALITY,
+              maxQuality: MAX_IMAGE_QUALITY,
             })
           : everyPage || parsed.ok
             ? _(EXPORT_PAGE_IMAGES_FILES, { files: pages.length })

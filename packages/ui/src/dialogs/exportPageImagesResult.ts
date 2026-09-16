@@ -1,7 +1,7 @@
 import {
-  MAX_JPEG_QUALITY,
+  MAX_IMAGE_QUALITY,
   MAX_PAGE_IMAGE_DPI,
-  MIN_JPEG_QUALITY,
+  MIN_IMAGE_QUALITY,
   MIN_PAGE_IMAGE_DPI,
   PAGE_IMAGE_FORMATS,
 } from '@monstera/contract';
@@ -21,7 +21,7 @@ export const EXPORT_PAGE_IMAGES_RESULT = z
     pages: z.array(z.number().int().nonnegative()).min(1),
     format: z.enum(PAGE_IMAGE_FORMATS),
     dpi: z.number().int().min(MIN_PAGE_IMAGE_DPI).max(MAX_PAGE_IMAGE_DPI),
-    quality: z.number().int().min(MIN_JPEG_QUALITY).max(MAX_JPEG_QUALITY),
+    quality: z.number().int().min(MIN_IMAGE_QUALITY).max(MAX_IMAGE_QUALITY),
   })
   .strict();
 

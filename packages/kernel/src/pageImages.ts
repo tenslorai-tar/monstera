@@ -1,24 +1,29 @@
 import {
-  MAX_JPEG_QUALITY,
+  MAX_IMAGE_QUALITY,
   MAX_SNAPSHOT_SCALE,
-  MIN_JPEG_QUALITY,
+  MIN_IMAGE_QUALITY,
   MIN_SNAPSHOT_SCALE,
   type PageImageFormat,
 } from '@monstera/contract';
-import { ColorSpace, Matrix } from 'mupdf';
+import { ColorSpace, Matrix, type Pixmap } from 'mupdf';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { MAX_SNAPSHOT_PIXELS } from './pageSnapshot.js';
+import { encodeWebp } from './webpEncoder.js';
 
 /**
- * A whole page rasterised to an image file — D10's *Pages → PNG / JPEG*.
+ * A whole page rasterised to an image file — D10's *Pages → PNG / JPEG / WebP*.
  *
- * ## MuPDF, because §3 says so and nothing else here encodes
+ * ## MuPDF rasterises all three; WebP alone is encoded by something else
  *
- * `Print & export rasterisation | MuPDF`. The pixmap encodes both formats
- * itself, `asPNG` and `asJPEG(quality)`, so there is no encoder to choose.
+ * `Print & export rasterisation | MuPDF`. The pixmap encodes PNG and JPEG
+ * itself, `asPNG` and `asJPEG(quality)`. It has no WebP writer, so §3's
+ * *Page image → WebP encoding* row takes the same pixmap's pixels to libwebp
+ * ([ADR-0070](../../../docs/DECISIONS/0070-a-page-image-is-encoded-as-webp-by-libwebps-wasm-in-the-engine-host.md))
+ * — one rasteriser for every format, so a WebP cannot differ from a PNG of the
+ * same page in anything but its encoding.
  *
  * ## `showExtras` IS `true`, and that was measured
  *
@@ -49,7 +54,7 @@ export interface PageImageRequest {
   readonly format: PageImageFormat;
   /** Device pixels per PDF point — the dialog's DPI over 72. */
   readonly scale: number;
-  /** A JPEG's quality, 1–100. A PNG ignores it. */
+  /** A JPEG's or a WebP's quality, 1–100. A PNG ignores it. */
   readonly quality: number;
 }
 
@@ -60,11 +65,11 @@ export interface PageImageRequest {
  *   displays no region, a scale or quality outside its bounds, or an image past
  *   {@link MAX_SNAPSHOT_PIXELS}.
  */
-export function rasterisePageImage(
+export async function rasterisePageImage(
   session: MupdfSession,
   request: PageImageRequest,
 ): Promise<ByteImage> {
-  return withDocument(session, (document) => {
+  const drawn = await withDocument(session, (document): ByteImage | RgbaImage => {
     const total = document.countPages();
     if (!Number.isInteger(request.page) || request.page < 0 || request.page >= total) {
       throw new RangeError(
@@ -84,12 +89,12 @@ export function rasterisePageImage(
     }
     if (
       !Number.isInteger(request.quality) ||
-      request.quality < MIN_JPEG_QUALITY ||
-      request.quality > MAX_JPEG_QUALITY
+      request.quality < MIN_IMAGE_QUALITY ||
+      request.quality > MAX_IMAGE_QUALITY
     ) {
       throw new RangeError(
-        `a JPEG quality of ${String(request.quality)} is outside ` +
-          `${String(MIN_JPEG_QUALITY)}–${String(MAX_JPEG_QUALITY)}`,
+        `an image quality of ${String(request.quality)} is outside ` +
+          `${String(MIN_IMAGE_QUALITY)}–${String(MAX_IMAGE_QUALITY)}`,
       );
     }
 
@@ -123,13 +128,58 @@ export function rasterisePageImage(
       true,
     );
     try {
-      return request.format === 'png'
-        ? pixmap.asPNG()
-        : // `false`: the CMYK inversion flag, which an RGB pixmap does not reach.
-          pixmap.asJPEG(request.quality, false);
+      switch (request.format) {
+        case 'png':
+          return pixmap.asPNG();
+        case 'jpeg':
+          // `false`: the CMYK inversion flag, which an RGB pixmap does not reach.
+          return pixmap.asJPEG(request.quality, false);
+        case 'webp':
+          return rgbaOf(pixmap);
+      }
     } finally {
       // The large allocation, in the wasm heap the collector does not see.
       pixmap.destroy();
     }
   });
+  if (drawn instanceof Uint8Array) return drawn;
+  return await encodeWebp(drawn.rgba, drawn.width, drawn.height, request.quality);
+}
+
+/** A page's pixels in the layout libwebp takes: four bytes a pixel, opaque. */
+interface RgbaImage {
+  readonly rgba: Uint8ClampedArray;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The pixmap's RGB widened to RGBA, COPIED out of the engine's heap.
+ *
+ * `getPixels` answers a view into MuPDF's WASM memory, which `destroy` frees in
+ * the `finally` above — so the copy is made here, before that runs, and the
+ * encoder never reads memory the engine may reuse. The pixmap was drawn with no
+ * alpha for the snapshot's reason (a page is paper), so every alpha is 255.
+ */
+function rgbaOf(pixmap: Pixmap): RgbaImage {
+  const width = pixmap.getWidth();
+  const height = pixmap.getHeight();
+  const components = pixmap.getNumberOfComponents();
+  // BOTH ARE READ, NOT ASSUMED: the loop below walks three bytes a pixel with no
+  // row padding, and a pixmap that had either would be encoded as a sheared image.
+  if (components !== 3 || pixmap.getStride() !== width * 3) {
+    throw new Error(
+      `a page pixmap for WebP has ${String(components)} components and a stride of ` +
+        `${String(pixmap.getStride())}; an opaque RGB page ${String(width)} wide has 3 and ${String(width * 3)}`,
+    );
+  }
+  const pixels = pixmap.getPixels();
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let from = 0, to = 0; to < rgba.length; from += 3, to += 4) {
+    rgba[to] = pixels[from] ?? 0;
+    rgba[to + 1] = pixels[from + 1] ?? 0;
+    rgba[to + 2] = pixels[from + 2] ?? 0;
+    rgba[to + 3] = 255;
+  }
+  return { rgba, width, height };
 }

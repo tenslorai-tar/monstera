@@ -452,11 +452,16 @@ describe('remoteMupdfLifecycle', () => {
     const session = await open(flat);
     const png = await lifecycle.pageImage(session, { page: 0, format: 'png', scale: 1, quality: 90 });
     const jpeg = await lifecycle.pageImage(session, { page: 0, format: 'jpeg', scale: 1, quality: 90 });
+    // WEBP CROSSES THE SAME CHANNEL, whose schema is the format union: a host
+    // schema that still listed two would refuse this at the pipe.
+    const webp = await lifecycle.pageImage(session, { page: 0, format: 'webp', scale: 1, quality: 90 });
 
     expect([...png.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
     expect([...jpeg.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+    expect(Buffer.from(webp.subarray(8, 12)).toString('latin1')).toBe('WEBP');
     expect(await exists(join(areas.made[0]?.outputDirectory ?? '', 'f1'))).toBe(false);
     expect(await exists(join(areas.made[0]?.outputDirectory ?? '', 'f2'))).toBe(false);
+    expect(await exists(join(areas.made[0]?.outputDirectory ?? '', 'f3'))).toBe(false);
 
     // A REFUSAL COMES BACK AS THE CHANNEL'S OWN CODE, not as a dead host: the
     // page does not exist, which is the request's fault.

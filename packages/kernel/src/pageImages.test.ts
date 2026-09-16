@@ -1,6 +1,7 @@
 import { PDFDocument, rgb } from '@cantoo/pdf-lib';
 import { MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract';
 import * as mupdf from 'mupdf';
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
@@ -126,6 +127,41 @@ describe('rasterisePageImage', () => {
     // A quality that went nowhere would make these the same file.
     expect(high.length).toBeGreaterThan(low.length);
     expect(countOf(high, [0, 0, 255])).toBeGreaterThan(55 * 55);
+  });
+
+  it('writes a WebP from the same rasteriser, and the quality reaches libwebp', async () => {
+    const bytes = await contentPage();
+    const high = await image(bytes, { format: 'webp', quality: 95 });
+    const low = await image(bytes, { format: 'webp', quality: 5 });
+
+    // `RIFF`, a length, `WEBP` — the container's own signature, read here
+    // rather than trusted from the encoder's name.
+    expect(Buffer.from(high.subarray(0, 4)).toString('latin1')).toBe('RIFF');
+    expect(Buffer.from(high.subarray(8, 12)).toString('latin1')).toBe('WEBP');
+    // A quality that went nowhere would make these the same file.
+    expect(high.length).toBeGreaterThan(low.length);
+  });
+
+  it('a WebP is the PAGE, decoded by a reader that is not its writer', async () => {
+    // Bytes carrying the signature prove an encoder ran, not that it encoded
+    // this page. MuPDF reads no WebP (`unknown image file format`, measured
+    // 2026-09-16), so the image is decoded by `sharp` — a development
+    // dependency, never shipped — whose libvips is not the code that wrote it.
+    // The 200×100 page at scale 2, and its blue 60-point square at 120×120.
+    const webp = await image(await contentPage(), { format: 'webp', scale: 2, quality: 100 });
+    const { data, info } = await sharp(webp).raw().toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height]).toEqual([400, 200]);
+
+    let blue = 0;
+    for (let at = 0; at < data.length; at += info.channels) {
+      const near = (value: number | undefined, want: number): boolean =>
+        value !== undefined && Math.abs(value - want) < 60;
+      if (near(data[at], 0) && near(data[at + 1], 0) && near(data[at + 2], 255)) blue += 1;
+    }
+    // Lossy at the square's edge, so near rather than exact — and nowhere near
+    // what a blank image, or one walked with the wrong stride, would give.
+    expect(blue).toBeGreaterThan(115 * 115);
+    expect(blue).toBeLessThan(125 * 125);
   });
 
   describe('refuses', () => {
