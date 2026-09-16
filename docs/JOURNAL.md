@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — Two red pushes, two different causes, and both were checks I chose not to run
+
+**The boards.** `d420a96` — **Guards 35043578305 red, CI 35043578206 red** (read 03:39:10). `40f8be4` — **Guards
+35044586053 green, CI 35044586063 red** (read 03:54:11). Two causes, not one:
+
+- **Guards:** `check:electronbinary` refused the item-3 instrument's `executablePath`. Fixed in `40f8be4` by widening
+  the rule to name resolvers rather than one resolver — the entry above.
+- **CI:** `probeLeftovers.proof.mjs` runs the electron-import scan, and that scan reports a file whose module specifier
+  it cannot read unless an entry accounts for it. `libreofficeContained.mjs` loads four built surfaces through one
+  `file://` helper. Listed now with its reason and its site count — *one* site, because the helper is one.
+
+**The mechanism of my own failure is the interesting half, and it is written down in this repository already.**
+`checkLocal.mjs` exists to answer *which proofs does this change reach*, and its output names them. I ran what I judged
+affected — typecheck, lint, the token proofs, the grant proof — and pushed. Neither red was reachable by that judgement:
+one lives in a scan of the tree, and the other in a proof whose subject is leftovers, not imports. **A change to
+`scripts/**` reaches checks that no import walk can point at**, which is exactly what the sweep prints when it finishes:
+*"These proofs SCAN the tree, so any change reaches them and no import walk can say so — run them too."*
+
+**Two more things the sweep said, kept because both are easy to read past:**
+
+- *"1 file(s) differ between your working tree and the index, so every index-reading check above inspected the PREVIOUS
+  content."* A pass under that condition is about the last commit's files.
+- *"Timed out is NOT passed: test."* The unit suite exceeded the harness's bound rather than failing; it was run
+  directly afterwards, and the figure is below.
+
+Verified for this commit: `proof:electronimports` **18 cases**, `probeLeftovers.proof.mjs` **7 cases**,
+`check:electronbinary` 0, `proof:electronbinary` 13, `npm run typecheck` 0, `npm run lint` 0, `npm test` **3006 passed
+in 224 files** (run directly, since the sweep's `test` step timed out rather than failing), and the proof the sweep
+named because no import walk can reach it — `proof:boundaries`, **202 cases**.
+
+---
+
 ## 2026-09-16 — The host-executable rule names RESOLVERS, not one resolver — and my own commit is what found it
 
 `d420a96` pushed the item-3 instrument with `executablePath: executable`, a variable.

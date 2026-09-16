@@ -486,6 +486,21 @@ try {
       },
     ],
     [
+      'scripts/research/libreofficeContained.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads four built modules through file:// URLs — the Win32 pipe, directory ' +
+          'and host surfaces and the session-directory pair — so the scan sees a single computed ' +
+          'site rather than four. The subject is ADR-0063 item 3, whether a converter starts ' +
+          'inside an AppContainer, and it is asked of the SHIPPED surfaces: a copy of any of them ' +
+          'would answer a question about this harness rather than about the mechanism that starts ' +
+          'a contained process. It runs under plain Node, starts LibreOffice through ' +
+          'sofficeLauncher() — the second resolver check:electronbinary sanctions — rather than ' +
+          'the Electron binary, and never imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/hostRecoveryHost.mjs',
       {
         sites: 1,
