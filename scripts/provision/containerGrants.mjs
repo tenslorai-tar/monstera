@@ -82,6 +82,7 @@ import { dirname, join } from 'node:path';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from './electron.mjs';
+import { libreOfficeRoot } from './libreoffice.mjs';
 import { pdfiumLibrary } from './pdfium.mjs';
 import { tessdataDirectory } from './tessdata.mjs';
 
@@ -186,6 +187,24 @@ export function grantSet(root = repoRoot()) {
       path: tessdataDirectory(root),
       rights: 'R',
       why: 'the OCR models the host reads inside the container',
+      required: false,
+    },
+    // THE PINNED LIBREOFFICE TREE, which ADR-0063 Decision 2 runs the converter
+    // from — never `PATH` and never the installed copy, which would be an
+    // unpinned build. The resolver rather than a spelled path, for the PDFium
+    // entry's reason: a version literal here goes stale at the next pin.
+    //
+    // THE TREE ROOT AND NOT `program\`: `soffice` loads its own configuration,
+    // filters and fonts out of `share\` beside the binaries, so a grant on the
+    // program directory alone is the four-path set's mistake one artefact along.
+    //
+    // `RX`, because this one is executed. NOT REQUIRED: a checkout that has not
+    // run `provision:libreoffice` offers no Office import, which is a decided
+    // state — the row says so — rather than a machine that cannot start a host.
+    {
+      path: libreOfficeRoot(root),
+      rights: 'RX',
+      why: 'the pinned LibreOffice tree the converter runs inside the container',
       required: false,
     },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and

@@ -331,3 +331,51 @@ claimed:** the morning's crash is not explained, and the minidump that would nam
 its exception is unread for want of a debugger. If it recurs, those controls are
 the first thing to repeat. **Items 3 and 4 are now reachable**, and they still
 come before any feature commit.
+
+## Correction, 2026-09-16 — item 3 is attempted, and what it measured is that Decision 2's generalisation is UNBUILT
+
+Item 2 was re-read first, because a premise two days old is a premise: same
+command, fresh `-env:UserInstallation=`, exit 0, a 16,191-byte `%PDF-1.7`.
+
+Decision 2 says the containment mechanism is *"generalised to launch a named
+executable with arguments, never copied"*, and that `createSuspended` *"takes the
+executable and the command line as parameters"*. **In code it does not yet.**
+`win32HostSurface.ts` prepends three Node interpreter flags to every child's
+command line — `--preserve-symlinks`, `--preserve-symlinks-main`,
+`--no-stdio-init`, each with its own measured reason about Node under a LowBox
+token — and forces `ELECTRON_RUN_AS_NODE=1` into the environment of everything it
+creates. Its `executablePath` is branded `ElectronBinaryPath`, which says the same
+thing in the type.
+
+Measured 2026-09-16, `scripts/research/libreofficeContained.mjs`: four cells, each
+with its own session directory pair DACL'd to this user and the container SID, the
+input written in under a fixed name, and the profile inside the writable half.
+
+| cell | launcher | contained | outcome | the child's own diagnostic |
+|---|---|---|---|---|
+| 1 | `soffice.exe` | no | no PDF; still running at 45 s | *(empty)* |
+| 2 | `soffice.com` | no | no PDF; exited | `Error in option: --preserve-symlinks` |
+| 3 | `soffice.bin` | no | no PDF; exited | the same |
+| 4 | `soffice.bin` | **yes** | no PDF; exited | the same |
+
+**The contained cell fails exactly as the uncontained ones do.** That is what the
+uncontained control is for: this run measures the command line this repository
+builds, and says nothing whatever about whether an AppContainer would have let
+LibreOffice start. **Item 3 remains UNREAD.** Cell 1 is worth its row — the GUI
+front end reports nothing at all and stays alive, so a reading taken through
+`soffice.exe` alone would have produced a timeout with no diagnostic and no cause.
+
+**What the run does settle:** the pinned tree needs an ACE of its own.
+`containerGrants.mjs` now carries `libreOfficeRoot(root)` at `RX`, **not required**
+— a checkout that has not provisioned LibreOffice offers no Office import, which
+is a decided state rather than a machine that cannot start a host — and
+`proof:containergrants`' hand-kept optional list names three rather than two.
+That list is kept by hand on purpose (audit item 4c): the danger is an entry
+quietly becoming optional, which a derived set would agree with.
+
+**What item 3 needs before it can be attempted again:** the interpreter flags and
+`ELECTRON_RUN_AS_NODE` conditioned on the child being the Electron binary in Node
+mode, rather than applied to everything the surface creates. That is Decision 2's
+own wording arriving in code, it touches a security-sensitive module with its own
+proofs and acceptance test, and it is therefore its own commit — before any
+further attempt at items 3 and 4, and before any feature commit.

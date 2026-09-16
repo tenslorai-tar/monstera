@@ -892,6 +892,52 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — ADR-0063 item 3 attempted: the contained surface cannot launch a program that is not Node
+
+Stage 8's Office import row starts with the block's instruction to find the LibreOffice crash mechanism first. **The
+record already held it**: the 2026-09-14 afternoon correction ran seven controlled cells and every one converted, so the
+crash is unexplained and not reproducing. Re-read today before building on it — same command, fresh
+`-env:UserInstallation=`, exit 0, a 16,191-byte `%PDF-1.7`. That is item 2 still true, not assumed.
+
+**Item 3 is the one ADR-0063 calls the premise most likely to be false**, and attempting it measured something else.
+`scripts/research/libreofficeContained.mjs` runs four cells, each with its own session pair DACL'd to this user and the
+container SID, the input written under a fixed name (Decision 2: a picked file's name never reaches a command line), and
+the profile inside the writable half:
+
+| cell | launcher | contained | outcome | the child's own diagnostic |
+|---|---|---|---|---|
+| 1 | `soffice.exe` | no | no PDF; alive at 45 s | *(empty)* |
+| 2 | `soffice.com` | no | no PDF; exited | `Error in option: --preserve-symlinks` |
+| 3 | `soffice.bin` | no | no PDF; exited | the same |
+| 4 | `soffice.bin` | **yes** | no PDF; exited | the same |
+
+`win32HostSurface.ts` prepends `--preserve-symlinks`, `--preserve-symlinks-main` and `--no-stdio-init` to every child it
+creates, and forces `ELECTRON_RUN_AS_NODE=1`. Each flag has a measured reason — the first two for `realpathSync` under a
+LowBox token, the third for a runner's stdio init — and every one of them is about **Node**. LibreOffice is handed them
+and refuses. So Decision 2's *"generalised to launch a named executable with arguments"* is unbuilt, and the branded
+`executablePath: ElectronBinaryPath` says so in the type.
+
+**The contained cell fails exactly as the uncontained ones do**, which is the whole reason the control exists: this
+measures the command line this repository builds and says nothing about containment. **Item 3 remains unread.** Cell 1
+earns its row — the GUI front end writes no diagnostic and stays alive, so a reading taken through `soffice.exe` alone
+is a timeout with no cause.
+
+**Settled on the way:** the pinned tree needs its own ACE. `containerGrants.mjs` carries `libreOfficeRoot(root)` at
+`RX`, not required. `proof:containergrants` went **red** when it was added — its hand-kept list says the optional
+entries are *exactly the two* a host can run without — and the claim is now three with LibreOffice's reason, which is
+the 4c anchor working rather than a check to loosen.
+
+**Two mistakes of mine, caught by the instrument's own refusals:** a session directory name outside the lower-case-hex
+allowlist (`lo-contained-…`, refused by the minter that exists because the host supplies such names), and one name for
+three cells, which made two of them collide on a directory the first had created. Both were reported by name rather
+than producing a misleading "no PDF".
+
+**Owed next, before any further attempt at items 3 and 4 and before any feature commit:** the interpreter flags and
+`ELECTRON_RUN_AS_NODE` conditioned on the child being the Electron binary in Node mode. Its own commit — the module is
+security-sensitive and carries `containedStart.mjs` and its own proofs.
+
+---
+
 ## 2026-09-16 — IIIIII-2 closed: the accessibility gate runs in all three themes
 
 The owner's ruling of 2026-09-16, and the record settles what it has to hold: Part M7 names *"all three themes (dark,

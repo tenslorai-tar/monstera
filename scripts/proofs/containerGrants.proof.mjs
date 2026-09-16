@@ -30,6 +30,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { electronRoot } from '../provision/electron.mjs';
+import { libreOfficeRoot } from '../provision/libreoffice.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
 import {
@@ -168,18 +169,26 @@ try {
   // expresses — `createPdfiumHostPlatform` answers `null` and the writer goes
   // unregistered.
   // -------------------------------------------------------------------------
-  // TWO SINCE 2026-09-11, and the rule is what generalised rather than the list:
-  // an entry is optional exactly when the MuPDF host does not need it to run —
-  // the second engine's library, and the OCR models a machine may simply not have
-  // provisioned. Both are features that are then not offered, where anything else
-  // here missing is a host that dies before its first line.
+  // THREE SINCE 2026-09-16, and the rule is still what decides rather than the
+  // list: an entry is optional exactly when the MuPDF host does not need it to
+  // run — the second engine's library, the OCR models a machine may not have
+  // provisioned, and now the pinned LibreOffice tree, which is a CONVERTER that
+  // ADR-0063's seam runs once per Office import and which no host loads. Each is
+  // a feature that is then not offered, where anything else here missing is a
+  // host that dies before its first line.
+  //
+  // THE LIST IS KEPT BY HAND ON PURPOSE (audit item 4c). The danger here is an
+  // entry quietly becoming optional, which a set derived from `grantSet` would
+  // agree with — so this names the three, and a fourth arrives owing an edit to
+  // this line rather than inheriting their exemption.
   check(
-    'the entries whose absence is not a failure are exactly the two a host can run without',
+    'the entries whose absence is not a failure are exactly the three a host can run without',
     set
       .filter((entry) => !entry.required)
       .map((entry) => entry.path)
       .sort()
-      .join('|') === [dirname(pdfiumLibrary(root)), tessdataDirectory(root)].sort().join('|'),
+      .join('|') ===
+      [dirname(pdfiumLibrary(root)), tessdataDirectory(root), libreOfficeRoot(root)].sort().join('|'),
     `optional: ${JSON.stringify(set.filter((entry) => !entry.required).map((e) => e.path))}. ` +
       `Everything else here is the host's OWN program — the runtime, its dependency graph, the ` +
       `shim, this application's packages — and a machine missing any of them cannot start a ` +
