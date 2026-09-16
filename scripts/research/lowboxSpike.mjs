@@ -1765,15 +1765,19 @@ function runCell(hostJs, scratchDir, reportPath, cell, contained, withJob, memor
     // The cells must be the Electron binary in Node mode for two reasons that
     // outlive this bug: it is what invariant 25's host actually is, and it is
     // what keeps the shim job's provisioning step consuming something (TT-1).
-    // `ELECTRON_RUN_AS_NODE` is forced by the surface itself.
-    executablePath: electronBinaryPath(),
-    // NO INTERPRETER FLAGS HERE. The surface supplies `--preserve-symlinks`,
-    // `--preserve-symlinks-main` and `--no-stdio-init` to every host it
-    // creates, with the measurement behind each on the line above it. Passing
-    // them again from a caller is a second copy of a decision that belongs to
-    // the thing creating the process, and a caller that stopped passing them
-    // would look like a caller that had changed its mind (B3a).
-    commandArguments: [hostJs, reportPath, cell],
+    // `ELECTRON_RUN_AS_NODE` follows from `runs: 'electron-node'`.
+    //
+    // NO INTERPRETER FLAGS HERE. The `electron-node` branch supplies
+    // `--preserve-symlinks`, `--preserve-symlinks-main` and `--no-stdio-init`,
+    // with the measurement behind each in `containedProgram.ts`. Passing them
+    // again from a caller is a second copy of a decision that belongs to the
+    // program's kind, and a caller that stopped passing them would look like a
+    // caller that had changed its mind (B3a).
+    program: {
+      runs: 'electron-node',
+      executablePath: electronBinaryPath(),
+      commandArguments: [hostJs, reportPath, cell],
+    },
     workingDirectory: scratchDir,
     // The ONE variable on the containment axis. A null name is an uncontained
     // cell; a name is the AppContainer, and the surface derives the SID and

@@ -169,17 +169,24 @@ function convert(cell, contained, which = 'bin', cellIndex = 0) {
     // NAMED BY ITS RESOLVER at the call site, which is `check:electronbinary`'s rule: a host's
     // executable answers out of a tree this repository provisioned, never out of `PATH` and never
     // from the copy this machine has installed (ADR-0063 Decision 2).
-    executablePath: sofficeLauncher(ROOT, which),
-    commandArguments: [
-      '--headless',
-      '--norestore',
-      `-env:UserInstallation=file:///${profile.replaceAll('\\', '/')}`,
-      '--convert-to',
-      'pdf',
-      '--outdir',
-      paths.output,
-      input,
-    ],
+    //
+    // `runs: 'converter'`, and this line is the whole of the 2026-09-16 finding: before the
+    // surface took a program kind, every cell here was refused with
+    // `Error in option: --preserve-symlinks`, inside the container and outside it.
+    program: {
+      runs: 'converter',
+      executablePath: sofficeLauncher(ROOT, which),
+      commandArguments: [
+        '--headless',
+        '--norestore',
+        `-env:UserInstallation=file:///${profile.replaceAll('\\', '/')}`,
+        '--convert-to',
+        'pdf',
+        '--outdir',
+        paths.output,
+        input,
+      ],
+    },
     // INSIDE THE GRANTED TREE, for `containedStart.mjs`' reason: a working directory of our own
     // would be a second path whose rights differ between the cells.
     workingDirectory: dirname(executable),
@@ -253,10 +260,16 @@ try {
   // end, which is what the shell runs that converted on 2026-09-14 and again today used; and
   // `soffice.bin` is the program itself. A cell that writes no PDF says nothing about containment
   // until one of them writes one uncontained.
+  //
+  // ONE OF THEM DOES, SINCE THE SURFACE TOOK A PROGRAM KIND (2026-09-16): `com-uncontained`
+  // converted, 13,601 bytes of `%PDF-1.7`, while `bin-uncontained` exited with no PDF and no log. So
+  // `com-contained` is the cell that reads item 3 — its uncontained twin is the control that
+  // converts — and `bin-contained` stays as the reading it was, not the question.
   const cells = [
     ['exe-uncontained', false, 'exe'],
     ['com-uncontained', false, 'com'],
     ['bin-uncontained', false, 'bin'],
+    ['com-contained', true, 'com'],
     ['bin-contained', true, 'bin'],
   ];
   for (const [index, [cell, contained, which]] of cells.entries()) {

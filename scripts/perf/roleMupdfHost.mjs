@@ -448,8 +448,11 @@ async function measureHost() {
       /** @param {string} pipeName */
       hostFor: (pipeName) =>
         hostSurface.createWin32HostSurface({
-          executablePath: electronBinaryPath(),
-          commandArguments: [join(ROOT, 'packages', 'kernel', 'dist', 'host', 'hostEntry.js'), pipeName],
+          program: {
+            runs: 'electron-node',
+            executablePath: electronBinaryPath(),
+            commandArguments: [join(ROOT, 'packages', 'kernel', 'dist', 'host', 'hostEntry.js'), pipeName],
+          },
           // Inside the grant set, as the acceptance test's is and for the same
           // reason: a working directory of our own would be a path whose rights
           // differ from everything else the host reaches.

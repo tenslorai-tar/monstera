@@ -379,3 +379,49 @@ mode, rather than applied to everything the surface creates. That is Decision 2'
 own wording arriving in code, it touches a security-sensitive module with its own
 proofs and acceptance test, and it is therefore its own commit — before any
 further attempt at items 3 and 4, and before any feature commit.
+
+## Correction, 2026-09-16 (later) — Decision 2's generalisation is built, and item 3 is now READ, not passed
+
+**The shape.** The surface's config no longer takes an executable and arguments; it
+takes a `ContainedProgram`, a discriminated union in `apps/desktop/src/containedProgram.ts`:
+`runs: 'electron-node'` with an `ElectronBinaryPath`, or `runs: 'converter'` with a
+`ConverterExecutablePath`. Node's three interpreter flags and `ELECTRON_RUN_AS_NODE=1`
+exist on the first branch only, and the variable is stripped from a converter's
+inherited environment. Each branch carries its own brand, so a TypeScript caller
+cannot run LibreOffice's path as an engine host; the untyped callers under
+`scripts/` are held to the same pairing by `check:electronbinary`, which now reads
+the resolver **and** the kind from one config. This is Decision 2's *"a named
+executable with arguments"* with the condition made a type rather than a flag somebody
+remembers — no law changed, so no amendment.
+
+**The controls held.** `scripts/research/containedStart.mjs` through the rebuilt
+surface: **OBTAINED** — the granted engine host reaches its own entry code, and the
+revoked one dies at runtime start. So the Node branch still carries the flags where
+they are load-bearing.
+
+**Item 3, measured** (`scripts/research/libreofficeContained.mjs`, same input, fresh
+profile per cell):
+
+| cell | launcher | contained | outcome |
+|---|---|---|---|
+| 1 | `soffice.exe` | no | converted on one run, no PDF within the budget on another |
+| 2 | `soffice.com` | no | **converted, both runs** — 13,601 bytes, `%PDF-1.7` |
+| 3 | `soffice.bin` | no | no PDF, exited, empty log, both runs |
+| 4 | `soffice.com` | **yes** | **no PDF within the budget; still alive; empty log** |
+| 5 | `soffice.bin` | yes | no PDF within the budget; still alive; empty log |
+
+Cell 2 is the first time this surface has converted anything, and it makes cell 4 a
+reading about containment rather than about the command line: **the same launcher,
+arguments and input convert uncontained and do not contained.** Item 3 is read, and
+the answer is *not yet*.
+
+**The mechanism is NOT established, and the leading candidate is stated as one.** The
+job object sets `ActiveProcessLimit: 1`, and `containment.ts` requires that flag of a
+contained host. `soffice.com` and `soffice.exe` are front ends that start
+`soffice.bin`; inside a one-process job that creation would be refused. Cell 3 says
+`soffice.bin` cannot simply be run directly instead. This fits every row and has not
+been measured: the next reading is whether the front end starts a child at all, taken
+uncontained, before any limit is changed. Decision 2 already expected children — it
+asks for *"kill-all-children on quit"* — so a converter's job limits differing from an
+engine host's would be Decision 2 read closely rather than a relaxation, and it is a
+decision to take in writing when the mechanism is known, not one this run takes.

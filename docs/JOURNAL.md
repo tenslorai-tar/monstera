@@ -892,6 +892,50 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — The contained surface takes a program kind, and ADR-0063 item 3 is read for the first time
+
+The owner's block: *"Generalise it so the containment carries any program, then take ADR-0063's items 3 and 4. B4
+first if the seam changes."* Decision 2 already decided the generalisation — *"a named executable with arguments …
+never copied"* — so this realises a decision rather than amending one, and the record is a dated correction on
+ADR-0063 rather than a §-level amendment.
+
+**The mechanism, stated before the change.** `win32HostSurface.ts` prepended `--preserve-symlinks`,
+`--preserve-symlinks-main` and `--no-stdio-init` to every command line and forced `ELECTRON_RUN_AS_NODE=1` into every
+environment. Each was correct and measured, and each was a fact about **the program** written as a fact about **the
+surface** — so LibreOffice was refused on the first flag before containment could be the question.
+
+**The change.** `ContainedProgram` is a discriminated union — `runs: 'electron-node'` or `runs: 'converter'` — and the
+flags and the variable exist on the first branch only; a converter's inherited environment has the variable stripped.
+The pure half moved to `containedProgram.ts`, the split `isInvalidHandleAddress` made for the same reason: koffi's
+module cannot be unit-tested, and what decides a command line is not native. Each branch has its own brand, so a
+TypeScript caller cannot run LibreOffice's path as an engine host.
+
+**The untyped half.** The drivers under `scripts/` import the surface through a computed specifier and see `any`, and
+`check:electronbinary` admitted `sofficeLauncher()` beside ANY program — which is the defect's own shape one layer out.
+It now reads the resolver and the kind from one config against one table, `RESOLVERS`, and reports a mismatch in
+either direction and a config with no kind.
+
+**The mutations.** Giving converters the Node flags reddens exactly `THE DEFECT: a converter gets NONE of them` (1 of
+6). Dropping the pairing from the scan reddens exactly its three new cases (3 of 16).
+
+**The controls held.** `containedStart.mjs` through the rebuilt surface: **OBTAINED** — the granted engine host reaches
+its own entry code and the revoked one dies at runtime start. So the Node branch still carries the flags where they are
+load-bearing.
+
+**Item 3, read.** `soffice.com` **converted uncontained on both runs** — 13,601 bytes of `%PDF-1.7` — the first time
+this surface has converted anything. **Contained, the same launcher, arguments and input produced nothing within the
+budget, alive, with an empty log.** So item 3 now measures containment and answers *not yet*. `soffice.exe` converted
+on one run and not the other, which makes it a timing reading and not an axis; `soffice.bin` run directly produced
+nothing even uncontained.
+
+**Not established, and stated as a candidate only:** the job sets `ActiveProcessLimit: 1`, and a front end that
+starts `soffice.bin` would be refused its child inside such a job. It fits every row and has not been measured. The
+next reading is whether the front end starts a child at all, taken uncontained, before any limit moves. Decision 2 asks
+for *"kill-all-children on quit"*, so it expected children; a converter's job limits differing from a host's would be
+a written decision taken on a mechanism, not a knob turned to see what happens.
+
+---
+
 ## 2026-09-16 — Occurrence 9, and the hole was a repair that stayed in the one rule it was made for
 
 `perl -0pi -e 's/…/…/' packages/kernel/src/commandBus.test.ts` **ran**. It made two mechanical test edits, the bytes

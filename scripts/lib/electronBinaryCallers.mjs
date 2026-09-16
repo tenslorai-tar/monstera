@@ -73,11 +73,60 @@ import { isMain } from './isMain.mjs';
  * launcher kind here, a root in a driver — and an equality rule would have every call site spell
  * one fixed string or be reported.
  */
-const SANCTIONED = Object.freeze(['electronBinaryPath', 'sofficeLauncher']);
+/**
+ * Each resolver, and the ONE program kind its path may be run as.
+ *
+ * ## A resolver alone stopped being enough the day there were two
+ *
+ * Naming a sanctioned resolver was the whole rule while the surface started one program. With two,
+ * the resolver says WHERE the executable came from and nothing about HOW it will be run — and the
+ * surface decides what it adds to a command line from the program's kind (`containedProgram.ts`).
+ * An untyped caller writing `runs: 'electron-node'` beside `sofficeLauncher()` hands LibreOffice
+ * Node's interpreter flags, which is the exact command line LibreOffice refused on 2026-09-16:
+ * `Error in option: --preserve-symlinks`. TypeScript callers cannot write that pair — each branch
+ * of `ContainedProgram` carries its own brand — and these callers import the surface through a
+ * computed specifier and see `any`, so this scan is where the pairing is held for them.
+ *
+ * One table rather than a list of names and a second map beside it (B3a): the names a site may use
+ * ARE this table's keys.
+ */
+const RESOLVERS = Object.freeze(
+  /** @type {Record<string, 'electron-node' | 'converter'>} */ ({
+    electronBinaryPath: 'electron-node',
+    sofficeLauncher: 'converter',
+  }),
+);
 
-/** @param {string} value @returns {boolean} */
-function namesSanctionedResolver(value) {
-  return SANCTIONED.some((resolver) => value.startsWith(`${resolver}(`));
+const SANCTIONED = Object.freeze(Object.keys(RESOLVERS));
+
+/**
+ * The resolver a value names, or `undefined` where it names none of them.
+ *
+ * @param {string} value
+ * @returns {string | undefined}
+ */
+function resolverNamedBy(value) {
+  return SANCTIONED.find((resolver) => value.startsWith(`${resolver}(`));
+}
+
+/**
+ * The program kind the config around a site declares — the nearest `runs:` between the object's
+ * opening brace and the property.
+ *
+ * Textual, for the reason {@link ASSIGNMENT} is: the question is what the author WROTE beside the
+ * path, and every call site spells the kind first inside `program: { … }`. A kind written after the
+ * path, or through a variable, reads as no kind at all and is reported — the scan cannot follow it,
+ * and the alternative to a false positive there is silence about a real mismatch.
+ *
+ * @param {string} text
+ * @param {number} index where the `executablePath` property starts
+ * @returns {string | undefined}
+ */
+function programKindBefore(text, index) {
+  const opening = text.lastIndexOf('{', index);
+  if (opening === -1) return undefined;
+  const window = text.slice(opening, index);
+  return /runs\s*:\s*['"]([^'"]+)['"]/u.exec(window)?.[1];
 }
 
 /**
@@ -146,7 +195,7 @@ function mjsFilesUnder(dir) {
 /**
  * @param {{ root?: string }} [options]
  * @returns {{
- *   sites: Array<{ file: string, line: number, value: string, ok: boolean }>,
+ *   sites: Array<{ file: string, line: number, value: string, runs: string | undefined, ok: boolean }>,
  *   creators: string[],
  *   silent: string[],
  * }}
@@ -163,7 +212,7 @@ export function scanElectronBinaryCallers(options = {}) {
     throw new Error(`Found no .mjs files under ${scriptsDir}. That is a broken walk, not a clean tree.`);
   }
 
-  /** @type {Array<{ file: string, line: number, value: string, ok: boolean }>} */
+  /** @type {Array<{ file: string, line: number, value: string, runs: string | undefined, ok: boolean }>} */
   const sites = [];
   /** @type {string[]} */
   const creators = [];
@@ -174,11 +223,15 @@ export function scanElectronBinaryCallers(options = {}) {
     if (CREATES_HOST.test(text)) creators.push(relativePath);
     for (const match of text.matchAll(ASSIGNMENT)) {
       const value = (match[1] ?? '').trim().replace(/,$/u, '');
+      const resolver = resolverNamedBy(value);
+      const runs = programKindBefore(text, match.index);
       sites.push({
         file: relativePath,
         line: text.slice(0, match.index).split('\n').length,
         value,
-        ok: namesSanctionedResolver(value),
+        runs,
+        // BOTH HALVES: a sanctioned resolver, AND the kind that resolver's path may be run as.
+        ok: resolver !== undefined && runs === RESOLVERS[resolver],
       });
     }
   }
@@ -208,15 +261,29 @@ export function report(options = {}) {
 
   let output = '';
   for (const site of bad) {
+    const resolver = resolverNamedBy(site.value);
+    if (resolver === undefined) {
+      output +=
+        `  FAILED  ${site.file}:${String(site.line)} assigns \`${site.value}\`\n` +
+        `          The resolvers are ${SANCTIONED.map((name) => `\`${name}()\``).join(' and ')}, each\n` +
+        `          answering out of a tree this repository provisioned. \`process.execPath\` is the\n` +
+        `          Electron binary under Electron and system Node under plain Node, and a host\n` +
+        `          created with the wrong one STARTS — it just runs the wrong runtime.\n`;
+      continue;
+    }
     output +=
-      `  FAILED  ${site.file}:${String(site.line)} assigns \`${site.value}\`\n` +
-      `          The resolvers are ${SANCTIONED.map((name) => `\`${name}()\``).join(' and ')}, each\n` +
-      `          answering out of a tree this repository provisioned. \`process.execPath\` is the\n` +
-      `          Electron binary under Electron and system Node under plain Node, and a host\n` +
-      `          created with the wrong one STARTS — it just runs the wrong runtime.\n`;
+      `  FAILED  ${site.file}:${String(site.line)} runs \`${site.value}\` as ` +
+      `${site.runs === undefined ? 'NO program kind' : `\`runs: '${site.runs}'\``}\n` +
+      `          \`${resolver}()\`'s path may only be run as \`runs: '${RESOLVERS[resolver] ?? ''}'\`, written\n` +
+      `          before the path inside \`program: { … }\`. The kind decides what the surface adds:\n` +
+      `          Node's interpreter flags handed to LibreOffice were refused with\n` +
+      `          \`Error in option: --preserve-symlinks\`, and an Electron host started without\n` +
+      `          them dies before its first line.\n`;
   }
   if (bad.length === 0) {
-    output += `  ok  ${String(sites.length)} host executablePath site(s) name a provisioned-tree resolver\n`;
+    output +=
+      `  ok  ${String(sites.length)} host executablePath site(s) name a provisioned-tree resolver, ` +
+      `each run as its own program kind\n`;
   }
   for (const file of silent) {
     output +=
@@ -224,7 +291,7 @@ export function report(options = {}) {
       `          A spread, a shared config object or a helper contributes no site, so this\n` +
       `          file would otherwise read as clean. It is not clean — it is unreadable to\n` +
       `          this scan, and the two must not share an output. Name the property at the\n` +
-      `          call, with ${SANCTIONED}.\n`;
+      `          call, with ${SANCTIONED.join(' or ')}.\n`;
   }
   if (silent.length === 0) {
     output += `  ok  all ${String(creators.length)} file(s) creating a host name the property\n`;

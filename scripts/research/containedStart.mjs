@@ -193,8 +193,11 @@ function sleep(ms) {
 function run(cell, contained) {
   const logPath = join(scratch, `${cell}.log`);
   const surface = createWin32HostSurface({
-    executablePath: electronBinaryPath(),
-    commandArguments: [HOST_ENTRY],
+    program: {
+      runs: 'electron-node',
+      executablePath: electronBinaryPath(),
+      commandArguments: [HOST_ENTRY],
+    },
     // INSIDE THE GRANT SET ON PURPOSE. A working directory of our own would be
     // a second path whose rights differ between the cells, and then a refusal
     // could be attributed to either. The Electron root varies with the one

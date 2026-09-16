@@ -58,6 +58,13 @@ import {
 import { type Result, err, ok } from '@monstera/shared';
 import koffi from 'koffi';
 
+import {
+  type ContainedProgram,
+  type ElectronBinaryPath,
+  commandLineFor,
+  environmentFor,
+} from './containedProgram.js';
+
 import type {
   CreatedProcess,
   HostCreationSurface,
@@ -108,18 +115,18 @@ export function isInvalidHandle(handle: unknown): boolean {
   return isInvalidHandleAddress(koffi.address(handle));
 }
 
-declare const electronBinaryBrand: unique symbol;
-
 /**
  * A path that has been ESTABLISHED to name the Electron binary, not merely
- * claimed to (finding YYY-2).
+ * claimed to (finding YYY-2). Declared in `containedProgram.ts` since
+ * 2026-09-16, beside the converter's brand, and re-exported here for the
+ * importers that already take it from this module.
  *
  * `executablePath: string` was a contract living in a comment, and two callers
  * broke it — both by writing `process.execPath`, which is the Electron binary
  * under Electron and system Node everywhere else. Once silently, costing a
  * property row that only a byte-identical comparison caught; once loudly, on an
  * interpreter flag. The parameter existed to be got wrong: the surface forces
- * `ELECTRON_RUN_AS_NODE` on every child it creates, so it already depends on the
+ * `ELECTRON_RUN_AS_NODE` on every engine host it creates, so it depends on the
  * answer, and a plain Node binary ignores that variable rather than failing.
  *
  * There is no single expression that is correct in both parents, which is why
@@ -128,7 +135,7 @@ declare const electronBinaryBrand: unique symbol;
  * the pinned install, which only `scripts/provision/electron.mjs` can locate.
  * So the type restricts WHO MAY MINT instead.
  */
-export type ElectronBinaryPath = string & { readonly [electronBinaryBrand]: true };
+export type { ContainedProgram, ElectronBinaryPath } from './containedProgram.js';
 
 /**
  * The mint for a process that IS the Electron binary — the only mint this
@@ -180,17 +187,22 @@ export function electronBinaryOfThisProcess(): ElectronBinaryPath {
   return process.execPath as ElectronBinaryPath;
 }
 
-/** How the host process is created. */
+/** How the contained process is created. */
 export interface Win32HostSurfaceConfig {
   /**
-   * The executable to run — the Electron binary, started in Node mode.
+   * The program to run, and — because it is a discriminated union — what the
+   * surface adds to its command line and environment
+   * ([ADR-0063](../../../docs/DECISIONS/0063-an-office-file-is-converted-by-a-pinned-libreoffice-in-a-contained-process.md)
+   * Decision 2).
    *
-   * Branded, so a bare `process.execPath` is a compile error rather than a
-   * comment somebody read. See {@link ElectronBinaryPath}.
+   * This was `executablePath` and `commandArguments`, with Node's interpreter
+   * flags and `ELECTRON_RUN_AS_NODE=1` applied to every child unconditionally.
+   * That was correct while the surface started one kind of program and wrong
+   * the moment it started a second: LibreOffice refused the first flag, inside
+   * the container and outside it (measured 2026-09-16). The containment never
+   * got to be the question. See {@link ContainedProgram}.
    */
-  readonly executablePath: ElectronBinaryPath;
-  /** Arguments after the interpreter flags. The first is the host's entry script. */
-  readonly commandArguments: readonly string[];
+  readonly program: ContainedProgram;
   /** The child's working directory. */
   readonly workingDirectory: string;
   /**
@@ -578,86 +590,16 @@ export function containerSidText(name: string): Result<string, string> {
 }
 
 /**
- * The child's environment, with `ELECTRON_RUN_AS_NODE` forced on.
+ * The child's environment block: `KEY=value` entries separated and terminated by
+ * NUL, in UTF-16, which is what `CREATE_UNICODE_ENVIRONMENT` requires.
  *
- * The host runs the Electron binary in Node mode (ADR-0022, invariant 26), so
- * the variable is set rather than inherited — an inherited one is a variable the
- * caller's environment decides, and this is the difference between starting a
- * Node process and starting a Chromium one.
+ * What goes in it is {@link environmentFor}'s decision and follows from the
+ * program — `ELECTRON_RUN_AS_NODE=1` for an engine host and never for a
+ * converter. This function only encodes.
  */
-function environmentBlock(): Buffer {
-  const entries: string[] = [];
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.toUpperCase() === 'ELECTRON_RUN_AS_NODE') continue;
-    if (value === undefined) continue;
-    entries.push(`${key}=${value}`);
-  }
-  entries.push('ELECTRON_RUN_AS_NODE=1');
+function environmentBlock(program: ContainedProgram): Buffer {
+  const entries = environmentFor(program, process.env);
   return Buffer.from(`${entries.join(NUL)}${NUL}${NUL}`, 'utf16le');
-}
-
-/**
- * `--preserve-symlinks` AND `--preserve-symlinks-main`, and the reason is
- * measured rather than defensive.
- *
- * Without them the spike's first contained cell died before its first line with
- * `EPERM lstat 'C:\'`. Node resolves the main path and every require through
- * `realpathSync`, which stats each ancestor by name — and a LowBox token's access
- * check is CONJUNCTIVE: the DACL must grant the request to the token's ordinary
- * identity AND to the container or an application-package SID. So the user's own
- * rights on the volume root are necessary and not sufficient, and the root grants
- * app packages nothing. (The other half of that conjunction was measured on
- * 2026-08-24 and is ADR-0023 §4's correction: a DACL naming only the container
- * refuses the container.)
- *
- * The alternative fix is an ACE on the volume root, which needs administrator
- * rights and puts a permanent grant there in order to run a sandbox. These flags
- * remove the call that was failing instead.
- */
-const INTERPRETER_FLAGS = [
-  '--preserve-symlinks',
-  '--preserve-symlinks-main',
-  // `--no-stdio-init`, and the WIN32 STD HANDLES ARE NOT THE CRT'S FILE
-  // DESCRIPTORS — which is the whole of it.
-  //
-  // Measured on a windows-latest runner, twice, and on no machine here: both
-  // contained cells died before their first line with
-  //
-  //   FATAL:electron/shell/app/node_main.cc:215
-  //   Unable to open nul device needed for initialization, aborting startup
-  //
-  // at Low integrity, in their job, with `previousSuspendCount: 1`. The first
-  // attempt at this was to supply `hStdInput` — the parent opens NUL and hands
-  // it in, which is this file's own rule for the diagnostic handle. **It did not
-  // help, and the reason is the mechanism.** `CreateProcessW` sets the Win32
-  // standard handles; it does not populate the CRT's inherited descriptor block
-  // (`lpReserved2`), which only a CRT parent passing its own table does. So
-  // `_get_osfhandle(0)` is invalid in the child however the Win32 handles are
-  // set, node's startup opens `nul` through the CRT to occupy descriptors 0-2,
-  // and inside an AppContainer that open is refused on that Windows build.
-  //
-  // This flag skips exactly that initialisation. It is safe HERE and not in
-  // general, because the handles the child then uses are the ones supplied
-  // above: `createSuspended` sets `STARTF_USESTDHANDLES` whenever it has a
-  // handle to set, so the host has real stdout and stderr rather than none.
-  // Supplying them was necessary and not sufficient; both halves ship.
-  //
-  // NOT a workaround for a defect of ours, and Rule 0 asks for the cause to be
-  // named: the cause is that a Windows AppContainer token cannot open the NUL
-  // device on that build, and node opens it unconditionally when the CRT
-  // descriptors are absent. Both are outside this repository, and the
-  // alternative — a CRT descriptor block — means fabricating an undocumented
-  // `lpReserved2` layout, which is a second opinion about a private ABI.
-  '--no-stdio-init',
-] as const;
-
-function commandLine(config: Win32HostSurfaceConfig): Buffer {
-  const parts = [
-    `"${config.executablePath}"`,
-    ...INTERPRETER_FLAGS,
-    ...config.commandArguments.map((argument) => `"${argument}"`),
-  ];
-  return wide(parts.join(' '));
 }
 
 /**
@@ -826,12 +768,12 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
       const information = Buffer.alloc(koffi.sizeof('MONSTERA_PROCESS_INFORMATION'));
       const started: unknown = bindings.createProcess(
         null,
-        commandLine(config),
+        wide(commandLineFor(config.program)),
         null,
         null,
         logHandle !== null,
         EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
-        environmentBlock(),
+        environmentBlock(config.program),
         config.workingDirectory,
         startup,
         information,

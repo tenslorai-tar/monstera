@@ -196,8 +196,11 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
       writesFor: createWin32WriteSurface,
       hostFor: (pipeName) =>
         createWin32HostSurface({
-          executablePath: binary,
-          commandArguments: [...hostCommandArguments({ kind: 'mupdf' }, entry, pipeName)],
+          program: {
+            runs: 'electron-node',
+            executablePath: binary,
+            commandArguments: [...hostCommandArguments({ kind: 'mupdf' }, entry, pipeName)],
+          },
           // Inside the grant set, for the reason the acceptance test's is: a
           // working directory of our own would be a path whose rights differ
           // from everything else the host can reach, and a difference nobody
@@ -283,10 +286,13 @@ export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPl
       ...base.surfaces,
       hostFor: (pipeName) =>
         createWin32HostSurface({
-          executablePath: binary,
-          commandArguments: [
-            ...hostCommandArguments({ kind: 'pdfium', libraryPath }, entry, pipeName),
-          ],
+          program: {
+            runs: 'electron-node',
+            executablePath: binary,
+            commandArguments: [
+              ...hostCommandArguments({ kind: 'pdfium', libraryPath }, entry, pipeName),
+            ],
+          },
           workingDirectory: dirname(binary),
           containerName: ENGINE_HOST_CONTAINER.pdfium,
           // A NAME OF ITS OWN, per host and per creation, exactly as MuPDF's is
@@ -338,8 +344,11 @@ export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostP
       ...base.surfaces,
       hostFor: (pipeName) =>
         createWin32HostSurface({
-          executablePath: binary,
-          commandArguments: [...hostCommandArguments({ kind: 'compose' }, entry, pipeName)],
+          program: {
+            runs: 'electron-node',
+            executablePath: binary,
+            commandArguments: [...hostCommandArguments({ kind: 'compose' }, entry, pipeName)],
+          },
           workingDirectory: dirname(binary),
           containerName: ENGINE_HOST_CONTAINER.compose,
           // A NAME OF ITS OWN, per host and per creation, as the other two have.

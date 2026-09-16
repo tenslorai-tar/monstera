@@ -132,8 +132,11 @@ function run(cell, withJob) {
     // The same substitution cost the containment instrument a property row when
     // its driver became plain Node. Twice now, from the same expression meaning
     // different things in different parents.
-    executablePath: electronBinaryPath(),
-    commandArguments: [CHILD, reportPath],
+    program: {
+      runs: 'electron-node',
+      executablePath: electronBinaryPath(),
+      commandArguments: [CHILD, reportPath],
+    },
     workingDirectory: scratch,
     containerName: null,
     diagnosticPath: logPath,

@@ -23,7 +23,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 16 });
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
@@ -58,13 +58,35 @@ function fixtureFiles(name, files) {
   return root;
 }
 
-const WRONG = 'const surface = createWin32HostSurface({\n  executablePath: process.execPath,\n});\n';
-const RIGHT = 'const surface = createWin32HostSurface({\n  executablePath: electronBinaryPath(),\n});\n';
+/**
+ * A config in the surface's shape since 2026-09-16: the path inside `program`, after its kind.
+ *
+ * @param {string} runs @param {string} executable @returns {string}
+ */
+function config(runs, executable) {
+  return (
+    'const surface = createWin32HostSurface({\n' +
+    `  program: {\n    runs: '${runs}',\n    executablePath: ${executable},\n    commandArguments: [],\n  },\n` +
+    '});\n'
+  );
+}
+
+const WRONG = config('electron-node', 'process.execPath');
+const RIGHT = config('electron-node', 'electronBinaryPath()');
 /** The SECOND sanctioned resolver, ADR-0063 Decision 2's external converter, with an argument. */
-const CONVERTER =
-  'const surface = createWin32HostSurface({\n  executablePath: sofficeLauncher(ROOT, which),\n});\n';
+const CONVERTER = config('converter', 'sofficeLauncher(ROOT, which)');
 /** A call that is not one of them. The rule accepts NAMED resolvers, never any call expression. */
-const UNKNOWN = 'const surface = createWin32HostSurface({\n  executablePath: whateverPath(),\n});\n';
+const UNKNOWN = config('converter', 'whateverPath()');
+/**
+ * THE DEFECT OF 2026-09-16, as an untyped caller could still write it: LibreOffice's resolver, run
+ * as an engine host. Before the surface took a program kind this was the ONLY way it could be run.
+ */
+const CONVERTER_AS_NODE = config('electron-node', 'sofficeLauncher(ROOT, which)');
+/** The mirror: the Electron binary run as a converter, which would start a host with no flags. */
+const NODE_AS_CONVERTER = config('converter', 'electronBinaryPath()');
+/** A config that names the path and no kind at all — the pre-2026-09-16 shape. */
+const NO_KIND =
+  'const surface = createWin32HostSurface({\n  executablePath: electronBinaryPath(),\n});\n';
 
 try {
   // -------------------------------------------------------------------------
@@ -129,6 +151,46 @@ try {
       !result.ok && /FAILED/u.test(result.output) && /whateverPath/u.test(result.output),
       `Without this the widening reads as "a function call is fine", and the next caller resolves ` +
         `an executable from PATH through a helper nobody sanctioned. Output:\n${result.output}`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 3c-3e. THE RESOLVER AND THE KIND ARE ONE CLAIM (2026-09-16).
+  //
+  // A sanctioned resolver says where a path came from; the kind says how it will be run, and the
+  // surface adds Node's flags from the kind. Each fixture below names a SANCTIONED resolver, so the
+  // only thing that can report it is the pairing — built from what the old rule let through, which
+  // is the rule for a negative probe.
+  // -------------------------------------------------------------------------
+  {
+    const root = fixture('converter-as-node', CONVERTER_AS_NODE);
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      "THE DEFECT: the converter's resolver run as electron-node is reported",
+      !result.ok && /runs `sofficeLauncher/u.test(result.output) && /'electron-node'/u.test(result.output),
+      `This is the command line LibreOffice refused with \`Error in option: --preserve-symlinks\`. ` +
+        `Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('node-as-converter', NODE_AS_CONVERTER);
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'the mirror: the Electron resolver run as a converter is reported',
+      !result.ok && /runs `electronBinaryPath/u.test(result.output),
+      `An engine host started without Node's flags dies before its first line. A rule that checked ` +
+        `only the converter direction would pass this. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('no-kind', NO_KIND);
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'a site that names a resolver and NO program kind is reported, not defaulted',
+      !result.ok && /NO program kind/u.test(result.output),
+      `The shape every caller had before the surface took a kind. The surface reads a missing kind ` +
+        `as "not electron-node", so an old-shape engine host would start flagless. ` +
+        `Output:\n${result.output}`,
     );
   }
 
