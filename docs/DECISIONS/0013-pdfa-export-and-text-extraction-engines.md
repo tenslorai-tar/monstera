@@ -171,3 +171,12 @@ to the owner.
 
 **The plain half is built on MuPDF** (D10, 2026-09-14): one extraction path through the text
 substrate, streamed a page at a time under ADR-0035. The matrix row stands.
+
+## Correction, 2026-09-16 — the owner chose Poppler for the layout half
+
+The owner took the choice left above: Poppler, through the external-converter seam. That does not
+revive the conditional this ADR dropped. *"When Poppler available"* was a feature that depended on
+whether a binary happened to be present; the decision is a **pinned** `pdftotext` from conda-forge,
+provisioned, licence-checked and run in a contained process, recorded in
+[ADR-0071](0071-layout-preserving-text-is-popplers-pdftotext-in-a-contained-process.md). Plain text
+stays MuPDF's, and ADR-0034 is not amended.
