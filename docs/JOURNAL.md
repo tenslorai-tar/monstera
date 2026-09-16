@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — IIIIII-1 closed: the colour normaliser is proven to SEPARATE
+
+The audit's own finding, fixed in the commit after it. `rgbToHex` moved from `rendererPolicy.proof.mjs` into
+`scripts/lib/cssColour.mjs` when `canvasPixels.proof.mjs` became its second caller, and took no case with it.
+
+**Why a missing case matters more here than for an ordinary helper.** This function is applied to **both operands of an
+equality**. A defect in it does not redden its callers — it makes two different colours normalise to one string, and
+both proofs report a match nobody checked. And neither caller can close that: a proof comparing a window's colour to a
+token's never holds two colours it knows to be different, so the separation case has nowhere to live but beside the
+module.
+
+`scripts/proofs/cssColour.proof.mjs`, 6 cases, registered as `proof:csscolour` and run in `guards.yml`: the two
+notations join; **two colours one channel apart do not**; a single-digit channel is padded, so the join in case 1 is
+real; hex case is not a difference; an unreadable value is returned unchanged and two of them stay apart. Case 6 pins a
+limit rather than a feature — **alpha is dropped**, so two opacities of one colour agree, which is safe while both
+callers compare opaque colours and is stated so the next caller meets it rather than a silent agreement.
+
+**Mutation.** `& 0xf0` on each channel — a normaliser that mangles colours the same way: 4 of 6 red, and the
+load-bearing one printed the finding's own shape, `rgb(1, 2, 3) → #000000, rgb(1, 2, 4) → #000000`. The hex-case and
+unparseable cases stayed green, because the mutation touches only the parseable branch — the set separates rather than
+failing as a block. Reverted, re-run green, and `git diff` on the module is empty.
+
+Verified: `proof:csscolour` 6 cases; `check:jobplacement` 0 (the step sits in `guards`, which installs nothing, and the
+proof imports only local modules); `npm run typecheck` 0; `npm run lint` 0.
+
+---
+
 ## 2026-09-16 — Stage audit of `09e0f74..9596f52` — findings IIIIII-1 to IIIIII-5
 
 **Why now, and it was not a choice.** The pre-commit gate refused the high-contrast feature commit: *"09e0f74..HEAD

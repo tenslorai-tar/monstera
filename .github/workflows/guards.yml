@@ -156,6 +156,14 @@ jobs:
       - name: Prove an ok line cannot outlive the case that earned it
         run: node scripts/ci/annotate.mjs scripts/lib/passRoster.proof.mjs
 
+      # Audit finding IIIIII-1. `rgbToHex` normalises BOTH operands of the
+      # comparisons `rendererPolicy` and `canvasPixels` make, so a defect in it
+      # does not redden those proofs — it makes two different colours equal and
+      # they report a match. Neither caller can hold two colours it knows to
+      # differ, which is why the separation case lives here.
+      - name: Prove the colour normaliser keeps different colours apart
+        run: node scripts/ci/annotate.mjs scripts/proofs/cssColour.proof.mjs
+
       # The same property a third time, about the instrument that decides whether
       # THIS board is green. It failed twice in one day and both times printed
       # "not yet", which for a waiter is the reassuring answer exactly as "found
