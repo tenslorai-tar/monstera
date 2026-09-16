@@ -47,7 +47,7 @@ import { pathToFileURL } from 'node:url';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
-import { libreOfficeRoot, sofficePath } from '../provision/libreoffice.mjs';
+import { libreOfficeRoot, sofficeLauncher, sofficePath } from '../provision/libreoffice.mjs';
 
 const ROOT = repoRoot();
 
@@ -121,11 +121,13 @@ function alive(pid) {
  *
  * @param {string} cell
  * @param {boolean} contained
- * @param {string} executable the launcher this cell runs — `.exe` hands off to `soffice.bin`,
- *   `.com` is the console front end, and `.bin` is the program itself
+ * @param {'exe' | 'com' | 'bin'} which the launcher this cell runs — `.exe` hands off to
+ *   `soffice.bin` and writes no diagnostic, `.com` is the console front end, `.bin` is the program
+ * @param {number} cellIndex its own session directory pair; two cells sharing a name collide on
+ *   the first one's directory, which the minter reports rather than adopting
  * @returns {{ cell: string, outcome: string, detail: string, pdfBytes: number | null, log: string }}
  */
-function convert(cell, contained, executable = soffice, cellIndex = 0) {
+function convert(cell, contained, which = 'bin', cellIndex = 0) {
   const user = pipes.currentUserSid();
   if (!user.ok) return { cell, outcome: 'no-user-sid', detail: user.error, pdfBytes: null, log: '' };
   const container = pipes.hostContainerSid(CONTAINER);
@@ -162,8 +164,12 @@ function convert(cell, contained, executable = soffice, cellIndex = 0) {
   mkdirSync(profile, { recursive: true });
 
   const logPath = join(scratch, `${cell}.log`);
+  const executable = sofficeLauncher(ROOT, which);
   const surface = hostSurface.createWin32HostSurface({
-    executablePath: executable,
+    // NAMED BY ITS RESOLVER at the call site, which is `check:electronbinary`'s rule: a host's
+    // executable answers out of a tree this repository provisioned, never out of `PATH` and never
+    // from the copy this machine has installed (ADR-0063 Decision 2).
+    executablePath: sofficeLauncher(ROOT, which),
     commandArguments: [
       '--headless',
       '--norestore',
@@ -247,15 +253,19 @@ try {
   // end, which is what the shell runs that converted on 2026-09-14 and again today used; and
   // `soffice.bin` is the program itself. A cell that writes no PDF says nothing about containment
   // until one of them writes one uncontained.
-  const program = dirname(soffice);
   const cells = [
-    ['exe-uncontained', false, join(program, 'soffice.exe')],
-    ['com-uncontained', false, join(program, 'soffice.com')],
-    ['bin-uncontained', false, join(program, 'soffice.bin')],
-    ['bin-contained', true, join(program, 'soffice.bin')],
+    ['exe-uncontained', false, 'exe'],
+    ['com-uncontained', false, 'com'],
+    ['bin-uncontained', false, 'bin'],
+    ['bin-contained', true, 'bin'],
   ];
-  for (const [index, [cell, contained, executable]] of cells.entries()) {
-    const result = convert(String(cell), Boolean(contained), String(executable), index);
+  for (const [index, [cell, contained, which]] of cells.entries()) {
+    const result = convert(
+      String(cell),
+      Boolean(contained),
+      /** @type {'exe' | 'com' | 'bin'} */ (String(which)),
+      index,
+    );
     process.stdout.write(
       `${result.cell}: ${result.outcome}\n  ${result.detail}\n  bytes: ${String(result.pdfBytes)}\n` +
         `  log: ${result.log.trim().split('\n').slice(0, 4).join(' | ') || '(empty)'}\n\n`,

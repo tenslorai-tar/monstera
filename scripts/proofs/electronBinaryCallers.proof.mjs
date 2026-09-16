@@ -23,7 +23,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 13 });
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
@@ -60,6 +60,11 @@ function fixtureFiles(name, files) {
 
 const WRONG = 'const surface = createWin32HostSurface({\n  executablePath: process.execPath,\n});\n';
 const RIGHT = 'const surface = createWin32HostSurface({\n  executablePath: electronBinaryPath(),\n});\n';
+/** The SECOND sanctioned resolver, ADR-0063 Decision 2's external converter, with an argument. */
+const CONVERTER =
+  'const surface = createWin32HostSurface({\n  executablePath: sofficeLauncher(ROOT, which),\n});\n';
+/** A call that is not one of them. The rule accepts NAMED resolvers, never any call expression. */
+const UNKNOWN = 'const surface = createWin32HostSurface({\n  executablePath: whateverPath(),\n});\n';
 
 try {
   // -------------------------------------------------------------------------
@@ -93,6 +98,37 @@ try {
       'a tree whose every site names the resolver is ok',
       result.ok && /^\s{2}ok/mu.test(result.output),
       `a guard that cannot pass is a guard someone removes. Output:\n${result.output}`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 3a & 3b. THE SECOND RESOLVER, and the rule is still about NAMES.
+  //
+  // The rule admitted one expression until 2026-09-16, because the surface started one program.
+  // ADR-0063 Decision 2 gives it an external converter resolved from the provisioned tree, and a
+  // rule that admitted only Electron's resolver would have been answered by exempting the file
+  // that has the converter — which is how a guard becomes a formality. The pair below is what
+  // keeps the widening honest: the named resolver passes, and a call that is merely A CALL does
+  // not.
+  // -------------------------------------------------------------------------
+  {
+    const root = fixture('converter', CONVERTER);
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      "a site naming the converter's provisioned resolver, with arguments, is ok",
+      result.ok,
+      `ADR-0063 Decision 2 resolves the converter from the provisioned tree; a resolver takes ` +
+        `arguments, so an equality rule would force one fixed spelling. Output:\n${result.output}`,
+    );
+  }
+  {
+    const root = fixture('unknown', UNKNOWN);
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'a site naming an UNSANCTIONED resolver is still reported, so the rule is not "any call"',
+      !result.ok && /FAILED/u.test(result.output) && /whateverPath/u.test(result.output),
+      `Without this the widening reads as "a function call is fine", and the next caller resolves ` +
+        `an executable from PATH through a helper nobody sanctioned. Output:\n${result.output}`,
     );
   }
 

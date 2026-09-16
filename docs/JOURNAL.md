@@ -892,6 +892,45 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — The host-executable rule names RESOLVERS, not one resolver — and my own commit is what found it
+
+`d420a96` pushed the item-3 instrument with `executablePath: executable`, a variable.
+`check:electronbinary` refuses that: its rule was *"the one resolver is `electronBinaryPath()`"*.
+**The local check fails on that tree** — read here, at 03:2x; that commit's board reading is owed at 03:39 and is
+expected red on Guards. Fixed forward, per B10.
+
+**The rule was right and had become too narrow, and the widening is the seam's own decision arriving.** It admitted one
+expression because the surface started one program: the Electron binary in Node mode. ADR-0063 Decision 2 gives it a
+second — an external converter *"resolved from the provisioned tree, never from `PATH` and never from an installed
+copy"* — and this machine has LibreOffice installed, so the wrong answer is available and plausible. A rule admitting
+only Electron's resolver would have been answered by exempting the file that has the converter, which is how a guard
+becomes a formality.
+
+**What is unchanged is the property**: a host's executable is NAMED by a resolver that answers out of a tree this
+repository provisioned. `process.execPath` — the expression two drivers actually wrote — is the Electron binary under
+Electron and system Node under plain Node, so a host created with it starts and runs the wrong runtime. Still a
+violation; so is any other expression, including a bare variable this textual scan cannot follow.
+
+Matched by NAME rather than by whole expression, because a resolver takes arguments — the launcher kind here, a root in
+a driver — and an equality rule would make every call site spell one fixed string or be reported.
+
+- `scripts/lib/electronBinaryCallers.mjs`: `SANCTIONED` is now the two resolver names with a predicate.
+- `scripts/provision/libreoffice.mjs`: `sofficeLauncher(root, which)` — `.exe`, `.com` or `.bin` from the pinned tree,
+  which is also what makes the three-way difference measurable rather than a path join at a call site.
+- `scripts/proofs/electronBinaryCallers.proof.mjs`: 11 → **13 cases**. The converter's resolver WITH ARGUMENTS is
+  accepted, and **a call that is merely a call (`whateverPath()`) is still reported** — without that second case the
+  widening reads as *a function call is fine*, and the next caller resolves an executable from `PATH` through a helper
+  nobody sanctioned.
+- `scripts/research/libreofficeContained.mjs`: the call site names the resolver.
+
+**Mutation.** The predicate widened to accept any non-empty value: the proof goes red — the violating fixture no longer
+makes the scan exit 1, which is the property the rule exists for, and its two control cases fail with it. Reverted; 13
+pass.
+
+Verified: `check:electronbinary` 0 (5 sites), `proof:electronbinary` 13, `npm run typecheck` 0, `npm run lint` 0.
+
+---
+
 ## 2026-09-16 — ADR-0063 item 3 attempted: the contained surface cannot launch a program that is not Node
 
 Stage 8's Office import row starts with the block's instruction to find the LibreOffice crash mechanism first. **The

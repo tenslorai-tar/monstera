@@ -52,8 +52,33 @@ import { join, relative, resolve } from 'node:path';
 import { repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
 
-/** The one resolver. Anything else assigned to the property is a violation. */
-const SANCTIONED = 'electronBinaryPath()';
+/**
+ * The resolvers a host's executable may be NAMED by. Anything else is a violation.
+ *
+ * ## It was one string until 2026-09-16, and what changed is the surface's job
+ *
+ * The rule was `electronBinaryPath()` and nothing else, because the surface started one program:
+ * the Electron binary in Node mode. ADR-0063 Decision 2 gives it a second — an external converter,
+ * *"resolved from the provisioned tree, never from `PATH` and never from an installed copy"* — and a
+ * rule that admits only the first would be answered by exempting the file that has the second,
+ * which is how a guard becomes a formality.
+ *
+ * **The property under test is unchanged**: a host's executable is named by a resolver that answers
+ * out of a tree this repository provisioned. `process.execPath` — the expression two drivers
+ * actually wrote — is the Electron binary under Electron and system Node under plain Node, so a
+ * host created with it STARTS and runs the wrong runtime. That is still a violation, and so is any
+ * other expression, including a bare variable this textual scan cannot follow.
+ *
+ * Matched by NAME rather than by the whole expression, because a resolver takes arguments — the
+ * launcher kind here, a root in a driver — and an equality rule would have every call site spell
+ * one fixed string or be reported.
+ */
+const SANCTIONED = Object.freeze(['electronBinaryPath', 'sofficeLauncher']);
+
+/** @param {string} value @returns {boolean} */
+function namesSanctionedResolver(value) {
+  return SANCTIONED.some((resolver) => value.startsWith(`${resolver}(`));
+}
 
 /**
  * The property, and whatever was assigned to it up to the end of the line.
@@ -153,7 +178,7 @@ export function scanElectronBinaryCallers(options = {}) {
         file: relativePath,
         line: text.slice(0, match.index).split('\n').length,
         value,
-        ok: value === SANCTIONED,
+        ok: namesSanctionedResolver(value),
       });
     }
   }
@@ -185,12 +210,13 @@ export function report(options = {}) {
   for (const site of bad) {
     output +=
       `  FAILED  ${site.file}:${String(site.line)} assigns \`${site.value}\`\n` +
-      `          The one resolver is \`${SANCTIONED}\`. \`process.execPath\` is the Electron\n` +
-      `          binary under Electron and system Node under plain Node, and a host created\n` +
-      `          with the wrong one STARTS — it just runs the wrong runtime.\n`;
+      `          The resolvers are ${SANCTIONED.map((name) => `\`${name}()\``).join(' and ')}, each\n` +
+      `          answering out of a tree this repository provisioned. \`process.execPath\` is the\n` +
+      `          Electron binary under Electron and system Node under plain Node, and a host\n` +
+      `          created with the wrong one STARTS — it just runs the wrong runtime.\n`;
   }
   if (bad.length === 0) {
-    output += `  ok  ${String(sites.length)} host executablePath site(s) name ${SANCTIONED}\n`;
+    output += `  ok  ${String(sites.length)} host executablePath site(s) name a provisioned-tree resolver\n`;
   }
   for (const file of silent) {
     output +=

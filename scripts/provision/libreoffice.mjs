@@ -78,6 +78,29 @@ export function libreOfficeRoot(root) {
 }
 
 /** @param {string} root */
+/**
+ * One of the three launchers in the provisioned tree, by name.
+ *
+ * **A resolver rather than a path join at the call site**, and the reason is the rule
+ * `scripts/lib/electronBinaryCallers.mjs` holds: a host's `executablePath` must NAME a resolver
+ * that answers out of the provisioned tree, because the defect that rule exists for is a caller
+ * that wrote `process.execPath` and got whatever runtime was running. ADR-0063 Decision 2 says the
+ * same thing for this converter — *"resolved from the provisioned tree, never from `PATH` and never
+ * from an installed copy"* — and this machine has LibreOffice installed, so the wrong answer is
+ * available and plausible.
+ *
+ * The three differ and the difference is measurable: `soffice.exe` is the GUI front end, which
+ * writes no diagnostic and stays alive; `soffice.com` is the console front end; `soffice.bin` is the
+ * program. Measured 2026-09-16 — under `CreateProcessW` only the latter two report anything at all.
+ *
+ * @param {string} root @param {'exe' | 'com' | 'bin'} which
+ * @returns {string}
+ */
+export function sofficeLauncher(root, which) {
+  return join(dirname(sofficePath(root)), `soffice.${which}`);
+}
+
+/** @param {string} root @returns {string} */
 export function sofficePath(root) {
   // MEASURED 2026-09-14 on the first run: an administrative install of this MSI puts
   // `program\soffice.exe` directly under TARGETDIR. The guess it replaced,
