@@ -651,7 +651,7 @@ These were given directly and bind every agent on this project.
   `python -c`. Use the file-editing tools. This rule used to say "prose or
   documentation", and that scoping was wrong: the mechanism is that *the tool
   rewrites the bytes on the way past*, which has nothing to do with what the
-  file contains. It has now happened **eight times**. The first five:
+  file contains. It has now happened **nine times**. The first five:
 
   1. backticks swallowed a package name;
   2. `\a` and `\b` became BEL and BACKSPACE, and the text rendered as though the
@@ -699,6 +699,36 @@ These were given directly and bind every agent on this project.
   turns off. Verified by running the exact occurrence-8 command afterwards and
   being denied, which is the self-certifying direction.
 
+  **A NINTH, ON 2026-09-16, THROUGH A SECOND HOLE — AND THE HOLE WAS A REPAIR
+  THAT STAYED IN THE ONE RULE IT WAS MADE FOR.** `perl -0pi -e` rewrote two call
+  sites in a test file and was not denied. Two separate misses in one command:
+  the in-place pattern spelt `-[a-zA-Z.]*i`, which **cannot see the digit** in
+  `-0pi`, and the inline-interpreter pattern required `-e` to be the **first
+  token** after `perl`.
+
+  The second of those had already been found and fixed — on 2026-08-29, in the
+  `node` rule, by tripping `node --input-type=module -e`. That fix was correct,
+  measured, and carried a paragraph explaining its doctrine. **It stayed in that
+  rule.** `sed -n -i`, `python -u -c` and `ruby -w -e` all walked past their own
+  rules for the same reason, and none of them had to be tripped to be found —
+  one question about the class named all three.
+
+  So this is Rule 0's *fix the class, not the instance* with the instance fixed
+  **properly**: nothing about the `node` repair was half-done, and that is what
+  made it invisible. A rule that has been repaired reads as a rule that is
+  sound, and its four siblings read as four rules that never needed it.
+
+  The remedy is the same one B3a keeps arriving at — **make it a named thing
+  with callers.** `afterFlags(command, flag)` is now the only way the skip is
+  spelt, so an interpreter rule written tomorrow cannot be written without it,
+  and `CLUSTERABLE` says once which switches may precede another. Verified by
+  running the exact occurrence-9 shape afterwards and being denied.
+
+  **The outcome was harmless and that is the reason it is here.** The two edits
+  wanted newlines, the bytes were checked and were correct — which is occurrence
+  7's lesson exactly: the mechanism fires whether or not the outcome happens to
+  matter, and judging by outcome is how a habit is concluded safe.
+
   **Mechanism, not intention.** Two mechanisms now, and the second exists
   because the first sentence of this paragraph used to end differently.
 
@@ -715,8 +745,9 @@ These were given directly and bind every agent on this project.
      equivalents (`Set-Content`, `Out-File`, `@"` here-strings). It fails closed
      on an unreadable payload, and there is no override — an escape hatch here
      would be a workaround with a config flag on it. `npm run proof:escapeguard`
-     covers over 250 cases in both directions, including the exact command that
-     caused occurrence 6 and the ordinary commands this project runs constantly,
+     covers over 300 cases in both directions, including the exact commands that
+     caused occurrences 6 and 9 and the ordinary commands this project runs
+     constantly,
      because a guard that blocks `echo` or `sed -n` is a guard someone turns
      off. It also **pins the false positives that stay** — a redirect whose
      owner is ambiguous across a compound is refused deliberately, and a

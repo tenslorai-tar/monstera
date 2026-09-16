@@ -148,13 +148,15 @@ const failures = [];
  * direction the rule warns about: *derive from a set only when the failure you
  * fear makes that set BIGGER*, and here the fear is a rule going quiet.
  *
- * **304, a literal, measured 2026-09-11 by running this file.** Adding a rule is
- * now a two-line diff — the rule, and this number — and removing one is a red
- * check rather than a smaller total nobody compares. That cost is the mechanism,
- * not a nuisance: this is the guard `CLAUDE.md` calls *the* mechanism for a rule
- * broken eight times.
+ * **325, a literal, measured 2026-09-16 by running this file** — 304 until the
+ * flag-cluster repair of that date, which split the inline-interpreter rule in
+ * two and added occurrence 9's own command with its three siblings and their
+ * controls. Adding a rule is now a two-line diff — the rule, and this number —
+ * and removing one is a red check rather than a smaller total nobody compares.
+ * That cost is the mechanism, not a nuisance: this is the guard `CLAUDE.md`
+ * calls *the* mechanism for a rule broken nine times.
  */
-const DECLARED_CASES = 304;
+const DECLARED_CASES = 325;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -277,6 +279,43 @@ mustBlock("ANSI-C quoting with the redirect first", "printf > f $'x\\ty'");
 mustBlock('sed substitution written through a redirect', "sed 's/x/a\\nb/' in.txt > out.txt");
 mustBlock('perl in-place editing', "perl -pi -e 's/a/b/' notes.md");
 mustBlock('perl in-place with a backup suffix', "perl -i.bak -pe 's/a/b/' notes.md");
+
+// OCCURRENCE 9, 2026-09-16, VERBATIM. This ran. Two misses in one command: the
+// in-place pattern spelt `-[a-zA-Z.]*i`, which cannot see the digit in `-0pi`,
+// and the inline-interpreter pattern required `-e` to be the FIRST token after
+// `perl`. The `node` rule had been repaired for the second of those on
+// 2026-08-29 and the repair stayed in that one rule.
+//
+// Kept verbatim rather than paraphrased, which is how occurrence 7's payload
+// semicolon was found: a shortened fixture tests the pattern you were thinking
+// of rather than the command that got through.
+mustBlock(
+  'OCCURRENCE 9: a digit in the flag cluster (perl -0pi -e)',
+  "perl -0pi -e 's/a/b/' packages/kernel/src/commandBus.test.ts",
+);
+mustBlock('the same cluster without the eval flag', "perl -0i.bak 's/a/b/' notes.md");
+// THE SAME HOLE IN THREE MORE RULES, found by asking the class rather than by
+// tripping each one. Every interpreter rule but `node` required its dangerous
+// flag to be the first token after the command word.
+mustBlock('sed in place behind another flag', "sed -n -i 's/a/b/' notes.md");
+mustBlock('python -c behind another flag', 'python -u -c "print(1)"');
+mustBlock('python with the flag clustered', 'python -Ic "print(1)"');
+mustBlock('ruby -e behind another flag', 'ruby -w -e \'puts 1\'');
+mustBlock('an inline ruby script in a cluster', "ruby -ne 'puts $_' notes.txt");
+mustBlock('php -r behind another flag', 'php -d error_reporting=0 -r \'echo 1;\'');
+
+// THE CONTROLS FOR THE WIDENED CLASS. Without these, a class of every character
+// would satisfy every case above and the rules would deny the interpreters this
+// project runs.
+mustAllow('perl running a script by path', 'perl scripts/report.pl --verbose');
+mustAllow('python running a module', 'python -m compileall packages');
+mustAllow('sed printing a range behind another flag', "sed -n -e '1,5p' notes.md");
+mustAllow('node running a script with its own flags', 'node scripts/checkLocal.mjs --only check:');
+// THE LETTER THAT DECIDES THE CLUSTER CLASS. `-I` takes its argument attached,
+// so the `i` here is inside `lib` and not a switch. Admitting uppercase `I` to
+// CLUSTERABLE would deny this — which is why the class is the switches that can
+// PRECEDE another, not perl's alphabet.
+mustAllow('perl with an include path whose value contains an i', 'perl -Ilib scripts/report.pl');
 
 mustAllow('a here-string feeding stdin with no file redirect', 'grep x <<< "$content"');
 mustAllow('sed reading a range with no redirect', "sed -n '1,5p' notes.md");

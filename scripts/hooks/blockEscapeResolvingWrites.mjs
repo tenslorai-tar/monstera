@@ -401,6 +401,63 @@ function eitherOrder(anchor, alsoAfter) {
   );
 }
 
+/**
+ * A command word, then the flag that makes it dangerous — **with any number of
+ * other tokens in between.**
+ *
+ * ## This is one repair the `node` rule had and its four siblings did not
+ *
+ * That rule carries the measurement and the doctrine: `node --input-type=module
+ * -e "…"` ran while `node -e` denied, because the pattern required the eval flag
+ * to sit immediately after the command word. The fix was
+ * `(?:[^\s;&|]+\s+)*` — skip arbitrary tokens, stop at a shell separator so the
+ * scan stays inside ONE command — and the disposition was *refuse the ambiguous
+ * case*, since a false positive costs one retyped command and a false negative
+ * is the failure this guard exists to prevent.
+ *
+ * **It stayed in that one rule, and the other four kept the shape it was fixed
+ * for**, which is Rule 0's *fix the class, not the instance* with the instance
+ * fixed properly and the class never named. Measured 2026-09-16, by tripping it:
+ * `perl -0pi -e 's/a/b/' f` **ran**. Two separate misses in one command —
+ * `-0pi` is not `-pi` to a character class that excludes digits, and `-e` is not
+ * the first token after `perl`. `sed -n -i`, `python -u -c` and `ruby -w -e` are
+ * the same hole in three more rules.
+ *
+ * So the skip is a named thing with callers rather than a paragraph each rule's
+ * author has to remember (B3a, and B5 over a comment): a new interpreter rule
+ * written through this helper cannot be written without it.
+ *
+ * **Token-aligned by construction.** The group consumes whole tokens and their
+ * trailing whitespace, so `flag` is always matched at a token start and can
+ * never slide into the middle of one — which is what keeps `sed --expression=…`
+ * from matching the in-place rule through the `i` inside it.
+ *
+ * @param {string} command alternation of command words, e.g. `python3?|py`.
+ * @param {string} flag alternation of the flags that make it dangerous.
+ */
+function afterFlags(command, flag) {
+  return new RegExp(String.raw`\b(?:${command})\s+(?:[^\s;&|]+\s+)*(?:${flag})`);
+}
+
+/**
+ * The switches that may legally CLUSTER in front of another one, for the
+ * interpreters whose dangerous flag is a single letter.
+ *
+ * Digits are the half that was missing and the half that let occurrence 9
+ * through: `-0` sets the input record separator and clusters freely, so `-0pi`
+ * is an ordinary spelling of `-pi` that `[a-zA-Z.]` cannot see. The letters are
+ * perl's and ruby's switches that take **no argument** — the only ones that can
+ * appear before another in one token. A switch that takes an attached argument
+ * (`-I`, `-M`, `-m`, `-F`, `-D`) consumes the rest of the token, so nothing can
+ * follow it, and including one would make `perl -Ilib script.pl` match the
+ * in-place rule on the `i` inside `lib`.
+ *
+ * Deliberately NOT perl's full grammar. This is the set that can precede, not a
+ * parser — a reimplementation of the CLI would be the second opinion B3a is
+ * about, and it would be wrong on the next release.
+ */
+const CLUSTERABLE = String.raw`[0-9placnsw.]`;
+
 /** Commands whose own evaluation resolves escapes before anything is written. */
 export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
@@ -431,19 +488,34 @@ export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     // Excluding `;`, `&` and `|` is what keeps the scan inside ONE command.
     // Without it `node --version && sed -e 's/a/b/' f` denies on the `sed`, and
     // a guard that blocks an ordinary `sed -e` is a guard someone turns off.
-    pattern: /\bnode\s+(?:[^\s;&|]+\s+)*(?:-[a-zA-Z]*e|--eval|-[a-zA-Z]*p\b|--print)\b/,
+    pattern: afterFlags('node', String.raw`-[a-zA-Z]*e\b|--eval\b|-[a-zA-Z]*p\b|--print\b`),
     what: 'node -e / --eval / --print',
     instead:
       'put the program in a file with the Write tool and run it by path. This is the exact ' +
       'call that mangled a regex and a template literal on 2026-08-17.',
   },
   {
-    pattern: /\b(?:python3?|py)\s+-c\b/,
+    // `python -u -c` and `python -Ic` both reach the same evaluation. The
+    // cluster class is alphanumeric here rather than {@link CLUSTERABLE},
+    // because python's no-argument switches are a different set and the only
+    // one-letter switch that takes an attached argument is `-c` itself.
+    pattern: afterFlags('python3?|py', String.raw`-[a-zA-Z0-9]*c\b`),
     what: 'python -c',
     instead: 'write the script to a file and run it by path',
   },
   {
-    pattern: /\b(?:perl\s+-[eEn]*e|ruby\s+-e|php\s+-r)\b/,
+    // THE RULE OCCURRENCE 9 WENT PAST, on both of its halves at once:
+    // `perl -0pi -e 's/a/b/' f` has its eval flag behind another token, and
+    // that token is a cluster beginning with a digit.
+    pattern: afterFlags(
+      'perl|ruby',
+      String.raw`-${CLUSTERABLE}*[eE]\b`,
+    ),
+    what: 'an inline interpreter script',
+    instead: 'write the script to a file and run it by path',
+  },
+  {
+    pattern: afterFlags('php', String.raw`-r\b`),
     what: 'an inline interpreter script',
     instead: 'write the script to a file and run it by path',
   },
@@ -483,7 +555,11 @@ export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
       '\\n inside its own string literals — occurrence 8.',
   },
   {
-    pattern: /\bsed\s+(?:-[a-zA-Z]*i|--in-place)/,
+    // `sed -n -i` reaches the same write as `sed -i`. Alphanumeric rather than
+    // {@link CLUSTERABLE}: sed's clusterable switches are its own set, and the
+    // two that take an attached argument — `-e` and `-f` — cannot be followed
+    // inside one token anyway.
+    pattern: afterFlags('sed', String.raw`-[a-zA-Z0-9]*i|--in-place\b`),
     what: 'sed in-place editing',
     instead:
       'use Edit. sed was used on a markdown file once already and survived only by luck — ' +
@@ -507,9 +583,15 @@ export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
       'the bytes you wrote.',
   },
   {
-    // perl -i in any spelling: -i, -pi, -ni, -i.bak. The interpreter rule below
-    // catches `perl -e`, but an in-place edit needs no -e to rewrite a file.
-    pattern: /\bperl\s+-[a-zA-Z.]*i/,
+    // perl -i in any spelling: -i, -pi, -ni, -0pi, -i.bak, and behind other
+    // flags. The interpreter rule above catches `perl -e`, but an in-place edit
+    // needs no -e to rewrite a file.
+    //
+    // OCCURRENCE 9, 2026-09-16: `perl -0pi -e` ran. `[a-zA-Z.]` excluded the
+    // digit, so `-0pi` was not `-pi` to this pattern — and nothing about
+    // reading it looked wrong, because the letters it does carry are the ones
+    // anybody writing the rule would think of.
+    pattern: afterFlags('perl', String.raw`-${CLUSTERABLE}*i`),
     what: 'perl in-place editing',
     instead: 'use Edit. Same mechanism as sed -i, and the same class as occurrence 4.',
   },
@@ -823,12 +905,13 @@ async function main() {
     `Blocked: this command writes a file through ${violation.what}, which resolves escape ` +
       `sequences on the way past.\n\n` +
       `Instead: ${violation.instead}\n\n` +
-      `This is a standing rule in CLAUDE.md and it has been broken eight times. The rule used to ` +
+      `This is a standing rule in CLAUDE.md and it has been broken nine times. The rule used to ` +
       `be the only defence for the classes guardFiles.mjs cannot see — a swallowed word, a real ` +
-      `newline, an octal escape — and five of the first six happened while it said so. The ` +
-      `eighth, 2026-09-04, went through a HOLE in this guard rather than past the rule: a quoted ` +
-      `heredoc feeding an interpreter. There is no override — an escape hatch here would be a ` +
-      `workaround with a config flag on it.`,
+      `newline, an octal escape — and five of the first six happened while it said so. The last ` +
+      `two went through HOLES in this guard rather than past the rule: a quoted heredoc feeding ` +
+      `an interpreter (2026-09-04), and a flag cluster beginning with a digit — perl -0pi — ` +
+      `behind which the eval flag was no longer the first token (2026-09-16). There is no ` +
+      `override; an escape hatch here would be a workaround with a config flag on it.`,
   );
 }
 

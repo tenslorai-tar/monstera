@@ -7,11 +7,11 @@
       "certifies": "detection",
       "exercise": "an interpreter reading a quoted heredoc, occurrence 8's own command, denied 2026-09-04",
       "evidence": "The hook produced its own output. Nothing that failed to load it can do that.",
-      "recordedAt": "2026-09-04T06:08:21.890Z",
+      "recordedAt": "2026-09-16T08:11:51.505Z",
       "sessionStartedAt": "2026-08-28T12:07:52.861Z",
-      "inputsLastChangedAt": "2026-08-29T08:09:36+02:00",
+      "inputsLastChangedAt": "2026-09-04T08:11:46+02:00",
       "verdict": {
-        "digest": "b97696bd51c619da91e9df4c683f98a0f8f571f26992b77aeb6066cdd205c1ce",
+        "digest": "b441a3b5cf2e36c23de940608e8771f173319776931fda19fd4f0309fce0e9fd",
         "inputs": [
           {
             "name": "file:.claude/settings.json",
@@ -19,7 +19,7 @@
           },
           {
             "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
-            "digest": "e808e13d793f61c03f88788e5e09012a1eb373ffb6484fea24eeaf5b3afd2e6c"
+            "digest": "7b03dcad4459b4b4d84a4ea64cbca7b62ac68d47d4f7a452704330aa35c13526"
           }
         ]
       }

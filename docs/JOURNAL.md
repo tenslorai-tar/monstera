@@ -892,6 +892,51 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — Occurrence 9, and the hole was a repair that stayed in the one rule it was made for
+
+`perl -0pi -e 's/…/…/' packages/kernel/src/commandBus.test.ts` **ran**. It made two mechanical test edits, the bytes
+were what I wanted, and I checked them — which is occurrence 7's lesson arriving again: the mechanism fires whether or
+not the outcome happens to matter, and judging by outcome is how a habit is concluded safe.
+
+**Two misses in one command.**
+
+- `/\bperl\s+-[a-zA-Z.]*i/` — the character class **excludes digits**, so `-0pi` is not `-pi` to it. `-0` sets perl's
+  input record separator and clusters freely, so this is an ordinary spelling and not an exotic one.
+- `/\b(?:perl\s+-[eEn]*e|…)/` — the eval flag had to be the **first token** after `perl`.
+
+**The second had already been found and fixed, on 2026-08-29, in the `node` rule.** `node --input-type=module -e` ran
+while `node -e` denied; the repair was `(?:[^\s;&|]+\s+)*`, measured by tripping it, and it carries a paragraph of
+doctrine — *skip arbitrary tokens, stop at a shell separator, refuse the ambiguous case, because a false positive costs
+one retyped command and a false negative is the failure this guard exists to prevent*. **It stayed in that rule.**
+
+So this is Rule 0's *fix the class, not the instance* with the instance fixed **properly**, which is what made it
+invisible: a rule that has been repaired reads as a rule that is sound, and its four siblings read as four rules that
+never needed the repair. Asking the class named three more without any of them having to be tripped — `sed -n -i`,
+`python -u -c`, `ruby -w -e`, each evading its own rule for exactly the same reason.
+
+**The remedy is the one B3a keeps arriving at: a named thing with callers.** `afterFlags(command, flag)` is now the
+only spelling of the skip, so an interpreter rule written tomorrow cannot be written without it; `CLUSTERABLE` says
+once which switches may precede another. The class is the switches that take **no argument**, plus digits — not perl's
+alphabet, and deliberately not perl's grammar, which would be the second opinion B3a is about and would be wrong on the
+next release. The letter that decides it is `-I`: it takes its argument attached, so admitting uppercase `I` would deny
+`perl -Ilib scripts/report.pl` on the `i` inside `lib`. That command is a control.
+
+**Verified in the self-certifying direction.** The exact occurrence-9 shape, run afterwards in the same session,
+**denied** — and a denial cannot come from an unloaded guard, whatever the session's age. This is also the second
+measurement of `CLAUDE.md`'s limit 1: editing a registered hook's *script body* takes effect on the very next command,
+where changing the *registration* does not.
+
+`proof:escapeguard` 304 → **325 cases**, including occurrence 9's own command kept verbatim rather than paraphrased —
+the discipline that found occurrence 7's payload semicolon, since a shortened fixture tests the pattern you were
+thinking of rather than the command that got through.
+
+**One more thing this guard does that is worth knowing, and it is working as designed.** A `grep` whose *pattern*
+contained the text `python -c` was denied while I was reading the proof. The guard scans the command string and a
+character class cannot know what is quoted; the header says so and picks the false positive deliberately. It cost one
+retyped command.
+
+---
+
 ## 2026-09-16 — The class behind the four dead rows: a writer's `apply` takes one named request
 
 `631ff46` fixed four rows this morning. It did not fix the **class**, and the owner's block said so: *"Fix the class,
