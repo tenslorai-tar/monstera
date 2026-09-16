@@ -55,7 +55,11 @@ const ROOT = repoRoot();
 const CONTAINER = 'monstera-libreoffice-convert';
 
 /** How long a conversion has to produce a PDF before this reports that it did not. */
-const CONVERT_BUDGET_MS = 45_000;
+// 90 s PER PHASE. It was 45, and the first uncontained readings through CreateProcess (2026-09-16)
+// came in at 30.9 s for a fresh-profile build and 25.4 s for a warm conversion — so a budget of 45
+// left a contained run, which is not faster, under 1.5x of the uncontained figure. A cell that runs
+// out of budget reads as "no PDF", the same observation a refusal produces.
+const CONVERT_BUDGET_MS = 90_000;
 
 if (process.platform !== 'win32') {
   process.stderr.write('libreofficeContained: Win32 only; this platform has no AppContainer.\n');
@@ -127,7 +131,7 @@ function alive(pid) {
  *   the first one's directory, which the minter reports rather than adopting
  * @returns {{ cell: string, outcome: string, detail: string, pdfBytes: number | null, log: string }}
  */
-function convert(cell, contained, which = 'bin', cellIndex = 0) {
+function convert(cell, contained, which = 'bin', cellIndex = 0, warm = false) {
   const user = pipes.currentUserSid();
   if (!user.ok) return { cell, outcome: 'no-user-sid', detail: user.error, pdfBytes: null, log: '' };
   const container = pipes.hostContainerSid(CONTAINER);
@@ -165,6 +169,55 @@ function convert(cell, contained, which = 'bin', cellIndex = 0) {
 
   const logPath = join(scratch, `${cell}.log`);
   const executable = sofficeLauncher(ROOT, which);
+
+  // THE WARM-UP RUN, for the cells that ask for one. Measured uncontained 2026-09-16 through
+  // CreateProcess: `soffice.bin` on a FRESH user installation builds the profile (245 entries) and
+  // exits 81 — LibreOffice's restart request — after 30.9 s with no PDF; the identical command on
+  // the now-warm profile exits 0 and converts. A front end performs that restart by starting a
+  // second `soffice.bin`, which a one-process job refuses; run directly, nothing restarts it. So a
+  // warm cell runs the same command once, in the same granted pair and the same container setting,
+  // and waits for the process to be GONE before the reading starts.
+  /** @type {string} */
+  let warmUp = 'none';
+  if (warm) {
+    const warmer = hostSurface.createWin32HostSurface({
+      program: {
+        runs: 'converter',
+        executablePath: sofficeLauncher(ROOT, which),
+        commandArguments: [
+          '--headless',
+          '--norestore',
+          `-env:UserInstallation=file:///${profile.replaceAll('\\', '/')}`,
+          '--convert-to',
+          'pdf',
+          '--outdir',
+          paths.output,
+          input,
+        ],
+      },
+      workingDirectory: dirname(executable),
+      containerName: contained ? CONTAINER : null,
+      diagnosticPath: join(scratch, `${cell}-warm.log`),
+    });
+    const first = warmer.createSuspended();
+    if (!first.ok) return { cell, outcome: 'warm-create-failed', detail: first.error, pdfBytes: null, log: '' };
+    warmer.resume(first.value.thread);
+    const warmDeadline = Date.now() + CONVERT_BUDGET_MS;
+    while (Date.now() < warmDeadline && alive(first.value.pid)) sleep(500);
+    const exited = !alive(first.value.pid);
+    if (!exited) warmer.terminate(first.value.process);
+    warmer.close(first.value.process);
+    warmer.close(first.value.thread);
+    const entries = (() => {
+      try {
+        return readdirSync(profile, { recursive: true }).length;
+      } catch {
+        return -1;
+      }
+    })();
+    warmUp = `${exited ? 'exited' : 'still running at the budget, terminated'}, profile entries ${String(entries)}, pdf already ${String(existsSync(join(paths.output, 'in.pdf')))}`;
+  }
+
   const surface = hostSurface.createWin32HostSurface({
     // NAMED BY ITS RESOLVER at the call site, which is `check:electronbinary`'s rule: a host's
     // executable answers out of a tree this repository provisioned, never out of `PATH` and never
@@ -215,7 +268,9 @@ function convert(cell, contained, which = 'bin', cellIndex = 0) {
       return `unreadable: ${String(error)}`;
     }
   })();
-  const where = `pid ${String(pid)}, resume ${JSON.stringify(resumed)}, alive ${String(stillRunning)}, out: ${wrote}`;
+  const where =
+    `pid ${String(pid)}, resume ${JSON.stringify(resumed)}, alive ${String(stillRunning)}, out: ${wrote}` +
+    (warm ? `; warm-up: ${warmUp}` : '');
 
   const log = (() => {
     try {
@@ -265,19 +320,30 @@ try {
   // converted, 13,601 bytes of `%PDF-1.7`, while `bin-uncontained` exited with no PDF and no log. So
   // `com-contained` is the cell that reads item 3 — its uncontained twin is the control that
   // converts — and `bin-contained` stays as the reading it was, not the question.
+  //
+  // THE WARM CELLS, and the contained one is item 3's decisive reading. `soffice.bin` run directly is
+  // ONE process — measured, no front end and no restart — so it is the one launcher a one-process
+  // job can hold. Its uncontained twin is the control that must convert first.
   const cells = [
-    ['exe-uncontained', false, 'exe'],
-    ['com-uncontained', false, 'com'],
-    ['bin-uncontained', false, 'bin'],
-    ['com-contained', true, 'com'],
-    ['bin-contained', true, 'bin'],
+    ['exe-uncontained', false, 'exe', false],
+    ['com-uncontained', false, 'com', false],
+    ['bin-uncontained', false, 'bin', false],
+    ['com-contained', true, 'com', false],
+    ['bin-contained', true, 'bin', false],
+    ['bin-uncontained-warm', false, 'bin', true],
+    ['bin-contained-warm', true, 'bin', true],
   ];
-  for (const [index, [cell, contained, which]] of cells.entries()) {
+  // `--only <substring>` runs a subset, because a full run is seven cells of up to two 90 s phases.
+  const onlyIndex = process.argv.indexOf('--only');
+  const only = onlyIndex === -1 ? undefined : process.argv[onlyIndex + 1];
+  for (const [index, [cell, contained, which, warm]] of cells.entries()) {
+    if (only !== undefined && !String(cell).includes(only)) continue;
     const result = convert(
       String(cell),
       Boolean(contained),
       /** @type {'exe' | 'com' | 'bin'} */ (String(which)),
       index,
+      Boolean(warm),
     );
     process.stdout.write(
       `${result.cell}: ${result.outcome}\n  ${result.detail}\n  bytes: ${String(result.pdfBytes)}\n` +

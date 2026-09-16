@@ -934,6 +934,25 @@ next reading is whether the front end starts a child at all, taken uncontained, 
 for *"kill-all-children on quit"*, so it expected children; a converter's job limits differing from a host's would be
 a written decision taken on a mechanism, not a knob turned to see what happens.
 
+### Later the same day: the candidate, measured — half right
+
+**`soffice.com` starts children**: `conhost.exe` and `soffice.bin` at once, and a second `soffice.bin` about 11.5 s in.
+A one-process job allows none of them. **`soffice.bin` run directly starts none**, and on a fresh profile exits **81**
+— LibreOffice's restart request, which is what the front end's second `soffice.bin` answers — after writing 245 profile
+entries; the same command again exits 0 with a PDF.
+
+So a two-run protocol keeps the job exactly as strict as an engine host's, and it **converts uncontained through the
+surface**. **Contained, the warm-up stalls**: 4 entries in 90 s, the last `registrymodifications.xcu`. One process, so
+not the limit; waiting rather than failing, so something the container refuses. The cause is **not** established —
+the named single-instance pipe, an `HKCU` key and a path outside the pair are candidates, not findings — and the reading
+that separates them is an access trace, which is where item 3 stops today.
+
+**Two instrument failures on the way, both caught by their own output.** `Start-Process` goes through ShellExecute,
+which refuses a `.bin` extension, so the first exit-code reading printed `exit=` with nothing after it — a reading of
+nothing, and the fix is `UseShellExecute = false`, which is `CreateProcess` and what the surface calls. And the
+instrument's 45 s budget sat under 1.5× the uncontained times just measured, so a contained cell that was merely slow
+would have read as a refusal; it is 90 s per phase, with the figures that set it in the comment.
+
 ---
 
 ## 2026-09-16 — Occurrence 9, and the hole was a repair that stayed in the one rule it was made for

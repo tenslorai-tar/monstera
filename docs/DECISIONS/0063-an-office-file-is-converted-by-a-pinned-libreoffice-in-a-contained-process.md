@@ -425,3 +425,35 @@ uncontained, before any limit is changed. Decision 2 already expected children �
 asks for *"kill-all-children on quit"* — so a converter's job limits differing from an
 engine host's would be Decision 2 read closely rather than a relaxation, and it is a
 decision to take in writing when the mechanism is known, not one this run takes.
+
+### Addendum, same day — the candidate is half right, and the half it misses is the one that matters
+
+Three readings, each uncontained unless stated, each through `CreateProcess`:
+
+| reading | result |
+|---|---|
+| `soffice.com`'s process tree, fresh profile | starts `conhost.exe` and `soffice.bin` at once, and a **second** `soffice.bin` ~11.5 s in, before the PDF |
+| `soffice.bin` direct, fresh profile, then again on the same profile | **exit 81** after 30.9 s, 245 profile entries, no PDF — then **exit 0** and a PDF |
+| `soffice.bin` direct, its process tree | **no descendants at all** |
+
+So the one-process job **does** explain the front ends — `.com` needs three processes and
+`ActiveProcessLimit: 1` allows one — and exit 81 is LibreOffice's restart request, which a
+front end honours by starting a second `soffice.bin`. And `soffice.bin` run directly is one
+process, **provided the profile is warmed by a first run**.
+
+That protocol was then read through the surface (`--only warm`):
+
+| cell | contained | warm-up | conversion |
+|---|---|---|---|
+| `bin-uncontained-warm` | no | exited, 245 entries | **converted**, 13,601 bytes |
+| `bin-contained-warm` | **yes** | **still running at 90 s, 4 entries**, terminated | no PDF |
+
+**The contained process stalls during first start**, having written `user/extensions/buildid`
+and `user/registrymodifications.xcu` and nothing after. It is one process, so the job's
+process limit is not the cause. It waits rather than failing, so something the container
+denies is being retried or awaited. **That is not established.** Candidates, all
+unmeasured: the named pipe LibreOffice creates to detect a running instance, a registry
+key under `HKCU`, or a path outside the granted pair. The reading that separates them is an
+access trace of the contained process, which is the next step for item 3 — and until it
+exists, item 3's answer is *not yet*, with the stall located to the step after the
+registry file is written.
