@@ -70,7 +70,15 @@ function toHex([r, g, b]: Rgb): string {
  */
 const ACCENT_FLOOR = 3;
 
-/** The ratio the colour on top of the accent must clear. */
+/**
+ * The ratio the colour on top of the accent must clear.
+ *
+ * **4.5 in every theme this function can run under**, rather than the theme-keyed text
+ * floor ADR-0003's 2026-09-16 correction introduces: `App.tsx` clears a user accent while
+ * high contrast is on — `applyAccent(root, 'theme')` — so a solve under `hc` is not a
+ * state this reaches, and taking the floor from the theme here would read as coverage of
+ * a path that does not exist.
+ */
 const ON_ACCENT_FLOOR = 4.5;
 
 /**

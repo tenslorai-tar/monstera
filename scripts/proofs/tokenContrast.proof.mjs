@@ -29,7 +29,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 13 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -179,6 +179,43 @@ try {
     unplaced.failures.some((failure) => failure.includes('--mark') && failure.includes('no @on')),
     `failures: ${unplaced.failures.join('; ') || 'none'}. A graphic with no declared surface is a pair ` +
       `the check evaluates zero of — the narrowing direction, reported as clean.`,
+  );
+
+  // ---- 12-13. The HIGH-CONTRAST floor is 7:1, and it is the theme that decides ----
+  //
+  // THE PLANTED FAILURE ADR-0003's correction asks for, and it has to be planted: measured
+  // 2026-09-16, all twelve declared `text` pairs in the shipped `hc` theme already clear
+  // 7:1, so a check that quietly applied 4.5 there would report exactly what a correct one
+  // reports. `#6c6c6c` on white is about 5.25:1 — above the ordinary floor and below the
+  // enhanced one — so the same colour is a failure in one theme and not in the other, which
+  // is what separates a per-theme obligation from a single number.
+  const perTheme = evaluate(
+    fixture([
+      ' * @role bg surface',
+      ' * @role ink text @on bg',
+      "[data-theme='hc'] {",
+      '  --bg: #ffffff;',
+      '  --ink: #6c6c6c;',
+      '}',
+      "[data-theme='light'] {",
+      '  --bg: #ffffff;',
+      '  --ink: #6c6c6c;',
+      '}',
+    ]),
+  );
+  check(
+    'a `text` pair between 4.5:1 and 7:1 is reported in the HIGH-CONTRAST theme',
+    perTheme.failures.some((failure) => failure.startsWith('hc:') && failure.includes('--ink')),
+    `failures: ${perTheme.failures.join('; ') || 'none'}. #6c6c6c on white is about 5.25:1; a ` +
+      `check holding every theme to 4.5 would report nothing here, and the shipped hc theme ` +
+      `cannot tell the two apart because all twelve of its text pairs already clear 7:1.`,
+  );
+  check(
+    'and the SAME colour on the same surface is not reported in the light theme',
+    !perTheme.failures.some((failure) => failure.startsWith('light:')),
+    `failures: ${perTheme.failures.join('; ') || 'none'}. The control: a check that had simply ` +
+      `raised the floor everywhere would report both, which reddens the build for light and ` +
+      `dark text nobody asked to be enhanced (ADR-0003's first rejected alternative).`,
   );
 
   if (failures.length > 0) {

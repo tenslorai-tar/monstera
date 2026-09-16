@@ -199,6 +199,40 @@ describe('Button', () => {
       expect(contrast(applied, accent)).toBeGreaterThanOrEqual(4.5);
     });
 
+    it('solves to 7:1 under the HIGH-CONTRAST theme, and to 4.5:1 under an ordinary one', async () => {
+      // THE FLOOR IS THE THEME'S, not the call site's (ADR-0003, corrected 2026-09-16).
+      // `Button` asks for `'text'` rather than a number, and `useOnColor` reads the theme
+      // in force at the control — so this case is what separates the two floors, and the
+      // live run that produced the correction measured the shipped label at 4.69:1 in
+      // high contrast, which is above 4.5 and below 7.
+      declareTokens();
+      document.documentElement.setAttribute('data-theme', 'hc');
+      render(<Button label={SAVE} variant="primary" />);
+      const button = screen.getByRole('button', { name: 'Save' });
+      await vi.waitFor(() => {
+        expect(button.style.color).not.toBe('');
+      });
+
+      const accent = channels('#2fb96a');
+      const underHighContrast = channels(button.style.color);
+      if (accent === null || underHighContrast === null) throw new Error('a colour did not parse');
+      expect(contrast(underHighContrast, accent)).toBeGreaterThanOrEqual(7);
+
+      // THE CONTROL, and it is the half that makes the assertion above mean anything: the
+      // same fixture under an ordinary theme must clear 4.5 and NOT reach 7. A hook that
+      // solved everything at 7 would satisfy the first assertion and fail here, which is
+      // ADR-0003's first rejected alternative — raising the floor in every theme.
+      document.documentElement.setAttribute('data-theme', 'light');
+      await vi.waitFor(() => {
+        const ordinary = channels(button.style.color);
+        if (ordinary === null) throw new Error('a colour did not parse');
+        expect(contrast(ordinary, accent)).toBeLessThan(7);
+      });
+      const ordinary = channels(button.style.color);
+      if (ordinary === null) throw new Error('a colour did not parse');
+      expect(contrast(ordinary, accent)).toBeGreaterThanOrEqual(4.5);
+    });
+
     it('reads the tokens at the control, not at the document root', async () => {
       // THE TWO READ SITES ARE MADE TO DISAGREE, which is the only way a case
       // can tell them apart. The root says the fill is nearly black, where the

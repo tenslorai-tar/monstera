@@ -35,6 +35,37 @@ import { type Result, err, ok } from './result.js';
 export type Rgb = readonly [number, number, number];
 
 /**
+ * The `data-theme` value that means *this reader asked the platform for high contrast*.
+ *
+ * `tokens.css` names the block and `appearance.ts` writes the attribute; this is the
+ * string both of them and the contrast check compare against, so a fourth spelling
+ * cannot drift away from the three.
+ */
+export const HIGH_CONTRAST_THEME = 'hc';
+
+/**
+ * The WCAG ratio a text colour owes on its surface, in the theme in force.
+ *
+ * **One answer with callers, rather than a number at each site**
+ * (ARCHITECTURE §10.2, [ADR-0003](../../../docs/DECISIONS/0003-token-role-typing-and-declared-pairings.md)
+ * corrected 2026-09-16). `scripts/lib/tokenContrast.mjs` asks it per theme block for every
+ * declared `text` pair, and `useOnColor` asks it for the theme in force at the element it
+ * is solving against. Two spellings of 7 would be a second opinion about the obligation,
+ * and the runtime half is where the colour that fails it actually lives: measured
+ * 2026-09-16, every declared `text` pair in `hc` already clears 7:1, while the primary
+ * button's derived label sat at 4.69:1 — solved to whichever floor it is given.
+ *
+ * `boundary-control` and `graphic` are deliberately not here: WCAG 1.4.11 has no enhanced
+ * level, so 3:1 is the standard's number in every theme and a second one would be ours.
+ *
+ * @param theme the `data-theme` in force, or `null` where none is set — the bare `:root`
+ *   block, which is the system default and carries the ordinary floor.
+ */
+export function textContrastFloor(theme: string | null | undefined): number {
+  return theme === HIGH_CONTRAST_THEME ? 7 : 4.5;
+}
+
+/**
  * Parses a CSS colour, compositing over `over` when it carries alpha.
  *
  * **Alpha is composited rather than ignored**, because §10.2 evaluates an alpha
@@ -146,7 +177,8 @@ const WHITE: Rgb = [255, 255, 255];
  *
  * @param wanted the colour the design asks for
  * @param backgrounds every surface it may sit on. Empty is a caller defect and refuses.
- * @param minimum the ratio to clear — 4.5 for text, 3.0 for a control boundary
+ * @param minimum the ratio to clear — {@link textContrastFloor} for text, which is the
+ *   theme's rather than the call site's, and 3.0 for a control boundary
  */
 export function onColor(
   wanted: Rgb,

@@ -2272,12 +2272,14 @@ onColor(brand, background, minRatio)
 Every companion role is a derived output of that function against the element's
 **real** background:
 
-- accent text on chrome — `onColor(accent, chrome surfaces ∪ soft composites, 4.5)`
+- accent text on chrome — `onColor(accent, chrome surfaces ∪ soft composites, the text
+  floor for the theme in force: 4.5, or 7 under `hc`)`
 - the primary button — a theme-aware pair. Light: darken the fill until a light
   label clears 4.5. Dark and high contrast: keep the bright brand fill and derive
   a near-black label, because dark mode's primary button must read as the
   brightest accent on screen, not a darker cousin. The fill is treated as a
-  surface and its label checked against it at 4.5:1.
+  surface and its label checked against it at the text floor for the theme in force —
+  4.5:1, and 7:1 under `hc`, which is the pair that carried the 4.69:1 label.
 - selection chrome on the page — `onColor(accent, page, 3.0)`
 - the selected-thumbnail ring — `onColor(accent, the sidebar it actually sits on, 3.0)`
 
@@ -2304,7 +2306,8 @@ foreground are themselves surfaces, and **CI exercises the derivation function
 across every (context, minRatio) pair** rather than auditing a list of frozen
 hexes. Raw `--accent` never carries text or an indicator; small non-text
 indicators (the unsaved dot, the slider thumb) use the derived chrome accent
-text at 4.5:1 and therefore always clear WCAG 1.4.11's 3:1.
+text at its theme's text floor — 4.5:1, or 7:1 under `hc` — and therefore always clear
+WCAG 1.4.11's 3:1.
 
 Spacing: control interiors use even values (multiples of 2 px); 4/8 px between
 elements; the 8 px grid between layout regions. Mockup page-content art and

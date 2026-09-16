@@ -21,7 +21,16 @@ export {
   err,
   toStructuredError,
 } from './result.js';
-export { type Rgb, channels, contrast, luminance, onColor, onColorRounded } from './colour.js';
+export {
+  HIGH_CONTRAST_THEME,
+  type Rgb,
+  channels,
+  contrast,
+  luminance,
+  onColor,
+  onColorRounded,
+  textContrastFloor,
+} from './colour.js';
 export { type MessageKey, isDottedName, messageDomain, messageKey } from './messages.js';
 // The matching rule, once. Both the kernel's search and the browser shim's
 // answer to `document.searchPage` take it from here — the shim may not import

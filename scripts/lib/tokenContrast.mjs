@@ -4,7 +4,8 @@
  *
  * ARCHITECTURE §10.2 and ADR-0003. Every colour role declares a category and,
  * for foregrounds, boundaries and graphics, the set of surfaces it may sit on.
- * This evaluates exactly those declared pairs: 4.5:1 for `text`, 3:1 for
+ * This evaluates exactly those declared pairs: 4.5:1 for `text` — 7:1 where the
+ * theme is `hc` (ADR-0003, corrected 2026-09-16) — 3:1 for
  * `boundary-control` and for `graphic` (a chrome graphic drawn over the document,
  * ADR-0003 corrected 2026-09-15), nothing for the rest.
  *
@@ -82,7 +83,10 @@ const colour = await import(pathToFileURL(join(repoRoot(), SHARED_BUILT)).href);
 /** Contrast obligations by category. `null` means the category carries none. */
 const OBLIGATION = {
   surface: null,
-  text: 4.5,
+  // THE DEFAULT FLOOR, and the pair loop below asks again per theme:
+  // `textContrastFloor` answers 7 under `hc` (ADR-0003, corrected 2026-09-16). Taken from
+  // the same function rather than spelt here, so 4.5 has one home.
+  text: colour.textContrastFloor(null),
   'boundary-control': 3,
   'boundary-decorative': null,
   fill: null,
@@ -245,8 +249,13 @@ export function evaluate(css) {
   // ---- The declared pairs ----
   for (const theme of themes) {
     for (const role of roles) {
-      const minimum = OBLIGATION[/** @type {keyof typeof OBLIGATION} */ (role.category)];
-      if (minimum === null || minimum === undefined) continue;
+      const declared = OBLIGATION[/** @type {keyof typeof OBLIGATION} */ (role.category)];
+      if (declared === null || declared === undefined) continue;
+      // PER THEME for `text`, because the floor is the theme's rather than the category's:
+      // 7:1 under `hc` and 4.5:1 elsewhere. `boundary-control` and `graphic` keep 3:1
+      // everywhere — WCAG 1.4.11 has no enhanced level.
+      const minimum =
+        role.category === 'text' ? colour.textContrastFloor(theme.theme) : declared;
 
       const rawForeground = theme.values.get(role.name);
       if (rawForeground === undefined) continue;

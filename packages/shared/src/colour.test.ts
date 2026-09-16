@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { type Rgb, channels, contrast, luminance, onColor, onColorRounded } from './colour.js';
+import {
+  HIGH_CONTRAST_THEME,
+  type Rgb,
+  channels,
+  contrast,
+  luminance,
+  onColor,
+  onColorRounded,
+  textContrastFloor,
+} from './colour.js';
 
 const WHITE: Rgb = [255, 255, 255];
 const BLACK: Rgb = [0, 0, 0];
@@ -18,6 +27,23 @@ describe('contrast', () => {
 
   it('is symmetric, so which argument is the foreground cannot change the answer', () => {
     expect(contrast(DARK_SURFACE, WHITE)).toBeCloseTo(contrast(WHITE, DARK_SURFACE), 10);
+  });
+});
+
+describe('textContrastFloor', () => {
+  it('is WCAG enhanced under the high-contrast theme and the ordinary floor elsewhere', () => {
+    expect(textContrastFloor(HIGH_CONTRAST_THEME)).toBe(7);
+    expect(textContrastFloor('light')).toBe(4.5);
+    expect(textContrastFloor('dark')).toBe(4.5);
+  });
+
+  it('answers the ordinary floor for NO theme, which is the bare :root block', () => {
+    // The load-bearing case. `applyTheme` REMOVES the attribute for `system`
+    // (`appearance.ts`), so an absent theme is the commonest state — and a floor
+    // function that treated *no attribute* as high contrast would solve every default
+    // install's labels to 7:1 while reporting nothing.
+    expect(textContrastFloor(null)).toBe(4.5);
+    expect(textContrastFloor(undefined)).toBe(4.5);
   });
 });
 

@@ -30,7 +30,7 @@
  * | category | obligation |
  * |---|---|
  * | `surface` | none itself; a background others are checked against |
- * | `text` | 4.5:1 against its declared surface set |
+ * | `text` | 4.5:1 against its declared surface set; 7:1 where the theme is `hc` |
  * | `boundary-control` | 3:1 against every surface it may sit on (WCAG 1.4.11) |
  * | `boundary-decorative` | none; lint forbids its use as a control boundary |
  * | `fill` | none itself; if it carries a foreground it is also a `surface` |

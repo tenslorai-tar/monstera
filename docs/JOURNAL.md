@@ -892,6 +892,187 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-16 — Stage audit of `09e0f74..9596f52` — findings IIIIII-1 to IIIIII-5
+
+**Why now, and it was not a choice.** The pre-commit gate refused the high-contrast feature commit: *"09e0f74..HEAD
+plus this commit: 202 files (one batch is 200)"*. `audit:scope` alone reports the range as within a batch — 45 commits,
+197 files — because it measures against HEAD and the commit that crosses is invisible to it. The gate counts the staged
+commit too, which is the whole reason it blocks there rather than reporting later.
+
+**The range.** 45 commits, 197 files: the design pass F–K, the splitter fix, the CI concurrency fix, the visual
+baselines, D3's redaction preview, the engine-wiring fix and its live run, and §10.2's high-contrast amendment.
+18 proofs added · 34 modified · 1 removed · 28 source files added · 61 changed · 1 removed.
+
+**IIIIII-1 — an instrument left a proof for a shared module and took no case with it, and it normalises BOTH SIDES of a
+comparison.** `rgbToHex` was defined inside `rendererPolicy.proof.mjs`; it now lives in `scripts/lib/cssColour.mjs` and
+is imported by that proof and by `canvasPixels.proof.mjs`. The consolidation is right — two spellings of *what is this
+colour* is the shape B3a forbids — and it moved a function that is applied to **both** operands of an equality. That is
+the one arrangement where a defect does not fail loudly: a normaliser that mangles two different colours the same way
+makes them compare **equal**, and both proofs then report a match nobody checked. The module has no case of its own
+(`grep -rln cssColour scripts/proofs scripts/checks` names only its two callers). **Remedy:** a case asserting it
+SEPARATES two colours that differ, beside the one asserting an unparseable value is returned unchanged. Owed in the
+commit after this one.
+
+**IIIIII-2 — the accessibility gate runs one theme.** `renderedScreen.pw.ts` never sets `data-theme`, so its three axe
+cases only ever see the default, while §10.4's threshold and Part M7's three themes are what the gate claims to hold.
+Item 2's easy shape, in the check that exists to catch what static rules cannot. The owner ruled on 2026-09-16: one run
+per theme with a planted failure per theme, in its own commit. **Not closed by this audit.**
+
+**IIIIII-3 — the thumbnail strip and the loupe draw a page at the rotation it was OPENED with.** Found during the
+external-edit live run and recorded in this journal the same day: `Thumbnails.tsx` and `Loupe.tsx:73` call `renderPage`
+with no rotation, so PDF.js falls back to the `/Rotate` in the bytes it opened, which `renderPage.ts`' own note calls
+stale the moment anything rotates a page. `PageList.tsx` is the one caller passing the view model's rotation. One live
+observation and a mechanism read from the code; **no reproducing case yet**, which is what keeps it a queued defect
+rather than a fixed one.
+
+**IIIIII-4 — a figure in FEATURES was falsified by a commit that never opened it.** Row 329 recorded *"48 declared
+pairs pass"*; `check:tokencontrast` prints **51**. The three are `--redact-mark` on `--page` in each theme, added by
+`c964f13` on 2026-09-15. NNN-4's shape exactly — no range ever changed both the sentence and the code that refutes it —
+and it was found by running the check while building something else, not by a sweep. Corrected in place, which costs
+that 298-word row no words.
+
+**IIIIII-5 — a defect CI could not have caught, and four rows that claimed done.** The composition root's writer
+delegates forwarded two of the bus's four arguments (`631ff46`), so every `sources: 'one'` command reached the engine
+host with no source. Item 3, answered from the code rather than from a workflow: no test crossed the delegate —
+`pageMerge.test.ts` and `documentCommands.test.ts` drive the in-process writer, `remoteEngine.test.ts` calls the remote
+one directly — so CI was structurally blind, and **Merge PDFs, Insert from PDF, Replace page and Import page as OCG
+layer (rows 94, 90, 98, 225) had never worked in the running application**. Closed by the composition-host case, which
+runs in `npm test` on both matrix legs.
+
+### 1. Root cause or workaround?
+
+All root-cause, each with its mechanism stated before a line changed: the splitter's shut-side pane (`a2761a2`), `main`
+grouping CI runs by commit (`d3f4bbf`), the accessibility step wrapped so a failure is public (`da7ec5e`), and the
+writer delegates (`631ff46`, IIIIII-5). **Two workaround-shaped options were refused and are named**: the intermittent
+5-second test timeouts were spun off as their own task rather than raised, and the visual gate's tolerance was chosen
+from a measurement — a three-run spread of 0 against a planted one-word change at 319 pixels — rather than widened
+until the run passed.
+
+### 2. Verified against the easy shape only?
+
+The delegate defect says no: three candidate mechanisms were read and eliminated, and the fault only appeared through
+the real graph — a contained host driven by the real composition. Two easy shapes remain and both are recorded rather
+than implied: the visual baselines compare **one platform** (Windows; the row says Linux is not compared), and the
+accessibility gate runs **one theme** (IIIIII-2).
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once — IIIIII-1. `rgbToHex` was an ordinary function inside a proof and is now a shared module two proofs import,
+with no case of its own. Strengthening where the derivation is read; a silent weakening for the property itself.
+
+### 3. Would CI have caught it?
+
+IIIIII-5: **no, structurally.** No case crossed the composition root's delegate, so every leg of CI was blind to it; the
+new `compositionHost.test.ts` case runs in `npm test` on both matrix legs, which closes that. The live-run defects
+(external edit, and IIIIII-3) are outside CI by nature — no runner drives the shipped window.
+**And the other direction — a defect this machine cannot see:** the visual job runs only on `windows-latest`, so a
+Linux rasterisation difference is invisible by construction, not by omission.
+
+### 4. Are the proofs non-vacuous?
+
+Mutations were run for every feature in the range and each was red for its own reason and reverted: the splitter's
+flushSync control (S-1), D3's three (S-D1 the renderer, S-D2 the category, S-D3 the box), the concurrency scan's M-1,
+the delegate's M-1, and the contrast pair M-2/M-3 recorded in the entry below. **Every deletion in the 34 modified
+proofs was read**, and all are corrections or moves rather than loosened checks: `nodeEditWatch.test.ts` lost a
+PowerShell short-path helper when that fixture started asking Windows directly (`5495374`); `settings/all.test.ts`'
+excluded list shrank because the annotation colour became a colour kind (ADR-0056's correction) and is still asserted
+with `toStrictEqual`; `projections.test.ts` replaced two start-screen cases with slot-based ones **plus** *a
+start-screen placement cannot be written WITHOUT a slot*; `Ribbon.test.tsx` lost a render helper;
+`mainNeverCancels.proof.mjs` and `rendererPolicy.proof.mjs` were rewritten by the fixes they cover. The one removed
+proof and the one removed source file are the same move — `StatusBar.tsx` and its test now sit under
+`packages/ui/src/surfaces/`, both present. Case loss is mechanical here rather than a matter of care:
+`scripts/checks/testAnchors.mjs` compares staged test files against HEAD and refuses a commit that loses one.
+
+### 4a. Has every instrument passed a resolution test before it measured anything?
+
+The visual baselines' control plants a one-word change and reports **319 pixels** against a three-run spread of **0**,
+which is the resolution test and the tolerance's justification in one. `splitterSize.ts` and `windowControlsOverlay.ts`
+arrived with their own cases. `scripts/lib/cssColour.mjs` did not — IIIIII-1.
+
+### 4b. Search-shaped instruments, and their positive controls
+
+`check:tokencontrast` carries a control fixture whose failure it must report and refuses to answer when blinded;
+`mainNeverCancels.mjs` carries two — a cancelling workflow and a shared group — and its proof runs 19 cases; the
+emitted-template scan carries its own control; `audit:scope` prints the five axes of its own classifier that have been
+defects. Nothing search-shaped arrived in this range without a control.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The visual baselines do — `LOOKS × SECTIONS` — and the danger there is a **shrink**: a section that stopped rendering
+would simply stop being compared. It is anchored by asserting the rail shows exactly `SECTIONS`, an independently
+written list. `tokenContrast.proof.mjs` spells its case count (13) rather than deriving it from its own cases. Nothing
+else in the range added a derived roster.
+
+### 5. Executed, or asserted?
+
+**Executed:** the external-edit live run with an installed editor; three harness runs through a real contained engine
+host (reimport, merge, layer import) before and after the fix; every mutation above; `npm run typecheck`, `npm run
+lint`, `npm test` (3006 in 224 files); `check:tokencontrast` and `proof:tokencontrast`.
+**Asserted and not executed, stated as such:** IIIIII-3's mechanism — read from the code with one live observation and
+no reproducing case; and the claim that the PDFium delegate's dropped parameters are unobservable today, which is read
+from the declaration table (no PDFium command declares a pre-read) rather than run.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, five times, each in its own commit ahead of the feature that needed it: ADR-0067's correction (status-bar
+placement by cluster), ADR-0068 (start-screen slots), ADR-0056's correction (a colour is a schema kind), ADR-0003's
+`graphic` category, and ADR-0003's high-contrast floor.
+
+### 7. Do the documents still match the code?
+
+Two drifts found and fixed in this range: IIIIII-4 (row 329's 48 against the check's 51) and the four statements of the
+4.5 text floor the amendment left stale — §10.2's accent-text formula, its primary-button pair, its indicators
+sentence, and `UI-GUIDE.md`'s category table. **ADR-0003's original lines were deliberately not edited**: an ADR records
+what was decided then and takes an appended correction. The cross-document sweep NNN-4 asks for was run for the
+text-floor claim, which is how those four were found.
+
+---
+
+## 2026-09-16 — The high-contrast text floor: one answer keyed by the theme, taken by the check and by the solver
+
+`9596f52` amended §10.2 (owner, 2026-09-15): text owes **7:1** in the `hc` theme, light and dark unchanged at 4.5:1.
+This builds it.
+
+**Where it lands is not where it looks, and the measurement is what said so.** Read from the shipped token file with
+the check's own parsers: `hc` has twelve declared `text` pairs and **all twelve already clear 7:1**. Light has eight
+below it and dark eight — those stay at 4.5:1. The colour that fails is **derived**: the primary button's label,
+solved by `useOnColor` against `--accent` at a 4.5 floor, **4.69:1** measured in the running application. A target
+written only into the token check would have reported nothing and changed nothing.
+
+**So the floor is one function with callers** (B3a): `textContrastFloor(theme)` in `packages/shared/src/colour.ts`,
+beside `onColor` and `contrast`, with `HIGH_CONTRAST_THEME` for the string the three sites compare. `tokenContrast.mjs`
+asks it **per theme block** for every declared `text` pair; `useOnColor` asks it for the theme in force **at the
+element** — `closest('[data-theme]')`, the same read site §10.2 settles for the tokens themselves, so a panel rendering
+its own theme gets that theme's floor. `Button` passes `'text'` rather than a number, which is what stops a text colour
+being solved to whichever floor a call site's author had in mind (B5 over a comment).
+
+**`accent.ts` keeps 4.5 and says why.** `App.tsx` clears a user accent while high contrast is on
+(`applyAccent(root, 'theme')`), so a solve under `hc` is not a state that function reaches; taking the theme's floor
+there would read as coverage of a path that does not exist.
+
+**Verified.** `check:tokencontrast`: 51 declared pairs, control fired, tightest still `--border-control` on dark
+`--surface2` at 3.04:1. `proof:tokencontrast`: 11 → **13** cases — the planted `hc` failure (`#6c6c6c` on white, about
+5.25:1, above the ordinary floor and below the enhanced one) and its light-theme control, which is the case that
+separates a per-theme obligation from a raised one. `npm run typecheck` 0, `npm run lint` 0, `npm test` **3006 passed
+in 224 files** (3003 before: the two floor cases and the button's).
+
+**Mutations.** **M-2**, the per-theme resolution removed from the check: proof case 12 red with `failures: none` — the
+exact silence a check holding every theme to 4.5 produces — and the light control green, so the pair separates rather
+than both going red. **M-3**, `Button` back to a hard-coded 4.5: its high-contrast case red at **4.61:1**, which is the
+live 4.69:1 reproduced in the harness. Both reverted and re-run green.
+
+**The stale-claim sweep this change owed** (NNN-4's rule: a range stating a cross-document relationship sweeps every
+other statement of it). Corrected: §10.2's accent-text formula, its primary-button pair, its indicators sentence, and
+`UI-GUIDE.md`'s category table — each stated 4.5 for text with no theme. **ADR-0003's original lines 12 and 79 were
+left alone**: an ADR records what was decided then, and the correction is appended below it. **No FEATURES row states
+the obligation**, so none was edited — rows 329 and 76 measure 298 and 248 words and had no room to grow anyway.
+
+**A figure this range re-read.** `check:tokencontrast` counts **51** declared pairs where FEATURES row 329 said 48.
+Nothing here adds a pair: the three are `--redact-mark` on `--page` in each theme, from `c964f13` on 2026-09-15, and no
+commit reopened the row. Corrected in place, which costs the row no words.
+
+---
+
 ## 2026-09-16 — Edit page in another app: the live run passes
 
 Screen control, owner-approved, against the development build (`npm start`) at `631ff46`, with PDF-XChange Editor as

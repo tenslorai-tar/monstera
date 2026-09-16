@@ -30,8 +30,10 @@ import { useOnColor } from './useOnColor.js';
  * one value baked for one theme while the theme is chosen at runtime, so the
  * stored colour would be right in one theme and quietly wrong in the others —
  * and a colour that fails contrast still renders, which is why nothing would
- * catch it. `useOnColor` solves it against the fill in effect, at 4.5:1 for
- * text.
+ * catch it. `useOnColor` solves it against the fill in effect, at the floor the
+ * theme in force asks of text — 4.5:1, and 7:1 under `hc` (ADR-0003, corrected
+ * 2026-09-16). This variant passes `'text'` rather than a number, so the floor
+ * cannot be the one whoever wrote the call site had in mind.
  *
  * The fallback when it cannot be solved is `--text`, a real token rather than a
  * guess: an unreadable token is a defect to see, and a hard-coded black would
@@ -87,7 +89,7 @@ export function Button({
   // The default variant sits on `--surface`, a pair `tokens.css` declares and
   // `check:tokencontrast` already evaluates — solving it again here would be a
   // second opinion about a question that has an authority (B3a).
-  useOnColor(element, 'color', '--text', variant === 'primary' ? ['--accent'] : [], 4.5);
+  useOnColor(element, 'color', '--text', variant === 'primary' ? ['--accent'] : [], 'text');
 
   return (
     <BaseButton

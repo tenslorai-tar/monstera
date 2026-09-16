@@ -155,7 +155,7 @@ decides what is checked:
 | category | means | checked at |
 |---|---|---|
 | `surface` | something is drawn on top of it | — (it is the background in other pairs) |
-| `text` | reading text | 4.5:1 against each declared surface |
+| `text` | reading text | 4.5:1 against each declared surface; **7:1 under `hc`** |
 | `boundary-control` | the boundary of something operable | 3:1 against each declared surface |
 | `boundary-decorative` | a divider, an outline, a rule | not checked |
 | `fill` | a solid block of brand colour | — |

@@ -1,4 +1,4 @@
-import { type Rgb, channels, onColorRounded } from '@monstera/shared';
+import { type Rgb, channels, onColorRounded, textContrastFloor } from '@monstera/shared';
 import { type RefObject, useEffect } from 'react';
 
 /**
@@ -88,14 +88,19 @@ import { type RefObject, useEffect } from 'react';
  * @param property the CSS property to set, e.g. `color`
  * @param wantedToken the token to start from, e.g. `--text`
  * @param backgroundTokens every surface the result must clear, e.g. `['--accent']`
- * @param minimum the WCAG ratio required — 4.5 for text, 3 for a boundary
+ * @param minimum the WCAG ratio required — a number for a boundary or a graphic, or
+ *   `'text'` for a colour that carries text, whose floor is the theme's rather than the
+ *   call site's: 7:1 under `hc` and 4.5:1 elsewhere (ADR-0003, corrected 2026-09-16).
+ *   Spelt as a word rather than left to each caller so that a text colour cannot be
+ *   solved to a number somebody typed, which is how the primary button's label sat at
+ *   4.69:1 in high contrast (B5 over a comment).
  */
 export function useOnColor(
   target: RefObject<HTMLElement | null>,
   property: string,
   wantedToken: string,
   backgroundTokens: readonly string[],
-  minimum: number,
+  minimum: number | 'text',
 ): void {
   // THE DEPENDENCY IS THE JOINED STRING, not the array. A caller writing
   // `['--accent']` inline hands a new array identity on every render, and an
@@ -158,7 +163,16 @@ export function useOnColor(
       // asking. Its failure lands on the path that was already here: an
       // unreachable floor removes the property rather than writing a colour
       // nobody checked.
-      const result = onColorRounded(wanted, backgrounds, minimum);
+      // THE THEME IN FORCE AT THIS ELEMENT, read the same way the tokens above are: a
+      // theme is whatever ancestor carries `data-theme` (`tokens.css` writes the blocks
+      // unqualified), so a panel rendering its own theme gets that theme's floor rather
+      // than the root's.
+      const floor =
+        minimum === 'text'
+          ? textContrastFloor(element.closest('[data-theme]')?.getAttribute('data-theme'))
+          : minimum;
+
+      const result = onColorRounded(wanted, backgrounds, floor);
       if (!result.ok) {
         element.style.removeProperty(property);
         return;
