@@ -202,5 +202,37 @@
         }
       }
     }
+  ],
+  "programs": [
+    {
+      "name": "Poppler",
+      "version": "26.09.0",
+      "role": "Layout-preserving text extraction: pdftotext, run in a contained separate process (ADR-0071). Not linked.",
+      "licence": "GPL-2.0-or-later, the xpdf-derived files GPL-2.0 or GPL-3.0; distributed under GPL-3.0",
+      "origin": "https://poppler.freedesktop.org/",
+      "source": "https://poppler.freedesktop.org/poppler-26.09.0.tar.xz, and each library's release at the version below; the build recipes are https://github.com/conda-forge/poppler-feedstock and its dependencies' feedstocks",
+      "build": "conda-forge win-64 poppler-26.09.0-h924501e_0 and the packages scripts/provision/poppler.mjs pins",
+      "licenceRoot": "scripts/release/licences/poppler",
+      "components": [
+        { "name": "Poppler", "version": "26.09.0", "spdx": "GPL-2.0-or-later (xpdf-derived files GPL-2.0-only OR GPL-3.0-only); taken under GPL-3.0", "texts": ["poppler/COPYING.txt", "poppler/COPYING3.txt"] },
+        { "name": "FreeType", "version": "2.14.3", "spdx": "FTL OR GPL-2.0-or-later; taken under FTL", "texts": ["libfreetype6/LICENSE.txt", "libfreetype6/FTL.txt"] },
+        { "name": "Little CMS", "version": "2.19.1", "spdx": "MIT", "texts": ["lcms2/LICENSE.txt"] },
+        { "name": "LERC", "version": "4.2.0", "spdx": "Apache-2.0", "texts": ["lerc/LICENSE.txt"] },
+        { "name": "libcurl", "version": "8.22.0", "spdx": "curl", "texts": ["libcurl/COPYING.txt"] },
+        { "name": "libdeflate", "version": "1.25", "spdx": "MIT", "texts": ["libdeflate/COPYING.txt"] },
+        { "name": "libjpeg-turbo", "version": "3.2.0", "spdx": "IJG AND BSD-3-Clause AND Zlib", "texts": ["libjpeg-turbo/LICENSE.md"] },
+        { "name": "liblzma (XZ Utils)", "version": "5.8.3", "spdx": "0BSD", "texts": ["liblzma/COPYING.txt", "liblzma/COPYING.0BSD.txt"] },
+        { "name": "libpng", "version": "1.6.58", "spdx": "libpng-2.0", "texts": ["libpng/LICENSE.txt"] },
+        { "name": "libpsl", "version": "0.23.1", "spdx": "MIT", "texts": ["libpsl/LICENSE.txt"] },
+        { "name": "libssh2", "version": "1.11.1", "spdx": "BSD-3-Clause", "texts": ["libssh2/COPYING.txt"] },
+        { "name": "LibTIFF", "version": "4.7.2", "spdx": "libtiff", "texts": ["libtiff/LICENSE.md"] },
+        { "name": "zlib", "version": "1.3.2", "spdx": "Zlib", "texts": ["libzlib/LICENSE.txt"] },
+        { "name": "OpenJPEG", "version": "2.5.4", "spdx": "BSD-2-Clause", "texts": ["openjpeg/LICENSE.txt"] },
+        { "name": "OpenSSL (libcrypto)", "version": "3.6.4", "spdx": "Apache-2.0", "texts": ["openssl/LICENSE.txt"] },
+        { "name": "ICU", "version": "78.3", "spdx": "Unicode-3.0", "texts": ["icu/LICENSE.txt"] },
+        { "name": "Zstandard", "version": "1.5.7", "spdx": "BSD-3-Clause", "texts": ["zstd/LICENSE.txt"] },
+        { "name": "Microsoft Visual C++ runtime", "version": "14.51.36247", "spdx": "LicenseRef-MicrosoftVisualCpp2015-2022Runtime", "texts": ["vc14_runtime/LICENSE.txt"] }
+      ]
+    }
   ]
 }

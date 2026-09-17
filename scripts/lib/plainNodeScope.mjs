@@ -41,8 +41,14 @@ export const PLAIN_NODE_EXTENSIONS = ['mjs', 'js', 'cjs'];
  * against (ADR-0063), which nothing loads or executes. It arrived with
  * `scripts/provision/keys/`, and this scan refused it until it was classified,
  * which is the design working.
+ *
+ * `txt` and `md` are licence texts: the committed copies under
+ * `scripts/release/licences/` that NOTICE renders in full (ADR-0071), which
+ * nothing loads. Their packages ship some with no extension at all
+ * (`LICENSE`, `COPYING`); those are committed with `.txt` appended rather than
+ * this scan learning to pass an extensionless file, which would admit anything.
  */
-export const SCAN_DATA_EXTENSIONS = ['json', 'asc'];
+export const SCAN_DATA_EXTENSIONS = ['json', 'asc', 'txt', 'md'];
 
 /**
  * One glob per extension, never a brace list.

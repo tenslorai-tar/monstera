@@ -486,6 +486,19 @@ try {
       },
     ],
     [
+      'scripts/research/popplerContained.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads four built modules through file:// URLs — the Win32 pipe, directory ' +
+          'and host surfaces and the session-directory pair — for libreofficeContained.mjs\'s ' +
+          'reason: ADR-0071\'s condition, that pdftotext runs contained with only its input and ' +
+          'output granted, is asked of the SHIPPED surfaces. Plain Node; it starts pdftotext ' +
+          'through pdftotextPath(), a converter resolver check:electronbinary sanctions, and never ' +
+          'imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/libreofficeContained.mjs',
       {
         sites: 1,

@@ -84,6 +84,7 @@ import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from './electron.mjs';
 import { libreOfficeRoot } from './libreoffice.mjs';
 import { pdfiumLibrary } from './pdfium.mjs';
+import { popplerRoot } from './poppler.mjs';
 import { tessdataDirectory } from './tessdata.mjs';
 
 /**
@@ -205,6 +206,16 @@ export function grantSet(root = repoRoot()) {
       path: libreOfficeRoot(root),
       rights: 'RX',
       why: 'the pinned LibreOffice tree the converter runs inside the container',
+      required: false,
+    },
+    // THE PINNED POPPLER TREE, which ADR-0071 runs `pdftotext` from: the
+    // executable and the twenty-one DLLs beside it. `RX`, because it is executed;
+    // NOT REQUIRED, for LibreOffice's reason — a checkout that has not run
+    // `provision:poppler` offers no layout-preserving text, a decided state.
+    {
+      path: popplerRoot(root),
+      rights: 'RX',
+      why: 'the pinned Poppler tree pdftotext runs from inside the container',
       required: false,
     },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and

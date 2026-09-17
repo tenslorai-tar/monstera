@@ -31,6 +31,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { electronRoot } from '../provision/electron.mjs';
 import { libreOfficeRoot } from '../provision/libreoffice.mjs';
+import { popplerRoot } from '../provision/poppler.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
 import {
@@ -179,16 +180,19 @@ try {
   //
   // THE LIST IS KEPT BY HAND ON PURPOSE (audit item 4c). The danger here is an
   // entry quietly becoming optional, which a set derived from `grantSet` would
-  // agree with — so this names the three, and a fourth arrives owing an edit to
-  // this line rather than inheriting their exemption.
+  // agree with — so this names them, and each new one arrives owing an edit to
+  // this line rather than inheriting their exemption. Poppler was the fourth
+  // (ADR-0071).
   check(
-    'the entries whose absence is not a failure are exactly the three a host can run without',
+    'the entries whose absence is not a failure are exactly the four a host can run without',
     set
       .filter((entry) => !entry.required)
       .map((entry) => entry.path)
       .sort()
       .join('|') ===
-      [dirname(pdfiumLibrary(root)), tessdataDirectory(root), libreOfficeRoot(root)].sort().join('|'),
+      [dirname(pdfiumLibrary(root)), tessdataDirectory(root), libreOfficeRoot(root), popplerRoot(root)]
+        .sort()
+        .join('|'),
     `optional: ${JSON.stringify(set.filter((entry) => !entry.required).map((e) => e.path))}. ` +
       `Everything else here is the host's OWN program — the runtime, its dependency graph, the ` +
       `shim, this application's packages — and a machine missing any of them cannot start a ` +

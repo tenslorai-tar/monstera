@@ -94,6 +94,8 @@ const RESOLVERS = Object.freeze(
   /** @type {Record<string, 'electron-node' | 'converter'>} */ ({
     electronBinaryPath: 'electron-node',
     sofficeLauncher: 'converter',
+    // ADR-0071: Poppler's pdftotext, provisioned by scripts/provision/poppler.mjs.
+    pdftotextPath: 'converter',
   }),
 );
 

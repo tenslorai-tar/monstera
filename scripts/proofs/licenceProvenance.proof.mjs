@@ -55,6 +55,7 @@ import {
   licenceFileIn,
   normaliseEndings,
   renderNotice,
+  renderProgram,
   requiresLocalInstall,
   shipsOnTarget,
   verifyLicenceSources,
@@ -417,6 +418,64 @@ try {
     `The third. A prefix walk that returned something for a name with no family would make the ` +
       `two cases above pass for a function that answers anything.`,
   );
+}
+
+// A SEPARATE PROGRAM'S TERMS ARE RENDERED IN FULL, AND A MISSING TEXT FAILS.
+// Built from a constructed tree under the fixture root, so the refusal is
+// about this input and not about whatever happens to be committed.
+{
+  const root = join(FIXTURE, 'programs');
+  rmSync(root, { recursive: true, force: true });
+  mkdirSync(join(root, 'licences', 'tool'), { recursive: true });
+  writeFileSync(join(root, 'licences', 'tool', 'LICENSE'), 'The tool licence, a known sentence.\n');
+  /** @type {import('../release/generateNotice.mjs').SeparateProgram} */
+  const program = {
+    name: 'Tool',
+    version: '1.0',
+    role: 'a fixture',
+    licence: 'MIT',
+    origin: 'https://example.invalid/',
+    source: 'https://example.invalid/tool-1.0.tar.gz',
+    build: 'a fixture build',
+    licenceRoot: 'licences',
+    components: [{ name: 'Tool', version: '1.0', spdx: 'MIT', texts: ['tool/LICENSE'] }],
+  };
+
+  const rendered = renderProgram(program, root).join('\n');
+  check(
+    'CONTROL: a separate program whose texts exist renders each one in full, with the offer of source',
+    rendered.includes('The tool licence, a known sentence.') && rendered.includes('WRITTEN OFFER OF SOURCE'),
+    `The refusal below means nothing unless the same program with its text present renders that text.`,
+  );
+
+  const missing = { ...program, components: [{ ...program.components[0], texts: ['tool/ABSENT'] }] };
+  let refusal = '';
+  try {
+    renderProgram(/** @type {typeof program} */ (missing), root);
+  } catch (error) {
+    refusal = String(error);
+  }
+  check(
+    'a separate program whose licence text is MISSING fails the render, naming the file',
+    refusal.includes('licences/tool/ABSENT') && refusal.includes('missing'),
+    `renderProgram returned for a component with no text on disk (${JSON.stringify(refusal)}). A notice ` +
+      `that lists a binary without its terms is the omission this generator exists to refuse.`,
+  );
+
+  writeFileSync(join(root, 'licences', 'tool', 'EMPTY'), '  \n');
+  const empty = { ...program, components: [{ ...program.components[0], texts: ['tool/EMPTY'] }] };
+  let emptyRefusal = '';
+  try {
+    renderProgram(/** @type {typeof program} */ (empty), root);
+  } catch (error) {
+    emptyRefusal = String(error);
+  }
+  check(
+    'a separate program whose licence text is EMPTY fails too',
+    emptyRefusal.includes('empty'),
+    `An empty file satisfies "exists" and carries no terms.`,
+  );
+  rmSync(root, { recursive: true, force: true });
 }
 
 if (failures.length > 0) {

@@ -638,6 +638,102 @@ export function declaredNativeComponents() {
   return nativeComponents();
 }
 
+/**
+ * @typedef {{
+ *   name: string,
+ *   version: string,
+ *   spdx: string,
+ *   texts: string[],
+ * }} ProgramComponent
+ *   One library a separate program loads. `texts` are paths under the program's
+ *   `licenceRoot`, and every one is rendered in full.
+ *
+ * @typedef {{
+ *   name: string,
+ *   version: string,
+ *   role: string,
+ *   licence: string,
+ *   origin: string,
+ *   source: string,
+ *   build: string,
+ *   licenceRoot: string,
+ *   components: ProgramComponent[],
+ * }} SeparateProgram
+ *   A third-party program this application provisions and RUNS as its own
+ *   process — never linked. `licenceRoot` is repository-relative.
+ */
+
+/** @returns {SeparateProgram[]} */
+export function separatePrograms() {
+  /** @type {{ programs?: SeparateProgram[] }} */
+  const declared = JSON.parse(readFileSync(join(HERE, 'nativeComponents.json'), 'utf8'));
+  return declared.programs ?? [];
+}
+
+/**
+ * One separate program's notice section: what it is, where its source is, the
+ * written offer, and EVERY licence text in full.
+ *
+ * ## A missing or empty text FAILS, for this file's own reason
+ *
+ * The MuPDF section names bundled libraries and points at the source tree for
+ * their texts, which ships with the source offer. A separate program is a binary
+ * distributed as it is, so its terms have to be in the notice itself — and a
+ * component rendered without them is the quiet omission the header refuses.
+ * The texts are committed copies, and the provisioner compares each with the
+ * pinned build's own before anything is installed.
+ *
+ * @param {SeparateProgram} program
+ * @param {string} root the repository root the `licenceRoot` is relative to
+ * @returns {string[]}
+ */
+export function renderProgram(program, root = ROOT) {
+  const lines = [];
+  lines.push('─'.repeat(78));
+  lines.push(`${program.name} ${program.version} — ${program.licence}`);
+  lines.push('─'.repeat(78));
+  lines.push('');
+  lines.push(`  ${program.role}`);
+  lines.push(`  Home:   ${program.origin}`);
+  lines.push(`  Build:  ${program.build}`);
+  lines.push(`  Source: ${program.source}`);
+  lines.push('');
+  lines.push(`  WRITTEN OFFER OF SOURCE. For at least three years from the date you received this`);
+  lines.push(`  application, its authors will provide, on request made through the project's source`);
+  lines.push(`  repository, a complete machine-readable copy of the corresponding source code of`);
+  lines.push(`  ${program.name} ${program.version} and of each library listed below, at the exact versions`);
+  lines.push(`  distributed, for no more than the cost of physically performing the distribution.`);
+  lines.push(`  The source releases named above are where that source is published today.`);
+  lines.push('');
+  for (const component of program.components) {
+    lines.push(`  ${component.name} ${component.version} — ${component.spdx}`);
+  }
+  lines.push('');
+  for (const component of program.components) {
+    if (component.texts.length === 0) {
+      throw new Error(
+        `${program.name} loads ${component.name} and records no licence text for it. NOTICE will not ` +
+          `list a component without its terms.`,
+      );
+    }
+    for (const text of component.texts) {
+      const path = join(root, program.licenceRoot, text);
+      const body = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      if (body.trim() === '') {
+        throw new Error(
+          `${program.name}: the licence text for ${component.name} at ${program.licenceRoot}/${text} is ` +
+            `${existsSync(path) ? 'empty' : 'missing'}. NOTICE will not render a component without its terms.`,
+        );
+      }
+      lines.push(`  ── ${component.name} ${component.version}: ${text}`);
+      lines.push('');
+      lines.push(normaliseEndings(body).trimEnd());
+      lines.push('');
+    }
+  }
+  return lines;
+}
+
 /** @returns {string} */
 export function renderNotice() {
   const shipped = shippedPackages();
@@ -730,6 +826,15 @@ export function renderNotice() {
   lines.push('    Those arrive inside MuPDF\'s tree, so "the MuPDF version" arguably covers them');
   lines.push('    already. Naming them costs a line and removes the argument.');
   lines.push('');
+
+  const programs = separatePrograms();
+  if (programs.length > 0) {
+    lines.push('═'.repeat(78));
+    lines.push('SEPARATE PROGRAMS — provisioned and run as their own processes, never linked');
+    lines.push('═'.repeat(78));
+    lines.push('');
+    for (const program of programs) lines.push(...renderProgram(program));
+  }
 
   lines.push('═'.repeat(78));
   lines.push(`BUNDLED PACKAGES — ${String(shipped.length)} from the production dependency tree`);
