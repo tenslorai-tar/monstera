@@ -1069,6 +1069,18 @@ a zod schema per params and result. Generated or type-derived from it:
 Hand-writing the same channel in several places drifts silently and surfaces at
 runtime.
 
+**AND THERE IS A SECOND DIRECTION, declared the same way** (amended 2026-09-17,
+[ADR-0082](DECISIONS/0082-main-may-push-on-declared-event-channels.md)). `main`
+may **push** to the renderer on an **event channel**, and an event registry
+beside the channel registry gives each one an id and a zod schema, bounded like
+every payload. The bridge gains `subscribe(channel, handler)` and nothing else;
+an event is addressed to a subscription the renderer opened and one it did not
+open is dropped; and work is stopped through an `invoke`, never by ignoring
+events — an abandoned subscription that left the work running is a person
+pressing Stop and paying for the rest of the answer. Stage 9's assistant is why:
+a provider streams, keys never leave `main`, and §9.27's CSP gives the renderer
+no network to ask for itself.
+
 The worker protocol takes the same shape, and the **intended** vehicle is one
 `defineWorkerContract` helper shared by both hosts. *That helper does not exist
 yet* (finding XX-1, 2026-08-22). This paragraph asserted it in the present tense
@@ -2525,6 +2537,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-17 | **`main` may push to the renderer, on declared event channels with the same discipline** (§5). The contract was request-and-answer over one `invoke`, and Stage 9's assistant streams: the provider answers in pieces, keys never leave `main`, and §9.27's CSP gives the renderer no network to ask for itself. An event registry gives each event an id, a zod schema and a bound; the bridge gains `subscribe` and nothing else; an event is addressed to a subscription the renderer opened, and one it did not open is dropped; stopping goes through an `invoke`, so Stop reaches the provider rather than leaving the work running. Rejects polling an `invoke`, one event channel with a `kind` union, a `MessagePort` beside the bridge, letting the renderer call the provider, and delivering the answer only when complete | Nothing withdrawn: §5's four generated surfaces and its one-validated-boundary rule stand, and the second direction takes the same discipline | [0082](DECISIONS/0082-main-may-push-on-declared-event-channels.md) |
 | 2026-09-17 | **Emailing a document is the Windows Share sheet, reached from `main` through WinRT** (§9.17). The owner chose the route (Q13, 2026-09-14); Electron's share menu is macOS-only, so the sheet is `DataTransferManager` through `IDataTransferManagerInterop`, whose activation is `combase.dll`'s, which §9.17's list excluded. Measured unpackaged, with no UI shown: `GetForWindow` on a window answers `S_OK` and on a null handle `0x80070578`; a koffi-built delegate registers; a package given a folder's items reads back one item by name, and one given none answers `0x8004006A`. `main` binds `combase.dll` on the first share. The sheet itself is an owner-present live run | nothing; `BUILD-PROMPT.md`:504 is met, not superseded | [0080](DECISIONS/0080-emailing-a-document-is-the-windows-share-sheet-from-main.md) |
 | 2026-09-17 | **The handwriting engine's runtime ships; only its model weights download** (§3's OCR recognition row). The owner's decision. ADR-0052 kept ONNX Runtime on demand because the models' downloader exists anyway; what bundling buys is a feature whose code never arrives from a CDN at run time. Measured: an npm dependency is refused by the notice — `onnxruntime-web` 1.29.0, `onnxruntime-common` and `guid-typescript` ship no licence text — so the three runtime files are provisioned from the registry tarball, pinned by its integrity and by the SHA-256 each file already had, and ONNX Runtime's `LICENSE` and `ThirdPartyNotices.txt` at `v1.29.0` are committed and rendered; no component in them is GPL-2.0-only. `cdn.jsdelivr.net` leaves the download host list | `BUILD-PROMPT.md`:806, *"the TrOCR/onnxruntime stack … follows the same pinned-hash-on-demand pattern as its models — never bundled"*, for the runtime only; the models stay on demand | [0052](DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md), corrected 2026-09-17 |
 | 2026-09-17 | **Barcodes are zxing-cpp's, read in the engine host and written for the place-image command** (§3). D10's *barcode generate & read* had no row, and MuPDF's barcode support is absent from the WASM build the kernel loads. The owner asked for one library by licence that reads and writes: `zxing-wasm` 3.1.4, whose four-package tree is MIT and audits clean, carrying zxing-cpp (Apache-2.0) and zint's library backend (BSD-3-Clause), whose texts the package omits and the notice will render. Measured: QR, Code 128 and Data Matrix round-trip through a MuPDF page raster; a blank page reads none. Reading is in the host, because the pixels are a document's; generation is in `main`, loaded on first use | nothing | [0076](DECISIONS/0076-barcodes-are-zxing-cpps-read-in-the-engine-host-written-for-the-place-image-command.md) |
