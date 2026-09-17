@@ -62,3 +62,23 @@ and not by judgement"*; that stands here.
 2026-09-17, scratch tree: a four-part WordprocessingML package — content types, package relationships, the main
 document with three paragraphs carrying a tab, `&`, `<` and non-Latin text — zipped by `fflate` to 1,011 bytes, opened
 by Microsoft Word through COM read-only, which reported `paragraphs=3` and each paragraph's text unchanged.
+
+## Correction, 2026-09-17 — composed in `main`, streamed, not in the engine host
+
+Decision 2 put composition in the engine host so that `main` would never hold the text. That was the wrong route to
+the right bound. The plain text export already reads **one page at a time in `main`** and streams it to disk, which is
+ADR-0035's own bound — *at most the largest page* — and `fflate` zips as a stream: each chunk of a part is deflated as
+it is pushed and handed on at once. So the Word export reads each page's structured text through the same substrate the
+plain export uses, writes that page's XML, and the zip carries it to the destination before the next page is read. What
+is resident is two pages' text (the page being written and the one held back to know whether it is the last) and the
+compressor's window.
+
+What the host route would have cost, and this avoids: a new engine channel, an export dependency inside the hostile
+process, a second copy of the substrate's reading there, and the output file read back into `main` or streamed out of a
+granted directory. Nothing about the decision's substance changes — the parts are this build's, `fflate` zips them, and
+each format is proven in the application that owns it.
+
+Measured the same day through the built modules on a corpus document's first five pages (391 lines): all three modes
+open in Word; layout mode keeps five pages, five sections and one frame per line; Word's own PDF of it, read back by
+MuPDF, places **328 of 383** lines with identical text within **1 pt** of the original (median 0 pt across, 1 pt down),
+while the reflowed text mode — the control — places 8.
