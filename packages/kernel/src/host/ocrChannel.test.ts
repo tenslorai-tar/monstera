@@ -83,6 +83,8 @@ const HANDWRITTEN: RecognisedPage = {
 
 /** The cache main downloads the runtime and models into — NOT the tessdata one. */
 const HANDWRITING_CACHE = 'C:/granted/trocr';
+/** The provisioned runtime, a different directory from the cache (ADR-0052's 2026-09-17 correction). */
+const ONNX_RUNTIME = 'C:/granted/onnxruntime';
 
 /**
  * The two halves joined over a JSON round trip, with both readers injected.
@@ -351,6 +353,7 @@ describe('engine/ocr-page', () => {
         region: [30, 180, 370, 230],
         size: 'small',
         modelDirectory: HANDWRITING_CACHE,
+        runtimeDirectory: ONNX_RUNTIME,
       });
       // STRICT EQUALITY, including the EMPTY word list: a line with no words is
       // what this engine answers and what `ocrTextLayer.ts` already handles, so
@@ -377,14 +380,23 @@ describe('engine/ocr-page', () => {
       // produced by a handler that dropped the field, which is the shape the
       // rotate shipped with — and the directory matters most, because the two
       // caches hold entirely different files.
+      // AND THE RUNTIME'S OWN DIRECTORY, which is not the cache: a handler that passed the cache
+      // twice would load no runtime, and this is the case that names both.
       await readHandwriting(session, {
         page: 3,
         region: [11, 22, 33, 44],
         size: 'base',
         modelDirectory: HANDWRITING_CACHE,
+        runtimeDirectory: ONNX_RUNTIME,
       });
       expect(asked).toStrictEqual([
-        { page: 3, region: [11, 22, 33, 44], size: 'base', modelDirectory: HANDWRITING_CACHE },
+        {
+          page: 3,
+          region: [11, 22, 33, 44],
+          size: 'base',
+          modelDirectory: HANDWRITING_CACHE,
+          runtimeDirectory: ONNX_RUNTIME,
+        },
       ]);
     } finally {
       await close();
@@ -423,7 +435,7 @@ describe('engine/ocr-page', () => {
           // The cast is the case: it constructs the value the type forbids, to
           // show the SCHEMA refuses it too. Without it this would assert only
           // that the compiler is working.
-          { page: 0, size: 'small', modelDirectory: HANDWRITING_CACHE } as Parameters<
+          { page: 0, size: 'small', modelDirectory: HANDWRITING_CACHE, runtimeDirectory: ONNX_RUNTIME } as Parameters<
             ReturnType<typeof remoteMupdfHandwriting>
           >[1],
         ),

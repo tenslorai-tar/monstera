@@ -177,7 +177,7 @@ import type { ConverterPlatform } from './converterSession.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { createPdfaSource } from './pdfaConversion.js';
 import type { PrintDestination } from './printing.js';
-import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
+import { provisionedModelDirectory, provisionedOcrLanguages, provisionedOnnxRuntimeDirectory } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
 
@@ -907,8 +907,16 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         if (handwritingCache === undefined) {
           throw new Error(
             'this build has no handwriting cache surface, so there is nowhere for the TrOCR ' +
-              'runtime and models to have been downloaded to. The surface is supplied by ' +
-              'entry.ts from `userData`; a graph without one offers no handwriting recognition.',
+              'models to have been downloaded to. The surface is supplied by entry.ts from ' +
+              '`userData`; a graph without one offers no handwriting recognition.',
+          );
+        }
+        const runtimeDirectory = provisionedOnnxRuntimeDirectory();
+        if (runtimeDirectory === null) {
+          throw new Error(
+            'no ONNX Runtime is provisioned with this build, so the handwriting models have nothing ' +
+              'to run on. `scripts/provision/onnxruntime.mjs` installs it and the launcher passes the ' +
+              'directory to the shell (ADR-0052, corrected 2026-09-17); a packaged build has neither yet.',
           );
         }
         return engineHost.handwriting(session, {
@@ -916,6 +924,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           region: request.region,
           size: request.size,
           modelDirectory: handwritingCache.directory,
+          runtimeDirectory,
         });
       }
 

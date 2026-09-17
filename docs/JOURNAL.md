@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Handwriting: the runtime ships, and the model download could never have worked
+
+ADR-0052's correction (the owner's, `2299129`): ONNX Runtime Web's three files are provisioned with
+the application (`066d04e`) and the host loads them from that directory; only the weights download.
+The request now carries `runtimeDirectory` beside `modelDirectory`, from the launcher's
+`MONSTERA_ONNXRUNTIME_DIRECTORY`, and the composition root refuses to start a read without it.
+
+**A defect the change found, and it predates it.** `HANDWRITING_HOSTS` was `huggingface.co` and
+`cdn.jsdelivr.net`. A `HEAD` on the small encoder's URL, 2026-09-17, answers `302` to
+`us.aws.cdn.hf.co` — and `downloadVerified` checks every hop, so every model download was refused
+at the hop that delivers the bytes. `verifiedDownload.ts` had supported `*.hf.co` since 2026-09-11;
+the list never used it. Nothing saw it because the proof reads a cache someone filled by hand. The
+list is now `huggingface.co`, `*.hf.co`, with a test that replays the redirect and a control with
+the old list that is refused before the second request.
+
+**Clearing the cache counts what is on disk**, not what the manifest names: a profile from before
+this correction holds the runtime there too, and the old count would have under-reported by 14 MB.
+
+`proof:ocrhandwriting`, run against the provisioned runtime and a scratch model cache: 5 of 5. It
+also holds the loader's and the provisioner's file names equal on every run, before its
+not-applicable exit, because neither package may import the other.
+
+---
+
 ## 2026-09-17 — D8 accessibility check: veraPDF's rules, held against veraPDF
 
 ADR-0078. The standard is the owner's: PDF/UA machine rules, and what a machine cannot check said

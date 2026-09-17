@@ -578,7 +578,7 @@ export {
 export {
   HANDWRITING_HOSTS,
   HANDWRITING_MODELS,
-  RUNTIME_ARTEFACTS,
+  RUNTIME_FILES,
   type HandwritingArtefact,
   type HandwritingModel,
   type TokenizerFamily,

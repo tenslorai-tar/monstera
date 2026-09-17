@@ -2088,8 +2088,14 @@ export const engineChannels = {
           /** REQUIRED. This engine is never offered on a page. */
           region: ocrBoxSchema,
           size: trocrSizeSchema,
-          /** The cache main downloaded the runtime and models into, and granted. */
+          /** The cache main downloaded the models into, and granted. */
           modelDirectory: pathSchema,
+          /**
+           * The ONNX Runtime provisioned with the application, granted (ADR-0052's 2026-09-17
+           * correction). Its own field for `modelDirectory`'s reason: a runtime handed the cache,
+           * or a cache handed as the runtime, is *model unreadable* rather than a compile error.
+           */
+          runtimeDirectory: pathSchema,
         })
         .strict(),
     ]),

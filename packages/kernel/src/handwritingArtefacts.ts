@@ -15,26 +15,18 @@ import type { TrocrSize } from '@monstera/contract';
  * no runtime, so main reaches it through the kernel barrel without loading
  * anything ONNX.
  *
- * ## Nothing here is bundled, and that survived being priced
+ * ## The runtime ships; only the models are downloaded
  *
- * `BUILD-PROMPT.md`:806 keeps this stack out of the installer as *a 200+ MB
- * runtime serving one niche feature*. That figure is `onnxruntime-node`'s and is
- * exact; the runtime a run needs is the WASM one at 13,961,845 bytes, 6.3% of
- * it. Bundling it anyway removes **no mechanism** — the models are 67 MB at the
- * smallest, so the downloader, the digests, the cache and the clear-caches
- * control exist whatever the runtime does
+ * ONNX Runtime Web's three files are provisioned with the application
+ * (`scripts/provision/onnxruntime.mjs`, pinned there) and the host loads them from
+ * that directory — the owner's decision, ADR-0052's 2026-09-17 correction, so the
+ * feature's code never arrives from a CDN at run time. This manifest names them
+ * and holds no URL for them. The models stay on demand: 67 MB at the smallest.
  * ([ADR-0052](../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)).
- *
- * The two JavaScript files are 74,344 bytes together and are downloaded for the
- * same reason rather than vendored: shipping them means either a 142 MB
- * dependency in every `npm ci` or third-party source committed to this tree,
- * against a fetch that invariant 9 already governs — the mechanism that puts
- * Electron's own binary on this machine.
  *
  * ## Every URL is IMMUTABLE
  *
- * A HuggingFace **revision sha**, never `main`; a pinned npm version on a CDN
- * that serves the registry tarball's own files. A digest pinned against a moving
+ * A HuggingFace **revision sha**, never `main`. A digest pinned against a moving
  * URL is a download that starts failing on somebody else's schedule.
  */
 
@@ -53,35 +45,22 @@ export interface HandwritingArtefact {
 }
 
 /**
- * The ONNX Runtime, as three files.
+ * The ONNX Runtime's three files, by name, in the provisioned runtime directory.
  *
- * `ort.wasm.min.mjs` is the API and the WASM backend; `ort-wasm-simd-threaded`
- * is the Emscripten factory and its binary. The *threaded* build is the one the
- * package ships for the CPU backend and it runs single-threaded here — measured
- * 2026-09-11, `numThreads > 1` fails in Node because the threaded build fetches
- * its worker through a URL the file scheme does not satisfy, which is recorded
- * as unmeasured headroom rather than worked around.
+ * `api` is the API and the WASM backend; `factory` and `binary` are the Emscripten
+ * factory and its WASM. The *threaded* build is the one the package ships for the
+ * CPU backend and it runs single-threaded here — measured 2026-09-11,
+ * `numThreads > 1` fails in Node because the threaded build fetches its worker
+ * through a URL the file scheme does not satisfy, which is recorded as unmeasured
+ * headroom rather than worked around. The digests are the provisioner's;
+ * `scripts/proofs/ocrHandwriting.proof.mjs` holds these names equal to the files it
+ * provisions, on every run, because neither side may import the other.
  */
-export const RUNTIME_ARTEFACTS: readonly HandwritingArtefact[] = [
-  {
-    file: 'ort.wasm.min.mjs',
-    url: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.wasm.min.mjs',
-    sha256: '14a0a63ad1a0fe8127722929fd16fb26c2e5352ea221bc9034d12daf314d0b92',
-    bytes: 50126,
-  },
-  {
-    file: 'ort-wasm-simd-threaded.mjs',
-    url: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort-wasm-simd-threaded.mjs',
-    sha256: '5a15f1fd086b3f6c2baf1f35105b8f502653b567e165cef80028870b39748747',
-    bytes: 24218,
-  },
-  {
-    file: 'ort-wasm-simd-threaded.wasm',
-    url: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort-wasm-simd-threaded.wasm',
-    sha256: 'ec8580a9d7b9476ceee52e10a7f94124e4dc71a019d666ed6d4726697c109a4d',
-    bytes: 13961845,
-  },
-];
+export const RUNTIME_FILES = {
+  api: 'ort.wasm.min.mjs',
+  factory: 'ort-wasm-simd-threaded.mjs',
+  binary: 'ort-wasm-simd-threaded.wasm',
+} as const;
 
 /** One model's files and how its ids detokenise. */
 export interface HandwritingModel {
@@ -187,16 +166,20 @@ export const HANDWRITING_MODELS: Readonly<Record<TrocrSize, HandwritingModel>> =
  * Every host a handwriting download may touch, on the first request and on every
  * redirect hop.
  *
- * Two entries and both are needed: HuggingFace answers a `resolve` URL with a
- * redirect to its CDN, so a list naming only the first would refuse every model
- * download at the hop that delivers the bytes.
+ * **Both entries are needed, and the second was missing until 2026-09-17.**
+ * HuggingFace answers a model's `resolve` URL with a redirect to a regional CDN
+ * host under `hf.co` — read that day with a `HEAD` on the small encoder: `302` to
+ * `us.aws.cdn.hf.co`. `verifiedDownload.ts` gained `*.hf.co` wildcards for exactly
+ * that host on 2026-09-11 and this list never used one: it named
+ * `cdn.jsdelivr.net`, which served the runtime, so every model download would have
+ * been refused at the hop that delivers the bytes. The runtime no longer downloads.
  */
-export const HANDWRITING_HOSTS: readonly string[] = ['huggingface.co', 'cdn.jsdelivr.net'];
+export const HANDWRITING_HOSTS: readonly string[] = ['huggingface.co', '*.hf.co'];
 
-/** Every artefact one size needs, runtime included, in no particular order. */
+/** Every file one size downloads — its encoder, decoder and tokenizer. */
 export function artefactsFor(size: TrocrSize): readonly HandwritingArtefact[] {
   const model = HANDWRITING_MODELS[size];
-  return [...RUNTIME_ARTEFACTS, model.encoder, model.decoder, model.tokenizer];
+  return [model.encoder, model.decoder, model.tokenizer];
 }
 
 /**

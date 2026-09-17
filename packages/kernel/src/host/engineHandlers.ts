@@ -754,6 +754,7 @@ export function createEngineHandlers({
               region: request.region,
               size: request.size,
               modelDirectory: request.modelDirectory,
+              runtimeDirectory: request.runtimeDirectory,
             }),
           };
         }

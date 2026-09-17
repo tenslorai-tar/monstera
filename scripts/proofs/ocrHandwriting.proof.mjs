@@ -11,13 +11,15 @@
  * look.
  *
  * So this one runs it: MuPDF rasterises a region of a real document, the ONNX
- * runtime loads **from the downloaded files**, the encoder and decoder run, and
- * the ids come back as text.
+ * runtime loads **from the provisioned files**, the encoder and decoder run on the
+ * downloaded weights, and the ids come back as text.
  *
  * ## The models are not in this repository and never will be
  *
  * 67 MB at the smallest, downloaded on demand and never bundled
- * (`BUILD-PROMPT.md`:806, ADR-0052). So the cases below need a cache and say so
+ * (`BUILD-PROMPT.md`:806, ADR-0052). The runtime is not downloaded — it ships, and
+ * here it is `npm run provision:onnxruntime`'s directory (ADR-0052's 2026-09-17
+ * correction). So the cases below need a cache and say so
  * loudly when there is none: **NOT APPLICABLE is printed apart from the passes**,
  * because a run that could not look must never read as a run that looked and
  * found nothing.
@@ -47,12 +49,13 @@ import { join } from 'node:path';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 
-import { artefactsFor } from '../../packages/kernel/dist/handwritingArtefacts.js';
+import { artefactsFor, RUNTIME_FILES } from '../../packages/kernel/dist/handwritingArtefacts.js';
 import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
 import { recogniseHandwriting } from '../../packages/kernel/dist/ocrHandwriting.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { ONNXRUNTIME_FILES, onnxRuntimeDirectory } from '../provision/onnxruntime.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const ROOT = repoRoot();
@@ -84,14 +87,37 @@ function check(label, condition, detail) {
   roster.record(mark, label);
 }
 
+// THE TWO NAME LISTS ARE HELD EQUAL HERE, BEFORE ANY NOT-APPLICABLE EXIT, so it runs on
+// every machine: the kernel names the files it imports and the provisioner names the
+// files it writes, and neither package may import the other. A rename on one side
+// would load nothing in the application while both sides stayed green.
+const loaderNames = Object.values(RUNTIME_FILES).toSorted();
+const provisionedNames = ONNXRUNTIME_FILES.map((entry) => entry.file).toSorted();
+if (JSON.stringify(loaderNames) !== JSON.stringify(provisionedNames)) {
+  process.stdout.write(
+    `\nFAILED — the handwriting loader and the ONNX Runtime provisioner name different files.\n` +
+      `  loader (handwritingArtefacts.ts RUNTIME_FILES): ${loaderNames.join(', ')}\n` +
+      `  provisioner (onnxruntime.mjs ONNXRUNTIME_FILES): ${provisionedNames.join(', ')}\n`,
+  );
+  process.exit(1);
+}
+
 const SIZE = 'small';
 const cache = process.env['MONSTERA_HANDWRITING_CACHE'] ?? '';
-const missing =
-  cache === ''
+// THE RUNTIME IS PROVISIONED, NOT DOWNLOADED (ADR-0052's 2026-09-17 correction), so
+// it has its own directory and the launcher's variable wins over the repository's.
+const suppliedRuntime = process.env['MONSTERA_ONNXRUNTIME_DIRECTORY'] ?? '';
+const runtime = suppliedRuntime === '' ? onnxRuntimeDirectory(ROOT) : suppliedRuntime;
+const missing = [
+  ...(cache === ''
     ? ['the MONSTERA_HANDWRITING_CACHE variable is not set']
     : artefactsFor(SIZE)
         .filter((artefact) => !existsSync(join(cache, artefact.file)))
-        .map((artefact) => artefact.file);
+        .map((artefact) => artefact.file)),
+  ...Object.values(RUNTIME_FILES)
+    .filter((file) => !existsSync(join(runtime, file)))
+    .map((file) => `${file} (run npm run provision:onnxruntime)`),
+];
 
 if (missing.length > 0) {
   // NOT APPLICABLE, PRINTED APART FROM ANY PASS, and exiting 0 — because a
@@ -100,8 +126,8 @@ if (missing.length > 0) {
   // visible: "could not look" is never "looked and found nothing".
   process.stdout.write(
     `\nNOT APPLICABLE — ${String(DECLARED_CASES)} handwriting case(s) did not run.\n\n` +
-      `  The handwriting stack is downloaded on demand and never bundled, so this machine may\n` +
-      `  simply not have it. Missing: ${missing.join(', ')}\n\n` +
+      `  The handwriting models are downloaded on demand and never bundled, so this machine may\n` +
+      `  simply not have them. Missing: ${missing.join(', ')}\n\n` +
       `  Set MONSTERA_HANDWRITING_CACHE to a directory holding the manifest's files. Their\n` +
       `  URLs and SHA-256 digests are in packages/kernel/src/handwritingArtefacts.ts, which is\n` +
       `  the one place that names them.\n`,
@@ -132,6 +158,7 @@ try {
     region: INK_REGION,
     size: SIZE,
     modelDirectory: cache,
+    runtimeDirectory: runtime,
   });
 
   check(
@@ -167,6 +194,7 @@ try {
     region: BLANK_REGION,
     size: SIZE,
     modelDirectory: cache,
+    runtimeDirectory: runtime,
   });
 
   check(
@@ -184,6 +212,7 @@ try {
       region: /** @type {never} */ ([100, 100, 100, 200]),
       size: SIZE,
       modelDirectory: cache,
+      runtimeDirectory: runtime,
     }).then(
       () => false,
       (error) => /has no area/u.test(String(error?.message)),

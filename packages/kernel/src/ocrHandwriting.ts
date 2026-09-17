@@ -8,7 +8,7 @@ import { ColorSpace, DrawDevice, Matrix, Pixmap, Rect } from 'mupdf';
 import type { MupdfSession } from './engineSeam.js';
 import {
   HANDWRITING_MODELS,
-  RUNTIME_ARTEFACTS,
+  RUNTIME_FILES,
   type TokenizerFamily,
 } from './handwritingArtefacts.js';
 import { withDocument } from './mupdfWriter.js';
@@ -187,7 +187,7 @@ function readArtefact(directory: string, file: string): Uint8Array {
 }
 
 /**
- * The ONNX Runtime, imported from the files main downloaded.
+ * The ONNX Runtime, imported from the directory it was provisioned into.
  *
  * **`numThreads` is 1 deliberately.** The threaded build fetches its worker
  * through a URL the file scheme does not satisfy in Node — measured 2026-09-11,
@@ -202,22 +202,19 @@ async function loadRuntime(directory: string): Promise<OrtModule> {
   if (cached !== undefined) return cached;
 
   const loading = (async () => {
-    const [api, factory, binary] = RUNTIME_ARTEFACTS;
-    if (api === undefined || factory === undefined || binary === undefined) {
-      throw new HandwritingModelUnreadableError('The runtime manifest names no files.');
-    }
+    const { api, factory, binary } = RUNTIME_FILES;
     // READ FIRST, so a missing runtime is the model-unreadable state rather than
     // an import failure from inside ORT with a stack nobody can act on.
-    readArtefact(directory, api.file);
-    readArtefact(directory, factory.file);
-    readArtefact(directory, binary.file);
+    readArtefact(directory, api);
+    readArtefact(directory, factory);
+    readArtefact(directory, binary);
 
-    const imported: unknown = await import(pathToFileURL(join(directory, api.file)).href);
+    const imported: unknown = await import(pathToFileURL(join(directory, api)).href);
     const ort = imported as OrtModule;
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.wasmPaths = {
-      mjs: pathToFileURL(join(directory, factory.file)).href,
-      wasm: pathToFileURL(join(directory, binary.file)).href,
+      mjs: pathToFileURL(join(directory, factory)).href,
+      wasm: pathToFileURL(join(directory, binary)).href,
     };
     ort.env.logLevel = 'error';
     return ort;
@@ -582,8 +579,14 @@ export interface HandwritingScope {
   readonly size: TrocrSize;
 }
 
-/** {@link HandwritingScope} plus the directory main granted this host. */
-export type HandwritingRequest = HandwritingScope & { readonly modelDirectory: string };
+/**
+ * {@link HandwritingScope} plus the two directories main granted this host: the downloaded
+ * models, and the runtime provisioned with the application (ADR-0052's 2026-09-17 correction).
+ */
+export type HandwritingRequest = HandwritingScope & {
+  readonly modelDirectory: string;
+  readonly runtimeDirectory: string;
+};
 
 /**
  * Reads one region of one page as a single line of handwriting.
@@ -601,7 +604,7 @@ export async function recogniseHandwriting(
   request: HandwritingRequest,
 ): Promise<RecognisedPage> {
   const raster = await rasteriseRegion(session, request.page, request.region);
-  const ort = await loadRuntime(request.modelDirectory);
+  const ort = await loadRuntime(request.runtimeDirectory);
   const model = await loadModel(request.modelDirectory, request.size);
 
   const [pixelName = 'pixel_values'] = model.encoder.inputNames;

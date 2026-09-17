@@ -1,4 +1,5 @@
-import { rm, stat } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { TrocrSize } from '@monstera/contract';
@@ -156,21 +157,24 @@ export async function fetchHandwritingModel(
  *   that something happened.
  */
 export async function clearHandwritingCache(directory: string): Promise<number> {
-  // A SET OF FILE NAMES, because the three runtime files are in BOTH sizes'
-  // lists — counting per size would report a machine holding one size as having
-  // freed the runtime twice, which is a figure shown to a reader.
-  const files = new Set<string>();
-  for (const size of ['small', 'base'] as const) {
-    for (const artefact of artefactsFor(size)) files.add(artefact.file);
-  }
-
+  // WHAT IS ON DISK, not what today's manifest names. A profile that ran a build
+  // from before ADR-0052's 2026-09-17 correction holds the three runtime files
+  // here too, and the `rm` below removes them — a figure counted from the
+  // manifest would tell that reader it freed 14 MB less than it did.
   let removed = 0;
-  for (const file of files) {
+  let entries: Dirent[] = [];
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    // No directory: a machine that never used the feature, and nothing to free.
+  }
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
     try {
-      const found = await stat(join(directory, file));
+      const found = await stat(join(directory, entry.name));
       removed += found.size;
     } catch {
-      // Absent, which is most of them on most machines.
+      // Gone between the listing and the stat; it frees nothing now.
     }
   }
   await rm(directory, { recursive: true, force: true });
