@@ -100,6 +100,16 @@ export const STEXT_OPTIONS = {
    * text layer, word count and spell check asked for neither.
    */
   structured: 'structured',
+  /**
+   * `FZ_STEXT_COLLECT_VECTORS` — the page's vector paths as blocks. **Asked for only
+   * by the table read**, where it is what lets a ruling line propose a table:
+   * `stext-table.c` proposes one per raft of vectors, and without them every
+   * generated grid came back two columns wide
+   * ([ADR-0073](../../../docs/DECISIONS/0073-a-table-is-the-engines-table-read-asked-as-its-own-table-writer-asks.md)).
+   */
+  vectors: 'vectors',
+  /** `FZ_STEXT_ACCURATE_BBOXES` — asked for only by the table read, as MuPDF's CSV writer asks. */
+  accurateBboxes: 'accurate-bboxes',
 } as const;
 
 /**
@@ -167,7 +177,7 @@ export const STEXT_OPTION_STRING: string = [
  * carry an option to `fz_parse_stext_options`: the engine host maps a name to the
  * string {@link stextOptionsFor} composes, and nothing else composes one (ADR-0065).
  */
-export const PAGE_TEXT_READS = ['substrate', 'structure'] as const;
+export const PAGE_TEXT_READS = ['substrate', 'structure', 'table'] as const;
 
 /** One of {@link PAGE_TEXT_READS}. */
 export type PageTextRead = (typeof PAGE_TEXT_READS)[number];
@@ -189,6 +199,16 @@ export function stextOptionsFor(read: PageTextRead): string {
       return STEXT_OPTION_STRING;
     case 'structure':
       return [STEXT_OPTION_STRING, STEXT_OPTIONS.structured].join(',');
+    // THE CSV WRITER'S SET, not the flag alone: `output-csv.c` asks for vectors,
+    // accurate boxes, segmentation and the hunt, and the hunt without vectors
+    // splits every table at its gutters (ADR-0073).
+    case 'table':
+      return [
+        STEXT_OPTION_STRING,
+        STEXT_OPTIONS.vectors,
+        STEXT_OPTIONS.accurateBboxes,
+        STEXT_OPTIONS.tableHunt,
+      ].join(',');
   }
 }
 
@@ -375,6 +395,8 @@ interface BlockVisitor {
   readonly image: () => void;
   /** A block carrying `lines`, with the ones this module could read — possibly none. */
   readonly text: (block: RawNode, lines: readonly TextLine[]) => void;
+  /** A `grid` block: the positions and cell flags `FZ_STEXT_TABLE_HUNT` found. */
+  readonly grid: (block: RawNode) => void;
 }
 
 /**
@@ -415,6 +437,7 @@ function walkBlocks(source: readonly unknown[], visitor: BlockVisitor): void {
     // may sit inside a `structure` block like any other, so a top-level count
     // would miss exactly the segmented pages this option was turned on for.
     if (str(field(block, 'type')) === 'image') visitor.image();
+    if (str(field(block, 'type')) === 'grid') visitor.grid(block);
 
     const rawLines = nodes(field(block, 'lines'));
     if (rawLines === null) continue;
@@ -504,6 +527,7 @@ export function parsePageText(json: string): PageText {
     text: (block, lines) => {
       if (lines.length > 0) blocks.push({ lines, box: rectOf(field(block, 'bbox')) });
     },
+    grid: () => undefined,
   });
   return { blocks, images };
 }
@@ -626,7 +650,166 @@ export function parsePageStructure(json: string): PageStructure {
       if (element === undefined) untaggedLines += lines.length;
       else element.lines += lines.length;
     },
+    grid: () => undefined,
   });
 
   return { nodes: found, untaggedLines, images };
+}
+
+/** One cell of a found table: the lines the engine moved into it, in its order. */
+export interface TableCell {
+  readonly lines: readonly TextLine[];
+}
+
+/** Which edges of a cell the engine found a ruling line on. */
+export interface CellBorders {
+  readonly top: boolean;
+  readonly left: boolean;
+  readonly bottom: boolean;
+  readonly right: boolean;
+}
+
+/** One table `FZ_STEXT_TABLE_HUNT` found, as rows of cells. */
+export interface PageTable {
+  /** The engine's grid width, in columns. */
+  readonly columns: number;
+  /**
+   * The engine's `TR` elements, each its `TD` elements, in the engine's order.
+   *
+   * **A spanning cell is ONE cell, and its row is shorter.** The engine decides
+   * spans and writes them into each cell's box, and its JSON carries no box for a
+   * structure element — so which grid columns a cell covers does not reach this
+   * reader. Placing a cell by its text's position would be this build's rule for
+   * something the engine already decided (B3a), so a row is its cells as given.
+   */
+  readonly rows: readonly (readonly TableCell[])[];
+  /**
+   * Each cell's ruled edges, from the grid's own flags — **only when every row has
+   * exactly {@link columns} cells and there is one row per grid row**, which is
+   * the one shape where a cell's place in its row IS its grid column. Otherwise
+   * `null`, for {@link rows}' reason.
+   */
+  readonly borders: readonly (readonly CellBorders[])[] | null;
+}
+
+/** One page under the `table` read. */
+export interface PageTables {
+  readonly tables: readonly PageTable[];
+  /** Every line on the page, inside a table or not — so *no table* and *no text* stay two answers. */
+  readonly lines: number;
+  /** Image blocks, for {@link PageText.images}' reason. */
+  readonly images: number;
+}
+
+/** `FZ_STEXT_GRID_T_BORDER` and `FZ_STEXT_GRID_L_BORDER`, from `structured-text.h`. */
+const GRID_TOP_BORDER = 8;
+const GRID_LEFT_BORDER = 4;
+
+/**
+ * A grid block's cell flags as edges, or null where its shape is not the one the
+ * table's rows imply.
+ *
+ * The flags hold one entry per grid POINT — `(rows + 1) × (columns + 1)` — each
+ * naming the line along its cell's top and left, so a cell's bottom is the top of
+ * the point below it and its right the left of the point beside it.
+ */
+function bordersOf(
+  grid: RawNode,
+  rows: readonly (readonly TableCell[])[],
+  columns: number,
+): readonly (readonly CellBorders[])[] | null {
+  const height = num(field(grid, 'h'), -1);
+  if (rows.length !== height || rows.some((row) => row.length !== columns)) return null;
+  const flags = (nodes(field(grid, 'flags')) ?? []).map((row) =>
+    (nodes(row) ?? []).map((value) => num(value, 0)),
+  );
+  if (flags.length !== height + 1 || flags.some((row) => row.length !== columns + 1)) return null;
+  const at = (x: number, y: number, bit: number): boolean =>
+    ((flags[y]?.[x] ?? 0) & bit) !== 0;
+  return rows.map((row, y) =>
+    row.map((_cell, x) => ({
+      top: at(x, y, GRID_TOP_BORDER),
+      left: at(x, y, GRID_LEFT_BORDER),
+      bottom: at(x, y + 1, GRID_TOP_BORDER),
+      right: at(x + 1, y, GRID_LEFT_BORDER),
+    })),
+  );
+}
+
+/**
+ * MuPDF's structured-text JSON under the `table` read, as the tables it found.
+ *
+ * The third view over {@link walkBlocks}
+ * ([ADR-0073](../../../docs/DECISIONS/0073-a-table-is-the-engines-table-read-asked-as-its-own-table-writer-asks.md)).
+ * A table is the engine's `Table` element, a row its `TR`, a cell its `TD`; the
+ * lines in a cell are the ones the engine moved there, reached through whatever
+ * segmentation blocks it left between. Nothing here groups a line.
+ *
+ * @param json the payload from the engine's structured-text call under `table`
+ * @throws for {@link parsePageText}'s reasons
+ */
+export function parsePageTables(json: string): PageTables {
+  interface OpenTable {
+    readonly kind: 'table';
+    grid: RawNode | null;
+    readonly rows: (readonly TableCell[])[];
+  }
+  interface OpenRow {
+    readonly kind: 'row';
+    readonly cells: TableCell[];
+  }
+  interface OpenCell {
+    readonly kind: 'cell';
+    readonly lines: TextLine[];
+  }
+  type Open = OpenTable | OpenRow | OpenCell | null;
+
+  const tables: PageTable[] = [];
+  const open: Open[] = [];
+  let lines = 0;
+  let images = 0;
+  const nearest = <K extends 'table' | 'row' | 'cell'>(kind: K): Extract<Open, { kind: K }> | undefined => {
+    for (let at = open.length - 1; at >= 0; at -= 1) {
+      const entry = open[at];
+      if (entry?.kind === kind) return entry as Extract<Open, { kind: K }>;
+    }
+    return undefined;
+  };
+
+  walkBlocks(blocksOf(json), {
+    enter: (block) => {
+      const role = str(field(block, 'type')) === 'structure' ? str(field(block, 'std')) : null;
+      if (role === 'Table') open.push({ kind: 'table', grid: null, rows: [] });
+      else if (role === 'TR') open.push({ kind: 'row', cells: [] });
+      else if (role === 'TD') open.push({ kind: 'cell', lines: [] });
+      else open.push(null);
+    },
+    leave: () => {
+      const closed = open.pop();
+      if (closed === null || closed === undefined) return;
+      if (closed.kind === 'cell') nearest('row')?.cells.push({ lines: closed.lines });
+      else if (closed.kind === 'row') nearest('table')?.rows.push(closed.cells);
+      else {
+        const columns = closed.grid === null ? 0 : num(field(closed.grid, 'w'), 0);
+        tables.push({
+          columns: Math.max(columns, ...closed.rows.map((row) => row.length)),
+          rows: closed.rows,
+          borders: closed.grid === null ? null : bordersOf(closed.grid, closed.rows, columns),
+        });
+      }
+    },
+    image: () => {
+      images += 1;
+    },
+    text: (_block, found) => {
+      lines += found.length;
+      nearest('cell')?.lines.push(...found);
+    },
+    grid: (block) => {
+      const table = nearest('table');
+      if (table !== undefined) table.grid = block;
+    },
+  });
+
+  return { tables, lines, images };
 }

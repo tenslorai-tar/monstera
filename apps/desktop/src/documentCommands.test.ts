@@ -12,6 +12,7 @@ import {
   PDFRawStream,
   StandardFonts,
   decodePDFRawStream,
+  rgb,
 } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -37,6 +38,7 @@ import {
   type MupdfSession,
   nodeFileSurface,
   parsePageStructure,
+  parsePageTables,
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -108,6 +110,7 @@ import {
   type DocumentDuplicatesReader,
   type DocumentPageText,
   type DocumentPageStructure,
+  type DocumentPageTables,
   DocumentPoisonedError,
   type DocumentRestore,
   MissingSessionError,
@@ -266,6 +269,9 @@ const noPageText: DocumentPageText = () =>
 
 const noPageStructure: DocumentPageStructure = () =>
   Promise.reject(new Error('this case does not read page structure'));
+
+const noPageTables: DocumentPageTables = () =>
+  Promise.reject(new Error('this case does not read page tables'));
 
 const noPageLinks: DocumentPageLinksReader = () =>
   Promise.reject(new Error('this case does not read page links'));
@@ -512,6 +518,13 @@ const localPageStructure: DocumentPageStructure = async (id, sessions, page) => 
   return parsePageStructure(await readPageTextJson(held, page, 'structure'));
 };
 
+/** The table read, composed as `composition.ts` composes it. */
+const localPageTables: DocumentPageTables = async (id, sessions, page) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return parsePageTables(await readPageTextJson(held, page, 'table'));
+};
+
 /**
  * The production composition of the link read, the way `composition.ts`
  * assembles it — a session lookup and `readPageLinks`.
@@ -578,6 +591,7 @@ const INERT = {
   geometry: noGeometry,
   pageText: noPageText,
   pageStructure: noPageStructure,
+  pageTables: noPageTables,
   pageLinks: noPageLinks,
   destinations: noDestinations,
   // REFUSES IN BOTH SETS, for the reason `textLines` gives below: recognition is
@@ -639,6 +653,7 @@ const LOCAL_READS = {
   geometry: localGeometry,
   pageText: localPageText,
   pageStructure: localPageStructure,
+  pageTables: localPageTables,
   pageLinks: localPageLinks,
   destinations: localDestinations,
   layers: localLayers,
@@ -1968,6 +1983,135 @@ describe('exportText — the document’s words, streamed one page at a time', (
       expect((await commands.exportText(textDoc, 'layout'))?.kind).toBe('refused');
       expect(ran).toBe(0);
     });
+  });
+});
+
+describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () => {
+  const registry = new CapabilityRegistry();
+  const service = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+  /** Page 1 prose, pages 2 and 3 each a ruled three-column table. */
+  let tablesDoc: DocId;
+  /** Page 1 a picture and no text, page 2 blank. */
+  let pictureDoc: DocId;
+  const held = new EngineSessions();
+
+  async function opened(bytes: Uint8Array, name: string): Promise<DocId> {
+    const path = join(directory, name);
+    writeFileSync(path, bytes);
+    const outcome = await service.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    held.hold(outcome.docId, { mupdf: await mupdfWriter.open(bytes) });
+    return outcome.docId;
+  }
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    document.addPage([612, 792]).drawText('a paragraph and no table', { x: 72, y: 700, size: 12, font });
+    for (const rows of [
+      [['Item', 'Qty', 'Price'], ['Bolt', '12', '0.45']],
+      [['Name', 'Share', 'Note'], ['North', '12.5%', 'first']],
+    ]) {
+      const drawn = document.addPage([612, 792]);
+      rows.forEach((row, r) => {
+        row.forEach((cell, c) => {
+          const x = 72 + c * 120;
+          const y = 700 - r * 24;
+          drawn.drawRectangle({ x, y: y - 6, width: 120, height: 24, borderColor: rgb(0, 0, 0), borderWidth: 1 });
+          drawn.drawText(cell, { x: x + 6, y, size: 11, font });
+        });
+      });
+    }
+    tablesDoc = await opened(await document.save(), 'tables.pdf');
+
+    // A JPEG's start-of-frame alone, which pdf-lib embeds and MuPDF reports as an
+    // image block — measured 2026-09-17 against a blank page, which reports none.
+    const pictures = await PDFDocument.create();
+    const jpeg = Uint8Array.of(0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0, 40, 0, 40, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xd9);
+    pictures.addPage([300, 300]).drawImage(await pictures.embedJpg(jpeg), { x: 0, y: 0, width: 300, height: 300 });
+    pictures.addPage([300, 300]);
+    pictureDoc = await opened(await pictures.save(), 'pictures.pdf');
+  });
+
+  function exportingTo(destination: string | null): {
+    readonly commands: DocumentCommands;
+    readonly picked: string[];
+  } {
+    const picked: string[] = [];
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      documents: service,
+      bus: bus(),
+      engine: held,
+      save: {
+        deps: {
+          checkWriteTarget: (id) => service.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: siblingNames,
+          wait: () => Promise.resolve(),
+        },
+        flush: () => Promise.reject(new Error('an Excel export does not flush the document')),
+      },
+      copy: {
+        pick: () => Promise.reject(new Error('an Excel export uses its own picker')),
+        checkTarget: (target) => service.checkCopyTarget(target),
+      },
+      pickOffice: (name, format) => {
+        picked.push(`${name}:${format}`);
+        return Promise.resolve(destination);
+      },
+    });
+    return { commands, picked };
+  }
+
+  /** Each sheet's name and the inline strings on it, read back out of the zip. */
+  function sheetsOf(path: string): { readonly name: string; readonly strings: readonly string[] }[] {
+    const files = unzipSync(readFileSync(path));
+    const workbook = strFromU8(files['xl/workbook.xml'] ?? new Uint8Array());
+    return [...workbook.matchAll(/<sheet name="([^"]*)"/gu)].map((match, index) => ({
+      name: match[1] ?? '',
+      strings: [
+        ...strFromU8(files[`xl/worksheets/sheet${String(index + 1)}.xml`] ?? new Uint8Array()).matchAll(
+          /<t xml:space="preserve">([^<]*)<\/t>/gu,
+        ),
+      ].map((cell) => cell[1] ?? ''),
+    }));
+  }
+
+  it('writes a sheet for EACH page with a table, holding every column of it', async () => {
+    const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'tables.xlsx');
+    const { commands, picked } = exportingTo(destination);
+
+    const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page');
+
+    expect(outcome?.kind).toBe('copied');
+    expect(picked).toStrictEqual(['tables.pdf:xlsx']);
+    // THE THIRD COLUMN is the separating assertion: the table-hunt flag without
+    // `vectors` returns this grid two columns wide, and `Price` and `Note` outside it.
+    expect(sheetsOf(destination)).toStrictEqual([
+      { name: '2', strings: ['Item', 'Qty', 'Price', 'Bolt'] },
+      { name: '3', strings: ['Name', 'Share', 'Note', 'North', 'first'] },
+    ]);
+  });
+
+  it('writes every table on ONE sheet when asked, named by the pages it spans', async () => {
+    const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'combined.xlsx');
+    const { commands } = exportingTo(destination);
+
+    expect((await commands.exportExcel(tablesDoc, 'one-sheet'))?.kind).toBe('copied');
+    expect(sheetsOf(destination)).toStrictEqual([
+      { name: '2-3', strings: ['Item', 'Qty', 'Price', 'Bolt', 'Name', 'Share', 'Note', 'North', 'first'] },
+    ]);
+  });
+
+  it('answers NO TABLES before any picker, counting the picture page and not the blank one', async () => {
+    const { commands, picked } = exportingTo(null);
+
+    expect(await commands.exportExcel(pictureDoc, 'sheet-per-page')).toStrictEqual({
+      kind: 'no-tables',
+      picturePages: 1,
+    });
+    expect(picked).toStrictEqual([]);
   });
 });
 

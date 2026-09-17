@@ -11,6 +11,8 @@ import {
   SAVE_WORK_INTACT,
   SAVE_LAYOUT_FAILED,
   SAVE_LAYOUT_UNAVAILABLE,
+  SAVE_NO_TABLES,
+  SAVE_NO_TABLES_NO_TEXT,
   SAVE_WRITE_FAILED,
 } from '../messages/en.js';
 
@@ -23,7 +25,9 @@ type SaveProblem =
   | 'unverifiable'
   | 'write-failed'
   | 'layout-unavailable'
-  | 'layout-failed';
+  | 'layout-failed'
+  | 'no-tables'
+  | 'no-tables-no-text';
 
 /**
  * The message for one outcome.
@@ -56,6 +60,10 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   // already says, and the plain export is the action.
   'layout-unavailable': SAVE_LAYOUT_UNAVAILABLE,
   'layout-failed': SAVE_LAYOUT_FAILED,
+  // AN EXCEL EXPORT that found no table. The second names the remedy where some
+  // pages have no text, since the table read can only find a table in text.
+  'no-tables': SAVE_NO_TABLES,
+  'no-tables-no-text': SAVE_NO_TABLES_NO_TEXT,
 };
 
 /**

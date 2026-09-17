@@ -1274,6 +1274,20 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
+    // THE EXCEL EXPORT'S SHIM, the copy's option and outcomes. Its `no-tables` answer
+    // is main's reading of a real document, which a shim has none of.
+    'document.exportExcel': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.copyDestination;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'write-failed') return Promise.resolve(ok({ kind: 'write-failed' as const }));
+      if (typeof chosen === 'object') {
+        return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
+      }
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+    },
     // THE POWERPOINT EXPORT'S SHIM, the same option and the same single-file outcomes.
     'document.exportPowerPoint': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));

@@ -68,6 +68,7 @@ import {
   nodeFileSurface,
   signpdfWriterWith,
   parsePageStructure,
+  parsePageTables,
   parsePageText,
   pdfiumChannels,
   type ComposeChannels,
@@ -789,6 +790,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return parsePageStructure(await engineHost.pageText(session, page, 'structure'));
+    },
+    // THE TABLE READ, the same channel under its own name (ADR-0073).
+    pageTables: async (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return parsePageTables(await engineHost.pageText(session, page, 'table'));
     },
     // THE OUTLINE, composed here for the reads above's reason and taking no
     // page, because an outline is a property of the document rather than of a

@@ -296,6 +296,7 @@ export function createContractHandlers(deps: {
     'document.exportText': exportTextHandler(deps.commands),
     'document.exportWord': exportWordHandler(deps.commands),
     'document.exportPowerPoint': exportPowerPointHandler(deps.commands),
+    'document.exportExcel': exportExcelHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1242,6 +1243,30 @@ function exportPowerPointHandler(commands: DocumentCommands): ContractHandlers['
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The Excel export's handler: a copy's outcomes, and `no-tables` before any picker. */
+function exportExcelHandler(commands: DocumentCommands): ContractHandlers['document.exportExcel'] {
+  return async ({
+    docId,
+    layout,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.exportExcel']>>> => {
+    try {
+      const outcome = await commands.exportExcel(docId, layout);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      if (outcome.kind === 'no-tables') {
+        return ok({ kind: 'no-tables', picturePages: outcome.picturePages } as const);
+      }
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

@@ -892,6 +892,37 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 Excel: the table read is MuPDF's, asked the way its own CSV writer asks
+
+ADR-0034 gave `TABLE_HUNT` a trigger — *the first feature whose subject is a table owes the reading* — and this is that
+feature. **The first probe said the engine was not good enough, and the probe was wrong.** `segment,table-hunt` returned
+every one of six generated grids two columns wide, ruled or not, on MuPDF 1.28.0 and on 1.28.1 in a scratch tree. Reading
+`output-csv.c` in the provisioned source showed MuPDF's own table consumer also sets `vectors` and `accurate-bboxes`, and
+`stext-table.c` proposes a candidate table per raft of vectors: without `vectors` a ruling line proposes nothing, and only
+segmentation's regions are tried — which had already cut the table at its gutters. With the writer's set, all four ruled
+grids came back exact; both unruled grids still split. So the 2026-09-10 reading in ADR-0013 and §3.2 measured an option
+string, not table finding, and both carry a dated correction (5da190e, ADR-0073).
+
+**On the corpus** the table read finds 13 tables in 3 documents, read cell by cell as ruled tables; everything the flag
+alone found in the other three documents was a list, a two-column article or a résumé's entries.
+
+**Measured in Excel** (COM, read-only) on a generated two-page export in both layouts: every value, number format
+(`#,##0.00`, `0.0%`), font, size, bold and all four borders read back as written, with the parts that list the sheets
+written after them. The instrument's control was a workbook whose sheet XML was cut short: Excel refused to open it.
+
+- **The four recognising engines are blocked on a decision, not built.** A scanned table's rulings are pixels, so
+  recognised words reach the engine as an unruled table — the case it splits. The routes are a recogniser that answers
+  tables itself or a grid of word boxes ADR-0034 refuses. Recorded as a question in the report.
+- **Fills and merges are blocked**: the JSON carries no cell background and no structure-element box, so a spanning
+  cell's columns never reach this build. The engine's HTML output has spans; reading it is a second parser.
+- A document with no table answers before any save dialog, reading until the first table so a normal document pays one
+  page; the pass keeps nothing, for ADR-0035.
+
+**Mutations, each restored:** the table read without `vectors` reddens both main-process export cases (the third column
+goes missing); a cell's bottom and right edges read from its own grid point redden the borders case.
+
+---
+
 ## 2026-09-17 — D10 PowerPoint export: a slide per page, and the slide is the page
 
 ADR-0072's second format. `presentationDocument.ts` writes the PresentationML parts a deck needs and no more — content

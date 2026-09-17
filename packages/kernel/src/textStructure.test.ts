@@ -8,6 +8,7 @@ import {
   STEXT_OPTIONS,
   linesOf,
   parsePageStructure,
+  parsePageTables,
   parsePageText,
   plainTextOf,
   stextOptionsFor,
@@ -107,6 +108,8 @@ describe('the stext options', () => {
     expect(STEXT_OPTIONS.segment).toBe('segment');
     expect(STEXT_OPTIONS.tableHunt).toBe('table-hunt');
     expect(STEXT_OPTIONS.structured).toBe('structured');
+    expect(STEXT_OPTIONS.vectors).toBe('vectors');
+    expect(STEXT_OPTIONS.accurateBboxes).toBe('accurate-bboxes');
   });
 
   it('keeps `structured` OUT of the shared read (ADR-0065)', () => {
@@ -134,8 +137,135 @@ describe('the named reads', () => {
     expect(shared.filter((name) => !structure.includes(name))).toStrictEqual([]);
   });
 
-  it('names exactly the two reads, so a third is a visible change to this line', () => {
-    expect(PAGE_TEXT_READS).toStrictEqual(['substrate', 'structure']);
+  it('the table read is the shared set PLUS the CSV writer’s three, and nothing else (ADR-0073)', () => {
+    // AS SETS, both directions, for the structure case's reason. `vectors` is the
+    // member that decides it: without it every generated grid came back two
+    // columns wide, measured 2026-09-17.
+    const shared = STEXT_OPTION_STRING.split(',');
+    const table = stextOptionsFor('table').split(',');
+    expect(table.filter((name) => !shared.includes(name)).sort()).toStrictEqual(
+      [STEXT_OPTIONS.vectors, STEXT_OPTIONS.accurateBboxes, STEXT_OPTIONS.tableHunt].sort(),
+    );
+    expect(shared.filter((name) => !table.includes(name))).toStrictEqual([]);
+  });
+
+  it('keeps the table read’s options OUT of the shared read', () => {
+    const shared = STEXT_OPTION_STRING.split(',');
+    expect(shared).not.toContain(STEXT_OPTIONS.vectors);
+    expect(shared).not.toContain(STEXT_OPTIONS.accurateBboxes);
+  });
+
+  it('names exactly the three reads, so a fourth is a visible change to this line', () => {
+    expect(PAGE_TEXT_READS).toStrictEqual(['substrate', 'structure', 'table']);
+  });
+});
+
+/**
+ * A ruled three-by-two grid as the table read returns it.
+ *
+ * **Shortened from a real reading**: the keys, the nesting — a `Table` holding its
+ * `grid` block and `TR` elements, a `TD` holding a segmentation block around its
+ * text — and the flags are MuPDF 1.28.0's for a generated ruled grid, read
+ * 2026-09-17. 28 is full plus top and left border, 4 a left border alone on the
+ * right-hand edge, 8 a top border alone along the bottom. **Two edges are left
+ * unruled on purpose** — the first row's right and the second row's first bottom —
+ * so a cell's far edges read from its own point, the wrong one, differ from the
+ * right answer.
+ */
+function tablePage(options: { readonly spanned?: boolean } = {}): string {
+  const text = (words: string, x: number) => ({
+    type: 'text',
+    bbox: { x, y: 83, w: 21, h: 8 },
+    lines: [
+      {
+        wmode: 0,
+        bbox: { x, y: 83, w: 21, h: 8 },
+        font: { name: 'Helvetica-Bold', family: 'sans-serif', weight: 'bold', style: 'normal', size: 11 },
+        x,
+        y: 91,
+        text: words,
+      },
+    ],
+  });
+  const cell = (words: string, x: number) => ({
+    type: 'structure',
+    raw: 'TD',
+    std: 'TD',
+    contents: [{ type: 'structure', raw: 'Split', std: 'Div', contents: [text(words, x)] }],
+  });
+  const secondRow = options.spanned === true ? [cell('Apple', 78)] : [cell('Apple', 78), cell('3', 198), cell('1.20', 318)];
+  return JSON.stringify({
+    blocks: [
+      text('Above the table', 72),
+      {
+        type: 'structure',
+        raw: 'Table',
+        std: 'Table',
+        contents: [
+          {
+            type: 'grid',
+            xpos: [71.5, 192, 312, 432.5],
+            ypos: [73.5, 98, 122.5],
+            w: 3,
+            h: 2,
+            flags: [
+              [28, 28, 28, 0],
+              [28, 28, 28, 4],
+              [0, 8, 8, 0],
+            ],
+          },
+          { type: 'structure', raw: 'TR', std: 'TR', contents: [cell('Item', 78), cell('Qty', 198), cell('Price', 318)] },
+          { type: 'structure', raw: 'TR', std: 'TR', contents: secondRow },
+        ],
+      },
+    ],
+  });
+}
+
+describe('parsePageTables', () => {
+  it('reads each Table as its rows and cells, in the engine’s order, reaching through segmentation', () => {
+    const [table, ...others] = parsePageTables(tablePage()).tables;
+
+    expect(others).toStrictEqual([]);
+    expect(table?.columns).toBe(3);
+    expect(table?.rows.map((row) => row.map((cell) => cell.lines.map((line) => line.text).join('|')))).toStrictEqual([
+      ['Item', 'Qty', 'Price'],
+      ['Apple', '3', '1.20'],
+    ]);
+    // THE CELL KEEPS ITS LINES, font and all, for a styled export to read.
+    expect(table?.rows[0]?.[0]?.lines[0]?.font.bold).toBe(true);
+  });
+
+  it('counts every line on the page, inside a table or not, so no-table and no-text stay two answers', () => {
+    const page = parsePageTables(tablePage());
+    expect(page.lines).toBe(7);
+    expect(page.images).toBe(0);
+  });
+
+  it('reads a cell’s ruled edges off the grid’s flags, the bottom and right from the next point', () => {
+    const borders = parsePageTables(tablePage()).tables[0]?.borders;
+    expect(borders?.[0]?.[0]).toStrictEqual({ top: true, left: true, bottom: true, right: true });
+    expect(borders?.[0]?.[2]).toStrictEqual({ top: true, left: true, bottom: true, right: false });
+    expect(borders?.[1]?.[0]).toStrictEqual({ top: true, left: true, bottom: false, right: true });
+  });
+
+  it('CONTROL: gives NO borders for a row shorter than the grid, where a cell’s place is not its column', () => {
+    // A SPANNING CELL arrives as one TD and its row is short; placing the others by
+    // index would draw a border on the wrong cell, so there are none.
+    const table = parsePageTables(tablePage({ spanned: true })).tables[0];
+    expect(table?.rows[1]).toHaveLength(1);
+    expect(table?.borders).toBeNull();
+  });
+
+  it('CONTROL: a page with no Table element has no tables and still counts its lines', () => {
+    const page = parsePageTables(segmentedTwoColumn());
+    expect(page.tables).toStrictEqual([]);
+    expect(page.lines).toBe(4);
+  });
+
+  it('refuses what parsePageText refuses, rather than answering a page with no tables', () => {
+    expect(() => parsePageTables('not json')).toThrow();
+    expect(() => parsePageTables('{}')).toThrow();
   });
 });
 

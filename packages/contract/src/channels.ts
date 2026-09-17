@@ -1899,6 +1899,27 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
+  /**
+   * Writes the tables MuPDF finds as an Excel workbook the user picks — D10's
+   * *Excel*, the automatic engine (ADR-0072, ADR-0073).
+   *
+   * The layout is REQUIRED, for `exportWord`'s reason. `no-tables` arrives before
+   * any picker opens, carrying how many pages are a picture with no text — the
+   * pages recognising would give words to.
+   */
+  'document.exportExcel': channel(
+    'Writes the tables found in the document as an Excel workbook the user picks.',
+    z.object({ docId: docIdSchema, layout: z.enum(['sheet-per-page', 'one-sheet']) }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      z.object({ kind: z.literal('no-tables'), picturePages: z.number().int().nonnegative() }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),

@@ -60,6 +60,7 @@ import { SPLIT_DOCUMENT_DIALOG_ID } from '../dialogs/splitDocument.js';
 import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
 import type { ExportPageImagesAnswer } from '../dialogs/exportPageImagesResult.js';
+import { EXPORT_EXCEL_DIALOG_ID, type ExportExcelAnswer } from '../dialogs/exportExcel.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
@@ -130,6 +131,7 @@ import {
   EXPORT_PAGE_IMAGES_COMMAND_TITLE,
   EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
   EXPORT_POWERPOINT_COMMAND_TITLE,
+  EXPORT_EXCEL_COMMAND_TITLE,
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
@@ -1915,6 +1917,47 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
       if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
+/**
+ * Writes the tables MuPDF finds as an Excel workbook (ADR-0072, ADR-0073): the
+ * layout dialog, then main's table check, save dialog and write.
+ *
+ * A dismissed layout dialog dispatches nothing. A document with no table answers
+ * before any save dialog, through the save problem dialog, naming recognition as
+ * the remedy where some pages are pictures with no text.
+ */
+export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.export-excel',
+    icon: 'FileSpreadsheet',
+    title: EXPORT_EXCEL_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 44 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+
+      const chosen = (await deps.ask(EXPORT_EXCEL_DIALOG_ID, {})) as ExportExcelAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.exportExcel']({ docId: context.docId, layout: chosen.layout });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      const outcome = answer.value;
+      if (outcome.kind === 'copied' || outcome.kind === 'cancelled') return;
+      if (outcome.kind === 'no-tables') {
+        void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+          outcome: outcome.picturePages > 0 ? 'no-tables-no-text' : 'no-tables',
+        });
+        return;
+      }
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested',
       });
     },
   };

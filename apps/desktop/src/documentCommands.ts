@@ -29,7 +29,11 @@ import {
 // which invariant 20 forbids by name and §9.17's budget is argued against
 // (ADR-0026). The kernel's barrel is now free of that edge too.
 import {
+  type PageTables,
   type PresentationPage,
+  type SheetLayout,
+  type SpreadsheetPage,
+  spreadsheetParts,
   type WordMode,
   type WordPage,
   ooxmlPackage,
@@ -1023,6 +1027,27 @@ export type DocumentPageStructure = (
 ) => Promise<PageStructure>;
 
 /**
+ * Reads the tables MuPDF finds on one page.
+ *
+ * Injected and one page for {@link DocumentPageText}'s reasons, and parsed where it
+ * is composed, for {@link DocumentPageStructure}'s — the `table` read
+ * ([ADR-0073](../../../docs/DECISIONS/0073-a-table-is-the-engines-table-read-asked-as-its-own-table-writer-asks.md)).
+ */
+export type DocumentPageTables = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<PageTables>;
+
+/**
+ * What an Excel export did: a copy's outcomes, or — before any file was picked —
+ * that no page holds a table, with how many pages are a picture with no text.
+ */
+export type ExcelOutcome =
+  | CopyOutcome
+  | { readonly kind: 'no-tables'; readonly picturePages: number };
+
+/**
  * Reads one page's links.
  *
  * Injected for {@link DocumentPageText}'s reason: this module names no engine,
@@ -1578,6 +1603,8 @@ export interface DocumentCommandsParts {
   readonly pageText: DocumentPageText;
   /** The `structure` read of one page — `pageStructure`'s (ADR-0065). */
   readonly pageStructure: DocumentPageStructure;
+  /** The `table` read of one page — `exportExcel`'s (ADR-0073). */
+  readonly pageTables: DocumentPageTables;
   readonly pageLinks: DocumentPageLinksReader;
   readonly destinations: DocumentDestinationsReader;
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
@@ -1680,6 +1707,7 @@ export class DocumentCommands {
   readonly #geometry: DocumentGeometry;
   readonly #pageText: DocumentPageText;
   readonly #pageStructure: DocumentPageStructure;
+  readonly #pageTables: DocumentPageTables;
   readonly #pageLinks: DocumentPageLinksReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
@@ -1733,6 +1761,7 @@ export class DocumentCommands {
     this.#geometry = parts.geometry;
     this.#pageText = parts.pageText;
     this.#pageStructure = parts.pageStructure;
+    this.#pageTables = parts.pageTables;
     this.#pageLinks = parts.pageLinks;
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
@@ -3353,6 +3382,75 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Writes the tables MuPDF finds as an Excel workbook — D10's *Excel*, the
+   * automatic engine: the page's text as it is (ADR-0072, ADR-0073).
+   *
+   * ## Asked BEFORE a file is picked
+   *
+   * A workbook of no tables is not an export of anything, so the pages are read
+   * until one holds a table, and a document with none answers `no-tables` without
+   * opening a picker — saying how many pages are pictures with no text, which is the case where
+   * recognising them first is the remedy. A document whose first page holds a table
+   * pays for one page.
+   *
+   * Then `exportWord`'s path: the picker, the lane, and the table read again a page
+   * at a time as the zip pulls it, so `main` holds one page's tables. The first
+   * pass keeps nothing — holding what it read to write it later is the document's
+   * text in `main`, which ADR-0035 forbids. It does NOT touch the document.
+   */
+  async exportExcel(docId: DocId, layout: SheetLayout): Promise<ExcelOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Excel');
+
+    const { value: found } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      let picturePages = 0;
+      for (let page = 0; page < pageCount; page += 1) {
+        const tables = await this.#pageTables(docId, sessions, page);
+        if (tables.tables.length > 0) return { kind: 'found' as const };
+        // A PICTURE AND NO TEXT, not merely no text: a blank page is not one that
+        // recognising would give a table to.
+        if (tables.lines === 0 && tables.images > 0) picturePages += 1;
+      }
+      return { kind: 'no-tables' as const, picturePages };
+    });
+    if (found.kind === 'no-tables') return found;
+
+    const destination = await this.#pickOffice(suggest, 'xlsx');
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeStreamedDocument(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions), layout))),
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /** Each page's tables, read as the zip pulls them. */
+  async *#tablePages(docId: DocId, sessions: DocumentSessions): AsyncIterable<SpreadsheetPage> {
+    const { pageCount } = await this.#geometry(docId, sessions, []);
+    for (let page = 0; page < pageCount; page += 1) {
+      yield { page, tables: (await this.#pageTables(docId, sessions, page)).tables };
+    }
   }
 
   /** Each page as a slide picture, rendered as the zip pulls it. */

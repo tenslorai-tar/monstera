@@ -200,6 +200,7 @@ describe('browser shim', () => {
       'document.duplicatePages',
       'document.editPageExternally',
       'document.execute',
+      'document.exportExcel',
       'document.exportFormData',
       'document.exportPageImages',
       'document.exportPowerPoint',

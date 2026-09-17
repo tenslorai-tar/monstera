@@ -356,10 +356,14 @@ export { type TextLayer, type TextLayerLine, textLayerOf } from './textLayer.js'
 export { type PageKind, pageKindOf } from './pageKind.js';
 export { countPageWords } from './wordCount.js';
 export {
+  type CellBorders,
   type DisplayedRect,
   type PageStructure,
+  type PageTable,
+  type PageTables,
   type PageText,
   type PageTextRead,
+  type TableCell,
   type StructureNode,
   type TextBlock,
   type TextLine,
@@ -369,6 +373,7 @@ export {
   STEXT_OPTION_STRING,
   linesOf,
   parsePageStructure,
+  parsePageTables,
   parsePageText,
   plainTextOf,
   stextOptionsFor,
@@ -384,6 +389,17 @@ export {
   presentationParts,
   slideSize,
 } from './presentationDocument.js';
+export {
+  type CellValue,
+  type SheetLayout,
+  type SpreadsheetPage,
+  MAX_CELL_STYLES,
+  MAX_SHEET_ROWS,
+  SHEET_LAYOUTS,
+  cellValue,
+  columnName,
+  spreadsheetParts,
+} from './spreadsheetDocument.js';
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
 // engine, and `readPageLinks` — which does — stays behind `/engine`.

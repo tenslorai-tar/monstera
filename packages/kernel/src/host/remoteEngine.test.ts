@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -21,7 +21,7 @@ import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
-import { linesOf, parsePageStructure, parsePageText } from '../textStructure.js';
+import { linesOf, parsePageStructure, parsePageTables, parsePageText } from '../textStructure.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import {
@@ -52,12 +52,30 @@ import {
 
 let flat: ByteImage;
 let tagged: ByteImage;
+let ruled: ByteImage;
 
 beforeAll(async () => {
   const document = await PDFDocument.create();
   for (let index = 0; index < 3; index += 1) document.addPage([612, 792]);
   flat = await document.save();
   tagged = taggedPdf();
+
+  // ONE RULED 3x2 GRID, each cell its own stroked rectangle.
+  const grid = await PDFDocument.create();
+  const font = await grid.embedFont(StandardFonts.Helvetica);
+  const page = grid.addPage([612, 792]);
+  [
+    ['Item', 'Qty', 'Price'],
+    ['Bolt', '12', '0.45'],
+  ].forEach((row, r) => {
+    row.forEach((text, c) => {
+      const x = 72 + c * 120;
+      const y = 700 - r * 24;
+      page.drawRectangle({ x, y: y - 6, width: 120, height: 24, borderColor: rgb(0, 0, 0), borderWidth: 1 });
+      page.drawText(text, { x: x + 6, y, size: 11, font });
+    });
+  });
+  ruled = await grid.save();
 });
 
 /**
@@ -385,6 +403,31 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         'drawn first',
         'drawn second',
       ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the TABLE read crosses under its name and finds the ruled grid whole (ADR-0073)', async () => {
+    const { session, token, pageText } = await joined(ruled);
+    try {
+      const tables = parsePageTables(await pageText(token, 0, 'table'));
+      const substrate = parsePageTables(await pageText(token, 0, 'substrate'));
+
+      // THREE COLUMNS is the separating assertion: the table-hunt flag without
+      // `vectors` finds this grid two columns wide (measured 2026-09-17), so a host
+      // that composed the flag alone is red here rather than merely different.
+      expect(
+        tables.tables.map((table) => table.rows.map((row) => row.map((cell) => cell.lines.map((l) => l.text).join(' ')))),
+      ).toStrictEqual([
+        [
+          ['Item', 'Qty', 'Price'],
+          ['Bolt', '12', '0.45'],
+        ],
+      ]);
+      // AND THE SUBSTRATE READ of the same page finds none, so the name decided it.
+      expect(substrate.tables).toStrictEqual([]);
+      expect(substrate.lines).toBe(tables.lines);
     } finally {
       await mupdfWriter.close(session);
     }

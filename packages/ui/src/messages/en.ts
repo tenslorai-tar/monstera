@@ -202,6 +202,12 @@ export const EXPORT_WORD_RICH = messageKey('dialog.export-word.rich');
 export const EXPORT_WORD_LAYOUT = messageKey('dialog.export-word.layout');
 export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
+export const EXPORT_EXCEL_COMMAND_TITLE = messageKey('command.export-excel.title');
+export const EXPORT_EXCEL_TITLE = messageKey('dialog.export-excel.title');
+export const EXPORT_EXCEL_LAYOUT = messageKey('dialog.export-excel.layout');
+export const EXPORT_EXCEL_SHEET_PER_PAGE = messageKey('dialog.export-excel.sheet-per-page');
+export const EXPORT_EXCEL_ONE_SHEET = messageKey('dialog.export-excel.one-sheet');
+export const EXPORT_EXCEL_APPLY = messageKey('dialog.export-excel.apply');
 export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
 export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
 export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
@@ -1138,6 +1144,8 @@ export const SAVE_REFUSED_UNVERIFIABLE = messageKey('dialog.save-problem.unverif
 export const SAVE_WRITE_FAILED = messageKey('dialog.save-problem.write-failed');
 export const SAVE_LAYOUT_UNAVAILABLE = messageKey('dialog.save-problem.layout-unavailable');
 export const SAVE_LAYOUT_FAILED = messageKey('dialog.save-problem.layout-failed');
+export const SAVE_NO_TABLES = messageKey('dialog.save-problem.no-tables');
+export const SAVE_NO_TABLES_NO_TEXT = messageKey('dialog.save-problem.no-tables-no-text');
 export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
@@ -2113,6 +2121,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_WORD_LAYOUT]: 'The page layout — each line where it sits on the page',
   [EXPORT_WORD_TEXT]: 'Just the words',
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
+  [EXPORT_EXCEL_COMMAND_TITLE]: 'Export tables to Excel…',
+  [EXPORT_EXCEL_TITLE]: 'Export tables to Excel',
+  [EXPORT_EXCEL_LAYOUT]: 'Where the tables go',
+  [EXPORT_EXCEL_SHEET_PER_PAGE]: 'A sheet for each page that has tables',
+  [EXPORT_EXCEL_ONE_SHEET]: 'Every table on one sheet',
+  [EXPORT_EXCEL_APPLY]: 'Choose where to save…',
   [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
   [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
   [EXPORT_PAGE_IMAGES_LABEL]: 'Pages',
@@ -2559,6 +2573,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_WRITE_FAILED]: 'The file could not be written. Check that it is not open in another application, and that there is room on the disk.',
   [SAVE_LAYOUT_UNAVAILABLE]: 'Text with layout needs a component that is not installed with this copy of Monstera. Export text… still works.',
   [SAVE_LAYOUT_FAILED]: 'The text could not be read with its layout from this document, so no file was written. Export text… may still work.',
+  [SAVE_NO_TABLES]: 'No tables with ruled lines were found in this document, so no file was written.',
+  [SAVE_NO_TABLES_NO_TEXT]: 'No tables were found, so no file was written. Some pages are pictures of text with no text to read; recognise their text first with Tools › OCR, then export again.',
   // "Could not be done" and never "error". Every code below leaves the document
   // exactly as it was, so the title describes the operation and not the state.
   [PROBLEM_TITLE]: 'That could not be done',

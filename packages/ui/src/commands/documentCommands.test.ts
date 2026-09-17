@@ -34,6 +34,7 @@ import {
   splitDocumentCommand,
   exportPageImagesCommand,
   exportLayoutTextCommand,
+  exportExcelCommand,
   exportPowerPointCommand,
   exportTextCommand,
   exportWordCommand,
@@ -2188,6 +2189,61 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC } }]);
     expect(asked).toStrictEqual([]);
+  });
+
+  it('export to Excel asks for the layout and dispatches exactly the one chosen', async () => {
+    for (const layout of ['sheet-per-page', 'one-sheet'] as const) {
+      const { client, sent } = recording({ 'document.exportExcel': { kind: 'copied', bytes: 9 } });
+      const asked: unknown[] = [];
+
+      await exportExcelCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve({ layout });
+        },
+      }).run(CONTEXT);
+
+      expect(asked).toStrictEqual([{ id: 'dialog.export-excel', props: {} }]);
+      expect(sent).toStrictEqual([{ id: 'document.exportExcel', params: { docId: DOC, layout } }]);
+    }
+  });
+
+  it('CONTROL: a DISMISSED Excel export dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await exportExcelCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('an Excel export that found NO TABLE says so, naming recognition only where pages are pictures', async () => {
+    for (const [picturePages, outcome] of [
+      [0, 'no-tables'],
+      [2, 'no-tables-no-text'],
+    ] as const) {
+      const { client } = recording({ 'document.exportExcel': { kind: 'no-tables', picturePages } });
+      const spoken: unknown[] = [];
+
+      await exportExcelCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          spoken.push({ id, props });
+          return Promise.resolve(id === 'dialog.export-excel' ? { layout: 'one-sheet' } : undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(spoken).toStrictEqual([
+        { id: 'dialog.export-excel', props: {} },
+        { id: 'dialog.save-problem', props: { outcome } },
+      ]);
+    }
   });
 
   it('CONTROL: a DISMISSED Word export dialog dispatches nothing', async () => {
