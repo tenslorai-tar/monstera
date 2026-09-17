@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — The notice: PDFium and the OCR models added; LibreOffice stopped on a licence
+
+PDFium (`ea1619c`) and the Tesseract language data (`d1b7a05`) now have NOTICE sections, each
+compared with the pinned download by its provisioner, each with a control that refuses.
+
+**LibreOffice is stopped, not added.** Its 26.8.0 `license.txt` points twenty-eight sections at
+the GPL version 2 text (`awk '/Jump to GPL Version 2/'`, 28 lines). Most are tri-licensed or *version 2 or later* — the Romanian dictionary's
+own README says so. **Culmus does not**: the section reads *distributed under the terms of GNU
+General Public License version 2*, and the fonts' own `name` records say the same — read
+2026-09-17 from `DavidCLM-Medium.otf`, `MiriamCLM-Book.otf`, `MiriamMonoCLM-Book.ttf`,
+`NachlieliCLM-Light.otf` and `FrankRuehlCLM-Medium.otf` in the provisioned tree, record 0, with
+no later-version grant; `FrankRuehlCLM-Medium.otf` carries the GPL v2 text itself in record 13.
+The owner's rule stops the chain at a GPL-2.0-only component, so the notice section and the
+contained-start trace both wait.
+
+**The question for the owner**, stated with what each answer costs: ship a subset without the
+Culmus fonts (whether conversion needs the tree's `Fonts/` directory is unmeasured), or do not
+ship LibreOffice. The other twenty-seven GPL v2 sections were not each read to the end, so a subset
+decision also owes that reading.
+
+---
+
 ## 2026-09-17 — Handwriting: the runtime ships, and the model download could never have worked
 
 ADR-0052's correction (the owner's, `2299129`): ONNX Runtime Web's three files are provisioned with
