@@ -892,6 +892,23 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D8 document compare: two text layers a page at a time, in the renderer
+
+**What the row means was not written down.** `BUILD-PROMPT.md` lists *document compare* under D8 and nothing else, and D1
+already has side-by-side viewing. So D8's row is taken as a report of what differs — the reading that adds something —
+and the report is words, because words are what the substrate reads. The question stays in the run's report.
+
+**No seam moved.** ADR-0035 keeps extracted text out of `main`, and `document.pageTextLayer` already answers one page's
+lines bounded by the caller, so the renderer walks both documents and holds two pages at a time. `diffLines` is a plain
+longest common subsequence with the common head and tail removed first; nothing in it is tuned.
+
+**Pages are paired by number, and the dialog says so first.** Aligning pages by content would be a matching rule with
+thresholds the record does not ask for, so the limit is stated where the answer is read.
+
+**Mutation, restored:** removing the mid-walk version check reddens the stop case.
+
+---
+
 ## 2026-09-17 — D10 barcodes: read in the host, written in main, placed as an image
 
 ADR-0076 (d502e4b) and the dependency with its notice (dd60cdd) first. The feature follows them without widening a seam:

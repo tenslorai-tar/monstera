@@ -215,6 +215,25 @@ export const PRINT_DPI_300 = messageKey('dialog.print.dpi-300');
 export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
 export const GROUP_BARCODES = messageKey('surface.ribbon.group.barcodes');
+export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
+export const COMPARE_COMMAND_TITLE = messageKey('command.compare-documents.title');
+export const COMPARE_PROGRESS = messageKey('task.compare-documents');
+export const COMPARE_DOCUMENTS_TITLE = messageKey('dialog.compare-documents.title');
+export const COMPARE_DOCUMENTS_LABEL = messageKey('dialog.compare-documents.label');
+export const COMPARE_DOCUMENTS_APPLY = messageKey('dialog.compare-documents.apply');
+export const COMPARE_RESULT_TITLE = messageKey('dialog.compare-result.title');
+export const COMPARE_RESULT_NONE = messageKey('dialog.compare-result.none');
+export const COMPARE_RESULT_REFUSED = messageKey('dialog.compare-result.refused');
+export const COMPARE_RESULT_WHAT = messageKey('dialog.compare-result.what');
+export const COMPARE_RESULT_SUMMARY = messageKey('dialog.compare-result.summary');
+export const COMPARE_RESULT_PARTIAL = messageKey('dialog.compare-result.partial');
+export const COMPARE_RESULT_EXTRA_HERE = messageKey('dialog.compare-result.extra-here');
+export const COMPARE_RESULT_EXTRA_OTHER = messageKey('dialog.compare-result.extra-other');
+export const COMPARE_RESULT_CLIPPED = messageKey('dialog.compare-result.clipped');
+export const COMPARE_RESULT_TRUNCATED = messageKey('dialog.compare-result.truncated');
+export const COMPARE_RESULT_PAGE = messageKey('dialog.compare-result.page');
+export const COMPARE_RESULT_REMOVED = messageKey('dialog.compare-result.removed');
+export const COMPARE_RESULT_ADDED = messageKey('dialog.compare-result.added');
 export const READ_BARCODES_COMMAND_TITLE = messageKey('command.read-barcodes.title');
 export const PLACE_BARCODE_TOOL_TITLE = messageKey('command.organize.place-barcode');
 export const PAGE_BARCODES_TITLE = messageKey('dialog.page-barcodes.title');
@@ -2180,6 +2199,31 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PRINT_DPI_600]: 'High — up to 600 dots per inch, lower on a large page',
   [PRINT_APPLY]: 'Choose a printer…',
   [GROUP_BARCODES]: 'Barcodes',
+  [GROUP_COMPARE]: 'Compare',
+  [COMPARE_COMMAND_TITLE]: 'Compare documents…',
+  [COMPARE_PROGRESS]: 'Comparing pages',
+  [COMPARE_DOCUMENTS_TITLE]: 'Compare documents',
+  [COMPARE_DOCUMENTS_LABEL]: 'Compare this document with',
+  [COMPARE_DOCUMENTS_APPLY]: 'Compare',
+  [COMPARE_RESULT_TITLE]: 'Differences',
+  [COMPARE_RESULT_NONE]: 'Open the other document in a tab first, then compare.',
+  [COMPARE_RESULT_REFUSED]: 'The documents could not be compared. One of them may be busy or no longer open.',
+  [COMPARE_RESULT_WHAT]:
+    'This compares the words on each page with the page at the same number in {name}. Pictures and layout are not compared, and a page added in the middle shifts every page after it.',
+  [COMPARE_RESULT_SUMMARY]:
+    '{count, plural, =0 {No lines differ in the {pages} pages both documents have.} one {One line differs in the {pages} pages both documents have.} other {# lines differ in the {pages} pages both documents have.}}',
+  [COMPARE_RESULT_PARTIAL]:
+    'Compared {counted} of {total} pages. A document changed during the comparison, so the rest were not compared.',
+  [COMPARE_RESULT_EXTRA_HERE]:
+    '{count, plural, one {This document has one more page, which was not compared.} other {This document has # more pages, which were not compared.}}',
+  [COMPARE_RESULT_EXTRA_OTHER]:
+    '{count, plural, one {{name} has one more page, which was not compared.} other {{name} has # more pages, which were not compared.}}',
+  [COMPARE_RESULT_CLIPPED]:
+    '{count, plural, one {One page has more text than can be read at once, so some of its lines may be missing from the comparison.} other {# pages have more text than can be read at once, so some of their lines may be missing from the comparison.}}',
+  [COMPARE_RESULT_TRUNCATED]: 'There are more differences than can be listed. Only the first ones are shown.',
+  [COMPARE_RESULT_PAGE]: 'Page {page}',
+  [COMPARE_RESULT_REMOVED]: 'Only in this document',
+  [COMPARE_RESULT_ADDED]: 'Only in {name}',
   [READ_BARCODES_COMMAND_TITLE]: 'Read barcodes',
   [PLACE_BARCODE_TOOL_TITLE]: 'Add a barcode',
   [PAGE_BARCODES_TITLE]: 'Barcodes on this page',

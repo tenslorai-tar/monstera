@@ -134,6 +134,8 @@ import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
 import { PAGE_STRUCTURE_DIALOG } from './dialogs/pageStructure.js';
 import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
+import { COMPARE_DOCUMENTS_DIALOG, COMPARE_RESULT_DIALOG } from './dialogs/compareDocuments.js';
+import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { OCR_DIALOG } from './dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
 import { ENHANCE_OUTCOME_DIALOG } from './dialogs/enhanceOutcome.js';
@@ -474,6 +476,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         PRINT_DIALOG,
         PDFA_REMOVALS_DIALOG,
         PAGE_BARCODES_DIALOG,
+        COMPARE_DOCUMENTS_DIALOG,
+        COMPARE_RESULT_DIALOG,
         PLACE_BARCODE_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
@@ -1520,6 +1524,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           },
         }),
         showWordCountCommand({ client, ask, track }),
+        compareDocumentsCommand({ client, ask, track }),
         inspectPageStructureCommand({ client, ask }),
         readBarcodesCommand({ client, ask }),
         // TAKES THE SETTINGS STORE, which no other command here does. The

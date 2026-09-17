@@ -913,6 +913,30 @@ textarea {
   user-select: text;
 }
 
+/*
+ * The comparison's list: the list exception's two rules, and each line's side above its text so
+ * a long line wraps under its label rather than beside it.
+ */
+.m-compare-result__changes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-compare-result__changes li {
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--space-4);
+}
+
+.m-compare-result__side {
+  color: var(--muted);
+}
+
+.m-compare-result__text {
+  overflow-wrap: anywhere;
+}
+
 /* The barcode form: the field fills the dialog's width, so a pasted link is readable whole. */
 .m-place-barcode {
   display: flex;
