@@ -1814,6 +1814,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // and a shim sharing one object could not tell the two apart. `available`
     // is `true` here so a UI case can exercise the path that stores; the
     // refusing machine is `secretStore.test.ts`' subject, against the real one.
+    // THE ASSISTANT'S SHIM: a browser has no provider key and no `main` to ask, so the
+    // model list is this build's own and an ask starts nothing. `started: false` is what a
+    // surface must already handle — it is the answer a real `main` gives when the
+    // subscription is in use or the provider has no key.
+    'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
+    'ai.ask': () => Promise.resolve(ok({ started: false })),
+    'ai.stop': () => Promise.resolve(ok({ stopped: false })),
     'settings.loadSecrets': () =>
       Promise.resolve(
         ok({

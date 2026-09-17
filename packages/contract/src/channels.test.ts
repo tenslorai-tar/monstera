@@ -325,6 +325,9 @@ const handlers: ContractHandlers = {
   // something to find: an empty list is what a machine with no keyring answers,
   // and it is the reassuring shape for every question here. An id and never a
   // value, which is all this channel can carry since ADR-0056.
+  'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
+  'ai.ask': () => Promise.resolve(ok({ started: false })),
+  'ai.stop': () => Promise.resolve(ok({ stopped: false })),
   'settings.loadSecrets': () =>
     Promise.resolve(ok({ stored: [AZURE_KEY_SETTING_ID], available: true })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),

@@ -2,6 +2,7 @@ import { type Incident, channelIds } from '@monstera/contract';
 import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { describe, expect, it } from 'vitest';
 
+import { createAssistant } from './assistant.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import {
@@ -61,6 +62,8 @@ const trustAll: IpcSenderCheck = () => true;
 
 function handlers() {
   return createContractHandlers({
+    // Same reasoning as the parts below: these cases are about which channels register.
+    assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),
     appInfo,
     // Same reasoning as `unusedCommands` above: these cases are about which
     // channels get registered and by what route, not about what any handler

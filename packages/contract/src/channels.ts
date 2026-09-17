@@ -1,7 +1,9 @@
 import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
+import { AI_PROVIDER_IDS } from './aiProviders.js';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
+import { subscriptionIdSchema } from './events.js';
 import {
   MAX_ANNOTATION_BORDER,
   MAX_IMAGE_BYTES,
@@ -306,6 +308,21 @@ export const MAX_SECRET_SETTING = 8 * 1024;
  * `check:docs` cannot see (UU-1's neighbour).
  */
 export const SETTINGS_SECRET_CHANNELS = ['settings.loadSecrets', 'settings.saveSecret'] as const;
+
+/**
+ * Bounds on what the assistant's channels carry.
+ *
+ * **A model id is short and a conversation is not a document.** 128 characters is longer
+ * than any id these providers answered when their lists were probed on 2026-09-17; 16 KiB
+ * a turn and 64 turns is a long conversation about a document, and a renderer that wanted
+ * to send the document would be doing something this channel is not for — what is sent is
+ * named on the assistant's *Asking about* line, and the page text it refers to travels the
+ * channels that already carry page text.
+ */
+export const MAX_MODEL_ID = 128;
+export const MAX_MODELS = 512;
+export const MAX_CHAT_TEXT = 16_384;
+export const MAX_CHAT_TURNS = 64;
 
 /** {@link OCR_LANGUAGES} as a schema, derived rather than respelt. */
 export const ocrLanguageSchema = z.enum(OCR_LANGUAGES);
@@ -4011,6 +4028,84 @@ export const channels = {
    * So what crosses is which declared secrets are stored, and the box a person
    * edits starts empty with a placeholder saying one is.
    */
+  /**
+   * The models one provider offers, fetched where it can be and answered from what this
+   * build knows where it cannot ([ADR-0081](../../../docs/DECISIONS/0081-an-ai-provider-is-a-declared-adapter-and-its-models-are-fetched.md)).
+   *
+   * **The key never crosses**: the renderer names a provider and `main` reads the stored
+   * secret. `source` says where the list came from, because a person choosing a model is
+   * owed the difference between *this is what your provider offers* and *this is what I
+   * know offline*.
+   */
+  'ai.models': channel(
+    'Which models a provider offers, and whether the list was fetched or is this build’s own.',
+    z.object({ provider: z.enum(AI_PROVIDER_IDS) }).strict(),
+    z.object({
+      source: z.enum(['fetched', 'fallback', 'no-list']),
+      problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']).optional(),
+      models: z
+        .array(
+          z.object({
+            id: z.string().min(1).max(MAX_MODEL_ID),
+            label: z.string().min(1).max(MAX_MODEL_ID),
+            capabilities: z.object({
+              vision: z.boolean().nullable(),
+              streaming: z.boolean().nullable(),
+            }),
+          }),
+        )
+        .max(MAX_MODELS),
+    }),
+  ),
+
+  /**
+   * Asks the assistant, and streams the answer on `ai.delta` / `ai.done`
+   * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
+   *
+   * **This answers when the request has STARTED**, not when the answer is finished: the
+   * answer arrives on the event channels, addressed to the `subscription` the renderer
+   * minted and passes here. A second ask on a live subscription is refused rather than
+   * interleaved — two answers typing into one conversation is not a state a person can
+   * read.
+   */
+  'ai.ask': channel(
+    'Starts an assistant answer; its text arrives on the ai.delta and ai.done events.',
+    z
+      .object({
+        subscription: subscriptionIdSchema,
+        provider: z.enum(AI_PROVIDER_IDS),
+        model: z.string().min(1).max(MAX_MODEL_ID),
+        messages: z
+          .array(
+            z
+              .object({
+                role: z.enum(['user', 'assistant']),
+                text: z.string().min(1).max(MAX_CHAT_TEXT),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(MAX_CHAT_TURNS),
+      })
+      .strict(),
+    z.object({ started: z.boolean() }),
+    ['subscription-in-use'],
+  ),
+
+  /**
+   * Stops a streaming answer, by the subscription it is streaming to.
+   *
+   * **An `invoke`, not an unsubscribe** (ADR-0082 Decision 4): letting go of the events
+   * would leave `main` asking the provider, so Stop has to reach it. Stopping a
+   * subscription that is not streaming is not an error — a person may press Stop as the
+   * last delta arrives.
+   */
+  'ai.stop': channel(
+    'Stops a streaming assistant answer.',
+    z.object({ subscription: subscriptionIdSchema }).strict(),
+    z.object({ stopped: z.boolean() }),
+  ),
+
   'settings.loadSecrets': channel(
     'Which secret settings are stored, never their values, and whether this machine can store one.',
     z.object({}),

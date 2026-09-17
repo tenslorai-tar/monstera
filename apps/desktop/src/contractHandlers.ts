@@ -32,6 +32,7 @@ import {
   InvalidSearchPatternError,
   MissingSessionError,
 } from './documentCommands.js';
+import type { Assistant } from './assistant.js';
 import type { HandwritingCache } from './handwritingCache.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
@@ -168,6 +169,8 @@ export interface TitleBarOverlay {
  */
 export function createContractHandlers(deps: {
   readonly commands: DocumentCommands;
+  /** The assistant, which holds the keys and pushes its answers (ADR-0081, ADR-0082). */
+  readonly assistant: Assistant;
   readonly appInfo: AppInfo;
   readonly documents: DocumentService;
   readonly capabilities: CapabilityRegistry;
@@ -359,6 +362,28 @@ export function createContractHandlers(deps: {
     // the handler above. What holds the separation is the schema —
     // `settings.save` refuses a `SECRET_SETTING_IDS` member before this runs,
     // and `settings.saveSecret` accepts nothing else.
+    // THE ASSISTANT (ADR-0081, ADR-0082). `ai.ask` answers that the request started; the
+    // answer itself arrives on the event channels, so nothing here awaits it.
+    'ai.models': async ({ provider }) => {
+      const list = await deps.assistant.models(provider);
+      return ok({
+        source: list.source,
+        ...(list.problem === undefined ? {} : { problem: list.problem }),
+        models: list.models.map((model) => ({
+          id: model.id,
+          label: model.label,
+          capabilities: model.capabilities,
+        })),
+      });
+    },
+    'ai.ask': ({ subscription, provider, model, messages }) => {
+      const started = deps.assistant.ask({ subscription, provider, model, messages });
+      // A SUBSCRIPTION ALREADY STREAMING IS A DECLARED REFUSAL, not a quiet `false`: the
+      // renderer must be able to say why nothing happened.
+      return Promise.resolve(started.started ? ok({ started: true }) : err({ code: 'subscription-in-use' }));
+    },
+    'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),
+
     'settings.loadSecrets': () => {
       // WHICH ARE STORED, AND NO VALUE (ADR-0056). The store decrypts to answer
       // this, and the plaintext ends in this frame: what crosses is the list.

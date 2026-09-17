@@ -11,6 +11,7 @@ import { channelIds, channels } from '@monstera/contract';
 import { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { type DocId, asDocVersion } from '@monstera/shared';
 
+import { createAssistant } from './assistant.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
@@ -135,6 +136,8 @@ afterAll(() => {
 function handlers(): ReturnType<typeof createContractHandlers> {
   const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
   return createContractHandlers({
+    // INERT, like every other surface here: these cases drive the SCHEMAS, not the work.
+    assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),
     appInfo,
     capabilities,
     commands: {} as unknown as DocumentCommands,
@@ -192,6 +195,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // build's own set, and a very short one — and no document contributes to it.
   // The keys and values are bounded in the schema, which is the other half of
   // L11's requirement.
+  'ai.models': 'names a provider from the registry and answers a bounded list of bounded model ids',
+  'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns',
+  'ai.stop': 'one bounded subscription id',
   'settings.loadSecrets': 'answers which declared secret ids are stored, never a value; no document contributes',
   'settings.saveSecret': 'answers a boolean',
   'log.reveal': 'answers a boolean',

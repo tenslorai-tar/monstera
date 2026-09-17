@@ -21,6 +21,17 @@ import { type AppInfo, type PickDocument, createContractHandlers } from './contr
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
+import { createAssistant } from './assistant.js';
+
+/**
+ * An assistant with no key and nowhere to push: these cases are about the other channels,
+ * and `ai.ask` on it answers the refusal a machine with no provider key gives (ADR-0081).
+ */
+const INERT_ASSISTANT = createAssistant({
+  secret: () => undefined,
+  setting: () => undefined,
+  send: () => undefined,
+});
 import { createEphemeralSettings } from './settingsFile.js';
 
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
@@ -66,6 +77,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   // rather than assert that a call was made.
   const recent = createRecentFiles(createEphemeralSettings());
   const handlers = createContractHandlers({
+    assistant: INERT_ASSISTANT,
     appInfo,
     capabilities,
     commands: unusedCommands,
@@ -330,6 +342,7 @@ describe('document.open', () => {
       const documents = { readRange: read } as unknown as DocumentService;
       return {
         handlers: createContractHandlers({
+          assistant: INERT_ASSISTANT,
           appInfo,
           capabilities: new CapabilityRegistry(),
           commands: unusedCommands,
@@ -511,6 +524,7 @@ describe('the recent list', () => {
     const recent = createRecentFiles(createEphemeralSettings());
     recent.record({ path: 'C:/docs/gone.pdf', name: 'gone.pdf' });
     const handlers = createContractHandlers({
+      assistant: INERT_ASSISTANT,
       appInfo,
       capabilities,
       commands: unusedCommands,
@@ -559,6 +573,7 @@ describe('log.reveal', () => {
    */
   it('passes a refusal through rather than reporting success', async () => {
     const handlers = createContractHandlers({
+      assistant: INERT_ASSISTANT,
       appInfo,
       capabilities: new CapabilityRegistry(),
       commands: unusedCommands,

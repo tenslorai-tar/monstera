@@ -85,6 +85,7 @@ import { type DocId, asDocId, asDocVersion } from '@monstera/shared';
 const AMPLE_CEILING = 64 * 1024 * 1024;
 
 import { executeCommandHandler } from './commandHandlers.js';
+import { createAssistant } from './assistant.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import {
@@ -983,6 +984,9 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         channels,
         'document.viewModel',
         createContractHandlers({
+          // INERT: this case is about a document command, and an assistant with no key
+          // and nowhere to push answers the state a machine without one is in.
+          assistant: createAssistant({ secret: () => undefined, setting: () => undefined, send: () => undefined }),
           appInfo: { version: '0.0.0', installChannel: 'development' },
           capabilities: new CapabilityRegistry(),
           commands,

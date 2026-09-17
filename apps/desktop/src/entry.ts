@@ -355,6 +355,14 @@ startShell(() => {
             },
           )
         : null,
+    // THE ASSISTANT'S EVENTS (ADR-0082): `webContents` is Electron's, so the push arrives
+    // from here like every other runtime surface. It goes to the focused window, or the
+    // first one — the window the ask came from — and to nothing at all when there is none,
+    // which is a closing application rather than a state to report.
+    sendEvent: (event, payload) => {
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      window?.webContents.send(event, payload);
+    },
     // THE SHARE SHEET (ADR-0080): the window's handle is Electron's, and so is the
     // temporary directory the shared file is written under — one folder per share, in a
     // directory this application owns.

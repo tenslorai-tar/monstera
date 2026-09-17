@@ -7,6 +7,8 @@ import {
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_ENDPOINT_SETTING_ID,
   AZURE_KEY_SETTING_ID,
+  type EventId,
+  type EventPayload,
   isNetworkOcrEngine,
   MIN_SNAPSHOT_SCALE,
   type NetworkOcrEngine,
@@ -176,6 +178,7 @@ import type { HandwritingCache } from './handwritingCache.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { createPdfaSource } from './pdfaConversion.js';
+import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
 import type { ShareDestination } from './sharing.js';
 import { provisionedModelDirectory, provisionedOcrLanguages, provisionedOnnxRuntimeDirectory } from './ocrModels.js';
@@ -490,6 +493,15 @@ export interface ShellComposition {
    * wearing a default.
    */
   readonly secrets?: SecretStoreSurface;
+  /**
+   * Pushes one declared event to the renderer
+   * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
+   *
+   * `undefined` where there is no window — every unit test — and an answer then streams to
+   * nobody rather than the graph refusing to build. `entry.ts` supplies the real one, for
+   * the pickers' reason: a `webContents` is Electron's.
+   */
+  readonly sendEvent?: <K extends EventId>(event: K, payload: EventPayload<K>) => void;
   /** The recent-files list. Required for `settings`' reason. */
   readonly recent: RecentFiles;
   /**
@@ -612,6 +624,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     editWatch,
     settings,
     secrets,
+    sendEvent,
     recent,
     handwriting: handwritingCache,
     enginePlatform = null,
@@ -1230,6 +1243,23 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       capabilities,
       commands,
       documents,
+      // THE ASSISTANT (ADR-0081, ADR-0082). It reads keys from the same store every other
+      // network feature reads, and pushes its answers through the shell's `sendEvent` —
+      // `null` where there is no window to push to, which is every unit test, and then
+      // an answer streams to nobody rather than crashing the graph.
+      assistant: createAssistant({
+        secret: (id) => {
+          const value = secretStore.read()[id];
+          return typeof value === 'string' ? value : undefined;
+        },
+        setting: (id) => {
+          const value = settings.read()[id];
+          return typeof value === 'string' ? value : undefined;
+        },
+        send: (event, payload) => {
+          sendEvent?.(event, payload);
+        },
+      }),
       openedDocument,
       unlockDocument,
       pickDocument,

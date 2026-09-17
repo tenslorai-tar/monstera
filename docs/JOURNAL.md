@@ -892,6 +892,36 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Stage 9: the assistant reaches the renderer — three channels and the streamed answer
+
+`ai.models`, `ai.ask` and `ai.stop` join the contract, and `apps/desktop/src/assistant.ts` is
+what they reach: it reads the provider's key from the same secret store every other network
+feature reads, asks through `listModels` and `streamChat`, and pushes the answer on ADR-0082's
+event channels. **`ai.ask` answers that the request STARTED**, not that it finished — the answer
+itself arrives as events, which is the whole point of the second direction.
+
+Four decisions, each with a case:
+
+- **One live answer per subscription.** A second ask is the declared refusal
+  `subscription-in-use`, not an interleave: two answers typing into one conversation is not a
+  state a person can read, and dropping the first would lose text somebody was mid-way through.
+- **Stop aborts the request**, so a person who presses it stops paying for the rest of the
+  answer. The case asserts the provider saw the abort, not merely that the events stopped.
+- **A delta longer than the event's bound is SPLIT, never truncated**: cutting it would lose the
+  answer a person is reading.
+- **A stopped subscription receives nothing more**, so a delta already in flight cannot arrive
+  after `ai.done`.
+
+The shim answers `started: false` and a fallback list, which is what a browser honestly has; the
+handler tests take an inert assistant with no key and nowhere to push, which is the state a
+machine without a provider key is in.
+
+Nine assistant cases, 86 across the wired surfaces, `proof:contract` 52 and
+`proof:composition` 5. **No surface is mounted yet** — the panel is the next unit, and the
+wired-tools rule means no control appears until it can do this end to end.
+
+---
+
 ## 2026-09-17 — Stage 9: the second direction is built, and the bridge's members are read back
 
 ADR-0082's seam. `packages/contract/src/events.ts` declares what `main` may push — `ai.delta`
