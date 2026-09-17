@@ -43,6 +43,7 @@
  * Usage: node scripts/proofs/licenceProvenance.proof.mjs
  */
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -54,6 +55,7 @@ import {
   familyLicence,
   licenceFileIn,
   normaliseEndings,
+  renderCompiledIntoPackages,
   renderNotice,
   renderProgram,
   requiresLocalInstall,
@@ -474,6 +476,58 @@ try {
     'a separate program whose licence text is EMPTY fails too',
     emptyRefusal.includes('empty'),
     `An empty file satisfies "exists" and carries no terms.`,
+  );
+  rmSync(root, { recursive: true, force: true });
+}
+
+// A LIBRARY COMPILED INTO A BUNDLED PACKAGE IS RENDERED WITH ITS TERMS — from inside the
+// package, or from a committed copy whose pin must hold — and a declaration for a package
+// that does not ship fails. Constructed under the fixture root, for the case above's reason.
+{
+  const root = join(FIXTURE, 'compiled');
+  rmSync(root, { recursive: true, force: true });
+  mkdirSync(join(root, 'node_modules', 'wrapper', 'codec'), { recursive: true });
+  mkdirSync(join(root, 'licences'), { recursive: true });
+  writeFileSync(join(root, 'node_modules', 'wrapper', 'codec', 'LICENSE.codec'), 'The inner codec licence, in the package.\n');
+  const committedText = 'The inner library licence, committed.\n';
+  writeFileSync(join(root, 'licences', 'inner.txt'), committedText);
+  const pin = createHash('sha256').update(committedText).digest('hex');
+  const shipped = [{ name: 'wrapper', path: 'node_modules/wrapper' }];
+  /** @type {import('../release/generateNotice.mjs').CompiledIntoPackage} */
+  const declared = {
+    package: 'wrapper',
+    components: [
+      { name: 'Codec', version: '1', spdx: 'BSD-3-Clause', source: 'https://example.invalid/codec', texts: [{ inPackage: 'codec/LICENSE.codec' }] },
+      { name: 'Inner', version: '2', spdx: 'Apache-2.0', source: 'https://example.invalid/inner', texts: [{ committed: 'licences/inner.txt', sha256: pin }] },
+    ],
+  };
+
+  const rendered = renderCompiledIntoPackages([declared], shipped, root).join('\n');
+  check(
+    'CONTROL: a library compiled into a shipped package renders its texts, from the package and from a pinned copy',
+    rendered.includes('The inner codec licence, in the package.') && rendered.includes('The inner library licence, committed.'),
+    `The two refusals below mean nothing unless the same declaration renders when it is right.`,
+  );
+
+  /** @param {() => unknown} render */
+  const refusalOf = (render) => {
+    try {
+      render();
+      return '';
+    } catch (error) {
+      return String(error);
+    }
+  };
+  check(
+    'a declaration for a package that is NOT shipped fails, rather than rendering a stale notice',
+    refusalOf(() => renderCompiledIntoPackages([declared], [], root)).includes('not in the production tree'),
+    `A notice for code that does not ship reads as attribution for code that does.`,
+  );
+  writeFileSync(join(root, 'licences', 'inner.txt'), `${committedText}An edit.\n`);
+  check(
+    'a committed text that no longer matches its pin fails, naming both digests',
+    refusalOf(() => renderCompiledIntoPackages([declared], shipped, root)).includes(pin),
+    `A committed licence edited by hand would render as the library's terms.`,
   );
   rmSync(root, { recursive: true, force: true });
 }

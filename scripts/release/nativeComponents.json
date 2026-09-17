@@ -203,6 +203,42 @@
       }
     }
   ],
+  "compiledIntoPackages": [
+    {
+      "package": "@jsquash/webp",
+      "components": [
+        {
+          "name": "libwebp",
+          "version": "1.1.0 (read from the encoder's own version() export, 2026-09-17; the codec README's v1.0.2 is stale)",
+          "spdx": "BSD-3-Clause",
+          "source": "https://github.com/webmproject/libwebp",
+          "texts": [{ "inPackage": "codec/LICENSE.codec.md" }]
+        }
+      ]
+    },
+    {
+      "package": "zxing-wasm",
+      "components": [
+        {
+          "name": "zxing-cpp",
+          "version": "commit 0b2d9a8fc81f420f369928c24331091ff0525976 (zxing-wasm v3.1.4's submodule)",
+          "spdx": "Apache-2.0",
+          "source": "https://github.com/zxing-cpp/zxing-cpp",
+          "texts": [{ "committed": "scripts/release/licences/npm/zxing-wasm/zxing-cpp/LICENSE.txt", "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08" }]
+        },
+        {
+          "name": "libzint (zint's library backend)",
+          "version": "2.16.0, commit 55541e139e62b9209b71cd9b0ba9010cec28b1d9 (zxing-cpp's submodule)",
+          "spdx": "BSD-3-Clause",
+          "source": "https://github.com/zint/zint",
+          "texts": [
+            { "committed": "scripts/release/licences/npm/zxing-wasm/zint/LICENSE.txt", "sha256": "d69af7f2442fcde1c3372cbbb43907fa1f4b3a91ef3899be69dd3a726dc255a4" },
+            { "committed": "scripts/release/licences/npm/zxing-wasm/zint/zint-h-licence.txt", "sha256": "e42c0a3e7faadc3dd5a23c1b9a70479eef6c885559185a1c7a8ee3b177b7385f" }
+          ]
+        }
+      ]
+    }
+  ],
   "programs": [
     {
       "name": "Poppler",

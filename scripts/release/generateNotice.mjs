@@ -51,6 +51,7 @@
  *   node scripts/release/generateNotice.mjs --check    fail if NOTICE is stale
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -735,6 +736,85 @@ export function renderProgram(program, root = ROOT) {
 }
 
 /** @returns {string} */
+/**
+ * @typedef {{
+ *   name: string,
+ *   version: string,
+ *   spdx: string,
+ *   source: string,
+ *   texts: ({ inPackage: string } | { committed: string, sha256: string })[],
+ * }} CompiledComponent
+ * @typedef {{ package: string, components: CompiledComponent[] }} CompiledIntoPackage
+ */
+
+/** @returns {CompiledIntoPackage[]} */
+export function compiledIntoPackages() {
+  /** @type {{ compiledIntoPackages?: CompiledIntoPackage[] }} */
+  const declared = JSON.parse(readFileSync(join(HERE, 'nativeComponents.json'), 'utf8'));
+  return declared.compiledIntoPackages ?? [];
+}
+
+/**
+ * The libraries compiled INTO a bundled package's WebAssembly, with their full texts.
+ *
+ * ## Why a package's own licence is not enough
+ *
+ * `zxing-wasm` is MIT and its `.wasm` carries zxing-cpp (Apache-2.0) and zint's library
+ * (BSD-3-Clause); `@jsquash/webp` is MIT and carries libwebp (BSD-3-Clause). The package's
+ * root licence names neither, so a notice built from it alone attributes the wrapper and
+ * omits the code that does the work.
+ *
+ * A text comes from INSIDE the installed package where the package ships it, or from a
+ * committed copy pinned by SHA-256 where it does not — so a hand edit to a committed text,
+ * and a declaration for a package no longer shipped, both FAIL rather than render.
+ *
+ * @param {CompiledIntoPackage[]} declared
+ * @param {{ name: string, path: string }[]} shipped
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function renderCompiledIntoPackages(declared, shipped, root = ROOT) {
+  const lines = [];
+  for (const entry of declared) {
+    const pkg = shipped.find((candidate) => candidate.name === entry.package);
+    if (pkg === undefined) {
+      throw new Error(
+        `nativeComponents.json declares libraries compiled into ${entry.package}, which is not in the production ` +
+          `tree. A notice for code that does not ship is a stale declaration; remove it.`,
+      );
+    }
+    for (const component of entry.components) {
+      lines.push('─'.repeat(78));
+      lines.push(`${component.name} ${component.version} — ${component.spdx}`);
+      lines.push(`  compiled into ${entry.package}; source: ${component.source}`);
+      lines.push('─'.repeat(78));
+      lines.push('');
+      if (component.texts.length === 0) {
+        throw new Error(`${entry.package} carries ${component.name} with no licence text recorded.`);
+      }
+      for (const text of component.texts) {
+        const path = 'inPackage' in text ? join(root, pkg.path, text.inPackage) : join(root, text.committed);
+        const body = existsSync(path) ? readFileSync(path, 'utf8') : '';
+        if (body.trim() === '') {
+          throw new Error(`${component.name}: the licence text at ${path} is missing or empty.`);
+        }
+        if ('committed' in text) {
+          const actual = createHash('sha256').update(readFileSync(path)).digest('hex');
+          if (actual !== text.sha256) {
+            throw new Error(
+              `${component.name}: ${text.committed} is not the text its pin records (${actual} against ` +
+                `${text.sha256}). A committed licence changes only by re-reading it from its source.`,
+            );
+          }
+        }
+        lines.push(normaliseEndings(body).trimEnd());
+        lines.push('');
+      }
+    }
+  }
+  return lines;
+}
+
 export function renderNotice() {
   const shipped = shippedPackages();
   const native = nativeComponents();
@@ -853,6 +933,15 @@ export function renderNotice() {
     lines.push('');
     lines.push(pkg.text);
     lines.push('');
+  }
+
+  const compiled = compiledIntoPackages();
+  if (compiled.length > 0) {
+    lines.push('═'.repeat(78));
+    lines.push('LIBRARIES COMPILED INTO BUNDLED PACKAGES — each under its own terms');
+    lines.push('═'.repeat(78));
+    lines.push('');
+    lines.push(...renderCompiledIntoPackages(compiled, shipped));
   }
 
   return `${lines.join('\n')}\n`;
