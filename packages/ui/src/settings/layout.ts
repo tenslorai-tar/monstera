@@ -6,6 +6,8 @@ import {
   DOCUMENT_PANEL_OPEN_TITLE,
   DOCUMENT_PANEL_TITLE,
   DOCUMENT_PANEL_WIDTH_TITLE,
+  CONTEXT_PANEL_TAB_TITLE,
+  CONTEXT_PANEL_TAB_TITLES,
   PANEL_TITLES,
   QUICK_TOOLBAR_EDGE_TITLE,
   QUICK_TOOLBAR_EDGE_TITLES,
@@ -177,6 +179,26 @@ export const QUICK_TOOLBAR_EDGE_SETTING: SettingDefinition<z.ZodEnum<{ start: 's
  * persisted per panel"*). Its own setting, never the document panel's: collapsing one side changes
  * nothing about the other.
  */
+/**
+ * Which tab the right contextual panel shows
+ * ([ADR-0083](../../../../docs/DECISIONS/0083-the-contextual-panel-holds-tabs-and-the-assistant-is-one.md)).
+ *
+ * The document panel's rule one side over: the setting is the one owner of which tab shows,
+ * so a command that opens the assistant and a person clicking the tab move the same value.
+ * **Properties by default** — the panel held only that until this tab arrived, and a person
+ * who has not asked for the assistant should not find their panel replaced by it.
+ */
+export const CONTEXT_PANEL_TAB_SETTING: SettingDefinition<
+  z.ZodEnum<{ properties: 'properties'; assistant: 'assistant' }>
+> = {
+  id: 'appearance.context-panel-tab',
+  title: CONTEXT_PANEL_TAB_TITLE,
+  schema: z.enum(['properties', 'assistant']),
+  fallback: 'properties',
+  category: 'appearance',
+  optionTitles: CONTEXT_PANEL_TAB_TITLES,
+};
+
 export const CONTEXT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'appearance.context-panel-open',
   title: CONTEXT_PANEL_OPEN_TITLE,

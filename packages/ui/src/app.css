@@ -1485,6 +1485,110 @@ textarea {
   font-size: var(--font-chrome-11);
 }
 
+/* The panel's two tabs (ADR-0083). Captioned rather than icon-only: there are two of them
+   and the words are short, where the left panel's six are a strip of glyphs. */
+.m-context-panel__tabs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.m-context-panel__tab {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  cursor: pointer;
+}
+
+.m-context-panel__tab:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.m-context-panel__tab[data-selected] {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.m-context-panel__tab:focus-visible {
+  /* The command search's ring, the convention in this stylesheet: an undefined token here
+     would drop the whole declaration and leave the tab with no visible focus at all. */
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
+}
+
+/* The assistant tab: choices, the conversation, then the composer pinned under it. */
+.m-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  block-size: 100%;
+  padding: var(--space-4);
+}
+
+.m-assistant__choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-assistant__state,
+.m-assistant__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+/* The problem line reads as TEXT, not as a colour nobody declared: this stylesheet has no
+   danger token, and `--text` beside the `--muted` lines around it is what makes it stand
+   out. §10.2's rule is tokens only, and inventing one here would be a raw value. */
+.m-assistant__problem {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__turns {
+  flex: 1;
+  min-block-size: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.m-assistant__turn + .m-assistant__turn {
+  margin-block-start: var(--space-4);
+}
+
+.m-assistant__who {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__text {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+}
+
+.m-assistant__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-assistant__draft {
+  resize: none;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 .m-context-panel__body {
   flex: 1;
   min-block-size: 0;

@@ -892,6 +892,35 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Stage 9: the assistant tab, and the contextual panel's two tabs
+
+ADR-0083's tab strip is built, and the assistant behind it: provider and model pickers, the
+conversation, a composer where **Enter sends and Shift+Enter starts a line**, streaming into one
+growing turn, **Send becoming Stop**, the no-key state and plain-language problems.
+
+**What is NOT here is in the row, not in a comment**: the *Asking about* line and everything
+document-aware, the two-document ask, regenerate, rendered Markdown, the shortcut, history. The
+row says *PART BUILT — the conversation; the document-aware half owed*, which is the honest
+status for a surface that works end to end and does less than the design asks.
+
+Three decisions worth keeping:
+
+- **The panel's tab is a setting**, the document panel's rule, so a command that opens the
+  assistant and a person clicking the tab move one value. One tab is mounted, not two hidden.
+- **The draft survives an ask that never started.** The text is cleared only once `main` says the
+  request began; a refusal leaves a person's words where they typed them, and a case asserts it.
+- **A delta for another subscription changes nothing**, which is ADR-0082's addressing read from
+  the renderer's side rather than trusted.
+
+Ten panel cases and three panel-tab cases. Two CSS mistakes were caught before they shipped: a
+`--danger` token this stylesheet does not declare and a `--focus-ring` it does not either — an
+undefined token drops the whole declaration, so the problem line would have been unstyled and the
+tab would have had no visible focus.
+
+The baselines move on every section: the panel's header is in each of those screenshots.
+
+---
+
 ## 2026-09-17 — Stage 9: the assistant reaches the renderer — three channels and the streamed answer
 
 `ai.models`, `ai.ask` and `ai.stop` join the contract, and `apps/desktop/src/assistant.ts` is

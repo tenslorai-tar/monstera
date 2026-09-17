@@ -267,6 +267,8 @@ import {
   TROCR_SIZE_SETTING,
 } from './settings/editing.js';
 import { CommentStylesPanel } from './CommentStylesPanel.js';
+import { AssistantPanel } from './AssistantPanel.js';
+import type { EventSubscriber } from './bridge.js';
 import { StylePanel } from './StylePanel.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
@@ -333,7 +335,20 @@ export interface AppProps {
    * can hand one with a different value and watch the application follow.
    */
   readonly settings: SettingsStore;
+  /**
+   * Listens for `main`'s pushed events
+   * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
+   *
+   * A prop for the client's reason: composition builds the real one over the bridge, and a
+   * case hands one it drives itself. **Defaulted to a subscriber that receives nothing**,
+   * so every existing case — and the browser shim, where `main` pushes nothing — keeps
+   * working without knowing this exists.
+   */
+  readonly subscribe?: EventSubscriber;
 }
+
+/** A subscriber that never delivers: the state a surface with no `main` behind it is in. */
+const NO_EVENTS: EventSubscriber = () => () => undefined;
 
 /**
  * The subscription for *no document is open*.
@@ -344,7 +359,7 @@ export interface AppProps {
  */
 const NO_DOCUMENT_SUBSCRIBE = (): (() => void) => (): void => undefined;
 
-export function App({ client, settings }: AppProps): ReactElement {
+export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): ReactElement {
   /**
    * Every open document, in the order they were opened.
    *
@@ -1977,7 +1992,15 @@ export function App({ client, settings }: AppProps): ReactElement {
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
           quickToolbar={<QuickToolbar registry={registry} context={context} settings={settings} />}
           contextPanel={
-            <ContextPanel settings={settings}>
+            <ContextPanel
+              assistant={
+                // THE ASSISTANT TAB (ADR-0083). It takes the same stored-secret list the
+                // other key-gated surfaces take, so *which providers have a key* is
+                // answered in one place, and the event subscriber `App` was given.
+                <AssistantPanel client={client} storedSecrets={storedSecrets} subscribe={subscribe} />
+              }
+              settings={settings}
+            >
               {/* THE STYLE CONTROLS, which take no document at all: they set what the
                   NEXT annotation is drawn in, so they do not change when the version
                   moves. That is what makes them settings rather than document state. */}

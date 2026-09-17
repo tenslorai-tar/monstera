@@ -1,9 +1,12 @@
 import {
   BRIDGE_KEY,
   type ContractClient,
+  type EventHandler,
+  type EventId,
   type MonsteraBridge,
   channels,
   createClient,
+  subscribeToEvent,
 } from '@monstera/contract';
 
 /**
@@ -99,4 +102,25 @@ export function createRendererClient(
 ): ContractClient {
   if (bridge === undefined) throw new BridgeUnavailableError();
   return createClient(channels, async (id, params) => bridge.invoke(id, params));
+}
+
+/**
+ * Subscribes to one of `main`'s declared events
+ * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
+ *
+ * `createRendererClient`'s rule for the second direction: the payload is validated on
+ * arrival against the event registry, and a malformed one is **dropped** rather than
+ * thrown at a callback nobody can catch from. It throws for an absent bridge, for the
+ * reason above — a renderer with no preload is wired wrong, not a channel that failed.
+ */
+export type EventSubscriber = <K extends EventId>(
+  id: K,
+  handler: EventHandler<K>,
+) => () => void;
+
+export function createEventSubscriber(
+  bridge: MonsteraBridge | undefined = globalThis[BRIDGE_KEY],
+): EventSubscriber {
+  if (bridge === undefined) throw new BridgeUnavailableError();
+  return (id, handler) => subscribeToEvent(bridge.subscribe, id, handler);
 }

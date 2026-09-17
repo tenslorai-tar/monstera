@@ -867,6 +867,30 @@ export const CONTEXT_PANEL_RESIZE = messageKey('surface.context-panel.resize');
 export const CONTEXT_PANEL_COLLAPSE = messageKey('surface.context-panel.collapse');
 export const CONTEXT_PANEL_REOPEN = messageKey('surface.context-panel.reopen');
 export const CONTEXT_PANEL_OPEN_TITLE = messageKey('setting.appearance-context-panel-open.title');
+export const CONTEXT_PANEL_TAB_TITLE = messageKey('setting.appearance-context-panel-tab.title');
+export const CONTEXT_PANEL_TAB_PROPERTIES = messageKey('surface.context-panel.tab-properties');
+export const CONTEXT_PANEL_TAB_ASSISTANT = messageKey('surface.context-panel.tab-assistant');
+export const CONTEXT_PANEL_TAB_STRIP = messageKey('surface.context-panel.tab-strip');
+export const ASSISTANT_PROVIDER_LABEL = messageKey('assistant.provider');
+export const ASSISTANT_MODEL_LABEL = messageKey('assistant.model');
+export const ASSISTANT_COMPOSER_LABEL = messageKey('assistant.composer');
+export const ASSISTANT_CONVERSATION_LABEL = messageKey('assistant.conversation');
+export const ASSISTANT_SEND = messageKey('assistant.send');
+export const ASSISTANT_STOP = messageKey('assistant.stop');
+export const ASSISTANT_YOU = messageKey('assistant.you');
+export const ASSISTANT_ASSISTANT = messageKey('assistant.assistant');
+export const ASSISTANT_EMPTY = messageKey('assistant.empty');
+export const ASSISTANT_ASK = messageKey('assistant.ask-hint');
+export const ASSISTANT_NO_KEY = messageKey('assistant.no-key');
+export const ASSISTANT_NO_MODELS = messageKey('assistant.no-models');
+export const ASSISTANT_PROBLEM_UNAUTHORISED = messageKey('assistant.problem-unauthorised');
+export const ASSISTANT_PROBLEM_UNREACHABLE = messageKey('assistant.problem-unreachable');
+export const ASSISTANT_PROBLEM_REJECTED = messageKey('assistant.problem-rejected');
+export const ASSISTANT_PROBLEM_UNREADABLE = messageKey('assistant.problem-unreadable');
+export const CONTEXT_PANEL_TAB_TITLES = {
+  properties: CONTEXT_PANEL_TAB_PROPERTIES,
+  assistant: CONTEXT_PANEL_TAB_ASSISTANT,
+} as const;
 export const QUICK_TOOLBAR_OPEN_TITLE = messageKey('setting.appearance-quick-toolbar-open.title');
 export const QUICK_TOOLBAR_EDGE_TITLE = messageKey('setting.appearance-quick-toolbar-edge.title');
 export const QUICK_TOOLBAR_EDGE_START = messageKey('setting.appearance-quick-toolbar-edge.start');
@@ -1963,6 +1987,26 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUMENT_PANEL_WIDTH_TITLE]: 'Document panel width',
   [PANEL_RESIZE]: 'Resize the document panel',
   [CONTEXT_PANEL_LABEL]: 'Properties',
+  [CONTEXT_PANEL_TAB_TITLE]: 'Contextual panel tab',
+  [CONTEXT_PANEL_TAB_PROPERTIES]: 'Properties',
+  [CONTEXT_PANEL_TAB_ASSISTANT]: 'Assistant',
+  [CONTEXT_PANEL_TAB_STRIP]: 'Contextual panel tabs',
+  [ASSISTANT_PROVIDER_LABEL]: 'Provider',
+  [ASSISTANT_MODEL_LABEL]: 'Model',
+  [ASSISTANT_COMPOSER_LABEL]: 'Ask about this document',
+  [ASSISTANT_CONVERSATION_LABEL]: 'Conversation',
+  [ASSISTANT_SEND]: 'Send',
+  [ASSISTANT_STOP]: 'Stop',
+  [ASSISTANT_YOU]: 'You',
+  [ASSISTANT_ASSISTANT]: 'Assistant',
+  [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+  [ASSISTANT_ASK]: 'Enter sends. Shift+Enter starts a new line.',
+  [ASSISTANT_NO_KEY]: 'This provider has no key stored. Add it in Settings › AI; the key stays on this machine.',
+  [ASSISTANT_NO_MODELS]: 'No models are listed for this provider yet. With a key stored, the list is fetched from the provider.',
+  [ASSISTANT_PROBLEM_UNAUTHORISED]: 'The provider did not accept the key. Check it in Settings › AI, then ask again.',
+  [ASSISTANT_PROBLEM_UNREACHABLE]: 'The provider could not be reached. Check the connection, then ask again.',
+  [ASSISTANT_PROBLEM_REJECTED]: 'The provider refused the request, so nothing more arrived. What is above is what it sent.',
+  [ASSISTANT_PROBLEM_UNREADABLE]: 'The answer stopped part way. What is above is what arrived.',
   [CONTEXT_PANEL_RESIZE]: 'Resize the properties panel',
   [CONTEXT_PANEL_COLLAPSE]: 'Collapse the properties panel',
   [CONTEXT_PANEL_REOPEN]: 'Show the properties panel',

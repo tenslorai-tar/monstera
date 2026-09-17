@@ -28,7 +28,7 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS))): SettingsStore {
   render(
     <Wrapped>
-      <ContextPanel settings={settings}>
+      <ContextPanel assistant={<p>assistant content</p>} settings={settings}>
         <p>properties content</p>
       </ContextPanel>
     </Wrapped>,
