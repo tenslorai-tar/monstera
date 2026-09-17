@@ -51,13 +51,12 @@
  *   node scripts/provision/tessdata.mjs [--force] [--check]
  */
 
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists, toolPath, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { isMain } from '../lib/isMain.mjs';
-import { sameAsCommitted } from './condaForge.mjs';
 
 /** Where the CDN serves the pinned build from. */
 const BASE = 'https://tessdata.projectnaptha.com/4.0.0_fast';
@@ -107,13 +106,26 @@ export const TESSDATA_MODELS = [
  * The CDN serves `tesseract-ocr/tessdata_fast` at tag `4.0.0` (commit `b893ed39`),
  * gzipped: measured 2026-09-17, `eng.traineddata.gz` from the CDN expands to the
  * repository's `eng.traineddata` byte for byte (SHA-256 `7d4322bd…`). That repository
- * is Apache-2.0 and ships the text as `COPYING`; it is fetched at the commit, pinned,
- * and compared with the committed copy whenever a model is fetched.
+ * is Apache-2.0 and ships the text as `COPYING`, read from that commit on 2026-09-17 and
+ * pinned below by digest.
+ *
+ * ## THE COMMITTED COPY IS CHECKED AGAINST THE PIN, OFFLINE (KKKKKK-1)
+ *
+ * The first version fetched the text on every run that fetched a model — including CI's
+ * `--only=eng` step on a cold cache, which gave a step that touched one host a second one
+ * whose outage would fail provisioning. The pin is the authority either way: what has to
+ * be true is that **NOTICE renders the bytes that were read from that commit**, and a
+ * digest settles that without asking anybody. So the check is a digest of the committed
+ * file, it costs nothing, and it therefore runs on **every** invocation rather than only
+ * when something is downloaded — which also closes the warm-machine hole for this
+ * provisioner (KKKKKK-2).
+ *
+ * What it gives up is stated: nothing here notices upstream re-tagging that commit, and
+ * nothing should — a pin exists precisely so a later change is not silently adopted.
  */
 const LICENCE_TEXT = {
-  url: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/b893ed3917f4eb4f3f08a79b1b58fe95097a7473/COPYING',
+  source: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/b893ed3917f4eb4f3f08a79b1b58fe95097a7473/COPYING',
   sha256: 'a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9',
-  bytes: 10173,
   into: 'COPYING.txt',
 };
 
@@ -205,23 +217,13 @@ async function main() {
     fetched += 1;
   }
 
-  if (fetched > 0) {
-    // ONLY WHEN SOMETHING ARRIVED: a run that verified what was already present
-    // installed nothing new, and a `--check` leg must not need a second host.
-    const staged = join(directory, `.licence-${String(process.pid)}`);
-    try {
-      await downloadVerified({
-        url: LICENCE_TEXT.url,
-        allowedHosts: ['raw.githubusercontent.com'],
-        sha256: LICENCE_TEXT.sha256,
-        maxBytes: LICENCE_TEXT.bytes,
-        destination: join(staged, LICENCE_TEXT.into),
-      });
-      await sameAsCommitted(tessdataLicenceRoot(REPO_ROOT), join(staged, LICENCE_TEXT.into), LICENCE_TEXT.into);
-    } finally {
-      await rm(staged, { recursive: true, force: true });
-    }
-  }
+  // EVERY RUN, because it reads one local file: NOTICE renders these models' terms, and a
+  // committed copy that is not the pinned bytes is a notice claiming something nobody read.
+  await verifyFileDigest({
+    path: join(tessdataLicenceRoot(REPO_ROOT), LICENCE_TEXT.into),
+    sha256: LICENCE_TEXT.sha256,
+    context: `the committed copy of tessdata_fast's ${LICENCE_TEXT.into} (read from ${LICENCE_TEXT.source})`,
+  });
 
   process.stdout.write(
     `OCR models ready in ${directory}\n` +

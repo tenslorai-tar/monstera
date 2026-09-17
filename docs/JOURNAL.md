@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — KKKKKK-1 closed: the tessdata licence is checked against its pin, offline
+
+The first version fetched `COPYING` from `raw.githubusercontent.com` whenever a model was
+fetched — including CI's `--only=eng` step on a cold cache, which gave a step that touched one
+host a second one whose outage would fail provisioning that used to succeed.
+
+The pin was already the authority. What has to be true is that **NOTICE renders the bytes read
+from that commit**, and a SHA-256 of the committed copy settles it with no network. So the check
+is now a digest, it costs nothing, and it therefore runs on **every** invocation rather than only
+when something is downloaded — which also closes the warm-machine hole (KKKKKK-2) for this
+provisioner. `pdfium.mjs` still compares only when it extracts, because its authority is inside
+the archive.
+
+Control, 2026-09-17: with another licence text put in place of the committed copy,
+`--check --only=eng` exits 1 naming the digest; restored, it exits 0.
+
+What it gives up is stated: nothing notices upstream re-tagging that commit, and nothing should —
+a pin exists so a later change is not silently adopted.
+
+---
+
 ## 2026-09-17 — Stage audit of `fcee46e..e08a99f` — findings KKKKKK-1 to KKKKKK-7
 
 35 commits, 196 files: D10's barcodes and PDF/A and Print and Email, D8's compare, annotation
