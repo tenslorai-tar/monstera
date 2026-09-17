@@ -51,12 +51,13 @@
  *   node scripts/provision/tessdata.mjs [--force] [--check]
  */
 
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists, toolPath, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { sameAsCommitted } from './condaForge.mjs';
 
 /** Where the CDN serves the pinned build from. */
 const BASE = 'https://tessdata.projectnaptha.com/4.0.0_fast';
@@ -99,6 +100,27 @@ export const TESSDATA_MODELS = [
   { language: 'kor', sha256: 'aae6df1bbd206053b366b0b0f00e2211637d0923e8c3c64a0cbc9edaf61a5896', bytes: 1114590 },
   { language: 'chi_sim', sha256: '3aa140069a09796b8cb8d3ccd0c052e8ed67f20cddb24b70ffa3344b3b94346b', bytes: 1730011 },
 ];
+
+/**
+ * The models' terms, and where NOTICE's copy is committed.
+ *
+ * The CDN serves `tesseract-ocr/tessdata_fast` at tag `4.0.0` (commit `b893ed39`),
+ * gzipped: measured 2026-09-17, `eng.traineddata.gz` from the CDN expands to the
+ * repository's `eng.traineddata` byte for byte (SHA-256 `7d4322bd…`). That repository
+ * is Apache-2.0 and ships the text as `COPYING`; it is fetched at the commit, pinned,
+ * and compared with the committed copy whenever a model is fetched.
+ */
+const LICENCE_TEXT = {
+  url: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/b893ed3917f4eb4f3f08a79b1b58fe95097a7473/COPYING',
+  sha256: 'a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9',
+  bytes: 10173,
+  into: 'COPYING.txt',
+};
+
+/** @param {string} root */
+export function tessdataLicenceRoot(root) {
+  return join(root, 'scripts', 'release', 'licences', 'tessdata');
+}
 
 /** What the fourteen weigh together, stated so a reader need not add them up. */
 export const TESSDATA_TOTAL_BYTES = 18_013_460;
@@ -181,6 +203,24 @@ async function main() {
       destination,
     });
     fetched += 1;
+  }
+
+  if (fetched > 0) {
+    // ONLY WHEN SOMETHING ARRIVED: a run that verified what was already present
+    // installed nothing new, and a `--check` leg must not need a second host.
+    const staged = join(directory, `.licence-${String(process.pid)}`);
+    try {
+      await downloadVerified({
+        url: LICENCE_TEXT.url,
+        allowedHosts: ['raw.githubusercontent.com'],
+        sha256: LICENCE_TEXT.sha256,
+        maxBytes: LICENCE_TEXT.bytes,
+        destination: join(staged, LICENCE_TEXT.into),
+      });
+      await sameAsCommitted(tessdataLicenceRoot(REPO_ROOT), join(staged, LICENCE_TEXT.into), LICENCE_TEXT.into);
+    } finally {
+      await rm(staged, { recursive: true, force: true });
+    }
   }
 
   process.stdout.write(

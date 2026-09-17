@@ -324,6 +324,19 @@
       ]
     },
     {
+      "name": "Tesseract language data (tessdata_fast)",
+      "version": "4.0.0",
+      "role": "OCR's fourteen language models: data files read by the Tesseract engine inside the contained MuPDF engine host (ADR-0014). Not code, and not linked.",
+      "licence": "Apache-2.0",
+      "origin": "https://github.com/tesseract-ocr/tessdata_fast",
+      "source": "https://github.com/tesseract-ocr/tessdata_fast/tree/4.0.0 (commit b893ed3917f4eb4f3f08a79b1b58fe95097a7473); the models are the source form this project receives",
+      "build": "tessdata.projectnaptha.com/4.0.0_fast, the gzipped files scripts/provision/tessdata.mjs pins; eng expands to the repository's file byte for byte (2026-09-17)",
+      "licenceRoot": "scripts/release/licences/tessdata",
+      "components": [
+        { "name": "tessdata_fast", "version": "4.0.0", "spdx": "Apache-2.0", "texts": ["COPYING.txt"] }
+      ]
+    },
+    {
       "name": "ONNX Runtime Web",
       "version": "1.29.0",
       "role": "Handwriting recognition's inference runtime: three files loaded inside the contained engine host (ADR-0052, corrected 2026-09-17). The model weights are downloaded on demand and are not part of this build.",
