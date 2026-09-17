@@ -892,6 +892,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Stage 9: a provider's models are asked of the provider, and the endpoints were probed
+
+`packages/kernel/src/aiModels.ts` (ADR-0081). It executes in `main` for the Claude recogniser's
+reason — invariant 25 gives the host no network — and takes its `fetch`, so every case drives it.
+
+**Every model-list URL was probed on 2026-09-17 with no key**, because this project does not recall
+a version or an address: `401`/`403` is a path that exists and wants credentials, `404` is a path
+that is wrong. Anthropic, OpenAI, Mistral, xAI, Groq, DeepSeek and Azure OpenAI answered 401,
+Gemini 403, **OpenRouter 200 — its list is public — and Perplexity 404**. So Perplexity is declared
+as having no list rather than given a URL that would always fail, and the table in the module holds
+each status.
+
+**A fallback names only models this build has read a specification for.** Anthropic's holds
+`claude-opus-5`, from the overview D6 read on 2026-09-13; every other provider's is **empty on
+purpose**, because filling it from memory would put model ids nobody read in front of a person, and
+a request against an invented id fails at the service with a message about a model that does not
+exist. An empty list says *set a key and I will ask*.
+
+**Capabilities are `boolean | null` now, and `null` is what a list endpoint actually says.** None of
+the nine states per-model vision or streaming, so a fetched model carries `null` and a surface shows
+it plainly; what a provider says a model cannot do is what gets disabled. The alternative — guessing
+from an id — is a fact this build would have made up.
+
+Sixteen cases, including controls for an empty list (a picker with nothing in it reads as broken),
+a 200 in the wrong shape, no key, no Azure resource, and a provider that cannot be reached.
+
+---
+
 ## 2026-09-17 — KKKKKK-1 closed: the tessdata licence is checked against its pin, offline
 
 The first version fetched `COPYING` from `raw.githubusercontent.com` whenever a model was

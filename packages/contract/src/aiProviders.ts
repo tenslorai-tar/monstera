@@ -118,10 +118,16 @@ export const AI_PROVIDERS: Readonly<Record<AiProviderId, AiProvider>> = {
  * broken one.
  */
 export interface AiModelCapabilities {
-  /** Accepts images in the request — what a page picture needs. */
-  readonly vision: boolean;
-  /** Answers as it goes, rather than in one piece. */
-  readonly streaming: boolean;
+  /**
+   * Accepts images in the request — what a page picture needs. **`null` is *the provider
+   * did not say*,** which is the usual answer: a model list names ids and rarely says what
+   * each can do. A surface offers an unknown as an ordinary choice and marks nothing; it
+   * disables only what a provider has actually said it cannot do, because a guess shown as
+   * a fact is worse than an unmarked model.
+   */
+  readonly vision: boolean | null;
+  /** Answers as it goes, rather than in one piece. `null` for the reason above. */
+  readonly streaming: boolean | null;
 }
 
 /** One model, as a surface names it. */

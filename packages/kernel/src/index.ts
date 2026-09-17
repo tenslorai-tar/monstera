@@ -216,6 +216,13 @@ export {
   pngSize,
   recogniseThroughClaude,
 } from './ocrClaude.js';
+export {
+  PROVIDERS_WITHOUT_A_LIST,
+  type AiModelList,
+  type AiModelRequest,
+  type AiModelSource,
+  listModels,
+} from './aiModels.js';
 export type { SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
