@@ -1582,7 +1582,9 @@ textarea {
 .m-assistant__draft {
   resize: none;
   padding: var(--space-2);
-  border: 1px solid var(--border);
+  /* A CONTROL, so the token that solves for 3:1 — ADR-0003 types `--border` as decorative
+     and CI caught this one at 1585 before it shipped. */
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
   background: var(--surface);
   color: var(--text);
