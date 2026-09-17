@@ -247,7 +247,7 @@ planner counting a table of rows as a table of untouched work.
 
 | Feature | Status |
 |---|---|
-| Assistant dialog (chat about the open document) | — |
+| Assistant panel — a tab in the right contextual panel (chat about the open document) | — |
 | Comment summarization | — |
 | Vision analysis (table reading assist) | — |
 | Provider registry: Anthropic, OpenAI, Google Gemini. **ITS ANTHROPIC KEY ALREADY EXISTS, placed 2026-09-13 by D6's Claude recogniser** ([ADR-0057](DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md)): the secret `ai.anthropic-key`, in Settings › AI. **This row takes that entry for Anthropic rather than declaring a second** — two ids would be two stored copies of one credential, and rotating the key in one would leave the other working on the old one. The recogniser's model constant, `claude-opus-5`, expires when this stage's model setting lands. | — |
