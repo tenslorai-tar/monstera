@@ -127,6 +127,7 @@ import {
   SAVE_COPY_TITLE,
   SPLIT_DOCUMENT_COMMAND_TITLE,
   EXPORT_PAGE_IMAGES_COMMAND_TITLE,
+  EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
   EXPORT_TEXT_COMMAND_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
@@ -1831,20 +1832,58 @@ export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
     // Export, and File is the Home group that writes a file out today.
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 40 }],
     when: hasDocument,
-    run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
-
-      const answer = await deps.client['document.exportText']({ docId: context.docId });
-      if (!answer.ok) {
-        reportProblem(deps, answer.error);
-        return;
-      }
-      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
-      });
-    },
+    run: (context) => runTextExport(deps, context, 'plain'),
   };
+}
+
+/**
+ * Writes the document's text with its layout kept — columns and spacing as the
+ * page shows them — to a file the user picks (ADR-0071).
+ *
+ * {@link exportTextCommand}'s path with the other MODE, never a second channel:
+ * the two exports differ in which engine reads the page and in nothing a person
+ * does, so one outcome handler serves both.
+ */
+export function exportLayoutTextCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.export-layout-text',
+    icon: 'FileText',
+    title: EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 41 }],
+    when: hasDocument,
+    run: (context) => runTextExport(deps, context, 'layout'),
+  };
+}
+
+async function runTextExport(
+  deps: DocumentCommandDeps,
+  context: CommandContext,
+  mode: 'plain' | 'layout',
+): Promise<void> {
+  if (context.docId === undefined) return;
+
+  const answer = await deps.client['document.exportText']({ docId: context.docId, mode });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return;
+  }
+  switch (answer.value.kind) {
+    case 'copied':
+    case 'cancelled':
+      return;
+    case 'write-failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return;
+    case 'refused':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+      return;
+    case 'unavailable':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'layout-unavailable' });
+      return;
+    case 'failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'layout-failed' });
+      return;
+  }
 }
 
 /**

@@ -1181,13 +1181,25 @@ function exportPageImagesHandler(
 function exportTextHandler(commands: DocumentCommands): ContractHandlers['document.exportText'] {
   return async ({
     docId,
+    mode,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportText']>>> => {
     try {
-      const outcome = await commands.exportText(docId);
+      const outcome = await commands.exportText(docId, mode);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
-      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
-      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+      switch (outcome.kind) {
+        case 'copied':
+          return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+        case 'write-failed':
+          return ok({ kind: 'write-failed' } as const);
+        case 'refused':
+          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'unavailable':
+          return ok({ kind: 'unavailable' } as const);
+        case 'failed':
+          // THE DETAIL STAYS IN MAIN: it names a converter's stderr and paths in a
+          // session area, which is diagnostic text the renderer has no use for.
+          return ok({ kind: 'failed' } as const);
+      }
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

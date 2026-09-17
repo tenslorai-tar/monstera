@@ -46,6 +46,8 @@ export const SAVE_PROBLEM_DIALOG = declareDialog({
       'unrepresentable',
       'unverifiable',
       'write-failed',
+      'layout-unavailable',
+      'layout-failed',
     ]),
   }),
   component: lazy(() => import('./SaveProblemBody.js')),

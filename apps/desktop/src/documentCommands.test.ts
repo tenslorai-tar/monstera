@@ -116,6 +116,7 @@ import {
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import { EngineSessions } from './engineSessions.js';
 import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
+import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 
 /**
@@ -610,6 +611,7 @@ const INERT = {
   pageImage: localPageImage,
   // REFUSES BY NAME, like every inert picker: a case that exports text supplies its own.
   pickText: () => Promise.reject(new Error('INERT: this case does not export text')),
+  layoutText: null,
   directory: noDirectory,
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
   // application without meaning to fails at the call rather than opening or watching anything.
@@ -1744,6 +1746,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
     options: {
       readonly checkTarget?: CopySource['checkTarget'];
       readonly surface?: typeof nodeFileSurface;
+      readonly layoutText?: LayoutTextSource | null;
+      readonly flush?: () => Promise<Uint8Array>;
+      readonly picked?: string[];
     } = {},
   ): { readonly commands: DocumentCommands; readonly reads: number[] } {
     const reads: number[] = [];
@@ -1763,13 +1768,18 @@ describe('exportText — the document’s words, streamed one page at a time', (
           names: siblingNames,
           wait: () => Promise.resolve(),
         },
-        flush: () => Promise.reject(new Error('a text export does not flush the document')),
+        flush:
+          options.flush ?? (() => Promise.reject(new Error('a plain text export does not flush the document'))),
       },
       copy: {
         pick: () => Promise.reject(new Error('a text export uses its own picker')),
         checkTarget: options.checkTarget ?? ((target) => textService.checkCopyTarget(target)),
       },
-      pickText: () => Promise.resolve(destination),
+      pickText: (name) => {
+        options.picked?.push(name);
+        return Promise.resolve(destination);
+      },
+      layoutText: options.layoutText ?? null,
     });
     return { commands, reads };
   }
@@ -1778,7 +1788,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     const destination = join(mkdtempSync(join(directory, 'text-')), 'words.txt');
     const { commands, reads } = exportingTo(destination);
 
-    const outcome = await commands.exportText(textDoc);
+    const outcome = await commands.exportText(textDoc, 'plain');
 
     const written = readFileSync(destination, 'utf8');
     expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8') });
@@ -1808,7 +1818,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     });
     reads = built.reads;
 
-    await built.commands.exportText(textDoc);
+    await built.commands.exportText(textDoc, 'plain');
 
     // Chunk 1 arrived after ONE read and chunk 2 after TWO. Reading everything
     // first answers [2, 2].
@@ -1818,7 +1828,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
   it('CONTROL: a dismissed picker returns nothing and reads no page', async () => {
     const { commands, reads } = exportingTo(null);
 
-    expect(await commands.exportText(textDoc)).toBeUndefined();
+    expect(await commands.exportText(textDoc, 'plain')).toBeUndefined();
     expect(reads).toEqual([]);
   });
 
@@ -1829,11 +1839,82 @@ describe('exportText — the document’s words, streamed one page at a time', (
         Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
     });
 
-    expect((await commands.exportText(textDoc))?.kind).toBe('refused');
+    expect((await commands.exportText(textDoc, 'plain'))?.kind).toBe('refused');
     // THE DECISION, not the end state: no file either way, but a refusal that came
     // after extracting the document would still have read both pages.
     expect(reads).toEqual([]);
     expect(existsSync(destination)).toBe(false);
+  });
+
+  describe('with layout (ADR-0071)', () => {
+    /** The save's flushed image, distinct from the fixture's own bytes. */
+    const FLUSHED = Uint8Array.of(0x25, 0x50, 0x44, 0x46, 0x2d, 0x32);
+
+    it('hands the converter the SAVE’S FLUSH and writes its chunks, reading no page itself', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'layout.txt');
+      const given: Uint8Array[] = [];
+      const { commands, reads } = exportingTo(destination, {
+        flush: () => Promise.resolve(FLUSHED),
+        layoutText: (pdf) => {
+          given.push(pdf);
+          // Each chunk crosses an await, as a file read's does.
+          return Promise.resolve(
+            (async function* () {
+              for (const part of ['col one      col two\n', '\f']) {
+                yield await Promise.resolve(new TextEncoder().encode(part));
+              }
+            })(),
+          );
+        },
+      });
+
+      const outcome = await commands.exportText(textDoc, 'layout');
+
+      expect(outcome).toEqual({ kind: 'copied', bytes: 22 });
+      expect(readFileSync(destination, 'utf8')).toBe('col one      col two\n\f');
+      // What the converter read is what a save would write — not the file on disk,
+      // and not MuPDF's text: the plain path's page reads never happened.
+      expect(given).toEqual([FLUSHED]);
+      expect(reads).toEqual([]);
+    });
+
+    it('with NO CONVERTER answers unavailable BEFORE the dialog', async () => {
+      const picked: string[] = [];
+      const { commands } = exportingTo('unused.txt', { layoutText: null, picked });
+
+      expect(await commands.exportText(textDoc, 'layout')).toEqual({ kind: 'unavailable' });
+      expect(picked).toEqual([]);
+    });
+
+    it('a converter that FAILED answers failed and writes no file', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'layout.txt');
+      const { commands } = exportingTo(destination, {
+        flush: () => Promise.resolve(FLUSHED),
+        layoutText: () =>
+          Promise.reject(new LayoutTextFailedError({ stage: 'exit-code', code: 1, said: 'Syntax Error' })),
+      });
+
+      const outcome = await commands.exportText(textDoc, 'layout');
+
+      expect(outcome?.kind).toBe('failed');
+      expect(existsSync(destination)).toBe(false);
+    });
+
+    it('CONTROL: a contested destination never runs the converter', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'layout.txt');
+      let ran = 0;
+      const { commands } = exportingTo(destination, {
+        checkTarget: () => Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
+        flush: () => Promise.resolve(FLUSHED),
+        layoutText: () => {
+          ran += 1;
+          return Promise.reject(new Error('the converter ran for a contested destination'));
+        },
+      });
+
+      expect((await commands.exportText(textDoc, 'layout'))?.kind).toBe('refused');
+      expect(ran).toBe(0);
+    });
   });
 });
 

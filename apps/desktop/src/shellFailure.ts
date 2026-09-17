@@ -100,6 +100,9 @@ export type ShellFailureEvent =
   | 'render-process-gone'
   | 'child-process-gone'
   | 'engine-host-gone'
+  // An external converter (§8) that did not produce its output: why it did not,
+  // including what it wrote to stderr, which the renderer is never sent.
+  | 'converter-failed'
   | 'document-unreadable'
   | 'unresponsive'
   /**

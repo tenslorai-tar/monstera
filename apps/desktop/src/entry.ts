@@ -29,6 +29,7 @@ import {
 import {
   createComposeHostPlatform,
   createEngineHostPlatform,
+  createLayoutTextPlatform,
   createPdfiumHostPlatform,
 } from './engineHostPlatform.js';
 import { createHandwritingCache } from './handwritingCache.js';
@@ -288,6 +289,9 @@ startShell(() => {
     // roads but one: it needs no provisioned library, so only a missing Win32
     // platform or an underivable container SID leaves it absent (ADR-0060).
     composePlatform: enginePlatform === null ? null : createComposeHostPlatform(enginePlatform),
+    // THE LAYOUT-TEXT CONVERTER'S PLATFORM, `null` on the PDFium roads: no Win32
+    // platform, no `pdftotext` handed down by the launcher, or no container SID (ADR-0071).
+    layoutTextPlatform: enginePlatform === null ? null : createLayoutTextPlatform(enginePlatform),
     // THE ENCODER, and it is here because `nativeImage` is Electron's.
     //
     // `composition.ts` imports no Electron — which is what lets

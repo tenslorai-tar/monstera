@@ -103,6 +103,7 @@ import {
   type EditWatchSurface,
   watchEdits,
 } from './externalEditWatch.js';
+import { type LayoutTextSource, LayoutTextFailedError } from './layoutText.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
 /**
@@ -1622,10 +1623,26 @@ export interface DocumentCommandsParts {
    * document's name so the suggested one and the filter share an extension.
    */
   readonly pickText: (sourceName: string) => Promise<string | null>;
+  /**
+   * Layout-preserving text: the document's current bytes in, text chunks out,
+   * from the contained `pdftotext` (ADR-0071) — or `null` where none can run, and
+   * the layout export then answers `unavailable` before any dialog.
+   */
+  readonly layoutText: LayoutTextSource | null;
   readonly directory: PickDirectory;
   /** A page edited in another application. See {@link ExternalEditSource}. */
   readonly externalEdit: ExternalEditSource;
 }
+
+/**
+ * What a text export produced: a copy's outcomes, plus the two only the layout
+ * mode has — no converter on this machine, and a converter that ran and wrote
+ * nothing usable.
+ */
+export type ExportTextOutcome =
+  | CopyOutcome
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'failed'; readonly detail: string };
 
 export class DocumentCommands {
   readonly #documents: DocumentService;
@@ -1662,6 +1679,7 @@ export class DocumentCommands {
   readonly #formData: FormDataSource;
   readonly #pageImage: DocumentPageImageReader;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
+  readonly #layoutText: LayoutTextSource | null;
   readonly #directory: PickDirectory;
   readonly #externalEdit: ExternalEditSource;
   /**
@@ -1713,6 +1731,7 @@ export class DocumentCommands {
     this.#formData = parts.formData;
     this.#pageImage = parts.pageImage;
     this.#pickText = parts.pickText;
+    this.#layoutText = parts.layoutText;
     this.#directory = parts.directory;
     this.#externalEdit = parts.externalEdit;
   }
@@ -3188,28 +3207,42 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    *   reason.
    */
-  async exportText(docId: DocId): Promise<CopyOutcome | undefined> {
+  async exportText(docId: DocId, mode: 'plain' | 'layout'): Promise<ExportTextOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export text');
+
+    // UNAVAILABLE BEFORE THE DIALOG: a person asked to pick a file for an export
+    // that cannot run would be asked a question whose answer changes nothing.
+    const layoutText = this.#layoutText;
+    if (mode === 'layout' && layoutText === null) return { kind: 'unavailable' };
 
     const destination = await this.#pickText(suggest);
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (): Promise<ExportTextOutcome> => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return await writeStreamedDocument(
-        this.#save.deps,
-        this.#copy.checkTarget,
-        // `open` is called only once the destination is known to be free, so a
-        // contested file reads no page at all.
-        () => Promise.resolve(this.#textChunks(docId, sessions)),
-        destination,
-      );
+      // `open` is called only once the destination is known to be free, so a
+      // contested file reads no page and runs no converter.
+      const open =
+        mode === 'plain' || layoutText === null
+          ? (): Promise<AsyncIterable<Uint8Array>> => Promise.resolve(this.#textChunks(docId, sessions))
+          : // THE SAVE'S OWN FLUSH, `saveCopy`'s reason: the converter reads what
+            // this document currently is, and a copy, a save and a layout export
+            // cannot disagree about that (B3a).
+            async (): Promise<AsyncIterable<Uint8Array>> =>
+              await layoutText(await this.#save.flush(docId, sessions));
+
+      try {
+        return await writeStreamedDocument(this.#save.deps, this.#copy.checkTarget, open, destination);
+      } catch (thrown) {
+        if (thrown instanceof LayoutTextFailedError) return { kind: 'failed', detail: thrown.message };
+        throw thrown;
+      }
     });
 
     return value;

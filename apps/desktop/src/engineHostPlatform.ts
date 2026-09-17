@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import type { EngineHostPlatform } from './composition.js';
+import { providedConverterExecutable } from './containedProgram.js';
+import { LAYOUT_TEXT_BOUNDS, type LayoutTextPlatform } from './layoutText.js';
 import {
   ENGINE_HOST_CONTAINER,
   ENGINE_HOST_ENTRY_FILE,
@@ -331,6 +333,39 @@ export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPl
  * Unlike PDFium, this host needs no provisioned library — `markdown-it` ships in the
  * kernel's dependencies — so there is no third road to `null`.
  */
+/**
+ * The AppContainer moniker the layout-text converter runs under — a FOURTH
+ * distinct string, for `ENGINE_HOST_CONTAINER`'s reason: the pdftotext process
+ * reads a copy of a document and must share no principal with any host.
+ */
+export const LAYOUT_TEXT_CONTAINER = 'monstera-text-converter';
+
+/**
+ * The Win32 half of the layout-text converter (ADR-0071), or `null` where it
+ * cannot exist: not Windows, no container SID, or no `pdftotext` handed down.
+ *
+ * It takes the engine host platform's session root, directory surface and user
+ * rather than resolving its own — one place decides where session areas live and
+ * who owns them — and its own container, so its DACLs name nothing a host holds.
+ */
+export function createLayoutTextPlatform(base: EngineHostPlatform): LayoutTextPlatform | null {
+  const executable = providedConverterExecutable('MONSTERA_POPPLER_EXECUTABLE', process.env);
+  if (executable === null) return null;
+  const container = hostContainerSid(LAYOUT_TEXT_CONTAINER);
+  if (!container.ok) return null;
+
+  return {
+    sessionRoot: base.sessionRoot,
+    directories: base.directories,
+    user: base.user,
+    container: container.value,
+    containerName: LAYOUT_TEXT_CONTAINER,
+    executable,
+    surfaceFor: (config) => createWin32HostSurface(config),
+    bounds: LAYOUT_TEXT_BOUNDS,
+  };
+}
+
 export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {
   const container = hostContainerSid(ENGINE_HOST_CONTAINER.compose);
   if (!container.ok) return null;

@@ -207,6 +207,7 @@ export const EXPORT_PAGE_IMAGES_QUALITY = messageKey('dialog.export-page-images.
 export const EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS = messageKey('dialog.export-page-images.out-of-bounds');
 export const EXPORT_PAGE_IMAGES_FILES = messageKey('dialog.export-page-images.files');
 export const EXPORT_TEXT_COMMAND_TITLE = messageKey('command.export-text.title');
+export const EXPORT_LAYOUT_TEXT_COMMAND_TITLE = messageKey('command.export-layout-text.title');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -1127,6 +1128,8 @@ export const SAVE_REFUSED_TARGET_ABSENT = messageKey('dialog.save-problem.target
 export const SAVE_REFUSED_UNREPRESENTABLE = messageKey('dialog.save-problem.unrepresentable');
 export const SAVE_REFUSED_UNVERIFIABLE = messageKey('dialog.save-problem.unverifiable');
 export const SAVE_WRITE_FAILED = messageKey('dialog.save-problem.write-failed');
+export const SAVE_LAYOUT_UNAVAILABLE = messageKey('dialog.save-problem.layout-unavailable');
+export const SAVE_LAYOUT_FAILED = messageKey('dialog.save-problem.layout-failed');
 export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
@@ -2111,6 +2114,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_PAGE_IMAGES_FILES]:
     'This document is not changed. One image for each page: {files} files will be written.',
   [EXPORT_TEXT_COMMAND_TITLE]: 'Export text…',
+  [EXPORT_LAYOUT_TEXT_COMMAND_TITLE]: 'Export text with layout…',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:
@@ -2537,6 +2541,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // character at all — not even escaped.
   [SAVE_REFUSED_UNREPRESENTABLE]: 'A field in this form holds a character XFDF cannot store. Export as FDF or JSON instead, which both keep it.',
   [SAVE_WRITE_FAILED]: 'The file could not be written. Check that it is not open in another application, and that there is room on the disk.',
+  [SAVE_LAYOUT_UNAVAILABLE]: 'Text with layout needs a component that is not installed with this copy of Monstera. Export text… still works.',
+  [SAVE_LAYOUT_FAILED]: 'The text could not be read with its layout from this document, so no file was written. Export text… may still work.',
   // "Could not be done" and never "error". Every code below leaves the document
   // exactly as it was, so the title describes the operation and not the state.
   [PROBLEM_TITLE]: 'That could not be done',

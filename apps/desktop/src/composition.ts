@@ -164,6 +164,7 @@ import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { HandwritingCache } from './handwritingCache.js';
+import { type LayoutTextPlatform, createLayoutTextSource } from './layoutText.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
@@ -519,6 +520,12 @@ export interface ShellComposition {
    */
   readonly composePlatform?: EngineHostPlatform | null;
   /**
+   * Where layout-preserving text is extracted: Poppler's `pdftotext` through §8's
+   * external-converter seam (ADR-0071). `null` where no Win32 platform exists or
+   * no `pdftotext` was handed down, and the export then answers *unavailable*.
+   */
+  readonly layoutTextPlatform?: LayoutTextPlatform | null;
+  /**
    * How a rasterised page becomes PNG bytes. See {@link EncodePng}.
    *
    * Optional, and its absence is a decided state rather than a default: a
@@ -569,6 +576,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     enginePlatform = null,
     pdfiumPlatform = null,
     composePlatform = null,
+    layoutTextPlatform = null,
     encodePng,
     log = null,
   } = composition;
@@ -1097,6 +1105,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
     // THE TEXT EXPORT'S DIALOG, a parameter for the folder picker's reason below.
     pickText,
+    // LAYOUT-PRESERVING TEXT, the contained pdftotext — `null` where it cannot run,
+    // so the export answers unavailable rather than extracting anywhere else (ADR-0071).
+    layoutText: layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures),
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the
     // part that arrives from `entry.ts` and this file keeps its property of

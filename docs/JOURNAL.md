@@ -892,6 +892,60 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 layout-preserving text: Poppler through the converter seam, in three commits
+
+The owner's Q2: *"OPTION 1, POPPLER"*, with conditions before any feature line. B4 (`0e5b6e1`, ADR-0071), adoption
+(`5d2e061`), and the feature (this commit).
+
+### The conditions, and the one that nearly stopped the row wrongly
+
+- **Contained separate process, only input and output, never linked.** Measured before the ADR through the shipped
+  launcher surface, with two controls: from an ungranted stage nothing ran; a PDF outside the granted pair was refused
+  (`Couldn't open file`) while the same path read uncontained. `scripts/research/popplerContained.mjs` carries it.
+- **Exact build and source.** conda-forge `poppler-26.09.0-h924501e_0`, dependencies from `micromamba 2.9.0`'s own
+  solve, each pinned; source `poppler-26.09.0.tar.xz`, whose signature is verified against the pinned key.
+- **No GPL-2.0-only component.** The package index gives FreeType as `GPL-2.0-only`. Read as written, that is the
+  owner's stop. The recipe says `GPL-2.0-only OR FTL`, and FreeType's `LICENSE.TXT` offers the FTL or GPLv2 *"any later
+  version"* — so the stop would have been a truncated field, not a licence. Taken under the FTL.
+- **Signature.** conda-forge publishes none per package; recorded as such rather than implied.
+- **Notice.** A new `programs` section renders Poppler and all 18 libraries' texts in full with a written offer of
+  source, failing on a missing or empty text; the provisioner compares every committed text with the pinned build's.
+
+**Two things the adoption met on the way, both decided rather than worked around.** The runtime scan over `scripts/`
+refused the extensionless `LICENSE` copies — correctly, it refuses what it cannot classify — so the copies carry `.txt`
+and `txt`/`md` are classified as data, rather than the scan learning to pass extensionless files. And FreeType's
+`GPLv2.TXT` carries form feeds the staged-file guard refuses; it is not the licence taken, so it is not committed.
+
+### The feature
+
+- **§8's seam gets its first running converter.** `externalConverter.ts` starts the program with the engine hosts'
+  own `createContainedHost` — one implementation of a contained start — and waits for its exit with a bound. The wait
+  is new Win32 surface: `WaitForSingleObject` called through koffi's `.async`, so `main`'s event loop is never held
+  for a conversion, and `GetExitCodeProcess`. A timeout or an unreadable exit terminates; the kill-on-close job is
+  closed on every path.
+- **`layoutText.ts`** writes the save's flush as `in.pdf` into a pair granted to a fourth AppContainer
+  (`monstera-text-converter`), runs `pdftotext -layout -enc UTF-8`, and returns the output file as a stream, so
+  `main` never holds the text (ADR-0035). The pair is removed when the stream ends, is abandoned, or the run fails.
+- **Bounds, measured 2026-09-17:** the corpus at most 1,090 ms and 11.8 MB peak working set; a generated 2,000-page
+  document 9,021 ms and 41.2 MB. The bounds are ceilings against a hung parser — 10 minutes and 1 GiB — not budgets.
+- **`document.exportText` takes a required `mode`**; *Export text with layout…* is the second command over it.
+  `unavailable` answers before any dialog when the launcher handed no `pdftotext` (a packaged build has none yet);
+  `failed` goes to the save problem dialog and the converter's own words to the shell log (`converter-failed`).
+- `ConverterExecutablePath` gets its product mint, `providedConverterExecutable`, now that a feature calls it.
+
+**Cases:** the runner (6: clean exit, timeout terminates, non-zero exit carries stderr, unreadable exit, not waited
+on when not contained, bad bound); the source over a real session root (3: fixed names and `-layout`, failure logged
+with the area removed, abandoned stream removes the area); main (4: the flush reaches the converter and no page is
+read, unavailable before the dialog, failed writes nothing, a contested destination never runs it); the UI (2: the
+layout command sends `mode: 'layout'`, its two outcomes reach the dialog). **Mutations, reverted:** a stream that does
+not remove the area reddens two source cases; layout routed to the plain reader reddens two main cases.
+
+**Read through the built product path, contained** (a scratch driver over `dist`): a generated two-column page came
+back `Invoice number   INV-0042` / `Date issued      2026-09-17`; a corpus document, 189 ms and 228 lines; no failure
+reported and no area left. **Owed:** an export of each mode from the running application.
+
+---
+
 ## 2026-09-16 — D10 Pages → WebP: built, in three commits, and the naming ternary it would have broken
 
 The owner's answer to Q1: *"use `@jsquash/webp` (WASM) … Research the version from the registry at the moment you adopt

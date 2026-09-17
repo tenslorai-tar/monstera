@@ -51,6 +51,7 @@ import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
 import { pdfiumLibrary } from './provision/pdfium.mjs';
+import { pdftotextPath } from './provision/poppler.mjs';
 import { tessdataDirectory, tessdataPath } from './provision/tessdata.mjs';
 import { formatError } from './lib/reportError.mjs';
 
@@ -140,6 +141,21 @@ async function tessdataEnvironment() {
   return { MONSTERA_TESSDATA_DIRECTORY: tessdataDirectory(REPO_ROOT) };
 }
 
+/**
+ * Poppler's `pdftotext`, passed the same way and for the same reasons (ADR-0071).
+ *
+ * {@link pdfiumEnvironment}' shape one artefact along: `scripts/provision/
+ * poppler.mjs` owns where it lives, `apps/desktop` cannot call that, and absent
+ * is a decided state — the layout-preserving text export says it is unavailable.
+ *
+ * @returns {Promise<Record<string, string>>}
+ */
+async function popplerEnvironment() {
+  const executable = pdftotextPath(REPO_ROOT);
+  if (!(await fileExists(executable))) return {};
+  return { MONSTERA_POPPLER_EXECUTABLE: executable };
+}
+
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
@@ -153,6 +169,7 @@ async function main() {
       ...process.env,
       ...(await pdfiumEnvironment()),
       ...(await tessdataEnvironment()),
+      ...(await popplerEnvironment()),
     },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to

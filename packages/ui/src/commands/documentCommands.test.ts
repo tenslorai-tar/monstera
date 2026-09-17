@@ -33,6 +33,7 @@ import {
   importPageAsLayerCommand,
   splitDocumentCommand,
   exportPageImagesCommand,
+  exportLayoutTextCommand,
   exportTextCommand,
   generateTocCommand,
   protectDocumentCommand,
@@ -2144,9 +2145,45 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC } }]);
+    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain' } }]);
     // NOTHING WAS ASKED: the save dialog is main's, and a success reports nothing.
     expect(asked).toStrictEqual([]);
+  });
+
+  it('export text WITH LAYOUT dispatches the same channel with the layout mode', async () => {
+    // The UI half of the layout export's wired pair. The two commands differ in
+    // exactly this field, so a layout command that sent `plain` — or omitted the
+    // mode — would pass every other case in this file and read MuPDF's text.
+    const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12 } });
+
+    await exportLayoutTextCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'layout' } }]);
+  });
+
+  it('a layout export with NO CONVERTER, and one that FAILED, each say so through the save problem dialog', async () => {
+    for (const [kind, outcome] of [
+      ['unavailable', 'layout-unavailable'],
+      ['failed', 'layout-failed'],
+    ] as const) {
+      const { client } = recording({ 'document.exportText': { kind } });
+      const spoken: unknown[] = [];
+
+      await exportLayoutTextCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          spoken.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(spoken).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome } }]);
+    }
   });
 
   it('export text reports a contested destination through the save problem dialog', async () => {

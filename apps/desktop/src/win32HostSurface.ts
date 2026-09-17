@@ -67,12 +67,12 @@ import {
 
 import type {
   CreatedProcess,
-  HostCreationSurface,
   JobHandle,
   JobMembership,
   ProcessHandle,
   ThreadHandle,
 } from './engineHostFactory.js';
+import type { ConverterSurface, ExitReading } from './externalConverter.js';
 
 /**
  * A DERIVED COPY of `scripts/lib/win32Handle.mjs`, which is the writer of record.
@@ -136,6 +136,7 @@ export function isInvalidHandle(handle: unknown): boolean {
  * So the type restricts WHO MAY MINT instead.
  */
 export type { ContainedProgram, ElectronBinaryPath } from './containedProgram.js';
+export type { ConverterSurface, ExitReading } from './externalConverter.js';
 
 /**
  * The mint for a process that IS the Electron binary — the only mint this
@@ -233,6 +234,8 @@ const PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009;
 const EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
 const CREATE_UNICODE_ENVIRONMENT = 0x00000400;
 const CREATE_SUSPENDED = 0x00000004;
+const WAIT_OBJECT_0 = 0x00000000;
+const WAIT_TIMEOUT = 0x00000102;
 const STARTF_USESTDHANDLES = 0x00000100;
 
 const GENERIC_READ = 0x80000000;
@@ -367,6 +370,20 @@ interface Bindings {
     returned: number[],
   ) => unknown;
   readonly terminateProcess: (target: ProcessHandle, code: number) => boolean;
+  /**
+   * `WaitForSingleObject`, called ONLY through `.async`: the wait runs on
+   * koffi's worker thread, so `main`'s event loop is never held for the length of
+   * a conversion. A synchronous call here would freeze every window for as long
+   * as the converter runs.
+   */
+  readonly waitForSingleObject: {
+    readonly async: (
+      handle: ProcessHandle,
+      milliseconds: number,
+      callback: (error: unknown, result: unknown) => void,
+    ) => void;
+  };
+  readonly getExitCodeProcess: (target: ProcessHandle, code: unknown[]) => unknown;
   readonly closeHandle: (handle: unknown) => boolean;
   readonly lastError: () => number;
   readonly createAppContainerProfile: (
@@ -506,6 +523,8 @@ function bind(): Bindings {
       'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
     ),
     terminateProcess: kernel.func('bool TerminateProcess(void *proc, uint32 code)'),
+    waitForSingleObject: kernel.func('uint32 WaitForSingleObject(void *handle, uint32 ms)'),
+    getExitCodeProcess: kernel.func('bool GetExitCodeProcess(void *proc, _Out_ uint32 *code)'),
     closeHandle: kernel.func('bool CloseHandle(void *handle)'),
     lastError: kernel.func('uint32 GetLastError()'),
     createAppContainerProfile: userenv.func(
@@ -609,7 +628,7 @@ function environmentBlock(program: ContainedProgram): Buffer {
  * that reports failure from every member would be indistinguishable from a
  * machine where containment does not work.
  */
-export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCreationSurface {
+export function createWin32HostSurface(config: Win32HostSurfaceConfig): ConverterSurface {
   registerStructs();
   const bindings = bind();
 
@@ -968,6 +987,37 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
       const previous: number = bindings.resumeThread(thread);
       return previous === RESUME_THREAD_FAILED ? null : previous;
     },
+
+    waitForExit: (target: ProcessHandle, timeoutMs: number): Promise<ExitReading> =>
+      new Promise((resolve) => {
+        bindings.waitForSingleObject.async(target, timeoutMs, (error, result) => {
+          if (error !== null && error !== undefined) {
+            resolve({
+              kind: 'unreadable',
+              detail: `WaitForSingleObject failed: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+            });
+            return;
+          }
+          if (result === WAIT_TIMEOUT) {
+            resolve({ kind: 'timed-out' });
+            return;
+          }
+          if (result !== WAIT_OBJECT_0) {
+            resolve({
+              kind: 'unreadable',
+              detail: `WaitForSingleObject answered ${String(result)}, error ${String(bindings.lastError())}`,
+            });
+            return;
+          }
+          const code = [0];
+          // Exactly `true`, not truthy. See the note on {@link Bindings}.
+          if (bindings.getExitCodeProcess(target, code) !== true || typeof code[0] !== 'number') {
+            resolve({ kind: 'unreadable', detail: `GetExitCodeProcess failed: ${String(bindings.lastError())}` });
+            return;
+          }
+          resolve({ kind: 'exited', code: code[0] });
+        });
+      }),
 
     terminate: (target: ProcessHandle): void => {
       // Best effort by the interface's own contract: there is nothing to do if

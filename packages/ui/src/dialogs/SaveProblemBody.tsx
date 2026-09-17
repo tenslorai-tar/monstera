@@ -9,6 +9,8 @@ import {
   SAVE_REFUSED_UNREPRESENTABLE,
   SAVE_REFUSED_UNVERIFIABLE,
   SAVE_WORK_INTACT,
+  SAVE_LAYOUT_FAILED,
+  SAVE_LAYOUT_UNAVAILABLE,
   SAVE_WRITE_FAILED,
 } from '../messages/en.js';
 
@@ -19,7 +21,9 @@ type SaveProblem =
   | 'target-absent'
   | 'unrepresentable'
   | 'unverifiable'
-  | 'write-failed';
+  | 'write-failed'
+  | 'layout-unavailable'
+  | 'layout-failed';
 
 /**
  * The message for one outcome.
@@ -47,6 +51,11 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   unrepresentable: SAVE_REFUSED_UNREPRESENTABLE,
   unverifiable: SAVE_REFUSED_UNVERIFIABLE,
   'write-failed': SAVE_WRITE_FAILED,
+  // A LAYOUT EXPORT's two: no converter on this machine, and one that ran and wrote
+  // nothing usable. The document is untouched in both, which the dialog's first line
+  // already says, and the plain export is the action.
+  'layout-unavailable': SAVE_LAYOUT_UNAVAILABLE,
+  'layout-failed': SAVE_LAYOUT_FAILED,
 };
 
 /**

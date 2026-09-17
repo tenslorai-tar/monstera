@@ -54,13 +54,37 @@ export type ElectronBinaryPath = string & { readonly [electronBinaryBrand]: true
  * (ADR-0063 Decision 2). This machine has LibreOffice installed, and a converter
  * that found it would be running an unpinned build.
  *
- * **There is no product mint yet, and that is the state, not an omission.** The
- * one caller that constructs this branch is the Office import row, which is not
- * built. Its resolver under `scripts/` is `sofficeLauncher()`; the product one
- * arrives with the feature that needs it, rather than as a mint nothing calls —
- * a declaration nothing can contradict.
+ * **The product mint is {@link providedConverterExecutable}**, arriving with the
+ * first built feature that runs a converter — layout-preserving text, ADR-0071.
+ * Under `scripts/` the resolvers are `sofficeLauncher()` and `pdftotextPath()`.
  */
 export type ConverterExecutablePath = string & { readonly [converterExecutableBrand]: true };
+
+/**
+ * The converter executable `scripts/launch.mjs` handed down in `variable`, or
+ * `null` when it handed none.
+ *
+ * ## Why an environment variable, and why that is still the provisioned tree
+ *
+ * `scripts/provision/*.mjs` own where a provisioned artefact lives, and
+ * `apps/desktop` cannot import them — `scripts/` is not shipped. So the launcher,
+ * the one process that knows the repository root, resolves the path through that
+ * resolver and passes it, exactly as it passes PDFium's library. Nothing here
+ * searches `PATH` or an install directory, so the only way a path reaches this
+ * brand is through the resolver that owns it.
+ *
+ * **Empty is absent**, for `pdfiumLibraryPath`'s reason, and so is a packaged
+ * build, which has no launcher: that is a decided state — the feature says it is
+ * unavailable — rather than a guess at a layout no installer has produced.
+ */
+export function providedConverterExecutable(
+  variable: string,
+  environment: Readonly<Record<string, string | undefined>>,
+): ConverterExecutablePath | null {
+  const supplied = environment[variable];
+  if (supplied === undefined || supplied.length === 0) return null;
+  return supplied as ConverterExecutablePath;
+}
 
 /**
  * The program a contained process runs.

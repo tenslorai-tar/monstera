@@ -1835,20 +1835,28 @@ export const channels = {
    * document's text (ADR-0035). The answer counts BYTES, as a copy's does,
    * because the file is one file.
    *
-   * ## The layout-preserving half is not here
+   * ## Two modes, two writers
    *
-   * MuPDF's text output has no layout mode — measured 2026-09-14, every option
-   * the engine names gave one line per text line — so a layout export is a
-   * decision, not a registration.
+   * `plain` is MuPDF's structured text through the one substrate. `layout` is
+   * Poppler's `pdftotext -layout`, run as a contained separate process (ADR-0071),
+   * because MuPDF's text output has no layout mode — measured 2026-09-14. The
+   * mode is REQUIRED: a default would decide which engine reads the document at
+   * a call site that did not say.
+   *
+   * `unavailable` is a layout export on a machine with no `pdftotext`, answered
+   * before any dialog. `failed` is a converter that ran and wrote nothing usable;
+   * its reason stays in `main`'s log.
    */
   'document.exportText': channel(
     'Writes the document’s text to a plain-text file the user picks.',
-    z.object({ docId: docIdSchema }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']) }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
+      z.object({ kind: z.literal('unavailable') }),
+      z.object({ kind: z.literal('failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
