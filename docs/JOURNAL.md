@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 PDF/A-2b: Ghostscript, contained, and the removals are the report
+
+ADR-0075 (fcee46e) and the adoption (f4f1299) first; the audit that the adoption's commit tripped is recorded below.
+
+**The seam changed in one place.** `runContainedConverter` answered only on failure what a converter printed, and
+Ghostscript says what it removed only there while exiting 0. It now answers `{ said }` on success, read before the
+diagnostics are discarded. The session pair, fixed names, run and streamed output that layout text had written for
+itself moved into `converterSession.ts`, which both converters call; `LayoutTextPlatform` became `ConverterPlatform`.
+
+**Measured through the shipped command line** (`ghostscriptContained.mjs`, now reading `pdfaArguments` from the build):
+the H6 fixture converted inside the container in 2.9 s, and veraPDF 1.30.2 passed it as PDF/A-2b.
+
+**The reading worth keeping.** The control cell — the input named outside the granted pair — exits 1 with *Permission
+denied* after writing a 5,203-byte file, and **that file passes veraPDF too**: conformant, and carrying none of the page.
+A validator's PASS is the reassuring answer, produced by the failure as readily as by the success. So a non-zero exit
+discards the output unread, and a *reverting to normal PDF output* line does the same; neither trusts what was written.
+
+- Removal lines are bounded at 64 lines of 400 characters in the contract — a document decides how many Ghostscript
+  prints — and shown in Ghostscript's words, marked as English, because a paraphrase would be this build guessing what
+  a construct was.
+- Owed, and in the row: the veraPDF and Java provisioning script, and a live export.
+
+**Mutation, restored:** not discarding a reverted conversion's output leaves its session area behind, and the case
+reddens.
+
+---
+
 ## 2026-09-17 — Stage audit of `9596f52..fcee46e` — findings JJJJJJ-1 to JJJJJJ-6
 
 **Why now.** The pre-commit gate refused Ghostscript's adoption commit: the range plus that commit passes one batch of

@@ -122,6 +122,7 @@ import {
   watchEdits,
 } from './externalEditWatch.js';
 import { type LayoutTextSource, LayoutTextFailedError } from './layoutText.js';
+import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
@@ -1718,6 +1719,11 @@ export interface DocumentCommandsParts {
    */
   readonly layoutText: LayoutTextSource | null;
   /**
+   * The PDF/A-2b conversion, from the contained Ghostscript (ADR-0075) — or `null` where
+   * none can run, and the export then answers `unavailable` before any dialog.
+   */
+  readonly pdfa: PdfaSource | null;
+  /**
    * The system print dialog and the printer it answers (ADR-0074) — or `null` where
    * there is none, and a print then answers `unavailable` before any dialog.
    */
@@ -1738,6 +1744,13 @@ export type ExportTextOutcome =
   | CopyOutcome
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'failed'; readonly detail: string };
+
+/** What a PDF/A-2b export did: a copy's outcomes, with what the conversion removed; or no converter; or no PDF/A. */
+export type ExportPdfaOutcome =
+  | { readonly kind: 'copied'; readonly bytes: number; readonly removed: readonly string[] }
+  | Exclude<CopyOutcome, { readonly kind: 'copied' }>
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'failed' };
 
 export class DocumentCommands {
   readonly #documents: DocumentService;
@@ -1776,6 +1789,7 @@ export class DocumentCommands {
   readonly #pageImage: DocumentPageImageReader;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
+  readonly #pdfa: PdfaSource | null;
   readonly #print: PrintDestination | null;
   readonly #pickOffice: PickOffice;
   readonly #directory: PickDirectory;
@@ -1831,6 +1845,7 @@ export class DocumentCommands {
     this.#pageImage = parts.pageImage;
     this.#pickText = parts.pickText;
     this.#layoutText = parts.layoutText;
+    this.#pdfa = parts.pdfa;
     this.#print = parts.print;
     this.#pickOffice = parts.pickOffice;
     this.#directory = parts.directory;
@@ -3342,6 +3357,58 @@ export class DocumentCommands {
         return await writeStreamedDocument(this.#save.deps, this.#copy.checkTarget, open, destination);
       } catch (thrown) {
         if (thrown instanceof LayoutTextFailedError) return { kind: 'failed', detail: thrown.message };
+        throw thrown;
+      }
+    });
+
+    return value;
+  }
+
+  /**
+   * Writes the document as PDF/A-2b to a file the user picks — D10's *PDF/A-2b export*,
+   * Ghostscript's `pdfwrite` in a contained process (ADR-0075).
+   *
+   * ## `exportText`'s layout path with a PDF where the text was
+   *
+   * Unavailable before the dialog; the picker; the lane; the save's own flush handed to
+   * the converter once the destination is known to be free; the output streamed to the
+   * file. What the conversion removed comes back with the outcome, because Ghostscript's
+   * exit code does not say (ADR-0075 reading 5).
+   *
+   * It does NOT touch the document.
+   */
+  async exportPdfa(docId: DocId): Promise<ExportPdfaOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export PDF/A');
+
+    const pdfa = this.#pdfa;
+    if (pdfa === null) return { kind: 'unavailable' };
+
+    const destination = await this.#copy.pick(suggest);
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async (): Promise<ExportPdfaOutcome> => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      let removed: readonly string[] = [];
+      try {
+        const outcome = await writeStreamedDocument(
+          this.#save.deps,
+          this.#copy.checkTarget,
+          async () => {
+            const converted = await pdfa(await this.#save.flush(docId, sessions));
+            removed = converted.removed;
+            return converted.output;
+          },
+          destination,
+        );
+        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, removed } : outcome;
+      } catch (thrown) {
+        if (thrown instanceof PdfaFailedError) return { kind: 'failed' };
         throw thrown;
       }
     });

@@ -132,6 +132,7 @@ const handlers: ContractHandlers = {
   'document.exportPowerPoint': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportExcel': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.print': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.exportPdfa': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

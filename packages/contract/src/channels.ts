@@ -233,6 +233,14 @@ export const MAX_TABLE_CELLS = 4096;
 export const MAX_TABLE_CELL_TEXT = 2048;
 
 /**
+ * The most removal lines a PDF/A export answers, and the most characters of each. What
+ * Ghostscript prints is decided by the document, so the answer is bounded here rather than
+ * by trusting it. On the corpus, 2026-09-17, one document produced one distinct line.
+ */
+export const MAX_PDFA_REMOVALS = 64;
+export const MAX_PDFA_REMOVAL_CHARS = 400;
+
+/**
  * The spelling dictionaries this build ships, and the ONE place they are named.
  *
  * ## One language, and that is the founding record read whole
@@ -1965,6 +1973,32 @@ export const channels = {
       z.object({ kind: z.literal('no-tables'), picturePages: z.number().int().nonnegative() }),
       /** The document moved since the review, or an edit names no cell it has. Nothing was written. */
       z.object({ kind: z.literal('changed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Writes the document as PDF/A-2b to a file the user picks — D10's *PDF/A-2b export*,
+   * Ghostscript's `pdfwrite` in a contained process (ADR-0075).
+   *
+   * `copied` carries what the conversion removed, in Ghostscript's own words, because its
+   * exit code does not say; `unavailable` where no converter is provisioned; `failed`
+   * where it produced no PDF/A file, which is then not written.
+   */
+  'document.exportPdfa': channel(
+    'Writes the document as PDF/A-2b to a file the user picks, saying what the conversion removed.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('copied'),
+        bytes: z.number().int().nonnegative(),
+        removed: z.array(z.string().max(MAX_PDFA_REMOVAL_CHARS)).max(MAX_PDFA_REMOVALS).readonly(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      z.object({ kind: z.literal('unavailable') }),
+      z.object({ kind: z.literal('failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

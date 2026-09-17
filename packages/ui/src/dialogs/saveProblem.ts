@@ -53,6 +53,8 @@ export const SAVE_PROBLEM_DIALOG = declareDialog({
       'review-changed',
       'print-unavailable',
       'print-failed',
+      'pdfa-unavailable',
+      'pdfa-failed',
     ]),
   }),
   component: lazy(() => import('./SaveProblemBody.js')),

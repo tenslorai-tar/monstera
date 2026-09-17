@@ -298,6 +298,7 @@ export function createContractHandlers(deps: {
     'document.exportPowerPoint': exportPowerPointHandler(deps.commands),
     'document.exportExcel': exportExcelHandler(deps.commands),
     'document.print': printHandler(deps.commands),
+    'document.exportPdfa': exportPdfaHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1246,6 +1247,31 @@ function exportPowerPointHandler(commands: DocumentCommands): ContractHandlers['
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The PDF/A export's handler: a copy's outcomes with the removals, and the converter's two refusals. */
+function exportPdfaHandler(commands: DocumentCommands): ContractHandlers['document.exportPdfa'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPdfa']>>> => {
+    try {
+      const outcome = await commands.exportPdfa(docId);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      switch (outcome.kind) {
+        case 'copied':
+          return ok({ kind: 'copied', bytes: outcome.bytes, removed: outcome.removed } as const);
+        case 'refused':
+          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'write-failed':
+        case 'unavailable':
+        case 'failed':
+          return ok({ kind: outcome.kind });
+      }
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

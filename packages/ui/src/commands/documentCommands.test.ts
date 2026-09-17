@@ -37,6 +37,7 @@ import {
   exportExcelCommand,
   exportPowerPointCommand,
   printCommand,
+  exportPdfaCommand,
   exportTextCommand,
   exportWordCommand,
   generateTocCommand,
@@ -2190,6 +2191,54 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC } }]);
     expect(asked).toStrictEqual([]);
+  });
+
+  describe('export as PDF/A (ADR-0075)', () => {
+    it('dispatches the document, and shows what was removed only when something was', async () => {
+      for (const [removed, notices] of [
+        [['not permitted in PDF/A, annotation will not be present in output file'], 1],
+        [[], 0],
+      ] as const) {
+        const { client, sent } = recording({ 'document.exportPdfa': { kind: 'copied', bytes: 9, removed } });
+        const asked: unknown[] = [];
+
+        await exportPdfaCommand({
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve(undefined);
+          },
+        }).run(CONTEXT);
+
+        expect(sent).toStrictEqual([{ id: 'document.exportPdfa', params: { docId: DOC } }]);
+        expect(asked).toStrictEqual(notices === 1 ? [{ id: 'dialog.pdfa-removals', props: { removed } }] : []);
+      }
+    });
+
+    it('says so for no converter, no PDF/A, a refused and an unwritable destination, and nothing for a dismissed dialog', async () => {
+      for (const [answered, spoken] of [
+        [{ kind: 'unavailable' }, [{ id: 'dialog.save-problem', props: { outcome: 'pdfa-unavailable' } }]],
+        [{ kind: 'failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'pdfa-failed' } }]],
+        [{ kind: 'write-failed' }, [{ id: 'dialog.save-problem', props: { outcome: 'write-failed' } }]],
+        [{ kind: 'refused', openElsewhere: 1 }, [{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]],
+        [{ kind: 'cancelled' }, []],
+      ] as const) {
+        const { client } = recording({ 'document.exportPdfa': answered });
+        const asked: unknown[] = [];
+
+        await exportPdfaCommand({
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve(undefined);
+          },
+        }).run(CONTEXT);
+
+        expect(asked).toStrictEqual(spoken);
+      }
+    });
   });
 
   describe('print (ADR-0074)', () => {

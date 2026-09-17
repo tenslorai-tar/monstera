@@ -124,6 +124,7 @@ import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.
 import { EngineSessions } from './engineSessions.js';
 import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
 import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
+import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 
@@ -633,6 +634,8 @@ const INERT = {
   layoutText: null,
   // NO PRINT DIALOG, the state a platform without one is in; a print case supplies its own.
   print: null,
+  // NO PDF/A CONVERTER, the state of a machine that has not provisioned one.
+  pdfa: null,
   pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
   directory: noDirectory,
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
@@ -1774,6 +1777,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly picked?: string[];
       readonly print?: PrintDestination | null;
       readonly images?: PageImageRequest[];
+      readonly pdfa?: PdfaSource | null;
+      /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
+      readonly copyTo?: string | null;
     } = {},
   ): { readonly commands: DocumentCommands; readonly reads: number[] } {
     const reads: number[] = [];
@@ -1783,6 +1789,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       bus: bus(),
       engine: textEngine(),
       print: options.print ?? null,
+      pdfa: options.pdfa ?? null,
       pageImage: async (id, sessions, request) => {
         options.images?.push(request);
         return await LOCAL_READS.pageImage(id, sessions, request);
@@ -1802,7 +1809,10 @@ describe('exportText — the document’s words, streamed one page at a time', (
           options.flush ?? (() => Promise.reject(new Error('a plain text export does not flush the document'))),
       },
       copy: {
-        pick: () => Promise.reject(new Error('a text export uses its own picker')),
+        pick:
+          options.copyTo === undefined
+            ? () => Promise.reject(new Error('a text export uses its own picker'))
+            : () => Promise.resolve(options.copyTo ?? null),
         checkTarget: options.checkTarget ?? ((target) => textService.checkCopyTarget(target)),
       },
       pickText: (name) => {
@@ -1994,6 +2004,59 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       expect((await commands.exportText(textDoc, 'layout'))?.kind).toBe('refused');
       expect(ran).toBe(0);
+    });
+  });
+
+  describe('as PDF/A-2b (ADR-0075)', () => {
+    /** The save's flushed image, distinct from the fixture's own bytes, so the case sees which bytes reached the converter. */
+    const FLUSHED = Uint8Array.of(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37);
+
+    function converter(answer: 'converted' | 'failed'): { readonly source: PdfaSource; readonly given: Uint8Array[] } {
+      const given: Uint8Array[] = [];
+      return {
+        given,
+        source: (pdf) => {
+          given.push(pdf);
+          if (answer === 'failed') return Promise.reject(new PdfaFailedError({ stage: 'reverted', said: 'reverting to normal PDF output' }));
+          return Promise.resolve({
+            removed: ['not permitted in PDF/A, annotation will not be present in output file'],
+            output: (async function* () {
+              yield await Promise.resolve(new TextEncoder().encode('%PDF-1.7 as PDF/A'));
+            })(),
+          });
+        },
+      };
+    }
+
+    it('hands the converter the SAVE’S FLUSH, writes what it produced, and answers what it removed', async () => {
+      const destination = join(mkdtempSync(join(directory, 'pdfa-')), 'archive.pdf');
+      const { source, given } = converter('converted');
+      const { commands, reads } = exportingTo(null, { pdfa: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+
+      const outcome = await commands.exportPdfa(textDoc);
+
+      expect(outcome).toStrictEqual({
+        kind: 'copied',
+        bytes: 17,
+        removed: ['not permitted in PDF/A, annotation will not be present in output file'],
+      });
+      expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 as PDF/A');
+      expect(given).toStrictEqual([FLUSHED]);
+      expect(reads).toStrictEqual([]);
+    });
+
+    it('answers FAILED and writes no file when the conversion produced no PDF/A', async () => {
+      const destination = join(mkdtempSync(join(directory, 'pdfa-')), 'archive.pdf');
+      const { source } = converter('failed');
+      const { commands } = exportingTo(null, { pdfa: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+
+      expect(await commands.exportPdfa(textDoc)).toStrictEqual({ kind: 'failed' });
+      expect(existsSync(destination)).toBe(false);
+    });
+
+    it('CONTROL: answers UNAVAILABLE before any dialog where no converter is provisioned', async () => {
+      const { commands } = exportingTo(null, { pdfa: null });
+      expect(await commands.exportPdfa(textDoc)).toStrictEqual({ kind: 'unavailable' });
     });
   });
 

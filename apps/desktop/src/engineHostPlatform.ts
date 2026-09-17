@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path';
 
 import type { EngineHostPlatform } from './composition.js';
 import { providedConverterExecutable } from './containedProgram.js';
-import { LAYOUT_TEXT_BOUNDS, type LayoutTextPlatform } from './layoutText.js';
+import type { ConverterPlatform } from './converterSession.js';
+import { LAYOUT_TEXT_BOUNDS } from './layoutText.js';
+import { PDFA_BOUNDS } from './pdfaConversion.js';
 import {
   ENGINE_HOST_CONTAINER,
   ENGINE_HOST_ENTRY_FILE,
@@ -348,7 +350,7 @@ export const LAYOUT_TEXT_CONTAINER = 'monstera-text-converter';
  * rather than resolving its own — one place decides where session areas live and
  * who owns them — and its own container, so its DACLs name nothing a host holds.
  */
-export function createLayoutTextPlatform(base: EngineHostPlatform): LayoutTextPlatform | null {
+export function createLayoutTextPlatform(base: EngineHostPlatform): ConverterPlatform | null {
   const executable = providedConverterExecutable('MONSTERA_POPPLER_EXECUTABLE', process.env);
   if (executable === null) return null;
   const container = hostContainerSid(LAYOUT_TEXT_CONTAINER);
@@ -363,6 +365,31 @@ export function createLayoutTextPlatform(base: EngineHostPlatform): LayoutTextPl
     executable,
     surfaceFor: (config) => createWin32HostSurface(config),
     bounds: LAYOUT_TEXT_BOUNDS,
+  };
+}
+
+/** The PDF/A converter's own container, so its DACLs name nothing a host or another converter holds. */
+export const PDFA_CONTAINER = 'monstera-pdfa-converter';
+
+/**
+ * Ghostscript's platform: {@link createLayoutTextPlatform}'s shape with its own container,
+ * executable and bounds (ADR-0075). `null` where no executable was handed down.
+ */
+export function createPdfaPlatform(base: EngineHostPlatform): ConverterPlatform | null {
+  const executable = providedConverterExecutable('MONSTERA_GHOSTSCRIPT_EXECUTABLE', process.env);
+  if (executable === null) return null;
+  const container = hostContainerSid(PDFA_CONTAINER);
+  if (!container.ok) return null;
+
+  return {
+    sessionRoot: base.sessionRoot,
+    directories: base.directories,
+    user: base.user,
+    container: container.value,
+    containerName: PDFA_CONTAINER,
+    executable,
+    surfaceFor: (config) => createWin32HostSurface(config),
+    bounds: PDFA_BOUNDS,
   };
 }
 

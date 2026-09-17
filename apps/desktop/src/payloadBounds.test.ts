@@ -297,6 +297,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.exportExcel': 'needs an engine session and a save dialog',
   // The print's ask is a `DocId` and a resolution; the pages are rasterised and printed in main.
   'document.print': 'needs an engine session and the system print dialog',
+  // The PDF/A export's ask is a `DocId`; the document is converted and streamed in main.
+  'document.exportPdfa': 'needs an engine session, a save dialog and the contained converter',
   'document.insertImage': 'needs an engine session and an image picker',
   // THE ASK IS NOTHING, OR A `DocId` AND ONE INDEX, and the source never crosses:
   // main picks and reads the Markdown file, the compose host sets it, and main

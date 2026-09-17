@@ -166,7 +166,9 @@ import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { HandwritingCache } from './handwritingCache.js';
-import { type LayoutTextPlatform, createLayoutTextSource } from './layoutText.js';
+import type { ConverterPlatform } from './converterSession.js';
+import { createLayoutTextSource } from './layoutText.js';
+import { createPdfaSource } from './pdfaConversion.js';
 import type { PrintDestination } from './printing.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
@@ -529,7 +531,13 @@ export interface ShellComposition {
    * external-converter seam (ADR-0071). `null` where no Win32 platform exists or
    * no `pdftotext` was handed down, and the export then answers *unavailable*.
    */
-  readonly layoutTextPlatform?: LayoutTextPlatform | null;
+  readonly layoutTextPlatform?: ConverterPlatform | null;
+  /**
+   * Where a document is converted to PDF/A-2b: Ghostscript's `gswin64c` through §8's
+   * external-converter seam (ADR-0075). `null` where no Win32 platform exists or no
+   * executable was handed down, and the export then answers *unavailable*.
+   */
+  readonly pdfaPlatform?: ConverterPlatform | null;
   /**
    * The system print dialog and the printer it answers (ADR-0074). `null` where there
    * is none, and a print then answers *unavailable*.
@@ -588,6 +596,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pdfiumPlatform = null,
     composePlatform = null,
     layoutTextPlatform = null,
+    pdfaPlatform = null,
     print = null,
     encodePng,
     log = null,
@@ -1128,6 +1137,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // LAYOUT-PRESERVING TEXT, the contained pdftotext — `null` where it cannot run,
     // so the export answers unavailable rather than extracting anywhere else (ADR-0071).
     layoutText: layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures),
+    // PDF/A-2b, the contained Ghostscript — `null` where it cannot run, for layout text's reason (ADR-0075).
+    pdfa: pdfaPlatform === null ? null : createPdfaSource(pdfaPlatform, failures),
     // THE PRINT DIALOG, from `entry.ts` for the pickers' reason (ADR-0074).
     print,
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is

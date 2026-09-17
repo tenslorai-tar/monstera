@@ -490,10 +490,11 @@ try {
       {
         sites: 1,
         reason:
-          'ONE helper loads four built modules through file:// URLs — the Win32 pipe, directory ' +
-          'and host surfaces and the session-directory pair — for popplerContained.mjs\'s reason: ' +
-          'ADR-0075\'s unexecuted item, that gswin64c converts inside the container holding only ' +
-          'its input and output, is asked of the SHIPPED surfaces. Plain Node; it starts ' +
+          'ONE helper loads five built modules through file:// URLs — the Win32 pipe, directory ' +
+          'and host surfaces, the session-directory pair and the PDF/A command line — for ' +
+          'popplerContained.mjs\'s reason: ADR-0075\'s unexecuted item, that gswin64c converts inside ' +
+          'the container holding only its input and output, is asked of the SHIPPED surfaces and ' +
+          'arguments. Plain Node; it starts ' +
           'Ghostscript through gswin64cPath(), a converter resolver check:electronbinary sanctions, ' +
           'and never imports the electron package.',
       },

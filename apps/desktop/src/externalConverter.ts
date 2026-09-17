@@ -44,6 +44,14 @@ export type ConverterFailure =
   | { readonly stage: 'exit-unreadable'; readonly detail: string }
   | { readonly stage: 'exit-code'; readonly code: number; readonly said: string | null };
 
+/**
+ * A conversion that exited 0, with what the converter printed — or null where it
+ * printed nothing. §8's contract reads it on success as well as failure (ADR-0075).
+ */
+export interface ConverterRan {
+  readonly said: string | null;
+}
+
 /** The bounds §8 puts on every converter, from the job object and the wait. */
 export interface ConverterBounds {
   readonly processMemoryLimitBytes: number;
@@ -71,7 +79,7 @@ export interface ConverterBounds {
 export async function runContainedConverter(
   surface: ConverterSurface,
   bounds: ConverterBounds,
-): Promise<Result<void, ConverterFailure>> {
+): Promise<Result<ConverterRan, ConverterFailure>> {
   if (!Number.isInteger(bounds.timeoutMs) || bounds.timeoutMs < 1) {
     throw new RangeError(
       `timeoutMs must be a positive integer, received ${String(bounds.timeoutMs)}. A converter ` +
@@ -92,8 +100,10 @@ export async function runContainedConverter(
         surface.terminate(process);
         return err({ stage: 'exit-unreadable', detail: exit.detail });
       case 'exited':
+        // READ BEFORE THE `finally` DISCARDS THEM, on success too (ADR-0075): a
+        // converter can exit 0 having changed what it was given, and say so only here.
         return exit.code === 0
-          ? ok(undefined)
+          ? ok({ said: surface.diagnostics() })
           : err({ stage: 'exit-code', code: exit.code, said: surface.diagnostics() });
     }
   } finally {

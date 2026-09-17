@@ -22,7 +22,7 @@
  *
  * Needs `npm run build`, `npm run provision:ghostscript` and `npm run provision:grants`.
  *
- * Usage: node scripts/research/ghostscriptContained.mjs <pdf>
+ * Usage: node scripts/research/ghostscriptContained.mjs <pdf> [--keep <folder>]
  */
 
 import { spawnSync } from 'node:child_process';
@@ -39,16 +39,6 @@ const ROOT = repoRoot();
 const CONTAINER = 'monstera-ghostscript-pdfa';
 const BUDGET_MS = 120_000;
 
-/** `lib/PDFA_def.ps`'s pdfmarks, the profile read from Ghostscript's own ROM (ADR-0075). */
-export const PDFA_OUTPUT_INTENT = [
-  '[/_objdef {icc_PDFA} /type /stream /OBJ pdfmark',
-  '[{icc_PDFA} <</N 3>> /PUT pdfmark',
-  '[{icc_PDFA} (%rom%iccprofiles/srgb.icc) (r) file /PUT pdfmark',
-  '[/_objdef {OutputIntent_PDFA} /type /dict /OBJ pdfmark',
-  '[{OutputIntent_PDFA} <</Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile {icc_PDFA} /OutputConditionIdentifier (sRGB)>> /PUT pdfmark',
-  '[{Catalog} <</OutputIntents [ {OutputIntent_PDFA} ]>> /PUT pdfmark',
-].join(' ');
-
 if (process.platform !== 'win32') {
   process.stderr.write('ghostscriptContained: Win32 only; this platform has no AppContainer.\n');
   process.exit(69);
@@ -60,6 +50,9 @@ if (argument === undefined || !existsSync(argument)) {
   process.exit(2);
 }
 const document = argument;
+/** `--keep <folder>` copies each cell's output there, so a validator can read what the container wrote. */
+const keepAt = process.argv.indexOf('--keep');
+const keep = keepAt > 0 ? process.argv[keepAt + 1] ?? null : null;
 
 /** @param {string} relative */
 const built = async (relative) =>
@@ -72,6 +65,8 @@ const pipes = await built('apps/desktop/dist/win32PipeSurface.js');
 const directories = await built('apps/desktop/dist/win32DirectorySurface.js');
 const sessionDirectories = await built('apps/desktop/dist/sessionDirectories.js');
 const hostSurface = await built('apps/desktop/dist/win32HostSurface.js');
+// THE SHIPPED COMMAND LINE, so this measures the arguments the export passes rather than a copy of them.
+const pdfa = await built('apps/desktop/dist/pdfaConversion.js');
 
 if (!existsSync(gswin64cPath(ROOT))) {
   process.stderr.write('ghostscriptContained: Ghostscript is not provisioned. Run `npm run provision:ghostscript`.\n');
@@ -118,11 +113,7 @@ function run(cell, contained, outside, index) {
     program: {
       runs: 'converter',
       executablePath: gswin64cPath(ROOT),
-      commandArguments: [
-        '-dPDFA=2', '-dBATCH', '-dNOPAUSE', '-dSAFER', '-sColorConversionStrategy=RGB',
-        '-dPDFACompatibilityPolicy=1', '-sDEVICE=pdfwrite', `-sOutputFile=${output}`,
-        '-c', PDFA_OUTPUT_INTENT, '-f', outside ? document : granted,
-      ],
+      commandArguments: [...pdfa.pdfaArguments(outside ? document : granted, output)],
     },
     workingDirectory: join(ghostscriptRoot(ROOT), 'bin'),
     containerName: contained ? CONTAINER : null,
@@ -139,6 +130,7 @@ function run(cell, contained, outside, index) {
   surface.close(created.value.process);
   surface.close(created.value.thread);
   const said = existsSync(log) ? readFileSync(log, 'utf8') : '';
+  if (keep !== null && existsSync(output)) copyFileSync(output, join(keep, `${cell}.pdf`));
   return {
     cell,
     exited,

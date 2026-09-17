@@ -13,6 +13,8 @@ import {
   SAVE_LAYOUT_UNAVAILABLE,
   SAVE_NO_TABLES,
   SAVE_NO_TABLES_NO_TEXT,
+  SAVE_PDFA_FAILED,
+  SAVE_PDFA_UNAVAILABLE,
   SAVE_PRINT_FAILED,
   SAVE_PRINT_UNAVAILABLE,
   SAVE_REVIEW_CHANGED,
@@ -33,7 +35,9 @@ type SaveProblem =
   | 'no-tables-no-text'
   | 'review-changed'
   | 'print-unavailable'
-  | 'print-failed';
+  | 'print-failed'
+  | 'pdfa-unavailable'
+  | 'pdfa-failed';
 
 /**
  * The message for one outcome.
@@ -75,6 +79,9 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   // A PRINT's two: no print dialog on this platform, and a printer that refused a step.
   'print-unavailable': SAVE_PRINT_UNAVAILABLE,
   'print-failed': SAVE_PRINT_FAILED,
+  // A PDF/A EXPORT's two, layout text's reason: no converter here, and one that made no PDF/A.
+  'pdfa-unavailable': SAVE_PDFA_UNAVAILABLE,
+  'pdfa-failed': SAVE_PDFA_FAILED,
 };
 
 /**

@@ -202,6 +202,10 @@ export const EXPORT_WORD_RICH = messageKey('dialog.export-word.rich');
 export const EXPORT_WORD_LAYOUT = messageKey('dialog.export-word.layout');
 export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
+export const EXPORT_PDFA_COMMAND_TITLE = messageKey('command.export-pdfa.title');
+export const PDFA_REMOVALS_TITLE = messageKey('dialog.pdfa-removals.title');
+export const PDFA_REMOVALS_SAVED = messageKey('dialog.pdfa-removals.saved');
+export const PDFA_REMOVALS_CONVERTER_WORDS = messageKey('dialog.pdfa-removals.converter-words');
 export const PRINT_COMMAND_TITLE = messageKey('command.print.title');
 export const PRINT_TITLE = messageKey('dialog.print.title');
 export const PRINT_DPI = messageKey('dialog.print.dpi');
@@ -1162,6 +1166,8 @@ export const SAVE_LAYOUT_FAILED = messageKey('dialog.save-problem.layout-failed'
 export const SAVE_NO_TABLES = messageKey('dialog.save-problem.no-tables');
 export const SAVE_NO_TABLES_NO_TEXT = messageKey('dialog.save-problem.no-tables-no-text');
 export const SAVE_REVIEW_CHANGED = messageKey('dialog.save-problem.review-changed');
+export const SAVE_PDFA_UNAVAILABLE = messageKey('dialog.save-problem.pdfa-unavailable');
+export const SAVE_PDFA_FAILED = messageKey('dialog.save-problem.pdfa-failed');
 export const SAVE_PRINT_UNAVAILABLE = messageKey('dialog.save-problem.print-unavailable');
 export const SAVE_PRINT_FAILED = messageKey('dialog.save-problem.print-failed');
 export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
@@ -2139,6 +2145,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_WORD_LAYOUT]: 'The page layout — each line where it sits on the page',
   [EXPORT_WORD_TEXT]: 'Just the words',
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
+  [EXPORT_PDFA_COMMAND_TITLE]: 'Export as PDF/A…',
+  [PDFA_REMOVALS_TITLE]: 'Saved as PDF/A',
+  [PDFA_REMOVALS_SAVED]: 'The PDF/A file was saved. To meet the archival standard, some things were left out of it.',
+  [PDFA_REMOVALS_CONVERTER_WORDS]: 'In the words of the converter, Ghostscript:',
   [PRINT_COMMAND_TITLE]: 'Print…',
   [PRINT_TITLE]: 'Print',
   [PRINT_DPI]: 'Print quality',
@@ -2607,6 +2617,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_LAYOUT_UNAVAILABLE]: 'Text with layout needs a component that is not installed with this copy of Monstera. Export text… still works.',
   [SAVE_LAYOUT_FAILED]: 'The text could not be read with its layout from this document, so no file was written. Export text… may still work.',
   [SAVE_NO_TABLES]: 'No tables with ruled lines were found in this document, so no file was written.',
+  [SAVE_PDFA_UNAVAILABLE]: 'PDF/A export needs a component that is not installed with this copy of Monstera, so no file was written.',
+  [SAVE_PDFA_FAILED]: 'This document could not be converted to PDF/A, so no file was written. Save a copy… still works.',
   [SAVE_PRINT_UNAVAILABLE]: 'Printing needs the system print dialog, which this copy of Monstera cannot open here, so nothing was printed.',
   [SAVE_PRINT_FAILED]: 'The printer did not accept the document, so it was cancelled and nothing more was sent. Check the printer, then print again.',
   [SAVE_REVIEW_CHANGED]: 'The document changed while its tables were being reviewed, so no file was written. Export tables to Excel… again to review the tables as they are now.',

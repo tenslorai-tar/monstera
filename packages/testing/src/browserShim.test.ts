@@ -203,6 +203,7 @@ describe('browser shim', () => {
       'document.exportExcel',
       'document.exportFormData',
       'document.exportPageImages',
+      'document.exportPdfa',
       'document.exportPowerPoint',
       'document.exportText',
       'document.exportWord',

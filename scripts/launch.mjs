@@ -51,6 +51,7 @@ import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
 import { fileExists } from './lib/fetchVerified.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
 import { pdfiumLibrary } from './provision/pdfium.mjs';
+import { gswin64cPath } from './provision/ghostscript.mjs';
 import { pdftotextPath } from './provision/poppler.mjs';
 import { tessdataDirectory, tessdataPath } from './provision/tessdata.mjs';
 import { formatError } from './lib/reportError.mjs';
@@ -156,6 +157,18 @@ async function popplerEnvironment() {
   return { MONSTERA_POPPLER_EXECUTABLE: executable };
 }
 
+/**
+ * Ghostscript's `gswin64c`, passed the same way and for the same reasons (ADR-0075).
+ * Absent is a decided state — the PDF/A-2b export says it is unavailable.
+ *
+ * @returns {Promise<Record<string, string>>}
+ */
+async function ghostscriptEnvironment() {
+  const executable = gswin64cPath(REPO_ROOT);
+  if (!(await fileExists(executable))) return {};
+  return { MONSTERA_GHOSTSCRIPT_EXECUTABLE: executable };
+}
+
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
@@ -170,6 +183,7 @@ async function main() {
       ...(await pdfiumEnvironment()),
       ...(await tessdataEnvironment()),
       ...(await popplerEnvironment()),
+      ...(await ghostscriptEnvironment()),
     },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to

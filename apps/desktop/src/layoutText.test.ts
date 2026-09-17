@@ -15,7 +15,8 @@ import type { ContainedProgram, ConverterExecutablePath } from './containedProgr
 import type { JobHandle, ProcessHandle, ThreadHandle } from './engineHostFactory.js';
 import type { ConverterSurface, ExitReading } from './externalConverter.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
-import { LayoutTextFailedError, type LayoutTextPlatform, createLayoutTextSource } from './layoutText.js';
+import type { ConverterPlatform } from './converterSession.js';
+import { LayoutTextFailedError, createLayoutTextSource } from './layoutText.js';
 import type { DirectoryCreationSurface } from './sessionDirectories.js';
 import type { ShellFailure } from './shellFailure.js';
 
@@ -59,7 +60,7 @@ const directories: DirectoryCreationSurface = {
 };
 
 function platform(convert: (program: ContainedProgram) => ExitReading): {
-  readonly platform: LayoutTextPlatform;
+  readonly platform: ConverterPlatform;
   readonly programs: ContainedProgram[];
   readonly inputsSeen: Uint8Array[];
 } {

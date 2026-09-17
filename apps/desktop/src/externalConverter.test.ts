@@ -73,11 +73,22 @@ describe('runContainedConverter', () => {
 
     const result = await runContainedConverter(surface, BOUNDS);
 
-    expect(result.ok).toBe(true);
+    expect(result).toStrictEqual({ ok: true, value: { said: null } });
     // The bound reached the wait, and nothing was terminated: a clean exit
     // leaves nothing to kill, and a runner that terminated anyway would be
     // indistinguishable here only if this list were not asserted.
     expect(calls).toStrictEqual(['close:thread', 'wait:5000', 'close:process', 'close:job', 'discardDiagnostics']);
+  });
+
+  it('a converter that exits 0 and PRINTED something answers it, read before the diagnostics are discarded (ADR-0075)', async () => {
+    // Ghostscript's shape: success, and a removal reported only in what it printed.
+    const said = 'not permitted in PDF/A, annotation will not be present in output file';
+    const { surface, calls } = recording({ kind: 'exited', code: 0 }, said);
+
+    const result = await runContainedConverter(surface, BOUNDS);
+
+    expect(result).toStrictEqual({ ok: true, value: { said } });
+    expect(calls.at(-1)).toBe('discardDiagnostics');
   });
 
   it('a converter past its TIME BOUND is terminated, and says so', async () => {

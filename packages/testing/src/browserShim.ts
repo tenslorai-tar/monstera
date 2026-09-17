@@ -1274,6 +1274,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
+    // THE PDF/A EXPORT'S SHIM: a browser has no contained converter, which is main's
+    // `unavailable` for a machine where none is provisioned.
+    'document.exportPdfa': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ kind: 'unavailable' as const }));
+    },
     // THE PRINT'S SHIM: a browser has no system print dialog to show, which is main's
     // `unavailable` answer for a platform without one.
     'document.print': ({ docId }) => {
