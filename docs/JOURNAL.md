@@ -15,7 +15,7 @@ the fact is not a baseline, it is a rationalisation.
 | 5 — text editing | **3 working days** (owner, 2026-09-08) | **3 days worked** (2026-09-08 → 2026-09-10), 79 commits — began at `fa5a2eb`, the commit after Stage 4 closed | **1.00× — continue** |
 | 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 38 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done at closing; the tenth, D6 row 8, passed its live run 2026-09-15 — ten of ten, figure unchanged** | **1.50× — continue** |
 | 7 — security and signatures | **2 working days** (owner, 2026-09-12) | **2 days worked** (2026-09-12 → 2026-09-13), 33 commits — began at `fd7d12e`, the commit after Stage 6 closed. **Fourteen of fifteen rows done; DocuSign is built and carries one trigger only its owner can clear.** Two OCR rows were built inside the window and are counted here | **1.00× — continue** |
-| 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | **in progress** — opened 2026-09-13 at the commit after Stage 7 closed | — |
+| 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | **5 days worked** (2026-09-13 → 2026-09-17; the 13th is shared with Stage 7's close), commits from `9b212cb` to the closing commit — `git rev-list --count ae6d7f9..<closing commit>`. **10 of 27 rows done, 13 built and owing a run in the application, 2 partly built, 2 blocked.** About half the commits are not Stage 8 rows: the design pass, audits, defect fixes and corrections to earlier stages | **2.50× — continue** |
 | 9 — AI and cloud | **2 working days** (owner, 2026-09-12) | — | — |
 | 10 — ship | **2 working days** (owner, 2026-09-12) | — | — |
 
@@ -889,6 +889,46 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-17 — Stage 8 closes: 2.50×, continue
+
+**The figure, pushed the unflattering way.** Opened 2026-09-13 at `9b212cb`, the commit after Stage
+7's close (`ae6d7f9`); five calendar days carry commits (17, 39, 25, 19 and 48 of them —
+`git log --format=%ad --date=short ae6d7f9..HEAD | sort | uniq -c`, read before this commit, 148
+in all), and the 13th is counted here as well as in Stage 7, which is the unflattering direction.
+Against the owner's 2-day baseline that is **2.50×**. The gate's trigger is 3×, six days; it is not
+armed. **Verdict: continue**, straight into Stage 9.
+
+**What the 148 are.** Stage 8's rows are fewer than half of them. The rest, by subject:
+
+- **The design pass** the owner ordered first on 2026-09-14 (UPDATE 77): passes A to K, from
+  `201da9d` to `a3db070`, with their B4s (`c9548e2`, `bb10271`, `474bcf4`, `fb3c16f`, `88dec39`,
+  `18d725d`, `9596f52`).
+- **Three stage audits**: `b0699a3`, `6b55789`, `874b845`, and `74e0ffe`'s JJJJJJ range.
+- **Red boards and defects**: `4971b60`, `3e7d1fd`, `f3d736e`, `334277a`, the writer seam's dropped
+  argument (`631ff46`, `a65ed4e`, `bfe2ead`), the ninth escape-guard occurrence (`196a249`), IIIIII-3
+  (`7ca20d1`).
+- **Corrections to earlier stages' done rows** (the third block's E): the handwriting runtime
+  (`2299129`, `066d04e`, `739808a`), NOTICE for PDFium and the OCR models (`ea1619c`, `d1b7a05`), the
+  redaction leak corpus (`3e3d728`).
+
+**The rows.** Twenty-seven (owner, 2026-09-13):
+
+| | rows |
+|---|---|
+| done | spell check pass, reading order, Markdown, CSV, images, open from URL, webcam, document scan, external edit, import page as layer |
+| built, one run in the application owed | compare, comment files, accessibility check, page images, text extraction, Word, PowerPoint, review grid, combine pages, Email, Print, PDF/A-2b, barcodes |
+| partly built | Excel table detection (automatic; four engines blocked on the owner's route for scanned tables), Excel styling (fills and merges not in the engine's JSON) |
+| blocked | Office import (GPL-2.0-only fonts in LibreOffice's tree, and a contained start that stalls), Optimize (its writer) |
+
+**The live re-check of four done rows is blocked a second time.** Rows 90, 94, 98 and 225 were
+re-checked in the running application at 19:37 with two generated documents: both opened, and then
+the command palette — opened by a double click on the title bar's search — did not close for
+Escape, a click outside, or the search button, while a window the session may not drive covered
+the tab strip. Nothing was concluded about the four rows. `df89c6f` proved the palette's Escape
+from its field; whether this is that path is unread.
 
 ---
 
