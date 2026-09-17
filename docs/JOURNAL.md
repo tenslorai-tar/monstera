@@ -892,6 +892,35 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 Print: MuPDF's raster, the system dialog, GDI
+
+ADR-0074 (f6c9944) first: §9.17 named what `main` may bind as two libraries and *nothing else*, and every Windows route
+from a raster to a printer goes through two more. The same clause turned out to have been short by `userenv.dll` since
+2026-08-23 — a bounded list doing its job by being checkably wrong.
+
+**The first run of the shipped module failed, and usefully.** `PrintDlgExW` answered `E_HANDLE` for a null owner window;
+its documentation says the owner cannot be null. The surface now takes the owning window's handle, and the application
+passes the focused window. The research instrument uses the desktop window.
+
+**Measured through the shipped module** (`scripts/research/printRoute.mjs`):
+
+- The dialog asked for the DEFAULT printer — no dialog shown, nothing printed — answered a device context, so the
+  136-byte structure koffi lays out is the one comdlg32 reads. The control, run from a scratch probe: four bytes short is
+  refused with `E_INVALIDARG`.
+- `printJobOn`, the drawing a print runs, into *Microsoft Print to PDF* with a file as output: two pages printed; each,
+  rendered back at the raster's size, within a mean 0.14 and 0.13 of 255 of the raster sent for it, and 17.48 and 17.56
+  from the other page's.
+
+What is not measured and is owed: the dialog in front of a person, and a page on paper.
+
+- The dialog runs on `main`'s thread, so `main`'s event loop pauses while it is open, as with Electron's synchronous
+  dialogs. On a worker thread the property sheet would run in an apartment nothing here initialised.
+- `rasterScale` is now the one rule for a DPI under a pixel budget; the slide picture takes it too.
+
+**Mutation, restored:** removing the abort when the printer refuses a page reddens the abandon case.
+
+---
+
 ## 2026-09-17 — D10 Excel review grid: corrections a page at a time, against the version read
 
 *Export tables to Excel…* now opens on the page on show with its tables as editable cells. A dialog body holds no client

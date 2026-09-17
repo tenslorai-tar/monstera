@@ -51,6 +51,8 @@ export const SAVE_PROBLEM_DIALOG = declareDialog({
       'no-tables',
       'no-tables-no-text',
       'review-changed',
+      'print-unavailable',
+      'print-failed',
     ]),
   }),
   component: lazy(() => import('./SaveProblemBody.js')),

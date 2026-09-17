@@ -7,7 +7,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
 } from '@monstera/contract';
-import { app, nativeImage, safeStorage, shell } from 'electron';
+import { BrowserWindow, app, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import {
@@ -38,6 +38,7 @@ import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
+import { createWin32PrintSurface } from './win32PrintSurface.js';
 import { startShell } from './main.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 import { isPdfPath } from './openExternalEditor.js';
@@ -313,6 +314,25 @@ startShell(() => {
           .createFromBitmap(Buffer.from(bitmap), { width, height, scaleFactor: 1 })
           .toPNG(),
       ),
+    // THE PRINT DIALOG AND PRINTER, here for the encoder's reason: the decoder and the
+    // window are Electron's (ADR-0074). `toBitmap` answers BGRA, the order a 32-bit DIB
+    // is drawn in. The dialog must have an owner — `PrintDlgExW` refuses none — so it
+    // is the focused window, or the first one, which is the window the command came from.
+    print:
+      process.platform === 'win32'
+        ? createWin32PrintSurface(
+            (png) => {
+              const image = nativeImage.createFromBuffer(Buffer.from(png));
+              const { width, height } = image.getSize();
+              return { width, height, bgra: new Uint8Array(image.toBitmap()) };
+            },
+            () => {
+              const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+              if (window === undefined) throw new Error('there is no window for the print dialog to belong to');
+              return window.getNativeWindowHandle().readBigUInt64LE(0);
+            },
+          )
+        : null,
     // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
     // packaged run: a Store application has no terminal attached, so until this
     // existed every failure this repository takes care to describe went to a

@@ -13,6 +13,8 @@ import {
   SAVE_LAYOUT_UNAVAILABLE,
   SAVE_NO_TABLES,
   SAVE_NO_TABLES_NO_TEXT,
+  SAVE_PRINT_FAILED,
+  SAVE_PRINT_UNAVAILABLE,
   SAVE_REVIEW_CHANGED,
   SAVE_WRITE_FAILED,
 } from '../messages/en.js';
@@ -29,7 +31,9 @@ type SaveProblem =
   | 'layout-failed'
   | 'no-tables'
   | 'no-tables-no-text'
-  | 'review-changed';
+  | 'review-changed'
+  | 'print-unavailable'
+  | 'print-failed';
 
 /**
  * The message for one outcome.
@@ -68,6 +72,9 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   'no-tables-no-text': SAVE_NO_TABLES_NO_TEXT,
   // THE REVIEW'S EDITS were made on a version the document is no longer at.
   'review-changed': SAVE_REVIEW_CHANGED,
+  // A PRINT's two: no print dialog on this platform, and a printer that refused a step.
+  'print-unavailable': SAVE_PRINT_UNAVAILABLE,
+  'print-failed': SAVE_PRINT_FAILED,
 };
 
 /**

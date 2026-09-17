@@ -202,6 +202,13 @@ export const EXPORT_WORD_RICH = messageKey('dialog.export-word.rich');
 export const EXPORT_WORD_LAYOUT = messageKey('dialog.export-word.layout');
 export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
+export const PRINT_COMMAND_TITLE = messageKey('command.print.title');
+export const PRINT_TITLE = messageKey('dialog.print.title');
+export const PRINT_DPI = messageKey('dialog.print.dpi');
+export const PRINT_DPI_150 = messageKey('dialog.print.dpi-150');
+export const PRINT_DPI_300 = messageKey('dialog.print.dpi-300');
+export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
+export const PRINT_APPLY = messageKey('dialog.print.apply');
 export const EXPORT_EXCEL_COMMAND_TITLE = messageKey('command.export-excel.title');
 export const EXPORT_EXCEL_TITLE = messageKey('dialog.export-excel.title');
 export const EXPORT_EXCEL_LAYOUT = messageKey('dialog.export-excel.layout');
@@ -1155,6 +1162,8 @@ export const SAVE_LAYOUT_FAILED = messageKey('dialog.save-problem.layout-failed'
 export const SAVE_NO_TABLES = messageKey('dialog.save-problem.no-tables');
 export const SAVE_NO_TABLES_NO_TEXT = messageKey('dialog.save-problem.no-tables-no-text');
 export const SAVE_REVIEW_CHANGED = messageKey('dialog.save-problem.review-changed');
+export const SAVE_PRINT_UNAVAILABLE = messageKey('dialog.save-problem.print-unavailable');
+export const SAVE_PRINT_FAILED = messageKey('dialog.save-problem.print-failed');
 export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
@@ -2130,6 +2139,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_WORD_LAYOUT]: 'The page layout — each line where it sits on the page',
   [EXPORT_WORD_TEXT]: 'Just the words',
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
+  [PRINT_COMMAND_TITLE]: 'Print…',
+  [PRINT_TITLE]: 'Print',
+  [PRINT_DPI]: 'Print quality',
+  [PRINT_DPI_150]: 'Draft — 150 dots per inch',
+  [PRINT_DPI_300]: 'Standard — 300 dots per inch',
+  [PRINT_DPI_600]: 'High — up to 600 dots per inch, lower on a large page',
+  [PRINT_APPLY]: 'Choose a printer…',
   [EXPORT_EXCEL_COMMAND_TITLE]: 'Export tables to Excel…',
   [EXPORT_EXCEL_TITLE]: 'Export tables to Excel',
   [EXPORT_EXCEL_LAYOUT]: 'Where the tables go',
@@ -2591,6 +2607,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_LAYOUT_UNAVAILABLE]: 'Text with layout needs a component that is not installed with this copy of Monstera. Export text… still works.',
   [SAVE_LAYOUT_FAILED]: 'The text could not be read with its layout from this document, so no file was written. Export text… may still work.',
   [SAVE_NO_TABLES]: 'No tables with ruled lines were found in this document, so no file was written.',
+  [SAVE_PRINT_UNAVAILABLE]: 'Printing needs the system print dialog, which this copy of Monstera cannot open here, so nothing was printed.',
+  [SAVE_PRINT_FAILED]: 'The printer did not accept the document, so it was cancelled and nothing more was sent. Check the printer, then print again.',
   [SAVE_REVIEW_CHANGED]: 'The document changed while its tables were being reviewed, so no file was written. Export tables to Excel… again to review the tables as they are now.',
   [SAVE_NO_TABLES_NO_TEXT]: 'No tables were found, so no file was written. Some pages are pictures of text with no text to read; recognise their text first with Tools › OCR, then export again.',
   // "Could not be done" and never "error". Every code below leaves the document

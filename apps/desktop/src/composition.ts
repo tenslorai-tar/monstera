@@ -167,6 +167,7 @@ import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { HandwritingCache } from './handwritingCache.js';
 import { type LayoutTextPlatform, createLayoutTextSource } from './layoutText.js';
+import type { PrintDestination } from './printing.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
@@ -530,6 +531,11 @@ export interface ShellComposition {
    */
   readonly layoutTextPlatform?: LayoutTextPlatform | null;
   /**
+   * The system print dialog and the printer it answers (ADR-0074). `null` where there
+   * is none, and a print then answers *unavailable*.
+   */
+  readonly print?: PrintDestination | null;
+  /**
    * How a rasterised page becomes PNG bytes. See {@link EncodePng}.
    *
    * Optional, and its absence is a decided state rather than a default: a
@@ -582,6 +588,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pdfiumPlatform = null,
     composePlatform = null,
     layoutTextPlatform = null,
+    print = null,
     encodePng,
     log = null,
   } = composition;
@@ -1121,6 +1128,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // LAYOUT-PRESERVING TEXT, the contained pdftotext — `null` where it cannot run,
     // so the export answers unavailable rather than extracting anywhere else (ADR-0071).
     layoutText: layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures),
+    // THE PRINT DIALOG, from `entry.ts` for the pickers' reason (ADR-0074).
+    print,
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the
     // part that arrives from `entry.ts` and this file keeps its property of

@@ -36,6 +36,7 @@ import {
   exportLayoutTextCommand,
   exportExcelCommand,
   exportPowerPointCommand,
+  printCommand,
   exportTextCommand,
   exportWordCommand,
   generateTocCommand,
@@ -2189,6 +2190,57 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC } }]);
     expect(asked).toStrictEqual([]);
+  });
+
+  describe('print (ADR-0074)', () => {
+    it('asks the resolution and dispatches exactly the one chosen, for each of the three', async () => {
+      for (const dpi of [150, 300, 600] as const) {
+        const { client, sent } = recording({ 'document.print': { kind: 'printed', pages: 2 } });
+        const asked: unknown[] = [];
+
+        await printCommand({
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve({ dpi });
+          },
+        }).run(CONTEXT);
+
+        expect(asked).toStrictEqual([{ id: 'dialog.print', props: {} }]);
+        expect(sent).toStrictEqual([{ id: 'document.print', params: { docId: DOC, dpi } }]);
+      }
+    });
+
+    it('CONTROL: a DISMISSED resolution dialog prints nothing', async () => {
+      const { client, sent } = recording();
+
+      await printCommand({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined) }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([]);
+    });
+
+    it('says so for a platform with no print dialog and for a printer that refused, and nothing for a dismissed one', async () => {
+      for (const [answered, spokenLast] of [
+        [{ kind: 'unavailable' }, { id: 'dialog.save-problem', props: { outcome: 'print-unavailable' } }],
+        [{ kind: 'failed' }, { id: 'dialog.save-problem', props: { outcome: 'print-failed' } }],
+        [{ kind: 'cancelled' }, { id: 'dialog.print', props: {} }],
+      ] as const) {
+        const { client } = recording({ 'document.print': answered });
+        const spoken: unknown[] = [];
+
+        await printCommand({
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            spoken.push({ id, props });
+            return Promise.resolve(id === 'dialog.print' ? { dpi: 300 } : undefined);
+          },
+        }).run(CONTEXT);
+
+        expect(spoken.at(-1)).toStrictEqual(spokenLast);
+      }
+    });
   });
 
   describe('export tables to Excel — the review grid, a page at a time', () => {

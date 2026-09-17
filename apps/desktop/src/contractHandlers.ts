@@ -297,6 +297,7 @@ export function createContractHandlers(deps: {
     'document.exportWord': exportWordHandler(deps.commands),
     'document.exportPowerPoint': exportPowerPointHandler(deps.commands),
     'document.exportExcel': exportExcelHandler(deps.commands),
+    'document.print': printHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1245,6 +1246,23 @@ function exportPowerPointHandler(commands: DocumentCommands): ContractHandlers['
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The print's handler: the command's outcomes as they are, and a dismissed dialog as `cancelled`. */
+function printHandler(commands: DocumentCommands): ContractHandlers['document.print'] {
+  return async ({ docId, dpi }): Promise<Awaited<ReturnType<ContractHandlers['document.print']>>> => {
+    try {
+      const outcome = await commands.print(docId, dpi);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'printed') return ok({ kind: 'printed', pages: outcome.pages } as const);
+      return ok({ kind: outcome.kind });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

@@ -1969,6 +1969,25 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
+  /**
+   * Prints the document — D10's *print*: MuPDF's raster of each page chosen in the
+   * system print dialog, at the resolution asked, drawn onto the printer chosen there
+   * (ADR-0074). Never the DOM. The dialog is main's, so the ask is a `DocId` and a
+   * resolution; `unavailable` where this platform has no print dialog, `failed` where
+   * the printer refused a step and the document was abandoned.
+   */
+  'document.print': channel(
+    'Prints the document through the system print dialog, each page rasterised by MuPDF.',
+    z.object({ docId: docIdSchema, dpi: z.union([z.literal(150), z.literal(300), z.literal(600)]) }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('printed'), pages: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('unavailable') }),
+      z.object({ kind: z.literal('failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),

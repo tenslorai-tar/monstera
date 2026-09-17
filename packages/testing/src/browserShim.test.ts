@@ -226,6 +226,7 @@ describe('browser shim', () => {
       'document.pageTextLayer',
       'document.pageWordCount',
       'document.placeImage',
+      'document.print',
       'document.readRange',
       'document.recent',
       'document.reimportExternalEdit',

@@ -32,6 +32,7 @@ import {
   CapabilityRegistry,
   CommandBus,
   DocumentNotOpenError,
+  type PageImageRequest,
   DocumentService,
   EngineCallFailed,
   EngineSessionGone,
@@ -123,6 +124,7 @@ import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.
 import { EngineSessions } from './engineSessions.js';
 import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
 import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
+import { type PrintDestination, PrintFailedError } from './printing.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 
 /**
@@ -629,6 +631,8 @@ const INERT = {
   // REFUSES BY NAME, like every inert picker: a case that exports text supplies its own.
   pickText: () => Promise.reject(new Error('INERT: this case does not export text')),
   layoutText: null,
+  // NO PRINT DIALOG, the state a platform without one is in; a print case supplies its own.
+  print: null,
   pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
   directory: noDirectory,
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
@@ -1768,6 +1772,8 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly layoutText?: LayoutTextSource | null;
       readonly flush?: () => Promise<Uint8Array>;
       readonly picked?: string[];
+      readonly print?: PrintDestination | null;
+      readonly images?: PageImageRequest[];
     } = {},
   ): { readonly commands: DocumentCommands; readonly reads: number[] } {
     const reads: number[] = [];
@@ -1776,6 +1782,11 @@ describe('exportText — the document’s words, streamed one page at a time', (
       documents: textService,
       bus: bus(),
       engine: textEngine(),
+      print: options.print ?? null,
+      pageImage: async (id, sessions, request) => {
+        options.images?.push(request);
+        return await LOCAL_READS.pageImage(id, sessions, request);
+      },
       pageText: async (id, sessions, page) => {
         reads.push(page);
         return await LOCAL_READS.pageText(id, sessions, page);
@@ -1983,6 +1994,95 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       expect((await commands.exportText(textDoc, 'layout'))?.kind).toBe('refused');
       expect(ran).toBe(0);
+    });
+  });
+
+  describe('printed (ADR-0074)', () => {
+    /** A print destination that records what reached it, answering `pages` for the dialog. */
+    function recordingPrinter(
+      pages: readonly number[] | null,
+      refuse: { readonly start?: boolean; readonly page?: boolean } = {},
+    ): { readonly destination: PrintDestination; readonly log: string[]; readonly drawn: Uint8Array[] } {
+      const log: string[] = [];
+      const drawn: Uint8Array[] = [];
+      return {
+        log,
+        drawn,
+        destination: {
+          choose: (pageCount) => {
+            log.push(`dialog for ${String(pageCount)} page(s)`);
+            if (pages === null) return null;
+            return {
+              pages,
+              start: (name) => {
+                log.push(`start ${name}`);
+                if (refuse.start === true) throw new PrintFailedError('the document', 0);
+                return {
+                  page: (png) => {
+                    if (refuse.page === true) throw new PrintFailedError('a page', 0);
+                    drawn.push(png);
+                    log.push('page');
+                  },
+                  finish: () => log.push('finish'),
+                  abort: () => log.push('abort'),
+                };
+              },
+              release: () => log.push('release'),
+            };
+          },
+        },
+      };
+    }
+
+    it('rasterises EACH page the dialog chose, in its order, at the DPI asked, and finishes the document', async () => {
+      const printer = recordingPrinter([1, 0]);
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(null, { print: printer.destination, images });
+
+      expect(await commands.print(textDoc, 150)).toStrictEqual({ kind: 'printed', pages: 2 });
+
+      expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'page', 'page', 'finish', 'release']);
+      expect(images).toStrictEqual([
+        { page: 1, format: 'png', scale: 150 / 72, quality: 90 },
+        { page: 0, format: 'png', scale: 150 / 72, quality: 90 },
+      ]);
+      // TWO DIFFERENT PICTURES, the second page's first: the pages carry different
+      // words, so a print that sent one page twice is red here.
+      expect(Buffer.from(printer.drawn[0] ?? []).equals(Buffer.from(printer.drawn[1] ?? []))).toBe(false);
+    });
+
+    it('prints nothing and reads no page when the dialog is dismissed', async () => {
+      const printer = recordingPrinter(null);
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(null, { print: printer.destination, images });
+
+      expect(await commands.print(textDoc, 300)).toBeUndefined();
+      expect(printer.log).toStrictEqual(['dialog for 2 page(s)']);
+      expect(images).toStrictEqual([]);
+    });
+
+    it('ABANDONS the document when the printer refuses a page, and releases the printer', async () => {
+      const printer = recordingPrinter([0, 1], { page: true });
+      const { commands } = exportingTo(null, { print: printer.destination });
+
+      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'failed' });
+      expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'abort', 'release']);
+    });
+
+    it('answers FAILED and releases the printer when the document cannot be started', async () => {
+      const printer = recordingPrinter([0], { start: true });
+      const { commands } = exportingTo(null, { print: printer.destination });
+
+      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'failed' });
+      expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'release']);
+    });
+
+    it('CONTROL: answers UNAVAILABLE with no print dialog on the platform, reading nothing', async () => {
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(null, { print: null, images });
+
+      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'unavailable' });
+      expect(images).toStrictEqual([]);
     });
   });
 });

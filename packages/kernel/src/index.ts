@@ -389,6 +389,7 @@ export {
   presentationParts,
   slideSize,
 } from './presentationDocument.js';
+export { rasterScale } from './rasterScale.js';
 export {
   type CellValue,
   type ReviewCell,

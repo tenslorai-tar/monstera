@@ -61,6 +61,7 @@ import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
 import type { ExportPageImagesAnswer } from '../dialogs/exportPageImagesResult.js';
 import { EXPORT_EXCEL_DIALOG_ID, type ExportExcelAnswer } from '../dialogs/exportExcel.js';
+import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
@@ -133,6 +134,7 @@ import {
   EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
   EXPORT_POWERPOINT_COMMAND_TITLE,
   EXPORT_EXCEL_COMMAND_TITLE,
+  PRINT_COMMAND_TITLE,
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
@@ -2008,6 +2010,41 @@ export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
+/**
+ * Prints the document (ADR-0074): the resolution dialog, then the operating
+ * system's print dialog and the printing, both main's.
+ *
+ * A dismissed resolution dialog dispatches nothing; a dismissed system dialog is
+ * main's `cancelled` and says nothing. A platform with no print dialog and a
+ * printer that refused a step each say so through the save problem dialog.
+ */
+export function printCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.print',
+    icon: 'Printer',
+    title: PRINT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 45 }],
+    shortcut: 'Ctrl+P',
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+
+      const chosen = (await deps.ask(PRINT_DIALOG_ID, {})) as PrintAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.print']({ docId: context.docId, dpi: chosen.dpi });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'printed' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'unavailable' ? 'print-unavailable' : 'print-failed',
       });
     },
   };

@@ -45,6 +45,7 @@ import {
   ooxmlPackage,
   pictureScale,
   presentationParts,
+  rasterScale,
   wordDocumentParts,
   type ByteImage,
   type CommandBus,
@@ -121,6 +122,7 @@ import {
   watchEdits,
 } from './externalEditWatch.js';
 import { type LayoutTextSource, LayoutTextFailedError } from './layoutText.js';
+import { type PrintDestination, PrintFailedError } from './printing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
 /**
@@ -1054,6 +1056,26 @@ export type ExcelOutcome =
   | { readonly kind: 'no-tables'; readonly picturePages: number }
   | { readonly kind: 'changed' };
 
+/** The resolutions a print may be asked for, in dots per inch. */
+export const PRINT_DPIS = [150, 300, 600] as const;
+
+export type PrintDpi = (typeof PRINT_DPIS)[number];
+
+/**
+ * A print's pixel budget: thirty megapixels a page, just under the engine's own
+ * 32-megapixel bound, so a large page is drawn at a lower scale rather than refused —
+ * this export's choice, not a copy of that bound. **600 dpi is not reached on US
+ * Letter**: 612×792 pt at 600 dpi is 33,671,701 pixels, so it prints at about 566 dpi
+ * (computed 2026-09-17 from `rasterScale`), and the dialog's label says *up to*.
+ */
+export const PRINT_PIXELS = 30_000_000;
+
+/** What a print did. */
+export type PrintOutcome =
+  | { readonly kind: 'printed'; readonly pages: number }
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'failed' };
+
 /** What the review grid hands an Excel export: the version it read, and the cells changed. */
 export interface ExcelReview {
   readonly version: DocVersion;
@@ -1695,6 +1717,11 @@ export interface DocumentCommandsParts {
    * the layout export then answers `unavailable` before any dialog.
    */
   readonly layoutText: LayoutTextSource | null;
+  /**
+   * The system print dialog and the printer it answers (ADR-0074) — or `null` where
+   * there is none, and a print then answers `unavailable` before any dialog.
+   */
+  readonly print: PrintDestination | null;
   /** Where an Office export goes. See {@link PickOffice}. */
   readonly pickOffice: PickOffice;
   readonly directory: PickDirectory;
@@ -1749,6 +1776,7 @@ export class DocumentCommands {
   readonly #pageImage: DocumentPageImageReader;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
+  readonly #print: PrintDestination | null;
   readonly #pickOffice: PickOffice;
   readonly #directory: PickDirectory;
   readonly #externalEdit: ExternalEditSource;
@@ -1803,6 +1831,7 @@ export class DocumentCommands {
     this.#pageImage = parts.pageImage;
     this.#pickText = parts.pickText;
     this.#layoutText = parts.layoutText;
+    this.#print = parts.print;
     this.#pickOffice = parts.pickOffice;
     this.#directory = parts.directory;
     this.#externalEdit = parts.externalEdit;
@@ -3510,6 +3539,82 @@ export class DocumentCommands {
       return { pageCount, ...reviewGridOf(tables, MAX_TABLE_CELLS, MAX_TABLE_CELL_TEXT) };
     });
     return { version, ...value };
+  }
+
+  /**
+   * Prints the document — D10's *print*: MuPDF's raster of each page the person
+   * chooses in the system print dialog, at `dpi`, drawn onto the printer they chose
+   * (ADR-0074). Never the DOM.
+   *
+   * ## The dialog is outside the lane, the pages inside it
+   *
+   * The dialog waits on a person, and a lane held across that would stall every
+   * other command on the document. The page count it is shown is read first; the
+   * pages are rasterised and drawn in the lane, one at a time, so `main` holds one
+   * page's picture — and a document that lost pages meanwhile is refused by the
+   * engine by page number rather than printed from a stale count.
+   *
+   * ## A raster past the print's pixel budget is drawn at a lower scale
+   *
+   * `rasterScale`'s rule, the slide picture's: the DPI asked for, or less where a
+   * large page would pass {@link PRINT_PIXELS}, never below the engine's floor.
+   *
+   * It does NOT touch the document.
+   */
+  async print(docId: DocId, dpi: PrintDpi): Promise<PrintOutcome | undefined> {
+    const name = this.#documents.nameOf(docId);
+    if (name === undefined) throw new DocumentNotOpenError(docId, 'print');
+    if (this.#print === null) return { kind: 'unavailable' };
+
+    const { value: pageCount } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return (await this.#geometry(docId, sessions, [])).pageCount;
+    });
+
+    const choice = this.#print.choose(pageCount);
+    if (choice === null) return undefined;
+    try {
+      const { value } = await this.#documents.run(docId, async (): Promise<PrintOutcome> => {
+        const failures = this.#engine.poisoned(docId);
+        if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+        const sessions = this.#engine.sessions(docId);
+        if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+        let job;
+        try {
+          job = choice.start(name);
+        } catch (thrown) {
+          if (thrown instanceof PrintFailedError) return { kind: 'failed' };
+          throw thrown;
+        }
+        try {
+          for (const page of choice.pages) {
+            const [size] = (await this.#geometry(docId, sessions, [page])).sizes;
+            if (size === undefined) throw new Error(`the geometry read named no size for page ${String(page)}`);
+            const png = await this.#pageImage(docId, sessions, {
+              page,
+              format: 'png',
+              scale: rasterScale(size, dpi, PRINT_PIXELS),
+              quality: 90,
+            });
+            job.page(png);
+          }
+          job.finish();
+        } catch (thrown) {
+          // ABANDONED, so the printer receives no half a document.
+          job.abort();
+          if (thrown instanceof PrintFailedError) return { kind: 'failed' };
+          throw thrown;
+        }
+        return { kind: 'printed', pages: choice.pages.length };
+      });
+      return value;
+    } finally {
+      choice.release();
+    }
   }
 
   /** Each page as a slide picture, rendered as the zip pulls it. */

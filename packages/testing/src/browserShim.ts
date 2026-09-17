@@ -1274,6 +1274,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
+    // THE PRINT'S SHIM: a browser has no system print dialog to show, which is main's
+    // `unavailable` answer for a platform without one.
+    'document.print': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ kind: 'unavailable' as const }));
+    },
     // THE EXCEL EXPORT'S SHIM, the copy's option and outcomes. Its `no-tables` answer
     // is main's reading of a real document, which a shim has none of.
     'document.exportExcel': ({ docId }) => {

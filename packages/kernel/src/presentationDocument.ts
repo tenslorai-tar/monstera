@@ -1,5 +1,6 @@
 import { type OoxmlPart, XML_DECLARATION } from './ooxmlPackage.js';
 import type { PageSize } from './pageGeometry.js';
+import { rasterScale } from './rasterScale.js';
 
 /**
  * A PDF as a PowerPoint presentation — D10's *PowerPoint*, written by this build
@@ -61,9 +62,7 @@ const PICTURE_PIXELS = 16_000_000;
  * floor; a page too large for that is refused by the engine by name.
  */
 export function pictureScale(size: PageSize): number {
-  const wanted = PICTURE_DPI / 72;
-  const area = Math.max(size.width * size.height, 1);
-  return Math.max(1, Math.min(wanted, Math.sqrt(PICTURE_PIXELS / area)));
+  return rasterScale(size, PICTURE_DPI, PICTURE_PIXELS);
 }
 
 /** The slide size for a deck whose first page is `size`, in points, inside PowerPoint's bounds. */
