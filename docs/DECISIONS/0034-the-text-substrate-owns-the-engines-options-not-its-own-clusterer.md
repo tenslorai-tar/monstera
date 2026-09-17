@@ -257,3 +257,19 @@ nothing in the original reading established that — it was assumed. A version
 skew between the shim and the package would have made the table describe a
 structure the product never sees, silently, and no check in this repository
 looks for that.
+
+---
+
+## Correction, 2026-09-17 — `TABLE_HUNT`'s trigger fired, and the flag is not enough on its own
+
+The Decision's *"The first feature whose subject is a table owes the reading"*
+fired with D10's Excel table detection, and the reading found that the flag this
+ADR measured is not the question the engine's own table consumer asks. The
+fixture table above measured `segment,table-hunt`; MuPDF's CSV writer adds
+`vectors` and `accurate-bboxes`, and without `vectors` no ruling line proposes a
+table. On six generated grids the flag alone returned every table two columns
+wide, and the CSV writer's set returned all four ruled grids exactly.
+*"Adding `table-hunt` is a single edit"* was therefore true of the edit and not of
+the capability. The rule this ADR set holds — the options, not a clusterer — and
+the table read takes the engine's set as a third named read,
+[ADR-0073](0073-a-table-is-the-engines-table-read-asked-as-its-own-table-writer-asks.md).

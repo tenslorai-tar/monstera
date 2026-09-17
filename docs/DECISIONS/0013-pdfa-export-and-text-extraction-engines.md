@@ -180,3 +180,15 @@ whether a binary happened to be present; the decision is a **pinned** `pdftotext
 provisioned, licence-checked and run in a contained process, recorded in
 [ADR-0071](0071-layout-preserving-text-is-popplers-pdftotext-in-a-contained-process.md). Plain text
 stays MuPDF's, and ADR-0034 is not amended.
+
+## Correction, 2026-09-17 — the tables reading asked without `vectors`
+
+The 2026-09-10 correction above measured `segment,table-hunt`. MuPDF's own CSV writer,
+`output-csv.c`, asks for `vectors` and `accurate-bboxes` as well, and `stext-table.c` proposes a
+table for every raft of vectors, so without `vectors` a ruling line proposes nothing. Measured on
+MuPDF 1.28.0: `segment,table-hunt` returned every one of six generated grids two columns wide, and
+the CSV writer's set returned all four ruled grids exactly. The −1.5 and −17.5 figures stand as a
+reading of the option string that was asked; they are not a reading of the engine's table finding,
+and its *"none improves"* says nothing about tables. Text extraction's choice is unchanged, because
+it wants lines. Finding a table is now its own §3 row and read,
+[ADR-0073](0073-a-table-is-the-engines-table-read-asked-as-its-own-table-writer-asks.md).
