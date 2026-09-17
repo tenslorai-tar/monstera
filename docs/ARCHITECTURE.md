@@ -866,10 +866,10 @@ Adding a row still means executing it first.
   **And the negative delta is not by itself the reason, which is the part worth
   carrying.** `TABLE_HUNT` exists to emit cells, and a cell is not a line, so
   lower agreement with a line-oriented reader is partly the option working. What
-  makes it a loss *today* is that **no shipped consumer of this substrate wants
-  cells** — the text layer, search, spell check and word count all read lines.
-  The per-consumer opt-in is therefore unchanged and now rests on a reading
-  rather than on nobody having taken one.
+  makes it a loss **for the shared read** is that its consumers — the text layer,
+  search, spell check and word count — read lines; the one consumer that wants
+  cells, Excel export, takes its own `table` read below. The per-consumer opt-in
+  therefore rests on a reading rather than on nobody having taken one.
 
   **Correction, 2026-09-17: that reading asked the engine a question its own
   table consumer does not ask** ([ADR-0073](DECISIONS/0073-a-table-is-the-engines-table-read-asked-as-its-own-table-writer-asks.md)).

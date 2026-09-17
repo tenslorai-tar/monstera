@@ -57,11 +57,13 @@ import { type ViewportPoint, viewportPoint } from '@monstera/shared';
  *
  * The delta is not the whole argument and the comment says so rather than
  * letting a number stand in for one: the option emits **cells**, a cell is not a
- * line, so part of that fall is the option working. What settles it here is that
- * every consumer of this substrate reads lines — the text layer, search, spell
- * check, word count. It stays a per-consumer opt-in, and the first feature whose
- * subject is a table owes a reading against table structure, which agreement
- * with a line-oriented reader cannot supply.
+ * line, so part of that fall is the option working. What settles it for the shared
+ * read is that its consumers read lines — the text layer, search, spell check,
+ * word count. It stays a per-consumer opt-in. The first feature whose subject is a
+ * table took that reading on 2026-09-17 and found the flag alone was not the
+ * engine's table question: the `table` read below asks with `vectors` as MuPDF's
+ * CSV writer does
+ * ([ADR-0073](../../../docs/DECISIONS/0073-a-table-is-the-engines-table-read-asked-as-its-own-table-writer-asks.md)).
  *
  * The names are MuPDF's own, from `source/fitz/stext-device.c`'s
  * `fz_parse_stext_options`.

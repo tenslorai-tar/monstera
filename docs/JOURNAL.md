@@ -892,6 +892,117 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Stage audit of `9596f52..fcee46e` — findings JJJJJJ-1 to JJJJJJ-6
+
+**Why now.** The pre-commit gate refused Ghostscript's adoption commit: the range plus that commit passes one batch of
+files. `audit:scope` alone read 35 commits and 181 files, within a batch, for the reason IIIIII's entry gives — it
+measures against HEAD.
+
+**The range.** 35 commits: row B's rotation fix, WebP, Poppler's layout text, Word, PowerPoint, Excel table detection,
+styled output, combine-pages and the review grid, Email blocked, Print, the red board it caused and its fix, and the
+PDF/A-2b amendment. 13 proofs added · 29 modified · 0 removed · 46 source files added · 63 changed · 0 removed.
+
+**JJJJJJ-1 — a scan registered only in the workflow reddened `main`, and nothing local could have seen it.**
+`scripts/research/printRoute.mjs` (9acd824) loads two modules through computed specifiers;
+`electronImports.proof.mjs` requires each such file to be listed with a reason, and it runs only in CI, inside
+`probeLeftovers.proof.mjs`'s control. Typecheck and lint, the pre-push set, cannot see it. Both legs failed at 6ef7a12;
+fixed in 313223f with the entry, and the steps the failure masked were run here. The class is *my local sweep is not
+CI's set*, recurring; closing it is tooling and tooling is suspended, so it is recorded, not closed.
+
+**JJJJJJ-2 — visual regeneration is not quiet, and the practice around it hides that.** Four regenerations in this range
+(2adb7e5, 00574e8, 759d3d0, 6ef7a12) each rewrote one or two images nothing in the range touched — `dark-section-edit`,
+`hc-start`, `hc-section-edit`, `dark-section-comment`, `light-section-edit` — and each was restored from HEAD as noise.
+IIIIII's entry recorded *a three-run spread of 0*; regeneration now moves bytes on every run. The comparison still passes
+within its tolerance, so the gate holds, but **the mechanism is not known and restoring by hand is a judgement repeated
+four times**. Open.
+
+**JJJJJJ-3 — a sentence in the law went false inside the range that made it false.** §3.2 said *no shipped consumer of
+this substrate wants cells*, and `textStructure.ts`' header said every consumer reads lines. 74b5ebc added Excel export,
+which reads cells through its own `table` read. ADR-0073's correction was added beside the paragraph; the body stayed.
+NNN-4's compound-claim shape. **Closed in this commit**: both bodies now scope the claim to the shared read.
+
+**JJJJJJ-4 — print's easy shape.** `printRoute.mjs` measured *Microsoft Print to PDF*: portrait Letter, no physical
+offset. A landscape page on portrait paper is fitted, not turned, so it prints smaller than a person expects;
+nothing rotates it and no row says so — a landscape Letter page on portrait Letter prints at 612/792, about 77% of its
+size. Open, and written into the Print row's limits in the next row commit.
+
+**JJJJJJ-5 — the table read was measured on upright pages only.** Every generated grid and the corpus pages were
+unrotated. A `/Rotate 90` page is the shape that failed H7's layout grid, and it is untested here. Open, not verified.
+
+**JJJJJJ-6 — two board reads were taken early.** The standing rule is one read per push, twenty minutes after: 759d3d0
+was read at 16 minutes and 6ef7a12 at 18. Both reads wait for completion, so neither reported a stale green — 6ef7a12's
+was the red one — but the rule was not followed.
+
+### 1. Root cause or workaround?
+
+Root-cause, each with the mechanism stated: row B's rotation read (PDF.js falling back to the opened `/Rotate`), the
+missing computed-load entry (a new site the scan cannot read), `PrintDlgExW`'s `E_HANDLE` (a null owner, which its
+documentation forbids), the table read's two columns (`vectors` unset, so no ruling proposes a table). **One
+workaround-shaped habit is named rather than excused**: restoring regenerated baselines by hand (JJJJJJ-2).
+
+### 2. Verified against the easy shape only?
+
+JJJJJJ-4 and JJJJJJ-5. Excel's review grid was measured against the harder address shape — the same table, row and
+column on two pages — and the table read against unruled grids, where it is stated to fail.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+One, and it widens: `containerGrants.proof.mjs`'s hand-kept list of optional grants grew by Poppler and is about to grow
+by Ghostscript, each entry added by name rather than derived, which is 4c's direction for a list whose danger is an
+entry quietly becoming optional. Nothing in the range turned an assertion into a derivation.
+
+### 3. Would CI have caught it?
+
+JJJJJJ-1 is the case where CI did and the machine did not. The feature checks in this range run in `npm test` on both
+legs; the research instruments (`printRoute`, `popplerContained`, `ghostscriptContained`) run nowhere automatically,
+and each commit message says what they measured.
+
+### 4. Are the proofs non-vacuous?
+
+Read the four modified proofs whose deletions do not appear in the range diff: `electronBinaryCallers.proof.mjs` and
+`containerGrants.proof.mjs` gained cases and counts (13 → 16 cases; optional grants two → four), and the two
+`documentCommands.test.ts` files rewrote cases inside the range for a changed signature. None loosened. Mutations run and
+restored in the range: the table read without `vectors`, borders read from the wrong grid point, the print's abort, the
+review's per-page edits.
+
+### 4a. Has every instrument passed a resolution test?
+
+Yes, each before it measured anything real, and each against the smallest difference its decision turned on: the table
+probe on grids of known width (two columns reported against three drawn separated the flag from the CSV writer's set),
+the print comparison on the other page (0.14 against 17.5), veraPDF on the unconverted input (five rules) against
+Ghostscript's output without an intent (two) and with one (none), and Excel through COM on a workbook it had to refuse.
+
+### 4b. Is the instrument a search, with a positive control on every run?
+
+Two are searches. `tableCells.mjs` and `tableCorpus.mjs` refuse to report maxima when no table was found anywhere, and
+`parsePageTables`' own cases assert a page with no `Table` element counts its lines — the known-present half. The DLL
+string scan for Ghostscript's bundled libraries had FreeType, OpenJPEG and Tesseract as markers known to be present
+before any absence was read; `IJG` returned zero there and was established from `libjpeg`'s hit instead.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The two rosters touched — the shim's channel list in `browserShim.test.ts` and the optional-grants list — are hand-kept,
+and both reddened when an entry was missing or misplaced in this range (the shim's order in 9acd824's run). No new count
+derived from its own collection.
+
+### 5. Executed or asserted?
+
+Asserted, and owed: a live export from the running application for WebP, layout text, Word, PowerPoint, Excel and the
+review grid, and the print dialog shown with a page printed. Row A's live re-check stays blocked on machine load.
+
+### 6. Architecture before the feature?
+
+Yes for each: ADR-0070, 0071, 0072 (and its same-day correction, before the Word commit), 0073, 0074, 0075, each in its
+own commit ahead of its feature.
+
+### 7. Do the documents match the code?
+
+JJJJJJ-3 closed. `proof:enginesurface` re-run for this range: 30 kernel modules import `mupdf`, 10 load it, 132 members
+— unchanged, so CLAUDE.md's figures stand. §9.17's list of what `main` binds was short by `userenv.dll` from the day it
+was written, found and corrected in ADR-0074.
+
+---
+
 ## 2026-09-17 — D10 Print: MuPDF's raster, the system dialog, GDI
 
 ADR-0074 (f6c9944) first: §9.17 named what `main` may bind as two libraries and *nothing else*, and every Windows route
