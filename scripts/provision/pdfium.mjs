@@ -56,13 +56,14 @@
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { committedLicenceName, sameAsCommitted } from './condaForge.mjs';
 
 /**
  * The pinned release.
@@ -109,6 +110,64 @@ export function pdfiumRoot(root) {
 }
 
 /**
+ * Where NOTICE's copies of the archive's licence texts are committed.
+ *
+ * @param {string} root the repository root
+ * @returns {string}
+ */
+export function pdfiumLicenceRoot(root) {
+  return join(root, 'scripts', 'release', 'licences', 'pdfium');
+}
+
+/**
+ * Every licence text the pinned archive carries, by its path in the archive: the
+ * binaries' own terms and `licenses/`, one file per library compiled in. Read from
+ * the archive 2026-09-17; the provisioner refuses an archive whose `licenses/`
+ * holds a file this list does not name, so a library a bump adds cannot reach the
+ * application with no terms in the notice.
+ */
+export const PDFIUM_LICENCE_TEXTS = [
+  'LICENSE',
+  ...[
+    'abseil.txt',
+    'agg23.txt',
+    'fast_float.txt',
+    'freetype.txt',
+    'icu.txt',
+    'lcms.txt',
+    'libjpeg_turbo.ijg',
+    'libjpeg_turbo.md',
+    'libopenjpeg.txt',
+    'libpng.txt',
+    'llvm-libc.txt',
+    'pdfium.txt',
+    'simdutf.txt',
+    'zlib.txt',
+  ].map((file) => `licenses/${file}`),
+];
+
+/**
+ * Throws unless the extracted archive's licence texts are exactly the declared set,
+ * each equal to its committed copy.
+ *
+ * @param {string} extracted the directory the archive was extracted into
+ * @param {string} root the repository root
+ */
+async function compareLicences(extracted, root) {
+  const shipped = (await readdir(join(extracted, 'licenses'))).map((file) => `licenses/${file}`);
+  const undeclared = shipped.filter((path) => !PDFIUM_LICENCE_TEXTS.includes(path));
+  if (undeclared.length > 0) {
+    throw new Error(
+      `${PDFIUM_ASSET} carries licence texts NOTICE does not render: ${undeclared.join(', ')}. ` +
+        `Read them, commit them under scripts/release/licences/pdfium and declare them.`,
+    );
+  }
+  for (const path of PDFIUM_LICENCE_TEXTS) {
+    await sameAsCommitted(pdfiumLicenceRoot(root), join(extracted, path), committedLicenceName(path));
+  }
+}
+
+/**
  * The library every consumer loads.
  *
  * @param {string} root the repository root
@@ -151,6 +210,7 @@ export async function provisionPdfium({ root, force = false }) {
 
     extract(staging, PDFIUM_ASSET);
     await rm(archive, { force: true });
+    await compareLicences(staging, root);
 
     const staged = join(staging, 'bin', 'pdfium.dll');
     if (!(await fileExists(staged))) {

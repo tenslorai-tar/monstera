@@ -298,6 +298,32 @@
       ]
     },
     {
+      "name": "PDFium",
+      "version": "155.0.8044.0",
+      "role": "In-place text editing's engine: pdfium.dll, the build without V8 or XFA, loaded through koffi inside the contained PDFium engine host (ADR-0047). Not linked into the application.",
+      "licence": "BSD-3-Clause and Apache-2.0, with the libraries below compiled in; the prebuilt binaries' build scripts are MIT",
+      "origin": "https://pdfium.googlesource.com/pdfium/",
+      "source": "https://pdfium.googlesource.com/pdfium/+/refs/heads/chromium/8044 and the dependencies its DEPS file pins at that branch; the build recipe is https://github.com/bblanchon/pdfium-binaries/tree/chromium/8044",
+      "build": "github.com/bblanchon/pdfium-binaries release chromium/8044, pdfium-win-x64.tgz, pinned by scripts/provision/pdfium.mjs",
+      "licenceRoot": "scripts/release/licences/pdfium",
+      "components": [
+        { "name": "PDFium", "version": "155.0.8044.0", "spdx": "BSD-3-Clause AND Apache-2.0", "texts": ["licenses/pdfium.txt"] },
+        { "name": "pdfium-binaries build scripts", "version": "chromium/8044", "spdx": "MIT", "texts": ["LICENSE.txt"] },
+        { "name": "Abseil", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "Apache-2.0", "texts": ["licenses/abseil.txt"] },
+        { "name": "Anti-Grain Geometry", "version": "2.3", "spdx": "LicenseRef-AGG-2.3 (permissive; see the text)", "texts": ["licenses/agg23.txt"] },
+        { "name": "fast_float", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "MIT", "texts": ["licenses/fast_float.txt"] },
+        { "name": "FreeType", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "FTL OR GPL-2.0-or-later; taken under FTL", "texts": ["licenses/freetype.txt"] },
+        { "name": "ICU", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "Unicode-3.0", "texts": ["licenses/icu.txt"] },
+        { "name": "Little CMS", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "MIT", "texts": ["licenses/lcms.txt"] },
+        { "name": "libjpeg-turbo", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "IJG AND BSD-3-Clause AND Zlib", "texts": ["licenses/libjpeg_turbo.md", "licenses/libjpeg_turbo.ijg.txt"] },
+        { "name": "OpenJPEG", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "BSD-2-Clause", "texts": ["licenses/libopenjpeg.txt"] },
+        { "name": "libpng", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "libpng-2.0", "texts": ["licenses/libpng.txt"] },
+        { "name": "LLVM libc", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "Apache-2.0 WITH LLVM-exception", "texts": ["licenses/llvm-libc.txt"] },
+        { "name": "simdutf", "version": "as compiled into PDFium 155.0.8044.0", "spdx": "MIT", "texts": ["licenses/simdutf.txt"] },
+        { "name": "zlib", "version": "1.3.2.1 (Chromium's)", "spdx": "Zlib", "texts": ["licenses/zlib.txt"] }
+      ]
+    },
+    {
       "name": "ONNX Runtime Web",
       "version": "1.29.0",
       "role": "Handwriting recognition's inference runtime: three files loaded inside the contained engine host (ADR-0052, corrected 2026-09-17). The model weights are downloaded on demand and are not part of this build.",
