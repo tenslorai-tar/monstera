@@ -296,6 +296,20 @@
         { "name": "Brotli", "version": "1.2.0", "spdx": "MIT", "texts": ["brotli/LICENSE.txt"] },
         { "name": "Microsoft Visual C++ runtime", "version": "14.51.36247", "spdx": "LicenseRef-MicrosoftVisualCpp2015-2022Runtime", "texts": ["vc14_runtime/LICENSE.txt"] }
       ]
+    },
+    {
+      "name": "ONNX Runtime Web",
+      "version": "1.29.0",
+      "role": "Handwriting recognition's inference runtime: three files loaded inside the contained engine host (ADR-0052, corrected 2026-09-17). The model weights are downloaded on demand and are not part of this build.",
+      "licence": "MIT",
+      "origin": "https://onnxruntime.ai/",
+      "source": "https://github.com/microsoft/onnxruntime/tree/v1.29.0 (commit 2e2543fbe9fae542f921d47a72d21d5a4ef0b710)",
+      "build": "npm registry onnxruntime-web-1.29.0.tgz, the three dist files scripts/provision/onnxruntime.mjs pins",
+      "licenceRoot": "scripts/release/licences/onnxruntime",
+      "components": [
+        { "name": "ONNX Runtime", "version": "1.29.0", "spdx": "MIT", "texts": ["LICENSE.txt"] },
+        { "name": "ONNX Runtime third-party notices, as upstream publishes them for every build", "version": "1.29.0", "spdx": "see the text", "texts": ["ThirdPartyNotices.txt"] }
+      ]
     }
   ]
 }

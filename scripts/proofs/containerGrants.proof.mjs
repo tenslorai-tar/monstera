@@ -32,6 +32,7 @@ import { formatError } from '../lib/reportError.mjs';
 import { electronRoot } from '../provision/electron.mjs';
 import { libreOfficeRoot } from '../provision/libreoffice.mjs';
 import { ghostscriptRoot } from '../provision/ghostscript.mjs';
+import { onnxRuntimeDirectory } from '../provision/onnxruntime.mjs';
 import { popplerRoot } from '../provision/poppler.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { tessdataDirectory } from '../provision/tessdata.mjs';
@@ -183,15 +184,22 @@ try {
   // entry quietly becoming optional, which a set derived from `grantSet` would
   // agree with — so this names them, and each new one arrives owing an edit to
   // this line rather than inheriting their exemption. Poppler was the fourth
-  // (ADR-0071), Ghostscript the fifth (ADR-0075).
+  // (ADR-0071), Ghostscript the fifth (ADR-0075), ONNX Runtime the sixth (ADR-0052's correction).
   check(
-    'the entries whose absence is not a failure are exactly the five a host can run without',
+    'the entries whose absence is not a failure are exactly the six a host can run without',
     set
       .filter((entry) => !entry.required)
       .map((entry) => entry.path)
       .sort()
       .join('|') ===
-      [dirname(pdfiumLibrary(root)), tessdataDirectory(root), libreOfficeRoot(root), popplerRoot(root), ghostscriptRoot(root)]
+      [
+        dirname(pdfiumLibrary(root)),
+        tessdataDirectory(root),
+        libreOfficeRoot(root),
+        popplerRoot(root),
+        ghostscriptRoot(root),
+        onnxRuntimeDirectory(root),
+      ]
         .sort()
         .join('|'),
     `optional: ${JSON.stringify(set.filter((entry) => !entry.required).map((e) => e.path))}. ` +

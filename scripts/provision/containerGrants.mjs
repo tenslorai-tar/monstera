@@ -85,6 +85,7 @@ import { electronRoot } from './electron.mjs';
 import { libreOfficeRoot } from './libreoffice.mjs';
 import { pdfiumLibrary } from './pdfium.mjs';
 import { ghostscriptRoot } from './ghostscript.mjs';
+import { onnxRuntimeDirectory } from './onnxruntime.mjs';
 import { popplerRoot } from './poppler.mjs';
 import { tessdataDirectory } from './tessdata.mjs';
 
@@ -226,6 +227,17 @@ export function grantSet(root = repoRoot()) {
       path: ghostscriptRoot(root),
       rights: 'RX',
       why: 'the pinned Ghostscript tree gswin64c runs from inside the container',
+      required: false,
+    },
+    // THE PINNED ONNX RUNTIME, which the handwriting recogniser loads inside the host
+    // (ADR-0052's 2026-09-17 correction): two JavaScript modules the host imports and the WASM it
+    // compiles. `RX`, because it is code the host runs, which is the line this list draws — the
+    // model weights beside it in the cache are the data. NOT REQUIRED: a checkout that has not run
+    // `provision:onnxruntime` offers no handwriting recognition, a decided state.
+    {
+      path: onnxRuntimeDirectory(root),
+      rights: 'RX',
+      why: 'the pinned ONNX Runtime the handwriting recogniser loads inside the container',
       required: false,
     },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and
