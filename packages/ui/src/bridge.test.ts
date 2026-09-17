@@ -22,6 +22,9 @@ function transport(reply: unknown): MonsteraBridge & { readonly calls: [string, 
       calls.push([channel, params]);
       return Promise.resolve(reply);
     },
+    // THE FAKE SUBSCRIBES TO NOTHING. These cases are about `invoke`; an event case
+    // drives `subscribeToEvent` with its own transport (ADR-0082).
+    subscribe: () => () => undefined,
   };
 }
 

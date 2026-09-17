@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Stage 9: the second direction is built, and the bridge's members are read back
+
+ADR-0082's seam. `packages/contract/src/events.ts` declares what `main` may push — `ai.delta`
+and `ai.done` — each with a bounded schema, a subscription id the renderer minted, and strict
+payloads that refuse anything extra. `checkEvent` validates where it is **sent**, so a malformed
+event throws in `main` rather than reaching the wire; `subscribeToEvent` validates on **arrival**
+and **drops** what is wrong, because a callback has no caller to throw at.
+
+The preload's bridge gains `subscribe` and nothing else, and the listener is wrapped so Electron's
+`IpcRendererEvent` — which carries `sender` and `ports` — never crosses into the isolated world.
+
+**`bridgeExposed` stopped being enough the moment there were two members.** It answers the same
+`true` for a bridge carrying one function and for one carrying a filesystem, so the renderer
+harness now reads the bridge's own function names out of the running page, and
+`proof:rendererpolicy` asserts they are exactly `invoke` and `subscribe` — 23 cases pass.
+
+Sixteen contract cases, including that an empty delta is refused, that a payload with anything
+extra on it is refused on both events, that a subscription id must be one the renderer could have
+minted, and a control that the unsubscribe actually stops the listening.
+
+---
+
 ## 2026-09-17 — Stage 9: the chat adapters, three shapes, streamed
 
 `packages/kernel/src/aiChat.ts` (ADR-0081). `prepareChat` builds one provider's request and

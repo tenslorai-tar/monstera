@@ -77,6 +77,18 @@ export {
 export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
 export {
+  EVENTS,
+  EVENT_IDS,
+  MAX_EVENT_TEXT,
+  type EventHandler,
+  type EventId,
+  type EventMap,
+  type EventPayload,
+  checkEvent,
+  subscribeToEvent,
+  subscriptionIdSchema,
+} from './events.js';
+export {
   ENGINE_HOST_FRAME_MAX_BYTES,
   ENGINE_HOST_MAX_IN_FLIGHT,
   HOST_CORRELATION_ID_MAX_CHARS,

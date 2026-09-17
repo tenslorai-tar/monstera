@@ -140,6 +140,13 @@ interface Readback {
   /** Whether `contextBridge` reached the page — the control for the line above. */
   readonly bridgeExposed: boolean;
   /**
+   * The bridge's function members, read from the running renderer.
+   *
+   * `bridgeExposed` answers the same `true` for a bridge carrying one function and for one
+   * carrying a filesystem, so it stopped being enough when ADR-0082 added a second member.
+   */
+  readonly bridgeMembers: readonly string[];
+  /**
    * What the preload threw, if anything.
    *
    * A preload that fails to load produces NO output on main's stderr and no
@@ -546,15 +553,24 @@ export async function reportRendererPolicy(): Promise<void> {
     webContents,
     `(() => {
        const names = ['require', 'process', 'module', 'exports', 'global', 'Buffer', '__dirname'];
+       const bridge = globalThis[${JSON.stringify(BRIDGE_KEY)}];
        return {
          visible: names.filter((name) => typeof globalThis[name] !== 'undefined'),
-         bridge: typeof globalThis[${JSON.stringify(BRIDGE_KEY)}] !== 'undefined',
+         bridge: typeof bridge !== 'undefined',
+         // WHAT THE BRIDGE ACTUALLY CARRIES, read from the running renderer rather than
+         // from the source: ADR-0082 added a second member, and "the bridge is there" is
+         // the same answer whether it holds one function or a filesystem.
+         bridgeMembers:
+           typeof bridge === 'object' && bridge !== null
+             ? Object.keys(bridge).filter((key) => typeof bridge[key] === 'function').sort()
+             : [],
        };
      })()`,
-    (value): value is { visible: string[]; bridge: boolean } =>
+    (value): value is { visible: string[]; bridge: boolean; bridgeMembers: string[] } =>
       typeof value === 'object' &&
       value !== null &&
       isStringArray((value as { visible?: unknown }).visible) &&
+      isStringArray((value as { bridgeMembers?: unknown }).bridgeMembers) &&
       typeof (value as { bridge?: unknown }).bridge === 'boolean',
     'node surface',
   );
@@ -787,6 +803,7 @@ export async function reportRendererPolicy(): Promise<void> {
     shell,
     nodeSurface: surface.visible,
     bridgeExposed: surface.bridge,
+    bridgeMembers: surface.bridgeMembers,
     preloadError: received.find((failure) => failure.event === 'preload-error')?.detail ?? null,
     popupReturnedNull,
     windowCount,

@@ -66,6 +66,19 @@ const bridge: MonsteraBridge = {
   // side, and a second opinion about which channels exist is exactly the drift
   // deriving every surface from one registry exists to prevent (B3a).
   invoke: (channel, params) => ipcRenderer.invoke(channel, params),
+  // THE SECOND DIRECTION (ADR-0082), and the same shape: a channel id and an opaque
+  // payload. The listener is wrapped so the renderer never receives Electron's
+  // `IpcRendererEvent` — that object carries `sender` and `ports`, which is a surface
+  // invariant 1 keeps out of the isolated world.
+  subscribe: (channel, handler) => {
+    const listener = (_event: unknown, payload: unknown): void => {
+      handler(payload);
+    };
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.removeListener(channel, listener);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld(BRIDGE_KEY, bridge);

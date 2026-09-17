@@ -29,6 +29,17 @@
  */
 export interface MonsteraBridge {
   readonly invoke: (channel: string, params: unknown) => Promise<unknown>;
+  /**
+   * Listens for one declared event from `main`, and answers the function that stops
+   * listening ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
+   *
+   * **The second member, and the last.** §5 gained a second direction because the assistant
+   * streams and the renderer has no network of its own; this carries it with the same
+   * shape as `invoke` — a channel id and an opaque payload, no per-event methods, nothing
+   * that could name a path. The payload is validated against the event registry on arrival,
+   * by `subscribeToEvent`, not here.
+   */
+  readonly subscribe: (channel: string, handler: (payload: unknown) => void) => () => void;
 }
 
 /** The single `window` key the preload is permitted to define. */

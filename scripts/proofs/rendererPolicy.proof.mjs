@@ -99,6 +99,7 @@ const RUNTIME_CASES = [
   'and its stylesheet arrived, so style-src self permits it too',
   'no Node surface is reachable from page script',
   'CONTROL: the contextBridge key IS reachable, so the probe could look',
+  'the bridge carries exactly invoke and subscribe, read from the running renderer',
   "popups are denied, in the renderer's view and in main's",
   'a permission outside the allowed set is refused',
   'CONTROL: the one permitted permission is GRANTED',
@@ -293,6 +294,7 @@ function pinnedPolicy(markdown) {
  *   shell: { mounted: boolean, background: string | null },
  *   nodeSurface: string[],
  *   bridgeExposed: boolean,
+ *   bridgeMembers: string[],
  *   preloadError: string | null,
  *   failureListeners: Record<string, number>,
  *   failuresReceived: string[],
@@ -598,6 +600,16 @@ try {
         `SyntaxError, the shell is pointing at the ESM artefact \`tsc\` emits instead of the ` +
         `CommonJS bundle from \`node scripts/build/preload.mjs\`. If it reports nothing at all, ` +
         `the preload loaded and did not expose the key.`,
+    );
+
+    check(
+      'the bridge carries exactly invoke and subscribe, read from the running renderer',
+      // ADR-0082 ADDED THE SECOND MEMBER, and the case above answers the same `true` for a
+      // bridge carrying one function and for one carrying a filesystem. This names them.
+      JSON.stringify(seen.bridgeMembers) === JSON.stringify(['invoke', 'subscribe']),
+      `the page sees ${JSON.stringify(seen.bridgeMembers)} on the bridge. §5 and invariant 1 ` +
+        `allow these two and nothing else: a third member is a surface nobody decided to ` +
+        `expose, and a missing one is a renderer that cannot ask or cannot listen.`,
     );
 
     check(
