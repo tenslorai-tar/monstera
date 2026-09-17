@@ -50,8 +50,6 @@ import { join } from 'node:path';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 
 import { artefactsFor, RUNTIME_FILES } from '../../packages/kernel/dist/handwritingArtefacts.js';
-import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
-import { recogniseHandwriting } from '../../packages/kernel/dist/ocrHandwriting.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -134,6 +132,15 @@ if (missing.length > 0) {
   );
   process.exit(0);
 }
+
+// THE ENGINE IS IMPORTED HERE, AFTER THE EXIT ABOVE, and that placement is a fix rather
+// than a preference: importing `mupdfWriter` starts MuPDF's WASM instantiation, and
+// `process.exit` while it is in flight aborts Node on Windows —
+// `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c:94`, which
+// reddened `main` on Node 24.19.0 at f7ea4b8 (run 35253615378) after this file printed its
+// not-applicable notice. A machine with nothing to run now loads no engine at all.
+const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
+const { recogniseHandwriting } = await import('../../packages/kernel/dist/ocrHandwriting.js');
 
 /** One line of text, drawn by us — never the corpus, whose content may not be quoted. */
 const LINE = 'Monstera deliciosa';
