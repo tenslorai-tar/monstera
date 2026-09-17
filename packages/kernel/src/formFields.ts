@@ -702,9 +702,15 @@ export const invertFillFormField: Invert<'mupdf', 'fillFormField'> = (session, i
  * all is either a merged field/widget — already gone if it was deleted, still
  * live if it was not — or a value-only parent the format allows. Only an array
  * that is present and empty says *this field's widgets have been removed*.
+ *
+ * **Exported for the redaction burn-in** (ADR-0079), which deletes the widgets under
+ * a mark and is the first caller to reach this on documents with no form at all.
+ * `get` on the shared Null THROWS, so `/AcroForm` is checked as a dictionary before
+ * it is asked for `/Fields`.
  */
-function pruneEmptyFields(document: PDFDocument): void {
+export function pruneEmptyFields(document: PDFDocument): void {
   const acroForm = document.getTrailer().get('Root').get('AcroForm');
+  if (!acroForm.isDictionary()) return;
   const fields = acroForm.get('Fields');
   if (!fields.isArray()) return;
 

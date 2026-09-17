@@ -2538,7 +2538,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPLY_REDACTIONS_COMMAND_TITLE]: 'Apply redactions',
   [APPLY_REDACTIONS_TITLE]: 'Apply redactions',
   [APPLY_REDACTIONS_WARNS]:
-    'The marked content is removed from the document, not covered over. The only way back is Undo, in this session.',
+    'The marked content is removed from the document, not covered over, with any comments and form fields under the marks. The document’s title, author and other properties are removed too. The only way back is Undo, in this session.',
   [APPLY_REDACTIONS_SCOPE]: 'Apply to',
   [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
   [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',

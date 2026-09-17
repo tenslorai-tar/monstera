@@ -3,6 +3,7 @@ import type * as mupdf from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
+import { pruneEmptyFields } from './formFields.js';
 import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
 
 /**
@@ -84,6 +85,50 @@ function redactMarksOn(page: mupdf.PDFPage): number {
   return page.getAnnotations().filter((annotation) => annotation.getType() === 'Redact').length;
 }
 
+/** Whether two rectangles in one frame share any area. */
+function overlaps(a: mupdf.Rect, b: mupdf.Rect): boolean {
+  return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+}
+
+/**
+ * Removes what the page carries OUTSIDE its content stream under a mark: every other
+ * annotation and every form widget whose box overlaps one.
+ *
+ * `applyRedactions` rewrites the content stream and consumes the marks; it leaves
+ * annotations alone — measured 2026-09-17 by `redactionLeaks.test.ts`, where a
+ * field's `/V` and its appearance stream and a comment's `/Contents` all survived a
+ * mark drawn over them. A burn-in that promises *this region is gone* has to take
+ * them too. A deleted widget leaves its field with an empty `/Kids` still holding
+ * the value, so the tree is pruned the way `deleteFormFields` prunes it.
+ *
+ * **Through MuPDF's own calls** — `getRect` answers the marks and the objects in one
+ * frame, and `deleteAnnotation` keeps the loaded page's own list in step, which an
+ * edit to the raw `/Annots` array would not.
+ *
+ * **LINKS ARE NOT HERE, because the engine already removes them.** Measured
+ * 2026-09-17: with a link-removal loop disabled, and with links also excluded from
+ * the loop below, a `/URI` carrying the secret under the mark was still gone after
+ * `applyRedactions` — while the control, a mark elsewhere, kept it. A second removal
+ * would be a second opinion about what the burn-in already decides.
+ */
+function removeCoveredObjects(document: mupdf.PDFDocument, page: mupdf.PDFPage): void {
+  const annotations = page.getAnnotations();
+  const marks = annotations
+    .filter((annotation) => annotation.getType() === 'Redact')
+    .map((annotation) => annotation.getRect());
+  const covered = (box: mupdf.Rect): boolean => marks.some((mark) => overlaps(mark, box));
+
+  for (const annotation of annotations) {
+    if (annotation.getType() !== 'Redact' && covered(annotation.getRect())) {
+      page.deleteAnnotation(annotation);
+    }
+  }
+  for (const widget of page.getWidgets()) {
+    if (covered(widget.getRect())) page.deleteAnnotation(widget);
+  }
+  pruneEmptyFields(document);
+}
+
 /**
  * Burns every redact mark on the scoped pages into the document.
  *
@@ -92,21 +137,39 @@ function redactMarksOn(page: mupdf.PDFPage): number {
  * an incremental save leaves the covered content readable by walking the xref
  * chain. This is the one command where getting that wrong produces a document
  * that looks redacted and is not.
+ *
+ * ## And the content stream is not the only copy (ADR-0079)
+ *
+ * The leak corpus measured four other places a redacted secret survived: an
+ * annotation or a field under the mark (removed above), a page's `/Thumb`, which is
+ * a picture of the page as it was, and the document's XMP packet and Info
+ * dictionary. The metadata cannot be matched to a region, so a burn-in removes it
+ * whole — see the ADR for what that costs and the question left for the owner.
  */
 export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session, command) =>
   withDocumentRemoving(session, (document) => {
+    let burned = false;
     for (const index of scopedPages(document, command.pages)) {
       const page = document.loadPage(index);
       // A PAGE WITH NO MARKS IS SKIPPED rather than redacted with nothing.
       // `applyRedactions` on a page with no `/Redact` rewrites its content
       // stream for no reason, which on a document-wide pass is every page.
       if (redactMarksOn(page) === 0) continue;
+      removeCoveredObjects(document, page);
       page.applyRedactions(
         command.cover === 'solid',
         IMAGE_METHOD[command.images],
         LINE_ART_REMOVE_IF_COVERED,
         TEXT_REMOVE,
       );
+      const pageObject = page.getObject();
+      pageObject.delete('Thumb');
+      pageObject.delete('Metadata');
+      burned = true;
+    }
+    if (burned) {
+      document.getTrailer().get('Root').delete('Metadata');
+      document.getTrailer().delete('Info');
     }
   });
 

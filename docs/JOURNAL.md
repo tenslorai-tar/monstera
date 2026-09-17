@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — The redaction leak corpus: four copies survived a burn-in
+
+ADR-0079. Eight fixtures, built by pdf-lib, burned in by MuPDF, and read back by pdf-lib — every
+indirect object walked, every stream decoded, and a stream it cannot decode refused rather than
+passed. Each has a control through the same pipeline: a mark elsewhere on the page, or, where no
+region applies, a serialise that burns nothing in.
+
+**Removed already**: page text, render-mode-3 text, an image under a drawn black rectangle, and a
+link's `/URI` — the last by MuPDF itself, which the first draft did not know and duplicated.
+**Left**: a field's `/V` and appearance, a comment's `/Contents`, the page's `/Thumb`, and the XMP
+packet and Info dictionary.
+
+**Two drafts were wrong, and both were found by measuring rather than reading.** The first added a
+function that detached a widget from `/AcroForm /Fields`, on the belief that `deleteAnnotation`
+leaves it there; `formFields.ts` had measured the opposite on 2026-09-07, and the leak was only the
+missing prune — reverting to `deleteAnnotation` plus the existing prune closed it. The second added a
+link-removal loop; disabling it, and excluding links from the annotation loop as well, left the case
+green with its control intact, so it was removed.
+
+**The cost is a title.** Metadata cannot be matched to a region, so any burn-in removes XMP and Info,
+and the confirm dialog now says so. Whether to offer keeping the title is the owner's (ADR-0079).
+
+`pruneEmptyFields` now checks `/AcroForm` is a dictionary before asking it for `/Fields`: the
+burn-in is its first caller on documents with no form, and `get` on MuPDF's shared Null throws.
+
+---
+
 ## 2026-09-17 — The notice: PDFium and the OCR models added; LibreOffice stopped on a licence
 
 PDFium (`ea1619c`) and the Tesseract language data (`d1b7a05`) now have NOTICE sections, each
