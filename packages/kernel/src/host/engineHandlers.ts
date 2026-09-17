@@ -33,6 +33,7 @@ import {
 import { HandwritingModelUnreadableError, type HandwritingRequest } from '../ocrHandwriting.js';
 import type { PageLink } from '../pageLinks.js';
 import type { PageTextRead } from '../textStructure.js';
+import type { AccessibilityReport } from '../accessibilityRules.js';
 import type { FoundBarcode } from '../barcodeReader.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageImageRequest } from '../pageImages.js';
@@ -234,6 +235,9 @@ export type HostFormDataExport = (
   session: MupdfSession,
   format: FormDataFormat,
 ) => Promise<ByteImage>;
+
+/** The PDF/UA-1 object rules for a document (ADR-0078). Injected for the readers' reason. */
+export type HostAccessibilityCheck = (session: MupdfSession) => Promise<AccessibilityReport>;
 
 /** The annotations, encoded — {@link HostFormDataExport}'s shape and reasons (ADR-0077). */
 export type HostAnnotationDataExport = (
@@ -449,6 +453,8 @@ export interface EngineHandlerParts {
   readonly exportFormData: HostFormDataExport;
   /** How this process writes the annotations out. `engine/exportAnnotations`. */
   readonly exportAnnotationData: HostAnnotationDataExport;
+  /** How this process checks the PDF/UA-1 object rules. `engine/accessibility-check`. */
+  readonly accessibility: HostAccessibilityCheck;
   /** How this process encodes one page as an image. `engine/pageImage`. */
   readonly pageImage: HostPageImage;
   /** How this process proposes fields on a flat page. `detectFlatFields`. */
@@ -479,6 +485,7 @@ export function createEngineHandlers({
   snapshot,
   exportFormData,
   exportAnnotationData,
+  accessibility,
   pageImage,
   flatFields,
   barcodes,
@@ -938,6 +945,21 @@ export function createEngineHandlers({
         kept.push({ format: barcode.format, text: barcode.text });
       }
       return { ok: true, value: { barcodes: kept, truncated } };
+    },
+
+    'engine/accessibility-check': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for `engine/flat-fields`' reason: every read here answers a verdict for what
+      // it finds, including `not-determined`, so a throw is a defect rather than a document.
+      const report = await accessibility(held.session);
+      return {
+        ok: true,
+        value: {
+          rules: report.rules.map((rule) => ({ ...rule, pages: [...rule.pages] })),
+          humanChecks: [...report.humanChecks],
+        },
+      };
     },
 
     'engine/duplicate-pages': async ({ session }) => {

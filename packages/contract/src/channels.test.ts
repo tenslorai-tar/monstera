@@ -147,6 +147,8 @@ const handlers: ContractHandlers = {
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
   'document.exportAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.accessibilityCheck': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), rules: [], humanChecks: [] })),
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),

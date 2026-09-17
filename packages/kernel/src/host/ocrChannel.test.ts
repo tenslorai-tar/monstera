@@ -203,6 +203,9 @@ async function joined(
       exportAnnotationData: () => {
         throw new Error('a recognition must not export annotations');
       },
+      accessibility: () => {
+        throw new Error('a recognition must not check accessibility');
+      },
     }),
     (incident) => incidents.push(incident),
   );

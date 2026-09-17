@@ -566,6 +566,9 @@ describe('the engine host answers a containment probe', () => {
     exportAnnotationData: () => {
       throw new Error('a containment probe must not export annotations');
     },
+    accessibility: () => {
+      throw new Error('a containment probe must not check accessibility');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {

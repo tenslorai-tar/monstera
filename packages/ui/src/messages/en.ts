@@ -217,6 +217,41 @@ export const PRINT_APPLY = messageKey('dialog.print.apply');
 export const GROUP_BARCODES = messageKey('surface.ribbon.group.barcodes');
 export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
 export const GROUP_COMMENT_FILES = messageKey('surface.ribbon.group.comment-files');
+export const ACCESSIBILITY_COMMAND_TITLE = messageKey('command.accessibility-check.title');
+export const ACCESSIBILITY_TITLE = messageKey('dialog.accessibility-check.title');
+export const ACCESSIBILITY_SUMMARY = messageKey('dialog.accessibility-check.summary');
+export const ACCESSIBILITY_NOT_CONFORMANCE = messageKey('dialog.accessibility-check.not-conformance');
+export const ACCESSIBILITY_REFUSED = messageKey('dialog.accessibility-check.refused');
+export const ACCESSIBILITY_MACHINE_HEADING = messageKey('dialog.accessibility-check.machine-heading');
+export const ACCESSIBILITY_PERSON_HEADING = messageKey('dialog.accessibility-check.person-heading');
+export const ACCESSIBILITY_PAGES = messageKey('dialog.accessibility-check.pages');
+export const ACCESSIBILITY_VERDICT_PASSED = messageKey('dialog.accessibility-check.verdict.passed');
+export const ACCESSIBILITY_VERDICT_FAILED = messageKey('dialog.accessibility-check.verdict.failed');
+export const ACCESSIBILITY_VERDICT_NOT_APPLICABLE = messageKey('dialog.accessibility-check.verdict.not-applicable');
+export const ACCESSIBILITY_VERDICT_NOT_DETERMINED = messageKey('dialog.accessibility-check.verdict.not-determined');
+export const ACCESSIBILITY_RULE_5_1 = messageKey('dialog.accessibility-check.rule.5-1');
+export const ACCESSIBILITY_RULE_6_2_1 = messageKey('dialog.accessibility-check.rule.6.2-1');
+export const ACCESSIBILITY_RULE_7_1_4 = messageKey('dialog.accessibility-check.rule.7.1-4');
+export const ACCESSIBILITY_RULE_7_1_5 = messageKey('dialog.accessibility-check.rule.7.1-5');
+export const ACCESSIBILITY_RULE_7_1_8 = messageKey('dialog.accessibility-check.rule.7.1-8');
+export const ACCESSIBILITY_RULE_7_1_9 = messageKey('dialog.accessibility-check.rule.7.1-9');
+export const ACCESSIBILITY_RULE_7_1_10 = messageKey('dialog.accessibility-check.rule.7.1-10');
+export const ACCESSIBILITY_RULE_7_1_11 = messageKey('dialog.accessibility-check.rule.7.1-11');
+export const ACCESSIBILITY_RULE_7_3_1 = messageKey('dialog.accessibility-check.rule.7.3-1');
+export const ACCESSIBILITY_RULE_7_16_1 = messageKey('dialog.accessibility-check.rule.7.16-1');
+export const ACCESSIBILITY_RULE_7_18_1_2 = messageKey('dialog.accessibility-check.rule.7.18.1-2');
+export const ACCESSIBILITY_RULE_7_18_1_3 = messageKey('dialog.accessibility-check.rule.7.18.1-3');
+export const ACCESSIBILITY_RULE_7_18_3_1 = messageKey('dialog.accessibility-check.rule.7.18.3-1');
+export const ACCESSIBILITY_RULE_7_18_5_2 = messageKey('dialog.accessibility-check.rule.7.18.5-2');
+export const ACCESSIBILITY_RULE_7_21_4_1_1 = messageKey('dialog.accessibility-check.rule.7.21.4.1-1');
+export const ACCESSIBILITY_RULE_UNKNOWN = messageKey('dialog.accessibility-check.rule.unknown');
+export const ACCESSIBILITY_HUMAN_READING_ORDER = messageKey('dialog.accessibility-check.human.reading-order');
+export const ACCESSIBILITY_HUMAN_ALT_TEXT = messageKey('dialog.accessibility-check.human.alternative-text-meaningful');
+export const ACCESSIBILITY_HUMAN_HEADINGS = messageKey('dialog.accessibility-check.human.headings-reflect-structure');
+export const ACCESSIBILITY_HUMAN_TABLES = messageKey('dialog.accessibility-check.human.table-headers-correct');
+export const ACCESSIBILITY_HUMAN_COLOUR = messageKey('dialog.accessibility-check.human.colour-not-sole-means');
+export const ACCESSIBILITY_HUMAN_LANGUAGE = messageKey('dialog.accessibility-check.human.language-of-passages');
+export const ACCESSIBILITY_HUMAN_LINKS = messageKey('dialog.accessibility-check.human.link-text-meaningful');
 export const EXPORT_ANNOTATIONS_JSON_TITLE = messageKey('command.export-annotations.json');
 export const EXPORT_ANNOTATIONS_XFDF_TITLE = messageKey('command.export-annotations.xfdf');
 export const EXPORT_ANNOTATIONS_FDF_TITLE = messageKey('command.export-annotations.fdf');
@@ -2211,6 +2246,43 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_BARCODES]: 'Barcodes',
   [GROUP_COMPARE]: 'Compare',
   [GROUP_COMMENT_FILES]: 'Comment files',
+  [ACCESSIBILITY_COMMAND_TITLE]: 'Accessibility check',
+  [ACCESSIBILITY_TITLE]: 'Accessibility check',
+  [ACCESSIBILITY_SUMMARY]:
+    '{failed, plural, =0 {None of the automatic checks failed.} one {One automatic check failed.} other {# automatic checks failed.}} {undetermined, plural, =0 {} one {One could not be decided.} other {# could not be decided.}}',
+  [ACCESSIBILITY_NOT_CONFORMANCE]:
+    'These are the PDF/UA checks a computer can make from the file. They do not show the document is accessible: the checks below need a person.',
+  [ACCESSIBILITY_REFUSED]: 'The document could not be checked. It may be busy or no longer open.',
+  [ACCESSIBILITY_MACHINE_HEADING]: 'Automatic checks',
+  [ACCESSIBILITY_PERSON_HEADING]: 'Checks for a person',
+  [ACCESSIBILITY_PAGES]: 'Pages {pages}',
+  [ACCESSIBILITY_VERDICT_PASSED]: 'Passed',
+  [ACCESSIBILITY_VERDICT_FAILED]: 'Failed',
+  [ACCESSIBILITY_VERDICT_NOT_APPLICABLE]: 'Does not apply',
+  [ACCESSIBILITY_VERDICT_NOT_DETERMINED]: 'Could not be decided',
+  [ACCESSIBILITY_RULE_5_1]: 'The file says it follows PDF/UA',
+  [ACCESSIBILITY_RULE_6_2_1]: 'The file is marked as tagged',
+  [ACCESSIBILITY_RULE_7_1_4]: 'The tags are not marked as suspect',
+  [ACCESSIBILITY_RULE_7_1_5]: 'Every custom tag maps to a standard one',
+  [ACCESSIBILITY_RULE_7_1_8]: 'The file has document metadata',
+  [ACCESSIBILITY_RULE_7_1_9]: 'The metadata gives the document a title',
+  [ACCESSIBILITY_RULE_7_1_10]: 'Viewers show the title, not the file name',
+  [ACCESSIBILITY_RULE_7_1_11]: 'The file has a tag tree',
+  [ACCESSIBILITY_RULE_7_3_1]: 'Every figure has alternative text',
+  [ACCESSIBILITY_RULE_7_16_1]: 'Encryption still lets assistive technology read the text',
+  [ACCESSIBILITY_RULE_7_18_1_2]: 'Every comment and mark has a description',
+  [ACCESSIBILITY_RULE_7_18_1_3]: 'Every form field has a description',
+  [ACCESSIBILITY_RULE_7_18_3_1]: 'Pages with comments or fields follow the tag order for Tab',
+  [ACCESSIBILITY_RULE_7_18_5_2]: 'Every link has a description',
+  [ACCESSIBILITY_RULE_7_21_4_1_1]: 'Every font is embedded in the file',
+  [ACCESSIBILITY_RULE_UNKNOWN]: 'Rule {clause} test {test}',
+  [ACCESSIBILITY_HUMAN_READING_ORDER]: 'The reading order follows the page as it is meant to be read',
+  [ACCESSIBILITY_HUMAN_ALT_TEXT]: 'Alternative text describes what each figure shows',
+  [ACCESSIBILITY_HUMAN_HEADINGS]: 'Headings match the document’s real sections',
+  [ACCESSIBILITY_HUMAN_TABLES]: 'Table headers are the right cells',
+  [ACCESSIBILITY_HUMAN_COLOUR]: 'Colour is never the only way something is shown',
+  [ACCESSIBILITY_HUMAN_LANGUAGE]: 'Passages in another language are marked as such',
+  [ACCESSIBILITY_HUMAN_LINKS]: 'Link text says where each link goes',
   [EXPORT_ANNOTATIONS_JSON_TITLE]: 'Export comments as JSON…',
   [EXPORT_ANNOTATIONS_XFDF_TITLE]: 'Export comments as XFDF…',
   [EXPORT_ANNOTATIONS_FDF_TITLE]: 'Export comments as FDF…',

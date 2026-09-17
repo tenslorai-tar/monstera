@@ -195,6 +195,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       exportAnnotationData: () => {
         throw new Error('a field read must not export annotations');
       },
+      accessibility: () => {
+        throw new Error('a field read must not check accessibility');
+      },
     }),
     (incident) => incidents.push(incident),
   );

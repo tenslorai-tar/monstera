@@ -267,6 +267,9 @@ function joined(
       },
       exportAnnotationData: async (session, format) =>
         serialiseAnnotationData(await readInterchangeAnnotations(session), format),
+      accessibility: () => {
+        throw new Error('the lifecycle half must not check accessibility');
+      },
     }),
     (incident) => incidents.push(incident),
   );
@@ -605,6 +608,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         exportAnnotationData: () => {
           throw new Error('the byte-size case must not export annotations');
+        },
+        accessibility: () => {
+          throw new Error('the byte-size case must not check accessibility');
         },
       }),
       () => undefined,

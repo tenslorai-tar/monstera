@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D8 accessibility check: veraPDF's rules, held against veraPDF
+
+ADR-0078. The standard is the owner's: PDF/UA machine rules, and what a machine cannot check said
+as such. The rules and their conditions come from veraPDF's PDF/UA-1 profile (commit `e462c0a7`),
+fifteen of its 106 — the ones MuPDF's object model decides without a content parser.
+
+**The unit tests passed on their first run, and that was the moment to distrust them.** The
+fixtures were mine and so were the expectations. A temporary run put the same four fixtures and
+the eleven corpus documents through veraPDF 1.30.2 and compared every decided verdict:
+
+- **201 agree, 21 disagree.** Twenty were 5-1 and 7.1-9 failing on documents with no XMP, where
+  veraPDF evaluates neither — they are rules on the XMP package, and 7.1-8 is the one that fails.
+  One was a form field's font reached only through its widget's appearance stream, which the page
+  resource walk never read.
+- **After both corrections: 222 agree, 0 disagree, 3 not determined.** The unit expectations were
+  changed to the authority's answers, and a case was added for XMP present without either entry.
+
+**Two things this build cannot see are said in the dialog rather than hidden**: an answer that sits
+on a structure element (verdict *could not be decided*), and everything a person must judge.
+
+---
+
 ## 2026-09-17 — D8 annotation import/export: an annotation is its entries, in user space
 
 ADR-0077. Neither shape this build already had could be the record: a draft is a drag, and MuPDF's

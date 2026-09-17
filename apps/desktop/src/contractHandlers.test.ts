@@ -1,5 +1,6 @@
-import { BARCODE_FORMATS, MAX_BARCODE_TEXT, MAX_PAGE_BARCODES } from '@monstera/contract';
+import { ACCESSIBILITY_HUMAN_CHECKS, BARCODE_FORMATS, MAX_BARCODE_TEXT, MAX_PAGE_BARCODES } from '@monstera/contract';
 import {
+  HUMAN_CHECKS,
   CapabilityRegistry,
   DocumentNotOpenError,
   DocumentService,
@@ -134,6 +135,10 @@ function handleOpened(opened: readonly FileHandle[]): FileHandle {
 describe('the barcode channels’ copies of the kernel’s set and bounds', () => {
   it('offers exactly the formats the writer writes, in its order', () => {
     expect([...BARCODE_FORMATS]).toStrictEqual([...BARCODE_WRITE_FORMATS]);
+  });
+
+  it('names the accessibility checks only a person can make as the kernel does (ADR-0078)', () => {
+    expect([...ACCESSIBILITY_HUMAN_CHECKS]).toStrictEqual([...HUMAN_CHECKS]);
   });
 
   it('bounds the renderer’s wire as the engine host’s wire is bounded', () => {

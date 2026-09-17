@@ -70,6 +70,7 @@ export {
   // THE BARCODE SET AND BOUNDS, exported because the placement dialog's result takes the same
   // enum and bound the channel does, and `contractHandlers.test.ts` holds them to the kernel's.
   BARCODE_FORMATS,
+  ACCESSIBILITY_HUMAN_CHECKS,
   MAX_BARCODE_TEXT,
   MAX_PAGE_BARCODES,
 } from './channels.js';

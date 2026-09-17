@@ -315,6 +315,7 @@ export function createContractHandlers(deps: {
     'document.placeImage': placeImageHandler(deps.commands),
     'document.placeBarcode': placeBarcodeHandler(deps.commands),
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
+    'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
     'docusign.send': docusignSendHandler(deps.commands),
     'docusign.retrieve': docusignRetrieveHandler(deps.commands),
@@ -911,6 +912,20 @@ function placeBarcodeHandler(commands: DocumentCommands): ContractHandlers['docu
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The accessibility check: {@link flatFieldCandidatesHandler}'s body and its refusals (ADR-0078). */
+function accessibilityCheckHandler(commands: DocumentCommands): ContractHandlers['document.accessibilityCheck'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.accessibilityCheck']>>> => {
+    try {
+      const { version, rules, humanChecks } = await commands.accessibilityCheck(docId);
+      return ok({ version, rules, humanChecks });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }

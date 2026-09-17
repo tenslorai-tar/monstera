@@ -559,6 +559,20 @@ export const MAX_BARCODE_TEXT = 7089;
 export const BARCODE_FORMATS = ['QRCode', 'DataMatrix', 'Aztec', 'PDF417', 'Code128', 'EAN13'] as const;
 
 /**
+ * The accessibility checks only a person can make, by name (ADR-0078). A COPY of the kernel's
+ * `HUMAN_CHECKS`, for {@link BARCODE_FORMATS}' reason; `contractHandlers.test.ts` holds them equal.
+ */
+export const ACCESSIBILITY_HUMAN_CHECKS = [
+  'reading-order',
+  'alternative-text-meaningful',
+  'headings-reflect-structure',
+  'table-headers-correct',
+  'colour-not-sole-means',
+  'language-of-passages',
+  'link-text-meaningful',
+] as const;
+
+/**
  * How many of a page's text objects one answer may name — and, because a page
  * cannot have more lines than runs, how many **lines** one answer may carry.
  *
@@ -2472,6 +2486,33 @@ export const channels = {
    * `document.flatFieldCandidates`' shape: per page, stamped with a version, and no
    * `document-busy`, because it mutates nothing.
    */
+  /**
+   * The document's accessibility check (ADR-0078): the PDF/UA-1 rules its objects decide, and
+   * the checks only a person can make. No `document-busy`, for `document.flatFieldCandidates`'
+   * reason; the engine host's bounds on this wire.
+   */
+  'document.accessibilityCheck': channel(
+    'Checks an open document against the PDF/UA-1 rules its objects decide.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      version: docVersionSchema,
+      rules: z
+        .array(
+          z.object({
+            clause: z.string().max(16).regex(/^\d+(?:\.\d+){0,3}$/u),
+            test: z.number().int().positive().max(99),
+            verdict: z.enum(['passed', 'failed', 'not-applicable', 'not-determined']),
+            count: z.number().int().nonnegative(),
+            pages: z.array(z.number().int().nonnegative()).max(16).readonly(),
+          }),
+        )
+        .max(32)
+        .readonly(),
+      humanChecks: z.array(z.enum(ACCESSIBILITY_HUMAN_CHECKS)).max(ACCESSIBILITY_HUMAN_CHECKS.length).readonly(),
+    }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
   'document.pageBarcodes': channel(
     'Reads the barcodes on one page of an open document.',
     z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),

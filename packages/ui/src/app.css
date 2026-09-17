@@ -937,6 +937,34 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+/*
+ * The accessibility check's two lists: the list exception's rules, and each rule's verdict, words
+ * and pages on one wrapping line so a long rule name does not push its verdict off the row.
+ */
+.m-accessibility-check__rules,
+.m-accessibility-check__human {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-accessibility-check__rules li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding-block: var(--space-4);
+}
+
+.m-accessibility-check__verdict {
+  font-weight: 600;
+  min-width: 12ch;
+}
+
+.m-accessibility-check__pages,
+.m-accessibility-check__human li {
+  color: var(--muted);
+}
+
 /* The barcode form: the field fills the dialog's width, so a pasted link is readable whole. */
 .m-place-barcode {
   display: flex;

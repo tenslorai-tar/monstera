@@ -11,7 +11,7 @@ import { byteImageWire, coreEngineChannels, engineChannels } from './engineChann
  * ## Why this is a case and not a comment
  *
  * The decision is *a second engine owes the seven engine-agnostic channels and
- * its own reads, and none of the seventeen MuPDF document-model ones*. Nothing in
+ * its own reads, and none of the eighteen MuPDF document-model ones*. Nothing in
  * the type system says which side a channel belongs on: a reader added to the
  * factory compiles, and so does a core channel moved into MuPDF's literal. The
  * cost of either is not a build failure — it is a second host inheriting a
@@ -74,6 +74,9 @@ const MUPDF_READS = [
   // DECODING A PAGE'S RASTER IS ONE OF MuPDF'S READS for `engine/ocr-page`'s reason: the pixels
   // are this engine's, and zxing-cpp decodes them in the process that made them (ADR-0076).
   'engine/page-barcodes',
+  // THE PDF/UA OBJECT RULES ARE ONE OF MuPDF'S READS: a walk of its catalog, structure tree,
+  // annotations and fonts (ADR-0078).
+  'engine/accessibility-check',
   'engine/duplicate-pages',
   // VERIFICATION IS ONE OF MuPDF'S READS for `engine/ocr-page`'s reason with a
   // different library at the end of it: parsing a stranger's PKCS#7 is parsing
@@ -250,7 +253,7 @@ describe('the core channel set', () => {
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core six, the live-session one, and its own seventeen reads', () => {
+  it('is the core six, the live-session one, and its own eighteen reads', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
       [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );

@@ -192,6 +192,7 @@ describe('browser shim', () => {
       'app.handwritingCache',
       'app.info',
       'app.ocrLanguages',
+      'document.accessibilityCheck',
       'document.annotations',
       'document.appendMarkdown',
       'document.awaitExternalEdit',

@@ -1,6 +1,7 @@
 import type { ClientApi, Command, CommandOfKind } from '@monstera/contract';
 
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
+import type { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { FoundBarcode } from '../barcodeReader.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
@@ -471,6 +472,33 @@ export function remoteMupdfFlatFields(
     );
     return { candidates: answer.candidates, truncated: answer.truncated };
   };
+}
+
+/**
+ * The PDF/UA-1 object rules, over the boundary (ADR-0078) — the channel's answer as it arrived,
+ * validated at the wrapper for `remoteMupdfGeometry`'s reason.
+ */
+export function remoteMupdfAccessibility(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): (session: MupdfSession) => Promise<AccessibilityReportOnWire> {
+  return async (session) =>
+    answered(
+      'engine/accessibility-check',
+      await client['engine/accessibility-check']({ session: sessions.handleFor(session) }),
+    );
+}
+
+/** What `engine/accessibility-check` answers, as main receives it. */
+export interface AccessibilityReportOnWire {
+  readonly rules: readonly {
+    readonly clause: string;
+    readonly test: number;
+    readonly verdict: 'passed' | 'failed' | 'not-applicable' | 'not-determined';
+    readonly count: number;
+    readonly pages: readonly number[];
+  }[];
+  readonly humanChecks: readonly (typeof HUMAN_CHECKS)[number][];
 }
 
 /** One page's barcodes as main receives them: the list, and whether the wire's bound stopped it. */

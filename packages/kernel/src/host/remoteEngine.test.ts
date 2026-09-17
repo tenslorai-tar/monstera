@@ -14,6 +14,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { checkAccessibility } from '../accessibilityCheck.js';
 import { readInterchangeAnnotations, serialiseAnnotationData } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { detectFlatFields } from '../flatFields.js';
@@ -32,6 +33,7 @@ import {
   remoteMupdfExecution,
   remoteMupdfGeometry,
   remoteMupdfPageText,
+  remoteMupdfAccessibility,
   type SessionAssets,
   UnknownRemoteSession,
 } from './remoteEngine.js';
@@ -194,6 +196,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly remote: ReturnType<typeof remoteMupdfExecution>;
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
+  readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
   readonly requests: () => number;
   readonly incidents: readonly Incident[];
@@ -305,6 +308,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       barcodes: readPageBarcodes,
       exportAnnotationData: async (session, format) =>
         serialiseAnnotationData(await readInterchangeAnnotations(session), format),
+      accessibility: checkAccessibility,
     }),
     (incident) => incidents.push(incident),
   );
@@ -324,6 +328,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     remote: remoteMupdfExecution(client, sessions, NO_ASSETS),
     geometry: remoteMupdfGeometry(client, sessions),
     pageText: remoteMupdfPageText(client, sessions),
+    accessibility: remoteMupdfAccessibility(client, sessions),
     sessions,
     requests: () => requests,
     incidents,
@@ -378,6 +383,19 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       expect(read.rotations).toStrictEqual([0, 0, 0]);
       // The sizes cross the boundary with the rotations, one per page asked for.
       expect(read.sizes).toHaveLength(ALL_PAGES.length);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the ACCESSIBILITY check crosses whole: every rule, and every human check beside them (ADR-0078)', async () => {
+    const { session, token, accessibility } = await joined(tagged);
+    try {
+      const report = await accessibility(token);
+      // THE HOST'S OWN ANSWER, not a fixture: the same report the check gives in this process.
+      expect(report).toStrictEqual(await checkAccessibility(session));
+      expect(report.rules.length).toBeGreaterThan(10);
+      expect(report.humanChecks).toContain('reading-order');
     } finally {
       await mupdfWriter.close(session);
     }
@@ -699,6 +717,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         exportAnnotationData: () => {
           throw new Error('unused');
         },
+        accessibility: () => {
+          throw new Error('unused');
+        },
       }),
       (incident) => incidents.push(incident),
     );
@@ -821,6 +842,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         exportAnnotationData: () => {
           throw new Error('the rotation-refusal case must not export annotations');
+        },
+        accessibility: () => {
+          throw new Error('the rotation-refusal case must not check accessibility');
         },
       }),
       (incident) => incidents.push(incident),

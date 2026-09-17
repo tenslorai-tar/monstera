@@ -97,6 +97,7 @@ async function joined(
       flatFields: refuse('propose fields'),
       barcodes,
       exportAnnotationData: refuse('export annotations'),
+      accessibility: refuse('check accessibility'),
     }),
     () => undefined,
   );

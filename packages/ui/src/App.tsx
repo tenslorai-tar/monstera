@@ -128,6 +128,8 @@ import { showSettingsCommand } from './commands/showSettings.js';
 import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
 import { inspectPageStructureCommand } from './commands/inspectPageStructure.js';
+import { accessibilityCheckCommand } from './commands/accessibilityCheck.js';
+import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
@@ -487,6 +489,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         PDFA_REMOVALS_DIALOG,
         PAGE_BARCODES_DIALOG,
         COMPARE_DOCUMENTS_DIALOG,
+        ACCESSIBILITY_DIALOG,
         COMPARE_RESULT_DIALOG,
         PLACE_BARCODE_DIALOG,
         DUPLICATE_PAGES_DIALOG,
@@ -1536,6 +1539,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ client, ask, track }),
         inspectPageStructureCommand({ client, ask }),
+        accessibilityCheckCommand({ client, ask }),
         readBarcodesCommand({ client, ask }),
         // TAKES THE SETTINGS STORE, which no other command here does. The
         // personal dictionary is what makes this feature manageable rather than

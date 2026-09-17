@@ -50,6 +50,7 @@ import {
   rasterScale,
   wordDocumentParts,
   type ByteImage,
+  type AccessibilityReportOnWire,
   barcodeRect,
   type CommandBus,
   type FlatFieldCandidate,
@@ -1368,6 +1369,12 @@ export interface DocumentBarcodes {
   readonly truncated: boolean;
 }
 
+/** How a document's accessibility check is read: in the engine host, whole (ADR-0078). */
+export type DocumentAccessibilityReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+) => Promise<AccessibilityReportOnWire>;
+
 /** The symbologies a person may generate. A type import, which loads nothing. */
 export type BarcodeFormat = BarcodeWriteFormat;
 
@@ -1763,6 +1770,8 @@ export interface DocumentCommandsParts {
   readonly flatFields: DocumentFlatFieldsReader;
   /** One page's barcodes, read in the engine host (ADR-0076). */
   readonly barcodes: DocumentBarcodesReader;
+  /** The accessibility check, read in the engine host (ADR-0078). */
+  readonly accessibility: DocumentAccessibilityReader;
   /** Writes a barcode for placement. See {@link BarcodeWriter}. */
   readonly writeBarcode: BarcodeWriter;
   /**
@@ -1881,6 +1890,7 @@ export class DocumentCommands {
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
   readonly #barcodes: DocumentBarcodesReader;
+  readonly #accessibility: DocumentAccessibilityReader;
   readonly #writeBarcode: BarcodeWriter;
   readonly #textLines: DocumentTextLinesReader;
   readonly #pageObjects: DocumentPageObjectsReader;
@@ -1940,6 +1950,7 @@ export class DocumentCommands {
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#barcodes = parts.barcodes;
+    this.#accessibility = parts.accessibility;
     this.#writeBarcode = parts.writeBarcode;
     this.#textLines = parts.textLines;
     this.#pageObjects = parts.pageObjects;
@@ -2414,6 +2425,23 @@ export class DocumentCommands {
     });
 
     return { version, barcodes: value.barcodes, truncated: value.truncated };
+  }
+
+  /**
+   * The document's accessibility check (ADR-0078), in the lane for {@link pageBarcodes}' reason and
+   * stamped with the version it describes.
+   */
+  async accessibilityCheck(docId: DocId): Promise<{ readonly version: DocVersion } & AccessibilityReportOnWire> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#accessibility(docId, sessions);
+    });
+    return { version, ...value };
   }
 
   /**

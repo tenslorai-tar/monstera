@@ -124,6 +124,7 @@ export {
   type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostAnnotationDataExport,
+  type HostAccessibilityCheck,
   type HostFormFieldsReader,
   type HostLayersReader,
   type HostHandwritingReader,
@@ -157,6 +158,13 @@ export type { FlatFieldCandidate } from './flatFields.js';
 // A TYPE ONLY, for the reason above: `barcodeReader.ts` loads zxing-cpp's reader, which runs in
 // the engine host and never in main (ADR-0076).
 export type { FoundBarcode } from './barcodeReader.js';
+// VALUES AND TYPES WITH NO ENGINE: the check itself is on `@monstera/kernel/engine` (ADR-0078).
+export {
+  type AccessibilityRuleResult,
+  type AccessibilityVerdict,
+  HUMAN_CHECKS,
+  MAX_REPORTED_PAGES,
+} from './accessibilityRules.js';
 // A VALUE, and pure geometry: the writer it serves stays behind `@monstera/kernel/barcode`.
 export { barcodeRect } from './barcodePlacement.js';
 // A TYPE ONLY, and for a sharper version of the reason above: `signatureRead.ts`
@@ -253,6 +261,8 @@ export {
   UnknownRemoteSession,
   createRemoteSessions,
   type BarcodeReport,
+  type AccessibilityReportOnWire,
+  remoteMupdfAccessibility,
   remoteMupdfAnnotations,
   remoteMupdfBarcodes,
   remoteMupdfExecution,

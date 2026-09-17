@@ -71,6 +71,7 @@ import {
   detectFlatFields,
   readInterchangeAnnotations,
   serialiseAnnotationData,
+  checkAccessibility,
   readPageBarcodes,
   readFormData,
   serialiseFormData,
@@ -646,6 +647,7 @@ const INERT = {
   flatFields: noFlatFields,
   barcodes: noBarcodes,
   writeBarcode: noBarcodeWriter,
+  accessibility: () => Promise.reject(new Error('this case does not check accessibility')),
   textLines: noTextLines,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
@@ -707,6 +709,11 @@ const LOCAL_READS = {
   formFields: localFormFields,
   flatFields: localFlatFields,
   barcodes: localBarcodes,
+  accessibility: async (id, sessions) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return checkAccessibility(held);
+  },
   // STAYS THE REFUSING ONE even in the local-reads set, and that is not an
   // omission. Every other reader here has a local composition because MuPDF is
   // in this process for these cases; PDFium is not, and a fixture that answered

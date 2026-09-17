@@ -182,6 +182,9 @@ function start(stream: HostByteStream) {
     exportAnnotationData: () => {
       throw new Error('no case here exports annotations');
     },
+    accessibility: () => {
+      throw new Error('no case here checks accessibility');
+    },
   });
 
   const body = startEngineHost(

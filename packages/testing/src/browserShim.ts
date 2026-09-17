@@ -7,6 +7,7 @@ import {
   type Incident,
   type OcrLanguage,
   MAX_FORM_DATA_BYTES,
+  ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
   SECRET_SETTING_IDS,
   channels,
@@ -287,6 +288,15 @@ export interface BrowserShimOptions {
    * interesting refusal is the one a case asks for.
    */
   readonly placedBarcode?: 'refused';
+
+  /** The rules `document.accessibilityCheck` answers. Absent is none. */
+  readonly accessibilityRules?: readonly {
+    readonly clause: string;
+    readonly test: number;
+    readonly verdict: 'passed' | 'failed' | 'not-applicable' | 'not-determined';
+    readonly count: number;
+    readonly pages: readonly number[];
+  }[];
 
   /** What `document.pageBarcodes` reads on any page. Absent is none. */
   readonly pageBarcodes?: readonly { readonly format: string; readonly text: string }[];
@@ -1151,6 +1161,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
       return Promise.resolve(ok({ kind: 'placed' as const, version, byteLength: 2048, historyDropped: 0 }));
+    },
+    // SEEDED FROM THE OPTION, or an empty report — a shim cannot read objects, and inventing
+    // verdicts here would be this file claiming a document's conformance.
+    'document.accessibilityCheck': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          rules: options.accessibilityRules ?? [],
+          humanChecks: [...ACCESSIBILITY_HUMAN_CHECKS],
+        }),
+      );
     },
     'document.pageBarcodes': ({ docId }) => {
       const current = versions.get(docId);

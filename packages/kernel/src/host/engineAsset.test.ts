@@ -188,6 +188,9 @@ async function joined(): Promise<{
       exportAnnotationData: () => {
         throw new Error('unused');
       },
+      accessibility: () => {
+        throw new Error('unused');
+      },
     }),
     (incident) => incidents.push(incident),
   );

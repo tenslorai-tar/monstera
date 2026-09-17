@@ -347,6 +347,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.placeImage': 'needs an engine session and an image picker',
   'document.placeBarcode': 'needs an engine session and the barcode writer',
   'document.exportAnnotations': 'needs an engine session and a file picker',
+  // BOUNDED BY THE RULE SET — 32 rules of 16 pages each — never by the document.
+  'document.accessibilityCheck': 'needs an engine session',
   'document.importAnnotations': 'needs an engine session and a file picker',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
   'document.pageBarcodes': 'needs an engine session',

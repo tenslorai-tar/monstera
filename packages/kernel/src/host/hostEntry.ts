@@ -1,5 +1,6 @@
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
+import { checkAccessibility } from '../accessibilityCheck.js';
 import { readInterchangeAnnotations, serialiseAnnotationData } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { localMupdfExecution } from '../commandSpecs.js';
@@ -155,6 +156,8 @@ const engineHandlers = createEngineHandlers({
   // AND THE ANNOTATIONS OUT, the form data's reason: reading them reaches MuPDF (ADR-0077).
   exportAnnotationData: async (session, format) =>
     serialiseAnnotationData(await readInterchangeAnnotations(session), format),
+  // AND THE PDF/UA-1 OBJECT RULES, a walk of MuPDF's objects (ADR-0078).
+  accessibility: checkAccessibility,
 });
 
 startEngineHost(

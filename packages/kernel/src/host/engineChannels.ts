@@ -48,6 +48,7 @@ import {
 } from '@monstera/contract';
 import { z } from 'zod';
 
+import { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
@@ -2367,6 +2368,38 @@ export const engineChannels = {
       })
       .strict(),
     ['no-such-session', 'barcode-read-failed'],
+  ),
+
+  /**
+   * The PDF/UA-1 object rules for a whole document (ADR-0078).
+   *
+   * A read of the catalog, the structure tree and every page's annotations and fonts, all MuPDF's
+   * object model, so it runs here. The answer is a fixed set of rules, each with a count and at
+   * most sixteen pages — bounded by the rule set, never by the document.
+   */
+  'engine/accessibility-check': channel(
+    'Checks a session’s document against the PDF/UA-1 rules its objects can decide.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({
+        rules: z
+          .array(
+            z
+              .object({
+                clause: z.string().max(16).regex(/^\d+(?:\.\d+){0,3}$/u),
+                test: z.number().int().positive().max(99),
+                verdict: z.enum(['passed', 'failed', 'not-applicable', 'not-determined']),
+                count: z.number().int().nonnegative(),
+                pages: z.array(z.number().int().nonnegative()).max(16).readonly(),
+              })
+              .strict(),
+          )
+          .max(32)
+          .readonly(),
+        humanChecks: z.array(z.enum(HUMAN_CHECKS)).max(HUMAN_CHECKS.length).readonly(),
+      })
+      .strict(),
+    ['no-such-session'],
   ),
 
   'engine/duplicate-pages': channel(

@@ -42,6 +42,7 @@ import {
   type HostSnapshot,
   type HostAnnotationsReader,
   type BarcodeReport,
+  type AccessibilityReportOnWire,
   type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostAnnotationDataExport,
@@ -83,6 +84,7 @@ import {
   remoteMupdfDestinations,
   remoteMupdfAnnotations,
   remoteMupdfBarcodes,
+  remoteMupdfAccessibility,
   remoteMupdfDuplicateReport,
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
@@ -973,6 +975,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.flatFields(session, page);
     },
+    // THE ACCESSIBILITY CHECK, composed the same way, whole-document (ADR-0078).
+    accessibility: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.accessibility(session);
+    },
     // THE BARCODE READ, composed the same way and per page for its reason (ADR-0076).
     barcodes: (docId, sessions, page) => {
       const session = sessions.mupdf;
@@ -1337,6 +1345,8 @@ function engineSessionOpener(
   readonly flatFields: HostFlatFieldsReader;
   /** One page's barcodes, from whichever host is live. */
   readonly barcodes: BarcodeReport;
+  /** The accessibility check, from whichever host is live. */
+  readonly accessibility: (session: MupdfSession) => Promise<AccessibilityReportOnWire>;
   /** The document's duplicate pages, from whichever host is live. */
   readonly duplicates: DuplicateReport;
   /**
@@ -1662,6 +1672,20 @@ function engineSessionOpener(
     return flatFields(session, page);
   };
 
+  /** The accessibility check's half of the same registration. See {@link pageText}. */
+  let accessibility: ((session: MupdfSession) => Promise<AccessibilityReportOnWire>) | null = null;
+
+  const checkAccessibilityThroughHost = (session: MupdfSession): Promise<AccessibilityReportOnWire> => {
+    if (accessibility === null) {
+      throw new Error(
+        'An accessibility check reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return accessibility(session);
+  };
+
   /** The barcode read's half of the same registration. See {@link pageText}. */
   let barcodes: BarcodeReport | null = null;
 
@@ -1877,6 +1901,7 @@ function engineSessionOpener(
     formFields = remoteMupdfFormFields(client, remote);
     flatFields = remoteMupdfFlatFields(client, remote);
     barcodes = remoteMupdfBarcodes(client, remote);
+    accessibility = remoteMupdfAccessibility(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
     return live.value;
   };
@@ -2151,6 +2176,7 @@ function engineSessionOpener(
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
     barcodes: readBarcodesThroughHost,
+    accessibility: checkAccessibilityThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
     snapshot: snapshotThroughHost,
