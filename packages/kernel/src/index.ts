@@ -377,6 +377,13 @@ export { type StructureOutline, structureOutlineOf } from './structureOutline.js
 // OFFICE EXPORTS (ADR-0072). Pure: strings in, zip chunks out, no engine.
 export { type OoxmlPart, ooxmlPackage, xmlText } from './ooxmlPackage.js';
 export { type WordMode, type WordPage, WORD_MODES, baseFontName, wordDocumentParts } from './wordDocument.js';
+export {
+  type PresentationPage,
+  fittedPicture,
+  pictureScale,
+  presentationParts,
+  slideSize,
+} from './presentationDocument.js';
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
 // engine, and `readPageLinks` — which does — stays behind `/engine`.

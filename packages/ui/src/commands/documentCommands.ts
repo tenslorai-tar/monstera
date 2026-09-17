@@ -129,6 +129,7 @@ import {
   SPLIT_DOCUMENT_COMMAND_TITLE,
   EXPORT_PAGE_IMAGES_COMMAND_TITLE,
   EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
+  EXPORT_POWERPOINT_COMMAND_TITLE,
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
@@ -1878,6 +1879,35 @@ export function exportWordCommand(deps: DocumentCommandDeps): UiCommand {
       if (chosen === undefined) return;
 
       const answer = await deps.client['document.exportWord']({ docId: context.docId, mode: chosen.mode });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
+/**
+ * Writes the document as a PowerPoint deck, a slide per page (ADR-0072).
+ *
+ * **No dialog of its own**, `exportTextCommand`'s reason: there is nothing to
+ * choose before the save dialog, which main runs.
+ */
+export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.export-powerpoint',
+    icon: 'FileImage',
+    title: EXPORT_POWERPOINT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 43 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+
+      const answer = await deps.client['document.exportPowerPoint']({ docId: context.docId });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;

@@ -195,6 +195,7 @@ export const SPLIT_DOCUMENT_APPLY = messageKey('dialog.split-document.apply');
 export const EXPORT_PAGE_IMAGES_COMMAND_TITLE = messageKey('command.export-page-images.title');
 export const EXPORT_PAGE_IMAGES_TITLE = messageKey('dialog.export-page-images.title');
 export const EXPORT_WORD_COMMAND_TITLE = messageKey('command.export-word.title');
+export const EXPORT_POWERPOINT_COMMAND_TITLE = messageKey('command.export-powerpoint.title');
 export const EXPORT_WORD_TITLE = messageKey('dialog.export-word.title');
 export const EXPORT_WORD_MODE = messageKey('dialog.export-word.mode');
 export const EXPORT_WORD_RICH = messageKey('dialog.export-word.rich');
@@ -2105,6 +2106,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_PAGE_IMAGES_COMMAND_TITLE]: 'Export pages as images…',
   [EXPORT_PAGE_IMAGES_TITLE]: 'Export pages as images',
   [EXPORT_WORD_COMMAND_TITLE]: 'Export to Word…',
+  [EXPORT_POWERPOINT_COMMAND_TITLE]: 'Export to PowerPoint…',
   [EXPORT_WORD_TITLE]: 'Export to Word',
   [EXPORT_WORD_MODE]: 'What to keep',
   [EXPORT_WORD_RICH]: 'Text and its fonts — editable, flows like a normal document',

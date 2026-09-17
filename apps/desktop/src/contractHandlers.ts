@@ -295,6 +295,7 @@ export function createContractHandlers(deps: {
     'document.exportPageImages': exportPageImagesHandler(deps.commands),
     'document.exportText': exportTextHandler(deps.commands),
     'document.exportWord': exportWordHandler(deps.commands),
+    'document.exportPowerPoint': exportPowerPointHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1218,6 +1219,26 @@ function exportWordHandler(commands: DocumentCommands): ContractHandlers['docume
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportWord']>>> => {
     try {
       const outcome = await commands.exportWord(docId, mode);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The PowerPoint export's handler: {@link saveCopyHandler}'s outcomes, a deck where the bytes were. */
+function exportPowerPointHandler(commands: DocumentCommands): ContractHandlers['document.exportPowerPoint'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPowerPoint']>>> => {
+    try {
+      const outcome = await commands.exportPowerPoint(docId);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);

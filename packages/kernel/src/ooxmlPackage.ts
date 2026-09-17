@@ -17,13 +17,25 @@ import { Zip, ZipDeflate } from 'fflate';
  * is the whole of the backpressure — no timer, no event loop turn.
  */
 
-/** One part of the package: its name inside the zip, and its text in order. */
+/**
+ * One part of the package: its name inside the zip, and its content in order —
+ * text for an XML part, bytes for a media part such as a slide's picture.
+ */
 export interface OoxmlPart {
   readonly name: string;
-  readonly chunks: Iterable<string> | AsyncIterable<string>;
+  readonly chunks: Iterable<string | Uint8Array> | AsyncIterable<string | Uint8Array>;
 }
 
-export async function* ooxmlPackage(parts: readonly OoxmlPart[]): AsyncIterable<Uint8Array> {
+/**
+ * The package's bytes, as they are produced.
+ *
+ * **The parts may themselves arrive lazily**: a presentation's slides are known
+ * one page at a time, and each is three parts. A caller that listed every part
+ * up front would have to read every page first.
+ */
+export async function* ooxmlPackage(
+  parts: Iterable<OoxmlPart> | AsyncIterable<OoxmlPart>,
+): AsyncIterable<Uint8Array> {
   const queued: Uint8Array[] = [];
   const failures: Error[] = [];
   const zip = new Zip((error, data) => {
@@ -41,11 +53,11 @@ export async function* ooxmlPackage(parts: readonly OoxmlPart[]): AsyncIterable<
     }
   }
 
-  for (const part of parts) {
+  for await (const part of parts) {
     const file = new ZipDeflate(part.name, { level: 6 });
     zip.add(file);
     for await (const chunk of part.chunks) {
-      file.push(encoder.encode(chunk), false);
+      file.push(typeof chunk === 'string' ? encoder.encode(chunk) : chunk, false);
       yield* drain();
     }
     file.push(new Uint8Array(0), true);

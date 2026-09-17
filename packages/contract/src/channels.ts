@@ -1882,6 +1882,23 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
+  /**
+   * Writes the document as a PowerPoint deck the user picks — D10's *PowerPoint*,
+   * one slide per page, each the page as MuPDF draws it (ADR-0072). No options:
+   * a copy's ask and a copy's outcomes.
+   */
+  'document.exportPowerPoint': channel(
+    'Writes the document as a PowerPoint deck the user picks.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),

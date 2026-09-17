@@ -29,9 +29,12 @@ import {
 // which invariant 20 forbids by name and §9.17's budget is argued against
 // (ADR-0026). The kernel's barrel is now free of that edge too.
 import {
+  type PresentationPage,
   type WordMode,
   type WordPage,
   ooxmlPackage,
+  pictureScale,
+  presentationParts,
   wordDocumentParts,
   type ByteImage,
   type CommandBus,
@@ -3312,6 +3315,59 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Writes the document as a PowerPoint deck — one slide per page, each slide the
+   * page as MuPDF's export rasteriser draws it (ADR-0072).
+   *
+   * `exportWord`'s path with pictures where the text was: the page-image read the
+   * image export already makes, one page at a time as the zip pulls it, so `main`
+   * holds one page's picture. It does NOT touch the document.
+   */
+  async exportPowerPoint(docId: DocId): Promise<CopyOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to PowerPoint');
+
+    const destination = await this.#pickOffice(suggest, 'pptx');
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeStreamedDocument(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        async () => {
+          const { pageCount } = await this.#geometry(docId, sessions, []);
+          const first =
+            pageCount === 0 ? { width: 612, height: 792 } : ((await this.#geometry(docId, sessions, [0])).sizes[0] ?? { width: 612, height: 792 });
+          return ooxmlPackage(presentationParts(this.#slidePages(docId, sessions, pageCount), first, pageCount));
+        },
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /** Each page as a slide picture, rendered as the zip pulls it. */
+  async *#slidePages(docId: DocId, sessions: DocumentSessions, pageCount: number): AsyncIterable<PresentationPage> {
+    for (let page = 0; page < pageCount; page += 1) {
+      const [size] = (await this.#geometry(docId, sessions, [page])).sizes;
+      if (size === undefined) throw new Error(`the geometry read named no size for page ${String(page)}`);
+      const png = await this.#pageImage(docId, sessions, {
+        page,
+        format: 'png',
+        scale: pictureScale(size),
+        quality: 90,
+      });
+      yield { png, size };
+    }
   }
 
   /** Each page's structured text and displayed size, read as the writer pulls. */

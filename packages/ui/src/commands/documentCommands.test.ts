@@ -34,6 +34,7 @@ import {
   splitDocumentCommand,
   exportPageImagesCommand,
   exportLayoutTextCommand,
+  exportPowerPointCommand,
   exportTextCommand,
   exportWordCommand,
   generateTocCommand,
@@ -2170,6 +2171,23 @@ describe('delete pages — the mutation-dialog gate', () => {
       expect(asked).toStrictEqual([{ id: 'dialog.export-word', props: {} }]);
       expect(sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode } }]);
     }
+  });
+
+  it('export to PowerPoint dispatches the document and opens no dialog of its own', async () => {
+    const { client, sent } = recording({ 'document.exportPowerPoint': { kind: 'copied', bytes: 9 } });
+    const asked: unknown[] = [];
+
+    await exportPowerPointCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC } }]);
+    expect(asked).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED Word export dialog dispatches nothing', async () => {

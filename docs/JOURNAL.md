@@ -892,6 +892,36 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 PowerPoint export: a slide per page, and the slide is the page
+
+ADR-0072's second format. `presentationDocument.ts` writes the PresentationML parts a deck needs and no more — content
+types, the presentation with its slide list and size, one blank master and layout, a plain theme with the four sections
+PowerPoint requires, and per page a slide, its relationships and its PNG. `ooxmlPackage` now takes binary chunks and a
+lazily produced list of parts, because a deck's slides are only known a page at a time and each is three parts.
+
+**The design question — pictures or editable text — was settled by what each loses.** Text boxes over the picture draw
+every word twice; text boxes instead of it drop every drawing, image and annotation. A deck made from a PDF is most
+often shown, so each slide is the page's picture and the row says the text is not editable. Recorded as a question in
+the report.
+
+**Measured in PowerPoint** (COM, read-only) on a corpus document: the deck opens, 2 slides at 612×792 pt, each one
+picture (shape type 13) filling the slide. PowerPoint's own render of slide 1 at 612×792 pixels differs from MuPDF's
+raster of page 1 by a mean **0.04** of 255; the control, page 2's raster, differs by **36.57**. A structure check alone
+would have passed a deck with the wrong picture on every slide.
+
+- The picture is 150 dpi, capped at a 16-megapixel slide budget and never below the engine's scale floor of 1 — the
+  export's own choice, half the engine's snapshot bound, which still refuses past its own.
+- The deck's slide size is the first page's, clamped to PowerPoint's 1–56 inch sides with a huge page shrunk
+  proportionally; each page is fitted inside it, aspect kept, centred.
+- A page count that disagrees with the pages that arrive is refused in both directions, since the content types and
+  the slide list are written first.
+
+**Cases:** the writer (6: each slide's own picture byte for byte, the count refused both ways, landscape fitted into
+portrait, the size clamp, the picture scale), main (1: two different real rasters, no third), the UI (1). **Mutation,
+reverted:** every slide rendered from page 0 reddens the main case.
+
+---
+
 ## 2026-09-17 — D10 Word export: the record's library refused itself, so this build writes the parts
 
 ### The question, settled by the run rule
