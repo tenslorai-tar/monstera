@@ -192,6 +192,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       barcodes: () => {
         throw new Error('a field read must not read barcodes');
       },
+      exportAnnotationData: () => {
+        throw new Error('a field read must not export annotations');
+      },
     }),
     (incident) => incidents.push(incident),
   );

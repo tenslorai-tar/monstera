@@ -200,6 +200,9 @@ async function joined(
       barcodes: () => {
         throw new Error('a recognition must not read barcodes');
       },
+      exportAnnotationData: () => {
+        throw new Error('a recognition must not export annotations');
+      },
     }),
     (incident) => incidents.push(incident),
   );

@@ -1,4 +1,4 @@
-import type { ClientApi, FormDataFormat } from '@monstera/contract';
+import type { AnnotationDataFormat, ClientApi, FormDataFormat } from '@monstera/contract';
 
 import type { ByteImage, LockedReason, MupdfSession } from '../engineSeam.js';
 import type { PageImageRequest } from '../pageImages.js';
@@ -161,6 +161,15 @@ export class EngineFormDataExportFailed extends Error {
   }
 }
 
+/** An annotation export the host refused, with its code — {@link EngineFormDataExportFailed}'s reason. */
+export class EngineAnnotationDataExportFailed extends Error {
+  override readonly name = 'EngineAnnotationDataExportFailed';
+
+  constructor(readonly detail: string) {
+    super(`The engine host could not write the annotations out: ${detail}.`);
+  }
+}
+
 /** The host wrote a different number of bytes than the file main read back. */
 export class EngineSerialiseMismatch extends Error {
   override readonly name = 'EngineSerialiseMismatch';
@@ -263,6 +272,8 @@ export interface RemoteMupdfLifecycle {
     session: MupdfSession,
     format: FormDataFormat,
   ) => Promise<ByteImage>;
+  /** The annotations, encoded — the form data's dance (ADR-0077). */
+  readonly exportAnnotationData: (session: MupdfSession, format: AnnotationDataFormat) => Promise<ByteImage>;
   /**
    * One whole page, encoded as an image.
    *
@@ -367,6 +378,24 @@ export function remoteMupdfLifecycle(
       // THE SAME MISMATCH CHECK the three above make, and here for the
       // snapshot's reason: a file main never looks inside is one whose
       // truncation nothing would notice until somebody opened it.
+      if (bytes.length !== answer.value.bytes) {
+        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
+      }
+      return bytes;
+    },
+
+    exportAnnotationData: async (session, format) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/exportAnnotations']({
+        session: sessions.handleFor(session),
+        format,
+        into,
+      });
+      if (!answer.ok) throw new EngineAnnotationDataExportFailed(answer.error.code);
+
+      const bytes = await areas.takeOutput(area, into);
+      // THE SAME MISMATCH CHECK, for the form data's reason.
       if (bytes.length !== answer.value.bytes) {
         throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
       }

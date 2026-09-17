@@ -68,6 +68,11 @@ import {
   invertImportFormData,
 } from './formData.js';
 import {
+  applyImportAnnotations,
+  captureImportAnnotations,
+  invertImportAnnotations,
+} from './annotationInterchange.js';
+import {
   applyDeleteFormFields,
   applyFillFormField,
   applyFlattenFormFields,
@@ -464,6 +469,12 @@ const declared = {
     apply: applyImportFormData,
     capture: captureImportFormData,
     invert: invertImportFormData,
+  },
+  importAnnotations: {
+    ...declaredCommands.importAnnotations,
+    apply: applyImportAnnotations,
+    capture: captureImportAnnotations,
+    invert: invertImportAnnotations,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them

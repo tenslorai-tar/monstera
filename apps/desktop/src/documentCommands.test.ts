@@ -10,6 +10,7 @@ import {
   PDFDocument,
   PDFName,
   PDFRawStream,
+  PDFString,
   StandardFonts,
   decodePDFRawStream,
   rgb,
@@ -68,6 +69,8 @@ import {
   readPageText,
   readPageTextJson,
   detectFlatFields,
+  readInterchangeAnnotations,
+  serialiseAnnotationData,
   readPageBarcodes,
   readFormData,
   serialiseFormData,
@@ -104,6 +107,7 @@ import {
   type DocumentAnnotationsReader,
   type DocumentFlatFieldsReader,
   type DocumentBarcodesReader,
+  type AnnotationDataSource,
   type BarcodeWriter,
   lazyBarcodeWriter,
   type DocumentTextLinesReader,
@@ -412,6 +416,18 @@ const localFormData: FormDataSource = {
   read: () => Promise.reject(new Error('this case does not read a form data file')),
 };
 
+/** {@link localFormData}'s shape for the annotations, with the real reader and encoder. */
+const localAnnotationData: AnnotationDataSource = {
+  pick: () => Promise.reject(new Error('this case does not write an annotation file')),
+  encode: async (id, sessions, format) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return serialiseAnnotationData(await readInterchangeAnnotations(held), format);
+  },
+  open: () => Promise.reject(new Error('this case does not pick an annotation file')),
+  read: () => Promise.reject(new Error('this case does not read an annotation file')),
+};
+
 /**
  * The page image composed the way `composition.ts` composes it: the real
  * rasteriser, for {@link localSnapshot}'s reason — a case claiming an image
@@ -649,6 +665,7 @@ const INERT = {
   extract: localExtract,
   snapshot: localSnapshot,
   formData: localFormData,
+  annotationData: localAnnotationData,
   pageImage: localPageImage,
   // REFUSES BY NAME, like every inert picker: a case that exports text supplies its own.
   pickText: () => Promise.reject(new Error('INERT: this case does not export text')),
@@ -1631,6 +1648,112 @@ describe('the form data export carries the format all the way to the file', () =
 
     expect(await commands.exportFormData(formDoc, 'fdf')).toBeUndefined();
     expect(existsSync(untouched)).toBe(false);
+  });
+});
+
+describe('annotations exported to a file and imported from it, through the lane (ADR-0077)', () => {
+  let annotatedDoc: DocId;
+  let annotatedSession: MupdfSession;
+  let blankDoc: DocId;
+  let blankSession: MupdfSession;
+  let exchangeService: DocumentService;
+
+  beforeAll(async () => {
+    const annotated = await PDFDocument.create();
+    const page = annotated.addPage([400, 600]);
+    const square = annotated.context.register(
+      annotated.context.obj({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [20, 20, 120, 80],
+        C: [1, 0, 0],
+        Contents: PDFString.of('Check this (twice)'),
+      }),
+    );
+    page.node.set(PDFName.of('Annots'), annotated.context.obj([square]));
+    const annotatedBytes = await annotated.save();
+    const blank = await PDFDocument.create();
+    blank.addPage([400, 600]);
+    const blankBytes = await blank.save();
+
+    const registry = new CapabilityRegistry();
+    exchangeService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const annotatedPath = join(directory, 'annotated.pdf');
+    const blankPath = join(directory, 'blank-for-annotations.pdf');
+    writeFileSync(annotatedPath, annotatedBytes);
+    writeFileSync(blankPath, blankBytes);
+    const first = await exchangeService.open(registry.mint(annotatedPath));
+    const second = await exchangeService.open(registry.mint(blankPath));
+    if (first.kind !== 'opened' || second.kind !== 'opened') throw new Error('a fixture did not open');
+    annotatedDoc = first.docId;
+    blankDoc = second.docId;
+    annotatedSession = await mupdfWriter.open(annotatedBytes);
+    blankSession = await mupdfWriter.open(blankBytes);
+  });
+
+  function commandsWith(annotationData: AnnotationDataSource): DocumentCommands {
+    const held = new EngineSessions();
+    held.hold(annotatedDoc, { mupdf: annotatedSession });
+    held.hold(blankDoc, { mupdf: blankSession });
+    return new DocumentCommands({
+      ...LOCAL_READS,
+      documents: exchangeService,
+      bus: bus(),
+      engine: held,
+      save: {
+        deps: {
+          checkWriteTarget: (id) => exchangeService.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: siblingNames,
+          wait: () => Promise.resolve(),
+        },
+        flush: () => Promise.reject(new Error('an export does not flush the document')),
+      },
+      copy: {
+        pick: () => Promise.reject(new Error('this case does not write a copy')),
+        checkTarget: (target) => exchangeService.checkCopyTarget(target),
+      },
+      annotationData,
+    });
+  }
+
+  for (const format of ['xfdf', 'fdf', 'json'] as const) {
+    it(`${format}: one document's comments land in a file, and the file adds them to another`, async () => {
+      const file = join(directory, `comments.${format}`);
+      const exported = await commandsWith({ ...localAnnotationData, pick: () => Promise.resolve(file) }).exportAnnotations(
+        annotatedDoc,
+        format,
+      );
+      expect(exported?.kind).toBe('copied');
+
+      const imported = await commandsWith({
+        ...localAnnotationData,
+        open: () => Promise.resolve(file),
+        read: (path) => Promise.resolve({ kind: 'read', bytes: new Uint8Array(readFileSync(path)) }),
+      }).importAnnotations(blankDoc, format);
+      expect(imported.kind).toBe('imported');
+
+      const landed = await readInterchangeAnnotations(blankSession);
+      expect(landed.at(-1)).toMatchObject({
+        subtype: 'Square',
+        rect: [20, 20, 120, 80],
+        colour: [1, 0, 0],
+        contents: 'Check this (twice)',
+      });
+    });
+  }
+
+  it('a file that is not annotation data is UNREADABLE, and the document does not move', async () => {
+    const file = join(directory, 'not-comments.json');
+    writeFileSync(file, '{"format":"monstera-form-data","version":1,"fields":[]}');
+    const commands = commandsWith({
+      ...localAnnotationData,
+      open: () => Promise.resolve(file),
+      read: (path) => Promise.resolve({ kind: 'read', bytes: new Uint8Array(readFileSync(path)) }),
+    });
+    const before = (await readInterchangeAnnotations(blankSession)).length;
+    expect(await commands.importAnnotations(blankDoc, 'json')).toStrictEqual({ kind: 'unreadable' });
+    expect(await readInterchangeAnnotations(blankSession)).toHaveLength(before);
   });
 });
 

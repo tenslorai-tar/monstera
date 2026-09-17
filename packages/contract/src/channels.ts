@@ -15,6 +15,7 @@ import {
   annotationRectSchema,
   formDataFormatSchema,
   formDataImportFormatSchema,
+  annotationDataFormatSchema,
   formFieldKindSchema,
   renderableCommandSchema,
 } from './commands.js';
@@ -2542,6 +2543,46 @@ export const channels = {
    * claiming a certainty this build does not have. The same limit governs every
    * shipped command that refuses on document state, including `fillFormField`.
    */
+  /**
+   * Writes the document's annotations to a file the user picks (ADR-0077). `document.exportFormData`'s
+   * outcomes and their reasons: the file goes by the copy route, and `unrepresentable` is XFDF
+   * meeting a character XML cannot carry.
+   */
+  'document.exportAnnotations': channel(
+    'Writes the document’s annotations to a file the user picks.',
+    z.object({ docId: docIdSchema, format: annotationDataFormatSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      z.object({ kind: z.literal('unrepresentable') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Adds the annotations a file the user picks carries (ADR-0077). `document.importFormData`'s
+   * outcomes: `unreadable` covers a file that is not annotation data, carries nothing exchanged,
+   * or names a page this document lacks — the host's reason does not cross, so it is not guessed.
+   */
+  'document.importAnnotations': channel(
+    'Adds the annotations from a file the user picks.',
+    z.object({ docId: docIdSchema, format: annotationDataFormatSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('imported'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('unreadable') }),
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.importFormData': channel(
     'Fills the form from a data file the user picks.',
     z.object({ docId: docIdSchema, format: formDataImportFormatSchema }),

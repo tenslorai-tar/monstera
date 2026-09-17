@@ -1085,7 +1085,7 @@ const AUTHORED_KEY = 'Monstera_Authored';
  * and one reader, in this file, and a command that starts minting annotations
  * elsewhere has to come through here (B3a).
  */
-function markAuthored(annotation: PDFAnnotation): void {
+export function markAuthored(annotation: PDFAnnotation): void {
   annotation.getObject().put(AUTHORED_KEY, true);
 }
 

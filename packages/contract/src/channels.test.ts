@@ -146,6 +146,8 @@ const handlers: ContractHandlers = {
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.exportAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': ({ begin, end }) =>

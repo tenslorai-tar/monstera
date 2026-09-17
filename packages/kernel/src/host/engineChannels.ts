@@ -18,8 +18,10 @@ import {
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
+  annotationDataFormatSchema,
   formFieldKindSchema,
   importFormDataSchema,
+  importAnnotationsSchema,
   channel,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -971,6 +973,8 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   // command is, and the derivation runs in the direction 4c allows — a field
   // added to the payload arrives here on its own, and the one removed is named.
   importFormDataSchema.omit({ bytes: true }),
+  // THE THIRD, for the second's reason (ADR-0077).
+  importAnnotationsSchema.omit({ bytes: true }),
 ]);
 
 /** What travels in place of a command, once its asset has been taken out. */
@@ -2280,6 +2284,23 @@ export const engineChannels = {
     // cannot carry a control character and the other two can. Folding it into
     // the general code would tell them the export failed and nothing they could
     // act on.
+    ['no-such-session', 'export-failed', 'unrepresentable'],
+  ),
+
+  /**
+   * Writes the document's annotations out, in one of three encodings, to the granted area
+   * (ADR-0077).
+   *
+   * `engine/exportFormData`'s route and both its reasons: the file is a second document's bytes,
+   * and `engine/annotations` is bounded for a panel and carries a kind and a box rather than the
+   * entries an export needs.
+   */
+  'engine/exportAnnotations': channel(
+    'Writes a session’s annotations to a file in the output directory.',
+    z
+      .object({ session: sessionSchema, format: annotationDataFormatSchema, into: outputNameSchema })
+      .strict(),
+    z.object({ bytes: z.number().int().nonnegative() }).strict(),
     ['no-such-session', 'export-failed', 'unrepresentable'],
   ),
 

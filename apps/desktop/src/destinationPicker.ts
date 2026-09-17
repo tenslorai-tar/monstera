@@ -1,8 +1,11 @@
 import { dialog } from 'electron';
 
-import type { FormDataFormat } from '@monstera/contract';
+import type { AnnotationDataFormat, FormDataFormat } from '@monstera/contract';
 
 import {
+  ANNOTATION_DATA_FILES,
+  type AnnotationDataSource,
+  suggestedAnnotationDataName,
   FORM_DATA_FILES,
   type FormDataSource,
   OFFICE_FILES,
@@ -130,6 +133,23 @@ export function createSnapshotPicker(): PickDestination {
  * `showOverwriteConfirmation`, `createDirectory` and the two routes to a
  * dismissal holds here unchanged.
  */
+/**
+ * The save picker for an annotation export (ADR-0077): {@link createFormDataPicker}'s dialog, with
+ * the annotation formats' words and suggested name.
+ */
+export function createAnnotationDataPicker(): AnnotationDataSource['pick'] {
+  return async (sourceName: string, format: AnnotationDataFormat): Promise<string | null> => {
+    const file = ANNOTATION_DATA_FILES[format];
+    const result = await dialog.showSaveDialog({
+      defaultPath: suggestedAnnotationDataName(sourceName, format),
+      properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
+      filters: [{ name: file.label, extensions: [file.extension] }],
+    });
+    if (result.canceled) return null;
+    return result.filePath.length === 0 ? null : result.filePath;
+  };
+}
+
 /**
  * The save picker for a text export: the same dialog, narrowed to plain text.
  *

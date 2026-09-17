@@ -2,6 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
+  MAX_ANNOTATION_DATA_BYTES,
   MAX_CSV_BYTES,
   MAX_FORM_DATA_BYTES,
   MAX_IMAGE_BYTES,
@@ -11,6 +12,7 @@ import { BrowserWindow, app, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import {
+  createAnnotationDataPicker,
   createDestinationPicker,
   createFormDataPicker,
   createOfficePicker,
@@ -20,6 +22,7 @@ import {
 import { createDocumentPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
 import {
+  createAnnotationDataOpenPicker,
   createCertificatePicker,
   createFormDataOpenPicker,
   createImagePicker,
@@ -127,6 +130,9 @@ startShell(() => {
     pickOffice: createOfficePicker(),
     // The fifth, and the first OPEN dialog added since the image picker.
     openFormData: createFormDataOpenPicker(),
+    // THE ANNOTATION FILES' TWO DIALOGS, beside the form data's (ADR-0077).
+    pickAnnotationData: createAnnotationDataPicker(),
+    openAnnotationData: createAnnotationDataOpenPicker(),
     // The third dialog, beside the two above so all of them are visible
     // together — and the first surface added since composition became an
     // object, which is why `pickerProbe.ts` is absent from this commit.
@@ -213,6 +219,17 @@ startShell(() => {
       try {
         const { size } = await stat(path);
         if (size > MAX_FORM_DATA_BYTES) return { kind: 'too-large' as const, byteLength: size };
+        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
+      } catch {
+        return { kind: 'unreadable' as const };
+      }
+    },
+    // `readFormData`'s shape against the annotation bound, written out for the reason above:
+    // `MAX_ANNOTATION_DATA_BYTES` is its own decision, equal today (ADR-0077).
+    readAnnotationData: async (path: string) => {
+      try {
+        const { size } = await stat(path);
+        if (size > MAX_ANNOTATION_DATA_BYTES) return { kind: 'too-large' as const, byteLength: size };
         return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
       } catch {
         return { kind: 'unreadable' as const };

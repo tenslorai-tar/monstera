@@ -152,6 +152,15 @@ import { FLAT_FIELDS_DIALOG } from './dialogs/flatFields.js';
 import { REPLACE_TEXT_OBJECT_DIALOG } from './dialogs/replaceTextObject.js';
 import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
+import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG } from './dialogs/importAnnotationsProblem.js';
+import {
+  exportAnnotationsFdfCommand,
+  exportAnnotationsJsonCommand,
+  exportAnnotationsXfdfCommand,
+  importAnnotationsFdfCommand,
+  importAnnotationsJsonCommand,
+  importAnnotationsXfdfCommand,
+} from './commands/annotationData.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
 import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
@@ -455,6 +464,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         REPLACE_TEXT_OBJECT_DIALOG,
         EDIT_PAGE_OBJECT_DIALOG,
         IMPORT_FORM_DATA_PROBLEM_DIALOG,
+        IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
         MARKDOWN_IMPORT_PROBLEM_DIALOG,
         OPEN_FROM_URL_DIALOG,
@@ -1649,6 +1659,13 @@ export function App({ client, settings }: AppProps): ReactElement {
         importFormDataJsonCommand({ client, onApplied: applied, ask }),
         importFormDataXfdfCommand({ client, onApplied: applied, ask }),
         importFormDataFdfCommand({ client, onApplied: applied, ask }),
+        // THE COMMENTS' FILES, Review › Comment files (ADR-0077).
+        importAnnotationsXfdfCommand({ client, onApplied: applied, ask }),
+        importAnnotationsFdfCommand({ client, onApplied: applied, ask }),
+        importAnnotationsJsonCommand({ client, onApplied: applied, ask }),
+        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask }),
+        exportAnnotationsFdfCommand({ client, onApplied: applied, ask }),
+        exportAnnotationsJsonCommand({ client, onApplied: applied, ask }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask }),
         replaceTextObjectCommand({ client, onApplied: applied, ask }),
         editPageObjectCommand({ client, onApplied: applied, ask }),

@@ -175,6 +175,15 @@ export {
   serialiseFormData,
 } from './formData.js';
 export {
+  applyImportAnnotations,
+  captureImportAnnotations,
+  invertImportAnnotations,
+  type InterchangeAnnotation,
+  parseAnnotationData,
+  readInterchangeAnnotations,
+  serialiseAnnotationData,
+} from './annotationInterchange.js';
+export {
   detectFlatFields,
   type FlatFieldCandidate,
   MAX_FLAT_CANDIDATES,

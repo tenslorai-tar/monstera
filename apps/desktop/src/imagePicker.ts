@@ -1,8 +1,10 @@
 import { dialog } from 'electron';
 
-import type { FormDataImportFormat } from '@monstera/contract';
+import type { AnnotationDataFormat, FormDataImportFormat } from '@monstera/contract';
 
 import {
+  ANNOTATION_DATA_FILES,
+  type AnnotationDataSource,
   FORM_DATA_FILES,
   type PickFormDataFile,
   type PickImage,
@@ -138,6 +140,19 @@ export function createImagesPicker(): PickImportFiles {
 export function createFormDataOpenPicker(): PickFormDataFile {
   return async (format: FormDataImportFormat): Promise<string | null> => {
     const file = FORM_DATA_FILES[format];
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: file.label, extensions: [file.extension] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
+  };
+}
+
+/** The open dialog for an annotation file (ADR-0077): {@link createFormDataOpenPicker}'s, with its words. */
+export function createAnnotationDataOpenPicker(): AnnotationDataSource['open'] {
+  return async (format: AnnotationDataFormat): Promise<string | null> => {
+    const file = ANNOTATION_DATA_FILES[format];
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'dontAddToRecent'],
       filters: [{ name: file.label, extensions: [file.extension] }],

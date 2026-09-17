@@ -15,6 +15,7 @@ import {
   DocumentNotOpenError,
   type DocumentService,
   EngineFormDataExportFailed,
+  EngineAnnotationDataExportFailed,
   StaleTargetError,
   type WriteTargetVerdict,
   readDocumentRange,
@@ -290,6 +291,8 @@ export function createContractHandlers(deps: {
     'document.extract': extractHandler(deps.commands),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands),
     'document.exportFormData': exportFormDataHandler(deps.commands),
+    'document.exportAnnotations': exportAnnotationsHandler(deps.commands),
+    'document.importAnnotations': importAnnotationsHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands),
     'document.exportPageImages': exportPageImagesHandler(deps.commands),
@@ -1165,6 +1168,62 @@ function exportFormDataHandler(
       if (thrown instanceof EngineFormDataExportFailed && thrown.detail === 'unrepresentable') {
         return ok({ kind: 'unrepresentable' } as const);
       }
+      throw thrown;
+    }
+  };
+}
+
+/** The annotation export's handler: {@link exportFormDataHandler}'s body for its outcomes (ADR-0077). */
+function exportAnnotationsHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.exportAnnotations'] {
+  return async ({
+    docId,
+    format,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.exportAnnotations']>>> => {
+    try {
+      const outcome = await commands.exportAnnotations(docId, format);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineAnnotationDataExportFailed && thrown.detail === 'unrepresentable') {
+        return ok({ kind: 'unrepresentable' } as const);
+      }
+      throw thrown;
+    }
+  };
+}
+
+/** The annotation import's handler: {@link importFormDataHandler}'s body for its outcomes. */
+function importAnnotationsHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.importAnnotations'] {
+  return async ({
+    docId,
+    format,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.importAnnotations']>>> => {
+    try {
+      const outcome = await commands.importAnnotations(docId, format);
+      if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'too-large') {
+        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+      }
+      return ok({
+        kind: 'imported',
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        historyDropped: outcome.historyDropped,
+      } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
   };

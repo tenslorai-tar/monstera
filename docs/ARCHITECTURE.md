@@ -270,17 +270,19 @@ one engine:
 built without either** ([ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
 2026-09-09).
 
-**A host's reader set is its own engine's.** The twenty-three channels split
+**A host's reader set is its own engine's.** The twenty-four channels split
 **six engine-agnostic** — `probe-containment`, `open`, `close`, `apply`,
 `capture`, `invert` — one that belongs to the **live-session shape**,
-`serialise`, and **sixteen MuPDF document-model reads**:
+`serialise`, and **seventeen MuPDF document-model reads**:
 `page-geometry`, `page-text`, `page-links`, `destinations`, `layers`,
-`annotations`, `form-fields`, `exportFormData`, `flat-fields`,
+`annotations`, `form-fields`, `exportFormData`, `exportAnnotations`, `flat-fields`,
 `duplicate-pages`, `extract`, `snapshotRegion`, `pageImage`, `ocr-page`,
-`signatures`, `page-barcodes`. **A second engine owes none of the sixteen.** `signatures` joined on
+`signatures`, `page-barcodes`. **A second engine owes none of the seventeen.** `signatures` joined on
 2026-09-12 with D7's verification row, `pageImage` on 2026-09-14 with D10's
-page-images row, and `page-barcodes` on 2026-09-17 with D10's barcode row
-([ADR-0076](DECISIONS/0076-barcodes-are-zxing-cpps-read-in-the-engine-host-written-for-the-place-image-command.md)).
+page-images row, `page-barcodes` on 2026-09-17 with D10's barcode row
+([ADR-0076](DECISIONS/0076-barcodes-are-zxing-cpps-read-in-the-engine-host-written-for-the-place-image-command.md)),
+and `exportAnnotations` the same day with D8's annotation import/export row
+([ADR-0077](DECISIONS/0077-annotations-are-exchanged-as-dictionary-entries-in-user-space.md)).
 This paragraph said *twenty* and *thirteen* until the audit of
 `622f794..4971b60`, and *twenty-one* and *fourteen* until the audit of
 `4971b60..09e0f74` — the names `coreChannels.test.ts` holds as a literal.

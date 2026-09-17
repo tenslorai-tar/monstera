@@ -346,6 +346,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // the opposite direction and on a boundary this file does not govern.
   'document.placeImage': 'needs an engine session and an image picker',
   'document.placeBarcode': 'needs an engine session and the barcode writer',
+  'document.exportAnnotations': 'needs an engine session and a file picker',
+  'document.importAnnotations': 'needs an engine session and a file picker',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
   'document.pageBarcodes': 'needs an engine session',
   'document.searchPage': 'needs an engine session',

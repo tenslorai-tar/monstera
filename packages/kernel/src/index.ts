@@ -123,6 +123,7 @@ export {
   type HostExtract,
   type HostFlatFieldsReader,
   type HostFormDataExport,
+  type HostAnnotationDataExport,
   type HostFormFieldsReader,
   type HostLayersReader,
   type HostHandwritingReader,
@@ -138,6 +139,7 @@ export {
 export {
   EngineDocumentLocked,
   EngineFormDataExportFailed,
+  EngineAnnotationDataExportFailed,
   EngineOpenFailed,
   EnginePageImageFailed,
   EngineSerialiseFailed,

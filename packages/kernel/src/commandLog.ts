@@ -586,6 +586,9 @@ export interface CommandPrior {
    */
   readonly importFormData: never;
 
+  /** An annotation import has no prior state, for `importFormData`'s reason (ADR-0077). */
+  readonly importAnnotations: never;
+
   /**
    * The string a text object held, and **which object puts it back**.
    *

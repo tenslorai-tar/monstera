@@ -3303,6 +3303,36 @@ export const formDataImportFormatSchema = z.enum(['json', 'xfdf', 'fdf']);
 export type FormDataImportFormat = z.infer<typeof formDataImportFormatSchema>;
 
 /**
+ * The formats annotations are exchanged in (ADR-0077). The same three names as form data's and a
+ * set of its own, for {@link formDataImportFormatSchema}'s reason: two features that coincide
+ * today are not one decision.
+ */
+export const annotationDataFormatSchema = z.enum(['json', 'xfdf', 'fdf']);
+
+/** See {@link annotationDataFormatSchema}. */
+export type AnnotationDataFormat = z.infer<typeof annotationDataFormatSchema>;
+
+/** How large an annotation file this build reads: {@link MAX_FORM_DATA_BYTES}' bound and reason. */
+export const MAX_ANNOTATION_DATA_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Adds the annotations a file carries (ADR-0077).
+ *
+ * `importFormData`'s route and its reasons: main picks and reads the file, the bytes travel the
+ * granted directory, and the parse happens in the engine host, where a stranger's file belongs.
+ * Every record is checked and every page confirmed before the first annotation is created, so a
+ * file that cannot be imported whole adds nothing.
+ */
+export const importAnnotationsSchema = z.object({
+  kind: z.literal('importAnnotations'),
+  format: annotationDataFormatSchema,
+  bytes: z.custom<Uint8Array>(
+    (value) => value instanceof Uint8Array && value.byteLength <= MAX_ANNOTATION_DATA_BYTES,
+    { message: 'not annotation data this build will read, or larger than the bound' },
+  ),
+});
+
+/**
  * Fills every field a data file names, matching by the field's own name.
  *
  * ## THE BYTES ARE HERE, and they leave before the wire
@@ -3982,6 +4012,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   signDocumentSchema,
   createFormFieldSchema,
   importFormDataSchema,
+  importAnnotationsSchema,
   replaceTextObjectSchema,
   placePageObjectSchema,
   recolorPageObjectsSchema,
@@ -4207,10 +4238,12 @@ export type RenderableCommand = z.infer<typeof renderableCommandSchema>;
 // reason: what it carries is a PKCS#12 private key. Main picks the file, reads
 // it and mints the command, so the renderer has no field to put one in — the
 // capability is unrepresentable rather than discouraged.
+// `importAnnotations` JOINS `importFormData`, for its reason exactly: a picked file's bytes.
 type WithheldFromRenderer =
   | 'insertImagePage'
   | 'placeImage'
   | 'importFormData'
+  | 'importAnnotations'
   | 'signDocument';
 type LeftOver = Exclude<Command['kind'], RenderableCommand['kind']>;
 const _withheldIsExactlyThat: LeftOver extends WithheldFromRenderer ? true : never = true;

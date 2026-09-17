@@ -1,5 +1,6 @@
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
+import { readInterchangeAnnotations, serialiseAnnotationData } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { localMupdfExecution } from '../commandSpecs.js';
 import { accessFor, mupdfWriter } from '../mupdfWriter.js';
@@ -151,6 +152,9 @@ const engineHandlers = createEngineHandlers({
   // AND A READ OF A DOCUMENT'S PIXELS BY A C++ DECODER, which is the whole reason it is here
   // rather than in main (ADR-0076).
   barcodes: readPageBarcodes,
+  // AND THE ANNOTATIONS OUT, the form data's reason: reading them reaches MuPDF (ADR-0077).
+  exportAnnotationData: async (session, format) =>
+    serialiseAnnotationData(await readInterchangeAnnotations(session), format),
 });
 
 startEngineHost(

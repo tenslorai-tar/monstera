@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,11 @@ import { type ClientApi, createClient, type Incident, wrapHandlers } from '@mons
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
+import {
+  parseAnnotationData,
+  readInterchangeAnnotations,
+  serialiseAnnotationData,
+} from '../annotationInterchange.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { rasterisePageImage } from '../pageImages.js';
@@ -260,6 +265,8 @@ function joined(
       barcodes: () => {
         throw new Error('the lifecycle half must not read barcodes');
       },
+      exportAnnotationData: async (session, format) =>
+        serialiseAnnotationData(await readInterchangeAnnotations(session), format),
     }),
     (incident) => incidents.push(incident),
   );
@@ -440,6 +447,35 @@ describe('remoteMupdfLifecycle', () => {
   });
 
   /**
+   * THE ANNOTATIONS' ROUND TRIP, written in the commit that adds the channel, for the page
+   * image's reason below: this fixture gained `exportAnnotationData` to compile, and a filled-in
+   * dependency is how a channel arrives looking covered.
+   *
+   * The document carries one square, so what comes back is the record and not only a file.
+   */
+  it('carries the annotations out through the granted directory, with the count checked', async () => {
+    const withSquare = await PDFDocument.load(flat);
+    const page = withSquare.getPages()[0];
+    if (page === undefined) throw new Error('the fixture has no page');
+    const square = withSquare.context.register(
+      withSquare.context.obj({ Type: 'Annot', Subtype: 'Square', Rect: [10, 10, 40, 40], C: [1, 0, 0] }),
+    );
+    page.node.set(PDFName.of('Annots'), withSquare.context.obj([square]));
+
+    const areas = realAreas();
+    const { lifecycle, open } = joined(areas);
+    const session = await open(await withSquare.save());
+    const written = await lifecycle.exportAnnotationData(session, 'json');
+
+    expect(parseAnnotationData(written, 'json')).toStrictEqual([
+      { page: 0, subtype: 'Square', rect: [10, 10, 40, 40], colour: [1, 0, 0] },
+    ]);
+    expect(await exists(join(areas.made[0]?.outputDirectory ?? '', 'f1'))).toBe(false);
+
+    await lifecycle.close(session);
+  });
+
+  /**
    * A PAGE IMAGE'S ROUND TRIP, written in the commit that adds the channel so it
    * cannot arrive the way `engine/exportFormData` did — a dependency filled in to
    * make the fixture compile and no case calling it.
@@ -566,6 +602,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         barcodes: () => {
           throw new Error('the byte-size case must not read barcodes');
+        },
+        exportAnnotationData: () => {
+          throw new Error('the byte-size case must not export annotations');
         },
       }),
       () => undefined,

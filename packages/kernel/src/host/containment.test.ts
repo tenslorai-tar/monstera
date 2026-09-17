@@ -563,6 +563,9 @@ describe('the engine host answers a containment probe', () => {
     barcodes: () => {
       throw new Error('a containment probe must not read barcodes');
     },
+    exportAnnotationData: () => {
+      throw new Error('a containment probe must not export annotations');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {

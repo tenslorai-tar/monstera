@@ -771,7 +771,8 @@ const SCAN_SPEC = `  straightenScans: {
   },`;
 
 /**
- * The newest kind, and the one the `missing a command kind` case now omits.
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason; it was the newest kind until
+ * `importAnnotations`.
  *
  * The third spec declaring `sources: 'one'`, and `replacePage`'s shape exactly — MuPDF,
  * checkpoint, reapply-intent — because it reads another open document's page into this one.
@@ -789,6 +790,26 @@ const IMPORT_LAYER_SPEC = `  importPageAsLayer: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'one',
+    reads: 'none',
+  },`;
+
+/**
+ * The newest kind, and the one the `missing a command kind` case now omits.
+ *
+ * `importFormData`'s shape exactly — MuPDF, checkpoint, reapply-intent, a picked file's bytes —
+ * because it reads a file into annotations the way that command reads one into fields (ADR-0077).
+ */
+const IMPORT_ANNOTATIONS_SPEC = `  importAnnotations: {
+    kind: 'importAnnotations',
+    writer: 'mupdf',
+    apply: applyImportAnnotations,
+    capture: captureImportAnnotations,
+    invert: invertImportAnnotations,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
     reads: 'none',
   },`;
 
@@ -1012,6 +1033,9 @@ const SPEC_IMPORTS = `import {
   applyImportPageAsLayer,
   captureImportPageAsLayer,
   invertImportPageAsLayer,
+  applyImportAnnotations,
+  captureImportAnnotations,
+  invertImportAnnotations,
   applyAddAnnotation,
   captureAddAnnotation,
   invertAddAnnotation,
@@ -1202,6 +1226,8 @@ export const handlers: ContractHandlers = {
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.exportAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': ({ begin, end }) =>
@@ -1330,6 +1356,8 @@ export const handlers: ContractHandlers = {
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.exportAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': ({ begin, end }) =>
@@ -1533,6 +1561,8 @@ export const shim: ContractClient = {
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.exportAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': () =>
@@ -1726,6 +1756,7 @@ ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
+${IMPORT_ANNOTATIONS_SPEC}
 };
 `,
   },
@@ -1743,7 +1774,7 @@ ${IMPORT_LAYER_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `importPageAsLayer` on 2026-09-14; `straightenScans` on
+    // table has to grow. `importAnnotations` on 2026-09-17; `importPageAsLayer` on 2026-09-14; `straightenScans` on
     // 2026-09-13; `promoteFormObjects`
     // and `replaceAllText` on 2026-09-10, and
     // `deletePageObjects` with `placePageObject` and `recolorPageObjects` the
@@ -1767,7 +1798,7 @@ ${IMPORT_LAYER_SPEC}
     // table in*, and the repair is to complete it up to the newest one. It fired
     // the same way on `importPageAsLayer`, TS2739 naming it and `straightenScans`.
     because:
-      /Property 'importPageAsLayer' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'importAnnotations' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1831,6 +1862,7 @@ ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
+${IMPORT_LAYER_SPEC}
 };
 `,
   },
@@ -1964,6 +1996,7 @@ ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
+${IMPORT_ANNOTATIONS_SPEC}
 };
 `,
   },
@@ -2032,6 +2065,7 @@ ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
+${IMPORT_ANNOTATIONS_SPEC}
 };
 `,
   },
@@ -2109,6 +2143,7 @@ ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
+${IMPORT_ANNOTATIONS_SPEC}
 };
 `,
   },
@@ -2182,6 +2217,7 @@ ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
+${IMPORT_ANNOTATIONS_SPEC}
 };
 `,
   },
@@ -3142,7 +3178,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // (both 2026-09-11), and 38 through 42 since `setDocumentProtection`,
     // `applyRedactions`, `markMatchesForRedaction`, `sanitizeDocument` and
     // `signDocument` (all 2026-09-12), 43 since `straightenScans` (2026-09-13), and 44
-    // since `importPageAsLayer` (2026-09-14).
+    // since `importPageAsLayer` (2026-09-14), and 45 since `importAnnotations` (2026-09-17).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -3160,7 +3196,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 40 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 41 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

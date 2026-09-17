@@ -59,7 +59,10 @@ import {
  * one object that holds both.
  */
 export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
-  Pick<RemoteMupdfLifecycle, 'close' | 'extract' | 'snapshot' | 'exportFormData' | 'pageImage'>;
+  Pick<
+    RemoteMupdfLifecycle,
+    'close' | 'extract' | 'snapshot' | 'exportFormData' | 'exportAnnotationData' | 'pageImage'
+  >;
 
 export function remoteMupdfWriter(
   client: ClientApi<EngineChannels>,
@@ -97,7 +100,8 @@ export function remoteMupdfWriter(
   // `exportFormData` JOINS FOR THE SAME REASON, which makes it a class of
   // three: bytes that are not the session's document, built where the engine
   // is, arriving through the granted area. `pageImage` is the fourth.
-  const { serialise, close, extract, snapshot, exportFormData, pageImage } = remoteMupdfLifecycle(
+  // `exportAnnotationData` is the fifth, for the fourth's reason (ADR-0077).
+  const { serialise, close, extract, snapshot, exportFormData, exportAnnotationData, pageImage } = remoteMupdfLifecycle(
     client,
     sessions,
     areas,
@@ -108,6 +112,7 @@ export function remoteMupdfWriter(
     extract,
     snapshot,
     exportFormData,
+    exportAnnotationData,
     pageImage,
     ...remoteMupdfExecution(client, sessions, assets),
   };

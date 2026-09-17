@@ -216,6 +216,16 @@ export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
 export const GROUP_BARCODES = messageKey('surface.ribbon.group.barcodes');
 export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
+export const GROUP_COMMENT_FILES = messageKey('surface.ribbon.group.comment-files');
+export const EXPORT_ANNOTATIONS_JSON_TITLE = messageKey('command.export-annotations.json');
+export const EXPORT_ANNOTATIONS_XFDF_TITLE = messageKey('command.export-annotations.xfdf');
+export const EXPORT_ANNOTATIONS_FDF_TITLE = messageKey('command.export-annotations.fdf');
+export const IMPORT_ANNOTATIONS_JSON_TITLE = messageKey('command.import-annotations.json');
+export const IMPORT_ANNOTATIONS_XFDF_TITLE = messageKey('command.import-annotations.xfdf');
+export const IMPORT_ANNOTATIONS_FDF_TITLE = messageKey('command.import-annotations.fdf');
+export const IMPORT_ANNOTATIONS_PROBLEM_TITLE = messageKey('dialog.import-annotations.title');
+export const IMPORT_ANNOTATIONS_UNREADABLE = messageKey('dialog.import-annotations.unreadable');
+export const IMPORT_ANNOTATIONS_TOO_LARGE = messageKey('dialog.import-annotations.too-large');
 export const COMPARE_COMMAND_TITLE = messageKey('command.compare-documents.title');
 export const COMPARE_PROGRESS = messageKey('task.compare-documents');
 export const COMPARE_DOCUMENTS_TITLE = messageKey('dialog.compare-documents.title');
@@ -2200,6 +2210,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PRINT_APPLY]: 'Choose a printer…',
   [GROUP_BARCODES]: 'Barcodes',
   [GROUP_COMPARE]: 'Compare',
+  [GROUP_COMMENT_FILES]: 'Comment files',
+  [EXPORT_ANNOTATIONS_JSON_TITLE]: 'Export comments as JSON…',
+  [EXPORT_ANNOTATIONS_XFDF_TITLE]: 'Export comments as XFDF…',
+  [EXPORT_ANNOTATIONS_FDF_TITLE]: 'Export comments as FDF…',
+  [IMPORT_ANNOTATIONS_JSON_TITLE]: 'Import comments from JSON…',
+  [IMPORT_ANNOTATIONS_XFDF_TITLE]: 'Import comments from XFDF…',
+  [IMPORT_ANNOTATIONS_FDF_TITLE]: 'Import comments from FDF…',
+  [IMPORT_ANNOTATIONS_PROBLEM_TITLE]: 'Those comments were not imported',
+  // NAMES EVERY CAUSE, for the form data message's reason: the refusal happens in the engine host
+  // and its reason does not cross, so naming one would be a guess.
+  [IMPORT_ANNOTATIONS_UNREADABLE]:
+    'Nothing was added. The file may not be comments in that format, it may carry no kind of comment Monstera imports, it may place a comment on a page this document does not have, or one of its comments may be incomplete.',
+  [IMPORT_ANNOTATIONS_TOO_LARGE]:
+    'Nothing was added. Monstera reads comment files up to {megabytes} MB, and that one is larger.',
   [COMPARE_COMMAND_TITLE]: 'Compare documents…',
   [COMPARE_PROGRESS]: 'Comparing pages',
   [COMPARE_DOCUMENTS_TITLE]: 'Compare documents',

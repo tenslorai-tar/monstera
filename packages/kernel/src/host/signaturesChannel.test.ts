@@ -86,6 +86,7 @@ async function joined(parts: {
       pageImage: refuse('export a page image'),
       flatFields: refuse('propose fields'),
       barcodes: refuse('read barcodes'),
+      exportAnnotationData: refuse('export annotations'),
     }),
     () => undefined,
   );

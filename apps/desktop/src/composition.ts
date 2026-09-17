@@ -44,6 +44,7 @@ import {
   type BarcodeReport,
   type HostFlatFieldsReader,
   type HostFormDataExport,
+  type HostAnnotationDataExport,
   type HostPageImage,
   type HostFormFieldsReader,
   type HostLayersReader,
@@ -107,6 +108,7 @@ import {
   lazyBarcodeWriter,
   DocumentCommands,
   type FormDataSource,
+  type AnnotationDataSource,
   type CertificateSource,
   type ImageSource,
   type ComposedImport,
@@ -380,6 +382,12 @@ export interface ShellComposition {
   readonly openFormData: FormDataSource['open'];
   /** The bytes at a path, bound-checked first. `readImage`'s shape. */
   readonly readFormData: FormDataSource['read'];
+  /** Where an annotation export goes: the same dialog, narrowed to the chosen format (ADR-0077). */
+  readonly pickAnnotationData: AnnotationDataSource['pick'];
+  /** Which annotation file is imported. The open dialog, narrowed to the format. */
+  readonly openAnnotationData: AnnotationDataSource['open'];
+  /** The bytes at a path, checked against the annotation bound first. */
+  readonly readAnnotationData: AnnotationDataSource['read'];
   /**
    * Which image becomes a page. Electron's open dialog, narrowed.
    *
@@ -577,6 +585,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickOffice,
     openFormData,
     readFormData,
+    pickAnnotationData,
+    openAnnotationData,
+    readAnnotationData,
     pickImage,
     pickDirectory,
     readImage,
@@ -1134,6 +1145,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       open: openFormData,
       read: readFormData,
     },
+    // THE ANNOTATIONS, composed as the form data is and for its reasons (ADR-0077).
+    annotationData: {
+      pick: pickAnnotationData,
+      encode: (docId, sessions, format) => {
+        const session = sessions.mupdf;
+        if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+        return engineHost.exportAnnotationData(session, format);
+      },
+      open: openAnnotationData,
+      read: readAnnotationData,
+    },
     // THE PAGE IMAGE, composed as the snapshot is and for its reasons: MuPDF
     // rasterises in the host, and the image arrives through the granted directory.
     pageImage: (docId, sessions, request) => {
@@ -1330,6 +1352,8 @@ function engineSessionOpener(
   readonly snapshot: HostSnapshot;
   /** Encodes the form's data. On this surface for {@link extract}'s reason. */
   readonly exportFormData: HostFormDataExport;
+  /** Encodes the annotations. On this surface for {@link extract}'s reason. */
+  readonly exportAnnotationData: HostAnnotationDataExport;
   /** Encodes one page as an image. On this surface for {@link extract}'s reason. */
   readonly pageImage: HostPageImage;
   /** Ends the shared host on the way out of the application. */
@@ -1707,6 +1731,18 @@ function engineSessionOpener(
       );
     }
     return writer.exportFormData(session, format);
+  };
+
+  /** The annotation export's half, and {@link extractThroughHost}'s reason word for word. */
+  const exportAnnotationDataThroughHost: HostAnnotationDataExport = (session, format) => {
+    if (writer === null) {
+      throw new Error(
+        'An annotation export reached the engine with no host writer registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return writer.exportAnnotationData(session, format);
   };
 
   /** The page image's half, and {@link extractThroughHost}'s reason word for word. */
@@ -2119,6 +2155,7 @@ function engineSessionOpener(
     extract: extractThroughHost,
     snapshot: snapshotThroughHost,
     exportFormData: exportFormDataThroughHost,
+    exportAnnotationData: exportAnnotationDataThroughHost,
     pageImage: pageImageThroughHost,
     closeHost,
     rebuildSessions: create,

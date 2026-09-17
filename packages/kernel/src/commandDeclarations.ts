@@ -1613,6 +1613,27 @@ const declarations = {
     // is unlinked, so there is nothing for a collecting save to sweep.
     purpose: 'ordinary',
   },
+  importAnnotations: {
+    kind: 'importAnnotations',
+    // MuPDF, for `importFormData`'s two reasons: it creates annotations, which §3 puts on MuPDF,
+    // and it reads an FDF, which is PDF syntax only MuPDF opens here (ADR-0077).
+    writer: 'mupdf',
+    // NOT INVERTIBLE, for `importFormData`'s reason: what it adds is decided by a file the command
+    // has not parsed, and the checkpoint restores the document exactly.
+    invertible: false,
+    undo: 'checkpoint',
+    // REPRODUCIBLE, on `addAnnotation`'s measurement of the same `createAnnotation` call — MuPDF
+    // stamps no date — and a date the file carries is the record's own `/M`, not the clock's.
+    // `annotationInterchange.test.ts` applies one file twice and compares the bytes.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'none',
+    reads: 'none',
+    // A PICKED FILE'S BYTES, `importFormData`'s asset.
+    asset: 'bytes',
+    purpose: 'ordinary',
+  },
   replaceTextObject: {
     kind: 'replaceTextObject',
     // THE FIRST COMMAND ROUTED TO PDFIUM, which is what makes the second host

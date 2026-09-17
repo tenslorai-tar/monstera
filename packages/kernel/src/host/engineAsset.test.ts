@@ -185,6 +185,9 @@ async function joined(): Promise<{
       barcodes: () => {
         throw new Error('unused');
       },
+      exportAnnotationData: () => {
+        throw new Error('unused');
+      },
     }),
     (incident) => incidents.push(incident),
   );

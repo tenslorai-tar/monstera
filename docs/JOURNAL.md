@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D8 annotation import/export: an annotation is its entries, in user space
+
+ADR-0077. Neither shape this build already had could be the record: a draft is a drag, and MuPDF's
+getters answer the displayed frame — a `/Rect` of `[100 100 300 200]` read back as
+`[101 593 299 691]`. The raw entries are in user space, which is what XFDF and FDF carry, so they
+are read and written with no transform.
+
+**Three readings the probe produced, and one of them a trap.**
+
+- Raw entries render on an upright and a rotated page (1,783 pixels of ink each). That reading
+  **cannot tell `update()` from its absence**: MuPDF draws a missing appearance when it renders.
+  The mutation that removed `update()` stayed green against ink and against a stored-`/AP` check
+  alike, and the reason was found rather than assumed — MuPDF's save writes the appearance from
+  the entries itself (`7 w`, `1 0 0 RG`, the inset box). So `update()` is kept as MuPDF's own call
+  and described as not load-bearing for the file.
+- `0.2` written and read back is `0.20000000298023224`: a real is a C `float`. A number read from
+  the engine is given at seven significant digits.
+- `PDFObject.get` on MuPDF's shared null throws — it belongs to no document — so a nested read
+  (`/BS /W`) checks the dictionary first.
+
+**A claim corrected before it was committed.** The declaration first said `importAnnotations` is not
+reproducible because `createAnnotation` stamps dates; `addAnnotation`'s 2026-09-05 measurement says
+it stamps none. It is reproducible, and a case applies one file twice and compares the bytes.
+
+**The escapers moved** from `formData.ts` to `interchangeEncoding.ts`, so XFDF and FDF have one
+writer of their syntax; the form data cases are unchanged and pass.
+
+**Found and not fixed (tooling):** three older fixtures in `contract.proof.mjs` still call themselves
+*the newest kind*.
+
+---
+
 ## 2026-09-17 — D8 document compare: two text layers a page at a time, in the renderer
 
 **What the row means was not written down.** `BUILD-PROMPT.md` lists *document compare* under D8 and nothing else, and D1

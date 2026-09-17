@@ -11,7 +11,7 @@ import { byteImageWire, coreEngineChannels, engineChannels } from './engineChann
  * ## Why this is a case and not a comment
  *
  * The decision is *a second engine owes the seven engine-agnostic channels and
- * its own reads, and none of the sixteen MuPDF document-model ones*. Nothing in
+ * its own reads, and none of the seventeen MuPDF document-model ones*. Nothing in
  * the type system says which side a channel belongs on: a reader added to the
  * factory compiles, and so does a core channel moved into MuPDF's literal. The
  * cost of either is not a build failure — it is a second host inheriting a
@@ -67,6 +67,9 @@ const MUPDF_READS = [
   'engine/annotations',
   'engine/form-fields',
   'engine/exportFormData',
+  // WRITING THE ANNOTATIONS OUT IS ONE OF MuPDF'S READS for `engine/exportFormData`'s reason: it
+  // walks MuPDF's annotation dictionaries (ADR-0077).
+  'engine/exportAnnotations',
   'engine/flat-fields',
   // DECODING A PAGE'S RASTER IS ONE OF MuPDF'S READS for `engine/ocr-page`'s reason: the pixels
   // are this engine's, and zxing-cpp decodes them in the process that made them (ADR-0076).
@@ -247,7 +250,7 @@ describe('the core channel set', () => {
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core six, the live-session one, and its own sixteen reads', () => {
+  it('is the core six, the live-session one, and its own seventeen reads', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
       [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );

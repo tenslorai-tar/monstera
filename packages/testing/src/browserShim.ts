@@ -301,6 +301,8 @@ export interface BrowserShimOptions {
    * do not: the import reads a data file and the placement reads a picture.
    */
   readonly importedFormData?: 'unreadable' | 'too-large' | { readonly byteLength: number };
+  /** What `document.importAnnotations` answers — its own switch, for `importedFormData`'s reason. */
+  readonly importedAnnotations?: 'unreadable' | { readonly byteLength: number };
   /**
    * The bytes each document is readable as, by id.
    *
@@ -1244,6 +1246,31 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // fact about a document's values, which this shim holds none of, so
     // offering a switch for it would let a case assert a message against a
     // condition nothing produced.
+    // THE COPY ROUTE'S OPTION, for `document.exportFormData`'s reason below: the same write.
+    'document.exportAnnotations': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const chosen = options.copyDestination;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'write-failed') return Promise.resolve(ok({ kind: 'write-failed' as const }));
+      if (typeof chosen === 'object') {
+        return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
+      }
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+    },
+    'document.importAnnotations': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const chosen = options.importedAnnotations;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
+      const version = asDocVersion(current + 1);
+      versions.set(docId, version);
+      return Promise.resolve(
+        ok({ kind: 'imported' as const, version, byteLength: chosen.byteLength, historyDropped: 0 }),
+      );
+    },
     'document.exportFormData': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));

@@ -179,6 +179,9 @@ function start(stream: HostByteStream) {
     barcodes: () => {
       throw new Error('no case here reads barcodes');
     },
+    exportAnnotationData: () => {
+      throw new Error('no case here exports annotations');
+    },
   });
 
   const body = startEngineHost(

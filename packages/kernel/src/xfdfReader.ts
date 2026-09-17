@@ -66,6 +66,33 @@ const MAX_TEXT = 4096;
 /** How many values one field may carry. */
 const MAX_VALUES = 256;
 
+/**
+ * How long an annotation's geometry may be as text: an attribute such as `coords` or `vertices`,
+ * or one `<gesture>`. 262,144 characters holds `MAX_INTERCHANGE_POINTS` pairs written to four
+ * decimal places, which a field value's bound would cut through a highlight of a long page.
+ */
+const MAX_GEOMETRY_TEXT = 262_144;
+
+/** How long an annotation's `<contents>` may be. */
+const MAX_CONTENTS_TEXT = 16_384;
+
+/** How many annotations one file may carry. `MAX_FIELDS`' argument. */
+const MAX_ANNOTATIONS = 4096;
+
+/**
+ * One annotation element an XFDF carries, as text: what `annotationInterchange.ts` turns into a
+ * record, so the meaning of every attribute is read in one place and this reader stays a grammar.
+ */
+export interface XfdfAnnotation {
+  /** The element's local name, lower-cased — `square`, `highlight`, `freetext`. */
+  readonly element: string;
+  readonly attributes: ReadonlyMap<string, string>;
+  readonly contents: string | undefined;
+  /** Each `<gesture>` under `<inklist>`, in order. */
+  readonly gestures: readonly string[];
+  readonly defaultAppearance: string | undefined;
+}
+
 /** One field an XFDF names. `ImportedField`'s shape, before it reaches a model. */
 export interface XfdfField {
   readonly name: string;
@@ -146,6 +173,147 @@ export function readXfdf(text: string): readonly XfdfField[] {
     throw new XfdfRefusedError('it names no fields at all');
   }
   return found;
+}
+
+/**
+ * Every annotation element under an XFDF's `<annots>`, wherever that sits.
+ *
+ * The same prolog, root, depth and entity rules as {@link readXfdf}. Inside an annotation only
+ * `<contents>`, `<inklist>`'s `<gesture>`s and `<defaultappearance>` are read; everything else —
+ * a `<popup>`, `<contents-richtext>`'s XHTML, a base64 `<appearance>` — is walked past without
+ * being interpreted, because an appearance from a stranger's file is content this build would
+ * draw, and the record regenerates one instead.
+ *
+ * @throws {@link XfdfRefusedError} — or one of its subclasses, each naming the rule that fired.
+ */
+export function readXfdfAnnotations(text: string): readonly XfdfAnnotation[] {
+  const cursor: Cursor = { text, at: 0 };
+  const found: XfdfAnnotation[] = [];
+
+  skipProlog(cursor);
+  const root = readTag(cursor);
+  if (root?.kind !== 'open' || localName(root.name) !== 'xfdf') {
+    throw new XfdfRefusedError('its root element is not <xfdf>');
+  }
+  if (!root.selfClosing) walkForAnnots(cursor, found, 1);
+  return found;
+}
+
+/** A container's children, looking for `<annots>`; anything else is walked through. */
+function walkForAnnots(cursor: Cursor, found: XfdfAnnotation[], depth: number): void {
+  if (depth > MAX_DEPTH) throw new XfdfTooDeepError();
+  for (;;) {
+    const tag = nextTag(cursor, 'an element');
+    if (tag === 'end') return;
+    if (tag.selfClosing) continue;
+    if (localName(tag.name) === 'annots') {
+      readAnnots(cursor, found, depth + 1);
+      continue;
+    }
+    walkForAnnots(cursor, found, depth + 1);
+  }
+}
+
+/** The annotation elements of one `<annots>`. */
+function readAnnots(cursor: Cursor, found: XfdfAnnotation[], depth: number): void {
+  if (depth > MAX_DEPTH) throw new XfdfTooDeepError();
+  for (;;) {
+    const tag = nextTag(cursor, '<annots>');
+    if (tag === 'end') return;
+    if (found.length >= MAX_ANNOTATIONS) {
+      throw new XfdfRefusedError(`it carries more than ${String(MAX_ANNOTATIONS)} annotations`);
+    }
+    let contents: string | undefined;
+    let defaultAppearance: string | undefined;
+    const gestures: string[] = [];
+    if (!tag.selfClosing) {
+      for (;;) {
+        const child = nextTag(cursor, 'an annotation');
+        if (child === 'end') break;
+        const name = localName(child.name);
+        if (child.selfClosing) continue;
+        if (name === 'contents') contents = readBoundedText(cursor, MAX_CONTENTS_TEXT, 'a <contents>');
+        else if (name === 'defaultappearance') {
+          defaultAppearance = readBoundedText(cursor, MAX_TEXT, 'a <defaultappearance>');
+        }
+        else if (name === 'inklist') readGestures(cursor, gestures, depth + 2);
+        else skipElement(cursor, depth + 2);
+      }
+    }
+    for (const [name, value] of tag.attributes) {
+      if (value.length > MAX_GEOMETRY_TEXT) {
+        throw new XfdfRefusedError(`the attribute "${name}" is longer than ${String(MAX_GEOMETRY_TEXT)} characters`);
+      }
+    }
+    found.push({ element: localName(tag.name), attributes: tag.attributes, contents, gestures, defaultAppearance });
+  }
+}
+
+/** An `<inklist>`'s `<gesture>` texts. */
+function readGestures(cursor: Cursor, gestures: string[], depth: number): void {
+  if (depth > MAX_DEPTH) throw new XfdfTooDeepError();
+  for (;;) {
+    const tag = nextTag(cursor, '<inklist>');
+    if (tag === 'end') return;
+    if (tag.selfClosing) continue;
+    if (localName(tag.name) === 'gesture') gestures.push(readBoundedText(cursor, MAX_GEOMETRY_TEXT, 'a <gesture>'));
+    else skipElement(cursor, depth + 1);
+  }
+}
+
+/** Walks past one element's content to its close tag, interpreting none of it. */
+function skipElement(cursor: Cursor, depth: number): void {
+  if (depth > MAX_DEPTH) throw new XfdfTooDeepError();
+  for (;;) {
+    const tag = nextTag(cursor, 'an element');
+    if (tag === 'end') return;
+    if (!tag.selfClosing) skipElement(cursor, depth + 1);
+  }
+}
+
+/**
+ * The next tag among an element's children, or `'end'` at its close tag — comments, processing
+ * instructions and text skipped, and a declaration refused as the prolog refuses one.
+ */
+function nextTag(cursor: Cursor, within: string): Tag | 'end' {
+  for (;;) {
+    skipSpace(cursor);
+    if (cursor.at >= cursor.text.length) {
+      throw new XfdfRefusedError(`it ends in the middle of ${within}`);
+    }
+    if (cursor.text.startsWith('<!--', cursor.at)) {
+      consumeThrough(cursor, '-->', 'an unterminated comment');
+      continue;
+    }
+    if (cursor.text.startsWith('<?', cursor.at)) {
+      consumeThrough(cursor, '?>', 'an unterminated processing instruction');
+      continue;
+    }
+    if (cursor.text.startsWith('<!DOCTYPE', cursor.at)) throw new XfdfDoctypeError();
+    if (cursor.text.startsWith('<![CDATA[', cursor.at)) {
+      consumeThrough(cursor, ']]>', 'an unterminated CDATA section');
+      continue;
+    }
+    if (cursor.text.startsWith('<!', cursor.at)) {
+      throw new XfdfRefusedError('it carries a declaration this reader does not accept');
+    }
+    // ONE CHARACTER PAST THE BOUND, so an attribute that exceeds it is refused where it is read
+    // into a record rather than cut to a number that still parses.
+    const tag = readTag(cursor, MAX_GEOMETRY_TEXT + 1);
+    if (tag === null) {
+      skipUntilTag(cursor);
+      continue;
+    }
+    if (tag.kind === 'close') return 'end';
+    return tag;
+  }
+}
+
+/** A text read to one past `limit`, refused if it reaches it — a cut coordinate still parses. */
+function readBoundedText(cursor: Cursor, limit: number, what: string): string {
+  const text = readText(cursor, limit + 1);
+  if (text.length > limit) throw new XfdfRefusedError(`${what} is longer than ${String(limit)} characters`);
+  return text;
 }
 
 /**
@@ -302,8 +470,8 @@ function readField(
   }
 }
 
-/** One element's text content, up to its close tag. */
-function readText(cursor: Cursor): string {
+/** One element's text content, up to its close tag, cut at `limit` as a field value is. */
+function readText(cursor: Cursor, limit = MAX_TEXT): string {
   let out = '';
   for (;;) {
     if (cursor.at >= cursor.text.length) {
@@ -318,7 +486,7 @@ function readText(cursor: Cursor): string {
     }
     if (cursor.text.startsWith('</', cursor.at)) {
       consumeThrough(cursor, '>', 'an unterminated close tag');
-      return out.slice(0, MAX_TEXT);
+      return out.slice(0, limit);
     }
     if (cursor.text.startsWith('<', cursor.at)) {
       // AN ELEMENT INSIDE A VALUE. XFDF's `<value>` holds text; markup here is
@@ -379,8 +547,8 @@ interface Tag {
   readonly attributes: ReadonlyMap<string, string>;
 }
 
-/** Reads one tag, or answers `null` when the cursor is not on one. */
-function readTag(cursor: Cursor): Tag | null {
+/** Reads one tag, or answers `null` when the cursor is not on one. Attribute values are cut at `limit`. */
+function readTag(cursor: Cursor, limit = MAX_TEXT): Tag | null {
   if (!cursor.text.startsWith('<', cursor.at)) return null;
   const end = cursor.text.indexOf('>', cursor.at);
   if (end === -1) throw new XfdfRefusedError('an unterminated tag');
@@ -401,7 +569,7 @@ function readTag(cursor: Cursor): Tag | null {
   let match = pattern.exec(inner.slice(name.length));
   while (match !== null) {
     const value = match[3] ?? match[4] ?? '';
-    attributes.set(localName(match[1] ?? ''), unescape(value).slice(0, MAX_TEXT));
+    attributes.set(localName(match[1] ?? ''), unescape(value).slice(0, limit));
     match = pattern.exec(inner.slice(name.length));
   }
   return { kind: 'open', name, selfClosing, attributes };

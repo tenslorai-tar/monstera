@@ -1,4 +1,4 @@
-import type { CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract';
+import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers } from '@monstera/contract';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
@@ -235,6 +235,12 @@ export type HostFormDataExport = (
   format: FormDataFormat,
 ) => Promise<ByteImage>;
 
+/** The annotations, encoded — {@link HostFormDataExport}'s shape and reasons (ADR-0077). */
+export type HostAnnotationDataExport = (
+  session: MupdfSession,
+  format: AnnotationDataFormat,
+) => Promise<ByteImage>;
+
 /**
  * One whole page, encoded as an image — a FOURTH producer of bytes that are not
  * the session's document, for {@link HostSnapshot}'s reason: rasterising reaches
@@ -441,6 +447,8 @@ export interface EngineHandlerParts {
   readonly snapshot: HostSnapshot;
   /** How this process writes the form's data out. `engine/exportFormData`. */
   readonly exportFormData: HostFormDataExport;
+  /** How this process writes the annotations out. `engine/exportAnnotations`. */
+  readonly exportAnnotationData: HostAnnotationDataExport;
   /** How this process encodes one page as an image. `engine/pageImage`. */
   readonly pageImage: HostPageImage;
   /** How this process proposes fields on a flat page. `detectFlatFields`. */
@@ -470,6 +478,7 @@ export function createEngineHandlers({
   extract,
   snapshot,
   exportFormData,
+  exportAnnotationData,
   pageImage,
   flatFields,
   barcodes,
@@ -870,6 +879,22 @@ export function createEngineHandlers({
         // EVERYTHING ELSE IS THE DOCUMENT'S FAULT rather than the host's, which
         // is `engine/extract`'s distinction: the supervisor declines to count a
         // distinguishable code as a host death.
+        return failed('export-failed', error);
+      }
+    },
+
+    'engine/exportAnnotations': async ({ session, format, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        const bytes = await exportAnnotationData(held.session, format);
+        const written = await files.writeOutput(held.outputDirectory, into, bytes);
+        return { ok: true, value: { bytes: written } };
+      } catch (error) {
+        // `engine/exportFormData`'s two codes and its reason for matching by name.
+        if (error instanceof Error && error.name === 'UnrepresentableAnnotationDataError') {
+          return failed('unrepresentable', error);
+        }
         return failed('export-failed', error);
       }
     },

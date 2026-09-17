@@ -1,5 +1,7 @@
 import {
+  type AnnotationDataFormat,
   type AnnotationRect,
+  MAX_ANNOTATION_DATA_BYTES,
   type CommandKind,
   type CommandOfKind,
   type FormDataFormat,
@@ -541,6 +543,46 @@ export function splitPartName(name: string, pages: readonly number[]): string {
  * at index 0 — is treated as having no extension. Splitting it would produce a
  * file whose whole name is an extension.
  */
+/**
+ * Each annotation format's extension and the words its dialog filter shows (ADR-0077).
+ * {@link FORM_DATA_FILES}' shape, with its own words: the same extension holds a different kind
+ * of file, and a filter saying *form data* over a comments file would name the wrong one.
+ */
+export const ANNOTATION_DATA_FILES: Readonly<
+  Record<AnnotationDataFormat, { readonly extension: string; readonly label: string }>
+> = {
+  json: { extension: 'json', label: 'JSON comments' },
+  xfdf: { extension: 'xfdf', label: 'XFDF comments' },
+  fdf: { extension: 'fdf', label: 'FDF comments' },
+};
+
+/** The name an annotation export's picker opens with: `report.pdf` becomes `report comments.xfdf`. */
+export function suggestedAnnotationDataName(name: string, format: AnnotationDataFormat): string {
+  const withWord = suffixed(name, 'comments');
+  const dot = withWord.lastIndexOf('.');
+  const stem = dot <= 0 ? withWord : withWord.slice(0, dot);
+  return `${stem}.${ANNOTATION_DATA_FILES[format].extension}`;
+}
+
+/**
+ * What exchanging annotations needs from the platform — {@link FormDataSource}'s four members,
+ * for the annotations (ADR-0077). The read answers {@link FormDataRead}'s shape against
+ * `MAX_ANNOTATION_DATA_BYTES`.
+ */
+export interface AnnotationDataSource {
+  readonly pick: (sourceName: string, format: AnnotationDataFormat) => Promise<string | null>;
+  readonly encode: (docId: DocId, sessions: DocumentSessions, format: AnnotationDataFormat) => Promise<ByteImage>;
+  readonly open: (format: AnnotationDataFormat) => Promise<string | null>;
+  readonly read: (path: string) => Promise<FormDataRead>;
+}
+
+/** What {@link DocumentCommands.importAnnotations} answers. */
+export type ImportAnnotationsOutcome =
+  | ({ readonly kind: 'imported' } & Applied)
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'too-large'; readonly limitBytes: number };
+
 function suffixed(name: string, word: string): string {
   const dot = name.lastIndexOf('.');
   if (dot <= 0) return `${name} ${word}`;
@@ -1765,6 +1807,8 @@ export interface DocumentCommandsParts {
   readonly extract: DocumentExtractReader;
   readonly snapshot: SnapshotSource;
   readonly formData: FormDataSource;
+  /** Where annotations are exchanged with. See {@link AnnotationDataSource}. */
+  readonly annotationData: AnnotationDataSource;
   /** How a page becomes an image file's bytes. See {@link DocumentPageImageReader}. */
   readonly pageImage: DocumentPageImageReader;
   /**
@@ -1854,6 +1898,7 @@ export class DocumentCommands {
   readonly #extract: DocumentExtractReader;
   readonly #snapshot: SnapshotSource;
   readonly #formData: FormDataSource;
+  readonly #annotationData: AnnotationDataSource;
   readonly #pageImage: DocumentPageImageReader;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
@@ -1912,6 +1957,7 @@ export class DocumentCommands {
     this.#extract = parts.extract;
     this.#snapshot = parts.snapshot;
     this.#formData = parts.formData;
+    this.#annotationData = parts.annotationData;
     this.#pageImage = parts.pageImage;
     this.#pickText = parts.pickText;
     this.#layoutText = parts.layoutText;
@@ -3354,6 +3400,68 @@ export class DocumentCommands {
       // `placeImage`'s catch and its reason: the classes the handler already
       // turns into declared codes are rethrown, and everything else is this
       // file refusing to import.
+      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
+        throw error;
+      }
+      if (error instanceof DocumentNotOpenError) throw error;
+      return { kind: 'unreadable' };
+    }
+  }
+
+  /**
+   * Writes the document's annotations to a file the user picks (ADR-0077).
+   *
+   * {@link exportFormData}'s body and its reasons: the picker before the lane, the encoding in the
+   * host, and the write by the one atomic copy route.
+   */
+  async exportAnnotations(docId: DocId, format: AnnotationDataFormat): Promise<CopyOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export annotations');
+
+    const destination = await this.#annotationData.pick(suggest, format);
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => this.#annotationData.encode(docId, sessions, format),
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /**
+   * Adds the annotations a file the user picks carries (ADR-0077).
+   *
+   * {@link importFormData}'s body and every one of its reasons, the wide catch included: a file
+   * that is not annotation data, carries nothing this build exchanges, or names a page this
+   * document lacks is the apply refusing, and that reason does not cross the host's boundary.
+   */
+  async importAnnotations(docId: DocId, format: AnnotationDataFormat): Promise<ImportAnnotationsOutcome> {
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'import annotations');
+    }
+
+    const picked = await this.#annotationData.open(format);
+    if (picked === null) return { kind: 'cancelled' };
+
+    const read = await this.#annotationData.read(picked);
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_ANNOTATION_DATA_BYTES };
+    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+
+    try {
+      const applied = await this.execute(docId, { kind: 'importAnnotations', format, bytes: read.bytes });
+      return { kind: 'imported', ...applied };
+    } catch (error) {
       if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
         throw error;
       }
