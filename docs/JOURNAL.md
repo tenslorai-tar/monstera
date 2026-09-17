@@ -892,6 +892,131 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Stage audit of `fcee46e..e08a99f` — findings KKKKKK-1 to KKKKKK-7
+
+35 commits, 196 files: D10's barcodes and PDF/A and Print and Email, D8's compare, annotation
+interchange and accessibility check, the corrections to earlier stages' rows, Stage 8's close and
+Stage 9's opening. `npm run audit:scope` named 16 proofs added, 26 modified, none removed, and 74
+source files added.
+
+### 1. Root cause or workaround
+
+Each fix in the range states a mechanism: the handwriting host
+list lacked `*.hf.co` while `downloadVerified` checks every hop (the redirect was read that day);
+the redaction burn-in left four copies (measured, each with a control); `pruneEmptyFields` asked a
+missing `/AcroForm` for `/Fields`, which throws on MuPDF's shared Null; the handwriting proof's
+`process.exit` raced MuPDF's WASM instantiation, which `mupdf.js` starts with a top-level `await`.
+Two drafts were **withdrawn by measurement** inside the range — a widget-detaching function and a
+link-removal loop, both second opinions about work something else already did.
+
+### 2. The hard shape
+
+The redaction corpus was built from eight fixtures including the merged
+field-and-widget shape, which is the one `deleteFormFields` measured in 2026-09-07. **KKKKKK-3**:
+it has an exactly-covering mark and a mark elsewhere, and never a PARTIAL overlap, nor a rotated
+page where `getRect` answers the displayed frame. Open.
+
+### 2a. Coverage moved by a change in HOW something is proven
+
+One move: `ocrHandwriting.proof.mjs` now holds the loader's file names equal to the provisioner's
+**before** its not-applicable exit, so that case runs on every machine rather than only where the
+models are present — a strengthening with no provisioning condition. Nothing in the range turned an
+asserted claim into a derived one.
+
+### 3. Would CI have caught it, and is there a defect this machine cannot see?
+
+CI caught what this machine could not: the proof's exit aborts on Node 24.19.0 and not on 24.12.0 here. In the other
+direction, **KKKKKK-1**: `tessdata.mjs` now fetches its licence text from `raw.githubusercontent.com`
+whenever a model is fetched, and CI's `--only=eng` step fetches on every cold leg — so a step that
+touched one host now touches two, and an outage there fails provisioning that used to succeed. The
+pinned digest can settle the committed copy offline; the fix is named and not yet made. **KKKKKK-2**:
+`pdfium.mjs` and `tessdata.mjs` compare the committed licence copies only when they actually
+provision, so a drifted copy is invisible to a warm machine — a green that could not have failed
+there. Its trigger: the first time a committed licence text differs from its pin.
+
+### 4. Non-vacuous proofs
+
+The corpus's own first run is its mutation test: with the burn-in unchanged,
+four cases failed and ten passed, and each fix turned one red case green. `aiProviders.test.ts`
+holds two lists equal **as sets from both sides**, because iterating one would make it the universe.
+`shareRoute.mjs` separates a filled package from an unfilled one (`0x8004006A`), and `sharing.ts`'s
+ID computation is held to three IDs the Windows SDK declares, with a control that one changed
+character changes the answer.
+
+### 4a. Resolution tests before anything real was measured
+
+`shareRoute.mjs` was run against a package with items and one without before it was believed, and
+they differ in the read rather than in a digit. `sharing.ts`'s interface-ID computation was checked
+against three IDs the Windows SDK header declares, and its control shows one changed character
+changes the answer. The leak corpus's reader was shown to see each secret before any assertion that
+it was gone — that is what every *CONTROL* case in it is.
+
+### 4b. Searches with a positive control
+
+The leak reader is a search: it walks every indirect object and every stream. Its control is per
+fixture and runs the same pipeline, so *found nothing* is separated from *could not look*; it also
+**refuses** a stream it cannot decode rather than passing it. `shareRoute.mjs` prints `SEPARATED`
+only when the filled and unfilled packages differ. The licence comparisons refuse when a committed
+copy is missing.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+Two new lists, and the direction was asked of both. `SECRET_SETTING_IDS` derives from the AI
+registry's key list, because the failure feared there makes the set **bigger** (a provider added
+with no way to store its key). `AI_PROVIDER_KEY_SETTING_IDS` is written out, because the failure
+feared makes it **smaller**, and a test holds it equal to the table from both sides.
+`PDFIUM_LICENCE_TEXTS` is written out and the provisioner refuses an archive carrying a licence the
+list does not name — again the shrinking direction.
+
+### 5. Executed or asserted
+
+**KKKKKK-4**: everything the Share sheet needs was executed headless,
+and the sheet itself — `ShowShareUIForWindow`, the operating system raising `DataRequested` on a
+koffi delegate, and whether it calls from a thread koffi did not register on — is asserted. That is
+the row's owner-present live run. Thirteen Stage 8 rows are *built* for the same reason.
+
+### 6. Architecture before the feature
+
+ADR-0080 landed in its own commit before Email's code.
+ADR-0079 (the redaction leak corpus's rulings) amends nothing and rode with its feature, which the
+B4 rule permits and this entry records so the difference is not read as precedent.
+
+### 7. Documents against code
+
+§3's *twenty-five channels … eighteen MuPDF document-model reads*
+was re-counted against `engineChannels.ts` (25) and `coreChannels.test.ts` (18 reads): they agree,
+including `page-barcodes` and `accessibility-check` added in this range. **KKKKKK-7**: the Email row
+was marked *blocked on the route, which is the owner's* while the owner's answer had been on record
+since 2026-09-14 — a block that dissolved on one grep, corrected in `f2c28dd` before the row was
+built. **KKKKKK-5**: `df89c6f` proves the command palette's Escape from its field, and in the
+running application on 2026-09-17 the palette would not close for Escape, a click outside, or the
+title-bar toggle; unreproduced, and it blocked the live re-check of four done rows. **KKKKKK-6**:
+`AppTabs.test.tsx`, `barcodesChannel.test.ts` and `barcode.test.ts` each failed only inside a large
+parallel run — `CreateJobObjectW returned no handle` among the host tests — and passed alone;
+recorded as load rather than cause, and not investigated.
+
+---
+
+## 2026-09-17 — Stage 9's first unit: the provider registry, and a key field for each of the ten
+
+ADR-0081. `packages/contract/src/aiProviders.ts` declares the owner's ten providers, each with
+its adapter shape and the secret setting its key lives under; `SECRET_SETTING_IDS` now spreads
+that list, and the Settings dialog builds a write-only key field per provider by walking it, with
+Azure OpenAI's endpoint beside its key.
+
+**`ANTHROPIC_KEY_SETTING_ID` moved into the table** and `schemas.ts` re-exports it, so the
+recogniser, the composition root and the Settings entry that already read it are unmoved. The
+alternative — a tenth id spelt beside nine — is the second opinion B3a is about.
+
+**The key list is written out rather than mapped from the table**, because the failure feared is
+an omission and a derived list agrees with any shrink. The test holds the two equal as sets from
+both sides, and a control asserts the endpoint setting is not among the secrets.
+
+`vitest --changed` was green apart from `barcode.test.ts`, which passed alone (8 of 8) — the third
+file today to fail only inside a large parallel run, beside `AppTabs` and `barcodesChannel`.
+
+---
+
 ## 2026-09-17 — Stage 8 closes: 2.50×, continue
 
 **The figure, pushed the unflattering way.** Opened 2026-09-13 at `9b212cb`, the commit after Stage
