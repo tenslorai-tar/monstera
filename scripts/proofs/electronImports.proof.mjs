@@ -514,6 +514,17 @@ try {
       },
     ],
     [
+      'scripts/research/shareRoute.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports apps/desktop/dist/win32ShareSurface.js through a file:// URL resolved at run ' +
+          'time: ADR-0080\'s reading — that the Share sheet handler\'s steps fill a DataPackage — is ' +
+          'asked of the SHIPPED surface, so a copy would measure a harness. Plain Node; it binds ' +
+          'combase through koffi and never imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/popplerContained.mjs',
       {
         sites: 1,

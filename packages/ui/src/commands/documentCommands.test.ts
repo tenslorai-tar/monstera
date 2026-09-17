@@ -37,6 +37,7 @@ import {
   exportExcelCommand,
   exportPowerPointCommand,
   printCommand,
+  emailCommand,
   exportPdfaCommand,
   exportTextCommand,
   exportWordCommand,
@@ -2238,6 +2239,46 @@ describe('delete pages — the mutation-dialog gate', () => {
         }).run(CONTEXT);
 
         expect(asked).toStrictEqual(spoken);
+      }
+    });
+  });
+
+  describe('email (ADR-0080)', () => {
+    it('dispatches the document and asks nothing when the sheet opened', async () => {
+      const { client, sent } = recording({ 'document.email': { kind: 'offered' } });
+      const asked: unknown[] = [];
+
+      await emailCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([{ id: 'document.email', params: { docId: DOC } }]);
+      expect(asked).toStrictEqual([]);
+    });
+
+    it('says so for a platform with no sheet and for a step that refused', async () => {
+      for (const [answered, spoken] of [
+        [{ kind: 'unavailable' }, 'email-unavailable'],
+        [{ kind: 'failed' }, 'email-failed'],
+      ] as const) {
+        const { client } = recording({ 'document.email': answered });
+        const asked: unknown[] = [];
+
+        await emailCommand({
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve(undefined);
+          },
+        }).run(CONTEXT);
+
+        expect(asked).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: spoken } }]);
       }
     });
   });

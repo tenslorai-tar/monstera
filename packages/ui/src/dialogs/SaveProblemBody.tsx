@@ -9,6 +9,8 @@ import {
   SAVE_REFUSED_UNREPRESENTABLE,
   SAVE_REFUSED_UNVERIFIABLE,
   SAVE_WORK_INTACT,
+  SAVE_EMAIL_FAILED,
+  SAVE_EMAIL_UNAVAILABLE,
   SAVE_LAYOUT_FAILED,
   SAVE_LAYOUT_UNAVAILABLE,
   SAVE_NO_TABLES,
@@ -36,6 +38,8 @@ type SaveProblem =
   | 'review-changed'
   | 'print-unavailable'
   | 'print-failed'
+  | 'email-unavailable'
+  | 'email-failed'
   | 'pdfa-unavailable'
   | 'pdfa-failed';
 
@@ -79,6 +83,9 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   // A PRINT's two: no print dialog on this platform, and a printer that refused a step.
   'print-unavailable': SAVE_PRINT_UNAVAILABLE,
   'print-failed': SAVE_PRINT_FAILED,
+  // EMAILING's two: no Share sheet on this platform, and a step before it that refused.
+  'email-unavailable': SAVE_EMAIL_UNAVAILABLE,
+  'email-failed': SAVE_EMAIL_FAILED,
   // A PDF/A EXPORT's two, layout text's reason: no converter here, and one that made no PDF/A.
   'pdfa-unavailable': SAVE_PDFA_UNAVAILABLE,
   'pdfa-failed': SAVE_PDFA_FAILED,

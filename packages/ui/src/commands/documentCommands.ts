@@ -136,6 +136,7 @@ import {
   EXPORT_POWERPOINT_COMMAND_TITLE,
   EXPORT_EXCEL_COMMAND_TITLE,
   PRINT_COMMAND_TITLE,
+  EMAIL_COMMAND_TITLE,
   EXPORT_PDFA_COMMAND_TITLE,
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
@@ -2089,6 +2090,37 @@ export function printCommand(deps: DocumentCommandDeps): UiCommand {
       if (answer.value.kind === 'printed' || answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'unavailable' ? 'print-unavailable' : 'print-failed',
+      });
+    },
+  };
+}
+
+/**
+ * Emails the document (ADR-0080): main offers its current bytes to the Windows Share
+ * sheet, where the person picks the mail application.
+ *
+ * No dialog of this build's comes first — the sheet is the choice. `offered` says
+ * nothing more; a platform with no sheet and a step that refused each say so through
+ * the save problem dialog.
+ */
+export function emailCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.email',
+    icon: 'Mail',
+    title: EMAIL_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 47 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+
+      const answer = await deps.client['document.email']({ docId: context.docId });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'offered') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'unavailable' ? 'email-unavailable' : 'email-failed',
       });
     },
   };

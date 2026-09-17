@@ -177,6 +177,7 @@ import type { ConverterPlatform } from './converterSession.js';
 import { createLayoutTextSource } from './layoutText.js';
 import { createPdfaSource } from './pdfaConversion.js';
 import type { PrintDestination } from './printing.js';
+import type { ShareDestination } from './sharing.js';
 import { provisionedModelDirectory, provisionedOcrLanguages, provisionedOnnxRuntimeDirectory } from './ocrModels.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
@@ -557,6 +558,11 @@ export interface ShellComposition {
    */
   readonly print?: PrintDestination | null;
   /**
+   * The Windows Share sheet (ADR-0080). `null` where there is none, and emailing then
+   * answers *unavailable*.
+   */
+  readonly share?: ShareDestination | null;
+  /**
    * How a rasterised page becomes PNG bytes. See {@link EncodePng}.
    *
    * Optional, and its absence is a decided state rather than a default: a
@@ -614,6 +620,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     layoutTextPlatform = null,
     pdfaPlatform = null,
     print = null,
+    share = null,
     encodePng,
     log = null,
   } = composition;
@@ -1191,6 +1198,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pdfa: pdfaPlatform === null ? null : createPdfaSource(pdfaPlatform, failures),
     // THE PRINT DIALOG, from `entry.ts` for the pickers' reason (ADR-0074).
     print,
+    // THE SHARE SHEET, from `entry.ts` for the print dialog's reason (ADR-0080).
+    share,
     // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
     // the one part of splitting that genuinely needs Electron, so it is the
     // part that arrives from `entry.ts` and this file keeps its property of

@@ -301,6 +301,7 @@ export function createContractHandlers(deps: {
     'document.exportPowerPoint': exportPowerPointHandler(deps.commands),
     'document.exportExcel': exportExcelHandler(deps.commands),
     'document.print': printHandler(deps.commands),
+    'document.email': emailHandler(deps.commands),
     'document.exportPdfa': exportPdfaHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
@@ -1392,6 +1393,20 @@ function exportPdfaHandler(commands: DocumentCommands): ContractHandlers['docume
         case 'failed':
           return ok({ kind: outcome.kind });
       }
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** Emailing's handler: the command's three outcomes as they are. */
+function emailHandler(commands: DocumentCommands): ContractHandlers['document.email'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.email']>>> => {
+    try {
+      return ok({ kind: (await commands.email(docId)).kind });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

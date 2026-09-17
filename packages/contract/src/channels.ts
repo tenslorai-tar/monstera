@@ -2055,6 +2055,24 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
+  /**
+   * Emails the document — D10's *email document*: its current bytes offered to the
+   * Windows Share sheet as a file, where the person picks the mail application
+   * (ADR-0080). The sheet is main's, so the ask is a `DocId`. `offered` says the sheet
+   * opened and nothing about a send; `unavailable` where this platform has no sheet,
+   * `failed` where a step before it refused.
+   */
+  'document.email': channel(
+    'Offers the document to the Windows Share sheet as a file, to be emailed.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('offered') }),
+      z.object({ kind: z.literal('unavailable') }),
+      z.object({ kind: z.literal('failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),

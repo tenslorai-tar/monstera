@@ -208,6 +208,7 @@ export const PDFA_REMOVALS_SAVED = messageKey('dialog.pdfa-removals.saved');
 export const PDFA_REMOVALS_CONVERTER_WORDS = messageKey('dialog.pdfa-removals.converter-words');
 export const PDFA_REMOVALS_TAGS = messageKey('dialog.pdfa-removals.tags');
 export const PRINT_COMMAND_TITLE = messageKey('command.print.title');
+export const EMAIL_COMMAND_TITLE = messageKey('command.email.title');
 export const PRINT_TITLE = messageKey('dialog.print.title');
 export const PRINT_DPI = messageKey('dialog.print.dpi');
 export const PRINT_DPI_150 = messageKey('dialog.print.dpi-150');
@@ -1256,6 +1257,8 @@ export const SAVE_PDFA_UNAVAILABLE = messageKey('dialog.save-problem.pdfa-unavai
 export const SAVE_PDFA_FAILED = messageKey('dialog.save-problem.pdfa-failed');
 export const SAVE_PRINT_UNAVAILABLE = messageKey('dialog.save-problem.print-unavailable');
 export const SAVE_PRINT_FAILED = messageKey('dialog.save-problem.print-failed');
+export const SAVE_EMAIL_UNAVAILABLE = messageKey('dialog.save-problem.email-unavailable');
+export const SAVE_EMAIL_FAILED = messageKey('dialog.save-problem.email-failed');
 export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
@@ -2237,6 +2240,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PDFA_REMOVALS_CONVERTER_WORDS]: 'In the words of the converter, Ghostscript:',
   [PDFA_REMOVALS_TAGS]: 'This document had tags that let screen readers follow it. The PDF/A file does not keep them.',
   [PRINT_COMMAND_TITLE]: 'Print…',
+  [EMAIL_COMMAND_TITLE]: 'Email…',
   [PRINT_TITLE]: 'Print',
   [PRINT_DPI]: 'Print quality',
   [PRINT_DPI_150]: 'Draft — 150 dots per inch',
@@ -2806,6 +2810,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_PDFA_FAILED]: 'This document could not be converted to PDF/A, so no file was written. Save a copy… still works.',
   [SAVE_PRINT_UNAVAILABLE]: 'Printing needs the system print dialog, which this copy of Monstera cannot open here, so nothing was printed.',
   [SAVE_PRINT_FAILED]: 'The printer did not accept the document, so it was cancelled and nothing more was sent. Check the printer, then print again.',
+  [SAVE_EMAIL_UNAVAILABLE]: 'Emailing uses the Windows Share sheet, which this copy of Monstera cannot open here, so nothing was shared.',
+  [SAVE_EMAIL_FAILED]: 'The Windows Share sheet could not be opened for this document, so nothing was shared. Save a copy… and attach it from your mail app instead.',
   [SAVE_REVIEW_CHANGED]: 'The document changed while its tables were being reviewed, so no file was written. Export tables to Excel… again to review the tables as they are now.',
   [SAVE_NO_TABLES_NO_TEXT]: 'No tables were found, so no file was written. Some pages are pictures of text with no text to read; recognise their text first with Tools › OCR, then export again.',
   // "Could not be done" and never "error". Every code below leaves the document

@@ -43,6 +43,7 @@ import { createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
 import { createWin32PrintSurface } from './win32PrintSurface.js';
+import { createWin32ShareSurface } from './win32ShareSurface.js';
 import { startShell } from './main.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 import { isPdfPath } from './openExternalEditor.js';
@@ -353,6 +354,17 @@ startShell(() => {
               return window.getNativeWindowHandle().readBigUInt64LE(0);
             },
           )
+        : null,
+    // THE SHARE SHEET (ADR-0080): the window's handle is Electron's, and so is the
+    // temporary directory the shared file is written under — one folder per share, in a
+    // directory this application owns.
+    share:
+      process.platform === 'win32'
+        ? createWin32ShareSurface(join(app.getPath('temp'), 'Monstera shares'), () => {
+            const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+            if (window === undefined) throw new Error('there is no window for the share sheet to belong to');
+            return window.getNativeWindowHandle().readBigUInt64LE(0);
+          })
         : null,
     // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
     // packaged run: a Store application has no terminal attached, so until this

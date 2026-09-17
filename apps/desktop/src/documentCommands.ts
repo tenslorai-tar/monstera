@@ -130,6 +130,7 @@ import {
 import { type LayoutTextSource, LayoutTextFailedError } from './layoutText.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
+import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
 /**
@@ -1118,6 +1119,12 @@ export type PrintDpi = (typeof PRINT_DPIS)[number];
 export const PRINT_PIXELS = 30_000_000;
 
 /** What a print did. */
+/** What emailing did: the sheet opened, there is none here, or a step before it refused. */
+export type EmailOutcome =
+  | { readonly kind: 'offered' }
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'failed' };
+
 export type PrintOutcome =
   | { readonly kind: 'printed'; readonly pages: number }
   | { readonly kind: 'unavailable' }
@@ -1841,6 +1848,11 @@ export interface DocumentCommandsParts {
    * there is none, and a print then answers `unavailable` before any dialog.
    */
   readonly print: PrintDestination | null;
+  /**
+   * The Windows Share sheet (ADR-0080) — or `null` where there is none, and emailing
+   * then answers `unavailable` before any bytes are taken.
+   */
+  readonly share: ShareDestination | null;
   /** Where an Office export goes. See {@link PickOffice}. */
   readonly pickOffice: PickOffice;
   readonly directory: PickDirectory;
@@ -1914,6 +1926,7 @@ export class DocumentCommands {
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
   readonly #print: PrintDestination | null;
+  readonly #share: ShareDestination | null;
   readonly #pickOffice: PickOffice;
   readonly #directory: PickDirectory;
   readonly #externalEdit: ExternalEditSource;
@@ -1974,6 +1987,7 @@ export class DocumentCommands {
     this.#layoutText = parts.layoutText;
     this.#pdfa = parts.pdfa;
     this.#print = parts.print;
+    this.#share = parts.share;
     this.#pickOffice = parts.pickOffice;
     this.#directory = parts.directory;
     this.#externalEdit = parts.externalEdit;
@@ -3879,6 +3893,46 @@ export class DocumentCommands {
       return { pageCount, ...reviewGridOf(tables, MAX_TABLE_CELLS, MAX_TABLE_CELL_TEXT) };
     });
     return { version, ...value };
+  }
+
+  /**
+   * Emails the document — D10's *email document*: its current bytes offered to the
+   * Windows Share sheet as a file named as the document is, where the person picks the
+   * mail application (ADR-0080, the owner's route).
+   *
+   * ## The bytes are the SAVE'S flush, taken inside the lane
+   *
+   * `docusignSend`'s reason: what is attached is exactly what a save would write now
+   * (B3a), and an edit mid-share cannot be half of each. The sheet opens outside the
+   * lane — it waits on a person.
+   *
+   * ## `offered` says the sheet opened, not that anything was sent
+   *
+   * What the person does in the sheet is theirs and the operating system's; nothing
+   * comes back to this build, so no answer here claims an email.
+   *
+   * It does NOT touch the document.
+   */
+  async email(docId: DocId): Promise<EmailOutcome> {
+    const fileName = this.#documents.nameOf(docId);
+    if (fileName === undefined) throw new DocumentNotOpenError(docId, 'email');
+    if (this.#share === null) return { kind: 'unavailable' };
+
+    const { value: bytes } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return await this.#save.flush(docId, sessions);
+    });
+
+    try {
+      await this.#share.offer({ fileName, title: shareTitle(fileName), bytes });
+      return { kind: 'offered' };
+    } catch (thrown) {
+      if (thrown instanceof ShareFailedError) return { kind: 'failed' };
+      throw thrown;
+    }
   }
 
   /**

@@ -136,6 +136,7 @@ import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
 import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
+import { type ShareDestination, ShareFailedError, type ShareOffer } from './sharing.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 
 /**
@@ -674,6 +675,8 @@ const INERT = {
   layoutText: null,
   // NO PRINT DIALOG, the state a platform without one is in; a print case supplies its own.
   print: null,
+  // NO SHARE SHEET, the state a platform without one is in; an email case supplies its own.
+  share: null,
   // NO PDF/A CONVERTER, the state of a machine that has not provisioned one.
   pdfa: null,
   pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
@@ -1977,6 +1980,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly flush?: () => Promise<Uint8Array>;
       readonly picked?: string[];
       readonly print?: PrintDestination | null;
+      readonly share?: ShareDestination | null;
       readonly images?: PageImageRequest[];
       readonly pdfa?: PdfaSource | null;
       /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
@@ -1992,6 +1996,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       bus: bus(),
       engine: textEngine(),
       print: options.print ?? null,
+      share: options.share ?? null,
       pdfa: options.pdfa ?? null,
       ...(options.structure === undefined
         ? {}
@@ -2378,6 +2383,54 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
       expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'unavailable' });
       expect(images).toStrictEqual([]);
+    });
+  });
+
+  describe('emailed (ADR-0080)', () => {
+    /** The save's flush, recognisable: a document whose bytes are exactly these. */
+    const FLUSHED = new TextEncoder().encode('%PDF-1.7 the flush\n%%EOF\n');
+
+    function recordingSheet(refuse = false): { readonly destination: ShareDestination; readonly offers: ShareOffer[] } {
+      const offers: ShareOffer[] = [];
+      return {
+        offers,
+        destination: {
+          offer: (offer) => {
+            offers.push(offer);
+            return refuse ? Promise.reject(new ShareFailedError('the share sheet', 0x80004005)) : Promise.resolve();
+          },
+        },
+      };
+    }
+
+    it('offers the SAVE’S FLUSH, named as the document is, with its name as the title', async () => {
+      const sheet = recordingSheet();
+      const { commands } = exportingTo(null, { share: sheet.destination, flush: () => Promise.resolve(FLUSHED) });
+
+      expect(await commands.email(textDoc)).toStrictEqual({ kind: 'offered' });
+      expect(sheet.offers).toStrictEqual([{ fileName: 'words.pdf', title: 'words', bytes: FLUSHED }]);
+    });
+
+    it('answers FAILED when a step before the sheet refuses', async () => {
+      const sheet = recordingSheet(true);
+      const { commands } = exportingTo(null, { share: sheet.destination, flush: () => Promise.resolve(FLUSHED) });
+
+      expect(await commands.email(textDoc)).toStrictEqual({ kind: 'failed' });
+      expect(sheet.offers).toHaveLength(1);
+    });
+
+    it('CONTROL: answers UNAVAILABLE with no sheet on the platform, and takes no bytes', async () => {
+      let flushed = 0;
+      const { commands } = exportingTo(null, {
+        share: null,
+        flush: () => {
+          flushed += 1;
+          return Promise.resolve(FLUSHED);
+        },
+      });
+
+      expect(await commands.email(textDoc)).toStrictEqual({ kind: 'unavailable' });
+      expect(flushed).toBe(0);
     });
   });
 });

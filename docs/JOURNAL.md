@@ -892,6 +892,36 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 Email: the Share sheet from `main`, and a row blocked on an answered question
+
+**The row was wrong before it was hard.** `ad1541c` marked Email blocked on a route *"which is the
+owner's"*. The owner had answered it on 2026-09-14 (Q13: the Windows Share sheet, no substitute
+design). It was found at the Stage 8 exit read, by asking why a D10 row still waited on a decision,
+and corrected in `f2c28dd` before any building. *A block that dissolves on one grep* again: the
+handoff held the answer and the row was written without reading it.
+
+ADR-0080 (`93daae1`). Four scratch probes, each run in Electron 43.4.1's `main`, none showing UI:
+the manager for a window (`S_OK`; a null handle `0x80070578`), a koffi-built delegate registering
+(its interface ID computed from the WinRT signature and equal to the SDK header's), a file becoming
+a storage item, and a package filled and read back through its view (unfilled: `0x8004006A`). Every
+vtable slot was then read from Windows SDK 10.0.26100's headers rather than recalled — they agreed.
+
+The shipped module (`win32ShareSurface.ts`) keeps the handler to two synchronous steps: the folder's
+item list is resolved before the sheet opens, and asynchronous results are polled rather than given
+completion delegates. `scripts/research/shareRoute.mjs` runs those two steps through the built module
+in plain Node and reads them back: `SEPARATED`. The registration is replaced on every share, because
+a closed window's handle value can be reused.
+
+**Not measured, and it is the part a person sees**: `ShowShareUIForWindow`, the operating system
+raising `DataRequested` on the koffi delegate — including whether it calls from another thread — and
+the mail app receiving the file. That is the owner-present live run the row owes.
+
+During `vitest --changed`, `AppTabs.test.tsx` and `barcodesChannel.test.ts` failed with
+`CreateJobObjectW returned no handle` among the host tests; alone, all three files passed (30 of 30).
+Not investigated: recorded as load, not as cause.
+
+---
+
 ## 2026-09-17 — The redaction leak corpus: four copies survived a burn-in
 
 ADR-0079. Eight fixtures, built by pdf-lib, burned in by MuPDF, and read back by pdf-lib — every
