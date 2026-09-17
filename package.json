@@ -113,6 +113,7 @@
     "provision:pdfium": "node scripts/provision/pdfium.mjs",
     "provision:libreoffice": "node scripts/provision/libreoffice.mjs",
     "provision:poppler": "node scripts/provision/poppler.mjs",
+    "provision:ghostscript": "node scripts/provision/ghostscript.mjs",
     "proof:corpus": "node scripts/proofs/corpus.proof.mjs",
     "proof:textbounds": "node scripts/research/textLayerBounds.mjs",
     "proof:enginesurface": "node scripts/research/engineSurface.mjs",

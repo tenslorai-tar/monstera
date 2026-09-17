@@ -84,6 +84,7 @@ import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from './electron.mjs';
 import { libreOfficeRoot } from './libreoffice.mjs';
 import { pdfiumLibrary } from './pdfium.mjs';
+import { ghostscriptRoot } from './ghostscript.mjs';
 import { popplerRoot } from './poppler.mjs';
 import { tessdataDirectory } from './tessdata.mjs';
 
@@ -216,6 +217,15 @@ export function grantSet(root = repoRoot()) {
       path: popplerRoot(root),
       rights: 'RX',
       why: 'the pinned Poppler tree pdftotext runs from inside the container',
+      required: false,
+    },
+    // THE PINNED GHOSTSCRIPT TREE, which ADR-0075 runs `gswin64c` from: the executable,
+    // its DLL and the MSVC runtime. `RX` and NOT REQUIRED, for Poppler's reason — a
+    // checkout that has not run `provision:ghostscript` offers no PDF/A export.
+    {
+      path: ghostscriptRoot(root),
+      rights: 'RX',
+      why: 'the pinned Ghostscript tree gswin64c runs from inside the container',
       required: false,
     },
     // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and

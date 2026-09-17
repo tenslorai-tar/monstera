@@ -233,6 +233,33 @@
         { "name": "Zstandard", "version": "1.5.7", "spdx": "BSD-3-Clause", "texts": ["zstd/LICENSE.txt"] },
         { "name": "Microsoft Visual C++ runtime", "version": "14.51.36247", "spdx": "LicenseRef-MicrosoftVisualCpp2015-2022Runtime", "texts": ["vc14_runtime/LICENSE.txt"] }
       ]
+    },
+    {
+      "name": "Ghostscript",
+      "version": "10.08.0",
+      "role": "PDF/A-2b conversion: gswin64c, run in a contained separate process (ADR-0075). Not linked.",
+      "licence": "AGPL-3.0-or-later",
+      "origin": "https://www.ghostscript.com/",
+      "source": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/ghostscript-10.08.0.tar.gz, which carries every statically linked library below at the version listed; the build recipe is https://github.com/conda-forge/ghostscript-feedstock",
+      "build": "conda-forge win-64 ghostscript-10.08.0-hac47afa_0 and vc14_runtime-14.51.36247-habf1de7_41, as scripts/provision/ghostscript.mjs pins",
+      "licenceRoot": "scripts/release/licences/ghostscript",
+      "components": [
+        { "name": "Ghostscript", "version": "10.08.0", "spdx": "AGPL-3.0-or-later", "texts": ["ghostscript/LICENSE.txt", "ghostscript/COPYING.txt"] },
+        { "name": "FreeType", "version": "2.14.2", "spdx": "FTL OR GPL-2.0-or-later; taken under FTL", "texts": ["freetype/LICENSE.txt", "freetype/FTL.txt"] },
+        { "name": "zlib", "version": "1.3.2", "spdx": "Zlib", "texts": ["zlib/LICENSE.txt"] },
+        { "name": "IJG libjpeg", "version": "10", "spdx": "IJG", "texts": ["jpeg/README.txt"] },
+        { "name": "libpng", "version": "1.6.58", "spdx": "libpng-2.0", "texts": ["libpng/LICENSE.txt"] },
+        { "name": "OpenJPEG", "version": "2.5.4", "spdx": "BSD-2-Clause", "texts": ["openjpeg/LICENSE.txt"] },
+        { "name": "Little CMS (lcms2mt)", "version": "2.19", "spdx": "MIT", "texts": ["lcms2mt/COPYING.txt"] },
+        { "name": "jbig2dec", "version": "0.20", "spdx": "AGPL-3.0-or-later", "texts": ["jbig2dec/LICENSE.txt", "jbig2dec/COPYING.txt"] },
+        { "name": "LibTIFF", "version": "4.7.0", "spdx": "libtiff", "texts": ["tiff/LICENSE.md"] },
+        { "name": "Tesseract", "version": "5.5.2", "spdx": "Apache-2.0", "texts": ["tesseract/LICENSE.txt"] },
+        { "name": "Leptonica", "version": "1.87.0", "spdx": "BSD-2-Clause", "texts": ["leptonica/leptonica-license.txt"] },
+        { "name": "extract", "version": "as distributed with Ghostscript 10.08.0", "spdx": "AGPL-3.0 (its COPYING text; the directory states no later-version grant)", "texts": ["extract/COPYING.txt"] },
+        { "name": "IJS", "version": "0.35", "spdx": "MIT", "texts": ["ijs/ijs-banner.txt"] },
+        { "name": "Brotli", "version": "1.2.0", "spdx": "MIT", "texts": ["brotli/LICENSE.txt"] },
+        { "name": "Microsoft Visual C++ runtime", "version": "14.51.36247", "spdx": "LicenseRef-MicrosoftVisualCpp2015-2022Runtime", "texts": ["vc14_runtime/LICENSE.txt"] }
+      ]
     }
   ]
 }

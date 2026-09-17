@@ -96,6 +96,8 @@ const RESOLVERS = Object.freeze(
     sofficeLauncher: 'converter',
     // ADR-0071: Poppler's pdftotext, provisioned by scripts/provision/poppler.mjs.
     pdftotextPath: 'converter',
+    // ADR-0075: Ghostscript's gswin64c, provisioned by scripts/provision/ghostscript.mjs.
+    gswin64cPath: 'converter',
   }),
 );
 
