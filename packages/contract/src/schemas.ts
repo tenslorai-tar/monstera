@@ -7,6 +7,8 @@ import {
 } from '@monstera/shared';
 import { z } from 'zod';
 
+import { AI_PROVIDER_KEY_SETTING_IDS } from './aiProviders.js';
+
 /**
  * Wire schemas for the branded identity types.
  *
@@ -250,13 +252,12 @@ export const AZURE_KEY_SETTING_ID = 'editing.azure-di-key';
  * The Anthropic API key — the PROVIDER's key, not a recogniser's
  * ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md) Decision 5).
  *
- * D6's Claude recogniser is the first thing to need it and main reads it by name
- * to make that call, which is why it is here beside the Azure pair. **Stage 9's
- * provider registry takes this id for Anthropic** rather than minting a second
- * one: two ids would be two stored copies of one credential, and a person who
- * rotated the key in one place would leave the other working on the old one.
+ * D6's Claude recogniser is the first thing to need it and main reads it by name.
+ * **Declared in `aiProviders.ts` since 2026-09-17** and re-exported here, where its
+ * readers have always found it: Stage 9's registry holds the other nine key ids, and
+ * two ids for one credential would be two stored copies of it (ADR-0081).
  */
-export const ANTHROPIC_KEY_SETTING_ID = 'ai.anthropic-key';
+export { ANTHROPIC_KEY_SETTING_ID } from './aiProviders.js';
 
 /**
  * How many device pixels one PDF point becomes, in a region snapshot.
@@ -488,7 +489,9 @@ export type ComposeRefusal = (typeof COMPOSE_REFUSALS)[number];
  */
 export const SECRET_SETTING_IDS = [
   AZURE_KEY_SETTING_ID,
-  ANTHROPIC_KEY_SETTING_ID,
+  // EVERY AI PROVIDER'S KEY, from the registry's own list (ADR-0081): a provider added
+  // there without an entry here would be one whose key the Settings dialog cannot save.
+  ...AI_PROVIDER_KEY_SETTING_IDS,
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
 ] as const;
 

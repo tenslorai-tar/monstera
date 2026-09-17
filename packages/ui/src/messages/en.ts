@@ -930,6 +930,16 @@ export const TROCR_SIZE_SMALL_TITLE = messageKey('setting.editing.trocr-size.sma
 export const TROCR_SIZE_BASE_TITLE = messageKey('setting.editing.trocr-size.base');
 export const SETTINGS_CATEGORY_AI = messageKey('dialog.settings.category.ai');
 export const AI_ANTHROPIC_KEY_TITLE = messageKey('setting.ai.anthropic-key.title');
+export const AI_OPENAI_KEY_TITLE = messageKey('setting.ai.openai-key.title');
+export const AI_GEMINI_KEY_TITLE = messageKey('setting.ai.gemini-key.title');
+export const AI_MISTRAL_KEY_TITLE = messageKey('setting.ai.mistral-key.title');
+export const AI_XAI_KEY_TITLE = messageKey('setting.ai.xai-key.title');
+export const AI_AZURE_OPENAI_KEY_TITLE = messageKey('setting.ai.azure-openai-key.title');
+export const AI_AZURE_OPENAI_ENDPOINT_TITLE = messageKey('setting.ai.azure-openai-endpoint.title');
+export const AI_OPENROUTER_KEY_TITLE = messageKey('setting.ai.openrouter-key.title');
+export const AI_GROQ_KEY_TITLE = messageKey('setting.ai.groq-key.title');
+export const AI_PERPLEXITY_KEY_TITLE = messageKey('setting.ai.perplexity-key.title');
+export const AI_DEEPSEEK_KEY_TITLE = messageKey('setting.ai.deepseek-key.title');
 export const CLAUDE_REGION_TOOL_TITLE = messageKey('command.annotate.claude-region');
 /** Each registered category's heading in the Settings dialog. */
 export const SETTINGS_CATEGORY_INTEGRATIONS = messageKey('dialog.settings.category.integrations');
@@ -2007,6 +2017,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TROCR_SIZE_TITLES.base]: 'Base',
   [SETTINGS_CATEGORY_AI]: 'AI',
   [AI_ANTHROPIC_KEY_TITLE]: 'Anthropic API key',
+  [AI_OPENAI_KEY_TITLE]: 'OpenAI API key',
+  [AI_GEMINI_KEY_TITLE]: 'Google Gemini API key',
+  [AI_MISTRAL_KEY_TITLE]: 'Mistral API key',
+  [AI_XAI_KEY_TITLE]: 'xAI API key',
+  [AI_AZURE_OPENAI_KEY_TITLE]: 'Azure OpenAI key',
+  [AI_AZURE_OPENAI_ENDPOINT_TITLE]: 'Azure OpenAI endpoint',
+  [AI_OPENROUTER_KEY_TITLE]: 'OpenRouter API key',
+  [AI_GROQ_KEY_TITLE]: 'Groq API key',
+  [AI_PERPLEXITY_KEY_TITLE]: 'Perplexity API key',
+  [AI_DEEPSEEK_KEY_TITLE]: 'DeepSeek API key',
   [SETTINGS_CATEGORY_INTEGRATIONS]: 'Integrations',
   [INTEGRATIONS_DOCUSIGN_KEY_TITLE]: 'DocuSign integration key',
   [DOCUSIGN_SEND_COMMAND_TITLE]: 'Send to DocuSign',

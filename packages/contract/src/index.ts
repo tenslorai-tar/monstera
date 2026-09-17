@@ -295,3 +295,13 @@ export {
   fileHandleSchema,
   structuredErrorSchema,
 } from './schemas.js';
+export {
+  AI_PROVIDERS,
+  AI_PROVIDER_IDS,
+  AI_PROVIDER_KEY_SETTING_IDS,
+  AZURE_OPENAI_ENDPOINT_SETTING_ID,
+  type AiModel,
+  type AiModelCapabilities,
+  type AiProvider,
+  type AiProviderId,
+} from './aiProviders.js';

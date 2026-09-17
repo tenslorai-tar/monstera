@@ -1,6 +1,6 @@
 import type { SettingDefinition } from '../registries/settings.js';
 import { ACCENT_SETTING } from './accent.js';
-import { ANTHROPIC_KEY_SETTING } from './ai.js';
+import { AI_PROVIDER_KEY_SETTINGS, AZURE_OPENAI_ENDPOINT_SETTING } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
 import { THEME_SETTING } from './appearance.js';
 import {
@@ -97,7 +97,11 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   TROCR_SIZE_SETTING,
   AZURE_DI_ENDPOINT_SETTING,
   AZURE_DI_KEY_SETTING,
-  ANTHROPIC_KEY_SETTING,
+  // EVERY AI PROVIDER'S KEY, from the registry's own order (ADR-0081), and Azure
+  // OpenAI's address beside them. Spread rather than listed: a provider added to the
+  // registry with no field here would be one whose key nobody can enter.
+  ...AI_PROVIDER_KEY_SETTINGS,
+  AZURE_OPENAI_ENDPOINT_SETTING,
   DOCUSIGN_INTEGRATION_KEY_SETTING,
   DOCUSIGN_ENVIRONMENT_SETTING,
 ];
