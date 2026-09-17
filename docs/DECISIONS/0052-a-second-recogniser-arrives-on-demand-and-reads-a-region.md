@@ -264,3 +264,35 @@ the answer's unit from `pixel` to `inch`.
 bytes it may read (invariant 2) and its raster would be PDF.js's, which the
 2026-09-10 §6.1 amendment makes a *view* concern — a display raster as the input
 would make PDF.js a source of truth.
+
+## Correction, 2026-09-17 — the runtime ships; only the model weights download
+
+**The owner's decision, and it reverses this ADR's *never bundled* for the runtime.**
+The argument above — bundling 14 MB removes no mechanism, because the models' downloader
+exists anyway — is true and was not the question the owner asked. What bundling buys is that
+the feature's **code** never arrives from a CDN at run time: `cdn.jsdelivr.net` served the
+three runtime files, and executable code fetched by a desktop application is a different thing
+from model weights checked against a digest, even with the same digest check in front of both.
+
+**The route, measured 2026-09-17 in a scratch tree:**
+
+- **Not an npm dependency.** `onnxruntime-web@1.29.0` installs eighteen packages, audits clean,
+  and three of them — `onnxruntime-web`, `onnxruntime-common` and `guid-typescript` — ship no
+  licence text. `generateNotice.mjs` refuses a package without one, and ADR-0050 records that
+  refusal as not waivable. The package also weighs 137 MB unpacked for three files.
+- **Provisioned, as Ghostscript is.** The three files are taken from the registry tarball
+  (integrity `sha512-LuQlpX6M…`), and each still has the SHA-256 this ADR's manifest pinned — read
+  from the installed package: `ort.wasm.min.mjs` `14a0a63a…`, `ort-wasm-simd-threaded.mjs`
+  `5a15f1fd…`, `ort-wasm-simd-threaded.wasm` `ec8580a9…`. The host is granted the provisioned
+  directory as it is Ghostscript's, and reads the runtime from there rather than from the cache.
+- **The notice** renders ONNX Runtime's `LICENSE` (MIT, SHA-256 `2f07c727…`) and
+  `ThirdPartyNotices.txt` (`53d3fa58…`) at the `v1.29.0` tag, commit `2e2543fb`. The notice covers
+  more than the WASM build compiles; it is the upstream's own, and rendering it whole claims
+  nothing about which of its components the build contains. No component in it is GPL-2.0-only:
+  its GPL mentions are an LGPL reverse-engineering clause, MPL-2.0's definition of a secondary
+  licence, and Mbed TLS, dual-licensed and used under Apache-2.0.
+
+**What stays**: the models download on demand with their pinned digests, into the same granted
+cache, behind the same consent and clear-caches control; the host has no network. `cdn.jsdelivr.net`
+leaves the download host list. The installer grows by the runtime's 14,036,189 bytes, inside the
+< 150 MB target, which the packaging row re-adds when it is built.
