@@ -170,6 +170,33 @@ const mergedFormValue = () =>
   });
 
 /**
+ * AN ANNOTATION THE MARK ONLY HALF COVERS (KKKKKK-3).
+ *
+ * The fixtures above put the annotation exactly under the mark, which a removal keyed on
+ * *contains* would also pass. This one hangs below the mark by half its height, so only an
+ * overlap test takes it — and a person who marked part of a comment asked for the comment's
+ * text to go, not for the part they drew over.
+ */
+const partlyCoveredAnnotation = () =>
+  fixture((document) => {
+    const { context } = document;
+    const note = context.register(
+      context.obj({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [
+          SECRET_BOX.x + SECRET_BOX.width / 2,
+          SECRET_BOX.y - SECRET_BOX.height / 2,
+          SECRET_BOX.x + SECRET_BOX.width * 1.5,
+          SECRET_BOX.y + SECRET_BOX.height / 2,
+        ],
+        Contents: PDFString.of(SECRET),
+      }),
+    );
+    onPage(document).node.addAnnot(note);
+  });
+
+/**
  * A LINK under the mark whose address carries the secret — the class `getAnnotations()`
  * hides, so the burn-in reaches it by a separate call.
  */
@@ -226,6 +253,7 @@ describe('the redaction leak corpus', () => {
     ['a form field value under the mark', formValue],
     ['a field merged with its widget, under the mark', mergedFormValue],
     ['annotation contents under the mark', annotationContents],
+    ['an annotation the mark only half covers', partlyCoveredAnnotation],
     ['a link address under the mark', linkAddress],
   ] as const;
 
