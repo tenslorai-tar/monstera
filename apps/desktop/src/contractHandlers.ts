@@ -294,6 +294,7 @@ export function createContractHandlers(deps: {
     'document.split': splitHandler(deps.commands),
     'document.exportPageImages': exportPageImagesHandler(deps.commands),
     'document.exportText': exportTextHandler(deps.commands),
+    'document.exportWord': exportWordHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1200,6 +1201,27 @@ function exportTextHandler(commands: DocumentCommands): ContractHandlers['docume
           // session area, which is diagnostic text the renderer has no use for.
           return ok({ kind: 'failed' } as const);
       }
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The Word export's handler: {@link saveCopyHandler}'s outcomes, a Word file where the bytes were. */
+function exportWordHandler(commands: DocumentCommands): ContractHandlers['document.exportWord'] {
+  return async ({
+    docId,
+    mode,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.exportWord']>>> => {
+    try {
+      const outcome = await commands.exportWord(docId, mode);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

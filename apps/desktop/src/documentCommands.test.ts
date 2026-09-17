@@ -1,4 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+
+import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
@@ -612,6 +614,7 @@ const INERT = {
   // REFUSES BY NAME, like every inert picker: a case that exports text supplies its own.
   pickText: () => Promise.reject(new Error('INERT: this case does not export text')),
   layoutText: null,
+  pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
   directory: noDirectory,
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
   // application without meaning to fails at the call rather than opening or watching anything.
@@ -1780,6 +1783,10 @@ describe('exportText — the document’s words, streamed one page at a time', (
         return Promise.resolve(destination);
       },
       layoutText: options.layoutText ?? null,
+      pickOffice: (name) => {
+        options.picked?.push(name);
+        return Promise.resolve(destination);
+      },
     });
     return { commands, reads };
   }
@@ -1844,6 +1851,32 @@ describe('exportText — the document’s words, streamed one page at a time', (
     // after extracting the document would still have read both pages.
     expect(reads).toEqual([]);
     expect(existsSync(destination)).toBe(false);
+  });
+
+  describe('as a Word file (ADR-0072)', () => {
+    it('writes a package whose document holds every page’s text, in order, read through the substrate', async () => {
+      const destination = join(mkdtempSync(join(directory, 'word-')), 'words.docx');
+      const { commands, reads } = exportingTo(destination);
+
+      const outcome = await commands.exportWord(textDoc, 'text');
+
+      expect(outcome?.kind).toBe('copied');
+      const files = unzipSync(readFileSync(destination));
+      const xml = strFromU8(files['word/document.xml'] ?? new Uint8Array());
+      // Both pages' words, the first before the second, with one page break
+      // between — the same reading the plain export makes, encoded differently.
+      expect(xml.indexOf('first page words')).toBeGreaterThan(0);
+      expect(xml.indexOf('second page words')).toBeGreaterThan(xml.indexOf('first page words'));
+      expect(xml.match(/<w:br w:type="page"\/>/gu)).toHaveLength(1);
+      expect(reads).toEqual([0, 1]);
+    });
+
+    it('CONTROL: a dismissed picker returns nothing and reads no page', async () => {
+      const { commands, reads } = exportingTo(null);
+
+      expect(await commands.exportWord(textDoc, 'layout')).toBeUndefined();
+      expect(reads).toEqual([]);
+    });
   });
 
   describe('with layout (ADR-0071)', () => {

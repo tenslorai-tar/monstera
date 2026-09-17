@@ -128,6 +128,7 @@ const handlers: ContractHandlers = {
   'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportPageImages': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportText': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.exportWord': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

@@ -1274,6 +1274,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
+    // THE WORD EXPORT'S SHIM, the text export's option: one file at a destination.
+    'document.exportWord': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.copyDestination;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'write-failed') return Promise.resolve(ok({ kind: 'write-failed' as const }));
+      if (typeof chosen === 'object') {
+        return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
+      }
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+    },
     'document.saveCopy': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));

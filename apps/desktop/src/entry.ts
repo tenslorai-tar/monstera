@@ -13,6 +13,7 @@ import { createShellDependencies } from './composition.js';
 import {
   createDestinationPicker,
   createFormDataPicker,
+  createOfficePicker,
   createSnapshotPicker,
   createTextPicker,
 } from './destinationPicker.js';
@@ -120,6 +121,8 @@ startShell(() => {
     pickFormData: createFormDataPicker(),
     // The fifth save dialog, beside its siblings for the reason above.
     pickText: createTextPicker(),
+    // The Office exports' save dialog, narrowed per format (ADR-0072).
+    pickOffice: createOfficePicker(),
     // The fifth, and the first OPEN dialog added since the image picker.
     openFormData: createFormDataOpenPicker(),
     // The third dialog, beside the two above so all of them are visible

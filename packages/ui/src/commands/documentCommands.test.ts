@@ -35,6 +35,7 @@ import {
   exportPageImagesCommand,
   exportLayoutTextCommand,
   exportTextCommand,
+  exportWordCommand,
   generateTocCommand,
   protectDocumentCommand,
   applyRedactionsCommand,
@@ -2148,6 +2149,39 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain' } }]);
     // NOTHING WAS ASKED: the save dialog is main's, and a success reports nothing.
     expect(asked).toStrictEqual([]);
+  });
+
+  it('export to Word asks the mode, then dispatches EXACTLY that mode', async () => {
+    // The UI half of the Word export's pair. Each mode is asked for in turn, so a
+    // command that sent a fixed mode passes for one of them at most.
+    for (const mode of ['text', 'layout', 'rich'] as const) {
+      const { client, sent } = recording({ 'document.exportWord': { kind: 'copied', bytes: 9 } });
+      const asked: unknown[] = [];
+
+      await exportWordCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve({ mode });
+        },
+      }).run(CONTEXT);
+
+      expect(asked).toStrictEqual([{ id: 'dialog.export-word', props: {} }]);
+      expect(sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode } }]);
+    }
+  });
+
+  it('CONTROL: a DISMISSED Word export dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await exportWordCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('export text WITH LAYOUT dispatches the same channel with the layout mode', async () => {

@@ -29,6 +29,10 @@ import { applyRotatePages } from './rotatePages.js';
 /** Every page of the three-page fixture, in order. */
 const ALL = [0, 1, 2];
 
+/** Every fixture page is 612×792 points; a quarter turn displays it 792×612. */
+const UPRIGHT = { width: 612, height: 792 };
+const TURNED = { width: 792, height: 612 };
+
 let flat: ByteImage;
 
 beforeAll(async () => {
@@ -60,7 +64,7 @@ describe('readPageGeometry', () => {
     const session = await mupdfWriter.open(flat);
     try {
       const geometry = await readPageGeometry(session, ALL);
-      expect(geometry).toStrictEqual({ pageCount: 3, rotations: [0, 0, 0] });
+      expect(geometry).toStrictEqual({ pageCount: 3, rotations: [0, 0, 0], sizes: [UPRIGHT, UPRIGHT, UPRIGHT] });
       // THE ANCHOR, and it is not implied by the line above. The consumer reads
       // `rotations` positionally against what it asked for, so a shorter array
       // is a page silently drawn the wrong way up rather than an error.
@@ -80,6 +84,9 @@ describe('readPageGeometry', () => {
       expect(await readPageGeometry(session, ALL)).toStrictEqual({
         pageCount: 3,
         rotations: [90, 90, 90],
+        // THE DISPLAYED SIZE, which is the frame structured text's boxes are in:
+        // a media-box size here would put a layout export's lines off the page.
+        sizes: [TURNED, TURNED, TURNED],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -93,10 +100,9 @@ describe('readPageGeometry', () => {
       // base, so a view model reporting 45 would put the renderer a half quarter
       // turn from the engine on every document carrying one — and it would be
       // consistently, invisibly wrong rather than broken.
-      expect(await readPageGeometry(session, ALL)).toStrictEqual({
-        pageCount: 3,
-        rotations: [0, 90, 0],
-      });
+      const geometry = await readPageGeometry(session, ALL);
+      expect(geometry.pageCount).toBe(3);
+      expect(geometry.rotations).toStrictEqual([0, 90, 0]);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -114,6 +120,7 @@ describe('readPageGeometry', () => {
       expect(await readPageGeometry(session, ALL)).toStrictEqual({
         pageCount: 3,
         rotations: [0, 0, 90],
+        sizes: [UPRIGHT, UPRIGHT, TURNED],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -130,6 +137,7 @@ describe('readPageGeometry', () => {
       expect(await readPageGeometry(session, [2, 0])).toStrictEqual({
         pageCount: 3,
         rotations: [90, 0],
+        sizes: [TURNED, UPRIGHT],
       });
     } finally {
       await mupdfWriter.close(session);
@@ -166,6 +174,7 @@ describe('readPageGeometry', () => {
       expect(await readPageGeometry(session, ALL)).toStrictEqual({
         pageCount: 3,
         rotations: [180, 90, 90],
+        sizes: [UPRIGHT, TURNED, TURNED],
       });
     } finally {
       await mupdfWriter.close(session);

@@ -248,6 +248,24 @@ export interface TextLine {
   readonly origin: ViewportPoint;
   /** Point size, as MuPDF reports it for the line's font. */
   readonly size: number;
+  /**
+   * The line's font as MuPDF names and classifies it, from the same `font` node
+   * the size comes from.
+   *
+   * MuPDF's classification, not ours: `bold` and `italic` are its reading of the
+   * font's weight and style, and a rich export uses them as given rather than
+   * guessing from a name like `Helvetica-Bold` (B3a).
+   */
+  readonly font: TextFont;
+}
+
+/** A line's font, as MuPDF reports it. */
+export interface TextFont {
+  readonly name: string;
+  /** MuPDF's generic family: `serif`, `sans-serif` or `monospace`. */
+  readonly family: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
 }
 
 /** A group of lines MuPDF placed together, in the reading order it chose. */
@@ -406,11 +424,18 @@ function walkBlocks(source: readonly unknown[], visitor: BlockVisitor): void {
       const line = node(rawLine);
       const text = str(field(line, 'text'));
       if (line === null || text === null) continue;
+      const font = node(field(line, 'font'));
       lines.push({
         text,
         box: rectOf(field(line, 'bbox')),
         origin: viewportPoint(num(field(line, 'x'), 0), num(field(line, 'y'), 0)),
-        size: num(field(node(field(line, 'font')), 'size'), 0),
+        size: num(field(font, 'size'), 0),
+        font: {
+          name: str(field(font, 'name')) ?? '',
+          family: str(field(font, 'family')) ?? '',
+          bold: str(field(font, 'weight')) === 'bold',
+          italic: str(field(font, 'style')) === 'italic',
+        },
       });
     }
     visitor.text(block, lines);

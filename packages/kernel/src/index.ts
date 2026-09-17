@@ -47,7 +47,7 @@ export type { PriorBox, PriorPageResize } from './pageResize.js';
 // The TYPE only, for the same reason and by the same spelling: `readPageGeometry`
 // reaches `mupdfWriter.ts`, so it is on `@monstera/kernel/engine`. The shape is
 // what main, the host and the contract all name, and it is erased.
-export type { PageGeometry, PageGeometryReader } from './pageGeometry.js';
+export type { PageGeometry, PageGeometryReader, PageSize } from './pageGeometry.js';
 export {
   type CaptureResult,
   type Checkpoint,
@@ -374,6 +374,9 @@ export {
   stextOptionsFor,
 } from './textStructure.js';
 export { type StructureOutline, structureOutlineOf } from './structureOutline.js';
+// OFFICE EXPORTS (ADR-0072). Pure: strings in, zip chunks out, no engine.
+export { type OoxmlPart, ooxmlPackage, xmlText } from './ooxmlPackage.js';
+export { type WordMode, type WordPage, WORD_MODES, baseFontName, wordDocumentParts } from './wordDocument.js';
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
 // engine, and `readPageLinks` — which does — stays behind `/engine`.

@@ -1890,6 +1890,21 @@ export const engineChannels = {
               }),
           )
           .readonly(),
+        // DISPLAYED SIZES, in points, aligned with `rotations`. Non-negative at
+        // the boundary, and finite because Zod 4's `z.number()` refuses NaN and
+        // the infinities by default: a hostile host's NaN would otherwise become a
+        // page size a layout export writes into a file.
+        sizes: z
+          .array(
+            z
+              .object({
+                width: z.number().nonnegative(),
+                height: z.number().nonnegative(),
+              })
+              .strict()
+              .readonly(),
+          )
+          .readonly(),
       })
       .strict(),
     ['no-such-session'],

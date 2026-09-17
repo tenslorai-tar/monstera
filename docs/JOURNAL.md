@@ -892,6 +892,49 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 Word export: the record's library refused itself, so this build writes the parts
+
+### The question, settled by the run rule
+
+Part A says *"use exceljs"* and says notices are generated from the lockfile; `generateNotice.mjs` refuses a shipped
+package with no licence text. Measured in scratch trees: `exceljs` reaches five such packages, `docx` two, `pptxgenjs`
+two and two high-severity `image-size` advisories — all three through `jszip` → `readable-stream` → `isarray@1.0.0`.
+The record's answer cannot be met beside the record's own rule. The run rule — *take the option that keeps the most rows
+moving, and write the question in the report* — decided it: `bb9594f` (B4, ADR-0072) has this build write the Office
+Open XML parts over `fflate` (`f3723b0`, one MIT package with its text). The question is in the report for the owner.
+
+**The first draft of ADR-0072 composed in the engine host, and a same-day correction moved it to `main`.** The plain
+text export already reads a page at a time in `main` within ADR-0035's bound, and `fflate` deflates as a stream, so the
+host route would have bought a new engine channel, a dependency in the hostile process and a second substrate reading
+for nothing.
+
+### The feature
+
+- `ooxmlPackage.ts`: a streamed zip over `fflate`'s `ZipDeflate`, and **one** XML escape (`xmlText`) that replaces what
+  XML 1.0 cannot carry with U+FFFD. **Its first write put a NUL byte into the source, and so did the first draft of
+  this entry**: both spelled the control range as escape sequences, and the editing tool resolved one each time.
+  `reportControlCharacters.mjs` named the byte on the write both times. The source was rewritten whole with the test
+  done on code points as numbers; this entry was restored from `HEAD` and re-applied without the sequence. Occurrence
+  count for the written rule's class, not the escape guard's: the guard governs shell tools, and these were file edits.
+- `wordDocument.ts`: text, layout and rich over the substrate's `PageText`. The substrate's lines now carry MuPDF's font
+  classification (name, family, bold, italic — read from the same `font` node the size came from), and `PageGeometry`
+  carries each page's displayed size, the frame the lines' boxes are in (`engine/page-geometry` validates it finite).
+- `document.exportWord` {docId, mode}; `DocumentCommands.exportWord` reads pages as the zip pulls them; a DOCX picker
+  (`OfficeFormat`, a record of labels); *Export to Word…* with a mode dialog, rich selected first.
+
+**Measured in Word itself** (COM, read-only), through the built modules on a corpus document's first five pages: all
+three open; layout keeps 5 pages, 5 sections and 391 frames; text and rich reflow to 11 pages. Word saved the layout
+file as PDF and MuPDF read it back against the original: **328 of 383** lines with identical text within **1 pt**
+(median |dx| 0, |dy| 1). The reflowed text mode, as the control, places **8**. The 55 unmatched are lines whose text
+did not match exactly after Word's font substitution; the row also states images are not carried at all.
+
+**Cases:** the writer (7: the parts, text, rich, layout in twips with one section per page, an empty document, the
+escape, base font names), the substrate's font (1), geometry sizes in every existing case (upright 612×792, turned
+792×612), main (2), the UI (2: each mode dispatched exactly; a dismissed dialog dispatches nothing), the dialog body (2).
+**Mutation, reverted:** the command sending a fixed `rich` reddens the dispatch case.
+
+---
+
 ## 2026-09-17 — D10 layout-preserving text: Poppler through the converter seam, in three commits
 
 The owner's Q2: *"OPTION 1, POPPLER"*, with conditions before any feature line. B4 (`0e5b6e1`, ADR-0071), adoption

@@ -5,8 +5,12 @@ import type { FormDataFormat } from '@monstera/contract';
 import {
   FORM_DATA_FILES,
   type FormDataSource,
+  OFFICE_FILES,
+  type OfficeFormat,
   type PickDestination,
+  type PickOffice,
   suggestedFormDataName,
+  suggestedOfficeName,
   suggestedTextName,
 } from './documentCommands.js';
 
@@ -140,6 +144,23 @@ export function createTextPicker(): (sourceName: string) => Promise<string | nul
       defaultPath: suggestedTextName(sourceName),
       properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
       filters: [{ name: 'Plain text', extensions: ['txt'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePath.length === 0 ? null : result.filePath;
+  };
+}
+
+/**
+ * Where an Office export goes: the save dialog narrowed to the one format asked
+ * for, offered under the document's name with that format's extension.
+ */
+export function createOfficePicker(): PickOffice {
+  return async (sourceName: string, format: OfficeFormat): Promise<string | null> => {
+    const file = OFFICE_FILES[format];
+    const result = await dialog.showSaveDialog({
+      defaultPath: suggestedOfficeName(sourceName, format),
+      properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
+      filters: [{ name: file.label, extensions: [format] }],
     });
     if (result.canceled) return null;
     return result.filePath.length === 0 ? null : result.filePath;

@@ -111,6 +111,7 @@ import {
   type ImportFormat,
   type ImportSource,
   type PickDestination,
+  type PickOffice,
   type PickDirectory,
   type PickImage,
   type DocumentDuplicatesReader,
@@ -366,6 +367,8 @@ export interface ShellComposition {
   readonly pickFormData: FormDataSource['pick'];
   /** Where a text export goes. The same dialog narrowed to plain text. */
   readonly pickText: (sourceName: string) => Promise<string | null>;
+  /** Where an Office export goes. The same dialog narrowed to one Office format. */
+  readonly pickOffice: PickOffice;
   /** Which data file fills the form. The open dialog, narrowed to the format. */
   readonly openFormData: FormDataSource['open'];
   /** The bytes at a path, bound-checked first. `readImage`'s shape. */
@@ -553,6 +556,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickSnapshot,
     pickFormData,
     pickText,
+    pickOffice,
     openFormData,
     readFormData,
     pickImage,
@@ -1105,6 +1109,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
     // THE TEXT EXPORT'S DIALOG, a parameter for the folder picker's reason below.
     pickText,
+    // THE OFFICE EXPORTS' DIALOG, a parameter for the same reason (ADR-0072).
+    pickOffice,
     // LAYOUT-PRESERVING TEXT, the contained pdftotext — `null` where it cannot run,
     // so the export answers unavailable rather than extracting anywhere else (ADR-0071).
     layoutText: layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures),

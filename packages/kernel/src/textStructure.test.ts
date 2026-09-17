@@ -253,6 +253,29 @@ describe('parsePageStructure', () => {
 });
 
 describe('parsePageText', () => {
+  it('keeps each line’s FONT as MuPDF classified it — name, family, bold, italic', () => {
+    // MuPDF's own node shape, measured 2026-09-17 on a Helvetica-Bold run:
+    // {name, family, weight, style, size}. Two lines that differ in every
+    // classified property, so a reader hard-wiring any one of them fails.
+    const json = JSON.stringify({
+      blocks: [
+        {
+          type: 'text',
+          bbox: { x: 0, y: 0, w: 100, h: 40 },
+          lines: [
+            { wmode: 0, bbox: { x: 0, y: 0, w: 100, h: 20 }, x: 0, y: 16, text: 'bold', font: { name: 'Helvetica-Bold', family: 'sans-serif', weight: 'bold', style: 'normal', size: 12 } },
+            { wmode: 0, bbox: { x: 0, y: 20, w: 100, h: 20 }, x: 0, y: 36, text: 'italic', font: { name: 'Times-Italic', family: 'serif', weight: 'normal', style: 'italic', size: 10 } },
+          ],
+        },
+      ],
+    });
+
+    expect(linesOf(parsePageText(json)).map((line) => line.font)).toStrictEqual([
+      { name: 'Helvetica-Bold', family: 'sans-serif', bold: true, italic: false },
+      { name: 'Times-Italic', family: 'serif', bold: false, italic: true },
+    ]);
+  });
+
   it('reads lines out of MuPDFs NESTED structure blocks', () => {
     const page = parsePageText(segmentedTwoColumn());
 

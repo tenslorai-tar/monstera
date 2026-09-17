@@ -60,6 +60,7 @@ import { SPLIT_DOCUMENT_DIALOG_ID } from '../dialogs/splitDocument.js';
 import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
 import type { ExportPageImagesAnswer } from '../dialogs/exportPageImagesResult.js';
+import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
@@ -129,6 +130,7 @@ import {
   EXPORT_PAGE_IMAGES_COMMAND_TITLE,
   EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
   EXPORT_TEXT_COMMAND_TITLE,
+  EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
@@ -1852,6 +1854,39 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps): UiCommand {
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 41 }],
     when: hasDocument,
     run: (context) => runTextExport(deps, context, 'layout'),
+  };
+}
+
+/**
+ * Writes the document as a Word file (ADR-0072): the mode dialog, then main's
+ * save dialog and write.
+ *
+ * A dismissed mode dialog dispatches nothing. The outcomes are a copy's, reported
+ * the way {@link exportTextCommand}'s are.
+ */
+export function exportWordCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.export-word',
+    icon: 'FileText',
+    title: EXPORT_WORD_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 42 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+
+      const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, {})) as ExportWordAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.exportWord']({ docId: context.docId, mode: chosen.mode });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
   };
 }
 

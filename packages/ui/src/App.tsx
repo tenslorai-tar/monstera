@@ -67,6 +67,7 @@ import {
   exportPageImagesCommand,
   exportLayoutTextCommand,
   exportTextCommand,
+  exportWordCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -161,6 +162,7 @@ import {
 import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
 import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { EXPORT_PAGE_IMAGES_DIALOG } from './dialogs/exportPageImages.js';
+import { EXPORT_WORD_DIALOG } from './dialogs/exportWord.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
@@ -457,6 +459,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         EXTRACT_PAGES_DIALOG,
         SPLIT_DOCUMENT_DIALOG,
         EXPORT_PAGE_IMAGES_DIALOG,
+        EXPORT_WORD_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
         SETTINGS_DIALOG,
@@ -1595,6 +1598,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         exportPageImagesCommand({ client, onApplied: applied, ask }),
         exportTextCommand({ client, onApplied: applied, ask }),
         exportLayoutTextCommand({ client, onApplied: applied, ask }),
+        exportWordCommand({ client, onApplied: applied, ask }),
         generateTocCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),

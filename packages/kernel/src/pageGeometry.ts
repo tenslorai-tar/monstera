@@ -87,6 +87,22 @@ export interface PageGeometry {
    * wire is a second thing that can disagree with the first.
    */
   readonly rotations: readonly number[];
+  /**
+   * Each named page's size as it is DISPLAYED, in points: MuPDF's page bounds,
+   * which apply the rotation and the crop box. Aligned with `rotations`.
+   *
+   * The frame the structured text's boxes are in, which is why this and not the
+   * media box: a layout export places a line at its box inside a page of this
+   * size, and a size from a different frame would put a rotated page's text
+   * outside its own page.
+   */
+  readonly sizes: readonly PageSize[];
+}
+
+/** A displayed page size, in points. */
+export interface PageSize {
+  readonly width: number;
+  readonly height: number;
 }
 
 /**
@@ -134,10 +150,15 @@ export function readPageGeometry(
       }
     }
 
-    const rotations = pages.map((page) => {
-      const inherited = document.loadPage(page).getObject().getInheritable('Rotate');
-      return inherited.isNumber() ? snapRotation(inherited.asNumber()) : 0;
-    });
-    return { pageCount, rotations };
+    const rotations: number[] = [];
+    const sizes: PageSize[] = [];
+    for (const index of pages) {
+      const page = document.loadPage(index);
+      const inherited = page.getObject().getInheritable('Rotate');
+      rotations.push(inherited.isNumber() ? snapRotation(inherited.asNumber()) : 0);
+      const [x0, y0, x1, y1] = page.getBounds();
+      sizes.push({ width: x1 - x0, height: y1 - y0 });
+    }
+    return { pageCount, rotations, sizes };
   });
 }

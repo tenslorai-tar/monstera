@@ -194,6 +194,13 @@ export const SPLIT_DOCUMENT_FILES = messageKey('dialog.split-document.files');
 export const SPLIT_DOCUMENT_APPLY = messageKey('dialog.split-document.apply');
 export const EXPORT_PAGE_IMAGES_COMMAND_TITLE = messageKey('command.export-page-images.title');
 export const EXPORT_PAGE_IMAGES_TITLE = messageKey('dialog.export-page-images.title');
+export const EXPORT_WORD_COMMAND_TITLE = messageKey('command.export-word.title');
+export const EXPORT_WORD_TITLE = messageKey('dialog.export-word.title');
+export const EXPORT_WORD_MODE = messageKey('dialog.export-word.mode');
+export const EXPORT_WORD_RICH = messageKey('dialog.export-word.rich');
+export const EXPORT_WORD_LAYOUT = messageKey('dialog.export-word.layout');
+export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
+export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
 export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
 export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
 export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
@@ -2097,6 +2104,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPLIT_DOCUMENT_APPLY]: 'Choose a folder…',
   [EXPORT_PAGE_IMAGES_COMMAND_TITLE]: 'Export pages as images…',
   [EXPORT_PAGE_IMAGES_TITLE]: 'Export pages as images',
+  [EXPORT_WORD_COMMAND_TITLE]: 'Export to Word…',
+  [EXPORT_WORD_TITLE]: 'Export to Word',
+  [EXPORT_WORD_MODE]: 'What to keep',
+  [EXPORT_WORD_RICH]: 'Text and its fonts — editable, flows like a normal document',
+  [EXPORT_WORD_LAYOUT]: 'The page layout — each line where it sits on the page',
+  [EXPORT_WORD_TEXT]: 'Just the words',
+  [EXPORT_WORD_APPLY]: 'Choose where to save…',
   [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
   [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
   [EXPORT_PAGE_IMAGES_LABEL]: 'Pages',

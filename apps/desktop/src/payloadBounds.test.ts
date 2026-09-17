@@ -289,6 +289,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.exportPageImages': 'needs an engine session and a folder dialog',
   // THE ASK IS A `DocId`; the text is streamed to disk in main and never crosses.
   'document.exportText': 'needs an engine session and a save dialog',
+  // The Word export's ask is a `DocId` and a mode; the document is streamed to disk in main.
+  'document.exportWord': 'needs an engine session and a save dialog',
   'document.insertImage': 'needs an engine session and an image picker',
   // THE ASK IS NOTHING, OR A `DocId` AND ONE INDEX, and the source never crosses:
   // main picks and reads the Markdown file, the compose host sets it, and main

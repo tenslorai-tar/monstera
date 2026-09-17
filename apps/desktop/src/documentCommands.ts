@@ -29,6 +29,10 @@ import {
 // which invariant 20 forbids by name and §9.17's budget is argued against
 // (ADR-0026). The kernel's barrel is now free of that edge too.
 import {
+  type WordMode,
+  type WordPage,
+  ooxmlPackage,
+  wordDocumentParts,
   type ByteImage,
   type CommandBus,
   type FlatFieldCandidate,
@@ -454,6 +458,25 @@ export function suggestedFormDataName(name: string, format: FormDataFormat): str
 export function suggestedTextName(name: string): string {
   const dot = name.lastIndexOf('.');
   return `${dot <= 0 ? name : name.slice(0, dot)}.txt`;
+}
+
+/** The Office formats an export writes (ADR-0072). The format IS the extension. */
+export type OfficeFormat = 'docx' | 'pptx' | 'xlsx';
+
+/** Each format's label in the save dialog's filter, as a record so a new format owes one. */
+export const OFFICE_FILES: Readonly<Record<OfficeFormat, { readonly label: string }>> = {
+  docx: { label: 'Word document' },
+  pptx: { label: 'PowerPoint presentation' },
+  xlsx: { label: 'Excel workbook' },
+};
+
+/** Where an Office export goes: the save dialog narrowed to `format`, or `null` when dismissed. */
+export type PickOffice = (sourceName: string, format: OfficeFormat) => Promise<string | null>;
+
+/** The name an Office export is offered under: the document's extension replaced, `suggestedTextName`'s rule. */
+export function suggestedOfficeName(name: string, format: OfficeFormat): string {
+  const dot = name.lastIndexOf('.');
+  return `${dot <= 0 ? name : name.slice(0, dot)}.${format}`;
 }
 
 export function suggestedSnapshotName(name: string): string {
@@ -1629,6 +1652,8 @@ export interface DocumentCommandsParts {
    * the layout export then answers `unavailable` before any dialog.
    */
   readonly layoutText: LayoutTextSource | null;
+  /** Where an Office export goes. See {@link PickOffice}. */
+  readonly pickOffice: PickOffice;
   readonly directory: PickDirectory;
   /** A page edited in another application. See {@link ExternalEditSource}. */
   readonly externalEdit: ExternalEditSource;
@@ -1680,6 +1705,7 @@ export class DocumentCommands {
   readonly #pageImage: DocumentPageImageReader;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
+  readonly #pickOffice: PickOffice;
   readonly #directory: PickDirectory;
   readonly #externalEdit: ExternalEditSource;
   /**
@@ -1732,6 +1758,7 @@ export class DocumentCommands {
     this.#pageImage = parts.pageImage;
     this.#pickText = parts.pickText;
     this.#layoutText = parts.layoutText;
+    this.#pickOffice = parts.pickOffice;
     this.#directory = parts.directory;
     this.#externalEdit = parts.externalEdit;
   }
@@ -3246,6 +3273,57 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Writes the document as a Word file — D10's *Word (rich / layout / text)*,
+   * written by this build over `fflate` (ADR-0072).
+   *
+   * ## `exportText`'s path with a different encoder
+   *
+   * The same picker-then-lane order, the same streamed write, and the same one
+   * reading: each page's structured text through the substrate, read when the zip
+   * asks for it. What `main` holds is one page's text and the compressor's
+   * window — ADR-0035's bound — never the document.
+   *
+   * It does NOT touch the document: no command, no log entry, no version bump.
+   */
+  async exportWord(docId: DocId, mode: WordMode): Promise<CopyOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Word');
+
+    const destination = await this.#pickOffice(suggest, 'docx');
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeStreamedDocument(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        // Called only once the destination is free, so a contested file reads no page.
+        () => Promise.resolve(ooxmlPackage(wordDocumentParts(mode, this.#wordPages(docId, sessions)))),
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /** Each page's structured text and displayed size, read as the writer pulls. */
+  async *#wordPages(docId: DocId, sessions: DocumentSessions): AsyncIterable<WordPage> {
+    const { pageCount } = await this.#geometry(docId, sessions, []);
+    for (let page = 0; page < pageCount; page += 1) {
+      const text = await this.#pageText(docId, sessions, page);
+      const { sizes } = await this.#geometry(docId, sessions, [page]);
+      const [size] = sizes;
+      if (size === undefined) throw new Error(`the geometry read named no size for page ${String(page)}`);
+      yield { text, size };
+    }
   }
 
   /**

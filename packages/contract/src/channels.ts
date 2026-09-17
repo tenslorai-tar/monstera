@@ -1861,6 +1861,27 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
+  /**
+   * Writes the document as a Word file the user picks — D10's *Word (rich /
+   * layout / text)*, written by this build (ADR-0072).
+   *
+   * `document.exportText`'s shape: a `DocId` and the mode, the file picked and
+   * written by main a page at a time, a copy's outcomes. The mode is REQUIRED,
+   * for `exportText`'s reason — a default would decide what a person gets at a
+   * call site that did not say.
+   */
+  'document.exportWord': channel(
+    'Writes the document as a Word file the user picks.',
+    z.object({ docId: docIdSchema, mode: z.enum(['text', 'layout', 'rich']) }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),

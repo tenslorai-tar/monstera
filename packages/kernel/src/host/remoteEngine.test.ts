@@ -350,10 +350,11 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
   it('the GEOMETRY read crosses and reports the page tree the host holds', async () => {
     const { session, token, geometry } = await joined();
     try {
-      expect(await geometry(token, ALL_PAGES)).toStrictEqual({
-        pageCount: 3,
-        rotations: [0, 0, 0],
-      });
+      const read = await geometry(token, ALL_PAGES);
+      expect(read.pageCount).toBe(3);
+      expect(read.rotations).toStrictEqual([0, 0, 0]);
+      // The sizes cross the boundary with the rotations, one per page asked for.
+      expect(read.sizes).toHaveLength(ALL_PAGES.length);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -408,10 +409,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // it, `[90, 0, 0]` is satisfied by a fixture that already carried a
       // rotation, and this file's document is built by `pdf-lib` with no
       // `/Rotate` at all — which is exactly the shape that would make it so.
-      expect(await geometry(token, ALL_PAGES)).toStrictEqual({
-        pageCount: 3,
-        rotations: [0, 0, 0],
-      });
+      expect((await geometry(token, ALL_PAGES)).rotations).toStrictEqual([0, 0, 0]);
 
       await remote.apply({ session: token, command: rotateFirst, source: undefined, reads: undefined });
 
@@ -420,10 +418,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // route by which the rotation can reach anything main hands the renderer.
       // A view model that read main's bytes would report `[0, 0, 0]` here and be
       // wrong in the one direction nothing else observes.
-      expect(await geometry(token, ALL_PAGES)).toStrictEqual({
-        pageCount: 3,
-        rotations: [90, 0, 0],
-      });
+      expect((await geometry(token, ALL_PAGES)).rotations).toStrictEqual([90, 0, 0]);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -440,7 +435,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // crossed from a list that was rebuilt on the far side, and the rotate
       // above is what makes the two entries differ — against a flat document
       // both answers are `[0, 0]`.
-      expect(await geometry(token, [2, 0])).toStrictEqual({ pageCount: 3, rotations: [0, 90] });
+      const named = await geometry(token, [2, 0]);
+      expect({ pageCount: named.pageCount, rotations: named.rotations }).toStrictEqual({ pageCount: 3, rotations: [0, 90] });
+      expect(named.sizes).toHaveLength(2);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -718,7 +715,11 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         // The page decides, so one harness carries the case and its control:
         // page 0 answers a raw 45 and page 1 a legal quarter turn.
         geometry: (_held, pages) =>
-          Promise.resolve({ pageCount: 3, rotations: pages.map((page) => (page === 0 ? 45 : 90)) }),
+          Promise.resolve({
+            pageCount: 3,
+            rotations: pages.map((page) => (page === 0 ? 45 : 90)),
+            sizes: pages.map(() => ({ width: 612, height: 792 })),
+          }),
         pageText: () => {
           throw new Error('the rotation-refusal case must not read page text');
         },
@@ -777,7 +778,11 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // this case is satisfied by a boundary that refuses every geometry answer
       // — which would be invisible here and would blank the renderer in the
       // product.
-      expect(await geometry(token, [1])).toStrictEqual({ pageCount: 3, rotations: [90] });
+      expect(await geometry(token, [1])).toStrictEqual({
+        pageCount: 3,
+        rotations: [90],
+        sizes: [{ width: 612, height: 792 }],
+      });
       expect(incidents).toHaveLength(1);
     } finally {
       await mupdfWriter.close(session);

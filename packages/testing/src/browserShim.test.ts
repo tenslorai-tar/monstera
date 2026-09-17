@@ -203,6 +203,7 @@ describe('browser shim', () => {
       'document.exportFormData',
       'document.exportPageImages',
       'document.exportText',
+      'document.exportWord',
       'document.extract',
       'document.flatFieldCandidates',
       'document.formFields',
