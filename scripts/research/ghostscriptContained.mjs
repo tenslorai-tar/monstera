@@ -54,11 +54,12 @@ if (process.platform !== 'win32') {
   process.exit(69);
 }
 
-const document = process.argv[2];
-if (document === undefined || !existsSync(document)) {
+const argument = process.argv[2];
+if (argument === undefined || !existsSync(argument)) {
   process.stderr.write('Usage: node scripts/research/ghostscriptContained.mjs <pdf>\n');
   process.exit(2);
 }
+const document = argument;
 
 /** @param {string} relative */
 const built = async (relative) =>
