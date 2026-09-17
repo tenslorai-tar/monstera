@@ -13,6 +13,8 @@ import {
   MAX_IMPORT_IMAGE_PIXELS,
   MAX_STRUCTURE_NAME,
   MAX_STRUCTURE_NODES,
+  MAX_TABLE_CELL_TEXT,
+  MAX_TABLE_CELLS,
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
   type ComposeRefusal,
@@ -31,8 +33,12 @@ import {
 import {
   type PageTables,
   type PresentationPage,
+  type ReviewGrid,
   type SheetLayout,
   type SpreadsheetPage,
+  type TableEdit,
+  editsFit,
+  reviewGridOf,
   spreadsheetParts,
   type WordMode,
   type WordPage,
@@ -1045,7 +1051,14 @@ export type DocumentPageTables = (
  */
 export type ExcelOutcome =
   | CopyOutcome
-  | { readonly kind: 'no-tables'; readonly picturePages: number };
+  | { readonly kind: 'no-tables'; readonly picturePages: number }
+  | { readonly kind: 'changed' };
+
+/** What the review grid hands an Excel export: the version it read, and the cells changed. */
+export interface ExcelReview {
+  readonly version: DocVersion;
+  readonly edits: readonly (TableEdit & { readonly page: number })[];
+}
 
 /**
  * Reads one page's links.
@@ -3400,18 +3413,34 @@ export class DocumentCommands {
    * at a time as the zip pulls it, so `main` holds one page's tables. The first
    * pass keeps nothing — holding what it read to write it later is the document's
    * text in `main`, which ADR-0035 forbids. It does NOT touch the document.
+   *
+   * ## The review's edits are checked in the same first pass
+   *
+   * They correct the tables read at `review.version`. A document at another version,
+   * or an edit naming a cell its page does not have — or one longer than the grid
+   * showed — answers `changed` before any picker, and the write checks the version
+   * again, since the document can move while the save dialog is open.
    */
-  async exportExcel(docId: DocId, layout: SheetLayout): Promise<ExcelOutcome | undefined> {
+  async exportExcel(docId: DocId, layout: SheetLayout, review: ExcelReview): Promise<ExcelOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Excel');
 
-    const { value: found } = await this.#documents.run(docId, async () => {
+    const byPage = new Map<number, TableEdit[]>();
+    for (const { page, ...edit } of review.edits) byPage.set(page, [...(byPage.get(page) ?? []), edit]);
+
+    const { value: found } = await this.#documents.run(docId, async (context) => {
+      if (context.version !== review.version) return { kind: 'changed' as const };
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       const { pageCount } = await this.#geometry(docId, sessions, []);
+      for (const [page, edits] of byPage) {
+        if (page >= pageCount) return { kind: 'changed' as const };
+        const { tables } = await this.#pageTables(docId, sessions, page);
+        if (!editsFit(tables, edits, MAX_TABLE_CELL_TEXT)) return { kind: 'changed' as const };
+      }
       let picturePages = 0;
       for (let page = 0; page < pageCount; page += 1) {
         const tables = await this.#pageTables(docId, sessions, page);
@@ -3422,12 +3451,13 @@ export class DocumentCommands {
       }
       return { kind: 'no-tables' as const, picturePages };
     });
-    if (found.kind === 'no-tables') return found;
+    if (found.kind !== 'found') return found;
 
     const destination = await this.#pickOffice(suggest, 'xlsx');
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
+      if (context.version !== review.version) return { kind: 'changed' as const };
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3437,7 +3467,7 @@ export class DocumentCommands {
       return await writeStreamedDocument(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions), layout))),
+        () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions, byPage), layout))),
         destination,
       );
     });
@@ -3445,12 +3475,41 @@ export class DocumentCommands {
     return value;
   }
 
-  /** Each page's tables, read as the zip pulls them. */
-  async *#tablePages(docId: DocId, sessions: DocumentSessions): AsyncIterable<SpreadsheetPage> {
+  /** Each page's tables with its edits, read as the zip pulls them. */
+  async *#tablePages(
+    docId: DocId,
+    sessions: DocumentSessions,
+    edits: ReadonlyMap<number, readonly TableEdit[]>,
+  ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
     for (let page = 0; page < pageCount; page += 1) {
-      yield { page, tables: (await this.#pageTables(docId, sessions, page)).tables };
+      yield { page, tables: (await this.#pageTables(docId, sessions, page)).tables, edits: edits.get(page) ?? [] };
     }
+  }
+
+  /**
+   * One page's tables for the review grid — each cell's text, at most
+   * `MAX_TABLE_CELLS` cells and `MAX_TABLE_CELL_TEXT` characters a cell, with the
+   * document's page count so the grid can move between pages.
+   *
+   * One page, for ADR-0035's reason; in the lane, for `searchPage`'s.
+   */
+  async pageTables(
+    docId: DocId,
+    page: number,
+  ): Promise<ReviewGrid & { readonly version: DocVersion; readonly pageCount: number }> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      if (page >= pageCount) return { pageCount, tables: [], truncated: false };
+      const { tables } = await this.#pageTables(docId, sessions, page);
+      return { pageCount, ...reviewGridOf(tables, MAX_TABLE_CELLS, MAX_TABLE_CELL_TEXT) };
+    });
+    return { version, ...value };
   }
 
   /** Each page as a slide picture, rendered as the zip pulls it. */

@@ -1496,6 +1496,16 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * that reads `untaggedLines` sees the page it drew rather than a zero that means
      * nothing was asked.
      */
+    // NO TABLES: the shim's pages are lines of text, and a table is the engine's
+    // reading of ruling lines the shim does not draw.
+    'document.pageTables': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), pageCount: pageLines.length, tables: [], truncated: false }),
+      );
+    },
+
     'document.pageStructure': ({ docId, page }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

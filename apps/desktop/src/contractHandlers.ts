@@ -317,6 +317,7 @@ export function createContractHandlers(deps: {
     'document.pageTextLayer': pageTextLayerHandler(deps.commands),
     'document.pageWordCount': pageWordCountHandler(deps.commands),
     'document.pageStructure': pageStructureHandler(deps.commands),
+    'document.pageTables': pageTablesHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
@@ -1258,12 +1259,15 @@ function exportExcelHandler(commands: DocumentCommands): ContractHandlers['docum
   return async ({
     docId,
     layout,
+    version,
+    edits,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportExcel']>>> => {
     try {
-      const outcome = await commands.exportExcel(docId, layout);
+      const outcome = await commands.exportExcel(docId, layout, { version, edits });
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      if (outcome.kind === 'changed') return ok({ kind: 'changed' } as const);
       if (outcome.kind === 'no-tables') {
         return ok({ kind: 'no-tables', picturePages: outcome.picturePages } as const);
       }
@@ -1502,6 +1506,21 @@ function pageWordCountHandler(
  * named rather than spread, so a field the lane adds later is a compile error here
  * rather than something that crosses without the schema having been read.
  */
+/** One page's tables for the review grid; a structure read's refusals. */
+function pageTablesHandler(commands: DocumentCommands): ContractHandlers['document.pageTables'] {
+  return async ({ docId, page }): Promise<Awaited<ReturnType<ContractHandlers['document.pageTables']>>> => {
+    try {
+      const { version, pageCount, tables, truncated } = await commands.pageTables(docId, page);
+      return ok({ version, pageCount, tables, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
 function pageStructureHandler(
   commands: DocumentCommands,
 ): ContractHandlers['document.pageStructure'] {

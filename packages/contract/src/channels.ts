@@ -215,6 +215,24 @@ export const MAX_STRUCTURE_NODES = 4096;
 export const MAX_STRUCTURE_NAME = 128;
 
 /**
+ * The most table cells `document.pageTables` carries for one page, and the most
+ * edits one Excel export carries.
+ *
+ * Measured 2026-09-17 over the corpus under the table read: 13 tables, the densest
+ * page **173** cells. About twenty-four times that.
+ */
+export const MAX_TABLE_CELLS = 4096;
+
+/**
+ * The most characters of one table cell's text, shown or typed.
+ *
+ * Measured 2026-09-17 on the same corpus: the longest cell holds **461**. A cell
+ * longer than this is shown cut short and cannot be edited, since an edit would
+ * replace text nobody saw.
+ */
+export const MAX_TABLE_CELL_TEXT = 2048;
+
+/**
  * The spelling dictionaries this build ships, and the ONE place they are named.
  *
  * ## One language, and that is the founding record read whole
@@ -1906,16 +1924,47 @@ export const channels = {
    * The layout is REQUIRED, for `exportWord`'s reason. `no-tables` arrives before
    * any picker opens, carrying how many pages are a picture with no text — the
    * pages recognising would give words to.
+   *
+   * ## The review's edits, against the version they were made on
+   *
+   * D10's *editable review grid*: `edits` replace cells' text, addressed as
+   * `document.pageTables` showed them. They are corrections of THOSE tables, so the
+   * request names the version the grid was read at, and a document that has moved
+   * since — or an edit naming a cell the page does not have — answers `changed`
+   * before any picker opens rather than writing text into the wrong cell. Both
+   * fields are required; an export nobody reviewed sends no edits.
    */
   'document.exportExcel': channel(
     'Writes the tables found in the document as an Excel workbook the user picks.',
-    z.object({ docId: docIdSchema, layout: z.enum(['sheet-per-page', 'one-sheet']) }).strict(),
+    z
+      .object({
+        docId: docIdSchema,
+        layout: z.enum(['sheet-per-page', 'one-sheet']),
+        version: docVersionSchema,
+        edits: z
+          .array(
+            z
+              .object({
+                page: z.number().int().nonnegative(),
+                table: z.number().int().nonnegative(),
+                row: z.number().int().nonnegative(),
+                column: z.number().int().nonnegative(),
+                text: z.string().max(MAX_TABLE_CELL_TEXT),
+              })
+              .strict(),
+          )
+          .max(MAX_TABLE_CELLS)
+          .readonly(),
+      })
+      .strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
       z.object({ kind: z.literal('no-tables'), picturePages: z.number().int().nonnegative() }),
+      /** The document moved since the review, or an edit names no cell it has. Nothing was written. */
+      z.object({ kind: z.literal('changed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -2839,6 +2888,47 @@ export const channels = {
    *
    * ## `page` is ZERO-BASED, like every other page index that crosses here
    */
+  'document.pageTables': channel(
+    'One page’s tables as MuPDF finds them — each cell’s text, bounded — for the Excel review grid.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+    }),
+    z.object({
+      version: docVersionSchema,
+      pageCount: z.number().int().nonnegative(),
+      tables: z
+        .array(
+          z.object({
+            rows: z
+              .array(
+                z
+                  .array(
+                    z.object({
+                      text: z.string().max(MAX_TABLE_CELL_TEXT),
+                      /** Longer than the bound, so shown cut short and not editable. */
+                      clipped: z.boolean(),
+                    }),
+                  )
+                  .max(MAX_TABLE_CELLS)
+                  .readonly(),
+              )
+              .max(MAX_TABLE_CELLS)
+              .readonly(),
+          }),
+        )
+        .max(MAX_TABLE_CELLS)
+        .readonly()
+        .refine(
+          (tables) => tables.reduce((sum, table) => sum + table.rows.reduce((cells, row) => cells + row.length, 0), 0) <= MAX_TABLE_CELLS,
+          { message: `a page's tables may carry at most ${String(MAX_TABLE_CELLS)} cells` },
+        ),
+      /** Whether cells were left out past the bound. */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.pageStructure': channel(
     'One page’s tagged structure — roles, nesting and line counts, never its text.',
     z.object({

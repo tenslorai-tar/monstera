@@ -222,6 +222,7 @@ describe('browser shim', () => {
       'document.pageLinks',
       'document.pageObjects',
       'document.pageStructure',
+      'document.pageTables',
       'document.pageTextLayer',
       'document.pageWordCount',
       'document.placeImage',

@@ -187,6 +187,8 @@ const handlers: ContractHandlers = {
     Promise.resolve(
       ok({ version: asDocVersion(1), words: 5, characters: 27, charactersNoSpaces: 23 }),
     ),
+  'document.pageTables': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
   // TWO ELEMENTS WITH DIFFERENT NAMES AND DEPTHS, and every count non-zero and
   // distinct, so a boundary that dropped a field or a node is visible.
   'document.pageStructure': () =>

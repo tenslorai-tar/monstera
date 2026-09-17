@@ -2191,43 +2191,98 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(asked).toStrictEqual([]);
   });
 
-  it('export to Excel asks for the layout and dispatches exactly the one chosen', async () => {
-    for (const layout of ['sheet-per-page', 'one-sheet'] as const) {
-      const { client, sent } = recording({ 'document.exportExcel': { kind: 'copied', bytes: 9 } });
-      const asked: unknown[] = [];
+  describe('export tables to Excel — the review grid, a page at a time', () => {
+    /** One cell per page, whose text names the page, so a grid opened on the wrong page is visible. */
+    const tablesOf = (page: number): unknown => [{ rows: [[{ text: `on ${String(page)}`, clipped: false }]] }];
+
+    /** A client answering each page's tables at the version `versionAt` gives it, and the export with `exported`. */
+    function reviewing(
+      exported: unknown,
+      versionAt: (page: number) => number = () => 5,
+    ): { readonly client: ContractClient; readonly sent: { id: string; params: unknown }[] } {
+      const sent: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.pageTables') {
+          const { page } = params as { page: number };
+          return Promise.resolve(
+            ok({ version: asDocVersion(versionAt(page)), pageCount: 10, tables: tablesOf(page), truncated: false }),
+          );
+        }
+        return Promise.resolve(ok(exported));
+      });
+      return { client, sent };
+    }
+
+    it('opens on the page ON SHOW, moves when asked, and sends every page’s edits with the version read', async () => {
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9 });
+      const asked: { id: string; props: unknown }[] = [];
+      const answers = [
+        { kind: 'page', to: 4, layout: 'one-sheet', edits: [{ table: 0, row: 0, column: 0, text: 'A' }] },
+        { kind: 'export', layout: 'one-sheet', edits: [{ table: 0, row: 0, column: 0, text: 'B' }] },
+      ];
 
       await exportExcelCommand({
         client,
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
-          return Promise.resolve({ layout });
+          return Promise.resolve(answers.shift());
         },
       }).run(CONTEXT);
 
-      expect(asked).toStrictEqual([{ id: 'dialog.export-excel', props: {} }]);
-      expect(sent).toStrictEqual([{ id: 'document.exportExcel', params: { docId: DOC, layout } }]);
-    }
-  });
+      expect(asked).toStrictEqual([
+        {
+          id: 'dialog.export-excel',
+          props: { index: 3, page: 4, pageCount: 10, tables: tablesOf(3), truncated: false, layout: 'sheet-per-page', edits: [] },
+        },
+        {
+          id: 'dialog.export-excel',
+          props: { index: 4, page: 5, pageCount: 10, tables: tablesOf(4), truncated: false, layout: 'one-sheet', edits: [] },
+        },
+      ]);
+      expect(sent).toStrictEqual([
+        { id: 'document.pageTables', params: { docId: DOC, page: 3 } },
+        { id: 'document.pageTables', params: { docId: DOC, page: 4 } },
+        {
+          id: 'document.exportExcel',
+          params: {
+            docId: DOC,
+            layout: 'one-sheet',
+            version: asDocVersion(5),
+            edits: [
+              { page: 3, table: 0, row: 0, column: 0, text: 'A' },
+              { page: 4, table: 0, row: 0, column: 0, text: 'B' },
+            ],
+          },
+        },
+      ]);
+    });
 
-  it('CONTROL: a DISMISSED Excel export dialog dispatches nothing', async () => {
-    const { client, sent } = recording();
+    it('opens a page AGAIN with the edits typed on it before', async () => {
+      const { client } = reviewing({ kind: 'copied', bytes: 9 });
+      const opened: unknown[] = [];
+      const typed = [{ table: 0, row: 0, column: 0, text: 'A' }];
+      const answers = [
+        { kind: 'page', to: 4, layout: 'sheet-per-page', edits: typed },
+        { kind: 'page', to: 3, layout: 'sheet-per-page', edits: [] },
+        { kind: 'export', layout: 'sheet-per-page', edits: typed },
+      ];
 
-    await exportExcelCommand({
-      client,
-      onApplied: () => undefined,
-      ask: () => Promise.resolve(undefined),
-    }).run(CONTEXT);
+      await exportExcelCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (_id, props) => {
+          opened.push((props as { edits: unknown }).edits);
+          return Promise.resolve(answers.shift());
+        },
+      }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([]);
-  });
+      expect(opened).toStrictEqual([[], [], typed]);
+    });
 
-  it('an Excel export that found NO TABLE says so, naming recognition only where pages are pictures', async () => {
-    for (const [picturePages, outcome] of [
-      [0, 'no-tables'],
-      [2, 'no-tables-no-text'],
-    ] as const) {
-      const { client } = recording({ 'document.exportExcel': { kind: 'no-tables', picturePages } });
+    it('stops with REVIEW-CHANGED, exporting nothing, when a page is read at another version', async () => {
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9 }, (page) => (page === 3 ? 5 : 6));
       const spoken: unknown[] = [];
 
       await exportExcelCommand({
@@ -2235,15 +2290,51 @@ describe('delete pages — the mutation-dialog gate', () => {
         onApplied: () => undefined,
         ask: (id, props) => {
           spoken.push({ id, props });
-          return Promise.resolve(id === 'dialog.export-excel' ? { layout: 'one-sheet' } : undefined);
+          return Promise.resolve(
+            id === 'dialog.export-excel' ? { kind: 'page', to: 4, layout: 'sheet-per-page', edits: [] } : undefined,
+          );
         },
       }).run(CONTEXT);
 
-      expect(spoken).toStrictEqual([
-        { id: 'dialog.export-excel', props: {} },
-        { id: 'dialog.save-problem', props: { outcome } },
-      ]);
-    }
+      expect(sent.map((each) => each.id)).toStrictEqual(['document.pageTables', 'document.pageTables']);
+      expect(spoken.at(-1)).toStrictEqual({ id: 'dialog.save-problem', props: { outcome: 'review-changed' } });
+    });
+
+    it('CONTROL: a DISMISSED grid exports nothing', async () => {
+      const { client, sent } = reviewing({ kind: 'copied', bytes: 9 });
+
+      await exportExcelCommand({
+        client,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+
+      expect(sent.map((each) => each.id)).toStrictEqual(['document.pageTables']);
+    });
+
+    it('says what went wrong for no table, pictures with no text, and a document that changed', async () => {
+      for (const [exported, outcome] of [
+        [{ kind: 'no-tables', picturePages: 0 }, 'no-tables'],
+        [{ kind: 'no-tables', picturePages: 2 }, 'no-tables-no-text'],
+        [{ kind: 'changed' }, 'review-changed'],
+      ] as const) {
+        const { client } = reviewing(exported);
+        const spoken: unknown[] = [];
+
+        await exportExcelCommand({
+          client,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            spoken.push({ id, props });
+            return Promise.resolve(
+              id === 'dialog.export-excel' ? { kind: 'export', layout: 'one-sheet', edits: [] } : undefined,
+            );
+          },
+        }).run(CONTEXT);
+
+        expect(spoken.at(-1)).toStrictEqual({ id: 'dialog.save-problem', props: { outcome } });
+      }
+    });
   });
 
   it('CONTROL: a DISMISSED Word export dialog dispatches nothing', async () => {

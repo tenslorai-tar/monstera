@@ -391,13 +391,19 @@ export {
 } from './presentationDocument.js';
 export {
   type CellValue,
+  type ReviewCell,
+  type ReviewGrid,
   type SheetLayout,
   type SpreadsheetPage,
+  type TableEdit,
   MAX_CELL_STYLES,
   MAX_SHEET_ROWS,
   SHEET_LAYOUTS,
+  cellText,
   cellValue,
   columnName,
+  editsFit,
+  reviewGridOf,
   spreadsheetParts,
 } from './spreadsheetDocument.js';
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';

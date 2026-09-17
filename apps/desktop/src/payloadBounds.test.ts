@@ -357,6 +357,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // ROLES AND COUNTS, never the page's words, and at most MAX_STRUCTURE_NODES of
   // them: the tagging bounds the answer rather than the text (ADR-0065).
   'document.pageStructure': 'needs an engine session',
+  'document.pageTables': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',
   'document.destinations': 'needs an engine session',

@@ -72,7 +72,7 @@ import {
   snapshotRegion,
   withDocument,
 } from '@monstera/kernel/engine';
-import { type DocId, asDocId } from '@monstera/shared';
+import { type DocId, asDocId, asDocVersion } from '@monstera/shared';
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
@@ -111,6 +111,7 @@ import {
   type DocumentPageText,
   type DocumentPageStructure,
   type DocumentPageTables,
+  type ExcelReview,
   DocumentPoisonedError,
   type DocumentRestore,
   MissingSessionError,
@@ -2082,7 +2083,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'tables.xlsx');
     const { commands, picked } = exportingTo(destination);
 
-    const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page');
+    const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc));
 
     expect(outcome?.kind).toBe('copied');
     expect(picked).toStrictEqual(['tables.pdf:xlsx']);
@@ -2098,7 +2099,9 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'combined.xlsx');
     const { commands } = exportingTo(destination);
 
-    expect((await commands.exportExcel(tablesDoc, 'one-sheet'))?.kind).toBe('copied');
+    expect((await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc)))?.kind).toBe(
+      'copied',
+    );
     expect(sheetsOf(destination)).toStrictEqual([
       { name: '2-3', strings: ['Item', 'Qty', 'Price', 'Bolt', 'Name', 'Share', 'Note', 'North', 'first'] },
     ]);
@@ -2107,10 +2110,69 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
   it('answers NO TABLES before any picker, counting the picture page and not the blank one', async () => {
     const { commands, picked } = exportingTo(null);
 
-    expect(await commands.exportExcel(pictureDoc, 'sheet-per-page')).toStrictEqual({
+    expect(await commands.exportExcel(pictureDoc, 'sheet-per-page', await unreviewed(commands, pictureDoc))).toStrictEqual({
       kind: 'no-tables',
       picturePages: 1,
     });
+    expect(picked).toStrictEqual([]);
+  });
+
+  /** No edits, at the version the review grid's first read answers — the export a person makes without correcting anything. */
+  async function unreviewed(commands: DocumentCommands, doc: DocId): Promise<ExcelReview> {
+    return { version: (await commands.pageTables(doc, 0)).version, edits: [] };
+  }
+
+  it('the review grid reads a page’s cells, and an EDIT replaces that cell’s text in the workbook', async () => {
+    const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'edited.xlsx');
+    const { commands } = exportingTo(destination);
+
+    const grid = await commands.pageTables(tablesDoc, 1);
+    expect(grid.pageCount).toBe(3);
+    expect(grid.tables.map((table) => table.rows.map((row) => row.map((cell) => cell.text)))).toStrictEqual([
+      [
+        ['Item', 'Qty', 'Price'],
+        ['Bolt', '12', '0.45'],
+      ],
+    ]);
+
+    const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', {
+      version: grid.version,
+      edits: [{ page: 1, table: 0, row: 1, column: 0, text: 'Hex bolt' }],
+    });
+
+    expect(outcome?.kind).toBe('copied');
+    // THE EDITED CELL AND NO OTHER: page 3's first data cell, at the same table,
+    // row and column on another page, is unchanged — so an edit applied by address
+    // alone, ignoring its page, is red here.
+    expect(sheetsOf(destination)).toStrictEqual([
+      { name: '2', strings: ['Item', 'Qty', 'Price', 'Hex bolt'] },
+      { name: '3', strings: ['Name', 'Share', 'Note', 'North', 'first'] },
+    ]);
+  });
+
+  it('answers CHANGED before any picker for an edit naming a cell the page does not have', async () => {
+    const { commands, picked } = exportingTo(null);
+    const { version } = await commands.pageTables(tablesDoc, 1);
+
+    expect(
+      await commands.exportExcel(tablesDoc, 'sheet-per-page', {
+        version,
+        edits: [{ page: 1, table: 0, row: 1, column: 3, text: 'no such cell' }],
+      }),
+    ).toStrictEqual({ kind: 'changed' });
+    expect(picked).toStrictEqual([]);
+  });
+
+  it('answers CHANGED before any picker for a review made at another version', async () => {
+    const { commands, picked } = exportingTo(null);
+    const { version } = await commands.pageTables(tablesDoc, 1);
+
+    expect(
+      await commands.exportExcel(tablesDoc, 'sheet-per-page', {
+        version: asDocVersion(Number(version) + 1),
+        edits: [],
+      }),
+    ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
   });
 });

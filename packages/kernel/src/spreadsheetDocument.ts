@@ -32,17 +32,106 @@ import { baseFontName } from './wordDocument.js';
  *   as it was printed: `1,234.50` is 1234.5 shown `#,##0.00`, and `12.5%` is 0.125
  *   shown `0.0%`. Anything else stays text, including a comma as the decimal mark,
  *   which a page alone cannot tell from a thousands separator.
- * - **Wrapping** where the cell holds more than one line, each line on its own.
+ * - **Wrapping** where the cell's text runs to more than one line, each on its own.
+ * - **A person's text where they corrected it** in the review grid, in the cell's
+ *   own style, and a number again if what they typed is one.
  *
  * **No fills and no merges.** The engine's JSON carries neither a cell's
  * background nor which grid columns a spanning cell covers, and the row says so.
  */
 
-/** One page's tables, in the engine's order. */
+/**
+ * A person's correction to one cell, made in the review grid — D10's *editable
+ * review grid*. Addressed by the page's table, row and cell in the engine's order,
+ * which is how the grid showed them. The cell keeps its style; the text is theirs.
+ */
+export interface TableEdit {
+  readonly table: number;
+  readonly row: number;
+  readonly column: number;
+  readonly text: string;
+}
+
+/** One page's tables, in the engine's order, and the edits made to them. */
 export interface SpreadsheetPage {
   /** The page's index, from 0. */
   readonly page: number;
   readonly tables: readonly PageTable[];
+  /** REQUIRED, and empty where nobody reviewed the page, for ADR-0069's reason. */
+  readonly edits: readonly TableEdit[];
+}
+
+/**
+ * A cell's text: its lines, one per line. **The one spelling**, taken by the review
+ * grid and the writer alike, so what a person corrected is what would otherwise
+ * have been written (B3a).
+ */
+export function cellText(cell: TableCell): string {
+  return cell.lines.map((line) => line.text).join('\n');
+}
+
+/** One cell as the review grid shows it. */
+export interface ReviewCell {
+  readonly text: string;
+  /** Longer than the grid carries, so shown cut short and not editable. */
+  readonly clipped: boolean;
+}
+
+/** One page's tables as the review grid shows them, within a bound. */
+export interface ReviewGrid {
+  readonly tables: readonly { readonly rows: readonly (readonly ReviewCell[])[] }[];
+  /** Whether cells were left out past the bound. */
+  readonly truncated: boolean;
+}
+
+/**
+ * A page's tables for review: every cell's text, at most `maxCells` cells in the
+ * engine's order and `maxText` characters a cell.
+ *
+ * A cell past the character bound is CLIPPED and marked, rather than cut silently —
+ * an edit to text a person never saw whole would replace what they did not read,
+ * so {@link editsFit} refuses one.
+ */
+export function reviewGridOf(tables: readonly PageTable[], maxCells: number, maxText: number): ReviewGrid {
+  let cells = 0;
+  let truncated = false;
+  const shown: { rows: ReviewCell[][] }[] = [];
+  for (const table of tables) {
+    if (cells >= maxCells) {
+      truncated = true;
+      break;
+    }
+    const rows: ReviewCell[][] = [];
+    for (const row of table.rows) {
+      if (cells >= maxCells) {
+        truncated = true;
+        break;
+      }
+      const room = maxCells - cells;
+      if (row.length > room) truncated = true;
+      rows.push(
+        row.slice(0, room).map((cell) => {
+          const text = cellText(cell);
+          return { text: text.slice(0, maxText), clipped: text.length > maxText };
+        }),
+      );
+      cells += Math.min(row.length, room);
+    }
+    shown.push({ rows });
+  }
+  return { tables: shown, truncated };
+}
+
+/**
+ * Whether every edit names a cell the page has, whose text the grid could have
+ * shown whole. An edit that does not is not a correction of these tables, and the
+ * export refuses rather than writing a guess.
+ */
+export function editsFit(tables: readonly PageTable[], edits: readonly TableEdit[], maxText: number): boolean {
+  return edits.every((edit) => {
+    const cell = tables[edit.table]?.rows[edit.row]?.[edit.column];
+    return cell !== undefined && cellText(cell).length <= maxText;
+  });
 }
 
 /**
@@ -217,10 +306,21 @@ class StyleTable {
   }
 }
 
-/** One cell's XML at `reference`, its style taken from `styles`. */
-function cellXml(reference: string, cell: TableCell, borders: CellBorders | null, styles: StyleTable): string {
+/**
+ * One cell's XML at `reference`, its style taken from `styles`.
+ *
+ * @param edited the person's text for this cell, which replaces the engine's and
+ *   keeps the cell's font
+ */
+function cellXml(
+  reference: string,
+  cell: TableCell,
+  edited: string | undefined,
+  borders: CellBorders | null,
+  styles: StyleTable,
+): string {
   const [first] = cell.lines;
-  const text = cell.lines.map((line) => line.text).join('\n');
+  const text = edited ?? cellText(cell);
   const value = cellValue(text);
   const style = styles.indexOf({
     font: first === undefined ? 'Calibri' : baseFontName(first.font.name),
@@ -230,7 +330,7 @@ function cellXml(reference: string, cell: TableCell, borders: CellBorders | null
     italic: first?.font.italic ?? false,
     borders,
     format: value.kind === 'number' ? value.format : null,
-    wrap: cell.lines.length > 1,
+    wrap: text.includes('\n'),
   });
   const styled = style === 0 ? '' : ` s="${String(style)}"`;
   if (value.kind === 'number') return `<c r="${reference}"${styled}><v>${String(value.value)}</v></c>`;
@@ -243,19 +343,28 @@ function cellXml(reference: string, cell: TableCell, borders: CellBorders | null
  * tables, and answers the XML and the next free row.
  */
 function tablesXml(
-  tables: readonly PageTable[],
+  page: SpreadsheetPage,
   startRow: number,
   styles: StyleTable,
 ): { readonly xml: string; readonly nextRow: number } {
+  const edits = new Map(page.edits.map((edit) => [`${String(edit.table)}:${String(edit.row)}:${String(edit.column)}`, edit.text]));
   let row = startRow;
   let xml = '';
-  for (const table of tables) {
+  for (const [t, table] of page.tables.entries()) {
     for (const [y, cells] of table.rows.entries()) {
       if (row > MAX_SHEET_ROWS) {
         throw new Error(`a sheet would pass Excel's ${String(MAX_SHEET_ROWS)} rows, so no workbook was written`);
       }
       const written = cells
-        .map((cell, x) => cellXml(`${columnName(x)}${String(row)}`, cell, table.borders?.[y]?.[x] ?? null, styles))
+        .map((cell, x) =>
+          cellXml(
+            `${columnName(x)}${String(row)}`,
+            cell,
+            edits.get(`${String(t)}:${String(y)}:${String(x)}`),
+            table.borders?.[y]?.[x] ?? null,
+            styles,
+          ),
+        )
         .join('');
       xml += `<row r="${String(row)}">${written}</row>`;
       row += 1;
@@ -323,7 +432,7 @@ export async function* spreadsheetParts(
         if (page.tables.length === 0) continue;
         first ??= page.page;
         last = page.page;
-        const written = tablesXml(page.tables, row, styles);
+        const written = tablesXml(page, row, styles);
         row = written.nextRow;
         yield written.xml;
       }
@@ -336,7 +445,7 @@ export async function* spreadsheetParts(
     for await (const page of pages) {
       if (page.tables.length === 0) continue;
       names.push(String(page.page + 1));
-      const { xml } = tablesXml(page.tables, 1, styles);
+      const { xml } = tablesXml(page, 1, styles);
       yield { name: `xl/worksheets/sheet${String(names.length)}.xml`, chunks: [SHEET_OPEN, xml, SHEET_CLOSE] };
     }
     if (names.length === 0) throw new Error('no page holds a table, so there is no sheet to write');

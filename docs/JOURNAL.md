@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 Excel review grid: corrections a page at a time, against the version read
+
+*Export tables to Excel…* now opens on the page on show with its tables as editable cells. A dialog body holds no client
+(ADR-0038), so moving to another page is the dialog's **answer**: the command keeps that page's edits, reads the page
+asked for through `document.pageTables` and opens the grid again. Every page's edits live in one map and reach
+`document.exportExcel` together, with the version the first page was read at.
+
+- **Two places refuse a review that no longer describes the document**: the command, when a later page is read at another
+  version, and main, which checks the version and that every edit names a cell its page has — before any save dialog, and
+  the version again inside the write, since the document can move while the save dialog is open.
+- **Bounds from a reading**: over the corpus the densest page holds 173 cells and the longest cell 461 characters, so a
+  page carries at most 4,096 cells and a cell 2,048 characters. A longer cell is shown cut short and read-only; main
+  refuses an edit to one too, since the renderer is not what enforces it.
+- The grid's cell text and the writer's are one function, `cellText`, so a correction replaces exactly what would
+  otherwise have been written.
+
+**Mutations, each restored:** opening a page with no edits instead of the ones typed there reddens the command's return
+case; applying every page's edits to every page reddens main's edit case (a cell at the same address on another page
+changes).
+
+---
+
 ## 2026-09-17 — D10 Excel: the table read is MuPDF's, asked the way its own CSV writer asks
 
 ADR-0034 gave `TABLE_HUNT` a trigger — *the first feature whose subject is a table owes the reading* — and this is that

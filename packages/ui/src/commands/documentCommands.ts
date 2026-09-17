@@ -61,6 +61,7 @@ import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
 import type { ExportPageImagesAnswer } from '../dialogs/exportPageImagesResult.js';
 import { EXPORT_EXCEL_DIALOG_ID, type ExportExcelAnswer } from '../dialogs/exportExcel.js';
+import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
@@ -1924,11 +1925,20 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
 
 /**
  * Writes the tables MuPDF finds as an Excel workbook (ADR-0072, ADR-0073): the
- * layout dialog, then main's table check, save dialog and write.
+ * review grid on the page on show, then main's check, save dialog and write.
  *
- * A dismissed layout dialog dispatches nothing. A document with no table answers
- * before any save dialog, through the save problem dialog, naming recognition as
- * the remedy where some pages are pictures with no text.
+ * ## The grid is opened once per page a person visits, and the edits stay here
+ *
+ * `document.pageTables` answers one page, and the dialog answers `page` to move —
+ * so this loop reads the page asked for and opens the grid again, carrying the
+ * layout and that page's edits back in. Every page's edits are held in one map
+ * and sent together, with the version the FIRST page was read at: a later read at
+ * another version means the document moved during the review, and the edits made
+ * before it no longer name the same cells.
+ *
+ * A dismissed grid dispatches nothing. A document with no table answers before any
+ * save dialog, naming recognition as the remedy where some pages are pictures with
+ * no text.
  */
 export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -1938,12 +1948,48 @@ export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 44 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      const { docId } = context;
+      if (docId === undefined) return;
 
-      const chosen = (await deps.ask(EXPORT_EXCEL_DIALOG_ID, {})) as ExportExcelAnswer | undefined;
-      if (chosen === undefined) return;
+      const edits = new Map<number, ExportExcelAnswer['edits']>();
+      let index = context.page ?? 0;
+      let layout: ExportExcelAnswer['layout'] = 'sheet-per-page';
+      let reviewed: DocVersion | undefined;
+      for (;;) {
+        const read = await deps.client['document.pageTables']({ docId, page: index });
+        if (!read.ok) {
+          reportProblem(deps, read.error);
+          return;
+        }
+        if (reviewed !== undefined && read.value.version !== reviewed) {
+          void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'review-changed' });
+          return;
+        }
+        reviewed = read.value.version;
 
-      const answer = await deps.client['document.exportExcel']({ docId: context.docId, layout: chosen.layout });
+        const chosen = (await deps.ask(EXPORT_EXCEL_DIALOG_ID, {
+          index,
+          page: pdfjsPageOf(index),
+          pageCount: read.value.pageCount,
+          tables: read.value.tables,
+          truncated: read.value.truncated,
+          layout,
+          edits: edits.get(index) ?? [],
+        })) as ExportExcelAnswer | undefined;
+        if (chosen === undefined) return;
+
+        edits.set(index, chosen.edits);
+        layout = chosen.layout;
+        if (chosen.kind === 'export') break;
+        index = chosen.to;
+      }
+
+      const answer = await deps.client['document.exportExcel']({
+        docId,
+        layout,
+        version: reviewed,
+        edits: [...edits].flatMap(([page, made]) => made.map((edit) => ({ page, ...edit }))),
+      });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -1954,6 +2000,10 @@ export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
         void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
           outcome: outcome.picturePages > 0 ? 'no-tables-no-text' : 'no-tables',
         });
+        return;
+      }
+      if (outcome.kind === 'changed') {
+        void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'review-changed' });
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {

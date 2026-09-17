@@ -846,6 +846,37 @@ textarea {
   color: var(--muted);
 }
 
+/*
+ * The Excel review grid: a table of fields, which default flow cannot lay out — so
+ * it takes the list exception's reason. The page controls sit on one line with the
+ * page between them; a wide table scrolls inside its own box rather than widening
+ * the dialog, and each field fills its cell so the columns read as a grid.
+ */
+.m-export-excel__pages {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.m-export-excel__table {
+  overflow-x: auto;
+  padding-block: var(--space-8);
+}
+
+.m-export-excel__table table {
+  border-collapse: collapse;
+}
+
+.m-export-excel__table td {
+  padding: 0;
+  border: 1px solid var(--border); /* decorative: the grid's lines; each field draws its own focus ring */
+}
+
+.m-export-excel__table input {
+  width: 100%;
+  min-width: 8ch;
+}
+
 .m-spell-check__where,
 .m-spell-check__suggestions,
 .m-spell-check__added {

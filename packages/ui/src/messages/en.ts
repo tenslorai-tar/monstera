@@ -208,6 +208,14 @@ export const EXPORT_EXCEL_LAYOUT = messageKey('dialog.export-excel.layout');
 export const EXPORT_EXCEL_SHEET_PER_PAGE = messageKey('dialog.export-excel.sheet-per-page');
 export const EXPORT_EXCEL_ONE_SHEET = messageKey('dialog.export-excel.one-sheet');
 export const EXPORT_EXCEL_APPLY = messageKey('dialog.export-excel.apply');
+export const EXPORT_EXCEL_PAGE = messageKey('dialog.export-excel.page');
+export const EXPORT_EXCEL_PREVIOUS_PAGE = messageKey('dialog.export-excel.previous-page');
+export const EXPORT_EXCEL_NEXT_PAGE = messageKey('dialog.export-excel.next-page');
+export const EXPORT_EXCEL_NO_TABLES_HERE = messageKey('dialog.export-excel.no-tables-here');
+export const EXPORT_EXCEL_TABLE = messageKey('dialog.export-excel.table');
+export const EXPORT_EXCEL_CELL = messageKey('dialog.export-excel.cell');
+export const EXPORT_EXCEL_CLIPPED = messageKey('dialog.export-excel.clipped');
+export const EXPORT_EXCEL_TRUNCATED = messageKey('dialog.export-excel.truncated');
 export const EXPORT_PAGE_IMAGES_ALL = messageKey('dialog.export-page-images.all');
 export const EXPORT_PAGE_IMAGES_RANGES = messageKey('dialog.export-page-images.ranges');
 export const EXPORT_PAGE_IMAGES_LABEL = messageKey('dialog.export-page-images.label');
@@ -1146,6 +1154,7 @@ export const SAVE_LAYOUT_UNAVAILABLE = messageKey('dialog.save-problem.layout-un
 export const SAVE_LAYOUT_FAILED = messageKey('dialog.save-problem.layout-failed');
 export const SAVE_NO_TABLES = messageKey('dialog.save-problem.no-tables');
 export const SAVE_NO_TABLES_NO_TEXT = messageKey('dialog.save-problem.no-tables-no-text');
+export const SAVE_REVIEW_CHANGED = messageKey('dialog.save-problem.review-changed');
 export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
@@ -2127,6 +2136,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_SHEET_PER_PAGE]: 'A sheet for each page that has tables',
   [EXPORT_EXCEL_ONE_SHEET]: 'Every table on one sheet',
   [EXPORT_EXCEL_APPLY]: 'Choose where to save…',
+  [EXPORT_EXCEL_PAGE]: 'Page {page} of {count}',
+  [EXPORT_EXCEL_PREVIOUS_PAGE]: 'Previous page',
+  [EXPORT_EXCEL_NEXT_PAGE]: 'Next page',
+  [EXPORT_EXCEL_NO_TABLES_HERE]: 'No tables were found on this page.',
+  [EXPORT_EXCEL_TABLE]: 'Table {table}',
+  [EXPORT_EXCEL_CELL]: 'Table {table}, row {row}, column {column}',
+  [EXPORT_EXCEL_CLIPPED]: 'This cell is too long to show whole, so it cannot be changed here.',
+  [EXPORT_EXCEL_TRUNCATED]: 'This page has more cells than can be shown. The ones not shown are exported as found.',
   [EXPORT_PAGE_IMAGES_ALL]: 'Every page',
   [EXPORT_PAGE_IMAGES_RANGES]: 'These pages',
   [EXPORT_PAGE_IMAGES_LABEL]: 'Pages',
@@ -2574,6 +2591,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_LAYOUT_UNAVAILABLE]: 'Text with layout needs a component that is not installed with this copy of Monstera. Export text… still works.',
   [SAVE_LAYOUT_FAILED]: 'The text could not be read with its layout from this document, so no file was written. Export text… may still work.',
   [SAVE_NO_TABLES]: 'No tables with ruled lines were found in this document, so no file was written.',
+  [SAVE_REVIEW_CHANGED]: 'The document changed while its tables were being reviewed, so no file was written. Export tables to Excel… again to review the tables as they are now.',
   [SAVE_NO_TABLES_NO_TEXT]: 'No tables were found, so no file was written. Some pages are pictures of text with no text to read; recognise their text first with Tools › OCR, then export again.',
   // "Could not be done" and never "error". Every code below leaves the document
   // exactly as it was, so the title describes the operation and not the state.

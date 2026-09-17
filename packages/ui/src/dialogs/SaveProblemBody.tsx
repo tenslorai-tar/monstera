@@ -13,6 +13,7 @@ import {
   SAVE_LAYOUT_UNAVAILABLE,
   SAVE_NO_TABLES,
   SAVE_NO_TABLES_NO_TEXT,
+  SAVE_REVIEW_CHANGED,
   SAVE_WRITE_FAILED,
 } from '../messages/en.js';
 
@@ -27,7 +28,8 @@ type SaveProblem =
   | 'layout-unavailable'
   | 'layout-failed'
   | 'no-tables'
-  | 'no-tables-no-text';
+  | 'no-tables-no-text'
+  | 'review-changed';
 
 /**
  * The message for one outcome.
@@ -64,6 +66,8 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   // pages have no text, since the table read can only find a table in text.
   'no-tables': SAVE_NO_TABLES,
   'no-tables-no-text': SAVE_NO_TABLES_NO_TEXT,
+  // THE REVIEW'S EDITS were made on a version the document is no longer at.
+  'review-changed': SAVE_REVIEW_CHANGED,
 };
 
 /**
