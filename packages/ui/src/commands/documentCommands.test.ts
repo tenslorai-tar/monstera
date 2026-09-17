@@ -2194,12 +2194,13 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   describe('export as PDF/A (ADR-0075)', () => {
-    it('dispatches the document, and shows what was removed only when something was', async () => {
-      for (const [removed, notices] of [
-        [['not permitted in PDF/A, annotation will not be present in output file'], 1],
-        [[], 0],
+    it('dispatches the document, and shows what was left out only when something was — lines or tags', async () => {
+      for (const [removed, tagsDropped, notices] of [
+        [['not permitted in PDF/A, annotation will not be present in output file'], false, 1],
+        [[], true, 1],
+        [[], false, 0],
       ] as const) {
-        const { client, sent } = recording({ 'document.exportPdfa': { kind: 'copied', bytes: 9, removed } });
+        const { client, sent } = recording({ 'document.exportPdfa': { kind: 'copied', bytes: 9, removed, tagsDropped } });
         const asked: unknown[] = [];
 
         await exportPdfaCommand({
@@ -2212,7 +2213,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         }).run(CONTEXT);
 
         expect(sent).toStrictEqual([{ id: 'document.exportPdfa', params: { docId: DOC } }]);
-        expect(asked).toStrictEqual(notices === 1 ? [{ id: 'dialog.pdfa-removals', props: { removed } }] : []);
+        expect(asked).toStrictEqual(notices === 1 ? [{ id: 'dialog.pdfa-removals', props: { removed, tagsDropped } }] : []);
       }
     });
 

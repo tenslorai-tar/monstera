@@ -18,14 +18,14 @@ afterEach(() => {
 });
 
 describe('PdfaRemovalsBody', () => {
-  it('says the file was saved and lists each removal in the converter’s own words, marked as English', () => {
+  it('lists each removal in the converter’s own words, marked as English', () => {
     const removed = [
       'not permitted in PDF/A, annotation will not be present in output file',
       'Transparency group not permitted in PDF/A, removing',
     ];
     render(
       <Wrapped>
-        <PdfaRemovalsBody removed={removed} />
+        <PdfaRemovalsBody removed={removed} tagsDropped={false} />
       </Wrapped>,
     );
 
@@ -33,5 +33,17 @@ describe('PdfaRemovalsBody', () => {
     const items = screen.getAllByRole('listitem');
     expect(items.map((item) => item.textContent)).toStrictEqual(removed);
     expect(items.every((item) => item.getAttribute('lang') === 'en')).toBe(true);
+    expect(screen.queryByText(/screen readers/u)).toBeNull();
+  });
+
+  it('says the tags were not kept, which the converter never mentions, with no empty list', () => {
+    render(
+      <Wrapped>
+        <PdfaRemovalsBody removed={[]} tagsDropped />
+      </Wrapped>,
+    );
+
+    expect(screen.getByText(/screen readers/u)).toBeTruthy();
+    expect(screen.queryByRole('list')).toBeNull();
   });
 });

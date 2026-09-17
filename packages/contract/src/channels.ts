@@ -1993,6 +1993,8 @@ export const channels = {
         kind: z.literal('copied'),
         bytes: z.number().int().nonnegative(),
         removed: z.array(z.string().max(MAX_PDFA_REMOVAL_CHARS)).max(MAX_PDFA_REMOVALS).readonly(),
+        /** The document was tagged and the file carries no structure tree — which Ghostscript does not print. */
+        tagsDropped: z.boolean(),
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),

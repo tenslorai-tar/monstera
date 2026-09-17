@@ -206,6 +206,7 @@ export const EXPORT_PDFA_COMMAND_TITLE = messageKey('command.export-pdfa.title')
 export const PDFA_REMOVALS_TITLE = messageKey('dialog.pdfa-removals.title');
 export const PDFA_REMOVALS_SAVED = messageKey('dialog.pdfa-removals.saved');
 export const PDFA_REMOVALS_CONVERTER_WORDS = messageKey('dialog.pdfa-removals.converter-words');
+export const PDFA_REMOVALS_TAGS = messageKey('dialog.pdfa-removals.tags');
 export const PRINT_COMMAND_TITLE = messageKey('command.print.title');
 export const PRINT_TITLE = messageKey('dialog.print.title');
 export const PRINT_DPI = messageKey('dialog.print.dpi');
@@ -2149,6 +2150,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PDFA_REMOVALS_TITLE]: 'Saved as PDF/A',
   [PDFA_REMOVALS_SAVED]: 'The PDF/A file was saved. To meet the archival standard, some things were left out of it.',
   [PDFA_REMOVALS_CONVERTER_WORDS]: 'In the words of the converter, Ghostscript:',
+  [PDFA_REMOVALS_TAGS]: 'This document had tags that let screen readers follow it. The PDF/A file does not keep them.',
   [PRINT_COMMAND_TITLE]: 'Print…',
   [PRINT_TITLE]: 'Print',
   [PRINT_DPI]: 'Print quality',

@@ -1264,7 +1264,7 @@ function exportPdfaHandler(commands: DocumentCommands): ContractHandlers['docume
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
-          return ok({ kind: 'copied', bytes: outcome.bytes, removed: outcome.removed } as const);
+          return ok({ kind: 'copied', bytes: outcome.bytes, removed: outcome.removed, tagsDropped: outcome.tagsDropped } as const);
         case 'refused':
           return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
         case 'write-failed':

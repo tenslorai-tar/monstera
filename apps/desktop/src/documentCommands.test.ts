@@ -33,6 +33,7 @@ import {
   CommandBus,
   DocumentNotOpenError,
   type PageImageRequest,
+  type PageStructure,
   DocumentService,
   EngineCallFailed,
   EngineSessionGone,
@@ -1780,6 +1781,8 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly pdfa?: PdfaSource | null;
       /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
       readonly copyTo?: string | null;
+      /** A page's structure nodes in place of the real read; absent, the real read. */
+      readonly structure?: (page: number) => PageStructure['nodes'];
     } = {},
   ): { readonly commands: DocumentCommands; readonly reads: number[] } {
     const reads: number[] = [];
@@ -1790,6 +1793,12 @@ describe('exportText — the document’s words, streamed one page at a time', (
       engine: textEngine(),
       print: options.print ?? null,
       pdfa: options.pdfa ?? null,
+      ...(options.structure === undefined
+        ? {}
+        : {
+            pageStructure: (_id: DocId, _sessions: unknown, page: number) =>
+              Promise.resolve({ nodes: options.structure?.(page) ?? [], untaggedLines: 0, images: 0 }),
+          }),
       pageImage: async (id, sessions, request) => {
         options.images?.push(request);
         return await LOCAL_READS.pageImage(id, sessions, request);
@@ -2039,10 +2048,33 @@ describe('exportText — the document’s words, streamed one page at a time', (
         kind: 'copied',
         bytes: 17,
         removed: ['not permitted in PDF/A, annotation will not be present in output file'],
+        // THE REAL STRUCTURE READ on this untagged fixture: nothing to lose, nothing said.
+        tagsDropped: false,
       });
       expect(readFileSync(destination, 'latin1')).toBe('%PDF-1.7 as PDF/A');
       expect(given).toStrictEqual([FLUSHED]);
       expect(reads).toStrictEqual([]);
+    });
+
+    it('says the TAGS were dropped when any page carries structure, which Ghostscript never prints', async () => {
+      const destination = join(mkdtempSync(join(directory, 'pdfa-')), 'tagged.pdf');
+      const { source } = converter('converted');
+      const asked: number[] = [];
+      const { commands } = exportingTo(null, {
+        pdfa: source,
+        flush: () => Promise.resolve(FLUSHED),
+        copyTo: destination,
+        // PAGE 2 TAGGED, page 1 not: a check of the first page alone is red here.
+        structure: (page) => {
+          asked.push(page);
+          return page === 1 ? [{ role: 'P', raw: 'P', depth: 0, lines: 1 }] : [];
+        },
+      });
+
+      const outcome = await commands.exportPdfa(textDoc);
+
+      expect(outcome?.kind === 'copied' && outcome.tagsDropped).toBe(true);
+      expect(asked).toStrictEqual([0, 1]);
     });
 
     it('answers FAILED and writes no file when the conversion produced no PDF/A', async () => {

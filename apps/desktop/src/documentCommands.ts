@@ -1747,7 +1747,13 @@ export type ExportTextOutcome =
 
 /** What a PDF/A-2b export did: a copy's outcomes, with what the conversion removed; or no converter; or no PDF/A. */
 export type ExportPdfaOutcome =
-  | { readonly kind: 'copied'; readonly bytes: number; readonly removed: readonly string[] }
+  | {
+      readonly kind: 'copied';
+      readonly bytes: number;
+      readonly removed: readonly string[];
+      /** The document was tagged, and the PDF/A file carries no structure tree. */
+      readonly tagsDropped: boolean;
+    }
   | Exclude<CopyOutcome, { readonly kind: 'copied' }>
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'failed' };
@@ -3395,18 +3401,23 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       let removed: readonly string[] = [];
+      let tagsDropped = false;
       try {
         const outcome = await writeStreamedDocument(
           this.#save.deps,
           this.#copy.checkTarget,
           async () => {
+            // TAGS ARE READ BEFORE CONVERTING, because Ghostscript drops the structure
+            // tree and does not say so: measured 2026-09-17, 4 of 4 tagged corpus
+            // documents lost it under the export's own arguments.
+            tagsDropped = await this.#anyPageTagged(docId, sessions);
             const converted = await pdfa(await this.#save.flush(docId, sessions));
             removed = converted.removed;
             return converted.output;
           },
           destination,
         );
-        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, removed } : outcome;
+        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, removed, tagsDropped } : outcome;
       } catch (thrown) {
         if (thrown instanceof PdfaFailedError) return { kind: 'failed' };
         throw thrown;
@@ -3414,6 +3425,18 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Whether any page carries tagged structure, by the structure read ADR-0065 owns —
+   * stopping at the first that does, so a tagged document pays for one page.
+   */
+  async #anyPageTagged(docId: DocId, sessions: DocumentSessions): Promise<boolean> {
+    const { pageCount } = await this.#geometry(docId, sessions, []);
+    for (let page = 0; page < pageCount; page += 1) {
+      if ((await this.#pageStructure(docId, sessions, page)).nodes.length > 0) return true;
+    }
+    return false;
   }
 
   /**

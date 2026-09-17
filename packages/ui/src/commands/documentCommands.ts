@@ -2043,7 +2043,9 @@ export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
         case 'cancelled':
           return;
         case 'copied':
-          if (outcome.removed.length > 0) void deps.ask(PDFA_REMOVALS_DIALOG_ID, { removed: outcome.removed });
+          if (outcome.removed.length > 0 || outcome.tagsDropped) {
+            void deps.ask(PDFA_REMOVALS_DIALOG_ID, { removed: outcome.removed, tagsDropped: outcome.tagsDropped });
+          }
           return;
         case 'unavailable':
         case 'failed':

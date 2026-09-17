@@ -19,8 +19,12 @@ export const PDFA_REMOVALS_DIALOG = declareDialog({
   title: PDFA_REMOVALS_TITLE,
   props: z
     .object({
-      removed: z.array(z.string().max(MAX_PDFA_REMOVAL_CHARS)).min(1).max(MAX_PDFA_REMOVALS).readonly(),
+      removed: z.array(z.string().max(MAX_PDFA_REMOVAL_CHARS)).max(MAX_PDFA_REMOVALS).readonly(),
+      tagsDropped: z.boolean(),
     })
-    .strict(),
+    .strict()
+    .refine((props) => props.removed.length > 0 || props.tagsDropped, {
+      message: 'the notice opens only when something was left out',
+    }),
   component: lazy(() => import('./PdfaRemovalsBody.js')),
 });
