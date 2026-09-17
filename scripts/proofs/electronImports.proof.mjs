@@ -486,6 +486,20 @@ try {
       },
     ],
     [
+      'scripts/research/printRoute.mjs',
+      {
+        sites: 2,
+        reason:
+          'imports the kernel\'s MuPDF package by the path require.resolve answers from ' +
+          'packages/kernel, and apps/desktop/dist/win32PrintSurface.js, both through file:// URLs. ' +
+          'ADR-0074\'s readings are asked of the SHIPPED print surface — the dialog\'s structure and ' +
+          'the drawing a print runs — so a copy would measure a harness; MuPDF is the engine the ' +
+          'rasters come from. Both paths are resolved at run time and need Windows backslash ' +
+          'conversion. Plain Node; it binds gdi32 and user32 through koffi and never imports the ' +
+          'electron package.',
+      },
+    ],
+    [
       'scripts/research/popplerContained.mjs',
       {
         sites: 1,
