@@ -188,6 +188,7 @@ export {
   XfdfTooDeepError,
 } from './xfdfReader.js';
 export { findDuplicatePages } from './pageDuplicates.js';
+export { readPageBarcodes } from './barcodeReader.js';
 export { extractPages } from './pageExtract.js';
 export { type PageImageRequest, rasterisePageImage } from './pageImages.js';
 export {

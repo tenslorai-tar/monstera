@@ -542,6 +542,22 @@ export const MAX_FORM_FIELD_VALUES = 256;
 export const MAX_FLAT_FIELD_CANDIDATES = 256;
 
 /**
+ * The barcodes one page may report, and the longest text one may carry: the engine host's
+ * bounds (`ENGINE_BARCODES_MAX`, `ENGINE_BARCODE_TEXT_MAX`) on this wire — 7,089 is the most any
+ * symbology carries, a QR code of digits. `contractHandlers.test.ts` holds the two pairs equal.
+ */
+export const MAX_PAGE_BARCODES = 64;
+export const MAX_BARCODE_TEXT = 7089;
+
+/**
+ * The symbologies a person may generate, in zxing-cpp's names.
+ *
+ * A COPY of `@monstera/kernel/barcode`'s `BARCODE_WRITE_FORMATS`, because this package cannot
+ * import the kernel; `contractHandlers.test.ts` holds the two equal.
+ */
+export const BARCODE_FORMATS = ['QRCode', 'DataMatrix', 'Aztec', 'PDF417', 'Code128', 'EAN13'] as const;
+
+/**
  * How many of a page's text objects one answer may name — and, because a page
  * cannot have more lines than runs, how many **lines** one answer may carry.
  *
@@ -2419,6 +2435,61 @@ export const channels = {
       z.object({ kind: z.enum(DOCUSIGN_REFUSALS) }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Places a barcode a person typed, on the page where they dragged a box (ADR-0076).
+   *
+   * `document.placeImage`'s route with the picker replaced by text: the renderer cannot express
+   * `placeImage`, so it sends the words and the box and main writes the symbol and mints the
+   * command. A text the symbology cannot carry — letters for EAN-13 — is `refused`.
+   */
+  'document.placeBarcode': channel(
+    'Places a barcode of the given text on pages of an open document.',
+    z.object({
+      docId: docIdSchema,
+      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_IMAGE_PAGES).readonly(),
+      rect: annotationRectSchema,
+      text: z.string().min(1).max(MAX_BARCODE_TEXT),
+      format: z.enum(BARCODE_FORMATS),
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('placed'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('refused') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * The barcodes on one page, read in the engine host (ADR-0076).
+   *
+   * `document.flatFieldCandidates`' shape: per page, stamped with a version, and no
+   * `document-busy`, because it mutates nothing.
+   */
+  'document.pageBarcodes': channel(
+    'Reads the barcodes on one page of an open document.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    z.object({
+      version: docVersionSchema,
+      barcodes: z
+        .array(
+          z.object({
+            /** zxing-cpp's name for the symbology, shown as data. */
+            format: z.string().min(1).max(32),
+            text: z.string().max(MAX_BARCODE_TEXT),
+          }),
+        )
+        .max(MAX_PAGE_BARCODES)
+        .readonly(),
+      /** Whether the bound stopped the list. `document.annotations`' flag. */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-poisoned'],
   ),
 
   'document.placeImage': channel(

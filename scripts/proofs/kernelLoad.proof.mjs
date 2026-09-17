@@ -90,9 +90,16 @@ const COMPOSE_FORBIDDEN = 'markdownCompose.js';
  */
 const CSV_FORBIDDEN = 'csvRead.js';
 
+/**
+ * zxing-cpp's reader and writer, from 2026-09-17 (ADR-0076). Two constants for two remedies:
+ * the reader belongs to the engine host, the writer to a lazy subpath in `main`.
+ */
+const BARCODE_READER_FORBIDDEN = 'barcodeReader.js';
+const BARCODE_WRITER_FORBIDDEN = 'barcodeWriter.js';
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+const roster = createRoster(failures, { cases: 27 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -399,6 +406,62 @@ try {
     `${CSV_FORBIDDEN} is PRESENT, so its four answers above are about reachability`,
     existsSync(join(DIST, CSV_FORBIDDEN)),
     `${CSV_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
+  );
+
+  // THE BARCODE DECODER AND WRITER, added 2026-09-17 (ADR-0076). Two modules and two
+  // remedies, for `PDFIUM_FORBIDDEN`'s reason: the READER decodes a document's pixels with
+  // a C++ decoder and belongs in the engine host alone, and the WRITER is `main`'s but is
+  // loaded on first use through `@monstera/kernel/barcode`, never at startup. So the barrel
+  // reaches neither, the writer's subpath reaches the writer and NOT the reader, and each
+  // control is anchored on the entry that exists to reach it.
+  const readerFromEngine = reaches('engine.js', BARCODE_READER_FORBIDDEN);
+  const readerFromIndex = reaches('index.js', BARCODE_READER_FORBIDDEN);
+  const readerFromSubpath = reaches('barcode.js', BARCODE_READER_FORBIDDEN);
+  const writerFromSubpath = reaches('barcode.js', BARCODE_WRITER_FORBIDDEN);
+  const writerFromIndex = reaches('index.js', BARCODE_WRITER_FORBIDDEN);
+
+  check(
+    `CONTROL: ${BARCODE_READER_FORBIDDEN} IS reachable from engine.js, so the walk can see it`,
+    readerFromEngine.reached,
+    `the walk could not reach ${BARCODE_READER_FORBIDDEN} from engine.js, which exports the reader ` +
+      `the host entry and the tests import. The reader's cases below would be satisfied by blindness.`,
+  );
+
+  check(
+    `importing the kernel's public surface does not load ${BARCODE_READER_FORBIDDEN}`,
+    !readerFromIndex.reached,
+    `reachable via ${readerFromIndex.path.join(' -> ')}.\n` +
+      `      A page's raster is decoded in the engine host and never in \`main\` (ADR-0076). The ` +
+      `barrel carries \`FoundBarcode\` as a TYPE only; read the emit for the module in the path.`,
+  );
+
+  check(
+    `@monstera/kernel/barcode does not load ${BARCODE_READER_FORBIDDEN}`,
+    !readerFromSubpath.reached,
+    `reachable via ${readerFromSubpath.path.join(' -> ')}.\n` +
+      `      The subpath exists so \`main\` can load the WRITER; a reader behind it would put the ` +
+      `decoder of hostile pixels into \`main\` the first time a person placed a barcode.`,
+  );
+
+  check(
+    `CONTROL: ${BARCODE_WRITER_FORBIDDEN} IS reachable from barcode.js, so the walk can see it`,
+    writerFromSubpath.reached,
+    `the walk could not reach ${BARCODE_WRITER_FORBIDDEN} from barcode.js, which exists to export it.`,
+  );
+
+  check(
+    `importing the kernel's public surface does not load ${BARCODE_WRITER_FORBIDDEN}`,
+    !writerFromIndex.reached,
+    `reachable via ${writerFromIndex.path.join(' -> ')}.\n` +
+      `      The writer is loaded on first use through \`@monstera/kernel/barcode\`, so zxing-cpp's ` +
+      `glue is never part of \`main\`'s startup graph (ADR-0076). \`barcodeRect\` is on the barrel ` +
+      `because \`barcodePlacement.js\` imports no writer; an edge from it would be the cause.`,
+  );
+
+  check(
+    `${BARCODE_READER_FORBIDDEN} and ${BARCODE_WRITER_FORBIDDEN} are PRESENT, so the answers above are about reachability`,
+    existsSync(join(DIST, BARCODE_READER_FORBIDDEN)) && existsSync(join(DIST, BARCODE_WRITER_FORBIDDEN)),
+    `one of them is missing from ${DIST}, so "not reachable" is true and means nothing.`,
   );
 
   // WHAT THIS CASE USED TO SAY, and why it no longer does (finding KKKK-3).

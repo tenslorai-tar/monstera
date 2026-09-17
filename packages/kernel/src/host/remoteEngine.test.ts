@@ -14,6 +14,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { readPageBarcodes } from '../barcodeReader.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
@@ -300,6 +301,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
         serialiseFormData(await readFormData(session), format),
       pageImage: rasterisePageImage,
       flatFields: detectFlatFields,
+      barcodes: readPageBarcodes,
     }),
     (incident) => incidents.push(incident),
   );
@@ -688,6 +690,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         flatFields: () => {
           throw new Error('unused');
         },
+        barcodes: () => {
+          throw new Error('unused');
+        },
       }),
       (incident) => incidents.push(incident),
     );
@@ -804,6 +809,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         flatFields: () => {
           throw new Error('the rotation-refusal case must not propose fields');
+        },
+        barcodes: () => {
+          throw new Error('the rotation-refusal case must not read barcodes');
         },
       }),
       (incident) => incidents.push(incident),

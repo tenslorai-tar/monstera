@@ -214,6 +214,27 @@ export const PRINT_DPI_150 = messageKey('dialog.print.dpi-150');
 export const PRINT_DPI_300 = messageKey('dialog.print.dpi-300');
 export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
+export const GROUP_BARCODES = messageKey('surface.ribbon.group.barcodes');
+export const READ_BARCODES_COMMAND_TITLE = messageKey('command.read-barcodes.title');
+export const PLACE_BARCODE_TOOL_TITLE = messageKey('command.organize.place-barcode');
+export const PAGE_BARCODES_TITLE = messageKey('dialog.page-barcodes.title');
+export const PAGE_BARCODES_FOUND = messageKey('dialog.page-barcodes.found');
+export const PAGE_BARCODES_NONE = messageKey('dialog.page-barcodes.none');
+export const PAGE_BARCODES_TRUNCATED = messageKey('dialog.page-barcodes.truncated');
+export const PAGE_BARCODES_REFUSED = messageKey('dialog.page-barcodes.refused');
+export const PAGE_BARCODES_TYPE = messageKey('dialog.page-barcodes.type');
+export const PAGE_BARCODES_CONTENT = messageKey('dialog.page-barcodes.content');
+export const PLACE_BARCODE_TITLE = messageKey('dialog.place-barcode.title');
+export const PLACE_BARCODE_TEXT = messageKey('dialog.place-barcode.text');
+export const PLACE_BARCODE_FORMAT = messageKey('dialog.place-barcode.format');
+export const PLACE_BARCODE_QR = messageKey('dialog.place-barcode.qr');
+export const PLACE_BARCODE_DATA_MATRIX = messageKey('dialog.place-barcode.data-matrix');
+export const PLACE_BARCODE_AZTEC = messageKey('dialog.place-barcode.aztec');
+export const PLACE_BARCODE_PDF417 = messageKey('dialog.place-barcode.pdf417');
+export const PLACE_BARCODE_CODE128 = messageKey('dialog.place-barcode.code128');
+export const PLACE_BARCODE_EAN13 = messageKey('dialog.place-barcode.ean13');
+export const PLACE_BARCODE_REFUSED = messageKey('dialog.place-barcode.refused');
+export const PLACE_BARCODE_APPLY = messageKey('dialog.place-barcode.apply');
 export const EXPORT_EXCEL_COMMAND_TITLE = messageKey('command.export-excel.title');
 export const EXPORT_EXCEL_TITLE = messageKey('dialog.export-excel.title');
 export const EXPORT_EXCEL_LAYOUT = messageKey('dialog.export-excel.layout');
@@ -2158,6 +2179,28 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PRINT_DPI_300]: 'Standard — 300 dots per inch',
   [PRINT_DPI_600]: 'High — up to 600 dots per inch, lower on a large page',
   [PRINT_APPLY]: 'Choose a printer…',
+  [GROUP_BARCODES]: 'Barcodes',
+  [READ_BARCODES_COMMAND_TITLE]: 'Read barcodes',
+  [PLACE_BARCODE_TOOL_TITLE]: 'Add a barcode',
+  [PAGE_BARCODES_TITLE]: 'Barcodes on this page',
+  [PAGE_BARCODES_FOUND]: '{count, plural, one {One barcode on page {page}.} other {# barcodes on page {page}.}}',
+  [PAGE_BARCODES_NONE]: 'No barcodes were found on page {page}.',
+  [PAGE_BARCODES_TRUNCATED]: 'This page has more barcodes than can be listed. Only the first ones are shown.',
+  [PAGE_BARCODES_REFUSED]: 'The barcodes on page {page} could not be read. The document may be busy or no longer open.',
+  [PAGE_BARCODES_TYPE]: 'Type',
+  [PAGE_BARCODES_CONTENT]: 'What it says',
+  [PLACE_BARCODE_TITLE]: 'Add a barcode',
+  [PLACE_BARCODE_TEXT]: 'Text or link',
+  [PLACE_BARCODE_FORMAT]: 'Barcode type',
+  [PLACE_BARCODE_QR]: 'QR Code',
+  [PLACE_BARCODE_DATA_MATRIX]: 'Data Matrix',
+  [PLACE_BARCODE_AZTEC]: 'Aztec',
+  [PLACE_BARCODE_PDF417]: 'PDF417',
+  [PLACE_BARCODE_CODE128]: 'Code 128',
+  [PLACE_BARCODE_EAN13]: 'EAN-13 — up to 13 digits; a shorter number gets leading zeros',
+  [PLACE_BARCODE_REFUSED]:
+    'That barcode type cannot hold this text, so nothing was added. Change the text or choose another type.',
+  [PLACE_BARCODE_APPLY]: 'Add to the page',
   [EXPORT_EXCEL_COMMAND_TITLE]: 'Export tables to Excel…',
   [EXPORT_EXCEL_TITLE]: 'Export tables to Excel',
   [EXPORT_EXCEL_LAYOUT]: 'Where the tables go',

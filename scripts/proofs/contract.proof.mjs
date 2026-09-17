@@ -1201,6 +1201,9 @@ export const handlers: ContractHandlers = {
   'document.awaitExternalEdit': () => Promise.resolve(ok({ kind: 'ended' as const })),
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.pageBarcodes': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -1326,6 +1329,9 @@ export const handlers: ContractHandlers = {
   'document.awaitExternalEdit': () => Promise.resolve(ok({ kind: 'ended' as const })),
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.pageBarcodes': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -1526,6 +1532,9 @@ export const shim: ContractClient = {
   'document.awaitExternalEdit': () => Promise.resolve(ok({ kind: 'ended' as const })),
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.pageBarcodes': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),
   'document.viewModel': () =>

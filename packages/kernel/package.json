@@ -21,6 +21,10 @@
     "./compose": {
       "types": "./dist/compose.d.ts",
       "default": "./dist/compose.js"
+    },
+    "./barcode": {
+      "types": "./dist/barcode.d.ts",
+      "default": "./dist/barcode.js"
     }
   },
   "main": "./dist/index.js",

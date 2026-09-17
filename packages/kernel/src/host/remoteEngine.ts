@@ -1,6 +1,7 @@
 import type { ClientApi, Command, CommandOfKind } from '@monstera/contract';
 
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
+import type { FoundBarcode } from '../barcodeReader.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
@@ -469,6 +470,28 @@ export function remoteMupdfFlatFields(
       await client['engine/flat-fields']({ session: sessions.handleFor(session), page }),
     );
     return { candidates: answer.candidates, truncated: answer.truncated };
+  };
+}
+
+/** One page's barcodes as main receives them: the list, and whether the wire's bound stopped it. */
+export type BarcodeReport = (
+  session: MupdfSession,
+  page: number,
+) => Promise<{ readonly barcodes: readonly FoundBarcode[]; readonly truncated: boolean }>;
+
+/**
+ * One page's barcodes, over the boundary.
+ *
+ * `remoteMupdfFlatFields`' shape and its reason: both halves come back, because the truncation
+ * flag has one consumer — the list says so.
+ */
+export function remoteMupdfBarcodes(client: ClientApi<EngineChannels>, sessions: RemoteSessions): BarcodeReport {
+  return async (session, page) => {
+    const answer = answered(
+      'engine/page-barcodes',
+      await client['engine/page-barcodes']({ session: sessions.handleFor(session), page }),
+    );
+    return { barcodes: answer.barcodes, truncated: answer.truncated };
   };
 }
 

@@ -7,7 +7,9 @@ import { overlayTransform } from './annotationSpace.js';
 import {
   MINIMUM_BOX,
   PLACE_IMAGE_TOOL_ID,
+  PLACE_BARCODE_TOOL_ID,
   PLACE_SIGNATURE_TOOL_ID,
+  placeBarcodeTool,
   placeImageTool,
   placeSignatureTool,
 } from './placeImageTool.js';
@@ -170,5 +172,38 @@ describe('the place-signature tool', () => {
   it('claims its own id, not the image tool’s', () => {
     expect(signed([20, 20], [120, 80]).tool.id).toBe(PLACE_SIGNATURE_TOOL_ID);
     expect(PLACE_SIGNATURE_TOOL_ID).not.toBe(PLACE_IMAGE_TOOL_ID);
+  });
+});
+
+describe('the place-barcode tool', () => {
+  function placed(
+    from: readonly [number, number],
+    to: readonly [number, number],
+  ): { readonly sent: readonly { page: number; rect: AnnotationRect }[]; readonly tool: UiTool } {
+    const sent: { page: number; rect: AnnotationRect }[] = [];
+    const tool = placeBarcodeTool({
+      onPlaceBarcode: (page, rect) => {
+        sent.push({ page, rect });
+      },
+    });
+    const started = tool.controller.begin(viewportPoint(from[0], from[1]));
+    const moved = tool.controller.update(started, viewportPoint(to[0], to[1]));
+    expect(tool.controller.commit(moved, 3, overlayTransform(PAGE))).toBeUndefined();
+    return { sent, tool };
+  }
+
+  it('sends the box to the barcode callback, in the same space the other two use', () => {
+    expect(placed([20, 20], [120, 80]).sent).toStrictEqual([
+      { page: 3, rect: { x0: 60, y0: 390, x1: 110, y1: 360 } },
+    ]);
+  });
+
+  it('CONTROL: a slip smaller than the minimum box opens no barcode dialog', () => {
+    expect(placed([20, 20], [20 + MINIMUM_BOX - 1, 80]).sent).toStrictEqual([]);
+  });
+
+  it('claims its own id', () => {
+    expect(placed([20, 20], [120, 80]).tool.id).toBe(PLACE_BARCODE_TOOL_ID);
+    expect(new Set([PLACE_BARCODE_TOOL_ID, PLACE_IMAGE_TOOL_ID, PLACE_SIGNATURE_TOOL_ID]).size).toBe(3);
   });
 });

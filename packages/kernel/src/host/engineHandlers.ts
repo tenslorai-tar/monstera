@@ -33,11 +33,14 @@ import {
 import { HandwritingModelUnreadableError, type HandwritingRequest } from '../ocrHandwriting.js';
 import type { PageLink } from '../pageLinks.js';
 import type { PageTextRead } from '../textStructure.js';
+import type { FoundBarcode } from '../barcodeReader.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageImageRequest } from '../pageImages.js';
 import type { RegionRequest, RegionSnapshot } from '../pageSnapshot.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import {
+  ENGINE_BARCODE_TEXT_MAX,
+  ENGINE_BARCODES_MAX,
   ENGINE_DUPLICATE_PAGES_MAX,
   type EngineChannels,
   type MupdfWireCommand,
@@ -243,6 +246,18 @@ export type HostPageImage = (
 ) => Promise<ByteImage>;
 
 /**
+ * The barcodes on one page, as `readPageBarcodes` answers. Injected for the readers' reason: a
+ * handler proof must drive the channel without rasterising or loading a decoder.
+ *
+ * It answers the whole list, and the bound is applied where the answer is assembled, for
+ * {@link HostDuplicatesReader}'s reason.
+ */
+export type HostBarcodesReader = (
+  session: MupdfSession,
+  page: number,
+) => Promise<readonly FoundBarcode[]>;
+
+/**
  * Where a flat page's fields probably are — a READ, unlike the three above.
  *
  * Per page rather than per document, because what it feeds is a proposal a
@@ -430,6 +445,8 @@ export interface EngineHandlerParts {
   readonly pageImage: HostPageImage;
   /** How this process proposes fields on a flat page. `detectFlatFields`. */
   readonly flatFields: HostFlatFieldsReader;
+  /** How this process reads a page's barcodes. `engine/page-barcodes`. */
+  readonly barcodes: HostBarcodesReader;
 }
 
 export function createEngineHandlers({
@@ -455,6 +472,7 @@ export function createEngineHandlers({
   exportFormData,
   pageImage,
   flatFields,
+  barcodes,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -870,6 +888,31 @@ export function createEngineHandlers({
         // refusal is about the page, the scale, the quality or the pixel count.
         return failed('page-image-failed', error);
       }
+    },
+
+    'engine/page-barcodes': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      let found: readonly FoundBarcode[];
+      try {
+        found = await barcodes(held.session, page);
+      } catch (error) {
+        // THE REQUEST'S FAULT rather than the host's, as a page image's is: a page the document
+        // does not have, or one that displays no region.
+        return failed('barcode-read-failed', error);
+      }
+      // A BARCODE IS KEPT WHOLE OR NOT AT ALL: a text past the bound is no symbology's, so it is
+      // counted as the bound stopping the list rather than cut to a plausible prefix.
+      const kept: { format: string; text: string }[] = [];
+      let truncated = false;
+      for (const barcode of found) {
+        if (kept.length === ENGINE_BARCODES_MAX || barcode.text.length > ENGINE_BARCODE_TEXT_MAX) {
+          truncated = true;
+          continue;
+        }
+        kept.push({ format: barcode.format, text: barcode.text });
+      }
+      return { ok: true, value: { barcodes: kept, truncated } };
     },
 
     'engine/duplicate-pages': async ({ session }) => {

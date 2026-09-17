@@ -182,6 +182,9 @@ async function joined(): Promise<{
       flatFields: () => {
         throw new Error('unused');
       },
+      barcodes: () => {
+        throw new Error('unused');
+      },
     }),
     (incident) => incidents.push(incident),
   );

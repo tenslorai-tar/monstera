@@ -85,6 +85,7 @@ async function joined(parts: {
       exportFormData: refuse('encode an export'),
       pageImage: refuse('export a page image'),
       flatFields: refuse('propose fields'),
+      barcodes: refuse('read barcodes'),
     }),
     () => undefined,
   );

@@ -257,6 +257,9 @@ function joined(
       // below drives it.
       pageImage: rasterisePageImage,
       flatFields: detectFlatFields,
+      barcodes: () => {
+        throw new Error('the lifecycle half must not read barcodes');
+      },
     }),
     (incident) => incidents.push(incident),
   );
@@ -560,6 +563,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         flatFields: () => {
           throw new Error('the byte-size case must not propose fields');
+        },
+        barcodes: () => {
+          throw new Error('the byte-size case must not read barcodes');
         },
       }),
       () => undefined,

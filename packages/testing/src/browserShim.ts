@@ -282,6 +282,16 @@ export interface BrowserShimOptions {
   readonly placedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
 
   /**
+   * What `document.placeBarcode` answers — its own switch for `placedImage`'s reason: the bytes
+   * come from a writer rather than a picker. Absent is a placement of 2,048 bytes, because the
+   * interesting refusal is the one a case asks for.
+   */
+  readonly placedBarcode?: 'refused';
+
+  /** What `document.pageBarcodes` reads on any page. Absent is none. */
+  readonly pageBarcodes?: readonly { readonly format: string; readonly text: string }[];
+
+  /**
    * What `document.importFormData` answers — its own switch, not the image's.
    *
    * Separate because a case that configures a picked image and exercises an
@@ -1129,6 +1139,22 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           byteLength: chosen.byteLength,
           historyDropped: 0,
         }),
+      );
+    },
+    'document.placeBarcode': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      if (options.placedBarcode === 'refused') return Promise.resolve(ok({ kind: 'refused' as const }));
+      const version = asDocVersion(current + 1);
+      versions.set(docId, version);
+      return Promise.resolve(ok({ kind: 'placed' as const, version, byteLength: 2048, historyDropped: 0 }));
+    },
+    'document.pageBarcodes': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), barcodes: options.pageBarcodes ?? [], truncated: false }),
       );
     },
     // ITS OWN SWITCH, for the reason `importedFormData` carries: this reads a

@@ -128,5 +128,22 @@ export function placeSignatureTool(deps: PlaceSignatureDeps): UiTool {
   return { id: PLACE_SIGNATURE_TOOL_ID, controller: boxPlacement(deps.onPlaceSignature) };
 }
 
+/**
+ * The place-barcode tool — drag a box, type what the barcode says (ADR-0076).
+ *
+ * The third registration of the same gesture, for the signature's reason: the command it leads to
+ * carries image bytes this side never holds, so it ends in a dialog and main mints the command.
+ */
+export const PLACE_BARCODE_TOOL_ID = 'organize.barcode';
+
+export interface PlaceBarcodeDeps {
+  /** Where the barcode goes — the page and the rectangle, in PDF user space. */
+  readonly onPlaceBarcode: (page: number, rect: AnnotationRect) => void;
+}
+
+export function placeBarcodeTool(deps: PlaceBarcodeDeps): UiTool {
+  return { id: PLACE_BARCODE_TOOL_ID, controller: boxPlacement(deps.onPlaceBarcode) };
+}
+
 /** Exported so the cases assert against the tool's own number. */
 export { MINIMUM_BOX };

@@ -48,8 +48,10 @@ import {
   rasterScale,
   wordDocumentParts,
   type ByteImage,
+  barcodeRect,
   type CommandBus,
   type FlatFieldCandidate,
+  type FoundBarcode,
   DocumentNotOpenError,
   type DocumentService,
   type PageGeometry,
@@ -100,6 +102,7 @@ import {
   checkedUrl,
   PngPixelsRefused,
 } from '@monstera/kernel';
+import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
   type DocId,
   type DocVersion,
@@ -1309,6 +1312,59 @@ export type DocumentFlatFieldsReader = (
   page: number,
 ) => Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }>;
 
+/** How one page's barcodes are read: `DocumentFlatFieldsReader`'s shape, in the engine host. */
+export type DocumentBarcodesReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<{ readonly barcodes: readonly FoundBarcode[]; readonly truncated: boolean }>;
+
+/** The barcodes, stamped with the version the lane read them at. */
+export interface DocumentBarcodes {
+  readonly version: DocVersion;
+  readonly barcodes: readonly FoundBarcode[];
+  readonly truncated: boolean;
+}
+
+/** The symbologies a person may generate. A type import, which loads nothing. */
+export type BarcodeFormat = BarcodeWriteFormat;
+
+/**
+ * How a barcode is written for placement: the PNG and its size, or zxing-cpp's refusal. The
+ * refusal carries no words: zxing-cpp's are English and the renderer shows message keys (B9).
+ *
+ * A refusal is an ANSWER rather than a throw, because the composition point is where the writer's
+ * error class is in reach — it is loaded by a dynamic import there — and matching it anywhere
+ * else would be matching a name across a module boundary.
+ */
+export type BarcodeWriter = (
+  text: string,
+  format: BarcodeFormat,
+) => Promise<
+  | { readonly kind: 'written'; readonly png: Uint8Array; readonly width: number; readonly height: number }
+  | { readonly kind: 'refused' }
+>;
+
+/**
+ * The production {@link BarcodeWriter}: zxing-cpp's writer, reached by a dynamic import the first
+ * time a person places a barcode, so its glue is never part of `main`'s startup graph. Its input
+ * is text a person typed, not a document, which is why it may run in `main` at all (ADR-0076).
+ */
+export const lazyBarcodeWriter: BarcodeWriter = async (text, format) => {
+  const { BarcodeTextRefusedError, writeBarcodePng } = await import('@monstera/kernel/barcode');
+  try {
+    return { kind: 'written', ...(await writeBarcodePng(text, format)) };
+  } catch (error) {
+    if (error instanceof BarcodeTextRefusedError) return { kind: 'refused' };
+    throw error;
+  }
+};
+
+/** What {@link DocumentCommands.placeBarcode} answers. */
+export type PlaceBarcodeOutcome =
+  | ({ readonly kind: 'placed' } & Applied)
+  | { readonly kind: 'refused' };
+
 /** The candidates, stamped with the version the lane read them at. */
 export interface DocumentFlatFields {
   readonly version: DocVersion;
@@ -1663,6 +1719,10 @@ export interface DocumentCommandsParts {
   readonly annotations: DocumentAnnotationsReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
+  /** One page's barcodes, read in the engine host (ADR-0076). */
+  readonly barcodes: DocumentBarcodesReader;
+  /** Writes a barcode for placement. See {@link BarcodeWriter}. */
+  readonly writeBarcode: BarcodeWriter;
   /**
    * The editing engine's reading of a page's text, or a thrower.
    *
@@ -1776,6 +1836,8 @@ export class DocumentCommands {
   readonly #annotations: DocumentAnnotationsReader;
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
+  readonly #barcodes: DocumentBarcodesReader;
+  readonly #writeBarcode: BarcodeWriter;
   readonly #textLines: DocumentTextLinesReader;
   readonly #pageObjects: DocumentPageObjectsReader;
   readonly #renderPage: DocumentPageRasteriser;
@@ -1832,6 +1894,8 @@ export class DocumentCommands {
     this.#annotations = parts.annotations;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
+    this.#barcodes = parts.barcodes;
+    this.#writeBarcode = parts.writeBarcode;
     this.#textLines = parts.textLines;
     this.#pageObjects = parts.pageObjects;
     this.#renderPage = parts.renderPage;
@@ -2284,6 +2348,56 @@ export class DocumentCommands {
     });
 
     return { version, candidates: value.candidates, truncated: value.truncated };
+  }
+
+  /**
+   * The barcodes on one page.
+   *
+   * {@link flatFieldCandidates}' body and its lane: the raster is made from the document the
+   * session holds, which a command mutates in place.
+   */
+  async pageBarcodes(docId: DocId, page: number): Promise<DocumentBarcodes> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#barcodes(docId, sessions, page);
+    });
+
+    return { version, barcodes: value.barcodes, truncated: value.truncated };
+  }
+
+  /**
+   * Places a barcode a person typed, in the box they dragged, as a `/Stamp`.
+   *
+   * {@link placeImage}' command — the barcode IS an image once written, so it is placed by the
+   * command that already places images, survives the save, and undoes as one entry
+   * (ADR-0076). What differs is where the bytes come from and the box: the writer makes them
+   * here from text, which is not a document and so needs no containment, and the box is
+   * narrowed to the symbol's proportions by {@link barcodeRect}.
+   */
+  async placeBarcode(
+    docId: DocId,
+    pages: readonly number[],
+    rect: AnnotationRect,
+    text: string,
+    format: BarcodeFormat,
+  ): Promise<PlaceBarcodeOutcome> {
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'place a barcode');
+    }
+    const written = await this.#writeBarcode(text, format);
+    if (written.kind === 'refused') return written;
+    const applied = await this.execute(docId, {
+      kind: 'placeImage',
+      pages,
+      rect: barcodeRect(rect, written.width, written.height),
+      bytes: written.png,
+    });
+    return { kind: 'placed', ...applied };
   }
 
   /**

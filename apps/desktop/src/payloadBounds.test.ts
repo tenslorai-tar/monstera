@@ -345,6 +345,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // That is the same *no raster crosses* answer the snapshot above gives, in
   // the opposite direction and on a boundary this file does not govern.
   'document.placeImage': 'needs an engine session and an image picker',
+  'document.placeBarcode': 'needs an engine session and the barcode writer',
+  // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
+  'document.pageBarcodes': 'needs an engine session',
   'document.searchPage': 'needs an engine session',
   // BOUNDED AT 2,048 LINES AND 1,024 CHARACTERS EACH, and per PAGE — so the
   // answer's size is a function of one page's density, never of how long the

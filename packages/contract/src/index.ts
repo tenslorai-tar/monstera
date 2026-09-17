@@ -67,6 +67,11 @@ export {
   // THE CAMERA'S FRAMES, exported because the capture dialog's result takes the same
   // schema the channel does, so the two cannot disagree about what may be sent.
   capturedFramesSchema,
+  // THE BARCODE SET AND BOUNDS, exported because the placement dialog's result takes the same
+  // enum and bound the channel does, and `contractHandlers.test.ts` holds them to the kernel's.
+  BARCODE_FORMATS,
+  MAX_BARCODE_TEXT,
+  MAX_PAGE_BARCODES,
 } from './channels.js';
 export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';

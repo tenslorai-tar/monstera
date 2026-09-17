@@ -68,6 +68,7 @@ import {
   readPageText,
   readPageTextJson,
   detectFlatFields,
+  readPageBarcodes,
   readFormData,
   serialiseFormData,
   rasterisePageImage,
@@ -102,6 +103,9 @@ import {
   type ImportSource,
   type DocumentAnnotationsReader,
   type DocumentFlatFieldsReader,
+  type DocumentBarcodesReader,
+  type BarcodeWriter,
+  lazyBarcodeWriter,
   type DocumentTextLinesReader,
   type DocumentPageObjectsReader,
   type DocumentPageRasteriser,
@@ -479,6 +483,20 @@ const noRenderPage: DocumentPageRasteriser = () =>
   Promise.reject(new EngineUnavailableError('rendering a page with the second engine'));
 
 /** The candidate proposal's composition, per page. */
+const noBarcodes: DocumentBarcodesReader = () =>
+  Promise.reject(new Error('this case does not read barcodes'));
+
+/** REFUSES BY NAME, like every inert surface: a case that places a barcode supplies the writer. */
+const noBarcodeWriter: BarcodeWriter = () =>
+  Promise.reject(new Error('INERT: this case writes no barcode'));
+
+const localBarcodes: DocumentBarcodesReader = async (id, sessions, page) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  // TRUNCATION IS THE CHANNEL'S, `localDuplicates`' reason: the bound lives in the host handler.
+  return { barcodes: await readPageBarcodes(held, page), truncated: false };
+};
+
 const localFlatFields: DocumentFlatFieldsReader = (id, sessions, page) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
@@ -610,6 +628,8 @@ const INERT = {
   annotations: noAnnotations,
   formFields: noFormFields,
   flatFields: noFlatFields,
+  barcodes: noBarcodes,
+  writeBarcode: noBarcodeWriter,
   textLines: noTextLines,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
@@ -669,6 +689,7 @@ const LOCAL_READS = {
   annotations: localAnnotations,
   formFields: localFormFields,
   flatFields: localFlatFields,
+  barcodes: localBarcodes,
   // STAYS THE REFUSING ONE even in the local-reads set, and that is not an
   // omission. Every other reader here has a local composition because MuPDF is
   // in this process for these cases; PDFium is not, and a fixture that answered
@@ -1348,6 +1369,55 @@ describe('search is E2s first consumer, through the composition point', () => {
  * So this drives the real `DocumentCommands` against a real session, writes
  * two formats to two files, and reads what landed.
  */
+describe('barcodes — placed from typed text and read back, through the lane (ADR-0076)', () => {
+  beforeAll(openDocument);
+
+  it('places the symbol the production writer makes, in its own proportions, and the page reads it back', async () => {
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      writeBarcode: lazyBarcodeWriter,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+    });
+
+    const before = await commands.pageBarcodes(docId, 0);
+    expect(before.barcodes).toStrictEqual([]);
+
+    // A WIDE BOX, so a placement that filled it would squeeze the symbol.
+    const placed = await commands.placeBarcode(docId, [0], { x0: 40, y0: 40, x1: 440, y1: 200 }, 'MONSTERA 42', 'QRCode');
+    expect(placed.kind).toBe('placed');
+
+    const after = await commands.pageBarcodes(docId, 0);
+    expect(after.barcodes).toStrictEqual([{ format: 'QRCode', text: 'MONSTERA 42' }]);
+    // The read is stamped with the version the placement produced, so a list can be discarded
+    // when the page it describes has moved.
+    expect(after.version).toBe(before.version + 1);
+
+    // AND IT IS A /Stamp OF A SQUARE BOX, which is what the fit is for.
+    const stamped = await readAnnotations(session);
+    const box = stamped.annotations.at(-1)?.rect;
+    expect(box).toBeDefined();
+    if (box === undefined || box === null) return;
+    expect(box.x1 - box.x0).toBeCloseTo(box.y1 - box.y0, 6);
+  });
+
+  it('a text the symbology cannot carry is REFUSED and the document does not move', async () => {
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      writeBarcode: lazyBarcodeWriter,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+    });
+    const before = await commands.pageBarcodes(docId, 0);
+    expect(await commands.placeBarcode(docId, [0], { x0: 40, y0: 40, x1: 440, y1: 200 }, 'letters', 'EAN13')).toStrictEqual({
+      kind: 'refused',
+    });
+    expect((await commands.pageBarcodes(docId, 0)).version).toBe(before.version);
+  });
+});
+
 describe('pageStructure — a tagged page’s elements, never its words (ADR-0065)', () => {
   /**
    * One page whose structure tree lists its second-drawn paragraph FIRST.

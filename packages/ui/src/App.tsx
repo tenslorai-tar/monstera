@@ -128,6 +128,7 @@ import { showSettingsCommand } from './commands/showSettings.js';
 import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
 import { inspectPageStructureCommand } from './commands/inspectPageStructure.js';
+import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
@@ -168,6 +169,8 @@ import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { EXPORT_PAGE_IMAGES_DIALOG } from './dialogs/exportPageImages.js';
 import { EXPORT_EXCEL_DIALOG } from './dialogs/exportExcel.js';
 import { PDFA_REMOVALS_DIALOG } from './dialogs/pdfaRemovals.js';
+import { PAGE_BARCODES_DIALOG } from './dialogs/pageBarcodes.js';
+import { PLACE_BARCODE_DIALOG } from './dialogs/placeBarcode.js';
 import { PRINT_DIALOG } from './dialogs/print.js';
 import { EXPORT_WORD_DIALOG } from './dialogs/exportWord.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
@@ -470,6 +473,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         EXPORT_EXCEL_DIALOG,
         PRINT_DIALOG,
         PDFA_REMOVALS_DIALOG,
+        PAGE_BARCODES_DIALOG,
+        PLACE_BARCODE_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
         SETTINGS_DIALOG,
@@ -1353,6 +1358,18 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Where a barcode goes: `onPlaceSignature`'s shape — one page, the one the box was drawn on —
+   * ending in the barcode dialog (ADR-0076).
+   */
+  const onPlaceBarcode = useCallback(
+    (page: number, rect: AnnotationRect): void => {
+      if (activeId === undefined) return;
+      void placeBarcode({ client, ask, onApplied: applied }, activeId, page, rect);
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
    * Restyling everything the select tool has picked.
    *
    * `removeSelection`'s shape with an appearance instead of a deletion, and the
@@ -1422,12 +1439,14 @@ export function App({ client, settings }: AppProps): ReactElement {
           trocrSize: () => trocrSize,
           onPlaceImage,
           onPlaceSignature,
+          onPlaceBarcode,
         }),
       ),
     [
       ask,
       listAnnotations,
       ocrLanguage,
+      onPlaceBarcode,
       onPlaceImage,
       onPlaceSignature,
       onSnapshot,
@@ -1502,6 +1521,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         }),
         showWordCountCommand({ client, ask, track }),
         inspectPageStructureCommand({ client, ask }),
+        readBarcodesCommand({ client, ask }),
         // TAKES THE SETTINGS STORE, which no other command here does. The
         // personal dictionary is what makes this feature manageable rather than
         // fixed, and it is a preference rather than document state — so it

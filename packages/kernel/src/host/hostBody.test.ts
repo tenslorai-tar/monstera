@@ -176,6 +176,9 @@ function start(stream: HostByteStream) {
     flatFields: () => {
       throw new Error('no case here proposes fields');
     },
+    barcodes: () => {
+      throw new Error('no case here reads barcodes');
+    },
   });
 
   const body = startEngineHost(

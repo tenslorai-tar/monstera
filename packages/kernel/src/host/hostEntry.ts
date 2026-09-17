@@ -1,5 +1,6 @@
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
+import { readPageBarcodes } from '../barcodeReader.js';
 import { localMupdfExecution } from '../commandSpecs.js';
 import { accessFor, mupdfWriter } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
@@ -147,6 +148,9 @@ const engineHandlers = createEngineHandlers({
   // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export
   // rasterisation to MuPDF, which is here.
   pageImage: rasterisePageImage,
+  // AND A READ OF A DOCUMENT'S PIXELS BY A C++ DECODER, which is the whole reason it is here
+  // rather than in main (ADR-0076).
+  barcodes: readPageBarcodes,
 });
 
 startEngineHost(

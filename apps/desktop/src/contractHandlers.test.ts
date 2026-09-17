@@ -1,4 +1,12 @@
-import { CapabilityRegistry, DocumentNotOpenError, DocumentService } from '@monstera/kernel';
+import { BARCODE_FORMATS, MAX_BARCODE_TEXT, MAX_PAGE_BARCODES } from '@monstera/contract';
+import {
+  CapabilityRegistry,
+  DocumentNotOpenError,
+  DocumentService,
+  ENGINE_BARCODE_TEXT_MAX,
+  ENGINE_BARCODES_MAX,
+} from '@monstera/kernel';
+import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
 import {
   type DocId,
   type FileHandle,
@@ -118,6 +126,23 @@ function handleOpened(opened: readonly FileHandle[]): FileHandle {
   if (handle === undefined) throw new Error('the service was never asked to open anything');
   return handle;
 }
+
+/**
+ * The contract's COPIES of the kernel's barcode set and bounds, held equal here — the one package
+ * that can import both. A copy that exists must be proven equal (ADR-0076).
+ */
+describe('the barcode channels’ copies of the kernel’s set and bounds', () => {
+  it('offers exactly the formats the writer writes, in its order', () => {
+    expect([...BARCODE_FORMATS]).toStrictEqual([...BARCODE_WRITE_FORMATS]);
+  });
+
+  it('bounds the renderer’s wire as the engine host’s wire is bounded', () => {
+    expect({ count: MAX_PAGE_BARCODES, text: MAX_BARCODE_TEXT }).toStrictEqual({
+      count: ENGINE_BARCODES_MAX,
+      text: ENGINE_BARCODE_TEXT_MAX,
+    });
+  });
+});
 
 describe('document.open', () => {
   it('never asks the renderer where the document is', async () => {

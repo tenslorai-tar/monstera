@@ -104,6 +104,8 @@ export {
   declaredCommands,
 } from './commandDeclarations.js';
 export {
+  ENGINE_BARCODE_TEXT_MAX,
+  ENGINE_BARCODES_MAX,
   ENGINE_PATH_MAX_CHARS,
   ENGINE_SESSION_ID_MAX_CHARS,
   type EngineChannels,
@@ -113,6 +115,7 @@ export {
 export {
   type EngineHandlerParts,
   type HostAnnotationsReader,
+  type HostBarcodesReader,
   type HostContainmentProbe,
   type HostFilesystem,
   type HostDestinationsReader,
@@ -149,6 +152,11 @@ export type { PageImageRequest } from './pageImages.js';
 // A TYPE ONLY, which is what keeps it on this barrel: `flatFields.ts` binds the
 // native library, and main reads its answers without ever calling it.
 export type { FlatFieldCandidate } from './flatFields.js';
+// A TYPE ONLY, for the reason above: `barcodeReader.ts` loads zxing-cpp's reader, which runs in
+// the engine host and never in main (ADR-0076).
+export type { FoundBarcode } from './barcodeReader.js';
+// A VALUE, and pure geometry: the writer it serves stays behind `@monstera/kernel/barcode`.
+export { barcodeRect } from './barcodePlacement.js';
 // A TYPE ONLY, and for a sharper version of the reason above: `signatureRead.ts`
 // imports `node-forge` at module scope, so a VALUE export from this barrel would
 // put an ASN.1 parser into `main` — the one process invariant 25 keeps document
@@ -242,7 +250,9 @@ export {
   type SessionArea,
   UnknownRemoteSession,
   createRemoteSessions,
+  type BarcodeReport,
   remoteMupdfAnnotations,
+  remoteMupdfBarcodes,
   remoteMupdfExecution,
   remoteMupdfGeometry,
   remoteMupdfDestinations,

@@ -372,6 +372,16 @@ export const ENGINE_FLAT_CANDIDATES_MAX = 256;
 export const ENGINE_FLAT_LABEL_MAX = 128;
 
 /**
+ * How many barcodes one page may report, and how long one's text may be.
+ *
+ * The text bound is the most any symbology zxing-cpp reads can carry: a QR code of 7,089 digits.
+ * `barcode.test.ts` writes that symbol and is refused one digit more, so a barcode is never cut
+ * to fit the wire. The count is a page a person reads a list of, not a label sheet.
+ */
+export const ENGINE_BARCODES_MAX = 64;
+export const ENGINE_BARCODE_TEXT_MAX = 7089;
+
+/**
  * One annotation, as it crosses from the host.
  *
  * **`kind` is a closed union, not the document's `/Subtype`.** A subtype is a
@@ -2303,6 +2313,39 @@ export const engineChannels = {
       })
       .strict(),
     ['no-such-session'],
+  ),
+
+  /**
+   * The barcodes on one page (ADR-0076).
+   *
+   * Read HERE because the page's raster is a document's pixels and zxing-cpp is a C++ decoder:
+   * a crafted symbol is input to it, so it is decoded inside invariant 25's containment. The
+   * raster itself never crosses; what does is a symbology name and a text per barcode.
+   */
+  'engine/page-barcodes': channel(
+    'Reads the barcodes on one page of a session this host holds.',
+    z.object({ session: sessionSchema, page: z.number().int().nonnegative() }).strict(),
+    z
+      .object({
+        barcodes: z
+          .array(
+            z
+              .object({
+                // zxing-cpp's own names, the longest 14 characters (`TelepenNumeric`, zxing-wasm
+                // 3.1.4's `BARCODE_FORMATS`). Bounded rather than closed, because a closed list
+                // here would import the decoder's package into the channel map every process
+                // loads; the renderer shows the name as data, never as a message key.
+                format: z.string().min(1).max(32),
+                text: z.string().max(ENGINE_BARCODE_TEXT_MAX),
+              })
+              .strict(),
+          )
+          .max(ENGINE_BARCODES_MAX),
+        /** Whether the bound stopped the list. See `engine/duplicate-pages`. */
+        truncated: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session', 'barcode-read-failed'],
   ),
 
   'engine/duplicate-pages': channel(

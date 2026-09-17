@@ -310,6 +310,8 @@ export function createContractHandlers(deps: {
     'document.awaitExternalEdit': awaitExternalEditHandler(deps.commands),
     'document.reimportExternalEdit': reimportExternalEditHandler(deps),
     'document.placeImage': placeImageHandler(deps.commands),
+    'document.placeBarcode': placeBarcodeHandler(deps.commands),
+    'document.pageBarcodes': pageBarcodesHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
     'docusign.send': docusignSendHandler(deps.commands),
     'docusign.retrieve': docusignRetrieveHandler(deps.commands),
@@ -879,6 +881,50 @@ function placeImageHandler(commands: DocumentCommands): ContractHandlers['docume
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The barcode placement's handler: {@link placeImageHandler}'s body for its outcomes. */
+function placeBarcodeHandler(commands: DocumentCommands): ContractHandlers['document.placeBarcode'] {
+  return async ({
+    docId,
+    pages,
+    rect,
+    text,
+    format,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.placeBarcode']>>> => {
+    try {
+      const outcome = await commands.placeBarcode(docId, pages, rect, text, format);
+      if (outcome.kind === 'refused') return ok({ kind: 'refused' } as const);
+      return ok({
+        kind: 'placed',
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        historyDropped: outcome.historyDropped,
+      } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** One page's barcodes: {@link flatFieldCandidatesHandler}'s body and its refusals. */
+function pageBarcodesHandler(commands: DocumentCommands): ContractHandlers['document.pageBarcodes'] {
+  return async ({
+    docId,
+    page,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.pageBarcodes']>>> => {
+    try {
+      const { version, barcodes, truncated } = await commands.pageBarcodes(docId, page);
+      return ok({ version, barcodes, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }

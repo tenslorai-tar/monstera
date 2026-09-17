@@ -41,6 +41,7 @@ import {
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
+  type BarcodeReport,
   type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostPageImage,
@@ -80,6 +81,7 @@ import {
   remoteMupdfGeometry,
   remoteMupdfDestinations,
   remoteMupdfAnnotations,
+  remoteMupdfBarcodes,
   remoteMupdfDuplicateReport,
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
@@ -102,6 +104,7 @@ import {
 } from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import {
+  lazyBarcodeWriter,
   DocumentCommands,
   type FormDataSource,
   type CertificateSource,
@@ -959,6 +962,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.flatFields(session, page);
     },
+    // THE BARCODE READ, composed the same way and per page for its reason (ADR-0076).
+    barcodes: (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.barcodes(session, page);
+    },
+    // THE BARCODE WRITER, loaded on first use (ADR-0076). See `lazyBarcodeWriter`.
+    writeBarcode: lazyBarcodeWriter,
     // THE OTHER ENGINE'S READ, and the only composition point here that reaches
     // a second host. It is two steps rather than one, and both are forced:
     // PDFium is a byte-image engine, so it is asked about a document by being
@@ -1302,6 +1313,8 @@ function engineSessionOpener(
   readonly formFields: HostFormFieldsReader;
   /** One page's field candidates, from whichever host is live. */
   readonly flatFields: HostFlatFieldsReader;
+  /** One page's barcodes, from whichever host is live. */
+  readonly barcodes: BarcodeReport;
   /** The document's duplicate pages, from whichever host is live. */
   readonly duplicates: DuplicateReport;
   /**
@@ -1625,6 +1638,20 @@ function engineSessionOpener(
     return flatFields(session, page);
   };
 
+  /** The barcode read's half of the same registration. See {@link pageText}. */
+  let barcodes: BarcodeReport | null = null;
+
+  const readBarcodesThroughHost: BarcodeReport = (session, page) => {
+    if (barcodes === null) {
+      throw new Error(
+        'A barcode read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return barcodes(session, page);
+  };
+
   /** The duplicate report's half of the same registration. See {@link pageText}. */
   let duplicates: DuplicateReport | null = null;
 
@@ -1813,6 +1840,7 @@ function engineSessionOpener(
     annotations = remoteMupdfAnnotations(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
     flatFields = remoteMupdfFlatFields(client, remote);
+    barcodes = remoteMupdfBarcodes(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
     return live.value;
   };
@@ -2086,6 +2114,7 @@ function engineSessionOpener(
     annotations: readAnnotationsThroughHost,
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
+    barcodes: readBarcodesThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
     snapshot: snapshotThroughHost,

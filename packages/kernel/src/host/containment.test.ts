@@ -560,6 +560,9 @@ describe('the engine host answers a containment probe', () => {
     flatFields: () => {
       throw new Error('a containment probe must not walk a page');
     },
+    barcodes: () => {
+      throw new Error('a containment probe must not read barcodes');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {

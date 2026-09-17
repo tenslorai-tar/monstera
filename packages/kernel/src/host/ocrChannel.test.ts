@@ -197,6 +197,9 @@ async function joined(
       flatFields: () => {
         throw new Error('a recognition must not propose fields');
       },
+      barcodes: () => {
+        throw new Error('a recognition must not read barcodes');
+      },
     }),
     (incident) => incidents.push(incident),
   );

@@ -189,6 +189,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       flatFields: () => {
         throw new Error('a field read must not propose candidates');
       },
+      barcodes: () => {
+        throw new Error('a field read must not read barcodes');
+      },
     }),
     (incident) => incidents.push(incident),
   );

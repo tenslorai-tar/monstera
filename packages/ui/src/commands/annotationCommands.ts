@@ -26,7 +26,11 @@ import {
 } from '../annotations/measureTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
-import { PLACE_IMAGE_TOOL_ID, PLACE_SIGNATURE_TOOL_ID } from '../annotations/placeImageTool.js';
+import {
+  PLACE_BARCODE_TOOL_ID,
+  PLACE_IMAGE_TOOL_ID,
+  PLACE_SIGNATURE_TOOL_ID,
+} from '../annotations/placeImageTool.js';
 import {
   CLAUDE_REGION_TOOL_ID,
   CLOUD_REGION_TOOL_ID,
@@ -58,9 +62,11 @@ import {
   FORM_FIELD_LISTBOX_TOOL_TITLE,
   FORM_FIELD_RADIO_TOOL_TITLE,
   FORM_FIELD_TEXT_TOOL_TITLE,
+  GROUP_BARCODES,
   GROUP_FIELDS,
   GROUP_MARKUP,
   GROUP_SIGNATURES,
+  PLACE_BARCODE_TOOL_TITLE,
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
@@ -645,6 +651,19 @@ export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The place-barcode tool's command.
+ *
+ * **Organize › Barcodes, at 10**, beside *Read barcodes* at 20: a barcode is something a page is
+ * given, like an inserted image or a Bates number, and the group reads make, then read.
+ */
+export function placeBarcodeToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(PLACE_BARCODE_TOOL_ID, PLACE_BARCODE_TOOL_TITLE, 'QrCode', 10, deps, {
+    section: 'organize',
+    group: GROUP_BARCODES,
+  });
+}
+
+/**
  * The OCR region tool's command.
  *
  * **60, among the marks**, beside the place-image tool and for its reason: both put
@@ -772,6 +791,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     snapshotToolCommand(deps),
     placeImageToolCommand(deps),
     placeSignatureToolCommand(deps),
+    placeBarcodeToolCommand(deps),
     ocrRegionToolCommand(deps),
     handwritingRegionToolCommand(deps),
     cloudRegionToolCommand(deps),

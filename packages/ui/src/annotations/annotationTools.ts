@@ -6,8 +6,8 @@ import { formFieldTools } from './formFieldTools.js';
 import { linkTools } from './linkTools.js';
 import type { MeasureDeps } from './measureTools.js';
 import { measureTools } from './measureTools.js';
-import type { PlaceImageDeps, PlaceSignatureDeps } from './placeImageTool.js';
-import { placeImageTool, placeSignatureTool } from './placeImageTool.js';
+import type { PlaceBarcodeDeps, PlaceImageDeps, PlaceSignatureDeps } from './placeImageTool.js';
+import { placeBarcodeTool, placeImageTool, placeSignatureTool } from './placeImageTool.js';
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
@@ -97,6 +97,8 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // picker. Composed here for the reason every tool is: this is the list the
     // registry mounts and `annotationCommands.test.ts` joins against.
     placeSignatureTool(deps),
+    // AND A THIRD TIME, ending in the barcode dialog (ADR-0076).
+    placeBarcodeTool(deps),
     // NOT ANNOTATION TOOLS EITHER, and composed here for the reason the two
     // above are: this list is what the registry mounts and what
     // `annotationCommands.test.ts` joins against, so a tool composed anywhere
@@ -130,4 +132,5 @@ export type AnnotationToolDeps = TextToolDeps &
   SnapshotDeps &
   OcrRegionDeps &
   PlaceImageDeps &
-  PlaceSignatureDeps;
+  PlaceSignatureDeps &
+  PlaceBarcodeDeps;

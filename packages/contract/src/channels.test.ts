@@ -145,6 +145,9 @@ const handlers: ContractHandlers = {
   'document.awaitExternalEdit': () => Promise.resolve(ok({ kind: 'ended' as const })),
   'document.reimportExternalEdit': () => Promise.resolve(ok({ kind: 'no-edit' as const })),
   'document.placeImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.placeBarcode': () => Promise.resolve(ok({ kind: 'refused' as const })),
+  'document.pageBarcodes': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': ({ begin, end }) =>
     // Echoes the SIZE it was asked for, so the L11 cases below can assert what
     // crossed rather than that something did.

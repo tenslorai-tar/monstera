@@ -892,6 +892,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — D10 barcodes: read in the host, written in main, placed as an image
+
+ADR-0076 (d502e4b) and the dependency with its notice (dd60cdd) first. The feature follows them without widening a seam:
+`engine/page-barcodes` is a sixteenth MuPDF read, `document.placeBarcode` mints the existing `placeImage` command, and the
+tool is the third registration of the box placement the image and signature tools share.
+
+**Two measurements changed what was built.**
+
+- **The shared raster rule was off by rounding.** A poster page fitted to the engine's 32,000,000 pixels by area came
+  out 4758 × 6726 = 32,002,308 and was refused, because the engine rounds each side up before it compares.
+  `rasterScale` now solves for the rounded sides, so print and the slide picture take the fix too; US Letter at 600 dpi
+  moves from 566.40 to 566.34.
+- **The decode, not the raster, is what a large page costs.** An A0 page's read failed a test under full-suite load at
+  7.2 s. Timed apart: 275 ms to raster and 2,807 ms to decode at 32 MP, 173 and 1,271 at 16, 64 and 559 at 8. The read
+  now has its own 16 MP budget — A2 still at 200 dpi — and takes raw RGBA, so no PNG stands between the two; that part
+  saved little, and the comment does not claim otherwise.
+
+**A claim written before it was measured.** The dialog first said EAN-13 takes *12 or 13 digits*. zint pads eleven
+digits to `0400638133390` and one to `0000000000017`, checks a thirteenth, and refuses fourteen. The words now say
+that, and a case pins all four.
+
+**Mutation, restored:** placing into the dragged box unfitted reddens the proportion assertion (400 against 160).
+**Not run:** a mutation of the kernel-load cases; their two controls anchor the walk on the entries that reach each module.
+
+---
+
 ## 2026-09-17 — D10 PDF/A-2b: Ghostscript, contained, and the removals are the report
 
 ADR-0075 (fcee46e) and the adoption (f4f1299) first; the audit that the adoption's commit tripped is recorded below.
