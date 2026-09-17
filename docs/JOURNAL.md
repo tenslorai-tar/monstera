@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-17 — Stage 9: the chat adapters, three shapes, streamed
+
+`packages/kernel/src/aiChat.ts` (ADR-0081). `prepareChat` builds one provider's request and
+`streamChat` reads the answer as it arrives, calling back per piece — which is what lets the
+composer show words appearing rather than a pause and a paragraph.
+
+**Every chat endpoint was probed on 2026-09-17**, unauthenticated, with an empty body: eight
+answered `401`, Gemini `403`, and **xAI `400 — Messages cannot be empty`**, which says the request
+reached the handler rather than a router. Azure OpenAI's is the person's deployment, and its path
+carries the deployment name where the others carry a model.
+
+Three delta shapes, each read where the provider puts it: OpenAI-format's
+`choices[0].delta.content` ending at `[DONE]`, Anthropic's `content_block_delta`, Gemini's parts.
+Gemini's roles are `user` and `model`, so an assistant turn is translated rather than sent as a
+word the service refuses.
+
+**Two decisions about what a person sees.** Stop is the caller's signal and answers
+`stopped: true` with the text so far — not an error, because pressing Stop is an ordinary thing to
+do. And a stream that ends badly **keeps what already arrived**: taking words back off the screen
+is the failure this shape exists to avoid. The case for that needed a fixture with two pulls:
+`controller.error()` in `start` discards what was queued, so the first version proved nothing.
+
+Fifteen cases, with controls that each shape's URL differs, that an abort is told from an
+unreachable service, and that a line which is not JSON is skipped rather than ending the answer.
+
+---
+
 ## 2026-09-17 — Stage 9: a provider's models are asked of the provider, and the endpoints were probed
 
 `packages/kernel/src/aiModels.ts` (ADR-0081). It executes in `main` for the Claude recogniser's

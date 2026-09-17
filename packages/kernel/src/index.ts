@@ -217,6 +217,13 @@ export {
   recogniseThroughClaude,
 } from './ocrClaude.js';
 export {
+  type ChatAnswer,
+  type ChatMessage,
+  type ChatRefusal,
+  type ChatRequest,
+  streamChat,
+} from './aiChat.js';
+export {
   PROVIDERS_WITHOUT_A_LIST,
   type AiModelList,
   type AiModelRequest,
