@@ -294,3 +294,18 @@ scope is narrower than it reads.
 **Weaken the clause to a general permission — "and whatever bindings it needs".**
 Rejected for the reason the bounded list exists: a permission stated as need is
 settled by whoever is arguing, and the next binding arrives with a need.
+
+---
+
+## Correction, 2026-09-17 — the list was short by one on the day, and printing adds two
+
+*"`kernel32.dll` and `advapi32.dll`, and nothing else"* was false when written:
+`win32HostSurface.ts` has loaded `userenv.dll` for the AppContainer profile since
+2026-08-23, five days earlier. The bounded list did its job in the way this ADR says a
+bounded list should — the error is a named set somebody can be wrong about in public —
+and it went unnoticed because nothing compares the list with the `koffi.load` calls.
+
+[ADR-0074](0074-printing-is-mupdfs-raster-through-the-system-print-dialog-and-gdi.md)
+amends the clause again: `userenv.dll` joins the baseline list, and printing binds
+`gdi32.dll` and `comdlg32.dll` when a person prints, not at startup. The permission stays
+a list of names, for this ADR's reason.
