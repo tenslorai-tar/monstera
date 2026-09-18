@@ -892,6 +892,44 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — KKKKKK-5 closed: the palette was a hand-made dialog, and one of its three failures was the instrument
+
+**The mechanism.** `CommandPalette` was a `div` with `role="dialog"` and a React `onKeyDown`, beside a
+dialog primitive that every other dialog uses (B9). A handler on an element hears a key only while focus
+is inside it; there was no outside-press handler at all; and `view.command-palette` could only open.
+So a press outside did nothing and moved focus out, after which nothing closed the palette. The fix is
+the class, not the palette's handler: the palette is now the `<Dialog>` primitive (gaining an optional
+`initialFocus`, so the field still takes the first key, and a `popupClassName` for its top placement),
+whose Base UI dismissal listens on the document and traps focus; the command is a toggle; and the
+backdrop is `-webkit-app-region: no-drag`, so a press on the title bar is a press outside rather than a
+window drag.
+
+**Measured in the built application, 2026-09-18:** a press on the title bar's empty stretch closed the
+palette; Ctrl+K opened and closed it; a press on the page closed it. Escape was the owner's reading, at
+the keyboard: Ctrl+K, then Escape, closed it. **The screen-control tool never delivered Escape** — it
+typed letters into the field, and `Escape`, `escape` and `Esc` all left the palette open, including with
+focus in the field, which every unit case and the Chromium run say closes. So **part of the 2026-09-17
+report was the instrument**: its Escape could not have closed anything. The click-away and the toggle
+were real defects, read from the code. Not measured: the title-bar press with the `no-drag` line
+removed; that it was needed rests on Electron's documented region rule.
+
+**The window over the tab strip** in the 2026-09-17 run was Sticky Notes: the tool masks a window it has
+no grant for, and a masked rectangle sat over the same place on 2026-09-18. Not ours.
+
+**Coverage.** Unit: six palette cases, one per route and focus position, each with a key or press from
+the same place that must not close it; run against the previous component, the key from outside the
+popup, the backdrop press and the Close control went red while the three in-popup Escapes stayed green —
+the old cases' blind spot, measured. App: Ctrl+K closes from the field (open-only mutation: red). Studio:
+Escape from a tool and from the body (unit), from a tool and a press on the page (Chromium). Chromium
+(`dismissal.pw.ts`): eight cases, real pointer and keyboard. The assistant is docked, so §10.3's route —
+the panel's chevron, *"collapsing the panel shuts both and reopening returns to the tab that was open"* —
+is its case; Escape and click-away are not its routes, and a panel that shut on every click on the page
+would lose the conversation beside it. There are no menus yet; right-click menus arrive on Base UI's
+menu with these cases owed. Found live and fixed: the palette's field and rows were 100% wide under the
+default content box and drew a horizontal scrollbar.
+
+---
+
 ## 2026-09-17 — Stage 9: the assistant tab, and the contextual panel's two tabs
 
 ADR-0083's tab strip is built, and the assistant behind it: provider and model pickers, the

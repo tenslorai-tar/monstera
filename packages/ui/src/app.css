@@ -412,24 +412,24 @@ textarea {
  * Not centred vertically: a list that grows downward from a fixed point keeps
  * the query field still as results filter, and a centred panel moves the field
  * under the reader's fingers on every keystroke.
+ *
+ * The popup is the dialog primitive's (B9), so its surface, border and elevation are `.m-dialog`'s; this moves it
+ * from the centre to the top and nothing else. Both classes in the selector, so the order the two stylesheets load
+ * in cannot decide which placement wins.
  */
-.m-palette {
-  position: fixed;
-  inset-block-start: 10vh;
-  inset-inline: 0;
-  margin-inline: auto;
+.m-dialog.m-palette {
+  top: 10vh;
+  transform: translateX(-50%);
   inline-size: min(560px, 90vw);
   max-block-size: 60vh;
-  overflow-y: auto;
-  z-index: 10;
-  background: var(--surface);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-10);
-  box-shadow: var(--elevation-3);
   padding: var(--space-8);
 }
 
+/* BORDER-BOX on the field and the rows, because both are 100% wide: under the default content box their padding and
+   border were added to the full width, every one overflowed the popup by 18 px, and the body grew a horizontal
+   scrollbar (seen live 2026-09-18). */
 .m-palette-query {
+  box-sizing: border-box;
   inline-size: 100%;
   padding: var(--space-8);
   background: var(--surface2);
@@ -445,6 +445,7 @@ textarea {
 }
 
 .m-palette-item {
+  box-sizing: border-box;
   inline-size: 100%;
   display: flex;
   justify-content: space-between;

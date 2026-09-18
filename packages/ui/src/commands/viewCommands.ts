@@ -90,7 +90,14 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
 }
 
 /**
- * Opens the command palette.
+ * Opens the command palette, or closes it when it is open.
+ *
+ * ## A TOGGLE, because its chord and its title-bar control are how a person expects to shut it
+ *
+ * This only opened until 2026-09-18, so Ctrl+K and the title bar's command search could never close the palette they
+ * had opened — one of the three routes a live session found missing at once (the other two, Escape from wherever
+ * focus is and a press outside, are the dialog primitive's). The state is the caller's; `onToggle` flips it with an
+ * updater, so a command built once never toggles from a captured boolean.
  *
  * ## Registered like anything else, and it appears in ITSELF
  *
@@ -105,7 +112,7 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
  * reached by its chord, and a button labelled *Command palette* is a control
  * whose whole purpose is to save a keystroke it costs a click to reach.
  */
-export function commandPaletteCommand(deps: { readonly onOpen: () => void }): UiCommand {
+export function commandPaletteCommand(deps: { readonly onToggle: () => void }): UiCommand {
   return {
     id: 'view.command-palette',
     icon: 'Command',
@@ -119,7 +126,7 @@ export function commandPaletteCommand(deps: { readonly onOpen: () => void }): Ui
     // ribbon existed, which was the honest state and is no longer.
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FIND, order: 20 }],
     run: (): void => {
-      deps.onOpen();
+      deps.onToggle();
     },
   };
 }

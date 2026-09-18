@@ -50,15 +50,19 @@ const ROTATE = commandOf('b.rotate', 'test.modes.rotate', [
   { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 10 },
 ]);
 
-function draw(stored: Record<string, unknown> = {}): { readonly settings: SettingsStore; readonly container: HTMLElement } {
+function draw(stored: Record<string, unknown> = {}): {
+  readonly settings: SettingsStore;
+  readonly container: HTMLElement;
+  readonly unmount: () => void;
+} {
   const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   settings.hydrate(stored);
-  const { container } = render(
+  const { container, unmount } = render(
     <Wrapped>
       <Ribbon registry={new CommandRegistry([SAVE, ROTATE])} context={CONTEXT} settings={settings} />
     </Wrapped>,
   );
-  return { settings, container };
+  return { settings, container, unmount };
 }
 
 function railButton(container: HTMLElement, section: string): HTMLButtonElement {
@@ -128,6 +132,27 @@ describe('the ribbon’s section and modes', () => {
       fireEvent.keyDown(home, { key: 'Escape' });
     });
     expect(screen.queryByRole('toolbar')).toBeNull();
+  });
+
+  it('STUDIO: ESCAPE from the other two places focus can be — a TOOL in the overlay, and the BODY — dismisses it too', () => {
+    // A person who Tabs into the strip presses Escape on a tool; one who clicked something inert presses it with focus
+    // on the body. Both are asserted because the overlay's earlier handler heard one position and not the others, and
+    // the palette's did the same (2026-09-17) — a route is only covered from every place a key can come from.
+    for (const target of ['tool', 'body'] as const) {
+      const { container, unmount } = draw({ [LAYOUT_MODE_SETTING.id]: 'studio' });
+      press(railButton(container, 'home'));
+      const from = target === 'tool' ? screen.getByRole('button', { name: 'Save' }) : document.body;
+      act(() => {
+        fireEvent.keyDown(from, { key: 'a' });
+      });
+      // CONTROL, per position: a key that is not Escape leaves it open.
+      expect(screen.queryByRole('toolbar'), target).not.toBeNull();
+      act(() => {
+        fireEvent.keyDown(from, { key: 'Escape' });
+      });
+      expect(screen.queryByRole('toolbar'), target).toBeNull();
+      unmount();
+    }
   });
 
   it('STUDIO: a press OUTSIDE dismisses the overlay; a press on the RAIL does not', () => {

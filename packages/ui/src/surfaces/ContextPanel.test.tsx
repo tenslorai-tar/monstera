@@ -8,7 +8,11 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
-import { CONTEXT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_OPEN_SETTING } from '../settings/layout.js';
+import {
+  CONTEXT_PANEL_OPEN_SETTING,
+  CONTEXT_PANEL_TAB_SETTING,
+  DOCUMENT_PANEL_OPEN_SETTING,
+} from '../settings/layout.js';
 import { SettingsStore } from '../settingsStore.js';
 import { ContextPanel } from './ContextPanel.js';
 
@@ -65,6 +69,30 @@ describe('ContextPanel', () => {
     });
     expect(screen.getByText('properties content')).toBeDefined();
     expect(settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
+  });
+
+  it('the ASSISTANT tab is shut by the panel’s own chevron, and the handle returns to it', async () => {
+    // THE ASSISTANT'S DISMISSAL ROUTE, as §10.3 gives it: "collapsing the panel shuts both and reopening returns to the
+    // tab that was open". It is docked, not transient, so Escape and a press outside are deliberately NOT routes here —
+    // a panel that shut whenever a person clicked the page would lose the conversation they are reading beside it.
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.hydrate({ [CONTEXT_PANEL_TAB_SETTING.id]: 'assistant' });
+    drawn(settings);
+    expect(screen.getByText('assistant content')).toBeDefined();
+    // CONTROL: the other tab's content is not what is showing, so the reopen below is not passing on Properties.
+    expect(screen.queryByText('properties content')).toBeNull();
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Collapse the properties panel' }).click();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('assistant content')).toBeNull();
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Show the properties panel' }).click();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('assistant content')).toBeDefined();
   });
 
   it('a STORED collapse is what opens', () => {

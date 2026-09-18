@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
-import { type ReactElement, type ReactNode, useRef } from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useRef } from 'react';
 
 import { IconButton } from './IconButton.js';
 
@@ -75,6 +75,15 @@ export interface DialogProps {
   title: MessageKey;
   /** The accessible name of the close control — an action, e.g. "Close". */
   closeLabel: MessageKey;
+  /**
+   * Where focus lands when the dialog opens; the popup itself when omitted.
+   *
+   * A dialog whose whole purpose is a field — the command palette — takes the field, because the chord that opened it
+   * says the person is about to type. Every other dialog keeps the popup, for the tooltip reason above.
+   */
+  initialFocus?: RefObject<HTMLElement | null>;
+  /** A second class on the popup, for a dialog placed differently from the centred default. */
+  popupClassName?: string;
   children: ReactNode;
 }
 
@@ -83,6 +92,8 @@ export function Dialog({
   onOpenChange,
   title,
   closeLabel,
+  initialFocus,
+  popupClassName,
   children,
 }: DialogProps): ReactElement {
   // Only the title is resolved here. `closeLabel` travels to `IconButton` as a
@@ -102,7 +113,11 @@ export function Dialog({
     >
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className="m-dialog__backdrop" />
-        <BaseDialog.Popup className="m-dialog" initialFocus={popup} ref={popup}>
+        <BaseDialog.Popup
+          className={popupClassName === undefined ? 'm-dialog' : `m-dialog ${popupClassName}`}
+          initialFocus={initialFocus ?? popup}
+          ref={popup}
+        >
           <div className="m-dialog__header">
             <BaseDialog.Title className="m-dialog__title">{_(title)}</BaseDialog.Title>
             {/* Inside the popup, per Base UI's own requirement for a modal

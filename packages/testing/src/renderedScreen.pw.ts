@@ -775,6 +775,33 @@ test('STUDIO opens the tool strip as an OVERLAY on a rail selection, moves nothi
   await expect(page.locator('.m-ribbon__tools')).toHaveCount(0);
 });
 
+test('STUDIO dismisses its overlay on Escape from a TOOL a person Tabbed to, and on a press on the PAGE', async ({ page }) => {
+  // The other two places a person's key or press comes from, driven by the keyboard and the pointer rather than aimed
+  // by the case (the palette's defect, 2026-09-17: a route covered from one focus position only).
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'appearance.layout-mode': 'studio' }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-page-list .m-page').first()).toBeVisible();
+  const overlay = page.locator('.m-ribbon__tools--overlay');
+
+  await page.locator('[data-ribbon-section="home"]').click();
+  await expect(overlay).toBeVisible();
+  const tool = overlay.getByRole('button').first();
+  await tool.focus();
+  await expect(tool).toBeFocused();
+  // CONTROL: a key that is not Escape, from the same place, leaves it open.
+  await page.keyboard.press('Shift');
+  await expect(overlay).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(overlay).toHaveCount(0);
+
+  await page.locator('[data-ribbon-section="home"]').click();
+  await expect(overlay).toBeVisible();
+  await page.locator('.m-page-list .m-page').first().click();
+  await expect(overlay).toHaveCount(0);
+});
+
 test('the TITLE BAR holds the tabs, the command search and the switcher on one row, stays in Focus, and Studio opens below it', async ({
   page,
 }) => {

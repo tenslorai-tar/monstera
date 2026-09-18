@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -47,15 +47,19 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
 
+/**
+ * Renders the palette and hands back the BODY as its container.
+ *
+ * The palette is the dialog primitive, which portals its popup to the body, so the element `render` returns holds
+ * none of it — a query there finds nothing, and a case built on it fails for the harness's reason.
+ */
 function open(registry: CommandRegistry, context = CONTEXT, onClose = vi.fn()) {
-  return {
-    onClose,
-    ...render(
-      <Wrapped>
-        <CommandPalette registry={registry} context={context} onClose={onClose} />
-      </Wrapped>,
-    ),
-  };
+  const rendered = render(
+    <Wrapped>
+      <CommandPalette registry={registry} context={context} onClose={onClose} />
+    </Wrapped>,
+  );
+  return { onClose, unmount: rendered.unmount, container: document.body };
 }
 
 function titles(container: HTMLElement): string[] {
@@ -75,11 +79,28 @@ function queryField(container: HTMLElement): HTMLInputElement {
   return field;
 }
 
-/** The palette's root, for the cases that dispatch an event at it. */
+/** The palette's popup. */
 function palette(container: HTMLElement): HTMLElement {
   const root = container.querySelector<HTMLElement>('.m-palette');
   if (root === null) throw new Error('the palette did not render');
   return root;
+}
+
+/** Fires a key where a person's key press would arrive: at the element given, bubbling, cancellable. */
+function press(target: EventTarget, key: string): void {
+  act(() => {
+    target.dispatchEvent(new globalThis.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key }));
+  });
+}
+
+/** Waits for the primitive to move initial focus, which it does after paint, and returns where it went. */
+async function landed(): Promise<HTMLElement> {
+  await waitFor(() => {
+    expect(document.activeElement).not.toBe(document.body);
+  });
+  const element = document.activeElement;
+  if (!(element instanceof HTMLElement)) throw new Error('focus landed on an element');
+  return element;
 }
 
 describe('CommandPalette', () => {
@@ -109,7 +130,10 @@ describe('CommandPalette', () => {
       command('b.needs-document', SAVE_TITLE, { when: (c) => c.docId !== undefined }),
     ]);
 
-    expect(titles(open(registry, CONTEXT).container)).toStrictEqual(['Undo', 'Save']);
+    const first = open(registry, CONTEXT);
+    expect(titles(first.container)).toStrictEqual(['Undo', 'Save']);
+    // UNMOUNTED between the two, because both portal to the one body and the second read would count the first.
+    first.unmount();
     expect(titles(open(registry, NO_DOCUMENT).container)).toStrictEqual(['Undo']);
   });
 
@@ -157,23 +181,108 @@ describe('CommandPalette', () => {
     expect(container.querySelector('.m-palette-empty')?.textContent).toBe('No command matches.');
   });
 
-  it('closes on Escape', () => {
-    const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
-    const { container, onClose } = open(registry);
+  /*
+   * DISMISSAL, ONE CASE PER ROUTE AND PER PLACE FOCUS CAN BE.
+   *
+   * The palette would not close in a live session on 2026-09-17, by Escape, by a click outside, or from its title-bar
+   * control. The cases here before then fired Escape at the palette's own elements, and a handler on the palette's
+   * root hears exactly those — so they passed while the defect lived in every key that arrived from ANYWHERE ELSE.
+   * The separating fixtures below are the ones that handler could not hear: a key whose target is outside the popup,
+   * and a press outside it. Measured against the previous component: those two red, the in-popup ones green.
+   *
+   * Each case's control is a key or a press the same position sends that must NOT close, so a listener that closed on
+   * every event cannot pass it.
+   */
+  describe('closes', () => {
+    it('on Escape WHERE FOCUS LANDS when it opens — which is the query field', async () => {
+      const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+      const { container, onClose } = open(registry);
+      const where = await landed();
+      // READ BACK, not chosen: the field is where a person's first key goes, and the case asserts it went there.
+      expect(where).toBe(queryField(container));
 
-    fireEvent.keyDown(palette(container), { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
+      press(where, 'a');
+      expect(onClose).not.toHaveBeenCalled();
+      press(where, 'Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
 
-  it('closes on Escape pressed IN THE QUERY FIELD, where a person is typing when they press it', () => {
-    // The case above dispatches at the palette's root, which no key press does: focus is in the field from the moment
-    // the palette opens. Added 2026-09-15 after Escape did not close the palette in a live session — this case is what
-    // separates "the handler does not receive a key from the field" from "focus had left the palette".
-    const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
-    const { container, onClose } = open(registry);
+    it('on Escape from a RESULT ROW, where Tab or a pointer leaves focus', async () => {
+      const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+      const { container, onClose } = open(registry);
+      await landed();
+      const row = container.querySelector<HTMLButtonElement>('.m-palette-item');
+      if (row === null) throw new Error('the palette listed a row');
+      row.focus();
+      expect(document.activeElement).toBe(row);
 
-    fireEvent.keyDown(queryField(container), { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+      press(row, 'ArrowDown');
+      expect(onClose).not.toHaveBeenCalled();
+      press(row, 'Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('on Escape from the POPUP itself, where a click on its padding leaves focus', async () => {
+      const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+      const { container, onClose } = open(registry);
+      await landed();
+      const popup = palette(container);
+
+      press(popup, 'Shift');
+      expect(onClose).not.toHaveBeenCalled();
+      press(popup, 'Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('on Escape arriving from OUTSIDE the popup — the key a handler on the palette could never hear', async () => {
+      // THE SEPARATING CASE. The target is the body, which is where a key goes once focus has left the palette.
+      const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+      const { onClose } = open(registry);
+      await landed();
+
+      press(document.body, 'a');
+      expect(onClose).not.toHaveBeenCalled();
+      press(document.body, 'Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('on a press OUTSIDE it, on the backdrop that covers the rest of the window', async () => {
+      const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+      const { container, onClose } = open(registry);
+      await landed();
+      const backdrop = container.querySelector<HTMLElement>('.m-dialog__backdrop');
+      if (backdrop === null) throw new Error('a modal palette draws a backdrop');
+
+      // CONTROL: the same press sequence INSIDE the popup does not close it.
+      const popup = palette(container);
+      fireEvent.pointerDown(popup);
+      fireEvent.mouseDown(popup);
+      fireEvent.pointerUp(popup);
+      fireEvent.mouseUp(popup);
+      fireEvent.click(popup);
+      expect(onClose).not.toHaveBeenCalled();
+
+      fireEvent.pointerDown(backdrop);
+      fireEvent.mouseDown(backdrop);
+      fireEvent.pointerUp(backdrop);
+      fireEvent.mouseUp(backdrop);
+      fireEvent.click(backdrop);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('from its Close control', async () => {
+      const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+      const { container, onClose } = open(registry);
+      await landed();
+      const close = [...container.querySelectorAll<HTMLElement>('.m-palette [aria-label]')].find(
+        (element) => element.getAttribute('aria-label') === 'Close',
+      );
+      if (close === undefined) throw new Error('the palette carries a Close control');
+      act(() => {
+        close.click();
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('an Escape that closed the palette does NOT reach a listener on the document', () => {

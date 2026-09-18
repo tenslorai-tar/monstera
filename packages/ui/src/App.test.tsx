@@ -707,6 +707,33 @@ describe('App', () => {
       expect(settings.get('appearance.layout-mode')).toBe('studio');
     });
 
+    it('the PALETTE closes on its own chord, pressed where focus is while it is open', async () => {
+      // THE TOGGLE ROUTE, which only the composed application holds: the chord reaches the command through the
+      // document's shortcut listener, and the command reaches the palette's state through the composition root. It
+      // only opened until 2026-09-18, so Ctrl+K and the title bar's search could never shut a palette they had opened.
+      const settings = freshSettings();
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+
+      const chord = async (target: EventTarget): Promise<void> => {
+        await act(async () => {
+          target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'k', ctrlKey: true }));
+          await Promise.resolve();
+        });
+      };
+
+      await chord(document);
+      const field = document.querySelector('.m-palette-query');
+      if (!(field instanceof HTMLInputElement)) throw new Error('Ctrl+K opened the palette');
+      // FROM THE FIELD, where focus is while the palette is open — not the document, which no key press targets then.
+      await chord(field);
+      expect(document.querySelector('.m-palette-query')).toBeNull();
+      // CONTROL: the same chord opens it again, so the line above is a toggle and not a chord that only ever closes.
+      await chord(document);
+      expect(document.querySelector('.m-palette-query')).not.toBeNull();
+    });
+
     it('the TITLE BAR: its search opens the palette, and Focus chosen on its switcher still returns to the mode left', async () => {
       // §10.3: the title bar holds "the Ctrl+K command search, and the layout switcher". The Escape line is the one only
       // the composed application can separate: a switcher writing the setting itself would also reach Focus, and would

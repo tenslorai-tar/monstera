@@ -1,7 +1,8 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, useMemo, useRef, useState } from 'react';
 
-import { PALETTE_EMPTY, PALETTE_LABEL, PALETTE_PLACEHOLDER } from './messages/en.js';
+import { CLOSE_LABEL, PALETTE_EMPTY, PALETTE_LABEL, PALETTE_PLACEHOLDER } from './messages/en.js';
+import { Dialog } from './primitives/Dialog.js';
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
 import { paletteModel } from './surfaces/projections.js';
 
@@ -40,19 +41,12 @@ export function CommandPalette({
 }: {
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
-  /** Closes the palette. Called after a command runs, and on Escape. */
+  /** Closes the palette: before a command runs, on Escape, on a press outside it, and from its Close control. */
   readonly onClose: () => void;
 }): ReactElement {
   const { i18n } = useLingui();
   const [query, setQuery] = useState('');
   const field = useRef<HTMLInputElement | null>(null);
-
-  // FOCUSED ON OPEN, because a palette that needs a click before it accepts
-  // typing is a palette a keyboard user cannot use — and the chord that opened
-  // it says they are on the keyboard.
-  useEffect(() => {
-    field.current?.focus();
-  }, []);
 
   const matches = useMemo(() => {
     const wanted = query.trim().toLocaleLowerCase();
@@ -62,18 +56,22 @@ export function CommandPalette({
   }, [context, i18n, query, registry]);
 
   return (
-    <div
-      className="m-palette"
-      role="dialog"
-      aria-modal="true"
-      aria-label={i18n._(PALETTE_LABEL)}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape') return;
-        onClose();
-        // CONSUMED, as Base UI's dialog dismissal consumes it: the application's shortcuts listen on the document, and
-        // an Escape that closed the palette must not also run `view.leave-focus` and change the layout underneath.
-        event.stopPropagation();
+    // THE ONE DIALOG PRIMITIVE (B9), and its absence was the defect. This was a `div` with `role="dialog"` and an
+    // `onKeyDown`, which hears a key only while focus is inside it — and it had no outside-press handler at all. So the
+    // first click a person made anywhere outside moved focus out, and nothing could close it again (live, 2026-09-17).
+    // Base UI's dismissal listens on the document and traps focus, which is every route at once, and it consumes the
+    // Escape it acts on, so `view.leave-focus` on the document never also runs.
+    //
+    // FOCUS OPENS ON THE FIELD, because the chord that opened the palette says the person is about to type.
+    <Dialog
+      closeLabel={CLOSE_LABEL}
+      initialFocus={field}
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
+      open
+      popupClassName="m-palette"
+      title={PALETTE_LABEL}
     >
       <input
         ref={field}
@@ -96,12 +94,13 @@ export function CommandPalette({
                 type="button"
                 className="m-palette-item"
                 onClick={() => {
+                  // CLOSED FIRST, so a command that opens a dialog of its own opens it with no modal still above it.
+                  onClose();
                   // NOT AWAITED, for `QuickToolbar`'s reason: a click handler
                   // returning a promise makes React's event handling wait on
                   // IPC, and nothing here reads the result — a command reports
                   // through its own callback.
                   void command.run(context);
-                  onClose();
                 }}
               >
                 <span className="m-palette-title">{i18n._(command.title)}</span>
@@ -113,6 +112,6 @@ export function CommandPalette({
           ))}
         </ul>
       )}
-    </div>
+    </Dialog>
   );
 }

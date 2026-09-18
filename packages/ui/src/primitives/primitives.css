@@ -346,6 +346,12 @@
   inset: 0;
   background: var(--canvas);
   opacity: 0.6;
+  /* NO-DRAG, so a press on the title bar is a press outside. The title bar is a `drag` region, and Electron hands a
+     drag region's presses to the window frame rather than to the page; a `no-drag` region subtracts from the drag
+     regions under it, so while a modal is open the whole window belongs to the backdrop. MEASURED in the built
+     application 2026-09-18: a press on the title bar's empty stretch closed the command palette. NOT measured: the same
+     press with this line removed, so that it was needed rests on Electron's documented region rule, not a reading. */
+  -webkit-app-region: no-drag;
 }
 
 .m-dialog {

@@ -1068,8 +1068,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * did would be a surface with a lifetime it has no reason to have.
    */
   const [palette, setPalette] = useState(false);
-  const openPalette = useCallback(() => {
-    setPalette(true);
+  const togglePalette = useCallback(() => {
+    setPalette((shown) => !shown);
   }, []);
   const closePalette = useCallback(() => {
     setPalette(false);
@@ -1735,7 +1735,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         toggleDarkPageCommand({ settings }),
         toggleLoupeCommand({ settings }),
         toggleSplitViewCommand({ settings }),
-        commandPaletteCommand({ onOpen: openPalette }),
+        commandPaletteCommand({ onToggle: togglePalette }),
         // §7's CHROME VISIBILITY, as commands: a hidden surface is restorable from the palette and
         // a chord because these exist, not because its own control survives being hidden.
         toggleQuickToolbarCommand({ settings }),
@@ -1776,7 +1776,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       navigator,
       openCommand,
       openDeps,
-      openPalette,
+      togglePalette,
       opened,
       readTool,
       refreshHandwriting,
