@@ -8,6 +8,7 @@ import type {
   ReadPreRead,
   SavePurpose,
   WriterSession,
+  WriterShapeOf,
 } from './engineSeam.js';
 
 /**
@@ -81,8 +82,33 @@ export type WriterOfRecord = keyof WriterSession;
  * this file has none.
  */
 export type WriterRouting = {
-  readonly [W in WriterOfRecord]: { readonly writer: W };
+  readonly [W in WriterOfRecord]: { readonly writer: W; readonly display: DisplayFor<W> };
 }[WriterOfRecord];
+
+/**
+ * How a command's effect reaches the screen
+ * ([ADR-0084](../../../docs/DECISIONS/0084-a-command-the-view-model-cannot-express-refreshes-the-image.md)).
+ *
+ * - `'view-model'` — `document.viewModel` carries it, so main's image may stay what it was.
+ * - `'image'` — PDF.js draws it from the document's bytes, so after the command main's
+ *   canonical image must be the session's bytes, or the effect is right on disk and absent
+ *   from the window until the document is reopened (measured 2026-09-18).
+ * - `'nothing-drawn'` — no surface draws what it changes.
+ *
+ * **Declared, never inferred.** MuPDF writes a rotate and a merge alike, so the writer says
+ * where an effect lives and not how it is drawn; the author of each command says that here.
+ */
+export type CommandDisplay = 'view-model' | 'image' | 'nothing-drawn';
+
+/**
+ * The displays a writer's commands may declare: a byte-image writer's only.
+ *
+ * Its `apply` returns the new image and the bus installs it, so a byte-image command is drawn
+ * from bytes by construction, and any other declaration would be a claim the path cannot keep.
+ */
+export type DisplayFor<W extends WriterOfRecord> = WriterShapeOf[W] extends 'byte-image'
+  ? 'image'
+  : CommandDisplay;
 
 /**
  * Does this command name a second document?
@@ -287,6 +313,9 @@ export type CommandDeclarations = { readonly [K in CommandKind]: CommandDeclarat
 const declarations = {
   rotatePages: {
     kind: 'rotatePages',
+    // THE ONE EFFECT THE VIEW MODEL CARRIES: `document.viewModel` answers each drawn page's
+    // rotation and PDF.js is overruled on it, so a rotate needs no new bytes in main (ADR-0032).
+    display: 'view-model',
     // Invariant L6: page-tree work rewrites in place through MuPDF's own
     // PDFObject API. Rebuilding into a new document drops /AcroForm, /Outlines,
     // /Names and /OCProperties — measured, not assumed (ADR-0006).
@@ -316,6 +345,7 @@ const declarations = {
   },
   setLayerVisibility: {
     kind: 'setLayerVisibility',
+    display: 'image',
     // `/OCProperties` is part of the document's structure, and invariant L6's
     // argument applies to it directly: ADR-0006 measured a rebuild DROPPING
     // /OCProperties, so this is written in place, for the same reason a
@@ -350,6 +380,7 @@ const declarations = {
   },
   movePage: {
     kind: 'movePage',
+    display: 'image',
     // Invariant L6, and this is the command that measured it. ADR-0006: MuPDF's
     // own `rearrangePages` drops `/AcroForm` EVEN FOR THE IDENTITY PERMUTATION,
     // and the widget annotations survive on their pages — so the fields still
@@ -384,6 +415,7 @@ const declarations = {
   },
   deletePages: {
     kind: 'deletePages',
+    display: 'image',
     // Invariant L6 and `movePage`'s measurement: the same `/Kids` rewrite, with
     // a keep-set instead of a permutation. `rearrangePages` would express a
     // delete natively and is banned for the reason ADR-0006 measured — it drops
@@ -417,6 +449,7 @@ const declarations = {
   },
   duplicatePage: {
     kind: 'duplicatePage',
+    display: 'image',
     // Invariant L6 again, and the copy is MuPDF's own `graftObject` rather than
     // a dictionary walk written here — measured 2026-09-04: a new indirect
     // object, dictionaries that diverge, and a shared `/Contents`.
@@ -447,6 +480,7 @@ const declarations = {
   },
   swapPages: {
     kind: 'swapPages',
+    display: 'image',
     // Invariant L6 and `movePage`'s measurement, a third time: the same
     // `/Kids` rewrite with a symmetric permutation.
     writer: 'mupdf',
@@ -474,6 +508,7 @@ const declarations = {
   },
   insertBlankPage: {
     kind: 'insertBlankPage',
+    display: 'image',
     // Invariant L6 and the same `/Kids` rewrite. MuPDF's `addPage` +
     // `insertPage` would build the page AND put it in the tree, which is a
     // second writer for `/Kids` — the thing `pageOrder.ts` routes every
@@ -502,6 +537,7 @@ const declarations = {
   },
   cropPages: {
     kind: 'cropPages',
+    display: 'image',
     // A page attribute written in place, exactly as a rotation is. Invariant
     // L6's argument for MuPDF applies unchanged: a rebuild to change one key
     // drops the four catalog entries ADR-0006 measured.
@@ -531,6 +567,7 @@ const declarations = {
   },
   watermarkPages: {
     kind: 'watermarkPages',
+    display: 'image',
     // THE FIRST COMMAND THAT IS NOT `mupdf`, and the writer is not a choice
     // made here: §3's matrix at ARCHITECTURE.md:381 assigns "drawing onto pages
     // (watermark, headers/footers, Bates, OCR text layer)" to @cantoo/pdf-lib
@@ -582,6 +619,7 @@ const declarations = {
   },
   headerFooterPages: {
     kind: 'headerFooterPages',
+    display: 'image',
     // §3's matrix at ARCHITECTURE.md:381 names "drawing onto pages (watermark,
     // headers/footers, Bates, OCR text layer)" for @cantoo/pdf-lib, so this is
     // the same assignment `watermarkPages` reads, on the next item in the list.
@@ -613,6 +651,7 @@ const declarations = {
   },
   batesNumberPages: {
     kind: 'batesNumberPages',
+    display: 'image',
     // §3's matrix at ARCHITECTURE.md:381 names Bates in the same clause as the
     // watermark and the headers.
     writer: 'pdf-lib',
@@ -643,6 +682,8 @@ const declarations = {
   },
   setPageTransition: {
     kind: 'setPageTransition',
+    // NOTHING DRAWN: `/Trans` is read by a presentation viewer, and no surface here draws it.
+    display: 'nothing-drawn',
     // A PAGE ATTRIBUTE WRITTEN IN PLACE, exactly as `cropPages` writes
     // `/CropBox` and `rotatePages` writes `/Rotate`. Invariant L6's argument
     // for MuPDF applies unchanged, and nothing here is drawn — so this is not
@@ -676,6 +717,7 @@ const declarations = {
   },
   setPageBackground: {
     kind: 'setPageBackground',
+    display: 'image',
     // Content composition — §3's matrix at ARCHITECTURE.md:381 — and unlike
     // `setPageTransition` next door this one really does write a content
     // stream, which is what puts it on the byte-image writer rather than on
@@ -704,6 +746,7 @@ const declarations = {
   },
   resizePages: {
     kind: 'resizePages',
+    display: 'image',
     // `docs/ARCHITECTURE.md:382` names resize on the page-tree-ops row. It
     // touches a content stream, which every pdf-lib command here also does —
     // and the row below is *drawing onto pages*, where this draws nothing: the
@@ -738,6 +781,7 @@ const declarations = {
   },
   deskewPages: {
     kind: 'deskewPages',
+    display: 'image',
     // The same write `resizePages` makes, for the same reason: it wraps the
     // page's existing content in a transform and puts no marks of its own on
     // the page. `docs/ARCHITECTURE.md:382`'s page-tree-ops row is MuPDF's, and
@@ -776,6 +820,7 @@ const declarations = {
   },
   enhancePages: {
     kind: 'enhancePages',
+    display: 'image',
     // `docs/ARCHITECTURE.md:372`'s page-tree row and the object surgery beside it:
     // this replaces an image XObject's stream and restates its dictionary, in
     // place, in the session. It is NOT content composition — nothing is drawn onto
@@ -804,6 +849,7 @@ const declarations = {
   },
   straightenScans: {
     kind: 'straightenScans',
+    display: 'image',
     // `enhancePages`' writer, for its reason and one more: it replaces the image
     // stream AND the page's boxes and content, which is page surgery in the session.
     writer: 'mupdf',
@@ -824,6 +870,7 @@ const declarations = {
   },
   ocrPage: {
     kind: 'ocrPage',
+    display: 'image',
     // §3's matrix puts content composition on `@cantoo/pdf-lib`, and a text layer
     // is drawing onto a page. The RECOGNITION is MuPDF's — it rasterises, by the
     // print-and-export row — which is exactly why this command needs a pre-read
@@ -928,6 +975,7 @@ const declarations = {
   },
   insertImagePage: {
     kind: 'insertImagePage',
+    display: 'image',
     // §3's matrix at ARCHITECTURE.md:381 names *image-to-PDF* on the
     // content-composition row. pdf-lib embeds JPEG and PNG directly; MuPDF
     // would need a decoder and an encoder this build does not have.
@@ -958,6 +1006,7 @@ const declarations = {
   },
   generateToc: {
     kind: 'generateToc',
+    display: 'image',
     // §3's matrix at ARCHITECTURE.md:381 names "new document generation
     // (markdown/CSV/TOC/image-to-PDF)" on the content-composition row. Routing
     // it to MuPDF instead would put the read and the write in one session and
@@ -1003,6 +1052,7 @@ const declarations = {
   },
   mergeDocument: {
     kind: 'mergeDocument',
+    display: 'image',
     // `docs/ARCHITECTURE.md:372` puts "Page tree ops:
     // delete/insert/extract/MERGE/split/crop/resize" on MuPDF, so the writer is
     // assigned rather than chosen — and this is the row that ADR-0040 was
@@ -1039,6 +1089,7 @@ const declarations = {
   },
   replacePage: {
     kind: 'replacePage',
+    display: 'image',
     // `docs/ARCHITECTURE.md:372`'s page-tree row, and this one touches both
     // halves of it — a delete and an insert.
     writer: 'mupdf',
@@ -1065,6 +1116,7 @@ const declarations = {
   },
   importPageAsLayer: {
     kind: 'importPageAsLayer',
+    display: 'image',
     // ADR-0064's row: MuPDF, through the object-tree writer `layers.ts` already is,
     // because the command writes `/OCProperties` and that module is its one writer.
     // *Drawing onto pages* is pdf-lib's, and taking this there would give
@@ -1091,6 +1143,7 @@ const declarations = {
   },
   addAnnotation: {
     kind: 'addAnnotation',
+    display: 'image',
     // `docs/ARCHITECTURE.md:386` puts "Annotations (all types), appearance
     // streams" on MuPDF. That is a CLASSIFICATION, not a preference: an
     // annotation is an object in `/Annots` carrying its own appearance stream,
@@ -1130,6 +1183,7 @@ const declarations = {
   },
   removeAnnotation: {
     kind: 'removeAnnotation',
+    display: 'image',
     // The same classification the row above carries, from the other direction:
     // an annotation is an object in `/Annots`, so removing one is a page-tree
     // write and MuPDF owns it. Nothing a content-stream writer could do would
@@ -1168,6 +1222,7 @@ const declarations = {
   },
   placeAnnotation: {
     kind: 'placeAnnotation',
+    display: 'image',
     // The two rows above, from the third direction: moving an annotation
     // rewrites an object in `/Annots` and its appearance stream. A content
     // writer could draw the shape somewhere else and would leave the original
@@ -1201,6 +1256,7 @@ const declarations = {
   },
   placeImage: {
     kind: 'placeImage',
+    display: 'image',
     // `addAnnotation`'s classification and its exact argument: a `/Stamp` is an
     // object in `/Annots` carrying its own appearance stream, and that is what
     // makes it selectable, movable and erasable afterwards. Drawing the image
@@ -1240,6 +1296,7 @@ const declarations = {
   },
   styleAnnotation: {
     kind: 'styleAnnotation',
+    display: 'image',
     // The annotation rows' classification: `/C`, `/CA` and `/BS` are keys on an
     // object in `/Annots`, and the appearance stream MuPDF regenerates is that
     // object's. A content writer could draw the shape again in another colour
@@ -1265,6 +1322,7 @@ const declarations = {
   },
   addLink: {
     kind: 'addLink',
+    display: 'image',
     // A `/Link` is an entry in `/Annots` and a page-tree write, so MuPDF owns it
     // for the annotation rows' reason. It is also NOT an annotation in MuPDF's
     // model — `getAnnotations()` does not return one — which is what put its
@@ -1292,6 +1350,7 @@ const declarations = {
   },
   fillFormField: {
     kind: 'fillFormField',
+    display: 'image',
     // `docs/ARCHITECTURE.md`:385 assigns *"Form fields: fill"* to MuPDF by
     // name, so the writer of record was settled before this row existed and
     // none of it is a B4. The classification holds on its own terms: a field's
@@ -1323,6 +1382,7 @@ const declarations = {
   },
   deleteFormFields: {
     kind: 'deleteFormFields',
+    display: 'image',
     // A widget is an object in `/Annots` and an entry in `/AcroForm`'s tree, so
     // removing one is a page-tree and catalog write — `removeAnnotation`'s
     // classification with a second structure attached. Nothing a content-stream
@@ -1357,6 +1417,7 @@ const declarations = {
   },
   flattenFormFields: {
     kind: 'flattenFormFields',
+    display: 'image',
     // `docs/ARCHITECTURE.md` §3 names the call: *"Form fields: flatten —
     // MuPDF, `bake(false, true)`"*. Settled before this row existed, so no B4
     // on the routing. The one that WAS owed is ADR-0045's, on the save.
@@ -1387,6 +1448,9 @@ const declarations = {
   },
   setDocumentProtection: {
     kind: 'setDocumentProtection',
+    // NOTHING DRAWN: its `apply` records how the document is WRITTEN (below) and changes no
+    // page, so there are no new bytes for the window to draw.
+    display: 'nothing-drawn',
     // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *encryption,
     // permissions* and has since the founding record, so no B4 on the routing.
     writer: 'mupdf',
@@ -1429,6 +1493,7 @@ const declarations = {
   },
   applyRedactions: {
     kind: 'applyRedactions',
+    display: 'image',
     // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *redaction* and has
     // since the founding record, so no B4 on the routing.
     writer: 'mupdf',
@@ -1462,6 +1527,7 @@ const declarations = {
   },
   markMatchesForRedaction: {
     kind: 'markMatchesForRedaction',
+    display: 'image',
     // §3's matrix names MuPDF for annotations and for redaction, and this
     // command creates annotations. No B4 on the routing.
     writer: 'mupdf',
@@ -1487,6 +1553,7 @@ const declarations = {
   },
   sanitizeDocument: {
     kind: 'sanitizeDocument',
+    display: 'image',
     // §3's matrix names MuPDF for *optimize* and for the object model this
     // walks. No B4 on the routing.
     writer: 'mupdf',
@@ -1509,6 +1576,7 @@ const declarations = {
   },
   signDocument: {
     kind: 'signDocument',
+    display: 'image',
     // §3's matrix names the writer in its own words: `@signpdf/signpdf` +
     // `@signpdf/signer-p12`, over a placeholder THIS BUILD writes. `signpdf`
     // has been a declared byte-image writer in `writerShapes` since Stage 0
@@ -1538,6 +1606,7 @@ const declarations = {
   },
   createFormField: {
     kind: 'createFormField',
+    display: 'image',
     // `docs/ARCHITECTURE.md`:388 names the writer and the reason in one line:
     // "@cantoo/pdf-lib — the one concern MuPDF has no API for". So the three
     // form commands above route to the structural writer of record and this one
@@ -1582,6 +1651,7 @@ const declarations = {
   },
   importFormData: {
     kind: 'importFormData',
+    display: 'image',
     // MuPDF, and for two reasons rather than one. It WRITES values, which §3's
     // matrix puts on MuPDF; and it READS an FDF, which is PDF syntax and has no
     // API of its own — measured 2026-09-08, `fdf` appears zero times in
@@ -1615,6 +1685,7 @@ const declarations = {
   },
   importAnnotations: {
     kind: 'importAnnotations',
+    display: 'image',
     // MuPDF, for `importFormData`'s two reasons: it creates annotations, which §3 puts on MuPDF,
     // and it reads an FDF, which is PDF syntax only MuPDF opens here (ADR-0077).
     writer: 'mupdf',
@@ -1636,6 +1707,7 @@ const declarations = {
   },
   replaceTextObject: {
     kind: 'replaceTextObject',
+    display: 'image',
     // THE FIRST COMMAND ROUTED TO PDFIUM, which is what makes the second host
     // buildable at all: `KindsRoutedTo<'pdfium'>` was `never` until this line,
     // and a zod union of zero options cannot be built. `BUILD-PROMPT.md`:257
@@ -1684,6 +1756,7 @@ const declarations = {
   },
   placePageObject: {
     kind: 'placePageObject',
+    display: 'image',
     writer: 'pdfium',
     // INVERTIBLE FROM THE OBJECT'S OWN MATRIX, and that is measured rather than
     // reasoned: `FPDFPageObj_SetMatrix` of the matrix read before a transform
@@ -1705,6 +1778,7 @@ const declarations = {
   },
   recolorPageObjects: {
     kind: 'recolorPageObjects',
+    display: 'image',
     writer: 'pdfium',
     // INVERTIBLE FROM THE PRIOR FILLS, one per named object — `fillFormField`'s
     // shape on a third walk. The prior is four small integers per object and is
@@ -1721,6 +1795,7 @@ const declarations = {
   },
   deletePageObjects: {
     kind: 'deletePageObjects',
+    display: 'image',
     writer: 'pdfium',
     // NOT INVERTIBLE, AND IT IS THE LIBRARY THAT SAYS SO. PDFium offers no way
     // to reconstruct a page object from a description, so there is no prior
@@ -1765,6 +1840,7 @@ const declarations = {
   },
   replaceAllText: {
     kind: 'replaceAllText',
+    display: 'image',
     writer: 'pdfium',
     // NOT INVERTIBLE, AND THE PRIOR IS WHY — which is a different reason from
     // `deletePageObjects`' beside it. A prior exists here: every object this
@@ -1796,6 +1872,7 @@ const declarations = {
   },
   promoteFormObjects: {
     kind: 'promoteFormObjects',
+    display: 'image',
     writer: 'pdfium',
     // NOT INVERTIBLE, AND IT IS THE FOURTH DISTINCT REASON — the first one's,
     // reached from the other end. `deletePageObjects` cannot be undone because

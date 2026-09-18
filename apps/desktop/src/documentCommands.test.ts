@@ -42,6 +42,7 @@ import {
   nodeFileSurface,
   parsePageStructure,
   parsePageTables,
+  readDocumentRange,
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -126,6 +127,7 @@ import {
   type ExcelReview,
   DocumentPoisonedError,
   type DocumentRestore,
+  type DocumentFlush,
   MissingSessionError,
   type FormDataSource,
   type SaveSource,
@@ -252,6 +254,19 @@ const noSaving: SaveSource = {
     wait: () => Promise.resolve(),
   },
   flush: () => Promise.reject(new Error('this case does not save')),
+};
+
+/**
+ * The flush a command declared `'image'` now calls (ADR-0084): the document's real MuPDF bytes.
+ *
+ * Not {@link noSaving}'s refusal, because a command whose effect PDF.js draws makes the session's
+ * bytes main's image before its version moves — so running one IS a flush, and a case that
+ * refused it would be refusing the renderer its document.
+ */
+const sessionFlush: DocumentFlush = (_docId, sessions) => {
+  const session: MupdfSession | undefined = sessions.mupdf;
+  if (session === undefined) throw new Error('the fixture holds a MuPDF session');
+  return mupdfWriter.serialise(session);
 };
 
 /**
@@ -1406,6 +1421,8 @@ describe('barcodes — placed from typed text and read back, through the lane (A
   it('places the symbol the production writer makes, in its own proportions, and the page reads it back', async () => {
     const commands = new DocumentCommands({
       ...LOCAL_READS,
+      // A PLACED IMAGE IS DRAWN FROM THE BYTES, so placing one flushes (ADR-0084).
+      save: { ...noSaving, flush: sessionFlush },
       writeBarcode: lazyBarcodeWriter,
       documents: service,
       bus: bus(),
@@ -1436,6 +1453,8 @@ describe('barcodes — placed from typed text and read back, through the lane (A
   it('a text the symbology cannot carry is REFUSED and the document does not move', async () => {
     const commands = new DocumentCommands({
       ...LOCAL_READS,
+      // A PLACED IMAGE IS DRAWN FROM THE BYTES, so placing one flushes (ADR-0084).
+      save: { ...noSaving, flush: sessionFlush },
       writeBarcode: lazyBarcodeWriter,
       documents: service,
       bus: bus(),
@@ -1705,7 +1724,12 @@ describe('annotations exported to a file and imported from it, through the lane 
     blankSession = await mupdfWriter.open(blankBytes);
   });
 
-  function commandsWith(annotationData: AnnotationDataSource): DocumentCommands {
+  /**
+   * `flushes` counts what the flush was asked for. It REFUSED until 2026-09-18, which asserted
+   * *an export does not flush*; an import now flushes by design (ADR-0084), so the count keeps
+   * the export's half and states the import's.
+   */
+  function commandsWith(annotationData: AnnotationDataSource, flushes: DocId[] = []): DocumentCommands {
     const held = new EngineSessions();
     held.hold(annotatedDoc, { mupdf: annotatedSession });
     held.hold(blankDoc, { mupdf: blankSession });
@@ -1721,7 +1745,10 @@ describe('annotations exported to a file and imported from it, through the lane 
           names: siblingNames,
           wait: () => Promise.resolve(),
         },
-        flush: () => Promise.reject(new Error('an export does not flush the document')),
+        flush: (docId, sessions) => {
+          flushes.push(docId);
+          return sessionFlush(docId, sessions);
+        },
       },
       copy: {
         pick: () => Promise.reject(new Error('this case does not write a copy')),
@@ -1734,18 +1761,27 @@ describe('annotations exported to a file and imported from it, through the lane 
   for (const format of ['xfdf', 'fdf', 'json'] as const) {
     it(`${format}: one document's comments land in a file, and the file adds them to another`, async () => {
       const file = join(directory, `comments.${format}`);
-      const exported = await commandsWith({ ...localAnnotationData, pick: () => Promise.resolve(file) }).exportAnnotations(
-        annotatedDoc,
-        format,
-      );
+      const exportFlushes: DocId[] = [];
+      const exported = await commandsWith(
+        { ...localAnnotationData, pick: () => Promise.resolve(file) },
+        exportFlushes,
+      ).exportAnnotations(annotatedDoc, format);
       expect(exported?.kind).toBe('copied');
+      // AN EXPORT READS THE ANNOTATIONS AND FLUSHES NOTHING.
+      expect(exportFlushes).toStrictEqual([]);
 
-      const imported = await commandsWith({
-        ...localAnnotationData,
-        open: () => Promise.resolve(file),
-        read: (path) => Promise.resolve({ kind: 'read', bytes: new Uint8Array(readFileSync(path)) }),
-      }).importAnnotations(blankDoc, format);
+      const importFlushes: DocId[] = [];
+      const imported = await commandsWith(
+        {
+          ...localAnnotationData,
+          open: () => Promise.resolve(file),
+          read: (path) => Promise.resolve({ kind: 'read', bytes: new Uint8Array(readFileSync(path)) }),
+        },
+        importFlushes,
+      ).importAnnotations(blankDoc, format);
       expect(imported.kind).toBe('imported');
+      // AN IMPORT IS DRAWN FROM THE BYTES, so it hands main the document once (ADR-0084).
+      expect(importFlushes).toStrictEqual([blankDoc]);
 
       const landed = await readInterchangeAnnotations(blankSession);
       expect(landed.at(-1)).toMatchObject({
@@ -3355,8 +3391,14 @@ describe('DocumentCommands.composeCapturedFrames', () => {
 });
 
 describe('DocumentCommands — a page edited in another application (ADR-0062)', () => {
-  /** The copy path over the real disk, `openFromUrl`'s `realSave`. */
-  function realSave(): SaveSource {
+  /**
+   * The copy path over the real disk, `openFromUrl`'s `realSave`.
+   *
+   * `flushes` counts the flush. It REFUSED until 2026-09-18, asserting *a page sent out flushes
+   * no document*; bringing the edit back replaces a page, which PDF.js draws from the bytes, so
+   * the reimport now flushes once by design (ADR-0084) and the count keeps the send-out's half.
+   */
+  function realSave(flushes: DocId[]): SaveSource {
     return {
       deps: {
         checkWriteTarget: () => Promise.reject(new Error('a page sent out writes a copy, never a save')),
@@ -3364,7 +3406,10 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
         names: siblingNames,
         wait: () => Promise.resolve(),
       },
-      flush: () => Promise.reject(new Error('a page sent out flushes no document')),
+      flush: (docId, sessions) => {
+        flushes.push(docId);
+        return sessionFlush(docId, sessions);
+      },
     };
   }
 
@@ -3438,16 +3483,18 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
     destination: string,
     watch: EditWatchSurface,
     open: (path: string) => Promise<string | null>,
-  ): { readonly commands: DocumentCommands; readonly picked: string[] } {
+  ): { readonly commands: DocumentCommands; readonly picked: string[]; readonly flushes: DocId[] } {
     const picked: string[] = [];
+    const flushes: DocId[] = [];
     return {
       picked,
+      flushes,
       commands: new DocumentCommands({
         ...INERT,
         documents: t.documents,
         bus: bus(),
         engine: t.held,
-        save: realSave(),
+        save: realSave(flushes),
         copy: {
           pick: () => Promise.reject(new Error('this case writes no copy')),
           checkTarget: (path) => t.documents.checkCopyTarget(path),
@@ -3545,9 +3592,11 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
     const t = await target('roundtrip-target.pdf');
     const destination = join(directory, 'roundtrip page.pdf');
     const driven = drivenWatch();
-    const { commands } = commandsFor(t, destination, driven.surface, () => Promise.resolve(null));
+    const { commands, flushes } = commandsFor(t, destination, driven.surface, () => Promise.resolve(null));
     try {
       expect(await commands.editPageExternally(t.id, 1, t.version)).toStrictEqual({ kind: 'sent' });
+      // SENDING A PAGE OUT FLUSHES NOTHING.
+      expect(flushes).toStrictEqual([]);
 
       // THE WAIT IS OPEN BEFORE THE SAVE, so the edit is announced to it rather than raced.
       const waiting = commands.awaitExternalEdit(t.id);
@@ -3557,10 +3606,18 @@ describe('DocumentCommands — a page edited in another application (ADR-0062)',
       expect(commands.externalEditToReimport(t.id)).toBe(destination);
 
       const edited = await openEdited(t, destination);
-      await commands.reimportExternalEdit(t.id, edited.id);
+      const applied = await commands.reimportExternalEdit(t.id, edited.id);
 
       // PAGE 2 IS THE EDIT and the pages either side are untouched, read by a different parser.
       expect(await widths(t.session)).toStrictEqual([612, 300, 612]);
+      // AND THE WINDOW IS HANDED IT (ADR-0084): the bytes main serves at the new version, read
+      // through the range reader the renderer's transport calls, are the edited document — before
+      // this, they were the document as opened, and the edit appeared only after a reopen.
+      expect(flushes).toStrictEqual([t.id]);
+      const served = readDocumentRange(t.documents, t.id, applied.version, 0, applied.byteLength);
+      if (served.kind !== 'bytes') throw new Error(`main refused its own current version: ${served.kind}`);
+      const shown = await PDFDocument.load(served.bytes);
+      expect(shown.getPages().map((page) => page.getWidth())).toStrictEqual([612, 300, 612]);
       // ACCEPTED: the same save is not offered again.
       expect(commands.externalEditToReimport(t.id)).toBeUndefined();
     } finally {

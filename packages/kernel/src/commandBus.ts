@@ -634,6 +634,37 @@ export class CommandBus {
   }
 
   /**
+   * Makes `main`'s canonical image the session's bytes after an operation on a command declared
+   * `'image'` ([ADR-0084](../../../docs/DECISIONS/0084-a-command-the-view-model-cannot-express-refreshes-the-image.md)).
+   *
+   * ## Why the window needs it
+   *
+   * The renderer draws through `document.readRange`, which serves this image. A live-session
+   * command lands in the engine session and a checkpoint restore rebuilds only the session, so
+   * without this the version moved while the bytes did not — measured 2026-09-18 as a merge that
+   * saved five pages and showed three, the renderer at version 2 holding the opened file's length.
+   *
+   * ## `installed` is the one case that already did it
+   *
+   * {@link CommandBus.#install} replaces the image with a byte-image `apply`'s result, so a
+   * second serialise there would reproduce bytes already in hand. Every other path — any
+   * live-session operation, and restoring a terminal entry's checkpoint for either shape —
+   * takes them from the session, which is what the engine now holds.
+   *
+   * Called before the version is bumped and inside the lane, so the version the renderer is
+   * answered with describes these bytes and no other command's.
+   */
+  async #show(
+    kind: CommandKind,
+    context: DocumentContext,
+    bytes: ByteImageAccess,
+    installed: boolean,
+  ): Promise<void> {
+    if (declaredCommands[kind].display !== 'image' || installed) return;
+    context.replaceCanonicalImage(COMMAND_WRITER, await bytes.current());
+  }
+
+  /**
    * What a command's `apply` is handed beyond its session and itself
    * (ADR-0040's 2026-09-05 extension).
    *
@@ -891,6 +922,10 @@ export class CommandBus {
     // its own.
     context.commandLog(COMMAND_WRITER).record(entry);
 
+    // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
+    // so a serialise that fails must leave the change undoable rather than unlogged.
+    await this.#show(command.kind, context, inputs, writerShapes[spec.writer] === 'byte-image');
+
     // ENFORCED HERE, because this is the only moment the log grows. §4's budget
     // was consulted at `open` and nowhere else, so checkpoints accumulated for
     // the whole life of a session and the only thing ever refused was the next
@@ -969,6 +1004,9 @@ export class CommandBus {
       );
 
       log.undo();
+      // NEVER `installed` here, for either shape: a restore rebuilds the session and replaces no
+      // image, so undoing a watermark left main's image watermarked until this line existed.
+      await this.#show(entry.command.kind, context, bytes, false);
       return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
     }
 
@@ -996,6 +1034,7 @@ export class CommandBus {
     await this.#install(entry.command.kind, spec.writer, inverted, context, bytes);
 
     log.undo();
+    await this.#show(entry.command.kind, context, bytes, writerShapes[spec.writer] === 'byte-image');
     return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
@@ -1108,6 +1147,7 @@ export class CommandBus {
     await this.#install(entry.command.kind, spec.writer, applied, context, inputs);
 
     log.redo();
+    await this.#show(entry.command.kind, context, inputs, writerShapes[spec.writer] === 'byte-image');
     return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
   }
 }

@@ -892,6 +892,56 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — ADR-0084 built: the window is handed what the engine holds, and three rows pass live
+
+**The finding** is ADR-0084's: a live merge saved five pages and showed three; over the debugging
+port the renderer at version 2 held the opened file's byte length exactly (1846), because a MuPDF
+command replaces no canonical image and the view model carries rotations.
+
+**Built.** `display` on every one of the 46 declarations — `DisplayFor<W>` lets a byte-image writer
+declare only `'image'`, and the table is `satisfies CommandDeclarations`, so a missing field does not
+compile. `rotatePages` is `'view-model'`; `setPageTransition` and `setDocumentProtection` are
+`'nothing-drawn'`; the other 43 are `'image'`. `CommandBus.#show` makes the session's bytes main's
+image after `execute`, `undo` and `redo` of an `'image'` command, after the entry is recorded (a failed
+serialise must leave the change undoable) and before the version is bumped.
+
+**Measured, not read: undoing a terminal entry was the same defect.** `replays the recognition it
+stored` expected four installed images and found five: the undo now installs the restored document,
+where main's image had stayed at the post-command bytes.
+
+**Mutations.** Removing the refresh from `execute` reddens six cases, including the nothing-drawn
+case's own control. Refreshing regardless of the declaration reddens every rotate case, because their
+stubs throw on a serialise. Moving the refresh after the bump reddens the ordering case alone.
+Declaring `deletePages` `'view-model'` reddens the literal-exceptions case. The external-edit end-to-end
+case now reads main's bytes through `readDocumentRange` at the answered version and finds the edited
+page; with the refresh removed it goes red.
+
+**Tests that changed meaning, read one by one.** Three `documentCommands.test.ts` harnesses had a
+flush that REFUSED, asserting *an export does not flush* and *a page sent out flushes no document*.
+Both halves are kept as counts — zero flushes for the export and the send-out, exactly one for the
+import and the reimport — rather than the refusal being removed. Found on the way, not fixed:
+`importAnnotations` maps every error but three named ones to `unreadable`, so an engine failure tells
+a person their file is bad; the host erases the parser's error class to `internal` across the pipe,
+which is why the catch is wide, and the fix is a declared refusal from the host.
+
+**Live, in the built application, 2026-09-18** (fixtures of three and two pages whose every page
+names its document and number, read back with MuPDF): **row 94** merge — five thumbnails and
+*Page 1 of 5* at once, saved file `TARGET 1–3, SOURCE 1–2`, reopened the same. **Row 98** replace — the
+dialog names page 1, the window shows Source's pages in its place at once, the saved six pages match,
+reopened the same. **Row 90** insert before page 2 — shown at once, saved eight pages in the asked
+order, reopened the same. **Row 225** import as layer — the layer drawn over page 5 at once; its save
+and reopen were not reached (below).
+
+**Not measured:** the cost ADR-0084 names — the serialise's wall-clock on a large document and how
+often the two-image peak is now reached. The row stays open for it.
+
+**Instrument notes.** The screen-control tool's keystrokes stopped reaching the application when a
+Windows text-input window took the foreground and could not be dismissed from here; the reviewing
+owner was asked to close it. Full-suite runs failed nine UI cases and three kernel cases on 5-second
+timeouts and a 50 ms bound; every one of those files passed alone (KKKKKK-6's class).
+
+---
+
 ## 2026-09-18 — KKKKKK-6's security half: a job that cannot be created stops the host before its first line
 
 The reviewing seat asked one question of the `CreateJobObjectW returned no handle` failures recorded as

@@ -312,4 +312,27 @@ describe('the writer-shape table', () => {
         `declaring a second one. Do not widen this case to make a build green.`,
     ).toStrictEqual(['mupdf']);
   });
+
+  it('every command is drawn from bytes unless it is one of the NAMED exceptions (ADR-0084)', () => {
+    // THE EXCEPTIONS ARE A LITERAL, not derived from the table: derived, a command that declared
+    // `'view-model'` by mistake would join the list that excuses it. Written here, adding one is
+    // a visible edit to this line — and the next command anyone registers defaults to being SEEN.
+    // A merge and a delete were right on disk and invisible until reopen before this existed.
+    const exceptions: Readonly<Record<string, 'view-model' | 'nothing-drawn'>> = {
+      rotatePages: 'view-model',
+      setPageTransition: 'nothing-drawn',
+      setDocumentProtection: 'nothing-drawn',
+    };
+    const declared = Object.fromEntries(
+      Object.entries(declaredCommands).map(([kind, declaration]) => [kind, declaration.display]),
+    );
+    // NOT VACUOUS: the table holds every kind, and an unreadable one answers nothing.
+    expect(Object.keys(declared).length).toBeGreaterThan(Object.keys(exceptions).length);
+    for (const [kind, display] of Object.entries(declared)) {
+      expect(display, kind).toBe(exceptions[kind] ?? 'image');
+    }
+    // AND EVERY EXCEPTION NAMES A COMMAND THAT EXISTS, so a renamed kind cannot leave an excuse
+    // behind that nothing uses.
+    for (const kind of Object.keys(exceptions)) expect(declared, kind).toHaveProperty(kind);
+  });
 });

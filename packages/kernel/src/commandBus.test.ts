@@ -251,6 +251,25 @@ const noByteImageExpected: CommandInputs = {
   sources: new Map(),
 };
 
+/**
+ * The byte-image access for a live-session command declared `'image'` (ADR-0084): `current` is
+ * the session's real serialise, so what the bus installs as main's image is what the engine
+ * holds, and a case can count its pages. `adopt` still throws — a live-session command's bytes
+ * go to main's image and never back into the session.
+ */
+function showingInputs(session: MupdfSession): CommandInputs {
+  return {
+    ...noByteImageExpected,
+    current: () => mupdfWriter.serialise(session),
+  };
+}
+
+/** How many pages a byte image holds, read back by a second parse. */
+async function pagesIn(image: ByteImage | undefined): Promise<number> {
+  if (image === undefined) throw new Error('no image was installed');
+  return (await PDFDocument.load(image)).getPageCount();
+}
+
 /** A session whose page 0 carries a `/Rotate` that is a name, not an integer. */
 async function malformedSession(): Promise<MupdfSession> {
   const session = await mupdfWriter.open(flat);
@@ -934,7 +953,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
   it('a deletePages entry is TERMINAL, and its checkpoint holds the document before it', async () => {
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(flat);
-    const context = contextStub();
+    const context = contextStub(true);
     const supervisor = restoreStub();
     try {
       const before = await mupdfWriter.serialise(session);
@@ -943,18 +962,25 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         { mupdf: session },
         context,
         { kind: 'deletePages', pages: [1] },
-        noByteImageExpected,
+        showingInputs(session),
       );
       expect(executed.entry.kind).toBe('terminal');
       // The document really lost a page — without this the case passes for a
       // command that recorded a checkpoint and applied nothing.
       expect(await withDocument(session, (document) => document.countPages())).toBe(2);
 
-      await bus.undo({ mupdf: session }, context, supervisor.restore, noByteImageExpected);
+      await bus.undo({ mupdf: session }, context, supervisor.restore, showingInputs(session));
 
       expect(context.written()).toHaveLength(1);
       expect(context.written()[0]?.bytes).toStrictEqual(before);
       expect(context.log.entries).toHaveLength(0);
+      // MAIN'S IMAGE FOLLOWED BOTH (ADR-0084): the execute installed the session's two-page
+      // document and the undo its bytes after the restore. This stub's restore rebuilds nothing,
+      // so the second is the session as the undo left it — the cursor's move is what that case
+      // separates, and the count here is what the window would have been handed.
+      const images = context.images();
+      expect(images).toHaveLength(2);
+      expect(await pagesIn(images[0])).toBe(2);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -1543,18 +1569,25 @@ describe('CommandBus and a parameterised pre-read', () => {
     // upgrade between the undo and the redo would answer differently — a redone
     // document that differs from the one that was undone.
     expect(inputs.requests()).toHaveLength(1);
-    // FOUR FOR TWO APPLIES, because installing a byte image is two calls this
+    // FIVE FOR TWO APPLIES AND AN UNDO. Installing a byte image is two calls this
     // stub records — the checkpoint-directory write and the canonical
-    // replacement. The pairs are `(0, 1)` from the execute and `(2, 3)` from the
-    // redo.
+    // replacement — so the pairs are `(0, 1)` from the execute and `(3, 4)` from
+    // the redo. Index 2 is the UNDO's (ADR-0084): restoring a terminal entry
+    // rebuilds only the session, so the bus makes the session's bytes main's image
+    // — and it was four until 2026-09-18, which is main's image left at the
+    // post-command bytes after an undo, measured.
     const images = context.images();
-    expect(images).toHaveLength(4);
+    expect(images).toHaveLength(5);
+    // THE UNDO INSTALLED WHAT THE SESSION HOLDS AFTER THE RESTORE — this stub's
+    // `current`, the pre-command document — and not the recognised one.
+    expect(images[2]).toStrictEqual(flat);
+    expect(images[2]).not.toStrictEqual(images[0]);
     // AND THE STORED VALUE REACHED THE SECOND APPLY, which the count alone does
     // not say. Byte equality is the assertion available here: the apply's input
     // is the same image both times, so identical output means the same text was
     // written — and an apply handed `undefined` instead throws on the language
     // check rather than producing these bytes at all.
-    expect(images[2]).toStrictEqual(images[0]);
+    expect(images[3]).toStrictEqual(images[0]);
   });
 
   it('refuses a recognition read in a language the command did not ask for', async () => {
@@ -1709,16 +1742,19 @@ describe('CommandBus and the targets axis', () => {
       const bus = new CommandBus({ mupdf: localMupdfWriter });
       const target = await mupdfWriter.open(flat);
       const source = await twoPageSource();
-      const context = contextStub();
+      const context = contextStub(true);
       try {
         await bus.execute(
           { mupdf: target },
           context,
           { kind: 'replacePage', source: sourceId, at: 0, version: asDocVersion(1) },
-          { ...noByteImageExpected, sources: new Map([[sourceId, { mupdf: source }]]) },
+          { ...showingInputs(target), sources: new Map([[sourceId, { mupdf: source }]]) },
         );
         expect(await pageCount(target)).toBe(4);
         expect(context.bumps()).toBe(1);
+        // AND MAIN'S IMAGE IS THE REPLACED DOCUMENT (ADR-0084), which is what the window reads.
+        expect(context.images()).toHaveLength(1);
+        expect(await pagesIn(context.images()[0])).toBe(4);
       } finally {
         await mupdfWriter.close(target);
         await mupdfWriter.close(source);
@@ -1733,18 +1769,20 @@ describe('CommandBus and the targets axis', () => {
     // green.
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await markedSession();
-    const context = contextStub();
+    const context = contextStub(true);
     try {
       const { entry, version } = await bus.execute(
         { mupdf: session },
         context,
         { kind: 'removeAnnotation', page: 0, indices: [0], version: asDocVersion(1) },
-        noByteImageExpected,
+        showingInputs(session),
       );
 
       expect(entry.kind).toBe('terminal');
       expect(version).toBe(2);
       expect(await markCount(session)).toBe(0);
+      // An annotation's appearance is drawn by PDF.js from the bytes, so main's image follows.
+      expect(context.images()).toHaveLength(1);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -1800,6 +1838,94 @@ describe('CommandBus and the targets axis', () => {
           noByteImageExpected,
         ),
       ).rejects.toThrow(/registration defect/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+/**
+ * ADR-0084: after an operation on a command declared `'image'`, main's canonical image is the
+ * session's bytes — because the renderer draws through that image, and without it a merge saved
+ * five pages and showed three (measured live 2026-09-18).
+ *
+ * The fixture's pages have THREE DIFFERENT SIZES, so an installed image says which ORDER it
+ * holds. A count cannot: a move changes none, and a bus that installed the pre-command bytes
+ * would pass every count here.
+ */
+describe('CommandBus and what the window is handed', () => {
+  let sized: ByteImage;
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    for (const side of [100, 200, 300]) document.addPage([side, side]);
+    sized = await document.save();
+  });
+
+  /** The first page's width in an installed image, which names the page now first. */
+  async function firstWidth(image: ByteImage | undefined): Promise<number> {
+    if (image === undefined) throw new Error('no image was installed');
+    return (await PDFDocument.load(image)).getPage(0).getWidth();
+  }
+
+  it('an IMAGE command installs the session’s bytes, before the version moves', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(sized);
+    const context = contextStub(true);
+    // THE ORDER, read at the moment the bytes are asked for: a refresh after the bump would hand
+    // the renderer a version whose bytes are still the old ones for as long as it takes.
+    const bumpsWhenAsked: number[] = [];
+    try {
+      await bus.execute({ mupdf: session }, context, { kind: 'movePage', from: 0, to: 2 }, {
+        ...showingInputs(session),
+        current: () => {
+          bumpsWhenAsked.push(context.bumps());
+          return mupdfWriter.serialise(session);
+        },
+      });
+
+      expect(bumpsWhenAsked).toStrictEqual([0]);
+      expect(context.images()).toHaveLength(1);
+      // THE MOVED DOCUMENT: the 200-point page is first now. The opened bytes would say 100.
+      expect(await firstWidth(context.images()[0])).toBe(200);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('an INVERTIBLE image command’s undo and redo each install what the session then holds', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(sized);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, { kind: 'movePage', from: 0, to: 2 }, showingInputs(session));
+      await bus.undo({ mupdf: session }, context, noRestoreExpected, showingInputs(session));
+      await bus.redo({ mupdf: session }, context, showingInputs(session));
+
+      const widths = await Promise.all(context.images().map((image) => firstWidth(image)));
+      // MOVED, PUT BACK, MOVED AGAIN — three images, each the document at that moment.
+      expect(widths).toStrictEqual([200, 100, 200]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a NOTHING-DRAWN command neither serialises nor replaces the image', async () => {
+    // `noByteImageExpected` throws from `current` and `contextStub()` throws from a replacement,
+    // so this passes only if neither is asked for — the call not made is the assertion.
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(sized);
+    try {
+      await bus.execute(
+        { mupdf: session },
+        contextStub(),
+        { kind: 'setPageTransition', pages: [0], style: 'fade', durationSeconds: 1 },
+        noByteImageExpected,
+      );
+      // CONTROL: the same two throwing stubs refuse an IMAGE command, so they can see a refresh.
+      await expect(
+        bus.execute({ mupdf: session }, contextStub(), { kind: 'movePage', from: 0, to: 2 }, noByteImageExpected),
+      ).rejects.toThrow(/must not mint a byte image/u);
     } finally {
       await mupdfWriter.close(session);
     }
