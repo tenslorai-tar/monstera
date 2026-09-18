@@ -892,6 +892,44 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — Print, PNG and JPEG live; a CORRECTION to the barcodes row; closing a dirty tab loses work
+
+**Print**: from the running application, the system dialog printed both pages to Microsoft
+Print to PDF at 300 dpi. MuPDF reads 2 Letter pages, and page 1 shows the annotations and the
+placed QR code. **PNG and JPEG**: two pages each at 150 dpi (612 pt → 1275 px), opened and
+read as the page, as was the WebP.
+
+**CORRECTION to the entry below**: its barcodes row said *placed and read back*, and the row
+was marked done in 7b20158. The save after that placement was the one defect 2 refused, so
+the code had never reached the file: the JPEG exported afterwards had no QR on page 1. Redone
+on the fixed build: placed, saved, a second edit saved (**the second save now writes**),
+the document closed, reopened from disk, and read back as *MONSTERA-LIVE-8*. The row now
+says so.
+
+**DEFECT, NOT FIXED — closing a document with unsaved changes discards them without asking.**
+Measured, clean run: open, draw a rectangle, close the tab with its ×. No prompt. The file
+still held only the state saved at 22:45 (MuPDF: two squares and a stamp), and no recovery
+sidecar was written. The tab showed no unsaved marker either. Ctrl+W, from Electron's default
+menu (the shell sets none), closes the whole window with the same result. The code agrees:
+`closeTab` in `App.tsx` calls `document.close` with no dirty check, and nothing in
+`apps/desktop` handles the window's `close`. The version counter's row calls `dirty`
+conservative *"because it fails towards prompting"*, but no prompt reads it.
+**Why it is not fixed tonight**: the founding record specifies *crash-recovery sidecars for
+dirty documents … offered on next launch* (`BUILD-PROMPT.md`:397), and :558 says a toast must
+never appear *on a dirty close* — so whether a dirty close prompts, writes a sidecar, or both
+is a design decision with main/renderer contract consequences. It is the owner's, and it is
+the first question in tonight's report.
+
+**Email — the owner's click list** (the Share sheet opens a window, so it waits for a person):
+1. `node scripts/launch.mjs`, then open any PDF.
+2. Ctrl+K, type *Email*, click **Email…** (also Home › File › Email…).
+3. The Windows Share sheet opens over the window. Check that the attachment is named as the
+   document.
+4. Pick a mail app, and check that the draft carries the PDF.
+5. Send it to yourself or close the draft. Either result goes into the row.
+
+---
+
 ## 2026-09-18 — Stage 8 exports, live; the run found two defects that every test had passed
 
 **One fixture, every export, from the running application.** Live8.pdf is generated in the
