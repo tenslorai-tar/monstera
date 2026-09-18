@@ -490,13 +490,20 @@ pages it named. One rotation per page scales with the document, so an unscoped
 read is correct once — at open — and becomes L11's defect the moment anything
 re-reads it, which a renderer must do after every command.
 
-**A LIVE-SESSION mutation reaches the screen through the view model, not through
-the bytes**, and that is a property of this design rather than an accident of
-it. A `DocumentRecord`'s bytes are replaced by no command MuPDF or PDFium
-writes: the mutation lands in the engine session, so `document.readRange` serves
-the pre-command document (measured 2026-08-30). §3.2's *"PDF.js is never a
-source of truth. It renders"* is what makes that correct — the parser is handed
-the kernel's rotation and overruled on the one value stale bytes cannot carry.
+**EVERY COMMAND DECLARES HOW ITS EFFECT REACHES THE SCREEN — amended 2026-09-18**
+([ADR-0084](DECISIONS/0084-a-command-the-view-model-cannot-express-refreshes-the-image.md)).
+A live-session mutation lands in the engine session, so `document.readRange`
+serves main's canonical image, which the command did not touch (measured
+2026-08-30, and again 2026-09-18 as a merge and a delete that were right on disk
+and not on screen). The view model carries the one effect those bytes cannot:
+rotation, where §3.2's *"PDF.js is never a source of truth. It renders"* lets the
+kernel overrule the parser. **Everything else PDF.js draws from the bytes** —
+page order and count, boxes, content, annotations' appearances, form values — so
+a declaration names `'view-model'`, `'image'` or `'nothing-drawn'`, and after
+`execute`, `undo` or `redo` of an `'image'` command main's canonical image is the
+session's bytes, taken inside the lane before the version moves. This paragraph
+read *"a live-session mutation reaches the screen through the view model"* until
+then, which was true of `rotatePages` and of nothing built after it.
 
 **A BYTE-IMAGE mutation reaches it through the bytes, and must**
 ([ADR-0039](DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
@@ -2543,6 +2550,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-18 | **Every command declares how its effect reaches the screen, and one the view model cannot express makes the session's bytes main's image** (§2). Measured in a live run: a merge read back five pages from disk while the window showed three, and a delete left the deleted page drawn — the renderer at version 2 held the opened file's byte length exactly, because a MuPDF command lands in the session and replaces no image, and the view model carries rotations. ADR-0032's own trigger — the first command its model cannot express — had fired in Stage 2 unnoticed. Each declaration now names `'view-model'` (`rotatePages`), `'image'` or `'nothing-drawn'`; after `execute`, `undo` or `redo` of an `'image'` command the bus makes the session's bytes main's canonical image inside the lane. Undoing a terminal entry joins it, read from the code as the same defect. Rejects a page map in the view model (it cannot express a merged page, a crop or an annotation), an undeclared refresh after every command (it serialises for a rotate and leaves the choice to nobody), and inferring it from the writer. Cost not yet measured and named so | §2's *"A LIVE-SESSION mutation reaches the screen through the view model, not through the bytes"* | [0084](DECISIONS/0084-a-command-the-view-model-cannot-express-refreshes-the-image.md) |
 | 2026-09-17 | **The right contextual panel holds tabs, and the assistant is one of them** (§10.3). The panel was one surface holding the style controls and the selection's properties; the owner's AI design (2026-09-15) puts the assistant in it **as a tab**, correcting D11's row, which said *dialog*. It takes the left panel's shape: named tabs, one open at a time, persisted per person, with the panel's own collapse unchanged. Rejects a dialog (asking about what you are reading should not mean leaving it), a tab in the left panel (whose tabs are the document's contents), a third panel, and the ribbon's Studio overlay (which exists in one layout mode) | Nothing withdrawn: §10.3's panel keeps what it holds, and gains a second tab beside it | [0083](DECISIONS/0083-the-contextual-panel-holds-tabs-and-the-assistant-is-one.md) |
 | 2026-09-17 | **`main` may push to the renderer, on declared event channels with the same discipline** (§5). The contract was request-and-answer over one `invoke`, and Stage 9's assistant streams: the provider answers in pieces, keys never leave `main`, and §9.27's CSP gives the renderer no network to ask for itself. An event registry gives each event an id, a zod schema and a bound; the bridge gains `subscribe` and nothing else; an event is addressed to a subscription the renderer opened, and one it did not open is dropped; stopping goes through an `invoke`, so Stop reaches the provider rather than leaving the work running. Rejects polling an `invoke`, one event channel with a `kind` union, a `MessagePort` beside the bridge, letting the renderer call the provider, and delivering the answer only when complete | Nothing withdrawn: §5's four generated surfaces and its one-validated-boundary rule stand, and the second direction takes the same discipline | [0082](DECISIONS/0082-main-may-push-on-declared-event-channels.md) |
 | 2026-09-17 | **Emailing a document is the Windows Share sheet, reached from `main` through WinRT** (§9.17). The owner chose the route (Q13, 2026-09-14); Electron's share menu is macOS-only, so the sheet is `DataTransferManager` through `IDataTransferManagerInterop`, whose activation is `combase.dll`'s, which §9.17's list excluded. Measured unpackaged, with no UI shown: `GetForWindow` on a window answers `S_OK` and on a null handle `0x80070578`; a koffi-built delegate registers; a package given a folder's items reads back one item by name, and one given none answers `0x8004006A`. `main` binds `combase.dll` on the first share. The sheet itself is an owner-present live run | nothing; `BUILD-PROMPT.md`:504 is met, not superseded | [0080](DECISIONS/0080-emailing-a-document-is-the-windows-share-sheet-from-main.md) |
