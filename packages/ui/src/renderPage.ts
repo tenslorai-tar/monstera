@@ -22,9 +22,10 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
  *
  * Everything above takes the parser's answer as given. The rotation does not,
  * and finding OOOOO-1 is why: a command's effect lands in the engine session,
- * main's canonical image is never replaced, so the bytes this parser reads are
- * the ones the document was opened with — for the whole life of the document.
- * The page's own `/Rotate` is stale the moment anything rotates it.
+ * and a rotate — the one command declared `'view-model'` (ADR-0084) — replaces
+ * no image, so the bytes this parser reads keep the `/Rotate` they were opened
+ * or last refreshed with. Every other command makes the session's bytes main's
+ * image, which is why only this one value is overruled.
  *
  * The view model carries the kernel's answer (`docs/ARCHITECTURE.md` §2), and
  * `page.getViewport({ rotation })` **replaces** the page's rotation rather than
@@ -92,6 +93,20 @@ export interface RasterisedPage {
 }
 
 /**
+ * A draw that was superseded before it finished — its `signal` aborted.
+ *
+ * Not a failure, and named so a caller can tell the two apart: a page whose draw was replaced
+ * by a newer one is being drawn, and marking it failed would put a broken-page marker on a page
+ * that is about to appear.
+ */
+export class RenderCancelledError extends Error {
+  constructor(pageNumber: number) {
+    super(`the draw of page ${String(pageNumber)} was superseded before it finished`);
+    this.name = 'RenderCancelledError';
+  }
+}
+
+/**
  * Draws page `pageNumber` (1-based, as PDF.js numbers them) at `scale`.
  *
  * The canvas is sized to the viewport before drawing. Sizing it afterwards
@@ -111,21 +126,46 @@ export interface RasterisedPage {
  *   A parameter that may be left out is one a caller can forget in silence;
  *   one that must be named makes the forgetting a compile error (B5, the shape
  *   ADR-0069 gave the writer seam for the same reason).
+ * @param signal aborted when this draw is superseded — a caller's effect cleanup.
+ *   **REQUIRED, for `rotation`'s reason.** PDF.js refuses a second render on a
+ *   canvas a first one still holds (*"Cannot use the same canvas during multiple
+ *   render() operations"*), and every caller's cleanup used to set a flag and
+ *   leave the first task running. So a redraw — a new view after a command, a
+ *   rotation arriving — was refused, and the empty catch in the thumbnail strip
+ *   dropped the refusal: measured over the debugging port 2026-09-18, the strip
+ *   left thumbnails at the full page size the interrupted first pass had set.
+ *   Aborting cancels the task, which releases the canvas synchronously, and a
+ *   draw that sees the abort before touching the canvas never resizes it.
+ * @throws {@link RenderCancelledError} when `signal` aborted, and nothing else
+ *   for that case, so a caller can ignore exactly the superseded draws.
  */
 export async function renderPage(
   document: PDFDocumentProxy,
   pageNumber: number,
   canvas: HTMLCanvasElement,
-  scale: number,
+  scale: number | { readonly fitWidth: number },
   rotation: number | undefined,
+  signal: AbortSignal,
   raster?: SecondRasteriser,
 ): Promise<RasterisedPage> {
+  // READ THROUGH A CALL, because the answer changes across every `await` below and a property
+  // read is narrowed by the compiler as if it could not: after one `if (signal.aborted)` it
+  // types every later read as `false`, and the checks that matter most would read as dead.
+  const superseded = (): boolean => signal.aborted;
   const page = await document.getPage(pageNumber);
+  // BEFORE THE CANVAS IS TOUCHED: sizing it clears it, so a superseded draw that got this far
+  // would wipe the newer one's pixels.
+  if (superseded()) throw new RenderCancelledError(pageNumber);
   // OMITTED rather than defaulted to zero when the caller has no model. PDF.js
   // falls back to the page's own rotation, which is right for a document nothing
   // has rotated; passing `0` would flatten every document that arrives already
   // turned, and it would do it silently on the first render.
-  const viewport = page.getViewport(rotation === undefined ? { scale } : { scale, rotation });
+  const at = (factor: number): ReturnType<typeof page.getViewport> =>
+    page.getViewport(rotation === undefined ? { scale: factor } : { scale: factor, rotation });
+  // A WIDTH TO FIT is answered from PDF.js' own viewport at scale 1, which sizes the page without
+  // drawing it. The thumbnail strip drew the whole page at full size to learn this, and that
+  // first pass is what a superseded draw left on its canvas (2026-09-18).
+  const viewport = typeof scale === 'number' ? at(scale) : at(scale.fitWidth / at(1).width);
 
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
@@ -140,8 +180,25 @@ export async function renderPage(
   // with no `pdfium.dll` drawing pages, and it is the same canvas either way, so
   // everything below this line is unchanged by which engine drew.
   const drawn = raster === undefined ? null : await raster(pageNumber, canvas.width, canvas.height);
+  if (superseded()) {
+    drawn?.close();
+    throw new RenderCancelledError(pageNumber);
+  }
   if (drawn === null) {
-    await page.render({ canvas, canvasContext: context, viewport }).promise;
+    const task = page.render({ canvas, canvasContext: context, viewport });
+    const cancel = (): void => {
+      task.cancel();
+    };
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+      await task.promise;
+    } catch (error) {
+      // THE CANCELLATION IS OURS, so it is reported as ours; anything else is the page's.
+      if (superseded()) throw new RenderCancelledError(pageNumber);
+      throw error;
+    } finally {
+      signal.removeEventListener('abort', cancel);
+    }
   } else {
     // `drawImage` AT 0,0 WITH NO SCALE. The raster was asked for at exactly this
     // canvas's device size, so any scaling here would be resampling a bitmap

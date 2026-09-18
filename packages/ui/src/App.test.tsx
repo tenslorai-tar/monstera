@@ -62,7 +62,9 @@ vi.mock('./documentView.js', () => ({
 // MOCKED FOR THE VIEW'S REASON: happy-dom implements no 2d context, so the real
 // `renderPage` refuses before it draws — which these cases would then have to
 // treat as a failure rather than as the environment.
-vi.mock('./renderPage.js', () => ({
+vi.mock('./renderPage.js', async (importOriginal) => ({
+  // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
+  ...(await importOriginal<typeof import('./renderPage.js')>()),
   // THE CROP AND THE ROTATION TOO, which the real one returns and this stub
   // omitted. Without them a slot measures to a size whose `crop` is undefined,
   // and the overlays that convert through it — the text layer among them — are

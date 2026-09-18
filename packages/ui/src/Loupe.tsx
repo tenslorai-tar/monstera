@@ -76,21 +76,31 @@ export function Loupe({
   useEffect(() => {
     const element = canvas.current;
     if (view === undefined || element === null) return;
-    let cancelled = false;
+    // ABORTED ON CLEANUP, which cancels the PDF.js task holding this canvas: a flag left it
+    // running, and PDF.js refused the next draw on the same canvas (`renderPage`).
+    const superseded = new AbortController();
 
     const ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio;
-    void renderPage(view.document, pdfjsPageOf(page), element, ratio * zoom * MAGNIFICATION, rotation)
+    void renderPage(
+      view.document,
+      pdfjsPageOf(page),
+      element,
+      ratio * zoom * MAGNIFICATION,
+      rotation,
+      superseded.signal,
+    )
       .then((size) => {
-        if (!cancelled) setDrawn(size);
+        if (!superseded.signal.aborted) setDrawn(size);
       })
       .catch(() => {
         // A loupe that cannot draw shows nothing. The page underneath is
         // unaffected and reports its own failures; a marker here would be a
-        // second report of one document's parse.
+        // second report of one document's parse. A superseded draw lands here
+        // too, and is followed by the draw that replaced it.
       });
 
     return (): void => {
-      cancelled = true;
+      superseded.abort();
     };
     // NOT keyed on `at`: moving the pointer must not re-rasterise. The bitmap
     // is the page at this magnification, and where the window sits on it is a

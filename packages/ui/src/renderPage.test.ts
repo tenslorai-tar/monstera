@@ -2,7 +2,10 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { describe, expect, it, vi } from 'vitest';
 
-import { renderPage } from './renderPage.js';
+import { RenderCancelledError, renderPage } from './renderPage.js';
+
+/** A signal nothing aborts, for the cases about what a draw does rather than whether it is superseded. */
+const LIVE = new AbortController().signal;
 
 /**
  * `renderPage` makes two decisions and neither is visible in its output.
@@ -90,7 +93,7 @@ describe('renderPage', () => {
     const { document, sizeAtRender } = documentWithViewport(300.2, 400.8);
     const canvas = canvasWithContext();
 
-    await renderPage(document, 1, canvas, 1, undefined);
+    await renderPage(document, 1, canvas, 1, undefined, LIVE);
 
     expect(sizeAtRender).toStrictEqual([{ width: 301, height: 401 }]);
   });
@@ -101,7 +104,7 @@ describe('renderPage', () => {
     const { document } = documentWithViewport(300.2, 400.8);
     const canvas = canvasWithContext();
 
-    const raster = await renderPage(document, 1, canvas, 1, undefined);
+    const raster = await renderPage(document, 1, canvas, 1, undefined, LIVE);
 
     expect(raster.width).toBe(301);
     expect(raster.height).toBe(401);
@@ -114,7 +117,7 @@ describe('renderPage', () => {
     const { document } = documentWithViewport(300, 400);
     const canvas = canvasWithContext();
 
-    const raster = await renderPage(document, 1, canvas, 1, undefined);
+    const raster = await renderPage(document, 1, canvas, 1, undefined, LIVE);
 
     expect(raster.width).toBe(300);
     expect(raster.height).toBe(400);
@@ -129,7 +132,7 @@ describe('renderPage', () => {
     // was drawn.
     const { document } = documentWithViewport(300, 400);
 
-    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined);
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined, LIVE);
 
     expect(raster.crop).toStrictEqual([12, 24, 312, 424]);
   });
@@ -142,7 +145,7 @@ describe('renderPage', () => {
     // than one that cannot be annotated.
     const { document } = documentWithViewport(300, 400, [5]);
 
-    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined);
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined, LIVE);
 
     expect(raster.crop).toStrictEqual([5, 0, 0, 0]);
   });
@@ -156,7 +159,7 @@ describe('renderPage', () => {
     // could have produced.
     const { document } = documentWithViewport(300, 400);
 
-    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined);
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, undefined, LIVE);
 
     expect(raster.rotation).toBe(270);
   });
@@ -166,7 +169,7 @@ describe('renderPage', () => {
     // reports 270, or one that ignores the parameter entirely.
     const { document } = documentWithViewport(300, 400);
 
-    const raster = await renderPage(document, 1, canvasWithContext(), 1, 90);
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, 90, LIVE);
 
     expect(raster.rotation).toBe(90);
   });
@@ -178,7 +181,7 @@ describe('renderPage', () => {
     // the pixels.
     const { document, asked } = documentWithViewport(300, 400);
 
-    await renderPage(document, 1, canvasWithContext(), 1, 90);
+    await renderPage(document, 1, canvasWithContext(), 1, 90, LIVE);
 
     expect(asked).toStrictEqual([{ scale: 1, rotation: 90 }]);
   });
@@ -192,7 +195,7 @@ describe('renderPage', () => {
     // which is every fixture anyone reaches for first.
     const { document, asked } = documentWithViewport(300, 400);
 
-    await renderPage(document, 1, canvasWithContext(), 1, undefined);
+    await renderPage(document, 1, canvasWithContext(), 1, undefined, LIVE);
 
     expect(asked).toStrictEqual([{ scale: 1 }]);
   });
@@ -214,7 +217,7 @@ describe('renderPage', () => {
     const bitmap = { close: () => closed.push(1) } as unknown as ImageBitmap;
     const asked: { page: number; width: number; height: number }[] = [];
 
-    const result = await renderPage(document, 1, canvas, 1, 0, (page, width, height) => {
+    const result = await renderPage(document, 1, canvas, 1, 0, LIVE, (page, width, height) => {
       asked.push({ page, width, height });
       return Promise.resolve(bitmap);
     });
@@ -243,7 +246,7 @@ describe('renderPage', () => {
     const { document, sizeAtRender } = documentWithViewport(300, 400);
     let asked = 0;
 
-    await renderPage(document, 1, canvasWithContext(), 1, 0, () => {
+    await renderPage(document, 1, canvasWithContext(), 1, 0, LIVE, () => {
       asked += 1;
       return Promise.resolve(null);
     });
@@ -259,10 +262,91 @@ describe('renderPage', () => {
     const canvas = window.document.createElement('canvas');
     vi.spyOn(canvas, 'getContext').mockReturnValue(null);
 
-    await expect(renderPage(document, 1, canvas, 1, undefined)).rejects.toThrow(/2d context/u);
+    await expect(renderPage(document, 1, canvas, 1, undefined, LIVE)).rejects.toThrow(/2d context/u);
     // ASSERT THE CALL THAT WAS NOT MADE. A throw that happened after handing the
     // page to PDF.js would leave a render running against a canvas nobody can
     // draw on, and the rejection alone cannot tell the two apart.
     expect(sizeAtRender).toStrictEqual([]);
+  });
+});
+
+/**
+ * A superseded draw CANCELS its PDF.js task.
+ *
+ * PDF.js refuses a render on a canvas an earlier render still holds, and every caller used to
+ * mark its draw stale with a flag and leave the task running — so after a command changed the
+ * document, the thumbnail strip's redraws were refused and it kept pages drawn at full size
+ * (measured over the debugging port, 2026-09-18). The observable is the CALL: `cancel` on the
+ * task, which is what releases the canvas.
+ */
+describe('renderPage and a superseded draw', () => {
+  /** A page whose render never finishes on its own, and records whether it was cancelled. */
+  function pendingPage(): { readonly document: PDFDocumentProxy; readonly cancels: () => number; readonly renders: () => number } {
+    let cancels = 0;
+    let renders = 0;
+    const page = {
+      view: VIEW,
+      getViewport: () => ({ width: 100, height: 100, rotation: 0 }),
+      render: () => {
+        renders += 1;
+        let reject: (error: Error) => void = () => undefined;
+        const promise = new Promise<void>((_resolve, rejectWith) => {
+          reject = rejectWith;
+        });
+        return {
+          promise,
+          // PDF.js' own shape: cancelling rejects the task's promise.
+          cancel: () => {
+            cancels += 1;
+            reject(new Error('Rendering cancelled, page 1'));
+          },
+        };
+      },
+    };
+    const document = { getPage: () => Promise.resolve(page) } as unknown as PDFDocumentProxy;
+    return { document, cancels: () => cancels, renders: () => renders };
+  }
+
+  it('cancels the running task when aborted, and says it was superseded rather than failed', async () => {
+    const { document, cancels } = pendingPage();
+    const superseded = new AbortController();
+    const drawing = renderPage(document, 1, canvasWithContext(), 1, 0, superseded.signal);
+    // Let it reach `render`, where the task holds the canvas.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(cancels()).toBe(0);
+
+    superseded.abort();
+
+    await expect(drawing).rejects.toBeInstanceOf(RenderCancelledError);
+    expect(cancels()).toBe(1);
+  });
+
+  it('never touches the canvas when aborted before the page arrives', async () => {
+    const { document, renders } = pendingPage();
+    const canvas = canvasWithContext();
+    const before = { width: canvas.width, height: canvas.height };
+    const superseded = new AbortController();
+    superseded.abort();
+
+    await expect(renderPage(document, 1, canvas, 5, 0, superseded.signal)).rejects.toBeInstanceOf(
+      RenderCancelledError,
+    );
+    // SIZING CLEARS A CANVAS, so a stale draw that sized it would wipe the newer one's pixels.
+    expect({ width: canvas.width, height: canvas.height }).toStrictEqual(before);
+    expect(renders()).toBe(0);
+  });
+
+  it('CONTROL: a render that FAILS on its own is reported as itself, not as superseded', async () => {
+    const failing = {
+      view: VIEW,
+      getViewport: () => ({ width: 100, height: 100, rotation: 0 }),
+      render: () => ({ promise: Promise.reject(new Error('a broken content stream')), cancel: () => undefined }),
+    };
+    const document = { getPage: () => Promise.resolve(failing) } as unknown as PDFDocumentProxy;
+
+    const outcome = renderPage(document, 1, canvasWithContext(), 1, 0, LIVE);
+    await expect(outcome).rejects.toThrow('a broken content stream');
+    await expect(outcome).rejects.not.toBeInstanceOf(RenderCancelledError);
   });
 });

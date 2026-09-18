@@ -16,7 +16,7 @@ import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
-import { type SecondRasteriser, renderPage } from './renderPage.js';
+import { RenderCancelledError, type SecondRasteriser, renderPage } from './renderPage.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
@@ -771,7 +771,9 @@ function PageSlot({
     // surface have a shape while the parse is still running. Drawing is what
     // waits, not the element.
     if (!draw || view === undefined) return;
-    let cancelled = false;
+    // SUPERSEDED, NOT MERELY IGNORED: aborting cancels the PDF.js task holding this canvas, which
+    // a flag did not — and the next draw on the same canvas was then refused (`renderPage`).
+    const superseded = new AbortController();
 
     const drawPage = async (): Promise<void> => {
       const target = canvas.current;
@@ -790,9 +792,10 @@ function PageSlot({
         // the page's own `/Rotate`. A flat zero would silently flatten every
         // document that arrives already turned.
         rotation,
+        superseded.signal,
         secondRasteriser,
       );
-      if (cancelled) return;
+      if (superseded.signal.aborted) return;
       onMeasured(page, {
         width: drawn.width,
         height: drawn.height,
@@ -802,7 +805,10 @@ function PageSlot({
       });
     };
 
-    void drawPage().catch(() => {
+    void drawPage().catch((error: unknown) => {
+      // A SUPERSEDED DRAW IS NOT A FAILED PAGE: a newer draw of this page is running. Before the
+      // draw could be cancelled, the refusal PDF.js gave the newer one landed here as a failure.
+      if (error instanceof RenderCancelledError || superseded.signal.aborted) return;
       // A PAGE THAT WILL NOT DRAW SAYS SO, on the element itself.
       //
       // This was a bare swallow, and the swallow is the reassuring answer: a
@@ -814,11 +820,11 @@ function PageSlot({
       // One page, not a broken document, so the marker is on the canvas rather
       // than on the surface — but it is *a* marker, which is the difference
       // between a state and a silence.
-      if (!cancelled && canvas.current !== null) canvas.current.dataset['failed'] = 'true';
+      if (canvas.current !== null) canvas.current.dataset['failed'] = 'true';
     });
 
     return (): void => {
-      cancelled = true;
+      superseded.abort();
     };
   }, [draw, onMeasured, page, renderZoom, rotation, secondRasteriser, view]);
 

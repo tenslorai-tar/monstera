@@ -11,7 +11,9 @@ const rasterised: [number, number][] = [];
 /** The rotation each rasterisation was handed, in the same order. */
 const drawnAt: (number | undefined)[] = [];
 
-vi.mock('./renderPage.js', () => ({
+vi.mock('./renderPage.js', async (importOriginal) => ({
+  // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
+  ...(await importOriginal<typeof import('./renderPage.js')>()),
   renderPage: (
     _document: unknown,
     pdfjsPage: number,

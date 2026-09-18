@@ -892,6 +892,41 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — A superseded page draw now cancels its PDF.js task, and the thumbnail strip stops swallowing
+
+**Seen live** once ADR-0084 made every edit a new version: after an insert or a layer import the
+thumbnail strip showed one thumbnail and then a page-sized white block. Measured over the debugging
+port: canvases of 612 × 792 (the page at scale 1) and 300 × 150 (a canvas never drawn) in a column
+whose drawn ones are 96 × 125. With the debugger pausing on every exception, caught ones included,
+one fired during the redraw: PDF.js' *"Cannot use the same canvas during multiple render()
+operations"*.
+
+**The mechanism.** Every caller of `renderPage` — the page list, the thumbnails, the loupe — marked a
+superseded draw with a flag in its effect cleanup and left the PDF.js task running, so the next draw
+on the same canvas was refused. The thumbnails drew each page twice (scale 1 to learn its width, then
+fitted), so a refused second pass left the first pass's full-size canvas; and their `.catch(() => {})`
+dropped the refusal, which is why no log said anything.
+
+**The fix is the class.** `renderPage` takes a **required** `AbortSignal` — the three production
+callers compiled only once each passed one — cancels its task on abort (which releases the canvas
+synchronously), checks the signal before it touches the canvas, and rejects a superseded draw with
+`RenderCancelledError` so callers can ignore exactly that. It also takes `{ fitWidth }`, answered from
+PDF.js' own viewport at scale 1 without drawing, so the thumbnails draw once. The thumbnail catch now
+marks `data-failed` for any other error, as the page list already did; the page list no longer marks
+a superseded draw as a failed page.
+
+**Proofs.** `renderPage.test.ts`: an abort mid-render calls the task's `cancel` and rejects as
+superseded; an abort before the page arrives never sizes the canvas; a render that fails on its own is
+reported as itself (control). Disconnecting the abort listener reddens the first. `Thumbnails.test.tsx`:
+one draw per page asked to fit the column, and replacing the view aborts the earlier draw's signal with
+a control that an unreplaced draw is not aborted. Eight test files' `renderPage` mocks now spread the
+real module, so the error class is the real one.
+
+**Not yet run live**: the rebuilt application with this fix, because the foreground was held by a
+Windows text-input window the tool could not dismiss. Owed with row 225's reopen.
+
+---
+
 ## 2026-09-18 — ADR-0084 built: the window is handed what the engine holds, and three rows pass live
 
 **The finding** is ADR-0084's: a live merge saved five pages and showed three; over the debugging

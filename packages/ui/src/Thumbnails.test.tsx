@@ -25,21 +25,29 @@ import { EN } from './messages/en.js';
  */
 
 /** Every rasterisation, as `[pdfjsPage, scale]`. */
-const rasterised: [number, number][] = [];
+const rasterised: [number, number | { readonly fitWidth: number }][] = [];
+/** The signal each draw was handed, in order — what a superseded draw is cancelled through. */
+const signals: AbortSignal[] = [];
 /** The rotation each rasterisation was handed, in the same order. */
 const drawnAt: (number | undefined)[] = [];
 
-vi.mock('./renderPage.js', () => ({
+vi.mock('./renderPage.js', async (importOriginal) => ({
+  // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
+  ...(await importOriginal<typeof import('./renderPage.js')>()),
   renderPage: (
     _document: unknown,
     pdfjsPage: number,
     _canvas: unknown,
-    scale: number,
+    scale: number | { readonly fitWidth: number },
     rotation: number | undefined,
+    signal: AbortSignal,
   ) => {
     rasterised.push([pdfjsPage, scale]);
     drawnAt.push(rotation);
-    return Promise.resolve({ width: 600 * scale, height: 800 * scale });
+    signals.push(signal);
+    // A 600 × 800 page, fitted the way the real one fits it: from its own width.
+    const factor = typeof scale === 'number' ? scale : scale.fitWidth / 600;
+    return Promise.resolve({ width: 600 * factor, height: 800 * factor });
   },
 }));
 
@@ -89,6 +97,7 @@ async function settle(): Promise<void> {
 beforeEach(() => {
   rasterised.length = 0;
   drawnAt.length = 0;
+  signals.length = 0;
   latestVersion = VERSION;
   const target: { IntersectionObserver: typeof IntersectionObserver } = globalThis;
   target.IntersectionObserver = class {
@@ -181,10 +190,36 @@ describe('Thumbnails', () => {
     // the cost lazy rendering exists to prevent, and with four pages the
     // difference is visible in this list.
     expect(new Set(rasterised.map(([page]) => page))).toStrictEqual(new Set([1]));
-    // Scale 1 first, because the page's own size is what the fitting scale is
-    // computed from — a strip that assumed a size would be wrong for every
-    // document that is not the one it was written against.
-    expect(rasterised[0]?.[1]).toBe(1);
+    // ONE DRAW, ASKED TO FIT THE COLUMN — the width comes from the page's own viewport inside
+    // `renderPage`. It drew at scale 1 and then again, and the first pass is what a superseded
+    // draw left on the canvas after every command (2026-09-18); a second entry here is that.
+    expect(rasterised).toStrictEqual([[1, { fitWidth: 96 }]]);
+  });
+
+  it('CANCELS the earlier draw when the view is replaced, so the redraw can have the canvas', async () => {
+    // A command replaces the view; PDF.js refuses a render on a canvas an earlier one still holds,
+    // and cancelling through the signal is what releases it. The call made is the assertion — an
+    // end state cannot show it, because a stub draws nothing and holds no canvas.
+    const { rerender } = render(
+      <Wrapped>
+        <Thumbnails {...reads()} view={view()} pageCount={4} current={0} onJump={vi.fn()} />
+      </Wrapped>,
+    );
+    await settle();
+    expect(signals).toHaveLength(1);
+    // CONTROL: a draw nothing replaced is not cancelled.
+    expect(signals[0]?.aborted).toBe(false);
+
+    rerender(
+      <Wrapped>
+        <Thumbnails {...reads()} view={view()} pageCount={4} current={0} onJump={vi.fn()} />
+      </Wrapped>,
+    );
+    await settle();
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
   });
 
   it('draws NOTHING before the parser is open', () => {

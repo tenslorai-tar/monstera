@@ -63,7 +63,9 @@ const drawn: (number | undefined)[] = [];
 // asks "what did the PAGE draw" — and it started reporting two extra entries the
 // moment the sidebar landed. The canvas's own class is the discriminator,
 // because it is the surface rather than a number that could coincide.
-vi.mock('./renderPage.js', () => ({
+vi.mock('./renderPage.js', async (importOriginal) => ({
+  // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
+  ...(await importOriginal<typeof import('./renderPage.js')>()),
   renderPage: (
     _document: unknown,
     _page: number,

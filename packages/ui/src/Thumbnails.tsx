@@ -6,7 +6,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
-import { renderPage } from './renderPage.js';
+import { RenderCancelledError, renderPage } from './renderPage.js';
 import { usePageRotations } from './usePageRotations.js';
 import { useVisiblePages } from './useVisiblePages.js';
 
@@ -216,31 +216,35 @@ function ThumbCanvas({
   useEffect(() => {
     const element = canvas.current;
     if (!draw || view === undefined || element === null) return;
-    let cancelled = false;
+    const superseded = new AbortController();
+    delete element.dataset['failed'];
 
-    // THE SCALE IS DERIVED FROM THE PAGE, not assumed. A first pass at scale 1
-    // reports the page's own size; the width this strip wants divided by that
-    // is the scale that fills the column. `renderPage` answers with what it
-    // drew, so the second call is the one whose result is kept.
-    void renderPage(view.document, pdfjsPageOf(page), element, 1, rotation)
-      .then((drawn) => {
-        if (cancelled || drawn.width === 0) return undefined;
-        return renderPage(view.document, pdfjsPageOf(page), element, THUMB_WIDTH / drawn.width, rotation);
-      })
-      .then((drawn) => {
-        if (cancelled || drawn === undefined) return;
-        setSize({ width: drawn.width, height: drawn.height });
-      })
-      .catch(() => {
-        // A THUMBNAIL THAT WILL NOT DRAW IS NOT A FAILURE OF THE DOCUMENT. The
-        // spine reports a parse failure with `data-failed` because that is the
-        // surface a reader is looking at; a blank square in a strip of a
-        // hundred is not worth a marker, and raising here would take the whole
-        // sidebar down with one bad page.
-      });
+    const drawThumb = async (): Promise<void> => {
+      // ONE DRAW, FITTED TO THE COLUMN by `renderPage` from the page's own viewport. This drew the
+      // page at full size first to learn its width, and that first pass is what a superseded
+      // draw left behind: a canvas 612 points wide in a 96-pixel column (measured 2026-09-18).
+      const drawn = await renderPage(
+        view.document,
+        pdfjsPageOf(page),
+        element,
+        { fitWidth: THUMB_WIDTH },
+        rotation,
+        superseded.signal,
+      );
+      setSize({ width: drawn.width, height: drawn.height });
+    };
+
+    void drawThumb().catch((error: unknown) => {
+      // A SUPERSEDED DRAW IS NOT A FAILURE: a newer one for this slot is running.
+      if (error instanceof RenderCancelledError || superseded.signal.aborted) return;
+      // ANY OTHER IS, and says so on the element, as the spine's pages do. This was an empty
+      // catch, and it is what hid PDF.js refusing every redraw after a command: a thumbnail
+      // that would not draw looked exactly like one not drawn yet, for ever.
+      element.dataset['failed'] = 'true';
+    });
 
     return (): void => {
-      cancelled = true;
+      superseded.abort();
     };
   }, [draw, page, rotation, view]);
 

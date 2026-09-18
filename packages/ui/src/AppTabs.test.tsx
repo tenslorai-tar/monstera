@@ -50,7 +50,9 @@ vi.mock('./documentView.js', () => ({
     }),
 }));
 
-vi.mock('./renderPage.js', () => ({
+vi.mock('./renderPage.js', async (importOriginal) => ({
+  // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
+  ...(await importOriginal<typeof import('./renderPage.js')>()),
   renderPage: () => Promise.resolve({ width: 595, height: 842 }),
 }));
 

@@ -83,7 +83,9 @@ const drawnAt: (number | undefined)[] = [];
  * The size returned is the viewport at that scale, so a page drawn at 2x has
  * twice the bitmap — which is what makes the CSS ratio meaningful.
  */
-vi.mock('./renderPage.js', () => ({
+vi.mock('./renderPage.js', async (importOriginal) => ({
+  // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
+  ...(await importOriginal<typeof import('./renderPage.js')>()),
   renderPage: (
     _document: unknown,
     pdfjsPage: number,
