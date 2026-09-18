@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import {
   OCR_ALL_PAGES,
+  OCR_HANDWRITING,
   OCR_LANGUAGE,
   OCR_LANGUAGE_NAMES,
   OCR_START,
@@ -50,10 +51,15 @@ export default function OcrBody({
   const [language, setLanguage] = useState<OcrLanguage | null>(languages[0] ?? null);
   const [everyPage, setEveryPage] = useState(true);
 
+  // IN BOTH BRANCHES: the network engines need no installed model, so a machine
+  // with none is exactly where a reader most needs to hear there is another way.
+  const handwriting = <p className="m-ocr__handwriting">{_(OCR_HANDWRITING)}</p>;
+
   if (language === null) {
     return (
       <div className="m-ocr">
         <p className="m-ocr__unavailable">{_(OCR_UNAVAILABLE)}</p>
+        {handwriting}
       </div>
     );
   }
@@ -97,6 +103,7 @@ export default function OcrBody({
           resolve({ pages: everyPage ? 'all' : [page], language });
         }}
       />
+      {handwriting}
     </div>
   );
 }

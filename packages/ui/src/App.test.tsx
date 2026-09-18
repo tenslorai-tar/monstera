@@ -155,15 +155,9 @@ function recordingClient(answer: unknown): {
  * reason on it rather than four `.filter`s that read as noise.
  */
 function commandCalls(calls: readonly string[]): readonly string[] {
-  // `app.handwritingCache` joins it for the same reason and a sharper one: the
-  // handwriting tool is hidden until its models are downloaded, so the registry
-  // has to ask before it can decide whether to offer the control — a read that
-  // happens because a surface loaded, never because a reader did anything.
-  //
-  // `settings.loadSecrets` joins them for the handwriting read's reason exactly
-  // (ADR-0056): the cloud tool is hidden until a key is stored, so the registry
-  // asks which secrets are stored when the surface loads — an id list, and never
-  // something a reader did.
+  // `settings.loadSecrets` joins it (ADR-0056): the cloud tool is hidden until a
+  // key is stored, so the registry asks which secrets are stored when the surface
+  // loads — an id list, and never something a reader did.
   //
   // `app.info` joins them for the recent list's own reason (design pass H1a):
   // the start screen's footer shows the running build's version, so the shell
@@ -172,7 +166,6 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   return calls.filter(
     (id) =>
       id !== 'document.recent' &&
-      id !== 'app.handwritingCache' &&
       id !== 'settings.loadSecrets' &&
       id !== 'app.info',
   );

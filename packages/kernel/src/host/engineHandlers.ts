@@ -27,10 +27,6 @@ import {
   type OcrRequest,
   type RecognisedPage,
 } from '../ocrRecognise.js';
-// A VALUE IMPORT for the same reason one line up, and with the same property:
-// `ocrHandwriting.ts` loads no runtime until `recogniseHandwriting` is called,
-// so naming the error class here costs this module nothing.
-import { HandwritingModelUnreadableError, type HandwritingRequest } from '../ocrHandwriting.js';
 import type { PageLink } from '../pageLinks.js';
 import type { PageTextRead } from '../textStructure.js';
 import type { AccessibilityReport } from '../accessibilityRules.js';
@@ -108,25 +104,6 @@ export type HostOcrReader = (
   // of the fields: `OcrRequest` is what a caller in main asks for and `recognisePage`
   // is what answers it, so a region added there arrives here without an edit.
   request: OcrRequest & { readonly modelDirectory: string },
-) => Promise<RecognisedPage>;
-
-/**
- * Reads one region as a single line of handwriting.
- *
- * A SECOND MEMBER rather than a widened `HostOcrReader`, and the reason is the
- * same one that made the channel a discriminated union: the two engines do not
- * take the same request, and one function taking the union would put a branch on
- * engine inside a signature whose callers already know which one they want
- * (ADR-0052 Decision 1 puts the choice in the request; it does not put a
- * dispatcher in every reader).
- *
- * Injected for `HostOcrReader`'s second reason and more sharply: this one loads
- * an ONNX runtime and two model files, so a handler proof importing it would
- * fetch 67 MB of model to decide whether a session lookup refuses a token.
- */
-export type HostHandwritingReader = (
-  session: MupdfSession,
-  request: HandwritingRequest,
 ) => Promise<RecognisedPage>;
 
 /**
@@ -440,8 +417,6 @@ export interface EngineHandlerParts {
   readonly pageLinks: HostPageLinksReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
   readonly ocr: HostOcrReader;
-  /** How this process reads one region as handwriting. `engine/ocr-page` too. */
-  readonly handwriting: HostHandwritingReader;
   readonly destinations: HostDestinationsReader;
   readonly layers: HostLayersReader;
   readonly annotations: HostAnnotationsReader;
@@ -475,7 +450,6 @@ export function createEngineHandlers({
   pageText,
   pageLinks,
   ocr,
-  handwriting,
   destinations,
   layers,
   annotations,
@@ -740,24 +714,7 @@ export function createEngineHandlers({
       // `ocr-failed` would send the supervisor after a recognition bug when the
       // file simply is not there — which is `unreadable`'s own argument in
       // `engine/probe-containment`, one noun along.
-      //
-      // ONE BRANCH, HERE, AND IT IS THE ONLY ONE IN THE BUILD. The schema's
-      // discriminant is what makes it exhaustive rather than defensive: each arm
-      // already carries exactly the fields its engine needs, so there is nothing
-      // to validate and nothing that can be missing.
       try {
-        if (request.engine === 'handwriting') {
-          return {
-            ok: true,
-            value: await handwriting(held.session, {
-              page: request.page,
-              region: request.region,
-              size: request.size,
-              modelDirectory: request.modelDirectory,
-              runtimeDirectory: request.runtimeDirectory,
-            }),
-          };
-        }
         return {
           ok: true,
           value: await ocr(held.session, {
@@ -771,13 +728,7 @@ export function createEngineHandlers({
           }),
         };
       } catch (error) {
-        return failed(
-          error instanceof OcrModelUnreadableError ||
-            error instanceof HandwritingModelUnreadableError
-            ? 'ocr-model-unreadable'
-            : 'ocr-failed',
-          error,
-        );
+        return failed(error instanceof OcrModelUnreadableError ? 'ocr-model-unreadable' : 'ocr-failed', error);
       }
     },
 

@@ -205,27 +205,6 @@ export const COMPOSE_HOST_LIVE = [
 ];
 
 /**
- * The handwriting recogniser and the manifest it reads its filenames from.
- *
- * **Two, and the manifest is the one that would go quiet.** The proof looks for
- * the cache's files by the names `handwritingArtefacts.ts` gives them, so a stale
- * build of that module makes it report *not applicable — these files are
- * missing* about a cache that has exactly the files the source now names. That is
- * the reassuring answer, on the instrument whose whole absent-state path is
- * designed to be quiet.
- *
- * @type {BuildEdge[]}
- */
-export const OCR_HANDWRITING = [
-  ['packages/kernel/src/ocrHandwriting.ts', 'packages/kernel/dist/ocrHandwriting.js', 'tsc'],
-  [
-    'packages/kernel/src/handwritingArtefacts.ts',
-    'packages/kernel/dist/handwritingArtefacts.js',
-    'tsc',
-  ],
-];
-
-/**
  * The declarations `contract.proof.mjs`' probes are compiled against.
  *
  * Its probes name `ContractHandlers`, `ContractClient`, `Command` and
@@ -345,13 +324,6 @@ export const ARTEFACT_EDGES = {
   // the first time that has happened — the four before it were each found by
   // `buildFreshness.proof.mjs` reading the set of proofs that import the guard.
   'proof:ocrrecognise': OCR_RECOGNISE,
-  // THE SEVENTH, and the anchor named it on its first CI run — registered on
-  // 2026-09-11 with its `refuseStaleBuild` call and without this entry, which
-  // turned Guards red on both platforms. That is the mechanism working exactly
-  // as this map's own header describes: an omission here is unreachable from a
-  // derived extent, so the requirement comes from the set of proofs that IMPORT
-  // the guard, which is what caught it.
-  'proof:ocrhandwriting': OCR_HANDWRITING,
   // THE EIGHTH, and the first found by READING the scan rather than by the scan:
   // it imports the bare specifier `@monstera/kernel`, which resolves to `dist`
   // through the exports map, where `IMPORTS_A_BUILD` looks for a `/dist/` path.

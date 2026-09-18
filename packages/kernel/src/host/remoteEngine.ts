@@ -20,7 +20,6 @@ import type {
   HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
-  HostHandwritingReader,
   HostOcrReader,
   HostPageLinksReader,
   HostPageTextReader,
@@ -317,10 +316,8 @@ export function remoteMupdfOcr(
     answered(
       'engine/ocr-page',
       await client['engine/ocr-page']({
-        // THE DISCRIMINANT, and it is a literal rather than a field of the
-        // request: this function is Tesseract's arm of the channel, and a value
-        // read from the caller would let a handwriting request take a path that
-        // carries a language and no model size.
+        // A LITERAL, the one engine this channel carries: the network engines run in
+        // main, and the local handwriting engine was removed (ADR-0085).
         engine: 'tesseract',
         session: sessions.handleFor(session),
         page: request.page,
@@ -330,37 +327,6 @@ export function remoteMupdfOcr(
         // which `exactOptionalPropertyTypes` refuses here and zod refuses on the wire.
         ...(request.region === undefined ? {} : { region: request.region }),
         modelDirectory: request.modelDirectory,
-      }),
-    );
-}
-
-/**
- * One region read as handwriting, over the same boundary.
- *
- * The sibling of {@link remoteMupdfOcr} and deliberately a separate function
- * rather than a branch inside it: the channel's arms carry different fields, so
- * one function would have to reconstruct which arm it is on from a request that
- * already says. Both answer a `RecognisedPage`, which is what ADR-0052 Decision
- * 1 buys — the choice of engine lives in the request and in nothing downstream.
- *
- * **No raster crosses here either**, and rather less than for a page: what this
- * one produces is a single line of text.
- */
-export function remoteMupdfHandwriting(
-  client: ClientApi<EngineChannels>,
-  sessions: RemoteSessions,
-): HostHandwritingReader {
-  return async (session, request) =>
-    answered(
-      'engine/ocr-page',
-      await client['engine/ocr-page']({
-        engine: 'handwriting',
-        session: sessions.handleFor(session),
-        page: request.page,
-        region: request.region,
-        size: request.size,
-        modelDirectory: request.modelDirectory,
-        runtimeDirectory: request.runtimeDirectory,
       }),
     );
 }

@@ -1477,7 +1477,7 @@ describe('CommandBus and a parameterised pre-read', () => {
     await bus.execute(
       {},
       context,
-      { kind: 'ocrPage', page: 1, language: 'deu', engine: 'tesseract', trocrSize: 'small' },
+      { kind: 'ocrPage', page: 1, language: 'deu', engine: 'tesseract' },
       inputs,
     );
 
@@ -1488,41 +1488,12 @@ describe('CommandBus and a parameterised pre-read', () => {
     ]);
   });
 
-  it('hands the resolver the HANDWRITING arm — the region and the size, and no language', async () => {
-    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
-    const context = contextStub(true);
-    const inputs = recordingOcr(flat);
-
-    // `trocrSize: 'base'` and a German OCR language, neither of which a default
-    // would produce: the size is the setting the surface read, and the language
-    // is carried and must NOT reach an engine that cannot honour it.
-    await bus.execute(
-      {},
-      context,
-      {
-        kind: 'ocrPage',
-        page: 2,
-        language: 'deu',
-        engine: 'handwriting',
-        trocrSize: 'base',
-        region: { x0: 10, y0: 20, x1: 30, y1: 40 },
-      },
-      inputs,
-    );
-
-    expect(inputs.requests()).toStrictEqual([
-      { engine: 'handwriting', page: 2, region: [10, 20, 30, 40], size: 'base' },
-    ]);
-  });
-
   it.each(NETWORK_OCR_ENGINES)(
-    'hands the resolver the NETWORK arm for %s — the region, and no language and no size',
+    'hands the resolver the NETWORK arm for %s — the region, and no language',
     async (engine) => {
-      // THE DEFECT THIS CLOSES (ADR-0057): the pre-read was a ternary on 'azure',
-      // so any other engine reached the handwriting arm — which carries a SIZE. A
-      // German language and `trocrSize: 'base'` are what a wrong route would carry
-      // into the request, and `toStrictEqual` refuses an extra key. The case above
-      // is the control that the handwriting arm still routes with its size.
+      // A German language is what a wrong route would carry into the request —
+      // the Tesseract arm takes one — and `toStrictEqual` refuses an extra key.
+      // The case above is the control that the Tesseract arm routes with it.
       //
       // EVERY DECLARED NETWORK ENGINE, from the contract's own list rather than a
       // list typed here, so an engine added there is covered without an edit.
@@ -1538,7 +1509,6 @@ describe('CommandBus and a parameterised pre-read', () => {
           page: 2,
           language: 'deu',
           engine,
-          trocrSize: 'base',
           region: { x0: 10, y0: 20, x1: 30, y1: 40 },
         },
         inputs,
@@ -1557,7 +1527,6 @@ describe('CommandBus and a parameterised pre-read', () => {
       page: 0,
       language: 'eng',
       engine: 'tesseract',
-      trocrSize: 'small',
     } as const;
 
     await bus.execute({}, context, command, inputs);
@@ -1606,18 +1575,18 @@ describe('CommandBus and a parameterised pre-read', () => {
       bus.execute(
         {},
         context,
-        { kind: 'ocrPage', page: 0, language: 'heb', engine: 'tesseract', trocrSize: 'small' },
+        { kind: 'ocrPage', page: 0, language: 'heb', engine: 'tesseract' },
         inputs,
       ),
     ).rejects.toThrow(/read with eng and the command asked for heb/u);
   });
 
-  it('CONTROL: the same mismatch is ACCEPTED for handwriting, whose answer is always eng', async () => {
+  it('CONTROL: the same mismatch is ACCEPTED for a network engine, which is sent no language', async () => {
     // The check above rests on the answer echoing the request, which is true of
     // exactly one engine. Without this case, scoping it to Tesseract would look
     // like an exemption; with it, the scope is the check's own premise — and a
     // future edit that dropped the engine condition reddens here rather than in
-    // a user's German locale.
+    // a user's Hebrew locale.
     const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
     const context = contextStub(true);
     const inputs: CommandInputs = {
@@ -1633,8 +1602,7 @@ describe('CommandBus and a parameterised pre-read', () => {
           kind: 'ocrPage',
           page: 0,
           language: 'heb',
-          engine: 'handwriting',
-          trocrSize: 'small',
+          engine: 'azure',
           region: { x0: 10, y0: 20, x1: 30, y1: 40 },
         },
         inputs,

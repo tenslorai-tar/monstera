@@ -162,10 +162,11 @@ export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
  * precisely so they need not have one each.
  *
  * - `tesseract` reads a page or a region, in one of {@link OCR_LANGUAGES}, from
- *   models this build provisions.
- * - `handwriting` is TrOCR, **offered on a region only** — it reads one text
- *   line, which is the model rather than the wiring, and a page of thirty lines
- *   is thirty encoder runs. Its stack downloads on demand and is never bundled.
+ *   models this build provisions. It is the one LOCAL engine: the TrOCR
+ *   handwriting engine that stood beside it was removed 2026-09-18
+ *   ([ADR-0085](../../../docs/DECISIONS/0085-handwriting-is-read-by-a-service-and-the-local-engine-is-removed.md)),
+ *   because its models' training data is licensed for non-commercial research
+ *   only — so handwriting is read by the two network engines.
  * - `azure` is Azure Document Intelligence, **on a region only** and for a
  *   different reason: the region's raster leaves the machine, and sending a
  *   whole page would send more of a reader's document than they asked about. It
@@ -175,14 +176,10 @@ export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
  *   reasons and in the same process — the second network engine, added
  *   2026-09-12 after Stage 6 closed ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md)).
  *
- * Named for what a reader is choosing rather than for the library behind it: a
- * person picks *handwriting*, and `trocr` would put a model's name in a surface
- * and in every payload that carries the choice. `azure` and `claude` are the
- * exceptions and are deliberate — each names a **service the reader's document is
- * sent to**, and that is the fact they are choosing rather than an implementation
- * detail.
+ * `azure` and `claude` each name a **service the reader's document is sent to**,
+ * and that is the fact a person is choosing rather than an implementation detail.
  */
-export const OCR_ENGINES = ['tesseract', 'handwriting', 'azure', 'claude'] as const;
+export const OCR_ENGINES = ['tesseract', 'azure', 'claude'] as const;
 
 /** One of {@link OCR_ENGINES}. */
 export type OcrEngine = (typeof OCR_ENGINES)[number];
@@ -192,7 +189,7 @@ export type OcrEngine = (typeof OCR_ENGINES)[number];
  * and the ONLY list of them ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md)).
  *
  * *Runs in main* used to be three literals, one of them a ternary that sent any
- * engine it did not name to the handwriting recogniser. Every question with an
+ * engine it did not name to the local handwriting recogniser. Every question with an
  * engine in it now reads this set: the command's pre-read, the composition root's
  * record of recognisers, the request type, and the tools that send a region out.
  */
@@ -205,28 +202,6 @@ export type NetworkOcrEngine = (typeof NETWORK_OCR_ENGINES)[number];
 export function isNetworkOcrEngine(engine: OcrEngine): engine is NetworkOcrEngine {
   return NETWORK_OCR_ENGINES.some((network) => network === engine);
 }
-
-/**
- * Which TrOCR the handwriting engine loads — `BUILD-PROMPT.md`:619's setting.
- *
- * Measured 2026-09-11 against the repositories themselves, quantised, the two
- * files a run needs plus the tokenizer:
- *
- * | size | bytes | tokenizer |
- * |---|---|---|
- * | `small` | 67,737,573 | `Unigram` + `Metaspace` |
- * | `base` | 339,045,465 | `BPE` + `ByteLevel` |
- *
- * **The tokenizer family differs between them**, which is not a detail: a
- * detokeniser written for one and handed the other's ids produces an empty
- * string, and an empty string is this feature's own reassuring answer — *the
- * image has no text*. So the family travels in the manifest beside the digests
- * rather than being inferred at the point of decoding.
- */
-export const TROCR_SIZES = ['small', 'base'] as const;
-
-/** One of {@link TROCR_SIZES}. */
-export type TrocrSize = (typeof TROCR_SIZES)[number];
 
 /**
  * The two setting ids the cloud recogniser's credentials are stored under.

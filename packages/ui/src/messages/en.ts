@@ -481,8 +481,6 @@ export const SPELL_CHECK_ADD = messageKey('dialog.spell-check.add');
 export const SPELL_CHECK_ADDED = messageKey('dialog.spell-check.added');
 export const SPELL_CHECK_SAVE = messageKey('dialog.spell-check.save');
 export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
-export const HANDWRITING_FETCH_TITLE = messageKey('command.handwriting.fetch.title');
-export const HANDWRITING_CLEAR_TITLE = messageKey('command.handwriting.clear.title');
 export const OCR_EXPORT_COMMAND_TITLE = messageKey('command.ocr-export.title');
 export const ENHANCE_COMMAND_TITLE = messageKey('command.enhance-scans.title');
 export const ENHANCE_OUTCOME_TITLE = messageKey('dialog.enhance-outcome.title');
@@ -498,6 +496,7 @@ export const OCR_LANGUAGE = messageKey('dialog.ocr.language');
 export const OCR_THIS_PAGE = messageKey('dialog.ocr.this-page');
 export const OCR_ALL_PAGES = messageKey('dialog.ocr.all-pages');
 export const OCR_START = messageKey('dialog.ocr.start');
+export const OCR_HANDWRITING = messageKey('dialog.ocr.handwriting');
 export const OCR_OUTCOME_TITLE = messageKey('dialog.ocr-outcome.title');
 export const OCR_OUTCOME_RECOGNISED = messageKey('dialog.ocr-outcome.recognised');
 export const OCR_OUTCOME_NONE = messageKey('dialog.ocr-outcome.none');
@@ -550,7 +549,6 @@ export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
   'setting.editing.personal-dictionary.title',
 );
 export const EDITING_OCR_LANGUAGE_TITLE = messageKey('setting.editing.ocr-language.title');
-export const EDITING_TROCR_SIZE_TITLE = messageKey('setting.editing.trocr-size.title');
 export const EDITING_AZURE_ENDPOINT_TITLE = messageKey('setting.editing.azure-di-endpoint.title');
 export const EDITING_AZURE_KEY_TITLE = messageKey('setting.editing.azure-di-key.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
@@ -739,7 +737,6 @@ export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
 export const SNAPSHOT_TOOL_TITLE = messageKey('command.view.snapshot');
 export const PLACE_IMAGE_TOOL_TITLE = messageKey('command.annotate.image');
 export const OCR_REGION_TOOL_TITLE = messageKey('command.tools.ocr-region');
-export const HANDWRITING_REGION_TOOL_TITLE = messageKey('command.tools.handwriting-region');
 export const CLOUD_REGION_TOOL_TITLE = messageKey('command.tools.cloud-region');
 export const LINK_ADDRESS_TOOL_TITLE = messageKey('command.annotate.link-address');
 export const LINK_PAGE_TOOL_TITLE = messageKey('command.annotate.link-page');
@@ -950,8 +947,6 @@ export const UNIT_IN_TITLE = messageKey('setting.unit.in');
 export const UNIT_FT_TITLE = messageKey('setting.unit.ft');
 export const IMAGE_PAGES_THIS_TITLE = messageKey('setting.editing.image-pages.this');
 export const IMAGE_PAGES_ALL_TITLE = messageKey('setting.editing.image-pages.all');
-export const TROCR_SIZE_SMALL_TITLE = messageKey('setting.editing.trocr-size.small');
-export const TROCR_SIZE_BASE_TITLE = messageKey('setting.editing.trocr-size.base');
 export const SETTINGS_CATEGORY_AI = messageKey('dialog.settings.category.ai');
 export const AI_ANTHROPIC_KEY_TITLE = messageKey('setting.ai.anthropic-key.title');
 export const AI_OPENAI_KEY_TITLE = messageKey('setting.ai.openai-key.title');
@@ -1047,11 +1042,6 @@ export const UNIT_TITLES = {
 export const IMAGE_PAGES_TITLES = {
   this: IMAGE_PAGES_THIS_TITLE,
   all: IMAGE_PAGES_ALL_TITLE,
-} as const;
-/** `editing.trocr-size`'s members. */
-export const TROCR_SIZE_TITLES = {
-  small: TROCR_SIZE_SMALL_TITLE,
-  base: TROCR_SIZE_BASE_TITLE,
 } as const;
 export const FIND_LABEL = messageKey('surface.find.label');
 export const FIND_SUBMIT = messageKey('surface.find.submit');
@@ -1441,11 +1431,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the ribbon group, where a reader who knows the word will look for it; the
   // command says what happens to their document.
   [OCR_COMMAND_TITLE]: 'Make scanned pages searchable',
-  // THE SIZE IS IN THE TITLE and the number is not: the download is 67 MB for
-  // the small model and 339 MB for the large one, so a figure here would be
-  // right for one setting and wrong for the other.
-  [HANDWRITING_FETCH_TITLE]: 'Download the handwriting model',
-  [HANDWRITING_CLEAR_TITLE]: 'Remove the downloaded handwriting model',
   // NAMES THE FILE, because that is the difference from the command above: both
   // recognise, and this one also writes a copy.
   [OCR_EXPORT_COMMAND_TITLE]: 'Export a searchable copy',
@@ -1473,6 +1458,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_THIS_PAGE]: 'This page',
   [OCR_ALL_PAGES]: 'All pages',
   [OCR_START]: 'Recognise',
+  // THE ONE LINE THE OWNER SPECIFIED (2026-09-18): handwriting is read by a
+  // service since ADR-0085, and a key is what makes its tool appear.
+  [OCR_HANDWRITING]: 'To read handwriting, add an Azure or Anthropic key in Settings.',
   [OCR_OUTCOME_TITLE]: 'Recognition',
   [OCR_OUTCOME_RECOGNISED]:
     '{count, plural, one {Read the text on one page} other {Read the text on # pages}}.',
@@ -1502,7 +1490,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_LANGUAGE_NAMES.chi_sim]: 'Chinese (Simplified)',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition language',
-  [EDITING_TROCR_SIZE_TITLE]: 'Handwriting model size',
   [EDITING_AZURE_ENDPOINT_TITLE]: 'Azure Document Intelligence endpoint',
   [EDITING_AZURE_KEY_TITLE]: 'Azure Document Intelligence key',
   [RULER_UNIT_TITLE]: 'Ruler unit',
@@ -1895,10 +1882,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to a reader who has not met the acronym; the words it puts on the page are what
   // they are after.
   [OCR_REGION_TOOL_TITLE]: 'Recognise text in a box',
-  // ONE LINE, and the title says so rather than leaving it to be discovered:
-  // TrOCR reads a single text line, so a reader who drags a box over a
-  // paragraph gets one line's worth of answer (ADR-0052 §4).
-  [HANDWRITING_REGION_TOOL_TITLE]: 'Recognise one line of handwriting',
   // THE SERVICE IS NAMED AND SO IS THE SENDING. What a reader is choosing here
   // is that this part of their document leaves the machine, and a title like
   // "Recognise with better accuracy" would hide the only thing about this
@@ -2057,8 +2040,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [UNIT_TITLES.ft]: 'Feet',
   [IMAGE_PAGES_TITLES.this]: 'This page only',
   [IMAGE_PAGES_TITLES.all]: 'Every page',
-  [TROCR_SIZE_TITLES.small]: 'Small',
-  [TROCR_SIZE_TITLES.base]: 'Base',
   [SETTINGS_CATEGORY_AI]: 'AI',
   [AI_ANTHROPIC_KEY_TITLE]: 'Anthropic API key',
   [AI_OPENAI_KEY_TITLE]: 'OpenAI API key',

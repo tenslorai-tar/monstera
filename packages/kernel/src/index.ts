@@ -127,7 +127,6 @@ export {
   type HostAccessibilityCheck,
   type HostFormFieldsReader,
   type HostLayersReader,
-  type HostHandwritingReader,
   type HostOcrReader,
   type HostPageImage,
   type HostPageLinksReader,
@@ -183,10 +182,6 @@ export type {
   RecognisedWord,
   RecognitionRequest,
 } from './ocrRecognise.js';
-// THE SCOPE, NOT THE REQUEST. `HandwritingRequest` carries the model directory,
-// which only the composition root supplies — and the type it supplies it to is
-// `HostHandwritingReader`, already on this barrel.
-export type { HandwritingScope } from './ocrHandwriting.js';
 // ON THE BARREL AS A VALUE, unlike the other two recognisers, and that IS the
 // decision: this one executes in `main`, so main imports and calls it. It binds
 // no engine — `fetch`, and `pageTransform` from shared — so `proof:kernelload`'s
@@ -287,7 +282,6 @@ export {
   remoteMupdfFormFields,
   remoteMupdfLayers,
   remoteMupdfSignatures,
-  remoteMupdfHandwriting,
   remoteMupdfOcr,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -585,17 +579,3 @@ export {
   refreshTokens,
   sendEnvelope,
 } from './docusign.js';
-// ON THE BARREL AND THE ENGINE HALF IS NOT. This module is data and two pure
-// functions — the URLs, the digests and which tokenizer family each model needs
-// — and main is what reads it, because main downloads. `ocrHandwriting.ts`, which
-// loads an ONNX runtime, is reached only by the host entry (ADR-0026 clause 2).
-export {
-  HANDWRITING_HOSTS,
-  HANDWRITING_MODELS,
-  RUNTIME_FILES,
-  type HandwritingArtefact,
-  type HandwritingModel,
-  type TokenizerFamily,
-  artefactsFor,
-  totalBytes,
-} from './handwritingArtefacts.js';

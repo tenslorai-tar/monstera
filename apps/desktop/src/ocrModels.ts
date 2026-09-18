@@ -50,15 +50,6 @@ export function provisionedModelDirectory(): string | null {
   return supplied;
 }
 
-/**
- * Where the provisioned ONNX Runtime is, or `null` — {@link provisionedModelDirectory}'s rule
- * and its reasons, for the handwriting recogniser's runtime (ADR-0052's 2026-09-17 correction).
- */
-export function provisionedOnnxRuntimeDirectory(): string | null {
-  const supplied = process.env['MONSTERA_ONNXRUNTIME_DIRECTORY'];
-  if (supplied === undefined || supplied.length === 0) return null;
-  return supplied;
-}
 
 /**
  * Which of the fourteen languages this machine can actually recognise.

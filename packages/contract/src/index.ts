@@ -58,7 +58,6 @@ export {
   // `channels.ts` back — and is exported below, from where it now lives.
   ocrEngineSchema,
   ocrLanguageSchema,
-  trocrSizeSchema,
   SPELLING_LANGUAGES,
   type SpellingLanguage,
   spellingLanguageSchema,
@@ -297,10 +296,8 @@ export {
   type DocumentAccess,
   OCR_ENGINES,
   OCR_LANGUAGES,
-  TROCR_SIZES,
   type OcrEngine,
   type OcrLanguage,
-  type TrocrSize,
   docIdSchema,
   docVersionSchema,
   envelopeSchema,

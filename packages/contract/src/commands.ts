@@ -5,7 +5,6 @@ import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
   OCR_LANGUAGES,
-  TROCR_SIZES,
   docIdSchema,
   docVersionSchema,
 } from './schemas.js';
@@ -1116,41 +1115,25 @@ export const ocrPageSchema = z.object({
    * Which recogniser answers — [ADR-0052](../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
    * Decision 1.
    *
-   * `tesseract` for a page or a region in one of fourteen languages;
-   * `handwriting` for **a region only**, where the language field is carried and
-   * not used, because both TrOCR repositories are English and the answer says
-   * `eng` whatever was asked.
+   * `tesseract` for a page or a region in one of fourteen languages; the network
+   * engines, which read handwriting since the local one was removed (ADR-0085),
+   * for **a region only**.
    */
   engine: z.enum(OCR_ENGINES),
-  /**
-   * Which TrOCR the handwriting engine loads — `BUILD-PROMPT.md`:619's setting.
-   *
-   * **Always present and used by one engine**, exactly as `language` is always
-   * present and used by the other. The alternative was making each optional and
-   * required per engine, which needs a nested discriminator this payload cannot
-   * carry (see below) and leaves two fields that are sometimes absent for
-   * reasons a reader has to reconstruct.
-   *
-   * It comes from the settings the surface read when it dispatched, not from a
-   * default here: a default would be a second place that decides which model
-   * runs, and the setting would then be a control that appears to do nothing.
-   */
-  trocrSize: z.enum(TROCR_SIZES),
 }).refine((command) => command.engine === 'tesseract' || command.region !== undefined, {
   message:
-    'Only Tesseract is offered on a whole page. The handwriting engine reads one text line ' +
-    '(ADR-0052 §4), and the cloud engine sends what it is given to a service — so a page-scoped ' +
-    'request would send more of the document than the reader asked about. Both must carry the ' +
-    'region the reader dragged.',
+    'Only Tesseract is offered on a whole page. A network engine sends what it is given to a ' +
+    'service, so a page-scoped request would send more of the document than the reader asked ' +
+    'about. It must carry the region the reader dragged.',
   path: ['region'],
 });
 
 /**
  * ## Why this one boundary REFUSES where the host boundary cannot EXPRESS
  *
- * `engine/ocr-page`'s schema is a discriminated union, so a handwriting request
- * without a region is a shape the wire cannot carry at all — B5, at the boundary
- * invariant 25 calls hostile.
+ * `engine/ocr-page`'s schema is a discriminated union, so a request for an engine
+ * that reads only a region, sent without one, is a shape the wire cannot carry at
+ * all — B5, at the boundary invariant 25 calls hostile.
  *
  * Here the discriminator would have to be a second one nested inside
  * `commandsSchema`'s own `kind`, which is the one field every command router in

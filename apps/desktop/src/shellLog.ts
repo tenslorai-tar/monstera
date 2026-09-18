@@ -170,7 +170,11 @@ export interface ShellLog {
   readonly incidents: IncidentSink;
   /** Shows the log directory, or answers `false` because there is nothing there. */
   readonly reveal: () => Promise<boolean>;
-  /** Appends one already-formatted line. Exported for the proof, not for callers. */
+  /**
+   * Appends one already-formatted line. For the proof, and for one lifecycle
+   * notice that is rare by construction: the retired-cache removal, which fires
+   * on the one start that finds the directory (`retiredCaches.ts`).
+   */
   readonly write: (kind: string, detail: string) => void;
 }
 

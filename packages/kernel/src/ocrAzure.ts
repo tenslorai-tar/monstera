@@ -7,14 +7,13 @@ import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecogn
 /**
  * Azure Document Intelligence — **the recogniser that runs in `main`**.
  *
- * ## Why it is not in the engine host, where the other two are
+ * ## Why it is not in the engine host, where Tesseract is
  *
  * [ADR-0052](../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
  * Decision 2 puts recognition beside the rasteriser and gives the reason twice.
- * That is about the two **local** engines. Invariant 25 gives the engine host no
- * network at all — the same sentence that made TrOCR's download main's job — so a
- * recogniser whose whole operation is an HTTPS call executes where the network
- * is (the ADR's 2026-09-12 addition).
+ * That is about the **local** engine. Invariant 25 gives the engine host no
+ * network at all, so a recogniser whose whole operation is an HTTPS call executes
+ * where the network is (the ADR's 2026-09-12 addition).
  *
  * What that gives up is what Decision 2 protects: the raster crosses. It is
  * unavoidable and cheap in those terms — the bytes are leaving the machine

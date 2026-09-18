@@ -5,7 +5,6 @@ import {
   measurePerPointSchema,
   measureUnitSchema,
   ocrLanguageSchema,
-  trocrSizeSchema,
   AZURE_ENDPOINT_SETTING_ID,
   AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
@@ -18,7 +17,6 @@ import {
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
   EDITING_OCR_LANGUAGE_TITLE,
-  EDITING_TROCR_SIZE_TITLE,
   EDITING_AZURE_ENDPOINT_TITLE,
   EDITING_AZURE_KEY_TITLE,
   EDITING_PERSONAL_DICTIONARY_TITLE,
@@ -27,7 +25,6 @@ import {
   IMAGE_PAGES_TITLES,
   OCR_LANGUAGE_NAMES,
   STYLE_COLOUR_AUTO,
-  TROCR_SIZE_TITLES,
   UNIT_TITLES,
 } from '../messages/en.js';
 import { STARTING_STYLE_COLOUR } from '../annotations/annotationStyle.js';
@@ -288,38 +285,6 @@ export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguageSchema> =
 };
 
 /**
- * Which TrOCR the handwriting engine loads — `BUILD-PROMPT.md`:619's
- * *TrOCR model size (small/base)*.
- *
- * ## A setting, where the ENGINE is not
- *
- * The engine is a per-rectangle choice and is made by picking a tool: a reader
- * knows whether this box is over handwriting. The size is not about the box at
- * all — it decides what this machine **downloads and keeps**, measured
- * 2026-09-11 at 67,737,573 bytes for `small` against 339,045,465 for `base`, and
- * a choice with that consequence belongs where a reader can find it once rather
- * than beside a gesture.
- *
- * **`small` by default**, which is ADR-0052's own ruling and not a guess: it is a
- * fifth of the download and a quarter of the encoder, and the founding record
- * names both sizes without saying which a first run gets.
- *
- * Changing it does not remove the other one. Both live in the same cache and the
- * clear-caches control removes both, so a reader who tries `base` and goes back
- * has not lost the first download.
- */
-export const TROCR_SIZE_SETTING: SettingDefinition<typeof trocrSizeSchema> = {
-  id: 'editing.trocr-size',
-  title: EDITING_TROCR_SIZE_TITLE,
-  // THE CONTRACT'S OWN ENUM, for `OCR_LANGUAGE_SETTING`'s reason: a stored value
-  // the command would refuse is one that fails on apply.
-  schema: trocrSizeSchema,
-  fallback: 'small',
-  category: 'editing',
-  optionTitles: TROCR_SIZE_TITLES,
-};
-
-/**
  * Where Azure Document Intelligence lives — `BUILD-PROMPT.md`:621's
  * *Azure DI endpoint + key (secret)*, the half that is not the key.
  *
@@ -336,7 +301,7 @@ export const TROCR_SIZE_SETTING: SettingDefinition<typeof trocrSizeSchema> = {
  * Not a default endpoint and not a placeholder: there is no address that would
  * be right for anybody, and one that looked plausible would be a control that
  * fails after a reader drags a box. The cloud tool is hidden while either half
- * is empty, which is the same `when` the handwriting tool uses.
+ * is empty, through the registry's `when`.
  */
 export const AZURE_DI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   // FROM THE CONTRACT, not a literal here: main looks this one up by name to

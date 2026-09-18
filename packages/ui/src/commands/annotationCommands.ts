@@ -34,7 +34,6 @@ import {
 import {
   CLAUDE_REGION_TOOL_ID,
   CLOUD_REGION_TOOL_ID,
-  HANDWRITING_REGION_TOOL_ID,
   OCR_REGION_TOOL_ID,
 } from '../annotations/ocrRegionTool.js';
 import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
@@ -88,7 +87,6 @@ import {
   PLACE_SIGNATURE_TOOL_TITLE,
   CLAUDE_REGION_TOOL_TITLE,
   CLOUD_REGION_TOOL_TITLE,
-  HANDWRITING_REGION_TOOL_TITLE,
   OCR_REGION_TOOL_TITLE,
   SNAPSHOT_TOOL_TITLE,
   STRIKEOUT_TOOL_TITLE,
@@ -145,21 +143,16 @@ export interface ToolCommandDeps {
   /** Makes one active, or `undefined` to leave drawing altogether. */
   readonly onSelect: (id: string | undefined) => void;
   /**
-   * Whether the handwriting engine's downloaded stack is on this machine.
+   * Whether the cloud engine has both an endpoint and a key.
    *
    * **Optional, and absent means yes**, which is the right default for the only
    * graphs that omit it: a browser-shim test has no main process to ask, and a
    * predicate defaulting to *hidden* there would make every case about that tool
    * assert on a control nothing mounts. The shipped graph always supplies it.
-   */
-  readonly handwritingReady?: () => boolean;
-  /**
-   * Whether the cloud engine has both an endpoint and a key.
    *
-   * Optional and defaulting to yes for `handwritingReady`'s reason. Read as a
-   * pair rather than two predicates: an endpoint with no key reaches the service
-   * and comes back unauthorised, which tells a reader their key is wrong when
-   * they never entered one.
+   * Read as a pair rather than two predicates: an endpoint with no key reaches
+   * the service and comes back unauthorised, which tells a reader their key is
+   * wrong when they never entered one.
    */
   readonly cloudReady?: () => boolean;
   /**
@@ -215,12 +208,11 @@ function toolCommand(
   /**
    * A second condition on top of *there is a document*, or nothing.
    *
-   * One tool needs it: the handwriting engine's stack is downloaded on demand
-   * and never bundled, so on a first run its tool would be a control that
-   * dispatches a command the engine refuses for a file nobody has fetched —
-   * the wired-tools rule's own defect. `when` is what the registry already has
-   * for *this does not exist yet*, and using it is what keeps a control that
-   * cannot work off the screen rather than failing after the drag.
+   * The network engines need it: without a key their tool would be a control
+   * that dispatches a command the service refuses — the wired-tools rule's own
+   * defect. `when` is what the registry already has for *this does not exist
+   * yet*, and using it keeps a control that cannot work off the screen rather
+   * than failing after the drag.
    */
   also?: () => boolean,
 ): UiCommand {
@@ -681,37 +673,11 @@ export function ocrRegionToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
- * The handwriting engine's own control, beside the one above.
- *
- * **It is what makes the second registration reachable**, which is the whole of
- * why it exists — `annotationCommands.test.ts` joins these ids against the tool
- * registry's and fails on a tool nothing can select. A handwriting tool with no
- * command would be the display-only defect with the gesture already built.
- */
-export function handwritingRegionToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(
-    HANDWRITING_REGION_TOOL_ID,
-    HANDWRITING_REGION_TOOL_TITLE,
-    'NotebookPen',
-    61,
-    deps,
-    { section: 'comment', group: GROUP_MARKUP },
-    // HIDDEN UNTIL THE MODELS ARE HERE. `handwritingReady` is answered by main
-    // over `app.handwritingCache`; the download itself is its own command, so
-    // the reader meets *get the models* rather than a tool that fails after a
-    // drag. Default `true` for every graph that supplies no predicate — a
-    // browser-shim test is not making a claim about a download.
-    () => deps.handwritingReady?.() ?? true,
-  );
-}
-
-/**
  * The cloud engine's control, hidden until its endpoint AND key are both set.
  *
- * The same `when` mechanism the handwriting tool uses, for the same rule and a
- * sharper consequence: without credentials the drag would spend a round trip to
- * be told the service refused a key nobody entered — and the reader would read
- * that as *the service is broken* rather than as *I have not set this up*.
+ * Without credentials the drag would spend a round trip to be told the service
+ * refused a key nobody entered — and the reader would read that as *the service
+ * is broken* rather than as *I have not set this up*.
  */
 export function cloudRegionToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
@@ -793,7 +759,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     placeSignatureToolCommand(deps),
     placeBarcodeToolCommand(deps),
     ocrRegionToolCommand(deps),
-    handwritingRegionToolCommand(deps),
     cloudRegionToolCommand(deps),
     claudeRegionToolCommand(deps),
     ...formFieldToolCommands(deps),

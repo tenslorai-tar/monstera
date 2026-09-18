@@ -12,12 +12,7 @@ import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
 import type { OcrRegionDeps } from './ocrRegionTool.js';
-import {
-  claudeRegionTool,
-  cloudRegionTool,
-  handwritingRegionTool,
-  ocrRegionTool,
-} from './ocrRegionTool.js';
+import { claudeRegionTool, cloudRegionTool, ocrRegionTool } from './ocrRegionTool.js';
 import type { SnapshotDeps } from './snapshotTool.js';
 import { snapshotTool } from './snapshotTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
@@ -79,17 +74,12 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     // row 6, registered into ADR-0042's platform with nothing widened.
     ocrRegionTool(deps),
     // THE SECOND REGISTRATION OF THE SAME GESTURE, differing in one field of the
-    // command it builds. Both are here rather than one being derived from the
-    // other at mount time, because this list is what the registry mounts and
-    // what `annotationCommands.test.ts` joins the command ids against — a tool
-    // that appeared by some other route would be a second place tools are named.
-    handwritingRegionTool(deps),
-    // AND THE THIRD, which differs from the two above in where it executes
-    // rather than in what it dispatches: `azure` runs in main, because the host
-    // has no network. Nothing about that is visible here, which is the point of
-    // the engine being a field of the request.
+    // command it builds, and in where it executes: `azure` runs in main, because
+    // the host has no network. Both are here rather than one being derived from
+    // the other at mount time, because this list is what the registry mounts and
+    // what `annotationCommands.test.ts` joins the command ids against.
     cloudRegionTool(deps),
-    // AND THE FOURTH, the second network engine: the same gesture, a different
+    // AND THE THIRD, the second network engine: the same gesture, a different
     // service. Composed here for the reason every tool is (ADR-0057).
     claudeRegionTool(deps),
     placeImageTool(deps),

@@ -526,13 +526,11 @@ export const applyOcrPage: Apply<'pdf-lib', 'ocrPage', 'none', 'ocr'> = async (
   //
   // **TESSERACT ONLY, and that is not an exemption — it is the check's own
   // premise.** It rests on the answer ECHOING the request, which is true of the
-  // engine whose request names one of fourteen models. The handwriting engine's
-  // repositories are English, so it answers `eng` whatever was asked and a
-  // comparison here would refuse every handwriting recognition on a machine
-  // whose OCR language is anything else. What the check is for — a resolver
-  // answering a different request — is covered for that engine by the region:
-  // `commandDeclarations` builds the handwriting request from this command's own
-  // rectangle, and `ocrHandwriting` answers at that rectangle's box.
+  // engine whose request names one of fourteen models. The network engines are
+  // sent no model name, so there is nothing for their answer to echo. What the
+  // check is for — a resolver answering a different request — is covered for
+  // them by the region: `commandDeclarations` builds their request from this
+  // command's own rectangle, and the answer is placed at that rectangle's box.
   if (command.engine === 'tesseract' && read.language !== command.language) {
     throw new Error(
       `the recognition handed to ocrPage was read with ${read.language} and the command asked ` +

@@ -44,7 +44,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SHELL_LAUNCH, refuseStaleBuild } from './lib/buildFreshness.mjs';
@@ -52,7 +52,6 @@ import { fileExists } from './lib/fetchVerified.mjs';
 import { electronBinaryPath } from './provision/electron.mjs';
 import { pdfiumLibrary } from './provision/pdfium.mjs';
 import { gswin64cPath } from './provision/ghostscript.mjs';
-import { ONNXRUNTIME_FILES, onnxRuntimeDirectory } from './provision/onnxruntime.mjs';
 import { pdftotextPath } from './provision/poppler.mjs';
 import { tessdataDirectory, tessdataPath } from './provision/tessdata.mjs';
 import { formatError } from './lib/reportError.mjs';
@@ -170,20 +169,6 @@ async function ghostscriptEnvironment() {
   return { MONSTERA_GHOSTSCRIPT_EXECUTABLE: executable };
 }
 
-/**
- * The provisioned ONNX Runtime directory the handwriting recogniser loads from, passed for
- * tessdata's reason (ADR-0052's 2026-09-17 correction). Absent is a decided state: no
- * handwriting recognition.
- *
- * @returns {Promise<Record<string, string>>}
- */
-async function onnxRuntimeEnvironment() {
-  const last = ONNXRUNTIME_FILES.at(-1);
-  const directory = onnxRuntimeDirectory(REPO_ROOT);
-  if (last === undefined || !(await fileExists(join(directory, last.file)))) return {};
-  return { MONSTERA_ONNXRUNTIME_DIRECTORY: directory };
-}
-
 async function main() {
   refuseStaleBuild(REPO_ROOT, SHELL_LAUNCH, 7);
   const binary = await resolveRuntime();
@@ -199,7 +184,6 @@ async function main() {
       ...(await tessdataEnvironment()),
       ...(await popplerEnvironment()),
       ...(await ghostscriptEnvironment()),
-      ...(await onnxRuntimeEnvironment()),
     },
     // No shell. The path is composed from a pinned version and a platform key,
     // but a shell would reinterpret whatever the repository root happens to

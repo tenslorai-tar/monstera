@@ -629,8 +629,8 @@ export interface PreReadKinds {
    *
    * **The request names which engine answers** (ADR-0052 Decision 1), and the
    * two arms of that union do not carry the same fields — so the member cannot
-   * be called with a handwriting request that names no region, and the branch
-   * that picks a model directory lives in the composition root alone.
+   * be called with a network request that names no region, and the branch that
+   * picks where an engine runs lives in the composition root alone.
    *
    * **Per page, never per document**, and that is ADR-0035 rather than a choice:
    * extracted text measured at 3.59× a document's bytes and is never resident in

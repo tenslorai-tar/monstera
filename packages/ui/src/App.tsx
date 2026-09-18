@@ -120,7 +120,6 @@ import {
   straightenScansCommand,
   recogniseTextCommand,
 } from './commands/recogniseText.js';
-import { handwritingModelCommands } from './commands/handwritingModel.js';
 import { featureShortcutCommands } from './commands/featureShortcuts.js';
 import { type OpenProblem, openDocument, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -264,7 +263,6 @@ import {
   MEASURE_UNIT_SETTING,
   AZURE_DI_ENDPOINT_SETTING,
   OCR_LANGUAGE_SETTING,
-  TROCR_SIZE_SETTING,
 } from './settings/editing.js';
 import { CommentStylesPanel } from './CommentStylesPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
@@ -546,16 +544,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     },
     [ask],
   );
-
-  /**
-   * Whether the handwriting engine's downloaded stack is on this machine.
-   *
-   * **FALSE UNTIL MAIN SAYS OTHERWISE**, which is the right way round for a
-   * feature that is never bundled: the first paint of a machine that has never
-   * fetched shows no handwriting tool, rather than showing one and withdrawing
-   * it. A tool that appears and vanishes reads as a defect; a tool that appears
-   * when the download lands reads as the download working.
-   */
 
   // WHAT A COMMAND LEFT BEHIND, applied to the open document.
   //
@@ -1227,8 +1215,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   // and handed to the registries. The OCR dialog offers the provisioned list and
   // writes this value; the tool has no dialog and reads it.
   const ocrLanguage = useSetting(settings, OCR_LANGUAGE_SETTING);
-  /** The handwriting registration's model size. Read here for the same reason. */
-  const trocrSize = useSetting(settings, TROCR_SIZE_SETTING);
   /**
    * Whether the cloud engine can be OFFERED: an endpoint in the settings, and a
    * key stored in the credential store.
@@ -1251,9 +1237,15 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const docusignKeyStored = storedSecrets.includes(DOCUSIGN_INTEGRATION_KEY_SETTING_ID);
 
   /**
-   * Asks main which secrets are stored — `refreshHandwriting`'s one-shot
-   * subscription shape and its `live` flag, for its reasons: a slow answer must
-   * not overwrite a newer one, and a refusal is not a stored key.
+   * Asks main which secrets are stored, and answers in a CALLBACK rather than by
+   * awaiting.
+   *
+   * `react-hooks/set-state-in-effect` traces a named async function called from
+   * an effect body and rejects it — correctly, and the rule's own second clause
+   * says what the legal shape is: *subscribe for updates from some external
+   * system, calling setState in a callback*. Main is that external system and
+   * this is the subscription's one-shot form. The `live` flag keeps a slow
+   * answer from overwriting a newer one, and a refusal is not a stored key.
    */
   const refreshSecrets = useCallback((): (() => void) => {
     let live = true;
@@ -1270,52 +1262,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     };
   }, [client]);
   useEffect(() => refreshSecrets(), [refreshSecrets]);
-
-  /**
-   * Whether the handwriting engine's downloaded stack is on this machine.
-   *
-   * **FALSE UNTIL MAIN SAYS OTHERWISE**, which is the right way round for a
-   * feature that is never bundled: the first paint of a machine that has never
-   * fetched shows no handwriting tool, rather than showing one and withdrawing
-   * it. A tool that appears and vanishes reads as a defect; a tool that appears
-   * when the download lands reads as the download working.
-   */
-  const [handwritingReady, setHandwritingReady] = useState(false);
-
-  /**
-   * Asks main, and answers in a CALLBACK rather than by awaiting.
-   *
-   * `react-hooks/set-state-in-effect` traces a named async function called from
-   * an effect body and rejects it — correctly, and the rule's own second clause
-   * says what the legal shape is: *subscribe for updates from some external
-   * system, calling setState in a callback*. Main is that external system and
-   * this is the subscription's one-shot form.
-   *
-   * The `live` flag is not ceremony: the size can change while an answer is in
-   * flight, and without it a slow answer about `small` would overwrite a fast
-   * one about `base` — the tool appearing for a model nobody downloaded.
-   */
-  const refreshHandwriting = useCallback((): (() => void) => {
-    let live = true;
-    void client['app.handwritingCache']({ size: trocrSize }).then(
-      (answer) => {
-        // A REFUSAL IS NOT A READY CACHE. This channel declares no failure code,
-        // so `ok === false` is an internal one — and treating it as ready would
-        // mount a tool whose first drag fails.
-        if (live) setHandwritingReady(answer.ok && answer.value.ready);
-      },
-      () => {
-        if (live) setHandwritingReady(false);
-      },
-    );
-    return (): void => {
-      live = false;
-    };
-  }, [client, trocrSize]);
-
-  // RE-ASKED WHEN THE SIZE CHANGES, because `ready` is per size: a reader who
-  // switches to `base` has not downloaded it, and the tool must go until they do.
-  useEffect(() => refreshHandwriting(), [refreshHandwriting]);
   const scale = useMemo<MeasureScale>(
     () => ({ perPoint: scalePerPoint, unit: scaleUnit }),
     [scalePerPoint, scaleUnit],
@@ -1466,8 +1412,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           // a stale capture unrepresentable on its side; this list is what keeps
           // the value it reads current.
           language: () => ocrLanguage,
-          // THE SAME MECHANISM, and it is listed below for the same reason.
-          trocrSize: () => trocrSize,
           onPlaceImage,
           onPlaceSignature,
           onPlaceBarcode,
@@ -1484,7 +1428,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       readSelection,
       scale,
       style,
-      trocrSize,
     ],
   );
 
@@ -1704,27 +1647,12 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         ...shapeToolCommands({
           activeTool: readTool,
           onSelect: setToolId,
-          // THE HANDWRITING TOOL'S GATE. Its stack is downloaded on demand, so
-          // without this the tool would be a control that dispatches a command
-          // the engine refuses for a file nobody fetched.
-          handwritingReady: () => handwritingReady,
           // THE PAIR, read here rather than as two predicates: an endpoint with
           // no key reaches the service and comes back unauthorised, which a
           // reader reads as a wrong key rather than as a missing one.
           cloudReady: () => azureEndpoint !== '' && azureKeyStored,
           // ONE INPUT: the Anthropic API needs no endpoint setting (ADR-0057).
           claudeReady: () => claudeKeyStored,
-        }),
-        // THE DOWNLOAD AND ITS REMOVAL, which is what a reader meets while the
-        // tool above is hidden. `onChanged` re-asks main, so the tool appears
-        // when the fetch lands and disappears when the cache is cleared.
-        ...handwritingModelCommands({
-          client,
-          size: () => trocrSize,
-          ask,
-          onChanged: () => {
-            refreshHandwriting();
-          },
         }),
         deleteSelectionCommand(selectionDeps),
         ...nudgeSelectionCommands(selectionDeps),
@@ -1755,36 +1683,28 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       activate,
       applied,
       ask,
-      // THE PREDICATE'S TWO INPUTS, for `handwritingReady`'s reason one line
-      // down: `cloudReady` closes over this render's pair, so without these the
-      // cloud tool would stay hidden however many keys were entered. The second
-      // is main's answer to *is a key stored*, never the key.
+      // THE PREDICATE'S TWO INPUTS: `cloudReady` closes over this render's
+      // pair, so without these the cloud tool would stay hidden however many
+      // keys were entered. The second is main's answer to *is a key stored*,
+      // never the key.
       azureEndpoint,
       azureKeyStored,
       claudeKeyStored,
       docusignKeyStored,
       changeZoom,
       client,
-      // THE PREDICATE'S OWN VALUE, and it has to be here for the same reason
-      // `ocrLanguage` does one memo along: `when: () => handwritingReady` closes
-      // over this render's value, so without the dependency the handwriting tool
-      // would stay hidden for the session however many models were downloaded —
-      // a control that never appears, which reads as a download that failed.
-      handwritingReady,
       navigator,
       openCommand,
       openDeps,
       togglePalette,
       opened,
       readTool,
-      refreshHandwriting,
-      // THE SETTINGS COMMAND'S `onSecretsChanged` closes over it, for
-      // `refreshHandwriting`'s reason one line up.
+      // THE SETTINGS COMMAND'S `onSecretsChanged` closes over it, so a key
+      // entered in Settings is what the predicates above read next.
       refreshSecrets,
       selectionDeps,
       settings,
       track,
-      trocrSize,
     ]);
 
   /**

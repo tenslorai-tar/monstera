@@ -43,10 +43,6 @@ const handlers: ContractHandlers = {
   // would produce; fourteen is what a fixture that stopped being a subset looks
   // like. One is the shape the channel exists to carry.
   'app.ocrLanguages': () => Promise.resolve(ok({ languages: ['eng' as const] })),
-  'app.handwritingCache': () =>
-    Promise.resolve(ok({ available: true, ready: false, bytesToFetch: 0 })),
-  'app.fetchHandwritingModel': () => Promise.resolve(ok({ ready: true, bytesToFetch: 0 })),
-  'app.clearHandwritingCache': () => Promise.resolve(ok({ bytesRemoved: 0 })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   // `unlocked` WITH THE OWNER BIT, rather than the user bit or the variant with
   // no number in it. `2` is what a handler that hard-coded the commonest answer

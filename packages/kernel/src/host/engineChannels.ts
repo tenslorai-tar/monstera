@@ -32,7 +32,6 @@ import {
   movePageSchema,
   ocrLanguageSchema,
   PAGE_IMAGE_FORMATS,
-  trocrSizeSchema,
   placeAnnotationSchema,
   styleAnnotationSchema,
   removeAnnotationSchema,
@@ -2041,64 +2040,34 @@ export const engineChannels = {
    * chooses. A second channel would put *which recogniser* in as many places as
    * there are callers.
    *
-   * A **discriminated union** rather than one object with optional extras,
-   * because the two engines do not accept the same request and B5 says make the
-   * difference unrepresentable rather than checked:
-   *
-   * - `tesseract` takes a language and an OPTIONAL region — the page is the
-   *   absence of one.
-   * - `handwriting` takes a REQUIRED region and a model size, and no language:
-   *   TrOCR reads one text line at seconds per line, so a page-scoped request is
-   *   not a thing this channel can express (Decision 4), and its repositories
-   *   are English so a language field would be a value nothing could honour.
-   *
-   * Each arm carries **its own** `modelDirectory`, which is the half that
-   * matters at a hostile boundary: the two caches hold different things, and a
-   * shared field would let a confused main hand the handwriting loader the
-   * tessdata directory and get *model unreadable* instead of a compile error.
+   * **Tesseract only**, the one engine that executes here: the network engines
+   * run in main (ADR-0052's 2026-09-12 addition), and the local handwriting engine
+   * that was this channel's second arm was removed (ADR-0085). The `engine` field
+   * stays on the wire as a literal, so a request for anything else is a shape this
+   * channel cannot carry rather than one it checks.
    */
   'engine/ocr-page': channel(
     'Recognises text and boxes for a page or a region, inside the process that holds the raster.',
-    z.discriminatedUnion('engine', [
-      z
-        .object({
-          engine: z.literal('tesseract'),
-          session: sessionSchema,
-          /** Zero-based index, as `commands.ts` declares them. */
-          page: z.number().int().nonnegative(),
-          language: ocrLanguageSchema,
-          /**
-           * A rectangle of the page to read instead of all of it, in PDF user space.
-           *
-           * D6 row 6. Bounded by `ocrBoxSchema`'s own shape — four numbers — and
-           * absent for a whole page, which is the same distinction `OcrRequest` makes
-           * one layer in: *the page* and *a rectangle that happens to cover it* are
-           * different requests.
-           */
-          region: ocrBoxSchema.optional(),
-          /** The directory main granted this host READ on for the models. */
-          modelDirectory: pathSchema,
-        })
-        .strict(),
-      z
-        .object({
-          engine: z.literal('handwriting'),
-          session: sessionSchema,
-          page: z.number().int().nonnegative(),
-          /** REQUIRED. This engine is never offered on a page. */
-          region: ocrBoxSchema,
-          size: trocrSizeSchema,
-          /** The cache main downloaded the models into, and granted. */
-          modelDirectory: pathSchema,
-          /**
-           * The ONNX Runtime provisioned with the application, granted (ADR-0052's 2026-09-17
-           * correction). Its own field for `modelDirectory`'s reason: a runtime handed the cache,
-           * or a cache handed as the runtime, is *model unreadable* rather than a compile error.
-           */
-          runtimeDirectory: pathSchema,
-        })
-        .strict(),
-    ]),
+    z
+      .object({
+        engine: z.literal('tesseract'),
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+        language: ocrLanguageSchema,
+        /**
+         * A rectangle of the page to read instead of all of it, in PDF user space.
+         *
+         * D6 row 6. Bounded by `ocrBoxSchema`'s own shape — four numbers — and
+         * absent for a whole page, which is the same distinction `OcrRequest` makes
+         * one layer in: *the page* and *a rectangle that happens to cover it* are
+         * different requests.
+         */
+        region: ocrBoxSchema.optional(),
+        /** The directory main granted this host READ on for the models. */
+        modelDirectory: pathSchema,
+      })
+      .strict(),
     z
       .object({
         lines: z

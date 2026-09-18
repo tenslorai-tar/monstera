@@ -11,7 +11,6 @@ import {
 import {
   type CapabilityRegistry,
   DocumentBusyError,
-  DownloadRefused,
   DocumentNotOpenError,
   type DocumentService,
   EngineFormDataExportFailed,
@@ -33,7 +32,6 @@ import {
   MissingSessionError,
 } from './documentCommands.js';
 import type { Assistant } from './assistant.js';
-import type { HandwritingCache } from './handwritingCache.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
@@ -215,15 +213,6 @@ export function createContractHandlers(deps: {
    */
   readonly ocrLanguages: () => Promise<readonly OcrLanguage[]>;
   /**
-   * The handwriting engine's downloaded stack, or absent.
-   *
-   * Optional because a build without one is a real state: no cache surface, no
-   * handwriting recognition, and `available: false` is what the renderer's
-   * `when` predicate reads — the same shape `settings.loadSecrets` uses for a
-   * machine with no keyring.
-   */
-  readonly handwriting?: HandwritingCache;
-  /**
    * Paints the window controls over the title bar, answering whether a window took it.
    *
    * Injected for the file's reason — `setTitleBarOverlay` is Electron's — and REQUIRED, so an assembly that
@@ -239,39 +228,6 @@ export function createContractHandlers(deps: {
     // AN ARRAY COPY, because the answer crosses a boundary that serialises it and
     // the source is a `readonly` the composition root may hold on to.
     'app.ocrLanguages': async () => ok({ languages: [...(await deps.ocrLanguages())] }),
-    // NOT DOWNLOADED IS A STATE, not a refusal, and neither is *this build has
-    // no cache*. Both answer `ready: false` with a different `available`, so a
-    // surface can tell "press to fetch 67 MB" from "this build cannot".
-    'app.handwritingCache': async ({ size }) => {
-      if (deps.handwriting === undefined) {
-        return ok({ available: false, ready: false, bytesToFetch: 0 });
-      }
-      const report = await deps.handwriting.report(size);
-      return ok({
-        available: true,
-        ready: report.missing.length === 0,
-        bytesToFetch: report.bytesToFetch,
-      });
-    },
-    'app.fetchHandwritingModel': async ({ size }) => {
-      if (deps.handwriting === undefined) return err({ code: 'no-handwriting-cache' });
-      try {
-        const report = await deps.handwriting.fetch(size);
-        return ok({ ready: report.missing.length === 0, bytesToFetch: report.bytesToFetch });
-      } catch (cause) {
-        // A REFUSED DOWNLOAD IS AN ANSWER ABOUT THE NETWORK AND THE ARTEFACT,
-        // and a reader can act on it. `DownloadRefused` carries WHICH rule
-        // stopped it on a field, so nothing here reads a message to find out —
-        // and anything else is a defect in this build and goes to the internal
-        // path, where it arrives with an incident id.
-        if (cause instanceof DownloadRefused) return err({ code: 'download-refused' });
-        throw cause;
-      }
-    },
-    'app.clearHandwritingCache': async () => {
-      if (deps.handwriting === undefined) return err({ code: 'no-handwriting-cache' });
-      return ok({ bytesRemoved: await deps.handwriting.clear() });
-    },
     'document.open': openDocumentHandler(deps),
     'document.openFromUrl': openFromUrlHandler(deps),
     'document.unlock': async ({ docId, password }) => {

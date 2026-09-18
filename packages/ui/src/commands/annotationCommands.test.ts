@@ -175,7 +175,6 @@ describe('rectangleToolCommand', () => {
       scale: { perPoint: 1, unit: 'pt' },
       onSnapshot: () => undefined,
       language: () => 'eng' as const,
-      trocrSize: () => 'small' as const,
       onPlaceImage: () => undefined,
       onPlaceSignature: () => undefined,
       onPlaceBarcode: () => undefined,

@@ -1,4 +1,4 @@
-import { type CommandKind, isNetworkOcrEngine } from '@monstera/contract';
+import type { CommandKind, NetworkOcrEngine } from '@monstera/contract';
 
 import type {
   CommandAsset,
@@ -912,10 +912,9 @@ const declarations = {
     // through rather than the pre-read learning to look for it — which is the whole
     // shape of this axis: the declaration knows the payload, the access object knows
     // the document, and neither knows the other.
-    // THE ENGINE TRAVELS WITH IT, and the two arms are built separately rather
-    // than by spreading an engine onto one object: the handwriting arm needs the
-    // region to be PRESENT, which a spread cannot express, and the size comes
-    // from the settings the surface read when it dispatched.
+    // THE ENGINE TRAVELS WITH IT, and the arms are built separately rather than by
+    // spreading an engine onto one object: a network engine needs the region to be
+    // PRESENT, which a spread cannot express.
     read: (access, command) => {
       const region =
         command.region === undefined
@@ -937,30 +936,17 @@ const declarations = {
               'carry a region (ADR-0052 §4 and its 2026-09-12 addition)',
           );
         }
-        // THE NETWORK ENGINES BY THE ONE DECLARED SET (ADR-0057), never by a
-        // literal. This was a ternary on `'azure'` that sent every engine it did
-        // not name to the handwriting recogniser — so a fourth engine added to the
-        // contract alone would have been read as handwriting, silently.
-        if (isNetworkOcrEngine(command.engine)) {
-          // NO LANGUAGE AND NO MODEL SIZE. Each service detects the language, and
-          // passing the reader's OCR setting would be telling a service something
-          // it did not ask for and then believing its answer was about that
-          // language.
-          return access.ocr({ engine: command.engine, page: command.page, region });
-        }
-        // EXHAUSTIVE BY A BINDING, NOT A BRANCH. After the network guard the only
-        // local engine left is `handwriting`, so any comparison is always true and
-        // lint rightly refuses it. Binding the engine to that one literal keeps the
-        // guarantee a branch would have given: a local engine added to the
-        // contract makes this line a compile error, rather than a request that
-        // reaches the handwriting recogniser.
-        const local: 'handwriting' = command.engine;
-        return access.ocr({
-          engine: local,
-          page: command.page,
-          region,
-          size: command.trocrSize,
-        });
+        // EXHAUSTIVE BY A BINDING, NOT A BRANCH. Tesseract is the one local engine
+        // since the TrOCR engine was removed (ADR-0085), so every other engine is a
+        // network one by the declared set (ADR-0057) and a guard would always be
+        // true. The binding keeps what the guard gave: a LOCAL engine added to the
+        // contract makes this line a compile error, rather than a request that is
+        // sent to a service.
+        const network: NetworkOcrEngine = command.engine;
+        // NO LANGUAGE. Each service detects it, and passing the reader's OCR
+        // setting would be telling a service something it did not ask for and then
+        // believing its answer was about that language.
+        return access.ocr({ engine: network, page: command.page, region });
       }
 
       return access.ocr({

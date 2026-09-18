@@ -74,7 +74,6 @@ async function joined(parts: {
       pageText: refuse('read the page text'),
       pageLinks: refuse('read the page links'),
       ocr: refuse('recognise a page'),
-      handwriting: refuse('read handwriting'),
       destinations: refuse('read the outline'),
       layers: refuse('read the layers'),
       annotations: refuse('list annotations'),

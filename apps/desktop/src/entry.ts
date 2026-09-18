@@ -37,7 +37,7 @@ import {
   createPdfaPlatform,
   createPdfiumHostPlatform,
 } from './engineHostPlatform.js';
-import { createHandwritingCache } from './handwritingCache.js';
+import { removeRetiredCaches } from './retiredCaches.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -100,6 +100,32 @@ startShell(() => {
   const enginePlatform = createEngineHostPlatform(
     join(app.getPath('sessionData'), 'engine-sessions'),
   );
+
+  // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
+  // packaged run: a Store application has no terminal attached, so until this
+  // existed every failure this repository takes care to describe went to a
+  // handle that discards it.
+  //
+  // `userData` for the reason settings use it, one step stronger: a log the
+  // OS may empty is a log that is missing exactly when somebody goes looking
+  // for it after a crash.
+  //
+  // `openPath` and not `showItemInFolder`: the directory is what is wanted,
+  // there being up to five rotated files and no single one of them *the* log.
+  // Its answer is an error STRING — empty on success — which is the shape
+  // `RevealDirectory`'s boolean is derived from here, at the only boundary
+  // entitled to know what Electron's convention is.
+  const log = createShellLog(app.getPath('userData'), async (directory) => {
+    const problem = await shell.openPath(directory);
+    return problem === '';
+  });
+
+  // INSIDE THE LAMBDA, so after the single-instance lock: a losing second launch
+  // must not delete anything in the winner's profile. Not awaited — nothing the
+  // application does depends on the directory being gone (ADR-0085).
+  void removeRetiredCaches(app.getPath('userData'), (detail) => {
+    log.write('retired-cache', detail);
+  });
 
   return createShellDependencies({
     appInfo: {
@@ -291,11 +317,6 @@ startShell(() => {
     // stored there would be a path in the renderer with nothing having decided
     // to send it.
     recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
-    // THE HANDWRITING CACHE, under `userData` for the settings' reason and one
-    // more of its own: the models outlive every session, and the install root is
-    // both unwritable on a Store install and unreachable by the contained host
-    // that reads them (ADR-0023's 2026-09-09 correction).
-    handwriting: createHandwritingCache(app.getPath('userData')),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved above and handed down. Under
@@ -379,18 +400,7 @@ startShell(() => {
     // existed every failure this repository takes care to describe went to a
     // handle that discards it.
     //
-    // `userData` for the reason settings use it, one step stronger: a log the
-    // OS may empty is a log that is missing exactly when somebody goes looking
-    // for it after a crash.
-    //
-    // `openPath` and not `showItemInFolder`: the directory is what is wanted,
-    // there being up to five rotated files and no single one of them *the* log.
-    // Its answer is an error STRING — empty on success — which is the shape
-    // `RevealDirectory`'s boolean is derived from here, at the only boundary
-    // entitled to know what Electron's convention is.
-    log: createShellLog(app.getPath('userData'), async (directory) => {
-      const problem = await shell.openPath(directory);
-      return problem === '';
-    }),
+    // Built above, beside the platform, because the retired-cache removal writes to it too.
+    log,
   });
 });

@@ -8,10 +8,6 @@ import type { Matrix as MupdfMatrix } from 'mupdf';
 import { ColorSpace, Matrix, Rect } from 'mupdf';
 
 import type { MupdfSession } from './engineSeam.js';
-// TYPE-ONLY, and it must be: `ocrHandwriting.ts` loads an ONNX runtime, and this
-// module is imported by the host entry before either engine is used. The import
-// is erased, so naming the shape costs nothing at runtime.
-import type { HandwritingScope } from './ocrHandwriting.js';
 import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 
@@ -293,14 +289,12 @@ export interface RecognisedLine {
 }
 
 /**
- * What one recognition answers — **the shape BOTH engines return** (ADR-0052
- * Decision 1), so nothing downstream chooses between two answer types.
+ * What one recognition answers — **the shape EVERY engine returns** (ADR-0052
+ * Decision 1), so nothing downstream chooses between answer types.
  *
  * What each engine can fill differs, and the difference is stated where it is
- * produced rather than implied here: `ocrHandwriting.ts` answers one line at the
- * region's own box with **no words**, because TrOCR emits tokens rather than
- * glyph positions, and its confidence measures how sure the model was of the
- * text it emitted rather than whether the image held text at all.
+ * produced rather than implied here: Tesseract fills words and their boxes, and a
+ * network engine fills what its service reports.
  */
 export interface RecognisedPage {
   readonly lines: readonly RecognisedLine[];
@@ -310,9 +304,7 @@ export interface RecognisedPage {
    * The language that actually read it.
    *
    * Tesseract echoes the request, because the request names one of its fourteen
-   * models. The handwriting engine answers `eng` whatever was asked, because its
-   * repositories are English — an echo there would put a language in the answer
-   * that no model in this build can honour.
+   * models; a network engine answers what its service detected, mapped into the set.
    */
   readonly language: OcrLanguage;
 }
@@ -460,27 +452,23 @@ export interface OcrRequest {
 }
 
 /**
- * What a caller in main asks for, **for either engine** (ADR-0052 Decision 1).
+ * What a caller in main asks for, **for any engine** (ADR-0052 Decision 1).
  *
  * A union discriminated by the engine rather than one object with optional
- * extras, for the reason `engine/ocr-page`'s schema gives: the two engines do
- * not take the same request. Tesseract takes a language and an optional region;
- * the handwriting engine takes a required region and a model size and no
- * language, because its repositories are English and it reads one text line.
- *
- * So *a handwriting recognition of a whole page* is not a value this type can
- * hold, which is B5 rather than a check — and the compiler refuses it at every
- * call site between the tool that drags a rectangle and the host that reads it.
+ * extras, because the engines do not take the same request: Tesseract takes a
+ * language and an optional region, and a network engine a required region and no
+ * language. So *a network recognition of a whole page* is not a value this type
+ * can hold, which is B5 rather than a check.
  */
 export type RecognitionRequest =
   | ({ readonly engine: 'tesseract' } & OcrRequest)
-  | ({ readonly engine: 'handwriting' } & HandwritingScope)
   | {
       /**
        * The NETWORK engines, by the one declared set (ADR-0057). Their arm carries
-       * no language and no model size — each service detects the language — and,
-       * like the handwriting arm, a REQUIRED region: what it is given is uploaded,
-       * so *the whole page* is not a request this type can express.
+       * no language — each service detects it — and a REQUIRED region: what it is
+       * given is uploaded, so *the whole page* is not a request this type can
+       * express. They read handwriting too, since the local engine was removed
+       * (ADR-0085).
        */
       readonly engine: NetworkOcrEngine;
       readonly page: number;

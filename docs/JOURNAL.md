@@ -892,6 +892,49 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — The local handwriting engine is removed (ADR-0085's build)
+
+**What went**: `ocrHandwriting.ts` and its artefact manifest in the kernel, the host channel's
+handwriting arm, main's download cache and its three channels (`app.handwritingCache`,
+`app.fetchHandwritingModel`, `app.clearHandwritingCache`), the model-size setting, the
+handwriting region tool and its two ribbon commands, `provision:onnxruntime`, the container
+grant for the runtime, `proof:ocrhandwriting` and its CI step, and ONNX Runtime's licence texts
+and NOTICE entry (6,390 lines, all deletions). `OCR_ENGINES` is now tesseract, azure, claude.
+The Excel table-detection row lists four engines, with three still blocked.
+
+**What arrived**: the recognition dialog's one line, *"To read handwriting, add an Azure or
+Anthropic key in Settings."*, in both of its states (`OcrBody.test.tsx`, with the no-models
+state as the control that the line is not tied to the start button). And `retiredCaches.ts`:
+main removes `userData/handwriting` at start and writes one `retired-cache` line to the shell
+log naming the file count and bytes; every later start finds nothing and says nothing. Its
+control is a case that leaves `settings.json` and `logs/` standing, and a file where the
+directory should be is reported rather than read as absent.
+
+**The channel refuses the old shape**: `ocrChannel.test.ts` asserts `engine/ocr-page` rejects
+the removed arm, beside a control that the same schema accepts a Tesseract request built the
+same way.
+
+**Left standing, deliberately**: the kernel's `downloadVerified` now has no shipped caller —
+the handwriting cache was its only one. Its proof still runs and `readWithin` and
+`receivedByteMeter` from the same module are used, so it is recorded here rather than removed
+in a commit whose subject is something else.
+
+**Checked**: `npm run typecheck` exit 0, `npm run lint` exit 0, `npm run build` exit 0;
+`containerGrants`, `contract` and `buildFreshness` proofs pass (17, 52, 16 cases); `notice:check`
+passes. Vitest over the affected files: 711 of 712 on the first run, where a worker failed to
+start under load so `App.test.tsx` did not run and one spell-check case timed out; both files
+run alone: 73 of 73.
+
+**The escape guard fired once**, on a `sed -i` reached for while editing the new test. The Edit
+tool did the same substitution.
+
+**Still owed on this row**: Azure's *Delete Analyze Result* after each read, and the Sonnet 5
+against Opus 5 measurement on real handwriting.
+
+**Board**: GREEN at f0f5c88 (Guards and CI), read 17:45, 87 minutes after its push.
+
+---
+
 ## 2026-09-18 — Red board at e9d36ee: the recovery harness hid its own failure and then hung
 
 **CI #911, step *A killed engine host recovers*: 180 s against 7 s on the run before it.** The

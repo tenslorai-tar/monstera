@@ -1,15 +1,17 @@
-import type { OcrLanguage, RenderableCommand, TrocrSize } from '@monstera/contract';
+import type { OcrLanguage, RenderableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
 import type { OcrRegionDeps } from './ocrRegionTool.js';
 import {
-  HANDWRITING_REGION_TOOL_ID,
+  CLAUDE_REGION_TOOL_ID,
+  CLOUD_REGION_TOOL_ID,
   MINIMUM_REGION,
   OCR_REGION_TOOL_ID,
+  claudeRegionTool,
   cloudRegionTool,
-  handwritingRegionTool,
   ocrRegionTool,
 } from './ocrRegionTool.js';
 
@@ -55,19 +57,8 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
  */
 const LANGUAGE: OcrLanguage = 'deu';
 
-/**
- * The model size every case below drags with.
- *
- * **NOT `'small'`, for `LANGUAGE`'s reason**: `TROCR_SIZE_SETTING`'s fallback is
- * `small`, so a tool that ignored the dep would satisfy a case written with it.
- */
-const SIZE: TrocrSize = 'base';
-
-/** Both deps, so a case that cares about one need not restate the other. */
-const deps = (
-  language: () => OcrLanguage = () => LANGUAGE,
-  trocrSize: () => TrocrSize = () => SIZE,
-): OcrRegionDeps => ({ language, trocrSize });
+/** The deps, with the language every case drags in unless it says otherwise. */
+const deps = (language: () => OcrLanguage = () => LANGUAGE): OcrRegionDeps => ({ language });
 
 /** The command one drag answered, or `undefined` if it answered none. */
 function dragged(
@@ -94,7 +85,6 @@ describe('the OCR region tool', () => {
       page: 3,
       language: LANGUAGE,
       engine: 'tesseract',
-      trocrSize: SIZE,
       region: { x0: 60, y0: 390, x1: 110, y1: 360 },
     });
   });
@@ -178,89 +168,51 @@ describe('the OCR region tool', () => {
   });
 });
 
-describe('the handwriting region tool', () => {
-  /** The same drag, through the second registration. */
-  function draggedHandwriting(
-    trocrSize: () => TrocrSize = () => SIZE,
-  ): RenderableCommand | undefined {
-    const { controller } = handwritingRegionTool(deps(undefined, trocrSize));
-    const started = controller.begin(viewportPoint(20, 20));
-    const moved = controller.update(started, viewportPoint(120, 80));
-    return controller.commit(moved, 3, overlayTransform(PAGE)) as RenderableCommand | undefined;
+describe('the network region tools', () => {
+  /** The same drag, through another registration. */
+  function draggedWith(tool: UiTool): RenderableCommand | undefined {
+    const started = tool.controller.begin(viewportPoint(20, 20));
+    const moved = tool.controller.update(started, viewportPoint(120, 80));
+    return tool.controller.commit(moved, 3, overlayTransform(PAGE)) as RenderableCommand | undefined;
   }
 
-  it('dispatches the SAME command with engine: handwriting, and the same region', () => {
-    // THE WHOLE CLAIM OF THE SECOND REGISTRATION. One command, one channel, one
+  it.each([
+    ['azure', cloudRegionTool],
+    ['claude', claudeRegionTool],
+  ] as const)('dispatches the SAME command with engine: %s, and the same region', (engine, build) => {
+    // THE WHOLE CLAIM OF A SECOND REGISTRATION. One command, one channel, one
     // answer shape — the engine is the only field that differs, and asserting
-    // the region here is what says so: a second tool that had drifted into its
-    // own conversion would pass a case that only read the engine.
-    expect(draggedHandwriting()).toStrictEqual({
+    // the region here is what says so: a tool that had drifted into its own
+    // conversion would pass a case that only read the engine.
+    expect(draggedWith(build(deps()))).toStrictEqual({
       kind: 'ocrPage',
       page: 3,
       language: LANGUAGE,
-      engine: 'handwriting',
-      trocrSize: SIZE,
+      engine,
       region: { x0: 60, y0: 390, x1: 110, y1: 360 },
     });
-  });
-
-  it('reads the model size at COMMIT, not when the tool was composed', () => {
-    // `language`'s case one field along, and it is the field this registration
-    // actually uses: a reader who changes the size in settings and drags again
-    // must get the model they just chose.
-    let size: TrocrSize = 'small';
-    const tool = handwritingRegionTool(deps(undefined, () => size));
-    const drag = (): RenderableCommand | undefined => {
-      const started = tool.controller.begin(viewportPoint(20, 20));
-      const moved = tool.controller.update(started, viewportPoint(120, 80));
-      return tool.controller.commit(moved, 3, overlayTransform(PAGE)) as
-        | RenderableCommand
-        | undefined;
-    };
-    expect(drag()).toMatchObject({ trocrSize: 'small' });
-    size = 'base';
-    expect(drag()).toMatchObject({ trocrSize: 'base' });
   });
 
   it('CONTROL: the printed-text registration sends engine: tesseract for the same drag', () => {
-    // The mirror that makes the case above a claim about the ENGINE rather than
-    // about this file's fixture. Both are built by one factory, so a literal
-    // written once in the wrong place would make both registrations agree — and
-    // only a pair of cases can see that.
+    // The mirror that makes the cases above a claim about the ENGINE rather than
+    // about this file's fixture. All are built by one factory, so a literal
+    // written once in the wrong place would make registrations agree — and only
+    // a set of cases, one per id, can see which.
     expect(dragged([20, 20], [120, 80])).toMatchObject({ engine: 'tesseract' });
-    expect(draggedHandwriting()).toMatchObject({ engine: 'handwriting' });
-  });
-
-  it('claims its OWN id, which is what makes it a second registration', () => {
-    expect(handwritingRegionTool(deps()).id).toBe(HANDWRITING_REGION_TOOL_ID);
-    expect(handwritingRegionTool(deps()).id).not.toBe(ocrRegionTool(deps()).id);
-  });
-
-  it('CONTROL: the CLOUD registration sends engine: azure for the same drag', () => {
-    // The third arm of the same claim. Three registrations from one factory
-    // means a literal written in the wrong place makes two of them agree — and
-    // only a set of cases, one per id, can see which two.
-    const { controller } = cloudRegionTool(deps());
-    const started = controller.begin(viewportPoint(20, 20));
-    const moved = controller.update(started, viewportPoint(120, 80));
-    expect(controller.commit(moved, 3, overlayTransform(PAGE))).toMatchObject({
-      engine: 'azure',
-      // THE SAME REGION, which is what says the three share a conversion rather
-      // than each having acquired one.
-      region: { x0: 60, y0: 390, x1: 110, y1: 360 },
-    });
   });
 
   it('the three registrations claim three DIFFERENT ids', () => {
-    const ids = [ocrRegionTool(deps()).id, handwritingRegionTool(deps()).id, cloudRegionTool(deps()).id];
+    const ids = [ocrRegionTool(deps()).id, cloudRegionTool(deps()).id, claudeRegionTool(deps()).id];
     expect(new Set(ids).size).toBe(3);
+    expect(ids[1]).toBe(CLOUD_REGION_TOOL_ID);
+    expect(ids[2]).toBe(CLAUDE_REGION_TOOL_ID);
   });
 
-  it('refuses a flat drag exactly as the other registration does', () => {
+  it('refuses a flat drag exactly as the printed-text registration does', () => {
     // The minimum lives in the shared factory, so this is a case about the
-    // sharing rather than about the number: a second registration that had
-    // acquired its own gesture would pass every case above and fail here.
-    const { controller } = handwritingRegionTool(deps());
+    // sharing rather than about the number: a registration that had acquired
+    // its own gesture would pass every case above and fail here.
+    const { controller } = claudeRegionTool(deps());
     const started = controller.begin(viewportPoint(20, 20));
     const moved = controller.update(started, viewportPoint(120, 20 + MINIMUM_REGION - 1));
     expect(controller.commit(moved, 3, overlayTransform(PAGE))).toBeUndefined();
