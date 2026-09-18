@@ -228,10 +228,20 @@ function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
   const widgetTu = tally();
   const linkContents = tally();
   const fonts = tally();
-  const fontsSeen = new Set<number>();
+  /** Each font's embedded-ness, and each form XObject's "reaches nothing unembedded", by object. */
+  const fontsSeen = new Map<number, boolean>();
+  /** Names a page an entry fails on, without counting a failure — a shared object seen again. */
+  const blameAt = (entry: ReturnType<typeof tally>, page: number): void => {
+    if (entry.pages.length < MAX_REPORTED_PAGES && !entry.pages.includes(page)) entry.pages.push(page);
+  };
   const failAt = (entry: ReturnType<typeof tally>, page: number): void => {
     entry.count += 1;
-    if (entry.pages.length < MAX_REPORTED_PAGES && !entry.pages.includes(page)) entry.pages.push(page);
+    blameAt(entry, page);
+  };
+  /** An unembedded font met on `page`: counted the first time its object is seen, blamed every time. */
+  const fontFailsAt = (page: number) => (firstSight: boolean): void => {
+    if (firstSight) failAt(fonts, page);
+    else blameAt(fonts, page);
   };
 
   const pages = document.countPages();
@@ -251,9 +261,7 @@ function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
         appearanceStreams(annotation.get('AP')).forEach((stream) => {
           collectFonts(stream.get('Resources'), 1, fontsSeen, () => {
             fonts.applicable = true;
-          }, () => {
-            failAt(fonts, index);
-          });
+          }, fontFailsAt(index));
         });
         const flags = annotation.get('F');
         if (flags.isNumber() && (flags.asNumber() & 2) === 2) continue;
@@ -281,9 +289,7 @@ function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
     }
     collectFonts(page.get('Resources'), 0, fontsSeen, () => {
       fonts.applicable = true;
-    }, () => {
-      failAt(fonts, index);
-    });
+    }, fontFailsAt(index));
   }
 
   const result = (clause: string, test: number, entry: ReturnType<typeof tally>): AccessibilityRuleResult => ({
@@ -340,35 +346,51 @@ function fieldOf(widget: PDFObject): PDFObject {
 function collectFonts(
   resources: PDFObject,
   depth: number,
-  seen: Set<number>,
+  seen: Map<number, boolean>,
   found: () => void,
-  unembedded: () => void,
-): void {
-  if (!resources.isDictionary() || depth > MAX_XOBJECT_DEPTH) return;
+  unembedded: (firstSight: boolean) => void,
+): boolean {
+  if (!resources.isDictionary() || depth > MAX_XOBJECT_DEPTH) return false;
+  // WHETHER ANYTHING REACHED FROM HERE IS UNEMBEDDED, so a shared form XObject can answer for a
+  // second page without being walked — and without being counted — again.
+  let anyUnembedded = false;
   const fonts = resources.get('Font');
   if (fonts.isDictionary()) {
     fonts.forEach((font: PDFObject) => {
       if (!font.isDictionary()) return;
-      if (font.isIndirect()) {
-        const number = font.asIndirect();
-        if (seen.has(number)) return;
-        seen.add(number);
+      // A FONT SEEN BEFORE IS COUNTED ONCE AND BLAMED ON EVERY PAGE THAT USES IT. The count is
+      // veraPDF's, one per font object; the pages are what a person fixes. This returned early
+      // for a seen font, so a font shared by every page was reported on the first page alone —
+      // measured live 2026-09-18, "Pages: 1" for a font used on pages 1 to 3.
+      const number = font.isIndirect() ? font.asIndirect() : undefined;
+      const known = number === undefined ? undefined : seen.get(number);
+      if (known !== undefined) {
+        if (!known) {
+          anyUnembedded = true;
+          unembedded(false);
+        }
+        return;
       }
       found();
       const subtype = font.get('Subtype').isName() ? font.get('Subtype').asName() : '';
-      if (subtype === 'Type3') return;
       // A TYPE 0 FONT PASSES ITSELF and its descendant CIDFont is a font of its own to veraPDF,
       // whose program must be embedded — so the descendant's descriptor is the one read.
       const descendants = font.get('DescendantFonts');
       const program = subtype === 'Type0' && descendants.isArray() && descendants.length > 0 ? descendants.get(0) : font;
-      if (!program.isDictionary()) return;
-      const descriptor = program.get('FontDescriptor');
+      const descriptor = program.isDictionary() ? program.get('FontDescriptor') : undefined;
       const embedded =
-        descriptor.isDictionary() &&
-        (descriptor.get('FontFile').isStream() ||
-          descriptor.get('FontFile2').isStream() ||
-          descriptor.get('FontFile3').isStream());
-      if (!embedded) unembedded();
+        subtype === 'Type3' ||
+        !program.isDictionary() ||
+        (descriptor !== undefined &&
+          descriptor.isDictionary() &&
+          (descriptor.get('FontFile').isStream() ||
+            descriptor.get('FontFile2').isStream() ||
+            descriptor.get('FontFile3').isStream()));
+      if (number !== undefined) seen.set(number, embedded);
+      if (!embedded) {
+        anyUnembedded = true;
+        unembedded(true);
+      }
     });
   }
   const xobjects = resources.get('XObject');
@@ -377,12 +399,22 @@ function collectFonts(
       if (!xobject.isStream()) return;
       const subtype = xobject.get('Subtype');
       if (!(subtype.isName() && subtype.asName() === 'Form')) return;
-      if (xobject.isIndirect()) {
-        const number = xobject.asIndirect();
-        if (seen.has(-number)) return;
-        seen.add(-number);
+      const number = xobject.isIndirect() ? -xobject.asIndirect() : undefined;
+      const known = number === undefined ? undefined : seen.get(number);
+      if (known !== undefined) {
+        // `seen` holds EMBEDDED-ness for a font and "holds nothing unembedded" for a form, so
+        // false means this form reaches an unembedded font: blame this page, count nothing.
+        if (!known) {
+          anyUnembedded = true;
+          unembedded(false);
+        }
+        return;
       }
-      collectFonts(xobject.get('Resources'), depth + 1, seen, found, unembedded);
+      if (number !== undefined) seen.set(number, true);
+      const inner = collectFonts(xobject.get('Resources'), depth + 1, seen, found, unembedded);
+      if (number !== undefined) seen.set(number, !inner);
+      if (inner) anyUnembedded = true;
     });
   }
+  return anyUnembedded;
 }

@@ -892,6 +892,24 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — Compare and the accessibility check, live; a shared font was blamed on one page
+
+**Document compare, live**: Source and Target open, compared from the palette — *4 lines differ in
+the 2 pages both documents have*, Target's two extra pages stated as not compared, and each page's
+line named on both sides. Read-only, so nothing to save or reopen. **Done.**
+
+**Accessibility check, live**, on the untagged fixture: every document rule failed where the file
+fails, *Every font is embedded* failed — and listed **page 1 only**, for a Helvetica every text page
+uses. The mechanism: `collectFonts` deduplicated by object across the document, so a shared font was
+examined once and blamed on the first page that reached it; a shared form XObject had the same shape
+one level down. The count is veraPDF's (one per font object) and stays one; the pages are what a
+person fixes. Now each font's verdict and each form's *reaches nothing unembedded* are remembered,
+so a repeat sighting blames its page without counting. Two cases — a font shared by three pages
+(count 1, pages 0–2) and a form XObject drawn on two (count 1, pages 0–1) — both red against the
+previous check (`[0]`). **Done.**
+
+---
+
 ## 2026-09-18 — An edit keeps the reader on their page; row 225 passes live; ADR-0084's cost, measured
 
 **The defect.** Once ADR-0084 made every edit a new version, every edit reopened the view and put

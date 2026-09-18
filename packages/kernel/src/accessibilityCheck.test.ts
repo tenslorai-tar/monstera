@@ -98,6 +98,18 @@ async function verdicts(bytes: Uint8Array): Promise<Record<string, Accessibility
   }
 }
 
+/** The embedded-fonts rule (7.21.4.1-1) as the check reports it. */
+async function fontRule(bytes: Uint8Array): Promise<{ readonly count: number; readonly pages: readonly number[] }> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    const rule = (await checkAccessibility(session)).rules.find((each) => each.clause === '7.21.4.1' && each.test === 1);
+    if (rule === undefined) throw new Error('the check reports the embedded-fonts rule');
+    return { count: rule.count, pages: rule.pages };
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
 describe('checkAccessibility — PDF/UA-1 object rules, and what they cannot see', () => {
   it('a bare document fails every document rule, its annotations and its unembedded font', async () => {
     const { bare } = await accessibilityFixtures();
@@ -120,6 +132,33 @@ describe('checkAccessibility — PDF/UA-1 object rules, and what they cannot see
       '7.18.5-2': 'failed',
       '7.21.4.1-1': 'failed',
     });
+  });
+
+  it('a font SHARED by every page is counted once and blamed on every page that uses it', async () => {
+    // pdf-lib embeds a font once and every page's resources point at the same object, which is how
+    // most producers write a document. The check examined each font object once and returned for a
+    // seen one, so it reported "Pages: 1" for a font used on pages 1 to 3 (live 2026-09-18).
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    for (let at = 0; at < 3; at += 1) document.addPage([400, 400]).drawText(`page ${String(at + 1)}`, { x: 50, y: 300, font });
+    const fonts = await fontRule(await document.save());
+    // ONE FONT OBJECT, as veraPDF counts it — the control that the pages are not bought with a count.
+    expect(fonts.count).toBe(1);
+    expect(fonts.pages).toStrictEqual([0, 1, 2]);
+  });
+
+  it('a form XObject SHARED by two pages blames both for the unembedded font inside it', async () => {
+    const source = await PDFDocument.create();
+    const helvetica = await source.embedFont(StandardFonts.Helvetica);
+    source.addPage([200, 100]).drawText('stamp', { x: 10, y: 50, font: helvetica });
+    const document = await PDFDocument.create();
+    const [stamp] = await document.embedPdf(await source.save());
+    if (stamp === undefined) throw new Error('the stamp embedded');
+    document.addPage([400, 400]).drawPage(stamp, { x: 0, y: 0 });
+    document.addPage([400, 400]).drawPage(stamp, { x: 0, y: 0 });
+    const fonts = await fontRule(await document.save());
+    expect(fonts.count).toBe(1);
+    expect(fonts.pages).toStrictEqual([0, 1]);
   });
 
   it('CONTROL: the prepared document passes each of them', async () => {
