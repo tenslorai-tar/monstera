@@ -813,10 +813,12 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * asked where they were.
    *
    * `startAt` is what stops that: the scroller seeds the page it is mounting
-   * at, so its first report is the truth. This supplies the other half — the
-   * `goTo` request that actually moves it there — and the two belong together,
-   * which is why every route that changes the active document comes through
-   * here rather than calling `setActiveId`.
+   * at, so its first report is the truth, and reveals it itself on mount. That
+   * reveal was a `goTo` issued here until 2026-09-18, and the route it did not
+   * cover — a new version, which remounts the scroller on every edit — is why
+   * it moved into the scroller (`PageList`'s `revealedStart`). Every route that
+   * changes the active document still comes through here rather than calling
+   * `setActiveId`, so there is one name for it.
    *
    * ## Only the active view is mounted, and that is a BUDGET decision
    *
@@ -826,14 +828,10 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * renderer budget is written about. Unmounting keeps that budget a statement
    * about one document, and this callback is what it costs.
    */
-  const activate = useCallback(
-    (docId: DocId): void => {
-      setActiveId(docId);
-      const page = stores.get(docId)?.getState().page;
-      if (page !== undefined) setGoTo(page);
-    },
-    [stores],
-  );
+  const activate = useCallback((docId: DocId): void => {
+    setActiveId(docId);
+  }, []);
+
 
   /**
    * A document main has opened, added as a tab and brought to the front.
@@ -1928,15 +1926,14 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // error rather than showing the previous document's failure over the
         // new one — a boundary that latches is a document you cannot open.
         //
-        // THE RETRY RE-ISSUES THE SCROLL REQUEST, and holding the state above
-        // the boundary is not enough without it. Measured: a reset remounts the
-        // scroller, which seeds its first page as visible and reports it — so
-        // `currentPage` was preserved across the failure and then overwritten
-        // by the fresh view a moment later, and a reader who threw on page 40
-        // came back to page 1 with every piece of state intact. `goTo` is the
-        // seam that already exists for *put the reader here*, so the retry sets
-        // it in the same event as the reset and the remounted view starts where
-        // the reader was.
+        // THE RETRY'S REMOUNT STARTS WHERE THE READER WAS, because the scroller
+        // reveals its `startAt` itself on mount. Holding the state above the
+        // boundary was not enough alone — measured: a reset remounts the scroller,
+        // which seeded its first page and reported it, so a reader who threw on
+        // page 40 came back to page 1 with every piece of state intact. The retry
+        // re-issued a `goTo` for that until 2026-09-18, when the reveal moved into
+        // the scroller because an edit remounts it too and no caller's request can
+        // reach the scroller that mounts after it (`PageList`'s `revealedStart`).
         <>
         <Ribbon registry={registry} context={context} settings={settings} />
         {/* THE BODY AREA, one element whatever the view renders: a scroller, a
@@ -1949,7 +1946,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           fallback={({ reset }) => (
             <ViewProblem
               onRetry={() => {
-                setGoTo(currentPage);
                 reset();
               }}
             />

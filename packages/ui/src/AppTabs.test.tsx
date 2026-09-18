@@ -124,6 +124,9 @@ function freshSettings(): SettingsStore {
 /** Every observer built during a case, with the callback it was given. */
 let observers: { callback: IntersectionObserverCallback; observed: Element[] }[] = [];
 
+/** The pages a slot was asked to reveal, in order — on the prototype, so a remount cannot lose it. */
+let scrolled: number[] = [];
+
 beforeEach(() => {
   activateCatalogue('en', EN);
   observers = [];
@@ -157,12 +160,20 @@ beforeEach(() => {
     }
   } as unknown as typeof IntersectionObserver;
 
-  // `scrollIntoView` is not implemented by happy-dom and the scroller calls it
-  // on every restored page. A no-op is enough: what the cases below read is the
-  // page the STORE holds, and the scroll is what a real observer would answer.
+  // `scrollIntoView` is not implemented by happy-dom and the scroller calls it on every restored
+  // page. RECORDED, not a no-op: the store's page is what the seeded `startAt` produces whether or
+  // not the view moved, so the page a slot was ASKED to reveal is the only observable that
+  // separates a restored place from a lost one (removing the reveal left every case here green).
+  scrolled = [];
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
-    value: (): void => undefined,
+    get(this: unknown): () => void {
+      const slot = this instanceof HTMLElement && this.classList.contains('m-page-slot') ? this : null;
+      const page = slot === null ? -1 : Number(slot.dataset['page'] ?? -1);
+      return (): void => {
+        if (slot !== null) scrolled.push(page);
+      };
+    },
   });
 });
 
@@ -264,10 +275,14 @@ describe('multi-document tabs', () => {
     // per-document page count from the first document's.
     expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 1 of 4');
 
+    scrolled.length = 0;
     await press(container, `[data-tab-select="${FIRST}"]`);
 
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
     expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 2 of 2');
+    // AND THE VIEW WAS TAKEN THERE, which the line above cannot say: the remounted scroller seeds
+    // page 2 as its report either way, and only the reveal moves what the reader sees.
+    expect(scrolled).toStrictEqual([1]);
   });
 
   it('CLOSES the document at main, not only the tab', async () => {

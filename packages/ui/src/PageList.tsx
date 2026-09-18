@@ -532,16 +532,68 @@ export function PageList({
    * above it — and it would go on being wrong as those pages corrected
    * themselves. The element knows where it is.
    *
-   * The request is reported as consumed whether or not a slot was found. A slot
-   * always exists — there is one per page from the first frame — so a miss
-   * means the page is outside the document, and leaving the request standing
-   * would retry it on every render for ever.
+   * The request is reported as consumed whether or not a slot was found, so it
+   * cannot retry on every render for ever.
+   *
+   * **A PAGE PAST THE END MEANS THE LAST PAGE.** The page a reader was on is
+   * re-requested after every edit (App's remount effect), and deleting the page
+   * they were on makes it one past the end; landing them on the new last page is
+   * where they were, where the top of the document is not.
    */
   useEffect(() => {
     if (goTo === undefined) return;
-    slotFor(goTo)?.scrollIntoView({ block: 'start' });
+    slotFor(Math.min(goTo, pageCount - 1))?.scrollIntoView({ block: 'start' });
     onWentTo();
-  }, [goTo, onWentTo, slotFor]);
+  }, [goTo, onWentTo, pageCount, slotFor]);
+
+  /**
+   * The page this scroller MOUNTS at, revealed once — the scroll half of `startAt`.
+   *
+   * `startAt` only seeded the page visible, and every remount route had to pair it with a `goTo`
+   * from above: a tab brought forward did, the error boundary's retry did, and a new version —
+   * every edit since ADR-0084 — did not, so each edit put the reader on page 1 (seen live
+   * 2026-09-18). Pairing it from above cannot work for that route at all: the request is issued
+   * in the render that moves the version, where the OLD scroller is still mounted and consumes
+   * it, and the new one mounts at the top a moment later. The scroller that mounts is the one
+   * place that knows it mounted, so it reveals its own starting page, and no route has a half
+   * left to forget.
+   *
+   * ONCE, by a ref: `slotFor` and `pageCount` may change while this scroller lives, and a reveal
+   * that re-fired on them would pull the reader back to where they started.
+   *
+   * **AND NOT BEFORE A PAGE IS MEASURED.** At mount every slot is at its minimum, so a reveal then
+   * scrolls to where page N sits among minimum slots; the first measurement arrives a moment later,
+   * every estimate takes it at once (`lastKnownBefore`), and the same scroll offset is inside an
+   * earlier page. Traced over the debugging port 2026-09-18: slots `260,260,260,260,260` and
+   * `top=568` at the reveal, then `792,…` and the status at page 1 of 5, for a reader on page 3.
+   *
+   * **ANY page, not the starting one.** The scroller mounts at the top, so its observer reports
+   * page 1 and replaces the seeded visible set before the starting page draws — which then never
+   * draws, so a reveal waiting for ITS measurement waited for ever (reproduced in Chromium by
+   * `pagePosition.pw.ts`: one canvas, every slot sized, and no reveal). The first measurement is
+   * the one that sets every estimate, which is all the position needs.
+   */
+  //
+  // **THE MOUNT'S `startAt`, held, because the prop is live.** The caller passes the reader's
+  // current page, and the new scroller's own observer reports page 1 before the starting page is
+  // measured — so read live, `startAt` had become 0 by the time the reveal could run, and it
+  // revealed nothing (traced 2026-09-18: status at page 1 of 4 while page 3 was measuring). The
+  // prop's contract was always *read once, at mount*; this is that, spelt so a re-render cannot
+  // change it.
+  const [mountedAt] = useState(startAt);
+  const revealedStart = useRef(false);
+  const startPage = Math.min(mountedAt, pageCount - 1);
+  const anyMeasured = sizes.size > 0;
+  useEffect(() => {
+    if (revealedStart.current) return;
+    if (mountedAt <= 0) {
+      revealedStart.current = true;
+      return;
+    }
+    if (!anyMeasured) return;
+    revealedStart.current = true;
+    slotFor(startPage)?.scrollIntoView({ block: 'start' });
+  }, [anyMeasured, mountedAt, slotFor, startPage]);
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>): void => {
@@ -686,6 +738,14 @@ export function PageList({
  * Before, rather than nearest in either direction: a document is read forwards,
  * so the page above the one being estimated is the one most likely to share its
  * size, and it is the one already drawn.
+ *
+ * **AND AFTER, WHEN NOTHING BEFORE IS MEASURED.** A scroller mounting mid-document
+ * — every edit since ADR-0084, and every tab brought back — draws its starting
+ * page first, so the pages above it had no estimate and sat at the slot's minimum.
+ * They grew as they drew, pushing the revealed page down: measured live
+ * 2026-09-18, a reader on page 3 of 4 landed on page 2 after an insert. The page
+ * below is the only size known then, and a wrong estimate is still a better one
+ * than none.
  */
 function lastKnownBefore(
   sizes: ReadonlyMap<number, Measured>,
@@ -695,7 +755,10 @@ function lastKnownBefore(
     const known = sizes.get(index);
     if (known !== undefined) return known;
   }
-  return sizes.get(0);
+  for (const [index, known] of [...sizes].sort(([a], [b]) => a - b)) {
+    if (index > page) return known;
+  }
+  return undefined;
 }
 
 /**

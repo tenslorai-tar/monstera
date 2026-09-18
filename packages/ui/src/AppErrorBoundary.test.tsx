@@ -89,6 +89,9 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   },
   'document.recent': { entries: [], lastExitClean: true },
   'log.reveal': { revealed: false },
+  // AN UNDO MOVES THE VERSION, which remounts the scroller exactly as a retry does — and moves no
+  // page, so the reader's page is the same number afterwards (a move would remap it, correctly).
+  'document.undo': { kind: 'undone' as const, version: asDocVersion(2), byteLength: 2048 },
 };
 
 function client(): ContractClient {
@@ -303,6 +306,37 @@ describe('the error boundary around the document view, in App', () => {
     // whether the reader's page was REQUESTED, which is a `scrollIntoView` on
     // that slot, and a real browser's observer answers it while happy-dom's
     // does not.
+    expect(scrolled).toStrictEqual([1]);
+  });
+
+  it('a COMMAND that moves the version returns the reader to their page, as a retry does', async () => {
+    // THE THIRD REMOUNT. A new version closes the view and opens the new bytes, so the scroller
+    // remounts and seeds page 1 — and until 2026-09-18 nothing re-requested the reader's page, so
+    // every edit put them back at the top (seen live after ADR-0084 made every edit a version).
+    activateCatalogue('en', EN);
+    const { container } = render(<App client={client()} settings={freshSettings()} />);
+    await open();
+    await act(async () => {
+      scrolledTo(1);
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 2 of 2');
+
+    // FROM HERE, so the list holds what the version move asked for and nothing before it.
+    scrolled.length = 0;
+    // A REAL COMMAND through its chord. An undo, not a page move: a move remaps the reader's page
+    // with the page they were on — correctly — so it cannot separate a kept place from a lost one.
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // THE CALL, not the end state: the remounted scroller reports page 1 whatever happened, and
+    // what separates a kept place from a lost one is whether page 2 was REQUESTED.
     expect(scrolled).toStrictEqual([1]);
   });
 

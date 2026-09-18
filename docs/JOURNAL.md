@@ -892,6 +892,63 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — An edit keeps the reader on their page; row 225 passes live; ADR-0084's cost, measured
+
+**The defect.** Once ADR-0084 made every edit a new version, every edit reopened the view and put
+the reader back on page 1. Three mechanisms, each found by tracing the running renderer over the
+debugging port rather than reasoned out, and each fixed in turn:
+
+1. **The reveal lived above the scroller.** `startAt` only seeded a page visible; tab activation and
+   the error boundary's retry each paired it with a `goTo`, and a version change did not. Issued from
+   `App`, the request is consumed by the OLD scroller, still mounted in that render. So the scroller
+   now reveals its own mount page (`revealedStart`), and the two `goTo` pairings are gone — one
+   route, where three had a half each.
+2. **The reveal fired before any page was measured**, at minimum slot heights: traced
+   `slots=260,260,260,260,260 top=568`, then `792,…` and page 1 of 5 for a reader on page 3. It now
+   waits for the first measurement. It waits for ANY page's: the remounted scroller sits at the top,
+   its observer reports page 1 and replaces the seeded set, and the starting page never draws —
+   reproduced in Chromium (`pagePosition.pw.ts`: one canvas, every slot sized, no reveal).
+3. **`startAt` was read live** while its contract says *read once, at mount*: the observer's report
+   changed it to 0 before the reveal ran. Held with `useState` now.
+
+And `lastKnownBefore` now falls back to the nearest measured page AFTER when none before is
+measured, so pages above a mid-document mount take its size instead of the minimum; and a `goTo`
+past the end lands on the last page (deleting the page a reader is on).
+
+**Proofs.** Chromium `pagePosition.pw.ts`: page 3 of three, a command, still page 3 and scrolled —
+against the build before the fix, *Page 1 of 3*. Unit: the reveal waits for a measurement and holds
+its mount page through a `startAt` of 0; unvisited pages above take the measured size; a request past
+the end lands on the last page; `AppErrorBoundary` — an undo returns the reader to page 2;
+`AppTabs` — switching back REQUESTS page 2, which its old end-state assertion could not say (with the
+reveal removed it stayed green; now it reddens). Each reddens with its code removed. **Live**:
+page 3 of 3, insert a blank page, still on page 3 of 4.
+
+**Row 225 live**: the layer drawn over page 2 at once, all three thumbnails 96 × 125 (the render fix,
+live), saved `TARGET 2 + SOURCE 1` on page 2 with one optional-content group `Source.pdf`, reopened
+the same. Rows 90, 94, 98 and 225 are done.
+
+**ADR-0084's cost, measured** (MuPDF's serialise after a real edit, the kernel's own writer, three
+readings each): control 62 KB 27/2/1 ms; **25.1 MB, 127k objects, 5671 / 2315 / 2611 ms**; 199.4 MB
+image-heavy 1348 / 586 / 586 ms. So an edit to a very dense document now waits two to six seconds
+for the window to follow. That is object count, as ADR-0044's table found for pdf-lib. **Not
+measured**: the two-image peak against §9.17; the row stays open for it.
+
+**Found and not fixed, recorded for the owner:**
+- **The engine host misses its 10 s connect under ordinary load.** `realConnect.mjs` (repaired for
+  the surface's `program` argument): contained 12247 / 7136 / 7528 ms, uncontained 6854 / 7461 /
+  7426 ms, against 1.4–1.8 s on 2026-09-14 — every import about three times slower, with the CPU at
+  100% (this session's own desktop app ~45%, a browser ~34%, 4 cores). Containment is not the cost;
+  the host's import graph is (`commandSpecs.js` 3.2 s alone). A four-core machine with a browser
+  open is an ordinary customer, and there the document becomes unusable until reopened. The bound is
+  not raised; making the host start cheaper is the fix, and it is its own piece of work.
+- **The launcher's staleness refusal names the wrong package**: it cited `kernel/dist/index.js`,
+  which `tsc` does not rewrite when its content is unchanged, while the build `tsc` owed was `ui`
+  and `testing`.
+- **`npm start` segfaulted twice** (the npm process itself, exit 139); `node scripts/launch.mjs`
+  directly did not, and was used for the rest of the run.
+
+---
+
 ## 2026-09-18 — A superseded page draw now cancels its PDF.js task, and the thumbnail strip stops swallowing
 
 **Seen live** once ADR-0084 made every edit a new version: after an insert or a layer import the

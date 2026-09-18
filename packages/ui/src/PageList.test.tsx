@@ -721,6 +721,114 @@ describe('PageList', () => {
     expect(drawnAt.at(-1)).toBe(90);
   });
 
+  it('mounted MID-DOCUMENT, the pages above take the measured size too — so nothing grows above the reader', async () => {
+    // A scroller mounting at page 3 draws page 3 first; the pages above had no estimate and sat
+    // at the slot's minimum, then grew as they drew and pushed the revealed page down a page
+    // (measured live 2026-09-18). The control is the slot BELOW, which always had its estimate.
+    const { client } = clientAnswering();
+    const { container } = render(
+      <PageList
+        startAt={2}
+        client={client}
+        view={viewDrawing()}
+        pageCount={5}
+        docId={DOC}
+        version={VERSION}
+        onCurrentPage={vi.fn()}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
+        goTo={undefined}
+        onWentTo={vi.fn()}
+        loupe={false}
+        rulers={false}
+        showGrid={false}
+        unit="in"
+        search={undefined}
+        secondRasteriser={undefined}
+      />,
+    );
+    await settle();
+
+    const heights = [...container.querySelectorAll<HTMLElement>('.m-page-slot')].map((slot) => slot.style.height);
+    // PAGE 3 WAS DRAWN AND MEASURED, so it has a height of its own.
+    expect(heights[2]).not.toBe('');
+    // CONTROL: the page below takes page 3's estimate, as it always did.
+    expect(heights[3]).toBe(heights[2]);
+    // AND THE PAGES ABOVE DO NOW, which is the change.
+    expect(heights[0]).toBe(heights[2]);
+    expect(heights[1]).toBe(heights[2]);
+  });
+
+  it('reveals the page it MOUNTED at once a page is measured, even after `startAt` has moved', async () => {
+    // THE INTERLEAVING THE LIVE APP HAS: the caller passes the reader's current page, and the new
+    // scroller's own observer reports page 1 before the starting page is measured — so the prop
+    // arrives as 0 on the next render. Read live, the reveal saw 0 and did nothing (traced
+    // 2026-09-18). The recorder is attached BEFORE the measurement, so it sees the reveal itself.
+    const { client } = clientAnswering();
+    const props = {
+      client,
+      view: viewDrawing(),
+      pageCount: 5,
+      docId: DOC,
+      version: VERSION,
+      onCurrentPage: vi.fn(),
+      mode: SCALE_1,
+      onZoom: vi.fn(),
+      onShownZoom: vi.fn(),
+      goTo: undefined,
+      onWentTo: vi.fn(),
+      loupe: false,
+      rulers: false,
+      showGrid: false,
+      unit: 'in' as const,
+      search: undefined,
+      secondRasteriser: undefined,
+    };
+    const { container, rerender } = render(<PageList {...props} startAt={2} />);
+    const scrolled = recordScrolls(container);
+    rerender(<PageList {...props} startAt={0} />);
+    await settle();
+
+    expect(scrolled).toStrictEqual([2]);
+  });
+
+  it('a request PAST THE END lands on the last page — the reader deleted the page they were on', async () => {
+    // App re-requests the reader's page after every edit, so deleting the page a reader is on
+    // asks for one past the end. The top of the document is not where they were; the new last
+    // page is. The case below is the control that an in-range request is not moved.
+    const { client } = clientAnswering();
+    const props = {
+      startAt: FIRST_PAGE.kernel,
+      client,
+      view: viewDrawing(),
+      pageCount: 5,
+      docId: DOC,
+      version: VERSION,
+      onCurrentPage: vi.fn(),
+      mode: SCALE_1,
+      onZoom: vi.fn(),
+      onShownZoom: vi.fn(),
+      onWentTo: vi.fn(),
+      loupe: false,
+      rulers: false,
+      showGrid: false,
+      unit: 'in' as const,
+      search: undefined,
+      secondRasteriser: undefined,
+    };
+    const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
+    await settle();
+    const scrolled = recordScrolls(container);
+
+    await act(async () => {
+      rerender(<PageList {...props} goTo={5} />);
+      await Promise.resolve();
+    });
+
+    expect(scrolled).toStrictEqual([4]);
+  });
+
   it('SCROLLS TO a requested page, and reports the request consumed', async () => {
     // The UI half of the navigation pair. `navigationCommands.test.ts` proves
     // which page each command asks for; this proves the ask reaches the slot
