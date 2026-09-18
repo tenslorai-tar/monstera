@@ -87,7 +87,8 @@ export type AzureRefusal =
   | 'rejected'
   | 'unreachable'
   | 'timed-out'
-  | 'unreadable-answer';
+  | 'unreadable-answer'
+  | 'not-deleted';
 
 /**
  * A refused recognition, carrying which thing refused it.
@@ -307,6 +308,43 @@ async function pollUntilDone(
   }
 }
 
+/**
+ * Asks the service to delete the stored result, and answers why not, or `null` once it has.
+ *
+ * *Delete Analyze Result*, `DELETE …/documentModels/{modelId}/analyzeResults/{resultId}`,
+ * answering `204` (Microsoft Learn, REST reference for api-version 2024-11-30, read
+ * 2026-09-18). That path is the `Operation-Location` the analysis handed back, so the
+ * URL deleted is the URL polled — the one the service itself named — and no second
+ * spelling of the path exists here to drift from it.
+ *
+ * **The owner's rule** (2026-09-18): the service keeps no copy of what a reader sent
+ * once the read is over. So this is called on every path an analysis STARTED, not only
+ * on success — a failed or timed-out analysis still left a result behind.
+ */
+async function deleteResult(
+  location: string,
+  credentials: AzureCredentials,
+  fetchImpl: typeof fetch,
+): Promise<string | null> {
+  let response: Response;
+  try {
+    response = await fetchImpl(location, {
+      method: 'DELETE',
+      headers: { 'Ocp-Apim-Subscription-Key': credentials.key },
+    });
+  } catch {
+    return 'the service could not be reached to delete its copy of the result';
+  }
+  // 204 AND ONLY 204. A 200 would be a different API version, and reading it as a
+  // deletion is this build inventing a protocol — the rule `startAnalysis` keeps
+  // for its 202.
+  if (response.status === 204) return null;
+  return (
+    `the service answered ${String(response.status)} ${response.statusText} when asked to ` +
+    'delete its copy of the result'
+  );
+}
+
 /** A polygon's eight numbers, or `null` for anything else. */
 function cornersOf(polygon: readonly unknown[] | undefined): readonly number[] | null {
   if (polygon === undefined || polygon.length < 8) return null;
@@ -349,7 +387,34 @@ export async function recogniseThroughAzure(
   const fetchImpl = request.fetchImpl ?? fetch;
   const url = analyzeUrl(credentials.endpoint);
   const location = await startAnalysis(url, credentials, request.png, fetchImpl);
-  const answer = await pollUntilDone(location, credentials, fetchImpl, clock.sleep, clock.now);
+
+  let answer: AnalyzeAnswer;
+  try {
+    answer = await pollUntilDone(location, credentials, fetchImpl, clock.sleep, clock.now);
+  } catch (cause) {
+    // THE ANALYSIS FAILED, AND ITS RESULT IS DELETED ANYWAY. The poll's refusal is the
+    // one a reader needs, so it keeps its reason; a delete that also failed is added to
+    // its sentence rather than lost, because it is the part they cannot see.
+    const undeleted = await deleteResult(location, credentials, fetchImpl);
+    if (undeleted === null || !(cause instanceof AzureRecognitionRefused)) throw cause;
+    throw new AzureRecognitionRefused(cause.reason, `${cause.message} And ${undeleted}.`, {
+      cause,
+    });
+  }
+
+  // A SUCCESSFUL READ WHOSE COPY STAYED ON THE SERVICE IS REFUSED, not returned. Handing
+  // back the text while saying nothing would be the one outcome a reader could not
+  // learn about, and the owner's rule is that no copy stays. The text is not kept: a
+  // second try sends the region again, which the reader can choose; a copy they were
+  // not told about is nothing they can choose.
+  const undeleted = await deleteResult(location, credentials, fetchImpl);
+  if (undeleted !== null) {
+    throw new AzureRecognitionRefused(
+      'not-deleted',
+      `Azure read the region, but ${undeleted}, so it may still hold a copy. The text was ` +
+        'not used.',
+    );
+  }
 
   // THE ONE CONVERTER, built from the host's own three facts. Nothing about the
   // flip, the crop origin or the turn is stated here.

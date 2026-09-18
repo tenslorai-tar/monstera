@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — Azure deletes every result it was sent; live, 204 then 404
+
+**The owner's rule**: Azure keeps no copy of what a reader sent once the read is over.
+`ocrAzure.ts` now sends *Delete Analyze Result* — `DELETE` on the result path, answering `204`
+(Microsoft Learn REST reference, api-version 2024-11-30, read 2026-09-18) — to the
+`Operation-Location` it polled, which is that path, so no second spelling of it exists.
+
+**On every path an analysis started**, success or not: a failed or timed-out analysis also
+left a result. A failure keeps its own reason, and a delete that also failed is added to its
+sentence. **A successful read whose delete is refused is refused as `not-deleted`**, and its
+text is not used. Returning it silently would leave a copy the reader cannot learn about;
+retrying is their choice. Only `204` counts; a `200` is refused.
+
+**Seven cases, both paths mutated**: removing the success-path delete reddens four cases,
+removing the failure-path delete reddens two. The harness records DELETEs apart, so the
+existing POST and poll counts keep their meaning.
+
+**Live, `npm run probe:azure`**: PASSED — the word read, the delete answered 204, and reading
+the result afterwards answered **404**. That second reading is independent of the recogniser's
+own check. Its control is inside the same run: the same URL answered `succeeded` to the polls
+seconds earlier, so the 404 is the deletion and not a wrong address.
+
+---
+
 ## 2026-09-18 — The local handwriting engine is removed (ADR-0085's build)
 
 **What went**: `ocrHandwriting.ts` and its artefact manifest in the kernel, the host channel's

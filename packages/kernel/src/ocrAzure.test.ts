@@ -65,11 +65,31 @@ function polygon(x0: number, y0: number, x1: number, y1: number): readonly numbe
 function service(
   start: Response | Error,
   polls: readonly (() => Response | Error)[],
-): { fetchImpl: typeof fetch; asked: string[]; bodies: unknown[] } {
+  removal: () => Response | Error = () => new Response(null, { status: 204 }),
+): {
+  fetchImpl: typeof fetch;
+  asked: string[];
+  bodies: unknown[];
+  deleted: { url: string; key: string | null; afterCalls: number }[];
+} {
   const asked: string[] = [];
   const bodies: unknown[] = [];
+  const deleted: { url: string; key: string | null; afterCalls: number }[] = [];
   let poll = 0;
   const fetchImpl = ((url: string | URL, init?: RequestInit): Promise<Response> => {
+    // A DELETE IS RECORDED APART, so every count of POSTs and polls below keeps the
+    // meaning it was written with. `afterCalls` is how many of those came first,
+    // which is what says the delete followed the last poll rather than raced it.
+    if (init?.method === 'DELETE') {
+      const headers = new Headers(init.headers);
+      deleted.push({
+        url: url.toString(),
+        key: headers.get('Ocp-Apim-Subscription-Key'),
+        afterCalls: asked.length,
+      });
+      const answer = removal();
+      return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
+    }
     // `string | URL` RATHER THAN `fetch`'s OWN UNION, which includes `Request`:
     // a `Request` stringifies to `[object Object]`, and a harness that recorded
     // that would make every URL assertion below pass for a call this module
@@ -84,7 +104,7 @@ function service(
     const answer = next?.() ?? new Response(null, { status: 500 });
     return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
   }) as unknown as typeof fetch;
-  return { fetchImpl, asked, bodies };
+  return { fetchImpl, asked, bodies, deleted };
 }
 
 /** A 202 naming where to poll. */
@@ -303,5 +323,104 @@ describe('the Azure recogniser', () => {
       INSTANT,
     );
     expect(read.lines[0]?.words.map((word) => word.text)).toStrictEqual(['GOOD']);
+  });
+});
+
+describe('the Azure recogniser leaves no copy behind (owner, 2026-09-18)', () => {
+  const READ = [
+    {
+      words: [{ content: 'A', polygon: polygon(0, 0, 10, 10), confidence: 0.9 }],
+      lines: [{ content: 'A', polygon: polygon(0, 0, 10, 10) }],
+    },
+  ];
+
+  it('deletes the result it polled, once, after the last poll, with the key in the header', async () => {
+    const { fetchImpl, asked, deleted } = service(accepted(), [
+      polled('running'),
+      polled('succeeded', READ),
+    ]);
+    const read = await recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, INSTANT);
+
+    // THE CONTROL for the refusal below: with a 204, the text comes back.
+    expect(read.lines[0]?.text).toBe('A');
+    // THE OPERATION-LOCATION, which is the documented result path, and after all three
+    // other calls — a delete sent before the answer was read would lose the answer.
+    expect(deleted).toStrictEqual([{ url: POLL_URL, key: CREDENTIALS.key, afterCalls: 3 }]);
+    expect(asked).toHaveLength(3);
+  });
+
+  it('refuses a read whose copy the service would not delete, rather than returning its text', async () => {
+    const { fetchImpl } = service(
+      accepted(),
+      [polled('succeeded', READ)],
+      () => new Response(null, { status: 404, statusText: 'Not Found' }),
+    );
+    const refused = await recogniseThroughAzure(
+      CREDENTIALS,
+      { png: PNG, ...FRAME, fetchImpl },
+      INSTANT,
+    ).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(AzureRecognitionRefused);
+    expect((refused as AzureRecognitionRefused).reason).toBe('not-deleted');
+    expect((refused as Error).message).toMatch(/404 Not Found/u);
+  });
+
+  it('refuses a 200 as a deletion, because the documented answer is 204', async () => {
+    const { fetchImpl } = service(
+      accepted(),
+      [polled('succeeded', READ)],
+      () => new Response(null, { status: 200 }),
+    );
+    await expect(
+      recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, INSTANT),
+    ).rejects.toThrow(/answered 200/u);
+  });
+
+  it('refuses when the delete cannot reach the service at all', async () => {
+    const { fetchImpl } = service(
+      accepted(),
+      [polled('succeeded', READ)],
+      () => new Error('socket hang up'),
+    );
+    const refused = await recogniseThroughAzure(
+      CREDENTIALS,
+      { png: PNG, ...FRAME, fetchImpl },
+      INSTANT,
+    ).catch((error: unknown) => error);
+    expect((refused as AzureRecognitionRefused).reason).toBe('not-deleted');
+  });
+
+  it('deletes after a FAILED analysis too, and the failure keeps its own reason', async () => {
+    const { fetchImpl, deleted } = service(accepted(), [polled('failed')]);
+    const refused = await recogniseThroughAzure(
+      CREDENTIALS,
+      { png: PNG, ...FRAME, fetchImpl },
+      INSTANT,
+    ).catch((error: unknown) => error);
+    expect((refused as AzureRecognitionRefused).reason).toBe('rejected');
+    expect(deleted.map((entry) => entry.url)).toStrictEqual([POLL_URL]);
+  });
+
+  it('adds a failed delete to a failed analysis’s sentence rather than dropping it', async () => {
+    const { fetchImpl } = service(
+      accepted(),
+      [polled('failed')],
+      () => new Response(null, { status: 500, statusText: 'Internal Server Error' }),
+    );
+    const refused = await recogniseThroughAzure(
+      CREDENTIALS,
+      { png: PNG, ...FRAME, fetchImpl },
+      INSTANT,
+    ).catch((error: unknown) => error);
+    expect((refused as AzureRecognitionRefused).reason).toBe('rejected');
+    expect((refused as Error).message).toMatch(/could not analyse this page\. And .*500/u);
+  });
+
+  it('sends no delete when the analysis never started, since nothing was stored', async () => {
+    const { fetchImpl, deleted } = service(new Response(null, { status: 401 }), []);
+    await recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, INSTANT).catch(
+      () => undefined,
+    );
+    expect(deleted).toStrictEqual([]);
   });
 });

@@ -111,6 +111,24 @@ if (endpoint === '' || key === '') {
   process.exit(outcome.code);
 }
 
+/**
+ * The result URLs the recogniser asked the service to delete.
+ *
+ * Recorded so the run can ask the service AFTERWARDS whether the result is still
+ * there. The recogniser already refuses anything but a 204; this is the second,
+ * independent reading — a 204 is the service's word that it deleted, and a result
+ * that still answers is what that word would look like if it were wrong.
+ *
+ * @type {string[]}
+ */
+const deletedUrls = [];
+
+/** @type {typeof fetch} */
+const recordingDeletes = (input, init) => {
+  if (init?.method === 'DELETE') deletedUrls.push(String(input));
+  return fetch(input, init);
+};
+
 /** The drawn word's region, rasterised the way the contained host rasterises one. */
 async function rasterOfDrawnWord() {
   const document = await PDFDocument.create();
@@ -141,6 +159,7 @@ async function recognise(raster) {
         rotation: raster.rotation,
         origin: raster.origin,
         scale: AZURE_RASTER_SCALE,
+        fetchImpl: recordingDeletes,
       },
     );
   } catch (error) {
@@ -189,6 +208,25 @@ if (found === undefined) {
   }
 }
 
+// THE COPY IS GONE: exactly one delete was sent, and the result it named no longer
+// answers with the analysis. Only the status is printed — the URL carries the
+// endpoint's host, and this output is one a person may paste.
+if (deletedUrls.length !== 1) {
+  failures.push(`${String(deletedUrls.length)} delete(s) were sent where one was owed`);
+} else {
+  const after = await fetch(deletedUrls[0] ?? '', {
+    headers: { 'Ocp-Apim-Subscription-Key': key },
+  });
+  const still = after.ok ? /** @type {{ status?: unknown }} */ (await after.json()) : null;
+  process.stdout.write(
+    `\nAfter the delete, reading the result answered ${String(after.status)}` +
+      `${still === null ? '' : ` with status ${JSON.stringify(still.status)}`}.\n`,
+  );
+  if (still !== null && still.status === 'succeeded') {
+    failures.push('the result still answers with the analysis after the service accepted its deletion');
+  }
+}
+
 if (failures.length > 0) {
   process.stderr.write(`\nFAILED — ${String(failures.length)} check(s):\n`);
   for (const failure of failures) process.stderr.write(`  - ${failure}\n`);
@@ -197,5 +235,5 @@ if (failures.length > 0) {
 
 process.stdout.write(
   `\nPASSED — the live service read the drawn word, at ${String(words.length)} word(s) ` +
-    'returned, with its box inside the region and over the drawing.\n',
+    'returned, with its box inside the region and over the drawing, and its copy deleted.\n',
 );
