@@ -188,8 +188,10 @@ export type {
 // property is untouched (ADR-0052's 2026-09-12 addition).
 export {
   AZURE_API_VERSION,
+  AZURE_MAX_DOCUMENT_BYTES,
   AZURE_RASTER_SCALE,
   AzureRecognitionRefused,
+  azureAcceptsBytes,
   type AzureCredentials,
   type AzureRefusal,
   type AzureRequest,
@@ -200,12 +202,14 @@ export {
 // (ADR-0057).
 export {
   CLAUDE_MAX_EDGE,
+  CLAUDE_MAX_IMAGE_ENCODED_BYTES,
   CLAUDE_MAX_VISUAL_TOKENS,
   CLAUDE_OCR_MODEL,
   type ClaudeCredentials,
   ClaudeRecognitionRefused,
   type ClaudeRefusal,
   type ClaudeRequest,
+  claudeAcceptsBytes,
   claudeRasterScale,
   fitsClaudeImage,
   pngSize,

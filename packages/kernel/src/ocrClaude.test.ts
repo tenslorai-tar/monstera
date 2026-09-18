@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CLAUDE_MAX_EDGE,
+  CLAUDE_MAX_IMAGE_ENCODED_BYTES,
   CLAUDE_OCR_MODEL,
   ClaudeRecognitionRefused,
+  claudeAcceptsBytes,
   claudeRasterScale,
   fitsClaudeImage,
   pngSize,
@@ -125,6 +127,24 @@ describe('claudeRasterScale', () => {
   });
 });
 
+describe('claudeAcceptsBytes', () => {
+  it('accepts at the limit and asks for a shrink one byte past it', () => {
+    expect(claudeAcceptsBytes(7_864_320)).toStrictEqual({ ok: true });
+    const over = claudeAcceptsBytes(7_864_321);
+    expect(over.ok).toBe(false);
+  });
+
+  it('asks for a shrink that brings a raster tracking its pixel count under the limit', () => {
+    // 11 MB encoded, the size measured on 2026-09-18: shrinking both sides by the
+    // factor must bring an area-proportional size under the limit, with room.
+    const raw = 8_234_490;
+    const verdict = claudeAcceptsBytes(raw);
+    if (verdict.ok) throw new Error('an 8.2 MB PNG must be over the limit');
+    expect(verdict.shrinkBy).toBeLessThan(1);
+    expect(claudeAcceptsBytes(Math.floor(raw * verdict.shrinkBy ** 2)).ok).toBe(true);
+  });
+});
+
 describe('pngSize', () => {
   it('reads IHDR’s width and height', () => {
     expect(pngSize(pngHeader(640, 480))).toStrictEqual({ width: 640, height: 480 });
@@ -200,6 +220,27 @@ describe('recogniseThroughClaude', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('refuses a raster over the ENCODED byte limit before sending, and CONTROL: one at it is sent', async () => {
+    // 7,864,320 raw bytes encode to exactly 10,485,760; one more byte encodes to four
+    // more. The pixel size is small on purpose: this is the case the pixel rule passes.
+    const padded = (length: number): Uint8Array => {
+      const bytes = new Uint8Array(length);
+      bytes.set(pngHeader(200, 300));
+      return bytes;
+    };
+    expect(CLAUDE_MAX_IMAGE_ENCODED_BYTES).toBe(10_485_760);
+
+    const over = service(() => answer(ONE_WORD));
+    await expect(
+      recogniseThroughClaude(CREDENTIALS, { png: padded(7_864_321), ...FRAME, fetchImpl: over.fetchImpl }),
+    ).rejects.toMatchObject({ reason: 'too-large' });
+    expect(over.calls).toHaveLength(0);
+
+    const at = service(() => answer(ONE_WORD));
+    await recogniseThroughClaude(CREDENTIALS, { png: padded(7_864_320), ...FRAME, fetchImpl: at.fetchImpl });
+    expect(at.calls).toHaveLength(1);
+  });
+
   it.each([
     ['refusal', 'refused'],
     ['max_tokens', 'truncated'],
@@ -223,6 +264,23 @@ describe('recogniseThroughClaude', () => {
     await expect(
       recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl }),
     ).rejects.toMatchObject({ reason });
+  });
+
+  it('carries the API’s own explanation, and CONTROL: a body with none leaves the status alone', async () => {
+    // THE MEASURED CASE: an exhausted credit balance is a 400, the same status as a
+    // malformed request, and only the explanation separates the two for a reader.
+    const credit = 'Your credit balance is too low to access the Anthropic API.';
+    const told = service(
+      () => new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: credit } }), { status: 400 }),
+    );
+    await expect(
+      recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl: told.fetchImpl }),
+    ).rejects.toThrow(`the Claude API rejected the request (400): ${credit}`);
+
+    const bare = service(() => new Response('not json', { status: 400 }));
+    await expect(
+      recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl: bare.fetchImpl }),
+    ).rejects.toThrow(/^the Claude API rejected the request \(400\)$/u);
   });
 
   it('refuses the whole answer when a box lies outside the raster', async () => {

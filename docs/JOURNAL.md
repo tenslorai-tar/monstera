@@ -892,6 +892,69 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — Sonnet 5 against Opus 5 on real handwriting: Opus stays; the run found three defects
+
+**The owner's question**: Sonnet 5 becomes the handwriting default if it is as accurate
+as Opus 5 ($2/$10 against $5/$25 per million tokens). **Answer: not shown to be as
+accurate. The default stays `claude-opus-5`.** Model ids from Anthropic's models endpoint
+the same day: `claude-sonnet-5`, `claude-opus-5`.
+
+**Samples**: 21 handwritten pages, 1842–1916, from 13 English Wikisource letters and
+manuscripts, public domain. Each has a transcription proofread (level 3) or validated
+(level 4) by a second person. Scans come from Commons, sized to Claude's unresized limits,
+with each PNG's sha256 recorded. Kept in the session scratchpad, not the repository.
+**The truth has errors of its own** — one page reads *"I am at"* where the ink says
+roughly *"I got"* — so the rates below include the proofreaders' mistakes, equally for
+both models.
+
+**Method**: the shipped `recogniseThroughClaude`, unchanged, with one injected `fetch`
+that rewrites only `model`. Each page read twice by each model, order alternating. Scored
+on words (lower case, punctuation removed, words hyphenated across lines joined, 35
+`{{illegible}}` marks dropped from the truth). **The scorer passed a resolution test
+first** against a hand-typed control: a perfect answer scores 0.0%, one swapped or dropped
+word scores 1.0% of 103, an empty answer 100%. That test found two scorer defects
+before any real number was read: a control that dropped template contents, and wiki
+table attributes being scored as words.
+
+**Result (run 1, the complete one)**: on the 10 pages both models answered, Opus had
+fewer errors on 8, Sonnet on 1, and 1 was a tie. Median page word error: **Opus 9.1%,
+Sonnet 13.5%**. Sonnet skipped most of a page twice (86% on one run each of two pages
+whose other run it read), which Opus never did. Every other call was refused by the
+recogniser or the API, at the same rate for both models (21/42 and 22/42).
+
+**Run 2 is void**: the account's credit ran out partway, and every later call answered
+*"Your credit balance is too low to access the Anthropic API"*. A complete run needs the
+owner to add credit; the decision above does not wait on it, because an equal-accuracy
+case would need Sonnet to win pages, and it won one of ten.
+
+**Three defects the run found, two fixed here**:
+
+1. **Pixels and bytes are separate limits.** A 2240×1652 scan passed `fitsClaudeImage` and
+   drew a 400: *"image exceeds 10 MB maximum: 10979320 bytes > 10485760 bytes"* — the
+   limit is on the base64 form. In the app, a large region of a photographed page reaches
+   it. **Fixed**: `claudeAcceptsBytes` and `azureAcceptsBytes` own each service's byte
+   rule (Azure's documented 4 MB free-tier limit, since the tier cannot be read), each
+   network engine must declare one (`accepts` is required), and `rasterWithinLimit.ts`
+   draws the region again smaller until it fits, at most three times, down to the
+   snapshot floor. Claude's recogniser also refuses an oversized raster by name before
+   sending. Boundary cases at exactly the limit and one byte over; both guards mutated
+   out, and cases turn red.
+2. **A 400 hid its reason.** The credit message reached the app as *"the Claude API
+   rejected the request (400)"*. **Fixed**: the refusal now carries the API's own
+   `error.message`, capped at 300 characters, with a control that a body without one
+   leaves the status alone.
+3. **Not fixed, recorded**: on long, dense pages the answer hit the 16,000-token output
+   limit (Opus 7 times, Sonnet 4), because every word carries a box. A region is usually
+   far smaller, but a large region of dense handwriting can reach it. And one box outside
+   the image discards the whole answer (Sonnet 5, Opus 3); that is the recogniser's
+   deliberate rule, and it is now measured.
+
+**Also found, not fixed**: Microsoft recommends polling an analysis no more than once
+every 2 seconds, and the free tier allows 1 GET per second; `ocrAzure.ts` polls every
+second.
+
+---
+
 ## 2026-09-18 — Azure deletes every result it was sent; live, 204 then 404
 
 **The owner's rule**: Azure keeps no copy of what a reader sent once the read is over.

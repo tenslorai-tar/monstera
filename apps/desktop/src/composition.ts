@@ -34,6 +34,8 @@ import {
   type AzureCredentials,
   type AzureRequest,
   ClaudeRecognitionRefused,
+  azureAcceptsBytes,
+  claudeAcceptsBytes,
   claudeRasterScale,
   recogniseThroughClaude,
   type RecognisedPage,
@@ -179,6 +181,7 @@ import { createAssistant } from './assistant.js';
 import type { PrintDestination } from './printing.js';
 import type { ShareDestination } from './sharing.js';
 import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.js';
+import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
 
@@ -888,17 +891,21 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
           Math.abs(x1 - x0),
           Math.abs(y1 - y0),
         );
-        const raster = await engineHost.snapshot(session, {
-          page: request.page,
-          rect: { x0, y0, x1, y1 },
-          scale: prepared.scale,
-        });
+        // BYTES ARE KNOWN ONLY AFTER RASTERISING, so a raster over the service's byte
+        // limit is taken again smaller — `rasterWithinLimit.ts` says why and when not.
+        const { raster, scale } = await rasterWithinLimit(
+          prepared.scale,
+          MIN_SNAPSHOT_SCALE,
+          prepared.accepts,
+          (at) =>
+            engineHost.snapshot(session, { page: request.page, rect: { x0, y0, x1, y1 }, scale: at }),
+        );
         return prepared.recognise({
           png: raster.png,
           crop: raster.crop,
           rotation: raster.rotation,
           origin: raster.origin,
-          scale: prepared.scale,
+          scale,
         });
       }
 
@@ -2768,6 +2775,12 @@ interface NetworkRecogniser {
     heightPoints: number,
   ) => {
     readonly scale: number;
+    /**
+     * Whether the service takes a PNG of this many bytes, and if not how much smaller
+     * to rasterise. REQUIRED, so an engine added to the declared set arrives owing its
+     * service's byte limit rather than inheriting nobody's.
+     */
+    readonly accepts: (pngBytes: number) => ByteVerdict;
     readonly recognise: (raster: RegionRaster) => Promise<RecognisedPage>;
   };
 }
@@ -2796,6 +2809,7 @@ function networkRecognisers(
         }
         return {
           scale: AZURE_RASTER_SCALE,
+          accepts: azureAcceptsBytes,
           recognise: (raster) => recogniseThroughAzure(credentials, raster),
         };
       },
@@ -2825,7 +2839,11 @@ function networkRecognisers(
               'Claude to read without resizing, even at the smallest snapshot scale',
           );
         }
-        return { scale, recognise: (raster) => recogniseThroughClaude({ key }, raster) };
+        return {
+          scale,
+          accepts: claudeAcceptsBytes,
+          recognise: (raster) => recogniseThroughClaude({ key }, raster),
+        };
       },
     },
   };

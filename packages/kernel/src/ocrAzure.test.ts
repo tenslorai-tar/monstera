@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { AzureRecognitionRefused, recogniseThroughAzure } from './ocrAzure.js';
+import {
+  AZURE_MAX_DOCUMENT_BYTES,
+  AzureRecognitionRefused,
+  azureAcceptsBytes,
+  recogniseThroughAzure,
+} from './ocrAzure.js';
 
 /**
  * The Azure protocol, driven end to end with no network and no key.
@@ -323,6 +328,16 @@ describe('the Azure recogniser', () => {
       INSTANT,
     );
     expect(read.lines[0]?.words.map((word) => word.text)).toStrictEqual(['GOOD']);
+  });
+});
+
+describe('azureAcceptsBytes', () => {
+  it('accepts the free tier’s limit and asks for a shrink one byte past it', () => {
+    expect(AZURE_MAX_DOCUMENT_BYTES).toBe(4_000_000);
+    expect(azureAcceptsBytes(4_000_000)).toStrictEqual({ ok: true });
+    const over = azureAcceptsBytes(4_000_001);
+    if (over.ok) throw new Error('one byte past the limit must be refused');
+    expect(over.shrinkBy).toBeLessThan(1);
   });
 });
 

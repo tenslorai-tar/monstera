@@ -61,6 +61,29 @@ export const AZURE_API_VERSION = '2024-11-30';
  */
 export const AZURE_RASTER_SCALE = 2;
 
+/**
+ * The largest raster this build sends, in bytes.
+ *
+ * *Service quotas and limits* (Microsoft Learn, read 2026-09-18): **Max document size
+ * 4 MB on the free tier (F0), 500 MB on the standard tier (S0)**. Which tier a reader's
+ * resource is on is not something the application can read, so it keeps to the one
+ * limit no resource refuses: a larger raster is shrunk before it is sent, never
+ * refused afterwards. 4,000,000 rather than 4,194,304 because the page does not say
+ * which megabyte it means.
+ */
+export const AZURE_MAX_DOCUMENT_BYTES = 4_000_000;
+
+/**
+ * Whether Azure accepts a PNG of this many bytes, and if not, the linear factor to
+ * shrink its raster by. {@link claudeAcceptsBytes}'s shape, so main treats both alike.
+ */
+export function azureAcceptsBytes(
+  pngBytes: number,
+): { readonly ok: true } | { readonly ok: false; readonly shrinkBy: number } {
+  if (pngBytes <= AZURE_MAX_DOCUMENT_BYTES) return { ok: true };
+  return { ok: false, shrinkBy: Math.sqrt(AZURE_MAX_DOCUMENT_BYTES / pngBytes) * 0.95 };
+}
+
 /** The model: text and word boxes, which is what a `RecognisedPage` holds. */
 const MODEL = 'prebuilt-read';
 

@@ -113,6 +113,33 @@ export function fitsClaudeImage(width: number, height: number): boolean {
 }
 
 /**
+ * The most an image may weigh once base64-encoded, in bytes.
+ *
+ * Read from the API's own refusal on 2026-09-18, sending a 2240×1652 scan whose PNG
+ * was 8,234,490 bytes: *"image exceeds 10 MB maximum: 10979320 bytes > 10485760
+ * bytes"*. The limit is on the ENCODED form, which is four bytes for every three, so a
+ * raster that passes {@link fitsClaudeImage} can still be refused: pixels and bytes are
+ * separate limits, and a photographed page compresses badly.
+ */
+export const CLAUDE_MAX_IMAGE_ENCODED_BYTES = 10_485_760;
+
+/** The base64 length of `bytes` raw bytes, which is what the limit above counts. */
+function encodedLength(bytes: number): number {
+  return Math.ceil(bytes / 3) * 4;
+}
+
+/**
+ * Whether Claude accepts a PNG of this many bytes, and if not, the linear factor to
+ * shrink its raster by — below 1, with a margin, because a PNG's size tracks its
+ * pixel count only roughly.
+ */
+export function claudeAcceptsBytes(pngBytes: number): { readonly ok: true } | { readonly ok: false; readonly shrinkBy: number } {
+  const encoded = encodedLength(pngBytes);
+  if (encoded <= CLAUDE_MAX_IMAGE_ENCODED_BYTES) return { ok: true };
+  return { ok: false, shrinkBy: Math.sqrt(CLAUDE_MAX_IMAGE_ENCODED_BYTES / encoded) * 0.95 };
+}
+
+/**
  * The largest raster scale, from `ceiling` down to `floor` in hundredths, whose
  * raster of a region this size Claude reads unresized — or `null` when none does.
  *
@@ -212,21 +239,45 @@ const messageSchema = z.object({
   content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
 });
 
+/** An error response's body, as the API documents it: `{ type: 'error', error: { message } }`. */
+const errorSchema = z.object({ error: z.object({ message: z.string() }) });
+
+/** How much of the API's own explanation a refusal carries. */
+const EXPLANATION_MAX = 300;
+
+/**
+ * The API's own sentence about why it refused, or `null` where the body has none.
+ *
+ * A status alone hides what a reader can act on: *"Your credit balance is too low"*
+ * and a malformed request are both a 400 (measured 2026-09-18), and only the first is
+ * theirs to fix. Bounded, because the text is the peer's.
+ */
+async function explanationOf(response: Response): Promise<string | null> {
+  try {
+    const parsed = errorSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data.error.message.slice(0, EXPLANATION_MAX) : null;
+  } catch {
+    // A body that is not JSON carries no explanation; the status still says what happened.
+    return null;
+  }
+}
+
 /** A refusal for an HTTP status, by the error types the API documents. */
-function refusalFor(status: number): ClaudeRecognitionRefused {
+function refusalFor(status: number, explanation: string | null): ClaudeRecognitionRefused {
+  const why = explanation === null ? '' : `: ${explanation}`;
   if (status === 401 || status === 403) {
-    return new ClaudeRecognitionRefused('unauthorised', `the Claude API refused the key (${String(status)})`);
+    return new ClaudeRecognitionRefused('unauthorised', `the Claude API refused the key (${String(status)})${why}`);
   }
   if (status === 413) {
-    return new ClaudeRecognitionRefused('too-large', 'the Claude API refused the request as too large (413)');
+    return new ClaudeRecognitionRefused('too-large', `the Claude API refused the request as too large (413)${why}`);
   }
   if (status === 429 || status === 500 || status === 504 || status === 529) {
     return new ClaudeRecognitionRefused(
       'unavailable',
-      `the Claude API is not taking requests right now (${String(status)})`,
+      `the Claude API is not taking requests right now (${String(status)})${why}`,
     );
   }
-  return new ClaudeRecognitionRefused('rejected', `the Claude API rejected the request (${String(status)})`);
+  return new ClaudeRecognitionRefused('rejected', `the Claude API rejected the request (${String(status)})${why}`);
 }
 
 /** The extent of a box's four corners once converted to the page. */
@@ -255,6 +306,16 @@ export async function recogniseThroughClaude(
       'too-large',
       `a ${String(width)}×${String(height)} raster is larger than Claude reads without resizing, ` +
         'and the coordinates of a resized image would not be this raster’s',
+    );
+  }
+
+  // THE BYTE LIMIT, BEFORE ANYTHING IS SENT: the API refuses an oversized image with a
+  // bare 400, which reaches a reader as *rejected* and names neither number.
+  if (!claudeAcceptsBytes(request.png.byteLength).ok) {
+    throw new ClaudeRecognitionRefused(
+      'too-large',
+      `a ${String(request.png.byteLength)}-byte raster is ${String(encodedLength(request.png.byteLength))} ` +
+        `bytes once encoded, over the ${String(CLAUDE_MAX_IMAGE_ENCODED_BYTES)} Claude accepts`,
     );
   }
 
@@ -297,7 +358,7 @@ export async function recogniseThroughClaude(
       cause,
     });
   }
-  if (!response.ok) throw refusalFor(response.status);
+  if (!response.ok) throw refusalFor(response.status, await explanationOf(response));
 
   let payload: unknown;
   try {
