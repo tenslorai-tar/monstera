@@ -2674,7 +2674,7 @@ export class DocumentCommands {
         // THE IDS COME FROM THE CONTRACT, not from a field read here.
         // `sourceIdsOf` is the one answer to *which documents does this payload
         // name*, and the payload is the contract's (ADR-0040 Decision 4).
-        this.#byteImage(docId, sessions, sourceIdsOf(command)),
+        this.#byteImage(docId, sourceIdsOf(command)),
       );
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
@@ -2748,7 +2748,7 @@ export class DocumentCommands {
           sessions,
           context,
           (write) => this.#restore(docId, write),
-          this.#byteImage(docId, sessions),
+          this.#byteImage(docId),
         )) !== undefined;
       return context.byteLength;
     });
@@ -2861,19 +2861,31 @@ export class DocumentCommands {
    * reading `reads` here could not serve `redo` anyway, since a redo has no
    * command until the bus has read the log.
    */
-  #byteImage(
-    docId: DocId,
-    sessions: DocumentSessions,
-    named: readonly DocId[] = [],
-  ): CommandInputs {
+  /**
+   * ## Every member reads the document's sessions WHEN CALLED, never when built
+   *
+   * A restore replaces the sessions (`recycle`), and the bus calls `current` AFTER one:
+   * undoing a terminal entry restores its checkpoint and then makes main's image the
+   * session's bytes (ADR-0084). A set captured when this was built is the one the
+   * restore released, and flushing it answered *"This session token was not adopted by
+   * this registry, or it has already been released"* — measured 2026-09-18, undoing a
+   * drawn rectangle in the running application. So no set is taken as a parameter: there
+   * is nothing stale to hand in.
+   */
+  #byteImage(docId: DocId, named: readonly DocId[] = []): CommandInputs {
+    const live = (): DocumentSessions => {
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return sessions;
+    };
     return {
-      current: () => this.#save.flush(docId, sessions),
+      current: () => this.#save.flush(docId, live()),
       adopt: (write) => this.#restore(docId, write),
-      outline: () => this.#destinations(docId, sessions),
+      outline: () => this.#destinations(docId, live()),
       // ADR-0051's member, and the one that takes an argument. The request is the
       // command's own — the declaration builds it — and this closure adds the
       // document, which is what the bus cannot name.
-      ocr: (request) => this.#ocr(docId, sessions, request),
+      ocr: (request) => this.#ocr(docId, live(), request),
       sources: this.#sourcesFor(named),
     };
   }

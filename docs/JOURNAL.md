@@ -892,6 +892,61 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — Stage 8 exports, live; the run found two defects that every test had passed
+
+**One fixture, every export, from the running application.** Live8.pdf is generated in the
+session scratchpad: page 1 has two columns of text, page 2 a ruled 3×3 table. Each export was
+read back by something other than its writer — LibreOffice, MuPDF, veraPDF, raw zip XML.
+
+| row | result |
+|---|---|
+| Text, plain and layout | plain: both pages with a form feed between; layout: columns side by side, table columns aligned |
+| Word, all three modes | rich had every word; layout framed each line at its own position (330 pt at 6600 twips); text broke between pages |
+| PowerPoint | one slide and one picture per page; LibreOffice opened it |
+| Excel detection, grid, styled, combine | every cell of the table right; *North* edited to *Northeast* came through; numbers stored as values; sheets *1*, *2* and *1-2* |
+| WebP | two valid files (PNG and JPEG still owed) |
+| Annotations | a rectangle exported to XFDF, undone, imported to the same box, saved, read back |
+| PDF/A-2b | veraPDF 1.30.2: PASS 2b; the annotation kept |
+| Barcodes | a QR code placed and read back as *MONSTERA-LIVE-8* |
+
+**Defect 1 — undoing a drawn rectangle failed** (*"Something went wrong inside Monstera"*,
+incident `i1`). The stack: `CommandBus.undo` → `#show` → `current()` → flush → *"This session
+token was not adopted by this registry, or it has already been released"*. Undoing a terminal
+entry restores its checkpoint, which replaces the document's sessions. ADR-0084's `#show`,
+built this morning, then flushed the set `#byteImage` had captured before the restore. The bus
+itself says that set *"is stale afterwards"*. **Fixed at the class**: `#byteImage` takes no
+session set; each member reads the document's sessions when called. **Why every test passed**:
+the one case with a real restore flushed whatever session object it was handed, and a local
+session serialises after a recycle. Its flush now refuses a session the document no longer
+holds, as the host's registry does. Reverting the fix turns it red with exactly that message,
+and it now also asserts what the window is handed after the undo.
+
+**Defect 2 — a document could be saved once.** The second Ctrl+S answered *"The file on disk
+is not the one this document was opened from."* A save renames a temporary file over the
+target, so afterwards the path holds a new file, while `openedIdentity` was written only at
+open. The next `checkWriteTarget` compared against the file the document had itself replaced
+and said `replaced`. **Fixed**: `markSaved` is now asynchronous and re-reads the identity of
+the file it just renamed into place, inside the lane. The window between rename and read is
+stated in the code. Two cases over a real disk: saving twice writes both edits (red with the
+fix disabled), and **the control** — a file renamed over the target from outside between
+saves — is still refused as `replaced`, so the guard is not disarmed. Not in the record
+before today: searched for *second save*, *save twice*, *re-record*.
+
+**Load-sensitive tests, not caused here and not bumped**: in the full kernel and desktop run,
+with the application open, three cases in `barcode.test.ts` and `csvRead.test.ts` passed the
+5 s default. Alone, which one failed alternated between runs; each file passes on its own
+(8/8, 7/7), and both are green on CI. Kernel and desktop otherwise: 2038 passed.
+
+**A clipboard event**: one typed file name arrived as an unrelated promotional sentence ("Talk
+to your documents…"). Something else wrote the clipboard between the tool's copy and paste.
+Windows refused it as a file name and nothing was written. Every later name was checked by
+zoom before Enter.
+
+**Still owed in section 3**: Print, PNG and JPEG, an Acrobat XFDF file, and the Email click
+list for the owner.
+
+---
+
 ## 2026-09-18 — Sonnet 5 against Opus 5 on real handwriting: Opus stays; the run found three defects
 
 **The owner's question**: Sonnet 5 becomes the handwriting default if it is as accurate

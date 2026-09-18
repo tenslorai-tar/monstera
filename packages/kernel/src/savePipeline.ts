@@ -172,7 +172,7 @@ export async function saveDocument(
 
   return {
     kind: 'saved',
-    version: context.markSaved(SAVE_WRITER),
+    version: await context.markSaved(SAVE_WRITER),
     bytes: bytes.byteLength,
     backedUp: written.value.backedUp,
   };

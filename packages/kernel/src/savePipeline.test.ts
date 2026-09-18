@@ -93,9 +93,9 @@ function held(version: number): Held {
       bumpVersion: (_writer: CommandWriter): DocVersion => at,
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,
-      markSaved: (_writer: SaveWriter): DocVersion => {
+      markSaved: (_writer: SaveWriter): Promise<DocVersion> => {
         recorded.stamped = at;
-        return at;
+        return Promise.resolve(at);
       },
       isDirty: (): boolean => recorded.stamped === null,
     },
@@ -236,7 +236,7 @@ describe('saveDocument', () => {
     const stampedAfter: string[] = [];
     const watching: DocumentContext = {
       ...document.context,
-      markSaved: (writer: SaveWriter): DocVersion => {
+      markSaved: (writer: SaveWriter): Promise<DocVersion> => {
         stampedAfter.push(f.calls.join(','));
         return document.context.markSaved(writer);
       },

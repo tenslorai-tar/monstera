@@ -553,8 +553,16 @@ export interface DocumentContext {
    * nothing prompts, and the work is gone — with every individual step correct.
    *
    * Writer of record: the save pipeline, by capability. See {@link SaveWriter}.
+   *
+   * **And it re-records which file this document now corresponds to.** A save
+   * writes a temporary file and renames it over the target, so the file at the
+   * path afterwards is a different file — a new index — from the one opened.
+   * Left at the open's identity, the next save's {@link DocumentService.checkWriteTarget}
+   * compared the document against the file it had itself replaced and refused as
+   * `replaced`: a document could be saved once per opening (measured 2026-09-18,
+   * a second Ctrl+S in the running application).
    */
-  markSaved(writer: SaveWriter): DocVersion;
+  markSaved(writer: SaveWriter): Promise<DocVersion>;
 
   /**
    * Whether the document holds content the file does not.
@@ -623,15 +631,16 @@ interface DocumentRecord {
   /** The path string the handle stands for, as minted — **not** canonicalised. */
   readonly path: string;
   /**
-   * The file this document was opened from.
+   * The file this document was opened from, or last saved to.
    *
-   * This is **evidence of what was opened**, and it has exactly one use: to
-   * detect that the file at {@link path} is no longer that file. It is never
-   * used to decide who is who *now* — that question is answered by re-reading,
-   * because a cached identity is correct precisely until the file moves, and
-   * the cases the walk exists to catch are the ones where it moved.
+   * This is **evidence of the last file this document read or wrote**, and it
+   * has exactly one use: to detect that the file at {@link path} is no longer
+   * that file. It is never used to decide who is who *now* — that question is
+   * answered by re-reading, because a cached identity is correct precisely until
+   * the file moves, and the cases the walk exists to catch are the ones where it
+   * moved. Written at open and by `markSaved`, and by nothing else.
    */
-  readonly openedIdentity: FileIdentity;
+  openedIdentity: FileIdentity;
   /**
    * The canonical image — **ARCHITECTURE §2's first clause**, and the reason
    * killing an engine host is a re-open rather than a loss.
@@ -1624,8 +1633,15 @@ export class DocumentService {
           get byteLength() {
             return record.bytes.byteLength;
           },
-          markSaved: () => {
+          markSaved: async () => {
             record.savedVersion = record.version;
+            // THE FILE THE SAVE JUST RENAMED INTO PLACE, read inside the lane straight
+            // after the rename. The window between the two is the one place an outside
+            // writer could be recorded as ours; it is the same width as the gap every
+            // check-then-write has, and without this read every second save is refused.
+            // A file gone by now keeps the old identity, and the next check says so.
+            const written = await this.#readIdentity(record.path);
+            if (written !== null) record.openedIdentity = written;
             return record.savedVersion;
           },
           isDirty: () => record.savedVersion !== record.version,

@@ -542,9 +542,9 @@ describe('DocumentService — the per-document lane', () => {
     });
     expect(afterBump).toStrictEqual({ value: true, version: 2 });
 
-    const afterSave = await service.run(docId, (context) => {
-      context.markSaved(SAVE_WRITER_FOR_TEST);
-      return Promise.resolve(context.isDirty());
+    const afterSave = await service.run(docId, async (context) => {
+      await context.markSaved(SAVE_WRITER_FOR_TEST);
+      return context.isDirty();
     });
     expect(afterSave).toStrictEqual({ value: false, version: 2 });
   });
@@ -630,12 +630,12 @@ describe('DocumentService — the per-document lane', () => {
     const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
-    const result = await service.run(docId, (context) => {
+    const result = await service.run(docId, async (context) => {
       context.bumpVersion(COMMAND_WRITER_FOR_TEST); // a command      -> v2
-      context.markSaved(SAVE_WRITER_FOR_TEST); //  saved at        -> v2
+      await context.markSaved(SAVE_WRITER_FOR_TEST); //  saved at  -> v2
       context.bumpVersion(COMMAND_WRITER_FOR_TEST); // undo           -> v3
       context.bumpVersion(COMMAND_WRITER_FOR_TEST); // redo           -> v4
-      return Promise.resolve(context.isDirty());
+      return context.isDirty();
     });
 
     // The content is byte-identical to the file and this says dirty. That is

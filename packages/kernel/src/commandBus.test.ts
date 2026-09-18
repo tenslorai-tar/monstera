@@ -144,8 +144,8 @@ function contextStub(acceptsImages = false): DocumentContext & {
     written: () => written,
     trims: () => trims,
     log,
-    markSaved(): DocVersion {
-      return version;
+    markSaved(): Promise<DocVersion> {
+      return Promise.resolve(version);
     },
     isDirty(): boolean {
       return false;

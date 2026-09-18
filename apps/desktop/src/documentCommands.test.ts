@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 
 import { strFromU8, unzipSync } from 'fflate';
 import { tmpdir } from 'node:os';
@@ -3701,9 +3701,17 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
           names: siblingNames,
           wait: () => Promise.resolve(),
         },
-        flush: (_docId, sessions) => {
+        flush: (docId, sessions) => {
           const mupdf = sessions.mupdf;
           if (mupdf === undefined) throw new Error('the target holds a session');
+          // A RELEASED SESSION IS REFUSED, as the host's registry refuses its token: *"This
+          // session token was not adopted by this registry, or it has already been
+          // released"*. A local session serialises after a recycle all the same, so without
+          // this the harness passed the flush of a stale set that the application refused
+          // (measured 2026-09-18, undoing a rectangle in the running app).
+          if (held.sessions(docId)?.mupdf !== mupdf) {
+            throw new Error('flushed a session this document no longer holds');
+          }
           return mupdfWriter.serialise(mupdf);
         },
       },
@@ -3720,6 +3728,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     const { version } = await documents.run(target.docId, () => Promise.resolve(null));
     return {
       commands,
+      documents,
       held,
       targetPath,
       target: target.docId,
@@ -3795,6 +3804,57 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     }
   });
 
+  it('SAVED TWICE: the second save of the same document is written, not refused as replaced', async () => {
+    // THE MEASURED CASE (2026-09-18): a save renames a temporary file over the target, so
+    // the file at the path afterwards is a new file. Compared against the identity read at
+    // open, the second save was refused as `replaced` — a document could be saved once.
+    const t = await twoDocuments();
+    await t.commands.execute(t.target, {
+      kind: 'importPageAsLayer',
+      source: t.source,
+      name: 'First',
+      at: 1,
+      version: t.version,
+    });
+    expect((await t.commands.save(t.target)).kind).toBe('saved');
+
+    const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
+    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
+    const second = await t.commands.save(t.target);
+    expect(second.kind).toBe('saved');
+
+    // AND THE FILE HOLDS THE SECOND EDIT: a refusal reported as a save would leave it out.
+    const reopened = await mupdfWriter.open(readFileSync(t.targetPath));
+    try {
+      expect((await readLayers(reopened)).map((layer) => layer.name).sort()).toStrictEqual(['First', 'Second']);
+    } finally {
+      await mupdfWriter.close(reopened);
+    }
+  });
+
+  it('CONTROL: a file replaced from OUTSIDE between two saves is still refused', async () => {
+    // What re-recording the identity must not disarm: the guard exists for this.
+    const t = await twoDocuments();
+    await t.commands.execute(t.target, {
+      kind: 'importPageAsLayer',
+      source: t.source,
+      name: 'First',
+      at: 1,
+      version: t.version,
+    });
+    expect((await t.commands.save(t.target)).kind).toBe('saved');
+
+    // ANOTHER PROGRAM'S SAVE: its own temporary file renamed over the target.
+    const outside = `${t.targetPath}.outside`;
+    writeFileSync(outside, readFileSync(t.targetPath));
+    renameSync(outside, t.targetPath);
+
+    const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
+    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
+    const refused = await t.commands.save(t.target);
+    expect(refused).toMatchObject({ kind: 'refused', verdict: { kind: 'replaced' } });
+  });
+
   it('UNDONE: all five structures are gone, from a checkpoint the lane restored', async () => {
     const t = await twoDocuments();
     await t.commands.execute(t.target, {
@@ -3811,7 +3871,8 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     if (before === undefined) throw new Error('the target holds a session');
     expect(structures(await PDFDocument.load(await mupdfWriter.serialise(before)), 1)).toStrictEqual(PRESENT);
 
-    expect(await t.commands.undo(t.target)).toBeDefined();
+    const undone = await t.commands.undo(t.target);
+    if (undone === undefined) throw new Error('the undo stepped nothing');
 
     // THE RESTORE RAN: undo reversed a checkpoint, not an inverse nobody captured.
     expect(t.restores()).toBe(1);
@@ -3819,6 +3880,13 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     if (after === undefined) throw new Error('the restore held no session');
     expect(structures(await PDFDocument.load(await mupdfWriter.serialise(after)), 1)).toStrictEqual(ABSENT);
     expect(await readLayers(after)).toStrictEqual([]);
+
+    // AND THE WINDOW IS HANDED THE RESTORED DOCUMENT (ADR-0084): the bytes main serves at the
+    // undo's version, taken from the session the restore REBUILT — the flush above refuses the
+    // one it released, which is the failure the running application met.
+    const served = readDocumentRange(t.documents, t.target, undone.version, 0, undone.byteLength);
+    if (served.kind !== 'bytes') throw new Error(`main refused its own current version: ${served.kind}`);
+    expect(structures(await PDFDocument.load(served.bytes), 1)).toStrictEqual(ABSENT);
   });
 });
 
