@@ -892,6 +892,35 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — Office import, step 1: conversion runs without `Fonts/`; this machine cannot say what it loses
+
+**The owner's step 1**: does conversion need the install tree's `Fonts/` (127 files, 51 MB,
+Culmus's Hebrew faces among them)? **Method**: a scratch install root whose directories are
+junctions to the provisioned 26.8.0 tree, with `Fonts/` left out — LibreOffice finds its root
+from where `soffice` runs. A probe document sets text in Calibri, Cambria, David CLM, Miriam
+CLM, Amiri and Liberation Sans. It is converted by both trees, and each PDF's fonts are read
+with MuPDF.
+
+**Result: both trees convert, on copies of one warm profile** (33.5 s and 36.9 s), and embed
+the same seven faces, DavidCLM and MiriamCLM included. **That sameness is not a finding**:
+`C:\Windows\Fonts` on this machine holds 69 of those files (Amiri, Caladea, the CLM faces…),
+installed by its system-wide LibreOffice, and the no-fonts tree drew from them. So *does it
+run without `Fonts/`* is answered — yes — and *what does the output lose* cannot be measured
+here. It needs a Windows machine without LibreOffice's fonts; a clean CI runner is one. Owed.
+
+**What did decide the afternoon's failures: a FRESH PROFILE.** Each tree on a new
+`UserInstallation`: the full tree's launcher exited 0 twice with **no PDF** (23 s each), and
+the no-fonts tree **stalled with `soffice.bin` idle at 8 s of CPU right after writing
+`registrymodifications.xcu`** (329 bytes, nothing further for ten minutes). That is word for
+word the signature this row recorded for the **contained** first start on 2026-09-16. Both
+trees convert once the profile is warm. So the contained stall may be a first-start problem
+that containment shares rather than causes, and the access trace owed on the row is now the
+experiment that separates the two. The first comparison mixed the two variables — the
+"full" profile was left from an earlier session and already warm — and was not read as a
+result.
+
+---
+
 ## 2026-09-18 — Print, PNG and JPEG live; a CORRECTION to the barcodes row; closing a dirty tab loses work
 
 **Print**: from the running application, the system dialog printed both pages to Microsoft
