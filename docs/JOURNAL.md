@@ -892,6 +892,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — Red board at e9d36ee: the recovery harness hid its own failure and then hung
+
+**CI #911, step *A killed engine host recovers*: 180 s against 7 s on the run before it.** The
+reported error was `EPERM` removing the harness's scratch directory, then `spawnSync … ETIMEDOUT`.
+Neither is the failure: e9d36ee changed only renderer files, a Playwright spec and documents, none of
+which this harness reaches, and the same step passed at 06c7fbc with the kernel changes in it.
+
+**The mechanism, in the harness.** `hostRecoveryHost.mjs`'s success path kills its hosts, waits for
+them, and removes the directory without throwing; its failure path removed the directory FIRST, so
+a live host's inherited handle made `rmSync` throw EPERM, which replaced the error that had arrived
+there. Then `main().catch` set `exitCode` and returned, and the reader worker and pipe kept the
+process alive until the driver's 180-second limit. So the harness could not report any failure it
+met — only a hang with the wrong error.
+
+**Fixed the class**: one `teardown` for both paths (kill, wait, remove-or-report), and `process.exit`
+on failure. **Proven by injection**: a throw after the first command, run against the repaired
+harness, reports `INJECTED …` and exits in 11 s; the same injection against the previous harness
+reports only EPERM and takes 184 s — CI #911 reproduced exactly. Unmodified, 7 of 7 cases pass
+locally. **What failed on the runner is still unknown**; the next run either passes or names it.
+
+**A rule broken while fixing it**: the edit was made while 903c89d's pre-commit hooks were still
+running, which the owner's rule forbids because hooks read the working tree. The edit was not staged
+and the commit's checks passed; recorded because the habit is the risk.
+
+---
+
 ## 2026-09-18 — Compare and the accessibility check, live; a shared font was blamed on one page
 
 **Document compare, live**: Source and Target open, compared from the palette — *4 lines differ in

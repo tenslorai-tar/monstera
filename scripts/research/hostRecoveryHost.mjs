@@ -338,41 +338,7 @@ async function main() {
     // in the session root, because a LIVE host holds that file through an
     // inherited handle. The experiment had finished and produced nothing.
     writeFileSync(REPORT_PATH, `${report}\n`, 'utf8');
-
-    // KILL WHAT WE OPENED. Any host still running is a process this harness
-    // created, holding the stdio handles it inherited from us — and a driver
-    // spawning this one waits on those, so a surviving grandchild turns a
-    // finished experiment into a timeout in the caller. Killing them here is
-    // cleanup rather than part of the measurement: the report is already
-    // written, and every case the driver asserts is decided by then.
-    for (const id of childProcessIds()) {
-      try {
-        process.kill(id);
-      } catch {
-        // Already gone, which is the ordinary case for the host we killed.
-      }
-    }
-
-    // WAIT FOR THEM TO BE GONE, rather than for a retry to outlast them.
-    // `process.kill` asks; the handles are released when the process actually
-    // exits, and `rmSync`'s retries ride out a handle being closed, not a
-    // process that is still running. Measured: without this the removal below
-    // throws EPERM on the session root, because a live host holds its
-    // diagnostic file there through an inherited handle.
-    await waitForChildren((ids) => ids.length === 0, DEATH_BUDGET_MS);
-
-    // AND THE DIRECTORY LAST. Its failure is reported and not thrown: the
-    // report is already on disk and every case the driver asserts is decided,
-    // so a leaked temp directory must not turn a finished experiment into no
-    // result at all. It is named, because a leak nobody mentions is one nobody
-    // fixes.
-    try {
-      rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    } catch (error) {
-      process.stderr.write(
-        `MONSTERA_HOST_RECOVERY_LEAKED ${scratch} could not be removed: ${formatError(error)}\n`,
-      );
-    }
+    await teardown(scratch);
 
     // EXIT EXPLICITLY. The shell holds a reader worker, a stop event and a pipe
     // instance whose lifetimes are the application's, so this process does not
@@ -380,8 +346,54 @@ async function main() {
     // hang rather than as a result.
     process.exit(0);
   } catch (error) {
-    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    // THE SAME TEARDOWN AS SUCCESS, and it cannot throw. This branch removed the directory
+    // without killing the hosts first, so a live host's handle made `rmSync` throw EPERM — which
+    // replaced the error that brought us here, and the process then never exited: CI #911 at
+    // e9d36ee, a 7-second step that ran its 180-second limit and reported only the EPERM.
+    await teardown(scratch);
     throw error;
+  }
+}
+
+/**
+ * Kills every host this harness created, waits for them, and removes the scratch directory,
+ * reporting rather than throwing a directory that will not go.
+ *
+ * ONE TEARDOWN FOR BOTH PATHS. It was written out on the success path only, and the failure
+ * path's shorter copy is what hid a failure behind EPERM and hung.
+ *
+ * @param {string} scratch
+ */
+async function teardown(scratch) {
+  // KILL WHAT WE OPENED. Any host still running is a process this harness
+  // created, holding the stdio handles it inherited from us — and a driver
+  // spawning this one waits on those, so a surviving grandchild turns a
+  // finished experiment into a timeout in the caller.
+  for (const id of childProcessIds()) {
+    try {
+      process.kill(id);
+    } catch {
+      // Already gone, which is the ordinary case for the host we killed.
+    }
+  }
+
+  // WAIT FOR THEM TO BE GONE, rather than for a retry to outlast them.
+  // `process.kill` asks; the handles are released when the process actually
+  // exits, and `rmSync`'s retries ride out a handle being closed, not a
+  // process that is still running. Measured: without this the removal below
+  // throws EPERM on the session root, because a live host holds its
+  // diagnostic file there through an inherited handle.
+  await waitForChildren((ids) => ids.length === 0, DEATH_BUDGET_MS);
+
+  // AND THE DIRECTORY LAST. Its failure is reported and not thrown: a leaked temp directory must
+  // not replace the result — or the error — that this process exists to deliver. It is named,
+  // because a leak nobody mentions is one nobody fixes.
+  try {
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    process.stderr.write(
+      `MONSTERA_HOST_RECOVERY_LEAKED ${scratch} could not be removed: ${formatError(error)}\n`,
+    );
   }
 }
 
@@ -390,5 +402,7 @@ main().catch((error) => {
   // cause's errno is usually the diagnosis here — a refused spawn, a pipe that
   // was not there. `check:stackowner` refuses any other reader.
   process.stderr.write(`MONSTERA_HOST_RECOVERY_FAILED ${formatError(error)}\n`);
-  process.exitCode = 1;
+  // EXIT, not `exitCode`: the reader worker and the pipe keep this process alive, so setting a code
+  // and returning is a hang the driver can only time out on — which is what CI #911 did.
+  process.exit(1);
 });
