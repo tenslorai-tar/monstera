@@ -892,6 +892,22 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-18 — KKKKKK-6's security half: a job that cannot be created stops the host before its first line
+
+The reviewing seat asked one question of the `CreateJobObjectW returned no handle` failures recorded as
+load: does the host refuse to start, or start uncontained? **It refuses, and nothing of it runs.**
+`win32HostSurface.ts` creates the host with `CREATE_SUSPENDED` (the flags at line 794);
+`createContainedHost` (`engineHostFactory.ts`) returns `job-create` when the job handle is null, through
+`abandon`, which calls `TerminateProcess` on the still-suspended process before closing any handle; the
+resume that would start it is never reached. Proven by `engineHostFactory.test.ts`, *terminates when the
+job could not be created at all* (no `resume`, a `terminate`), and by the refusal table below it, which
+asserts the kill precedes every close; and a thread found already running at resume is itself a refusal,
+so a creation that silently dropped the suspend flag could not reach the success path. Invariant 25's job
+term fails closed under load. What stays open in KKKKKK-6 is only why the job cannot be created inside a
+large parallel run — a test-run flake, not a containment gap.
+
+---
+
 ## 2026-09-18 — KKKKKK-5 closed: the palette was a hand-made dialog, and one of its three failures was the instrument
 
 **The mechanism.** `CommandPalette` was a `div` with `role="dialog"` and a React `onKeyDown`, beside a
