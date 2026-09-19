@@ -9,6 +9,7 @@ import {
   claudeRasterScale,
   fitsClaudeImage,
   pngSize,
+  readTablesThroughClaude,
   recogniseThroughClaude,
 } from './ocrClaude.js';
 
@@ -325,5 +326,84 @@ describe('recogniseThroughClaude', () => {
       fetchImpl,
     });
     expect(page.lines).toStrictEqual([]);
+  });
+});
+
+describe('readTablesThroughClaude (ADR-0086)', () => {
+  const BOUNDS = { maxCells: 4096, maxText: 2048 };
+  const MERGED = {
+    tables: [
+      {
+        rowCount: 2,
+        columnCount: 2,
+        cells: [
+          { rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 2, content: 'Totals' },
+          { rowIndex: 1, columnIndex: 0, rowSpan: 1, columnSpan: 1, content: 'Q1' },
+          { rowIndex: 1, columnIndex: 1, rowSpan: 1, columnSpan: 1, content: '120' },
+        ],
+      },
+    ],
+  };
+
+  it('asks for tables in the TABLE schema and answers the grid with its span', async () => {
+    const { fetchImpl, calls } = service(() => answer(MERGED));
+    const tables = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
+
+    expect(tables).toStrictEqual([
+      {
+        kind: 'recognised',
+        rows: 2,
+        columns: 2,
+        cells: [
+          { row: 0, column: 0, rowSpan: 1, columnSpan: 2, text: 'Totals' },
+          { row: 1, column: 0, rowSpan: 1, columnSpan: 1, text: 'Q1' },
+          { row: 1, column: 1, rowSpan: 1, columnSpan: 1, text: '120' },
+        ],
+      },
+    ]);
+    // THE QUESTION WAS THE TABLE ONE: its schema names spans, and the word recogniser's does not.
+    const sent = calls[0]?.init?.body;
+    if (typeof sent !== 'string') throw new Error(`the body was sent as ${typeof sent}, not a string`);
+    const body = JSON.parse(sent) as {
+      model: string;
+      output_config: { format: { schema: { properties: Record<string, unknown> } } };
+    };
+    expect(Object.keys(body.output_config.format.schema.properties)).toStrictEqual(['tables']);
+    expect(body.model).toBe(CLAUDE_OCR_MODEL);
+  });
+
+  it('CONTROL: the word recogniser asks its own schema, so the two questions are told apart', async () => {
+    const { fetchImpl, calls } = service(() => answer(ONE_WORD));
+    await recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl });
+    const sent = calls[0]?.init?.body;
+    if (typeof sent !== 'string') throw new Error(`the body was sent as ${typeof sent}, not a string`);
+    const body = JSON.parse(sent) as {
+      output_config: { format: { schema: { properties: Record<string, unknown> } } };
+    };
+    expect(Object.keys(body.output_config.format.schema.properties)).toStrictEqual(['lines']);
+  });
+
+  it('refuses a grid that contradicts itself rather than placing it', async () => {
+    const overlapping = {
+      tables: [
+        {
+          rowCount: 1,
+          columnCount: 2,
+          cells: [
+            { rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 2, content: 'merged' },
+            { rowIndex: 0, columnIndex: 1, rowSpan: 1, columnSpan: 1, content: 'also here' },
+          ],
+        },
+      ],
+    };
+    const { fetchImpl } = service(() => answer(overlapping));
+    await expect(
+      readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS),
+    ).rejects.toThrow(/two cells claim/u);
+  });
+
+  it('answers no tables for a page with none, which is an answer and not a refusal', async () => {
+    const { fetchImpl } = service(() => answer({ tables: [] }));
+    expect(await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS)).toStrictEqual([]);
   });
 });

@@ -183,6 +183,7 @@ import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
 import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { EXPORT_PAGE_IMAGES_DIALOG } from './dialogs/exportPageImages.js';
 import { EXPORT_EXCEL_DIALOG } from './dialogs/exportExcel.js';
+import { SERVICE_REFUSED_DIALOG } from './dialogs/serviceRefused.js';
 import { PDFA_REMOVALS_DIALOG } from './dialogs/pdfaRemovals.js';
 import { PAGE_BARCODES_DIALOG } from './dialogs/pageBarcodes.js';
 import { PLACE_BARCODE_DIALOG } from './dialogs/placeBarcode.js';
@@ -507,6 +508,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         EXPORT_PAGE_IMAGES_DIALOG,
         EXPORT_WORD_DIALOG,
         EXPORT_EXCEL_DIALOG,
+        SERVICE_REFUSED_DIALOG,
         PRINT_DIALOG,
         PDFA_REMOVALS_DIALOG,
         PAGE_BARCODES_DIALOG,
@@ -1707,7 +1709,18 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         exportLayoutTextCommand({ client, onApplied: applied, ask }),
         exportWordCommand({ client, onApplied: applied, ask }),
         exportPowerPointCommand({ client, onApplied: applied, ask }),
-        exportExcelCommand({ client, onApplied: applied, ask }),
+        exportExcelCommand({
+          client,
+          onApplied: applied,
+          ask,
+          // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
+          // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
+          tableEngines: () => [
+            'automatic',
+            ...(azureEndpoint !== '' && azureKeyStored ? (['azure'] as const) : []),
+            ...(claudeKeyStored ? (['claude'] as const) : []),
+          ],
+        }),
         printCommand({ client, onApplied: applied, ask }),
         emailCommand({ client, onApplied: applied, ask }),
         exportPdfaCommand({ client, onApplied: applied, ask }),

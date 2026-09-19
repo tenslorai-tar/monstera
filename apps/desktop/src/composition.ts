@@ -11,6 +11,8 @@ import {
   type EventPayload,
   isNetworkOcrEngine,
   MIN_SNAPSHOT_SCALE,
+  MAX_TABLE_CELLS,
+  MAX_TABLE_CELL_TEXT,
   type NetworkOcrEngine,
   ENGINE_HOST_MAX_IN_FLIGHT,
   type ClientApi,
@@ -38,6 +40,9 @@ import {
   claudeAcceptsBytes,
   claudeRasterScale,
   recogniseThroughClaude,
+  readTablesThroughClaude,
+  readTablesThroughAzure,
+  type RecognisedTable,
   type RecognisedPage,
   type HostOcrReader,
   recogniseThroughAzure,
@@ -128,6 +133,7 @@ import {
   type DocumentSessions,
   EngineUnavailableError,
   MissingSessionError,
+  NetworkKeyMissing,
 } from './documentCommands.js';
 import { timestampTransport } from './timestampTransport.js';
 
@@ -1161,6 +1167,22 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.pageImage(session, request);
+    },
+    // A PAGE'S TABLES THROUGH A SERVICE (ADR-0086), composed as the network OCR is: the engine
+    // host rasterises the WHOLE page — the page image's route, a PNG — within the service's byte
+    // limit, and main sends it, because invariant 25 gives the host no network. The engine's own
+    // entry holds its credentials, scale and byte check, read once.
+    networkTables: async (docId, sessions, page, engine) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      const { sizes } = await engineHost.geometry(session, [page]);
+      const size = sizes[0];
+      if (size === undefined) throw new Error(`the engine reported no size for page ${String(page + 1)}`);
+      const prepared = networkRecognisers(settings, secrets)[engine].prepare(size.width, size.height);
+      const { raster } = await rasterWithinLimit(prepared.scale, MIN_SNAPSHOT_SCALE, prepared.accepts, async (at) => ({
+        png: await engineHost.pageImage(session, { page, format: 'png', scale: at, quality: 100 }),
+      }));
+      return prepared.readTables(raster.png);
     },
     // THE TEXT EXPORT'S DIALOG, a parameter for the folder picker's reason below.
     pickText,
@@ -2800,8 +2822,16 @@ interface NetworkRecogniser {
      */
     readonly accepts: (pngBytes: number) => ByteVerdict;
     readonly recognise: (raster: RegionRaster) => Promise<RecognisedPage>;
+    /**
+     * The same service asked for a whole page's TABLES (ADR-0086), with the credentials the
+     * check above already read. REQUIRED, for {@link accepts}' reason.
+     */
+    readonly readTables: (png: Uint8Array) => Promise<readonly RecognisedTable[]>;
   };
 }
+
+/** The table bounds every service's answer is held to — the review grid's and the channel's. */
+const TABLE_BOUNDS = { maxCells: MAX_TABLE_CELLS, maxText: MAX_TABLE_CELL_TEXT } as const;
 
 /**
  * Every network engine's route, keyed by the one declared set.
@@ -2818,29 +2848,21 @@ function networkRecognisers(
     azure: {
       prepare: () => {
         const credentials = azureCredentials(settings, secrets);
-        if (credentials === null) {
-          throw new Error(
-            'the Azure Document Intelligence endpoint and key are not both set, so there is ' +
-              'nowhere to send the region. Both are settings; the key is a secret one and lives ' +
-              'in the OS keychain.',
-          );
-        }
+        // TYPED, so a caller can answer *no key* by what it is: the Excel export's
+        // `service-refused` does. Its sentence is the one this used to throw.
+        if (credentials === null) throw new NetworkKeyMissing('azure');
         return {
           scale: AZURE_RASTER_SCALE,
           accepts: azureAcceptsBytes,
           recognise: (raster) => recogniseThroughAzure(credentials, raster),
+          readTables: (png) => readTablesThroughAzure(credentials, { png }, TABLE_BOUNDS),
         };
       },
     },
     claude: {
       prepare: (widthPoints, heightPoints) => {
         const key = secrets?.read()[ANTHROPIC_KEY_SETTING_ID];
-        if (typeof key !== 'string' || key === '') {
-          throw new Error(
-            'no Anthropic API key is stored, so there is nowhere to send the region. It is a ' +
-              'secret setting, in Settings under AI, and lives in the OS keychain.',
-          );
-        }
+        if (typeof key !== 'string' || key === '') throw new NetworkKeyMissing('claude');
         // AZURE'S SCALE AS THE CEILING, for that constant's own reason — the bytes
         // cross the internet either way — and lowered only as far as Claude's
         // image limits require, never below the floor the host refuses.
@@ -2861,6 +2883,7 @@ function networkRecognisers(
           scale,
           accepts: claudeAcceptsBytes,
           recognise: (raster) => recogniseThroughClaude({ key }, raster),
+          readTables: (png) => readTablesThroughClaude({ key }, { png }, TABLE_BOUNDS),
         };
       },
     },

@@ -608,3 +608,32 @@ describe('window.titleBarOverlay', () => {
     }
   });
 });
+
+describe('document.exportExcel — which engine reads the tables (ADR-0086)', () => {
+  const params = channels['document.exportExcel'].params;
+  const edited = {
+    docId: asDocId('doc-1'),
+    layout: 'sheet-per-page',
+    version: asDocVersion(3),
+    edits: [{ page: 0, table: 0, row: 0, column: 0, text: 'A' }],
+  };
+
+  it('CONTROL: the review grid’s edits are accepted with the AUTOMATIC engine, and no edits with any', () => {
+    // The same edits as the refusal below, so a schema refusing every edited request is red here.
+    expect(params.safeParse({ ...edited, engine: 'automatic' }).success).toBe(true);
+    for (const engine of ['automatic', 'azure', 'claude']) {
+      expect(params.safeParse({ ...edited, engine, edits: [] }).success, engine).toBe(true);
+    }
+  });
+
+  it('refuses edits sent with a SERVICE engine — they correct MuPDF’s tables, which the service never read', () => {
+    for (const engine of ['azure', 'claude']) {
+      expect(params.safeParse({ ...edited, engine }).success, engine).toBe(false);
+    }
+  });
+
+  it('refuses a request that names no engine, or one this build does not have', () => {
+    expect(params.safeParse({ ...edited, edits: [] }).success).toBe(false);
+    expect(params.safeParse({ ...edited, engine: 'tesseract', edits: [] }).success).toBe(false);
+  });
+});

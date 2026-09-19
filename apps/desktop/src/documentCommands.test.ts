@@ -30,6 +30,7 @@ import {
   MAX_IMPORT_IMAGE_BYTES,
 } from '@monstera/contract';
 import {
+  AzureRecognitionRefused,
   CapabilityRegistry,
   CommandBus,
   DocumentNotOpenError,
@@ -43,6 +44,7 @@ import {
   parsePageStructure,
   parsePageTables,
   readDocumentRange,
+  type RecognisedTable,
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
@@ -125,6 +127,7 @@ import {
   type DocumentPageStructure,
   type DocumentPageTables,
   type ExcelReview,
+  type NetworkTableReader,
   DocumentPoisonedError,
   type DocumentRestore,
   type DocumentFlush,
@@ -680,6 +683,8 @@ const INERT = {
   // REFUSES BY NAME, like every inert surface: a case that reached the network without
   // meaning to fails at the call rather than fetching anything.
   fetchUrl: () => Promise.reject(new Error('INERT: this case does not fetch a URL')),
+  // REFUSES BY NAME for the same reason: a table export through a service supplies its own.
+  networkTables: () => Promise.reject(new Error('INERT: this case sends no page to a service')),
   certificate: noCertificates,
   extract: localExtract,
   snapshot: localSnapshot,
@@ -2523,13 +2528,17 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     pictureDoc = await opened(await pictures.save(), 'pictures.pdf');
   });
 
-  function exportingTo(destination: string | null): {
+  function exportingTo(
+    destination: string | null,
+    networkTables: NetworkTableReader = LOCAL_READS.networkTables,
+  ): {
     readonly commands: DocumentCommands;
     readonly picked: string[];
   } {
     const picked: string[] = [];
     const commands = new DocumentCommands({
       ...LOCAL_READS,
+      networkTables,
       documents: service,
       bus: bus(),
       engine: held,
@@ -2663,6 +2672,99 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       }),
     ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
+  });
+
+  describe('through a SERVICE (ADR-0086) — each page read as the workbook streams', () => {
+    /** A header cell spanning both columns, over a row of two: the merge is the separating shape. */
+    const SPANNED: RecognisedTable = {
+      kind: 'recognised',
+      rows: 2,
+      columns: 2,
+      cells: [
+        { row: 0, column: 0, rowSpan: 1, columnSpan: 2, text: 'Totals' },
+        { row: 1, column: 0, rowSpan: 1, columnSpan: 1, text: 'North' },
+        { row: 1, column: 1, rowSpan: 1, columnSpan: 1, text: '12' },
+      ],
+    };
+
+    it('asks the service for EVERY page, in order, and writes its span as a merge', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'service.xlsx');
+      const asked: string[] = [];
+      const { commands, picked } = exportingTo(destination, (_doc, _sessions, page, engine) => {
+        asked.push(`${engine}:${String(page)}`);
+        return Promise.resolve(page === 1 ? [SPANNED] : []);
+      });
+
+      const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'azure');
+
+      expect(outcome?.kind).toBe('copied');
+      expect(picked).toStrictEqual(['tables.pdf:xlsx']);
+      expect(asked).toStrictEqual(['azure:0', 'azure:1', 'azure:2']);
+      // THE SERVICE'S TABLE, NOT MUPDF'S: page 2's ruled grid would put `Item` here.
+      // `12` is a NUMBER cell, as MuPDF's `12` is above, so it is not among the inline strings.
+      expect(sheetsOf(destination)).toStrictEqual([{ name: '2', strings: ['Totals', 'North'] }]);
+      const sheet = strFromU8(unzipSync(readFileSync(destination))['xl/worksheets/sheet1.xml'] ?? new Uint8Array());
+      expect(sheet).toContain('<v>12</v>');
+      expect(sheet).toContain('<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>');
+    });
+
+    it('stops at the FIRST page the service refuses, names it, sends nothing after, and writes nothing', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'refused.xlsx');
+      const asked: number[] = [];
+      const { commands } = exportingTo(destination, (_doc, _sessions, page) => {
+        asked.push(page);
+        return page === 1
+          ? Promise.reject(new AzureRecognitionRefused('rejected', 'Azure answered 400: the page was refused'))
+          : Promise.resolve([SPANNED]);
+      });
+
+      expect(
+        await commands.exportExcel(tablesDoc, 'one-sheet', await unreviewed(commands, tablesDoc), 'azure'),
+      ).toStrictEqual({
+        kind: 'service-refused',
+        engine: 'azure',
+        page: 1,
+        reason: 'rejected',
+        detail: 'Azure answered 400: the page was refused',
+      });
+      expect(asked).toStrictEqual([0, 1]);
+      expect(existsSync(destination)).toBe(false);
+    });
+
+    it('answers NO TABLES, writing nothing, when the service finds none on any page', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'none.xlsx');
+      const { commands } = exportingTo(destination, () => Promise.resolve([]));
+
+      expect(
+        await commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude'),
+      ).toStrictEqual({ kind: 'no-tables', picturePages: 0 });
+      expect(existsSync(destination)).toBe(false);
+    });
+
+    it('CONTROL: a thrown value that is no service refusal is a DEFECT, and is not dressed as one', async () => {
+      const destination = join(mkdtempSync(join(directory, 'xlsx-')), 'defect.xlsx');
+      const { commands } = exportingTo(destination, () => Promise.reject(new TypeError('a bug in this build')));
+
+      await expect(
+        commands.exportExcel(tablesDoc, 'sheet-per-page', await unreviewed(commands, tablesDoc), 'claude'),
+      ).rejects.toThrow('a bug in this build');
+      expect(existsSync(destination)).toBe(false);
+    });
+
+    it('answers CHANGED before any picker, sending nothing, for a review at another version', async () => {
+      const asked: number[] = [];
+      const { commands, picked } = exportingTo(null, (_doc, _sessions, page) => {
+        asked.push(page);
+        return Promise.resolve([]);
+      });
+      const { version } = await commands.pageTables(tablesDoc, 0);
+
+      expect(
+        await commands.exportExcel(tablesDoc, 'sheet-per-page', { version: asDocVersion(Number(version) + 1), edits: [] }, 'azure'),
+      ).toStrictEqual({ kind: 'changed' });
+      expect(picked).toStrictEqual([]);
+      expect(asked).toStrictEqual([]);
+    });
   });
 });
 

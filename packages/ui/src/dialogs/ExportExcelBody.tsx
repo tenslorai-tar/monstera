@@ -8,7 +8,13 @@ import {
   EXPORT_EXCEL_APPLY,
   EXPORT_EXCEL_CELL,
   EXPORT_EXCEL_CLIPPED,
+  EXPORT_EXCEL_ENGINE,
+  EXPORT_EXCEL_ENGINE_AUTOMATIC,
+  EXPORT_EXCEL_ENGINE_AZURE,
+  EXPORT_EXCEL_ENGINE_CLAUDE,
   EXPORT_EXCEL_LAYOUT,
+  EXPORT_EXCEL_SENDS_AZURE,
+  EXPORT_EXCEL_SENDS_CLAUDE,
   EXPORT_EXCEL_NEXT_PAGE,
   EXPORT_EXCEL_NO_TABLES_HERE,
   EXPORT_EXCEL_ONE_SHEET,
@@ -23,12 +29,26 @@ import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ExportExcelAnswer, ExportExcelProps } from './exportExcel.js';
 
 type SheetLayout = ExportExcelAnswer['layout'];
+type Engine = ExportExcelAnswer['engine'];
 type Edit = ExportExcelAnswer['edits'][number];
 
 /** Each layout and the sentence that says what a person gets, as a record so a third arrives owing its words. */
 const LAYOUTS: Readonly<Record<SheetLayout, MessageKey>> = {
   'sheet-per-page': EXPORT_EXCEL_SHEET_PER_PAGE,
   'one-sheet': EXPORT_EXCEL_ONE_SHEET,
+};
+
+/** Each engine's name, as a record for the same reason. */
+const ENGINES: Readonly<Record<Engine, MessageKey>> = {
+  automatic: EXPORT_EXCEL_ENGINE_AUTOMATIC,
+  azure: EXPORT_EXCEL_ENGINE_AZURE,
+  claude: EXPORT_EXCEL_ENGINE_CLAUDE,
+};
+
+/** What a service engine sends, said before anything is sent (ADR-0086 Decision 4). */
+const SENDS: Readonly<Record<Exclude<Engine, 'automatic'>, MessageKey>> = {
+  azure: EXPORT_EXCEL_SENDS_AZURE,
+  claude: EXPORT_EXCEL_SENDS_CLAUDE,
 };
 
 const keyOf = (table: number, row: number, column: number): string =>
@@ -54,25 +74,88 @@ export default function ExportExcelBody({
   tables,
   truncated,
   layout: initialLayout,
+  engines,
+  engine: initialEngine,
   edits: initialEdits,
   resolve,
 }: ExportExcelProps & DialogAnswering<ExportExcelAnswer>): ReactElement {
   const { _ } = useLingui();
   const [layout, setLayout] = useState<SheetLayout>(initialLayout);
+  const [engine, setEngine] = useState<Engine>(initialEngine);
   const [edits, setEdits] = useState<ReadonlyMap<string, Edit>>(
     () => new Map(initialEdits.map((edit) => [keyOf(edit.table, edit.row, edit.column), edit])),
   );
 
-  const answer = (): ExportExcelAnswer['edits'] => [...edits.values()];
+  // THE GRID'S EDITS ARE MUPDF'S TABLES', so a service engine sends none — the channel refuses
+  // them with any other engine, and a correction to a table the service never read would be
+  // written nowhere.
+  const answer = (): ExportExcelAnswer['edits'] => (engine === 'automatic' ? [...edits.values()] : []);
+
+  const layoutChoice = (
+    <fieldset className="m-export-excel__layout">
+      <legend>{_(EXPORT_EXCEL_LAYOUT)}</legend>
+      {(Object.keys(LAYOUTS) as SheetLayout[]).map((each) => (
+        <label key={each}>
+          <input
+            type="radio"
+            name="export-excel-layout"
+            checked={layout === each}
+            onChange={() => {
+              setLayout(each);
+            }}
+          />
+          {_(LAYOUTS[each])}
+        </label>
+      ))}
+    </fieldset>
+  );
+
+  const engineChoice =
+    engines.length > 1 ? (
+      <fieldset className="m-export-excel__layout">
+        <legend>{_(EXPORT_EXCEL_ENGINE)}</legend>
+        {engines.map((each) => (
+          <label key={each}>
+            <input
+              type="radio"
+              name="export-excel-engine"
+              checked={engine === each}
+              onChange={() => {
+                setEngine(each);
+              }}
+            />
+            {_(ENGINES[each])}
+          </label>
+        ))}
+      </fieldset>
+    ) : null;
+
+  if (engine !== 'automatic') {
+    return (
+      <div className="m-export-excel">
+        {engineChoice}
+        <p>{_(SENDS[engine], { count: pageCount })}</p>
+        {layoutChoice}
+        <Button
+          label={EXPORT_EXCEL_APPLY}
+          variant="primary"
+          onClick={() => {
+            resolve({ kind: 'export', layout, engine, edits: [] });
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="m-export-excel">
+      {engineChoice}
       <div className="m-export-excel__pages">
         <Button
           label={EXPORT_EXCEL_PREVIOUS_PAGE}
           disabled={index === 0}
           onClick={() => {
-            resolve({ kind: 'page', to: index - 1, layout, edits: answer() });
+            resolve({ kind: 'page', to: index - 1, layout, engine, edits: answer() });
           }}
         />
         <span>{_(EXPORT_EXCEL_PAGE, { page, count: pageCount })}</span>
@@ -80,7 +163,7 @@ export default function ExportExcelBody({
           label={EXPORT_EXCEL_NEXT_PAGE}
           disabled={index + 1 >= pageCount}
           onClick={() => {
-            resolve({ kind: 'page', to: index + 1, layout, edits: answer() });
+            resolve({ kind: 'page', to: index + 1, layout, engine, edits: answer() });
           }}
         />
       </div>
@@ -125,27 +208,12 @@ export default function ExportExcelBody({
       ))}
       {truncated ? <p>{_(EXPORT_EXCEL_TRUNCATED)}</p> : null}
 
-      <fieldset className="m-export-excel__layout">
-        <legend>{_(EXPORT_EXCEL_LAYOUT)}</legend>
-        {(Object.keys(LAYOUTS) as SheetLayout[]).map((each) => (
-          <label key={each}>
-            <input
-              type="radio"
-              name="export-excel-layout"
-              checked={layout === each}
-              onChange={() => {
-                setLayout(each);
-              }}
-            />
-            {_(LAYOUTS[each])}
-          </label>
-        ))}
-      </fieldset>
+      {layoutChoice}
       <Button
         label={EXPORT_EXCEL_APPLY}
         variant="primary"
         onClick={() => {
-          resolve({ kind: 'export', layout, edits: answer() });
+          resolve({ kind: 'export', layout, engine, edits: answer() });
         }}
       />
     </div>

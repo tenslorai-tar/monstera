@@ -1426,15 +1426,17 @@ function exportExcelHandler(commands: DocumentCommands): ContractHandlers['docum
   return async ({
     docId,
     layout,
+    engine,
     version,
     edits,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportExcel']>>> => {
     try {
-      const outcome = await commands.exportExcel(docId, layout, { version, edits });
+      const outcome = await commands.exportExcel(docId, layout, { version, edits }, engine);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       if (outcome.kind === 'changed') return ok({ kind: 'changed' } as const);
+      if (outcome.kind === 'service-refused') return ok({ ...outcome });
       if (outcome.kind === 'no-tables') {
         return ok({ kind: 'no-tables', picturePages: outcome.picturePages } as const);
       }

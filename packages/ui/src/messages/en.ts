@@ -303,6 +303,14 @@ export const PLACE_BARCODE_APPLY = messageKey('dialog.place-barcode.apply');
 export const EXPORT_EXCEL_COMMAND_TITLE = messageKey('command.export-excel.title');
 export const EXPORT_EXCEL_TITLE = messageKey('dialog.export-excel.title');
 export const EXPORT_EXCEL_LAYOUT = messageKey('dialog.export-excel.layout');
+export const EXPORT_EXCEL_ENGINE = messageKey('dialog.export-excel.engine');
+export const EXPORT_EXCEL_ENGINE_AUTOMATIC = messageKey('dialog.export-excel.engine.automatic');
+export const EXPORT_EXCEL_ENGINE_AZURE = messageKey('dialog.export-excel.engine.azure');
+export const EXPORT_EXCEL_ENGINE_CLAUDE = messageKey('dialog.export-excel.engine.claude');
+export const EXPORT_EXCEL_SENDS_AZURE = messageKey('dialog.export-excel.sends.azure');
+export const EXPORT_EXCEL_SENDS_CLAUDE = messageKey('dialog.export-excel.sends.claude');
+export const EXCEL_SERVICE_REFUSED = messageKey('dialog.service-refused.body');
+export const SERVICE_REFUSED_TITLE = messageKey('dialog.service-refused.title');
 export const EXPORT_EXCEL_SHEET_PER_PAGE = messageKey('dialog.export-excel.sheet-per-page');
 export const EXPORT_EXCEL_ONE_SHEET = messageKey('dialog.export-excel.one-sheet');
 export const EXPORT_EXCEL_APPLY = messageKey('dialog.export-excel.apply');
@@ -2399,6 +2407,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_COMMAND_TITLE]: 'Export tables to Excel…',
   [EXPORT_EXCEL_TITLE]: 'Export tables to Excel',
   [EXPORT_EXCEL_LAYOUT]: 'Where the tables go',
+  [EXPORT_EXCEL_ENGINE]: 'Read the tables with',
+  [EXPORT_EXCEL_ENGINE_AUTOMATIC]: 'This PDF’s own text',
+  [EXPORT_EXCEL_ENGINE_AZURE]: 'Azure Document Intelligence',
+  [EXPORT_EXCEL_ENGINE_CLAUDE]: 'Claude',
+  // SAID BEFORE ANYTHING IS SENT (ADR-0086 Decision 4): what leaves this computer, and where to.
+  // No cost is stated, which is the row's rule for every service string.
+  [EXPORT_EXCEL_SENDS_AZURE]:
+    'All {count, plural, one {# page} other {# pages}} of this document will be sent to Azure Document Intelligence to find their tables. Each copy is deleted from Azure after it is read.',
+  [EXPORT_EXCEL_SENDS_CLAUDE]:
+    'All {count, plural, one {# page} other {# pages}} of this document will be sent to Anthropic’s Claude to find their tables.',
+  [EXCEL_SERVICE_REFUSED]: 'Page {page} could not be read, so nothing was written. {detail}',
+  [SERVICE_REFUSED_TITLE]: 'The tables were not read',
   [EXPORT_EXCEL_SHEET_PER_PAGE]: 'A sheet for each page that has tables',
   [EXPORT_EXCEL_ONE_SHEET]: 'Every table on one sheet',
   [EXPORT_EXCEL_APPLY]: 'Choose where to save…',

@@ -3,6 +3,7 @@ import type { PdfPoint, Rotation } from '@monstera/shared';
 import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
 
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
+import { type RecognisedTable, recognisedTable } from './recognisedTables.js';
 
 /**
  * Azure Document Intelligence — **the recogniser that runs in `main`**.
@@ -84,8 +85,16 @@ export function azureAcceptsBytes(
   return { ok: false, shrinkBy: Math.sqrt(AZURE_MAX_DOCUMENT_BYTES / pngBytes) * 0.95 };
 }
 
-/** The model: text and word boxes, which is what a `RecognisedPage` holds. */
-const MODEL = 'prebuilt-read';
+/**
+ * The two models this build asks for, and nothing else.
+ *
+ * - `prebuilt-read`: text and word boxes, which is what a `RecognisedPage` holds.
+ * - `prebuilt-layout`: the same plus **tables**, each cell with its row, column and spans, which
+ *   is what a scanned table's export is read with ([ADR-0086](../../../docs/DECISIONS/0086-a-scanned-table-is-read-by-a-service-that-answers-tables.md)).
+ *
+ * A closed set rather than a string, so no caller can send a page to a model nobody decided on.
+ */
+export type AzureModel = 'prebuilt-read' | 'prebuilt-layout';
 
 /**
  * How long to keep polling before giving up, and how often.
@@ -214,6 +223,18 @@ interface AnalyzeAnswer {
         readonly polygon?: readonly unknown[];
       }[];
     }[];
+    /** `prebuilt-layout`'s only: REST reference, api-version 2024-11-30, read 2026-09-19. */
+    readonly tables?: readonly {
+      readonly rowCount?: unknown;
+      readonly columnCount?: unknown;
+      readonly cells?: readonly {
+        readonly rowIndex?: unknown;
+        readonly columnIndex?: unknown;
+        readonly rowSpan?: unknown;
+        readonly columnSpan?: unknown;
+        readonly content?: unknown;
+      }[];
+    }[];
   };
 }
 
@@ -227,7 +248,7 @@ interface AnalyzeAnswer {
  * URL it is not a compile-time constant and this is the only thing standing
  * between a typo and a plaintext upload.
  */
-function analyzeUrl(endpoint: string): string {
+function analyzeUrl(endpoint: string, model: AzureModel): string {
   let parsed: URL;
   try {
     parsed = new URL(endpoint);
@@ -245,7 +266,7 @@ function analyzeUrl(endpoint: string): string {
     );
   }
   const base = parsed.toString().replace(/\/+$/u, '');
-  return `${base}/documentintelligence/documentModels/${MODEL}:analyze?api-version=${AZURE_API_VERSION}`;
+  return `${base}/documentintelligence/documentModels/${model}:analyze?api-version=${AZURE_API_VERSION}`;
 }
 
 /**
@@ -444,21 +465,33 @@ function boxOf(
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
+/** The clock the poller waits on; injected so cases need no real time. */
+export interface AzureClock {
+  readonly sleep: (ms: number) => Promise<void>;
+  readonly now: () => number;
+}
+
+const REAL_CLOCK: AzureClock = {
+  sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+  now: () => Date.now(),
+};
+
 /**
- * Sends one region's raster to the service and answers a `RecognisedPage`.
+ * One analysis, whole: start it, poll it as the service asks, and delete its result — for every
+ * model this build asks for. **The one sequence**, so the text recogniser and the table reader
+ * cannot differ about polling or about leaving a copy on the service (B3a).
  *
- * @throws {@link AzureRecognitionRefused} for every way this does not happen.
+ * @throws {@link AzureRecognitionRefused} for every way this does not happen, including a
+ *   successful analysis whose stored copy could not be deleted.
  */
-export async function recogniseThroughAzure(
+async function analyseThroughAzure(
   credentials: AzureCredentials,
-  request: AzureRequest,
-  clock: { sleep: (ms: number) => Promise<void>; now: () => number } = {
-    sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
-    now: () => Date.now(),
-  },
-): Promise<RecognisedPage> {
+  model: AzureModel,
+  request: { readonly png: Uint8Array; readonly fetchImpl?: typeof fetch },
+  clock: AzureClock,
+): Promise<AnalyzeAnswer> {
   const fetchImpl = request.fetchImpl ?? fetch;
-  const url = analyzeUrl(credentials.endpoint);
+  const url = analyzeUrl(credentials.endpoint, model);
   const { location, retryAfter } = await startAnalysis(url, credentials, request.png, fetchImpl);
 
   let answer: AnalyzeAnswer;
@@ -478,16 +511,67 @@ export async function recogniseThroughAzure(
   // A SUCCESSFUL READ WHOSE COPY STAYED ON THE SERVICE IS REFUSED, not returned. Handing
   // back the text while saying nothing would be the one outcome a reader could not
   // learn about, and the owner's rule is that no copy stays. The text is not kept: a
-  // second try sends the region again, which the reader can choose; a copy they were
+  // second try sends the image again, which the reader can choose; a copy they were
   // not told about is nothing they can choose.
   const undeleted = await deleteResult(location, credentials, fetchImpl);
   if (undeleted !== null) {
     throw new AzureRecognitionRefused(
       'not-deleted',
-      `Azure read the region, but ${undeleted}, so it may still hold a copy. The text was ` +
+      `Azure read the image, but ${undeleted}, so it may still hold a copy. The answer was ` +
         'not used.',
     );
   }
+  return answer;
+}
+
+/**
+ * Sends one page's raster to the Layout model and answers the tables it found
+ * ([ADR-0086](../../../docs/DECISIONS/0086-a-scanned-table-is-read-by-a-service-that-answers-tables.md)).
+ *
+ * Every table goes through {@link recognisedTable}, the one reader of a service's grid. A cell
+ * with no spans reported is a 1×1 cell, which is the service's own default; a table whose grid is
+ * wrong refuses the whole answer rather than a part of it being placed by a rule of ours.
+ *
+ * @throws {@link AzureRecognitionRefused}, or {@link RecognisedTableRefused} for a grid that does
+ *   not fit itself.
+ */
+export async function readTablesThroughAzure(
+  credentials: AzureCredentials,
+  request: { readonly png: Uint8Array; readonly fetchImpl?: typeof fetch },
+  bounds: { readonly maxCells: number; readonly maxText: number },
+  clock: AzureClock = REAL_CLOCK,
+): Promise<readonly RecognisedTable[]> {
+  const answer = await analyseThroughAzure(credentials, 'prebuilt-layout', request, clock);
+  const whole = (value: unknown, fallback?: number): number =>
+    typeof value === 'number' ? value : (fallback ?? Number.NaN);
+  return (answer.analyzeResult?.tables ?? []).map((table) =>
+    recognisedTable(
+      whole(table.rowCount),
+      whole(table.columnCount),
+      (table.cells ?? []).map((cell) => ({
+        row: whole(cell.rowIndex),
+        column: whole(cell.columnIndex),
+        rowSpan: whole(cell.rowSpan, 1),
+        columnSpan: whole(cell.columnSpan, 1),
+        text: typeof cell.content === 'string' ? cell.content : '',
+      })),
+      bounds.maxCells,
+      bounds.maxText,
+    ),
+  );
+}
+
+/**
+ * Sends one region's raster to the service and answers a `RecognisedPage`.
+ *
+ * @throws {@link AzureRecognitionRefused} for every way this does not happen.
+ */
+export async function recogniseThroughAzure(
+  credentials: AzureCredentials,
+  request: AzureRequest,
+  clock: AzureClock = REAL_CLOCK,
+): Promise<RecognisedPage> {
+  const answer = await analyseThroughAzure(credentials, 'prebuilt-read', request, clock);
 
   // THE ONE CONVERTER, built from the host's own three facts. Nothing about the
   // flip, the crop origin or the turn is stated here.

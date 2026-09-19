@@ -892,6 +892,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Excel tables through Azure and Claude, with merges (ADR-0086, built; live run owed)
+
+Built on the B4 in `ae3dc5d`. **One reader of a service's table**: `recognisedTables.ts` turns
+either service's grid into a `RecognisedTable` and refuses — never repairs — a cell outside the
+grid or two cells claiming one place. Azure is asked `prebuilt-layout` through the same start, poll
+and delete as the word reader (`analyseThroughAzure`, one path, so the 2 s floor and the delete
+apply to both); Claude is asked for Azure's shape with `output_config` structured output. The sheet
+writer takes either kind and writes a span over one as `<mergeCells>`.
+
+**Main**: a service engine picks the file first — each page is a paid request and the tables cannot
+be held to write later (ADR-0035) — then reads each page as the zip pulls it. The first refusal stops
+the export as `service-refused` naming the page; a thrown value that is no known refusal is rethrown
+as a defect, not dressed as the service's answer. **Renderer**: the engine choice shows only where a
+key is stored, says what leaves the computer before anything is sent, and drops the grid's edits,
+which are MuPDF's tables; the channel refuses edits with a service engine.
+
+**Cases**: 6 table-reader, 3 Azure layout, 4 Claude table, 3 writer, 5 main (every page in order
+and a merge in the zip; the first refusal with nothing after it and no file; no tables; the defect
+control; a moved version before any picker), 3 schema, 3 dialog, 1 command. **Mutated**: the
+channel's refusal removed → its case red; the refused page reported as 0 → the refusal case red.
+**The sweep's lint found three defects in the first draft**, two of them `String()` over a request
+body in a test, which would have parsed a non-string body without saying so.
+
+**Not yet executed**: either service against a real scanned table from the running application.
+The rows stay *built* until that run.
+
+---
+
 ## 2026-09-19 — Guards red at `7e7a24f` on a case whose failure could not be read
 
 `proof:checklocal`'s *a survivor is seen ADVANCING, then killed, then seen still* failed on

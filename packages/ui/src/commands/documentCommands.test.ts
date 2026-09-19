@@ -2361,12 +2361,13 @@ describe('delete pages — the mutation-dialog gate', () => {
       const { client, sent } = reviewing({ kind: 'copied', bytes: 9 });
       const asked: { id: string; props: unknown }[] = [];
       const answers = [
-        { kind: 'page', to: 4, layout: 'one-sheet', edits: [{ table: 0, row: 0, column: 0, text: 'A' }] },
-        { kind: 'export', layout: 'one-sheet', edits: [{ table: 0, row: 0, column: 0, text: 'B' }] },
+        { kind: 'page', to: 4, layout: 'one-sheet', engine: 'automatic', edits: [{ table: 0, row: 0, column: 0, text: 'A' }] },
+        { kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [{ table: 0, row: 0, column: 0, text: 'B' }] },
       ];
 
       await exportExcelCommand({
         client,
+        tableEngines: () => ['automatic'],
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
@@ -2377,11 +2378,31 @@ describe('delete pages — the mutation-dialog gate', () => {
       expect(asked).toStrictEqual([
         {
           id: 'dialog.export-excel',
-          props: { index: 3, page: 4, pageCount: 10, tables: tablesOf(3), truncated: false, layout: 'sheet-per-page', edits: [] },
+          props: {
+            index: 3,
+            page: 4,
+            pageCount: 10,
+            tables: tablesOf(3),
+            truncated: false,
+            layout: 'sheet-per-page',
+            engines: ['automatic'],
+            engine: 'automatic',
+            edits: [],
+          },
         },
         {
           id: 'dialog.export-excel',
-          props: { index: 4, page: 5, pageCount: 10, tables: tablesOf(4), truncated: false, layout: 'one-sheet', edits: [] },
+          props: {
+            index: 4,
+            page: 5,
+            pageCount: 10,
+            tables: tablesOf(4),
+            truncated: false,
+            layout: 'one-sheet',
+            engines: ['automatic'],
+            engine: 'automatic',
+            edits: [],
+          },
         },
       ]);
       expect(sent).toStrictEqual([
@@ -2392,6 +2413,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           params: {
             docId: DOC,
             layout: 'one-sheet',
+            engine: 'automatic',
             version: asDocVersion(5),
             edits: [
               { page: 3, table: 0, row: 0, column: 0, text: 'A' },
@@ -2407,13 +2429,14 @@ describe('delete pages — the mutation-dialog gate', () => {
       const opened: unknown[] = [];
       const typed = [{ table: 0, row: 0, column: 0, text: 'A' }];
       const answers = [
-        { kind: 'page', to: 4, layout: 'sheet-per-page', edits: typed },
-        { kind: 'page', to: 3, layout: 'sheet-per-page', edits: [] },
-        { kind: 'export', layout: 'sheet-per-page', edits: typed },
+        { kind: 'page', to: 4, layout: 'sheet-per-page', engine: 'automatic', edits: typed },
+        { kind: 'page', to: 3, layout: 'sheet-per-page', engine: 'automatic', edits: [] },
+        { kind: 'export', layout: 'sheet-per-page', engine: 'automatic', edits: typed },
       ];
 
       await exportExcelCommand({
         client,
+        tableEngines: () => ['automatic'],
         onApplied: () => undefined,
         ask: (_id, props) => {
           opened.push((props as { edits: unknown }).edits);
@@ -2430,11 +2453,14 @@ describe('delete pages — the mutation-dialog gate', () => {
 
       await exportExcelCommand({
         client,
+        tableEngines: () => ['automatic'],
         onApplied: () => undefined,
         ask: (id, props) => {
           spoken.push({ id, props });
           return Promise.resolve(
-            id === 'dialog.export-excel' ? { kind: 'page', to: 4, layout: 'sheet-per-page', edits: [] } : undefined,
+            id === 'dialog.export-excel'
+              ? { kind: 'page', to: 4, layout: 'sheet-per-page', engine: 'automatic', edits: [] }
+              : undefined,
           );
         },
       }).run(CONTEXT);
@@ -2448,6 +2474,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
       await exportExcelCommand({
         client,
+        tableEngines: () => ['automatic'],
         onApplied: () => undefined,
         ask: () => Promise.resolve(undefined),
       }).run(CONTEXT);
@@ -2466,17 +2493,55 @@ describe('delete pages — the mutation-dialog gate', () => {
 
         await exportExcelCommand({
           client,
+          tableEngines: () => ['automatic'],
           onApplied: () => undefined,
           ask: (id, props) => {
             spoken.push({ id, props });
             return Promise.resolve(
-              id === 'dialog.export-excel' ? { kind: 'export', layout: 'one-sheet', edits: [] } : undefined,
+              id === 'dialog.export-excel'
+                ? { kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [] }
+                : undefined,
             );
           },
         }).run(CONTEXT);
 
         expect(spoken.at(-1)).toStrictEqual({ id: 'dialog.save-problem', props: { outcome } });
       }
+    });
+
+    it('sends the SERVICE the person chose and no edits, and shows a page the service refused', async () => {
+      // THE UI HALF of ADR-0086's wired pair: the dialog offers what `tableEngines` answers, the
+      // choice crosses as `engine`, and the grid's edits — MuPDF's tables' — do not cross with it.
+      const { client, sent } = reviewing({
+        kind: 'service-refused',
+        engine: 'claude',
+        page: 6,
+        reason: 'rejected',
+        detail: 'Claude said no.',
+      });
+      const spoken: { id: string; props: unknown }[] = [];
+
+      await exportExcelCommand({
+        client,
+        tableEngines: () => ['automatic', 'claude'],
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          spoken.push({ id, props });
+          return Promise.resolve(
+            id === 'dialog.export-excel'
+              ? { kind: 'export', layout: 'sheet-per-page', engine: 'claude', edits: [{ table: 0, row: 0, column: 0, text: 'Z' }] }
+              : undefined,
+          );
+        },
+      }).run(CONTEXT);
+
+      expect((spoken[0]?.props as { engines: unknown }).engines).toStrictEqual(['automatic', 'claude']);
+      expect(sent.at(-1)).toStrictEqual({
+        id: 'document.exportExcel',
+        params: { docId: DOC, layout: 'sheet-per-page', engine: 'claude', version: asDocVersion(5), edits: [] },
+      });
+      // PAGE 6 ZERO-BASED IS THE SEVENTH a person reads.
+      expect(spoken.at(-1)).toStrictEqual({ id: 'dialog.service-refused', props: { page: 7, detail: 'Claude said no.' } });
     });
   });
 

@@ -61,6 +61,7 @@ import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
 import type { ExportPageImagesAnswer } from '../dialogs/exportPageImagesResult.js';
 import { EXPORT_EXCEL_DIALOG_ID, type ExportExcelAnswer } from '../dialogs/exportExcel.js';
+import { SERVICE_REFUSED_DIALOG_ID } from '../dialogs/serviceRefused.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
@@ -1996,7 +1997,16 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
  * save dialog, naming recognition as the remedy where some pages are pictures with
  * no text.
  */
-export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
+export function exportExcelCommand(
+  deps: DocumentCommandDeps & {
+    /**
+     * The engines this machine can read tables with (ADR-0086): `automatic` always, a service
+     * where its key is stored. A function, read when the command runs, so a key stored after
+     * the ribbon was drawn is offered.
+     */
+    readonly tableEngines: () => readonly ExportExcelAnswer['engine'][];
+  },
+): UiCommand {
   return {
     id: 'document.export-excel',
     icon: 'FileSpreadsheet',
@@ -2010,6 +2020,8 @@ export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
       const edits = new Map<number, ExportExcelAnswer['edits']>();
       let index = context.page ?? 0;
       let layout: ExportExcelAnswer['layout'] = 'sheet-per-page';
+      let engine: ExportExcelAnswer['engine'] = 'automatic';
+      const engines = deps.tableEngines();
       let reviewed: DocVersion | undefined;
       for (;;) {
         const read = await deps.client['document.pageTables']({ docId, page: index });
@@ -2030,12 +2042,15 @@ export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
           tables: read.value.tables,
           truncated: read.value.truncated,
           layout,
+          engines,
+          engine,
           edits: edits.get(index) ?? [],
         })) as ExportExcelAnswer | undefined;
         if (chosen === undefined) return;
 
         edits.set(index, chosen.edits);
         layout = chosen.layout;
+        engine = chosen.engine;
         if (chosen.kind === 'export') break;
         index = chosen.to;
       }
@@ -2043,8 +2058,13 @@ export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
       const answer = await deps.client['document.exportExcel']({
         docId,
         layout,
+        engine,
         version: reviewed,
-        edits: [...edits].flatMap(([page, made]) => made.map((edit) => ({ page, ...edit }))),
+        // THE GRID'S EDITS ARE MUPDF'S TABLES', and only the automatic engine writes them.
+        edits:
+          engine === 'automatic'
+            ? [...edits].flatMap(([page, made]) => made.map((edit) => ({ page, ...edit })))
+            : [],
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -2060,6 +2080,10 @@ export function exportExcelCommand(deps: DocumentCommandDeps): UiCommand {
       }
       if (outcome.kind === 'changed') {
         void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'review-changed' });
+        return;
+      }
+      if (outcome.kind === 'service-refused') {
+        void deps.ask(SERVICE_REFUSED_DIALOG_ID, { page: pdfjsPageOf(outcome.page), detail: outcome.detail });
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {

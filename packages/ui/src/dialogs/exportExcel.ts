@@ -1,4 +1,4 @@
-import { MAX_TABLE_CELLS, MAX_TABLE_CELL_TEXT } from '@monstera/contract';
+import { MAX_TABLE_CELLS, MAX_TABLE_CELL_TEXT, TABLE_ENGINES } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -8,6 +8,9 @@ import { declareDialog } from '../registries/dialogs.js';
 export const EXPORT_EXCEL_DIALOG_ID = 'dialog.export-excel';
 
 const LAYOUT = z.enum(['sheet-per-page', 'one-sheet']);
+
+/** Who reads the tables (ADR-0086); the dialog carries the choice across its pages. */
+const ENGINE = z.enum(TABLE_ENGINES);
 
 /** A person's text for one cell of the page on show, addressed as the grid shows it. */
 const EDIT = z
@@ -39,6 +42,7 @@ export const EXPORT_EXCEL_RESULT = z.discriminatedUnion('kind', [
       /** The zero-based page to show next. */
       to: z.number().int().nonnegative(),
       layout: LAYOUT,
+      engine: ENGINE,
       edits: z.array(EDIT).max(MAX_TABLE_CELLS).readonly(),
     })
     .strict(),
@@ -46,6 +50,7 @@ export const EXPORT_EXCEL_RESULT = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('export'),
       layout: LAYOUT,
+      engine: ENGINE,
       edits: z.array(EDIT).max(MAX_TABLE_CELLS).readonly(),
     })
     .strict(),
@@ -78,6 +83,13 @@ export const EXPORT_EXCEL_PROPS = z
       .readonly(),
     truncated: z.boolean(),
     layout: LAYOUT,
+    /**
+     * The engines this machine can use — `automatic` always, a service only where its key is
+     * stored — and the one chosen so far. A service the person has no key for is not offered,
+     * the rule every network feature follows.
+     */
+    engines: z.array(ENGINE).min(1).readonly(),
+    engine: ENGINE,
     /** This page's edits so far, so moving back to a page shows what was typed on it. */
     edits: z.array(EDIT).max(MAX_TABLE_CELLS).readonly(),
   })

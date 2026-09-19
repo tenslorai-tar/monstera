@@ -1,4 +1,5 @@
 import { type OoxmlPart, XML_DECLARATION, xmlText } from './ooxmlPackage.js';
+import type { RecognisedTable } from './recognisedTables.js';
 import type { CellBorders, PageTable, TableCell } from './textStructure.js';
 import { baseFontName } from './wordDocument.js';
 
@@ -52,11 +53,29 @@ export interface TableEdit {
   readonly text: string;
 }
 
+/**
+ * No page held a table, so there is no sheet to write — a workbook needs one.
+ *
+ * A class, so a caller that reads its pages while writing (a network engine, ADR-0086) can answer
+ * *no tables* for it by what it IS rather than by its message.
+ */
+export class NoTablesToWrite extends Error {
+  constructor() {
+    super('no page holds a table, so there is no sheet to write');
+    this.name = 'NoTablesToWrite';
+  }
+}
+
 /** One page's tables, in the engine's order, and the edits made to them. */
 export interface SpreadsheetPage {
   /** The page's index, from 0. */
   readonly page: number;
-  readonly tables: readonly PageTable[];
+  /**
+   * MuPDF's tables (the automatic engine) or a service's (ADR-0086) — a page is read by one
+   * engine, so one page holds one kind. `kind` is on the service's only, which is how the writer
+   * tells them apart.
+   */
+  readonly tables: readonly (PageTable | RecognisedTable)[];
   /** REQUIRED, and empty where nobody reviewed the page, for ADR-0069's reason. */
   readonly edits: readonly TableEdit[];
 }
@@ -346,11 +365,19 @@ function tablesXml(
   page: SpreadsheetPage,
   startRow: number,
   styles: StyleTable,
-): { readonly xml: string; readonly nextRow: number } {
+): { readonly xml: string; readonly nextRow: number; readonly merges: readonly string[] } {
   const edits = new Map(page.edits.map((edit) => [`${String(edit.table)}:${String(edit.row)}:${String(edit.column)}`, edit.text]));
   let row = startRow;
   let xml = '';
+  const merges: string[] = [];
   for (const [t, table] of page.tables.entries()) {
+    if ('kind' in table) {
+      const written = recognisedXml(table, row, styles);
+      xml += written.xml;
+      merges.push(...written.merges);
+      row += table.rows + 1;
+      continue;
+    }
     for (const [y, cells] of table.rows.entries()) {
       if (row > MAX_SHEET_ROWS) {
         throw new Error(`a sheet would pass Excel's ${String(MAX_SHEET_ROWS)} rows, so no workbook was written`);
@@ -371,11 +398,79 @@ function tablesXml(
     }
     row += 1;
   }
-  return { xml, nextRow: row };
+  return { xml, nextRow: row, merges };
+}
+
+/**
+ * A service's table from `startRow`: each cell at its own column, and each span over one cell a
+ * merged range (ADR-0086 Decision 5).
+ *
+ * **No borders and the default font**: a service reports where the table is and what each cell
+ * says, not which edges are ruled or what face the text was set in. Drawing rulings it did not
+ * report would be the sheet claiming something nobody read — fills stay a stated limit for the
+ * same reason.
+ */
+function recognisedXml(
+  table: RecognisedTable,
+  startRow: number,
+  styles: StyleTable,
+): { readonly xml: string; readonly merges: readonly string[] } {
+  if (startRow + table.rows - 1 > MAX_SHEET_ROWS) {
+    throw new Error(`a sheet would pass Excel's ${String(MAX_SHEET_ROWS)} rows, so no workbook was written`);
+  }
+  let xml = '';
+  const merges: string[] = [];
+  for (let y = 0; y < table.rows; y += 1) {
+    const sheetRow = startRow + y;
+    const written = table.cells
+      .filter((cell) => cell.row === y)
+      .sort((a, b) => a.column - b.column)
+      .map((cell) => {
+        if (cell.rowSpan > 1 || cell.columnSpan > 1) {
+          merges.push(
+            `${columnName(cell.column)}${String(sheetRow)}:` +
+              `${columnName(cell.column + cell.columnSpan - 1)}${String(sheetRow + cell.rowSpan - 1)}`,
+          );
+        }
+        return textCellXml(`${columnName(cell.column)}${String(sheetRow)}`, cell.text, styles);
+      })
+      .join('');
+    xml += `<row r="${String(sheetRow)}">${written}</row>`;
+  }
+  return { xml, merges };
+}
+
+/** A cell of text alone, in the default font — a service's cell, for {@link recognisedXml}'s reason. */
+function textCellXml(reference: string, text: string, styles: StyleTable): string {
+  const value = cellValue(text);
+  const style = styles.indexOf({
+    font: 'Calibri',
+    size: 11,
+    bold: false,
+    italic: false,
+    borders: null,
+    format: value.kind === 'number' ? value.format : null,
+    wrap: text.includes('\n'),
+  });
+  const styled = style === 0 ? '' : ` s="${String(style)}"`;
+  if (value.kind === 'number') return `<c r="${reference}"${styled}><v>${String(value.value)}</v></c>`;
+  if (text.length === 0) return '';
+  return `<c r="${reference}"${styled} t="inlineStr"><is><t xml:space="preserve">${xmlText(text)}</t></is></c>`;
 }
 
 const SHEET_OPEN = `${XML_DECLARATION}<worksheet xmlns="${MAIN}" xmlns:r="${R}"><sheetData>`;
-const SHEET_CLOSE = '</sheetData></worksheet>';
+
+/**
+ * The sheet's end: its merged ranges, where there are any, after `sheetData` as the schema
+ * orders a worksheet's children.
+ */
+function sheetClose(merges: readonly string[]): string {
+  const merged =
+    merges.length === 0
+      ? ''
+      : `<mergeCells count="${String(merges.length)}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>`;
+  return `</sheetData>${merged}</worksheet>`;
+}
 
 function relationships(entries: readonly (readonly [string, string, string])[]): string {
   const body = entries
@@ -428,27 +523,29 @@ export async function* spreadsheetParts(
     async function* rows(): AsyncIterable<string> {
       yield SHEET_OPEN;
       let row = 1;
+      const merges: string[] = [];
       for await (const page of pages) {
         if (page.tables.length === 0) continue;
         first ??= page.page;
         last = page.page;
         const written = tablesXml(page, row, styles);
         row = written.nextRow;
+        merges.push(...written.merges);
         yield written.xml;
       }
-      yield SHEET_CLOSE;
+      yield sheetClose(merges);
     }
     yield { name: 'xl/worksheets/sheet1.xml', chunks: rows() };
-    if (first === undefined) throw new Error('no page holds a table, so there is no sheet to write');
+    if (first === undefined) throw new NoTablesToWrite();
     names.push(first === last ? String(first + 1) : `${String(first + 1)}-${String(last + 1)}`);
   } else {
     for await (const page of pages) {
       if (page.tables.length === 0) continue;
       names.push(String(page.page + 1));
-      const { xml } = tablesXml(page, 1, styles);
-      yield { name: `xl/worksheets/sheet${String(names.length)}.xml`, chunks: [SHEET_OPEN, xml, SHEET_CLOSE] };
+      const { xml, merges } = tablesXml(page, 1, styles);
+      yield { name: `xl/worksheets/sheet${String(names.length)}.xml`, chunks: [SHEET_OPEN, xml, sheetClose(merges)] };
     }
-    if (names.length === 0) throw new Error('no page holds a table, so there is no sheet to write');
+    if (names.length === 0) throw new NoTablesToWrite();
   }
 
   yield { name: 'xl/styles.xml', chunks: [styles.xml()] };

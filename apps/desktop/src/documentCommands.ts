@@ -15,8 +15,11 @@ import {
   MAX_IMPORT_IMAGE_PIXELS,
   MAX_STRUCTURE_NAME,
   MAX_STRUCTURE_NODES,
+  MAX_SERVICE_DETAIL,
   MAX_TABLE_CELL_TEXT,
   MAX_TABLE_CELLS,
+  type SERVICE_REFUSALS,
+  type TABLE_ENGINES,
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
   type ComposeRefusal,
@@ -104,6 +107,11 @@ import {
   UrlFetchRefused,
   checkedUrl,
   PngPixelsRefused,
+  AzureRecognitionRefused,
+  ClaudeRecognitionRefused,
+  NoTablesToWrite,
+  type RecognisedTable,
+  RecognisedTableRefused,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
@@ -1102,7 +1110,77 @@ export type DocumentPageTables = (
 export type ExcelOutcome =
   | CopyOutcome
   | { readonly kind: 'no-tables'; readonly picturePages: number }
-  | { readonly kind: 'changed' };
+  | { readonly kind: 'changed' }
+  | ServiceRefusal;
+
+/** The services a table export may be read by (ADR-0086). */
+export type NetworkTableEngine = Exclude<(typeof TABLE_ENGINES)[number], 'automatic'>;
+
+/** A network engine that did not read a page, with the page it was reading. */
+export interface ServiceRefusal {
+  readonly kind: 'service-refused';
+  readonly engine: NetworkTableEngine;
+  readonly page: number;
+  readonly reason: (typeof SERVICE_REFUSALS)[number];
+  readonly detail: string;
+}
+
+/**
+ * How one page's tables are read by a service (ADR-0086): the page rasterised in the engine host
+ * within the service's byte limit, and sent from `main`. Composed where the credentials and the
+ * host are, which is `composition.ts`.
+ *
+ * @throws the service's own refusal — `AzureRecognitionRefused`, `ClaudeRecognitionRefused` or
+ *   `RecognisedTableRefused` — or `NetworkKeyMissing` where no key is stored
+ */
+export type NetworkTableReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  engine: NetworkTableEngine,
+) => Promise<readonly RecognisedTable[]>;
+
+/** No key is stored for the engine the export was asked to use. */
+export class NetworkKeyMissing extends Error {
+  constructor(readonly engine: NetworkTableEngine) {
+    super(`no ${engine === 'azure' ? 'Azure Document Intelligence endpoint and key are' : 'Anthropic key is'} stored`);
+    this.name = 'NetworkKeyMissing';
+  }
+}
+
+/**
+ * A page's refusal as the channel carries it: the service's own kind where it gave one, and the
+ * sentence main built — bounded, because the service's words in it are the peer's.
+ *
+ * A thrown value that is none of the four known refusals is NOT turned into one: it is a defect,
+ * and rethrowing it sends it to the incident log rather than dressing it as a service's answer.
+ */
+function serviceRefusal(engine: NetworkTableEngine, page: number, thrown: unknown): ServiceRefusal {
+  const refusal = (reason: ServiceRefusal['reason'], message: string): ServiceRefusal => ({
+    kind: 'service-refused',
+    engine,
+    page,
+    reason,
+    detail: message.slice(0, MAX_SERVICE_DETAIL),
+  });
+  if (thrown instanceof AzureRecognitionRefused || thrown instanceof ClaudeRecognitionRefused) {
+    return refusal(thrown.reason, thrown.message);
+  }
+  if (thrown instanceof RecognisedTableRefused) return refusal('unplaceable', thrown.message);
+  if (thrown instanceof NetworkKeyMissing) return refusal('no-key', thrown.message);
+  throw thrown;
+}
+
+/** A page's refusal while the workbook streams, carrying which page, so it can be answered. */
+class PageRefused extends Error {
+  constructor(
+    readonly page: number,
+    readonly original: unknown,
+  ) {
+    super(`page ${String(page + 1)} was not read`, { cause: original });
+    this.name = 'PageRefused';
+  }
+}
 
 /** The resolutions a print may be asked for, in dots per inch. */
 export const PRINT_DPIS = [150, 300, 600] as const;
@@ -1753,6 +1831,8 @@ export interface DocumentCommandsParts {
   readonly pageStructure: DocumentPageStructure;
   /** The `table` read of one page — `exportExcel`'s (ADR-0073). */
   readonly pageTables: DocumentPageTables;
+  /** One page's tables read by a service — `exportExcel`'s network engines (ADR-0086). */
+  readonly networkTables: NetworkTableReader;
   readonly pageLinks: DocumentPageLinksReader;
   readonly destinations: DocumentDestinationsReader;
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
@@ -1892,6 +1972,7 @@ export class DocumentCommands {
   readonly #pageText: DocumentPageText;
   readonly #pageStructure: DocumentPageStructure;
   readonly #pageTables: DocumentPageTables;
+  readonly #networkTables: NetworkTableReader;
   readonly #pageLinks: DocumentPageLinksReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
@@ -1953,6 +2034,7 @@ export class DocumentCommands {
     this.#pageText = parts.pageText;
     this.#pageStructure = parts.pageStructure;
     this.#pageTables = parts.pageTables;
+    this.#networkTables = parts.networkTables;
     this.#pageLinks = parts.pageLinks;
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
@@ -3816,9 +3898,15 @@ export class DocumentCommands {
    * showed — answers `changed` before any picker, and the write checks the version
    * again, since the document can move while the save dialog is open.
    */
-  async exportExcel(docId: DocId, layout: SheetLayout, review: ExcelReview): Promise<ExcelOutcome | undefined> {
+  async exportExcel(
+    docId: DocId,
+    layout: SheetLayout,
+    review: ExcelReview,
+    engine: (typeof TABLE_ENGINES)[number] = 'automatic',
+  ): Promise<ExcelOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Excel');
+    if (engine !== 'automatic') return this.#exportExcelThroughService(docId, suggest, layout, review.version, engine);
 
     const byPage = new Map<number, TableEdit[]>();
     for (const { page, ...edit } of review.edits) byPage.set(page, [...(byPage.get(page) ?? []), edit]);
@@ -3868,6 +3956,77 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * The Excel export through a SERVICE that reads each page's raster (ADR-0086).
+   *
+   * ## The file is picked FIRST, and that is the one difference in order from the automatic engine
+   *
+   * The automatic engine reads every page before any picker to answer *no tables* early, because
+   * reading is free. Here each page is a request to a service a person pays for, and the tables
+   * cannot be held to write later — the document's text in `main` is what ADR-0035 forbids — so
+   * the pages are read AS the workbook streams, after the destination is known. A document with
+   * no table answers `no-tables` after the picker, with nothing written: the stream fails and
+   * `atomicWrite` removes its temporary file.
+   *
+   * ## A refusal names its page, and writes nothing
+   *
+   * The first page a service does not read stops the export, as `service-refused` with the page,
+   * the reason and main's sentence. Nothing after it is sent.
+   */
+  async #exportExcelThroughService(
+    docId: DocId,
+    suggest: string,
+    layout: SheetLayout,
+    version: DocVersion,
+    engine: NetworkTableEngine,
+  ): Promise<ExcelOutcome | undefined> {
+    const current = await this.#documents.run(docId, (context) => Promise.resolve(context.version));
+    if (current.value !== version) return { kind: 'changed' };
+
+    const destination = await this.#pickOffice(suggest, 'xlsx');
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async (context): Promise<ExcelOutcome> => {
+      if (context.version !== version) return { kind: 'changed' };
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      try {
+        return await writeStreamedDocument(
+          this.#save.deps,
+          this.#copy.checkTarget,
+          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine), layout))),
+          destination,
+        );
+      } catch (thrown) {
+        if (thrown instanceof NoTablesToWrite) return { kind: 'no-tables', picturePages: 0 };
+        if (thrown instanceof PageRefused) return serviceRefusal(engine, thrown.page, thrown.original);
+        throw thrown;
+      }
+    });
+    return value;
+  }
+
+  /** Each page's tables as the service reads them, one request per page, as the zip pulls them. */
+  async *#servicePages(
+    docId: DocId,
+    sessions: DocumentSessions,
+    engine: NetworkTableEngine,
+  ): AsyncIterable<SpreadsheetPage> {
+    const { pageCount } = await this.#geometry(docId, sessions, []);
+    for (let page = 0; page < pageCount; page += 1) {
+      let tables: readonly RecognisedTable[];
+      try {
+        tables = await this.#networkTables(docId, sessions, page, engine);
+      } catch (thrown) {
+        throw new PageRefused(page, thrown);
+      }
+      yield { page, tables, edits: [] };
+    }
   }
 
   /** Each page's tables with its edits, read as the zip pulls them. */

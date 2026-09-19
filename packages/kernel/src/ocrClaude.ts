@@ -4,6 +4,7 @@ import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
 import { z } from 'zod';
 
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
+import { type RecognisedTable, recognisedTable } from './recognisedTables.js';
 
 /**
  * Recognition by Anthropic's Claude — D6's fourth recogniser, added 2026-09-12
@@ -309,6 +310,132 @@ export async function recogniseThroughClaude(
     );
   }
 
+  const parsed = await askClaudeAboutImage(credentials, request, INSTRUCTION, OUTPUT_SCHEMA, 'the region');
+  const answer = answerSchema.safeParse(parsed);
+  if (!answer.success) {
+    throw new ClaudeRecognitionRefused('unreadable-answer', 'Claude’s answer is not the shape it was asked for');
+  }
+  return pageFrom(answer.data, request);
+}
+
+/** What is asked for a table. English, for {@link INSTRUCTION}'s reason. */
+const TABLE_INSTRUCTION =
+  'Find every table in this image of a page. For each table give its number of rows and ' +
+  'columns, and each cell once: its zero-based row and column where the cell starts, how many ' +
+  'rows and columns it spans (1 when it does not span), and its exact text. A merged cell is one ' +
+  'cell with spans, never repeated. If the page holds no table, return an empty list of tables.';
+
+/**
+ * A table's shape, as `output_config.format` constrains it — **Azure's Layout shape on purpose**
+ * (ADR-0086 Decision 3), so one reader turns either service's answer into the export's table,
+ * and a schema that cannot express a span cannot be answered with one.
+ */
+const TABLE_SCHEMA = {
+  type: 'object',
+  properties: {
+    tables: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          rowCount: { type: 'integer' },
+          columnCount: { type: 'integer' },
+          cells: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                rowIndex: { type: 'integer' },
+                columnIndex: { type: 'integer' },
+                rowSpan: { type: 'integer' },
+                columnSpan: { type: 'integer' },
+                content: { type: 'string' },
+              },
+              required: ['rowIndex', 'columnIndex', 'rowSpan', 'columnSpan', 'content'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['rowCount', 'columnCount', 'cells'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['tables'],
+  additionalProperties: false,
+} as const;
+
+/** The same shape, checked here: the schema constrains the answer's form, not its numbers. */
+const tableAnswerSchema = z.object({
+  tables: z.array(
+    z.object({
+      rowCount: z.number(),
+      columnCount: z.number(),
+      cells: z.array(
+        z.object({
+          rowIndex: z.number(),
+          columnIndex: z.number(),
+          rowSpan: z.number(),
+          columnSpan: z.number(),
+          content: z.string(),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * Sends one page's raster to Claude and answers the tables it found
+ * ([ADR-0086](../../../docs/DECISIONS/0086-a-scanned-table-is-read-by-a-service-that-answers-tables.md)).
+ *
+ * Each table goes through {@link recognisedTable}, the one reader of a service's grid, so a
+ * grid that does not fit itself refuses the answer rather than being placed by a rule of ours.
+ *
+ * @throws {@link ClaudeRecognitionRefused}, or `RecognisedTableRefused`.
+ */
+export async function readTablesThroughClaude(
+  credentials: ClaudeCredentials,
+  request: { readonly png: Uint8Array; readonly fetchImpl?: typeof fetch },
+  bounds: { readonly maxCells: number; readonly maxText: number },
+): Promise<readonly RecognisedTable[]> {
+  const parsed = await askClaudeAboutImage(credentials, request, TABLE_INSTRUCTION, TABLE_SCHEMA, 'the page');
+  const answer = tableAnswerSchema.safeParse(parsed);
+  if (!answer.success) {
+    throw new ClaudeRecognitionRefused('unreadable-answer', 'Claude’s tables are not the shape they were asked for');
+  }
+  return answer.data.tables.map((table) =>
+    recognisedTable(
+      table.rowCount,
+      table.columnCount,
+      table.cells.map((cell) => ({
+        row: cell.rowIndex,
+        column: cell.columnIndex,
+        rowSpan: cell.rowSpan,
+        columnSpan: cell.columnSpan,
+        text: cell.content,
+      })),
+      bounds.maxCells,
+      bounds.maxText,
+    ),
+  );
+}
+
+/**
+ * One question about one image, answered as JSON in a schema: the byte limit, the request, the
+ * stop reasons and the parse. **The one sequence**, so the text recogniser and the table reader
+ * cannot differ about what counts as an answer (B3a,
+ * [ADR-0086](../../../docs/DECISIONS/0086-a-scanned-table-is-read-by-a-service-that-answers-tables.md)).
+ *
+ * @param subject what the image is, in a refusal's words — *the region*, *the page*
+ * @returns the parsed JSON, which the caller checks against its own schema
+ */
+async function askClaudeAboutImage(
+  credentials: ClaudeCredentials,
+  request: { readonly png: Uint8Array; readonly fetchImpl?: typeof fetch },
+  instruction: string,
+  schema: object,
+  subject: string,
+): Promise<unknown> {
   // THE BYTE LIMIT, BEFORE ANYTHING IS SENT: the API refuses an oversized image with a
   // bare 400, which reaches a reader as *rejected* and names neither number.
   if (!claudeAcceptsBytes(request.png.byteLength).ok) {
@@ -346,11 +473,11 @@ export async function recogniseThroughClaude(
                 // A RESIZE BECOMES A 400, never a silent shift of every box.
                 transformations: { oversized_image: 'error' },
               },
-              { type: 'text', text: INSTRUCTION },
+              { type: 'text', text: instruction },
             ],
           },
         ],
-        output_config: { format: { type: 'json_schema', schema: OUTPUT_SCHEMA } },
+        output_config: { format: { type: 'json_schema', schema } },
       }),
     });
   } catch (cause) {
@@ -377,7 +504,7 @@ export async function recogniseThroughClaude(
   // would otherwise parse, or fail to parse, as if they were a page.
   const stop = message.data.stop_reason;
   if (stop === 'refusal') {
-    throw new ClaudeRecognitionRefused('refused', 'Claude declined to read the region');
+    throw new ClaudeRecognitionRefused('refused', `Claude declined to read ${subject}`);
   }
   if (stop === 'max_tokens' || stop === 'model_context_window_exceeded') {
     throw new ClaudeRecognitionRefused('truncated', `Claude's answer was cut off (${stop})`);
@@ -398,11 +525,12 @@ export async function recogniseThroughClaude(
       cause,
     });
   }
-  const answer = answerSchema.safeParse(parsed);
-  if (!answer.success) {
-    throw new ClaudeRecognitionRefused('unreadable-answer', 'Claude’s answer is not the shape it was asked for');
-  }
+  return parsed;
+}
 
+/** The recogniser's answer, as a page in PDF space — every box checked against its raster. */
+function pageFrom(data: z.infer<typeof answerSchema>, request: ClaudeRequest): RecognisedPage {
+  const { width, height } = pngSize(request.png);
   const transform = pageTransform(
     { x0: request.crop[0], y0: request.crop[1], x1: request.crop[2], y1: request.crop[3] },
     request.rotation,
@@ -412,7 +540,7 @@ export async function recogniseThroughClaude(
     toPdf(viewportPoint(x + request.origin[0], y + request.origin[1]), transform);
 
   const lines: RecognisedLine[] = [];
-  for (const line of answer.data.lines) {
+  for (const line of data.lines) {
     const words: RecognisedWord[] = [];
     for (const word of line.words) {
       // EVERY BOX IS CHECKED AGAINST THE RASTER IT CLAIMS TO BE IN. The schema

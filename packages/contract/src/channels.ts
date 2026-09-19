@@ -226,6 +226,38 @@ export const MAX_STRUCTURE_NAME = 128;
 export const MAX_TABLE_CELLS = 4096;
 
 /**
+ * Who reads a document's tables for an Excel export (ADR-0086): MuPDF's table read of the page's
+ * text, or a service reading each page's raster. Tesseract is not one — it answers words, and a
+ * table from them is the grid over word boxes ADR-0034 refuses.
+ */
+export const TABLE_ENGINES = ['automatic', 'azure', 'claude'] as const;
+
+/**
+ * Why a network engine did not read a page, as one set for both services: each service's own
+ * refusal kinds (`AzureRefusal`, `ClaudeRefusal` in the kernel), `no-key` where none is stored,
+ * and `unplaceable` for a grid that contradicts itself. A kind the kernel adds that is not here
+ * is a compile error where main maps it, which is what keeps the two lists one list.
+ */
+export const SERVICE_REFUSALS = [
+  'no-key',
+  'not-https',
+  'unauthorised',
+  'rejected',
+  'unavailable',
+  'unreachable',
+  'timed-out',
+  'refused',
+  'truncated',
+  'too-large',
+  'unreadable-answer',
+  'not-deleted',
+  'unplaceable',
+] as const;
+
+/** How long a refusal's sentence may be: main's words plus the service's 300 of its own. */
+export const MAX_SERVICE_DETAIL = 600;
+
+/**
  * The most characters of one table cell's text, shown or typed.
  *
  * Measured 2026-09-17 on the same corpus: the longest cell holds **461**. A cell
@@ -1904,6 +1936,13 @@ export const channels = {
       .object({
         docId: docIdSchema,
         layout: z.enum(['sheet-per-page', 'one-sheet']),
+        /**
+         * Which reader finds the tables (ADR-0086): MuPDF's table read of the page's text, or a
+         * service reading each page's raster. The review grid shows MuPDF's tables, so its edits
+         * belong to `automatic` alone — refused below with any other engine rather than applied
+         * to a table they were not made on.
+         */
+        engine: z.enum(TABLE_ENGINES),
         version: docVersionSchema,
         edits: z
           .array(
@@ -1920,7 +1959,10 @@ export const channels = {
           .max(MAX_TABLE_CELLS)
           .readonly(),
       })
-      .strict(),
+      .strict()
+      .refine((request) => request.engine === 'automatic' || request.edits.length === 0, {
+        message: 'the review grid’s edits are MuPDF’s tables’, so only the automatic engine takes them',
+      }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),
@@ -1929,6 +1971,19 @@ export const channels = {
       z.object({ kind: z.literal('no-tables'), picturePages: z.number().int().nonnegative() }),
       /** The document moved since the review, or an edit names no cell it has. Nothing was written. */
       z.object({ kind: z.literal('changed') }),
+      /**
+       * A network engine did not read a page (ADR-0086). Declared rather than left to the
+       * incident log, because most of these are the reader's to act on — a key, a service's
+       * limit, an account's credit — and `detail` is the sentence main built, carrying the
+       * service's own words where it gave any. Nothing was written.
+       */
+      z.object({
+        kind: z.literal('service-refused'),
+        engine: z.enum(['azure', 'claude']),
+        page: z.number().int().nonnegative(),
+        reason: z.enum(SERVICE_REFUSALS),
+        detail: z.string().max(MAX_SERVICE_DETAIL),
+      }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

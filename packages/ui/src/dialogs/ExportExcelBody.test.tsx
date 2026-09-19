@@ -45,6 +45,8 @@ const PROPS: ExportExcelProps = {
   ],
   truncated: false,
   layout: 'sheet-per-page',
+  engines: ['automatic'],
+  engine: 'automatic',
   edits: [],
 };
 
@@ -69,6 +71,7 @@ describe('ExportExcelBody', () => {
     expect(resolve).toHaveBeenCalledWith({
       kind: 'export',
       layout: 'sheet-per-page',
+      engine: 'automatic',
       edits: [{ table: 0, row: 1, column: 0, text: 'Hex bolt' }],
     });
   });
@@ -78,7 +81,7 @@ describe('ExportExcelBody', () => {
     fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
     fireEvent.change(cell(2, 1), { target: { value: 'Bolt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
-    expect(resolve).toHaveBeenCalledWith({ kind: 'export', layout: 'sheet-per-page', edits: [] });
+    expect(resolve).toHaveBeenCalledWith({ kind: 'export', layout: 'sheet-per-page', engine: 'automatic', edits: [] });
   });
 
   it('makes a clipped cell read-only, since an edit would replace text nobody saw', () => {
@@ -96,7 +99,40 @@ describe('ExportExcelBody', () => {
       kind: 'page',
       to: 2,
       layout: 'one-sheet',
+      engine: 'automatic',
       edits: [{ table: 0, row: 0, column: 1, text: 'Count' }],
+    });
+  });
+
+  it('CONTROL: with one engine there is no engine choice at all', () => {
+    shown();
+    expect(screen.queryByRole('radio', { name: 'Claude' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Read the tables with' })).toBeNull();
+  });
+
+  it('choosing a SERVICE says what leaves the computer, hides the grid, and answers no edits', () => {
+    const resolve = shown({ engines: ['automatic', 'azure', 'claude'] });
+    // Typed BEFORE the switch: a correction to MuPDF's table must not cross with a service engine.
+    fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Azure Document Intelligence' }));
+
+    expect(screen.getByText(/All 3 pages of this document will be sent to Azure Document Intelligence/u)).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
+    expect(resolve).toHaveBeenCalledWith({ kind: 'export', layout: 'sheet-per-page', engine: 'azure', edits: [] });
+  });
+
+  it('CONTROL: switching BACK to this PDF’s own text keeps what was typed', () => {
+    const resolve = shown({ engines: ['automatic', 'claude'] });
+    fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Claude' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'This PDF’s own text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
+    expect(resolve).toHaveBeenCalledWith({
+      kind: 'export',
+      layout: 'sheet-per-page',
+      engine: 'automatic',
+      edits: [{ table: 0, row: 1, column: 0, text: 'Hex bolt' }],
     });
   });
 

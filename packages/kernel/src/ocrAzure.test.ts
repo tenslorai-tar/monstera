@@ -6,6 +6,7 @@ import {
   POLL_MIN_INTERVAL_MS,
   azureAcceptsBytes,
   pollDelay,
+  readTablesThroughAzure,
   recogniseThroughAzure,
 } from './ocrAzure.js';
 
@@ -439,6 +440,74 @@ describe('the Azure recogniser leaves no copy behind (owner, 2026-09-18)', () =>
       () => undefined,
     );
     expect(deleted).toStrictEqual([]);
+  });
+});
+
+describe('readTablesThroughAzure (ADR-0086)', () => {
+  const BOUNDS = { maxCells: 4096, maxText: 2048 };
+  /** A Layout answer: one 2×2 table whose header spans both columns; span omitted on body cells. */
+  const layout = (): (() => Response) => () =>
+    Response.json({
+      status: 'succeeded',
+      analyzeResult: {
+        pages: [],
+        tables: [
+          {
+            rowCount: 2,
+            columnCount: 2,
+            cells: [
+              { kind: 'columnHeader', rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 2, content: 'Totals' },
+              { kind: 'content', rowIndex: 1, columnIndex: 0, content: 'Q1' },
+              { kind: 'content', rowIndex: 1, columnIndex: 1, content: '120' },
+            ],
+          },
+        ],
+      },
+    });
+
+  it('asks the LAYOUT model, reads the grid with its span, and deletes the result', async () => {
+    const { fetchImpl, asked, deleted } = service(accepted(), [layout()]);
+    const tables = await readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT);
+
+    expect(asked[0]).toBe(
+      'https://example.cognitiveservices.azure.com/documentintelligence/documentModels/' +
+        'prebuilt-layout:analyze?api-version=2024-11-30',
+    );
+    expect(tables).toStrictEqual([
+      {
+        kind: 'recognised',
+        rows: 2,
+        columns: 2,
+        cells: [
+          { row: 0, column: 0, rowSpan: 1, columnSpan: 2, text: 'Totals' },
+          // AN OMITTED SPAN IS 1, the service's own default — not a refusal.
+          { row: 1, column: 0, rowSpan: 1, columnSpan: 1, text: 'Q1' },
+          { row: 1, column: 1, rowSpan: 1, columnSpan: 1, text: '120' },
+        ],
+      },
+    ]);
+    // THE SAME DELETE the word recogniser owes: one sequence, so no copy stays for tables either.
+    expect(deleted.map((entry) => entry.url)).toStrictEqual([POLL_URL]);
+  });
+
+  it('CONTROL: the word recogniser still asks prebuilt-read, so the model is not fixed at layout', async () => {
+    const { fetchImpl, asked } = service(accepted(), [polled('succeeded', [{ words: [], lines: [] }])]);
+    await recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, INSTANT);
+    expect(asked[0]).toContain('/documentModels/prebuilt-read:analyze');
+  });
+
+  it('refuses a table whose grid does not fit itself', async () => {
+    const bad = (): Response =>
+      Response.json({
+        status: 'succeeded',
+        analyzeResult: {
+          tables: [{ rowCount: 1, columnCount: 1, cells: [{ rowIndex: 0, columnIndex: 3, content: 'x' }] }],
+        },
+      });
+    const { fetchImpl } = service(accepted(), [bad]);
+    await expect(readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT)).rejects.toThrow(
+      /outside its 1×1 grid/u,
+    );
   });
 });
 

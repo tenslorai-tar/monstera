@@ -13,6 +13,7 @@ import {
   reviewGridOf,
   spreadsheetParts,
 } from './spreadsheetDocument.js';
+import type { RecognisedTable } from './recognisedTables.js';
 import type { PageTable, TableCell, TextLine } from './textStructure.js';
 import { viewportPoint } from '@monstera/shared';
 
@@ -231,5 +232,56 @@ describe('spreadsheetParts', () => {
     for (const layout of ['sheet-per-page', 'one-sheet'] as const) {
       await expect(written([{ page: 0, edits: [], tables: [] }], layout)).rejects.toThrow(/no page holds a table/u);
     }
+  });
+});
+
+describe('spreadsheetParts — a service’s table (ADR-0086)', () => {
+  /** A 3×3 grid: a header spanning all three columns, a row label spanning two rows. */
+  const RECOGNISED: RecognisedTable = {
+    kind: 'recognised',
+    rows: 3,
+    columns: 3,
+    cells: [
+      { row: 0, column: 0, rowSpan: 1, columnSpan: 3, text: 'Sales' },
+      { row: 1, column: 0, rowSpan: 2, columnSpan: 1, text: 'North' },
+      { row: 1, column: 1, rowSpan: 1, columnSpan: 1, text: 'Q1' },
+      { row: 1, column: 2, rowSpan: 1, columnSpan: 1, text: '120' },
+      { row: 2, column: 1, rowSpan: 1, columnSpan: 1, text: 'Q2' },
+      { row: 2, column: 2, rowSpan: 1, columnSpan: 1, text: '135' },
+    ],
+  };
+
+  it('places each cell at its own column and writes each span as a merged range', async () => {
+    const files = await written([{ page: 0, edits: [], tables: [RECOGNISED] }], 'sheet-per-page');
+    const sheet = files['xl/worksheets/sheet1.xml'] ?? '';
+
+    // Q2 sits in COLUMN B of row 3, beside the merged label — not in A, where a row read as its
+    // cells in order would put it.
+    expect(sheet).toMatch(/<row r="3"><c r="B3"( s="\d+")? t="inlineStr"><is><t xml:space="preserve">Q2<\/t>/u);
+    expect(sheet).toMatch(/<c r="C2"( s="\d+")?><v>120<\/v><\/c>/u);
+    // AFTER sheetData, as the schema orders a worksheet's children.
+    expect(sheet).toContain('</sheetData><mergeCells count="2"><mergeCell ref="A1:C1"/><mergeCell ref="A2:A3"/></mergeCells></worksheet>');
+  });
+
+  it('CONTROL: MuPDF’s tables write no merged range, since the engine reports no span', async () => {
+    const files = await written(TWO_PAGES, 'sheet-per-page');
+    for (const [name, xml] of Object.entries(files)) {
+      if (name.startsWith('xl/worksheets/')) expect(xml).not.toContain('mergeCell');
+    }
+  });
+
+  it('carries every page’s merges to the one sheet’s end, shifted to where the tables landed', async () => {
+    const files = await written(
+      [
+        { page: 0, edits: [], tables: [RECOGNISED] },
+        { page: 1, edits: [], tables: [RECOGNISED] },
+      ],
+      'one-sheet',
+    );
+    const sheet = files['xl/worksheets/sheet1.xml'] ?? '';
+    // Rows 1-3 the first page, 4 blank, 5-7 the second.
+    expect(sheet).toContain(
+      '<mergeCells count="4"><mergeCell ref="A1:C1"/><mergeCell ref="A2:A3"/><mergeCell ref="A5:C5"/><mergeCell ref="A6:A7"/></mergeCells>',
+    );
   });
 });
