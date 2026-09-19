@@ -161,6 +161,7 @@ export async function provisionLibreOffice({ root, force = false }) {
     // shape), and nothing is published that has not been confirmed.
     const staged = join(target, 'program', 'soffice.exe');
     if (!(await fileExists(staged))) throw new Error(`the unpacked tree has no ${staged}`);
+    await removeExcluded(target);
 
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
@@ -168,6 +169,51 @@ export async function provisionLibreOffice({ root, force = false }) {
     return { provisioned: true, soffice };
   } finally {
     await rm(staging, { recursive: true, force: true });
+  }
+}
+
+/**
+ * What the subset leaves out of the MSI's tree, relative to its root (owner, 2026-09-18 and
+ * 2026-09-19; JOURNAL 2026-09-19, *Office import, step 2*).
+ *
+ * - **The Culmus Hebrew fonts**: their own `name` records say *GNU General Public License
+ *   version 2* with no later-version grant, and the owner's rule stops at a GPL-2.0-only part.
+ * - **Four dictionary extensions**: of the eighteen components `license.txt` points at the GPL v2
+ *   text, these are the ones whose grant it leaves at *GPL v2* with no alternative and no *or
+ *   later* — Norwegian (all three), Hungarian (its thesaurus), Romanian (its hyphenation) and
+ *   Vietnamese (its spelling). A conversion reads no spelling or thesaurus data; what a
+ *   dictionary changes in one is the line breaks of a paragraph with automatic hyphenation, in
+ *   that language.
+ *
+ * Every entry must EXIST before it is removed: an entry the tree does not have means the pinned
+ * MSI and this list have parted, and a list that removed nothing would read exactly like one that
+ * removed everything it should.
+ */
+export const LIBREOFFICE_EXCLUDED = Object.freeze([
+  ...[
+    'DavidCLM-Bold.otf', 'DavidCLM-BoldItalic.otf', 'DavidCLM-Medium.otf', 'DavidCLM-MediumItalic.otf',
+    'FrankRuehlCLM-Bold.otf', 'FrankRuehlCLM-BoldOblique.otf', 'FrankRuehlCLM-Medium.otf',
+    'FrankRuehlCLM-MediumOblique.otf', 'MiriamCLM-Bold.otf', 'MiriamCLM-Book.otf',
+    'MiriamMonoCLM-Bold.ttf', 'MiriamMonoCLM-BoldOblique.ttf', 'MiriamMonoCLM-Book.ttf',
+    'MiriamMonoCLM-BookOblique.ttf', 'NachlieliCLM-Bold.otf', 'NachlieliCLM-BoldOblique.otf',
+    'NachlieliCLM-Light.otf', 'NachlieliCLM-LightOblique.otf',
+    // `Fonts\` AT THE TREE'S TOP, where an administrative install puts the MSI's font
+    // components; the first draft named `share\fonts\truetype` and the refusal below caught it.
+  ].map((font) => join('Fonts', font)),
+  ...['dict-no', 'dict-hu', 'dict-ro', 'dict-vi'].map((dictionary) => join('share', 'extensions', dictionary)),
+]);
+
+/** Removes {@link LIBREOFFICE_EXCLUDED} from an unpacked tree, refusing an entry it does not hold. @param {string} tree */
+async function removeExcluded(tree) {
+  for (const relative of LIBREOFFICE_EXCLUDED) {
+    // `existsSync`, not `fileExists`: four entries are directories, and `fileExists` answers
+    // only for files — which would refuse every dictionary as absent.
+    const path = join(tree, relative);
+    if (!existsSync(path)) {
+      throw new Error(`the subset excludes ${relative}, and the unpacked tree has no such path`);
+    }
+    await rm(path, { recursive: true, force: true });
+    if (existsSync(path)) throw new Error(`${relative} is still present after its removal`);
   }
 }
 

@@ -131,7 +131,16 @@ function alive(pid) {
  *   the first one's directory, which the minter reports rather than adopting
  * @returns {{ cell: string, outcome: string, detail: string, pdfBytes: number | null, log: string }}
  */
-function convert(cell, contained, which = 'bin', cellIndex = 0, warm = false) {
+function convert(
+  cell,
+  contained,
+  which = 'bin',
+  cellIndex = 0,
+  warm = false,
+  warmOutside = false,
+  tempInPair = false,
+  nestedOut = false,
+) {
   const user = pipes.currentUserSid();
   if (!user.ok) return { cell, outcome: 'no-user-sid', detail: user.error, pdfBytes: null, log: '' };
   const container = pipes.hostContainerSid(CONTAINER);
@@ -196,7 +205,10 @@ function convert(cell, contained, which = 'bin', cellIndex = 0, warm = false) {
         ],
       },
       workingDirectory: dirname(executable),
-      containerName: contained ? CONTAINER : null,
+      // WARMED OUTSIDE, for the cell that separates a first-start stall from a containment
+      // refusal (2026-09-19): the profile is built uncontained, on this instrument's own fixed
+      // text and no document of anyone's, and only the reading runs contained.
+      containerName: contained && !warmOutside ? CONTAINER : null,
       diagnosticPath: join(scratch, `${cell}-warm.log`),
     });
     const first = warmer.createSuspended();
@@ -218,6 +230,26 @@ function convert(cell, contained, which = 'bin', cellIndex = 0, warm = false) {
     warmUp = `${exited ? 'exited' : 'still running at the budget, terminated'}, profile entries ${String(entries)}, pdf already ${String(existsSync(join(paths.output, 'in.pdf')))}`;
   }
 
+  // TEMP INSIDE THE PAIR, for the cell that asks (2026-09-19). The surface hands the child this
+  // process's environment, so the user's own temporary directory — which an AppContainer may not
+  // write — is where LibreOffice would put its scratch files. Set on this process for the one
+  // creation and restored after it; the product would take this as the converter's own
+  // environment rather than a mutation of the parent's.
+  const savedTemp = { TEMP: process.env['TEMP'], TMP: process.env['TMP'] };
+  if (tempInPair) {
+    const temp = join(paths.output, 'temp');
+    mkdirSync(temp, { recursive: true });
+    process.env['TEMP'] = temp;
+    process.env['TMP'] = temp;
+  }
+
+  // THE OUTPUT ONE LEVEL DOWN, for the cell that asks (2026-09-19). osl checks a directory with
+  // FindFirstFileW, which opens the directory's PARENT for listing, and a contained probe was
+  // refused (error 5) on the output half itself, whose parent is the session root, while a
+  // directory inside the output half was found. This moves `--outdir` to such a directory.
+  const outDir = nestedOut ? join(paths.output, 'pdf') : paths.output;
+  if (nestedOut) mkdirSync(outDir, { recursive: true });
+
   const surface = hostSurface.createWin32HostSurface({
     // NAMED BY ITS RESOLVER at the call site, which is `check:electronbinary`'s rule: a host's
     // executable answers out of a tree this repository provisioned, never out of `PATH` and never
@@ -236,7 +268,7 @@ function convert(cell, contained, which = 'bin', cellIndex = 0, warm = false) {
         '--convert-to',
         'pdf',
         '--outdir',
-        paths.output,
+        outDir,
         input,
       ],
     },
@@ -248,6 +280,10 @@ function convert(cell, contained, which = 'bin', cellIndex = 0, warm = false) {
   });
 
   const created = surface.createSuspended();
+  if (tempInPair) {
+    process.env['TEMP'] = savedTemp.TEMP;
+    process.env['TMP'] = savedTemp.TMP;
+  }
   if (!created.ok) {
     return { cell, outcome: 'create-failed', detail: created.error, pdfBytes: null, log: '' };
   }
@@ -257,7 +293,7 @@ function convert(cell, contained, which = 'bin', cellIndex = 0, warm = false) {
   // this instrument could not tell those apart.
   const resumed = surface.resume(created.value.thread);
 
-  const expected = join(paths.output, 'in.pdf');
+  const expected = join(outDir, 'in.pdf');
   const deadline = Date.now() + CONVERT_BUDGET_MS;
   while (Date.now() < deadline && !existsSync(expected)) sleep(250);
   const stillRunning = alive(pid);
@@ -332,11 +368,24 @@ try {
     ['bin-contained', true, 'bin', false],
     ['bin-uncontained-warm', false, 'bin', true],
     ['bin-contained-warm', true, 'bin', true],
+    // THE PROFILE WARMED OUTSIDE, THE CONVERSION INSIDE (2026-09-19). A fresh profile stalled the
+    // UNCONTAINED first start of the no-fonts tree on 2026-09-18 exactly as the contained one
+    // stalls, so the stall may be a first start's rather than containment's. This cell reads that
+    // directly: if it converts, containment refuses nothing a warm conversion needs.
+    ['bin-contained-warmed-outside', true, 'bin', true, true],
+    // AND WITH ITS TEMPORARY DIRECTORY INSIDE THE PAIR: the first candidate for what the container
+    // refuses a warm conversion, since the child inherits the user's TEMP.
+    ['bin-contained-warmed-outside-temp', true, 'bin', true, true, true],
+    // AND WITH `--outdir` ONE LEVEL INSIDE THE OUTPUT HALF, whose parent the container can list.
+    ['bin-contained-warmed-outside-nested', true, 'bin', true, true, true, true],
+    // THE SAME, FRESH: whether a first start inside the container also converts once both
+    // directories it checks have a listable parent.
+    ['bin-contained-nested', true, 'bin', false, false, true, true],
   ];
   // `--only <substring>` runs a subset, because a full run is seven cells of up to two 90 s phases.
   const onlyIndex = process.argv.indexOf('--only');
   const only = onlyIndex === -1 ? undefined : process.argv[onlyIndex + 1];
-  for (const [index, [cell, contained, which, warm]] of cells.entries()) {
+  for (const [index, [cell, contained, which, warm, warmOutside, tempInPair, nestedOut]] of cells.entries()) {
     if (only !== undefined && !String(cell).includes(only)) continue;
     const result = convert(
       String(cell),
@@ -344,6 +393,9 @@ try {
       /** @type {'exe' | 'com' | 'bin'} */ (String(which)),
       index,
       Boolean(warm),
+      Boolean(warmOutside),
+      Boolean(tempInPair),
+      Boolean(nestedOut),
     );
     process.stdout.write(
       `${result.cell}: ${result.outcome}\n  ${result.detail}\n  bytes: ${String(result.pdfBytes)}\n` +

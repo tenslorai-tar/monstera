@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Office import, steps 2 and 3: the other GPL v2 sections, a subset, and the first contained cause
+
+**The count.** `license.txt` in the provisioned 26.8.0 tree carries 28 *Jump to GPL Version 2*
+links across **18 components**, split on the file's own `## Component` headings. Culmus was read on
+2026-09-17; the other seventeen were read whole:
+
+| component | the grant | GPL-2.0-only? |
+|---|---|---|
+| Hunspell, Hyphen, Portuguese | GPL 2.0 / LGPL 2.1 / MPL 1.1, *"Version 2 or later"* | no |
+| libcmis | MPL 1.1 / LGPL v2+ / GPL v2+ | no |
+| poppler (poppler-data) | *"GPL, version 2 or version 3"*; the CMaps BSD | no |
+| Zstandard | *"dual-licensed under BSD or GPLv2"* | no — BSD |
+| Hindi, Occitan, Telugu, Breeze | *"version 2 of the License, or (at your option) any later version"* | no |
+| Ukrainian | *"GPL 2.0 or above, LGPL 2.1 or above and MPL 1.1"* | no |
+| Slovak | spelling GPL 2 / LGPL 2.1 / MPL 1.1; hyphenation LPPL; thesaurus MIT | no |
+| Slovenian | GPL 2 **or** LGPL 2.1; thesaurus LGPL 2.1 | no — LGPL |
+| Hungarian | **thesaurus: a GPL v2 link and nothing else** | thesaurus: yes, by this file |
+| Norwegian | spelling, hyphenation, thesaurus: **a GPL v2 link and nothing else** | yes, by this file |
+| Romanian | **hyphenation *"GNU General Public License Version 2"*** | hyphenation: yes, by this file |
+| Vietnamese | **spelling *"released with GPLv2 license"*** | yes, by this file |
+
+**Everything left open is a dictionary**, so the subset leaves out `dict-no`, `dict-hu`, `dict-ro`
+and `dict-vi` beside the eighteen Culmus fonts under `Fonts\` (`LIBREOFFICE_EXCLUDED` in
+`scripts/provision/libreoffice.mjs`). Each entry must exist before it is removed: the first draft
+named the fonts under `share\fonts\truetype`, and provisioning refused, which is the check doing
+its job. A conversion reads no spelling or thesaurus data; what a missing dictionary can change is
+hyphenated line breaks in that language.
+
+**The contained stall, step 3.** A window capture (`PrintWindow`) of the stalled `soffice.bin`
+shows *The application cannot be started. An internal error occurred.* LibreOffice's own source
+names one route to that string: `utl::Bootstrap::INVALID_BOOTSTRAP_DATA`, reached when the base
+install path's status is neither found nor missing — `E_ACCES` among them (`unotools`
+`bootstrap.cxx`, `desktop` `app.cxx`, read at `master` today). osl checks a directory with
+`FindFirstFileW` on its path (`sal/osl/w32/file_dirvol.cxx`), which opens the PARENT for listing.
+
+**Measured, not inferred**: a probe run as Electron in Node mode, contained in the converter's own
+profile, called `FindFirstFileW` on each path. Inside: the tree root **error 5**, its `program`
+folder found, the profile folder found, the session's output half **error 5**. Outside, the
+control: every path found. `(RD)` on the parent did not help — a `FindFirstFileW` open also asks
+for SYNCHRONIZE — and `(RD,S)` made the tree root found inside the container. With it the dialog
+is gone, and still no PDF arrives: warmed outside, fresh, with the user's TEMP moved into the
+pair, and with `--outdir` one level inside the output half, whose parent the container can list.
+A wait-chain read mid-stall: four threads, one running, three blocked, 7.6 s of CPU in 100 s.
+**That second cause is not named**, and the grant was removed again; nothing about it is
+committed to the grant set until the conversion runs. `warmed outside` also retires step 1's
+reading that a fresh profile, not containment, was the difference.
+
+---
+
 ## 2026-09-19 — Live run: Excel tables through Azure and Claude PASSED; one wording defect fixed
 
 **The document**: one page that is only a picture of a ruled 5×3 table, the header *Quarterly
