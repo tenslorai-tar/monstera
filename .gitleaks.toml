@@ -106,3 +106,32 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''(^|[\\/])scripts[\\/]provision[\\/]keys[\\/]libreOfficeKey\.mjs$''']
 regexes = ['''^C2839ECAD9408FBE9531C3E9F434A1EFAFEEAEA3$''']
+
+# ---------------------------------------------------------------------------
+# Allowlist: two more PUBLIC key fingerprints, for the same reason as above.
+#
+# Finding: generic-api-key at scripts/provision/keys/verapdfKey.mjs:11 and
+# scripts/provision/keys/adoptiumKey.mjs:11, on `VERAPDF_KEY_FINGERPRINT` and
+# `ADOPTIUM_KEY_FINGERPRINT`. They are the v4 fingerprints of the veraPDF
+# consortium's and Adoptium's release-signing keys, which sign the veraPDF
+# installer and the Temurin JRE that `provision/verapdf.mjs` verifies (ADR-0075):
+# published by their owners, served by keyservers, named in every signature's
+# issuer subpacket. Knowing either grants nothing.
+#
+# Narrow on all three axes, as the entry above: this rule, one file each, the
+# exact value.
+# ---------------------------------------------------------------------------
+
+[[allowlists]]
+description = "The veraPDF consortium's public release-signing-key fingerprint (ADR-0075)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|[\\/])scripts[\\/]provision[\\/]keys[\\/]verapdfKey\.mjs$''']
+regexes = ['''^13DD102B4DD69354D12DE5A83184863278B17FE7$''']
+
+[[allowlists]]
+description = "Adoptium's public release-signing-key fingerprint (ADR-0075)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|[\\/])scripts[\\/]provision[\\/]keys[\\/]adoptiumKey\.mjs$''']
+regexes = ['''^3B04D753C9050D9A5D343F39843C48A565F8F04B$''']
