@@ -892,6 +892,36 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Live run: Excel tables through Azure and Claude PASSED; one wording defect fixed
+
+**The document**: one page that is only a picture of a ruled 5×3 table, the header *Quarterly
+totals* spanning two columns — drawn with pdf-lib, rendered by MuPDF at 200 dpi, embedded as a
+PNG. MuPDF finds 0 text characters on it, and the dialog said *No tables were found on this page*
+with only the automatic engine offered: the control, before any key was stored.
+
+**Keys** were entered through Settings from the environment by way of the clipboard, so no value
+passed through this session's output, and the clipboard was cleared afterwards. With them saved the
+dialog offered all three engines, and each service showed what it sends before anything went.
+
+**Azure**: every cell's text right, `B1:C1` merged, `4.50` stored as 4.5 with format `0.00`.
+**Claude**: the same values and `B1:C1`, and also `A1:A2` — it read the empty cell under *Region*
+as part of it. That is the service's grid, written as reported; ADR-0086's reader refuses only a
+grid that contradicts itself. **Excel** (COM, read-only) opened both: `B1` merged over `B1:C1`,
+`C3` shown as *4.50*.
+
+**Defect found and fixed**: a one-page document read *All 1 page of this document will be sent*.
+The ICU plural now says *This document's page* for one; a dialog case asserts it, and it fails on
+the old string.
+
+**Not exercised live**: a refusal (a wrong key, a service error). The main-side case covers the
+page named and nothing written.
+
+**My own error, recorded because it looked like a defect for a minute**: the first attempt closed
+Settings with × and the engines did not appear. × dismisses and saves nothing; the Save button
+is at the foot of the dialog. `showSettings.ts` does exactly what it says.
+
+---
+
 ## 2026-09-19 — Excel tables through Azure and Claude, with merges (ADR-0086, built; live run owed)
 
 Built on the B4 in `ae3dc5d`. **One reader of a service's table**: `recognisedTables.ts` turns

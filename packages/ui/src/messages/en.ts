@@ -2414,9 +2414,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAID BEFORE ANYTHING IS SENT (ADR-0086 Decision 4): what leaves this computer, and where to.
   // No cost is stated, which is the row's rule for every service string.
   [EXPORT_EXCEL_SENDS_AZURE]:
-    'All {count, plural, one {# page} other {# pages}} of this document will be sent to Azure Document Intelligence to find their tables. Each copy is deleted from Azure after it is read.',
+    '{count, plural, one {This document’s page} other {All # pages of this document}} will be sent to Azure Document Intelligence to find its tables. Each copy is deleted from Azure after it is read.',
   [EXPORT_EXCEL_SENDS_CLAUDE]:
-    'All {count, plural, one {# page} other {# pages}} of this document will be sent to Anthropic’s Claude to find their tables.',
+    '{count, plural, one {This document’s page} other {All # pages of this document}} will be sent to Anthropic’s Claude to find its tables.',
   [EXCEL_SERVICE_REFUSED]: 'Page {page} could not be read, so nothing was written. {detail}',
   [SERVICE_REFUSED_TITLE]: 'The tables were not read',
   [EXPORT_EXCEL_SHEET_PER_PAGE]: 'A sheet for each page that has tables',

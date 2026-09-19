@@ -122,6 +122,13 @@ describe('ExportExcelBody', () => {
     expect(resolve).toHaveBeenCalledWith({ kind: 'export', layout: 'sheet-per-page', engine: 'azure', edits: [] });
   });
 
+  it('says a ONE-page document’s page goes, not “all 1 page”', () => {
+    shown({ index: 0, page: 1, pageCount: 1, engines: ['automatic', 'claude'] });
+    fireEvent.click(screen.getByRole('radio', { name: 'Claude' }));
+    expect(screen.getByText(/^This document’s page will be sent to Anthropic’s Claude/u)).toBeTruthy();
+    expect(screen.queryByText(/All 1 page/u)).toBeNull();
+  });
+
   it('CONTROL: switching BACK to this PDF’s own text keeps what was typed', () => {
     const resolve = shown({ engines: ['automatic', 'claude'] });
     fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
