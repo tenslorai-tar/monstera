@@ -1013,6 +1013,97 @@ MZ_EXPORT int mz_save(mz_ctx *c, mz_doc *d, const char *path, int incremental)
 }
 
 /*
+ * Rewrites the document's images through MuPDF's own rewriter, `pdf_rewrite_images`, the
+ * routine `mutool clean` drives. What this build decides is only the inputs:
+ *
+ * - an image stored LOSSY (a DCT or JPX stream) is re-encoded as JPEG at `jpeg_quality`;
+ * - an image stored LOSSLESS stays lossless — flate — because a JPEG of a screenshot or a
+ *   drawing is a visible defect the person did not ask for by choosing a JPEG quality;
+ * - a colour or grey image drawn above `threshold_dpi` is subsampled to `target_dpi` (0 and 0
+ *   leave resolution alone), and a bitonal image is left as it is;
+ * - `recompress_when` is SMALLER, so an image whose new stream would be larger is kept.
+ *
+ * The quality travels as the string the options struct holds, which the rewriter reads with
+ * fz_atoi; it is formatted here rather than taken from the caller as a string, so the ABI
+ * carries an int and cannot carry an option string MuPDF would parse.
+ */
+MZ_EXPORT int mz_rewrite_images(mz_ctx *c, mz_doc *d, int jpeg_quality, int threshold_dpi, int target_dpi)
+{
+    pdf_image_rewriter_options opts;
+    char quality[8];
+
+    if (jpeg_quality < 1 || jpeg_quality > 100) {
+        mz_fail(c, "jpeg quality must be between 1 and 100");
+        return MZ_ERR;
+    }
+    if (threshold_dpi < 0 || target_dpi < 0 || (threshold_dpi > 0 && target_dpi >= threshold_dpi)) {
+        mz_fail(c, "subsampling needs a target below its threshold, or both 0");
+        return MZ_ERR;
+    }
+
+    memset(&opts, 0, sizeof opts);
+    fz_snprintf(quality, sizeof quality, "%d", jpeg_quality);
+
+    opts.color_lossy_image_subsample_method = FZ_SUBSAMPLE_AVERAGE;
+    opts.color_lossless_image_subsample_method = FZ_SUBSAMPLE_AVERAGE;
+    opts.color_lossy_image_subsample_threshold = threshold_dpi;
+    opts.color_lossy_image_subsample_to = target_dpi;
+    opts.color_lossless_image_subsample_threshold = threshold_dpi;
+    opts.color_lossless_image_subsample_to = target_dpi;
+    opts.color_lossy_image_recompress_method = FZ_RECOMPRESS_JPEG;
+    opts.color_lossy_image_recompress_quality = quality;
+    opts.color_lossless_image_recompress_method = FZ_RECOMPRESS_LOSSLESS;
+
+    opts.gray_lossy_image_subsample_method = FZ_SUBSAMPLE_AVERAGE;
+    opts.gray_lossless_image_subsample_method = FZ_SUBSAMPLE_AVERAGE;
+    opts.gray_lossy_image_subsample_threshold = threshold_dpi;
+    opts.gray_lossy_image_subsample_to = target_dpi;
+    opts.gray_lossless_image_subsample_threshold = threshold_dpi;
+    opts.gray_lossless_image_subsample_to = target_dpi;
+    opts.gray_lossy_image_recompress_method = FZ_RECOMPRESS_JPEG;
+    opts.gray_lossy_image_recompress_quality = quality;
+    opts.gray_lossless_image_recompress_method = FZ_RECOMPRESS_LOSSLESS;
+
+    opts.bitonal_image_recompress_method = FZ_RECOMPRESS_NEVER;
+    opts.recompress_when = FZ_RECOMPRESS_WHEN_SMALLER;
+
+    fz_try(c->fz)
+        pdf_rewrite_images(c->fz, d->pdf, &opts);
+    fz_catch(c->fz) {
+        mz_record(c);
+        return MZ_ERR;
+    }
+    return MZ_OK;
+}
+
+/*
+ * Saves a full rewrite with the unreferenced objects collected and streams compressed, so the
+ * image streams `mz_rewrite_images` replaced are not carried into the file beside their
+ * replacements. Garbage level 3 is `mutool clean -ggg`'s: collect, renumber, merge duplicates.
+ *
+ * OBJECT STREAMS ON, because the default writes every object in the open: measured 2026-09-19, a
+ * plain re-save with no image touched grew a corpus document by 12% — its original packed its
+ * objects into compressed object streams, and the default write unpacked them.
+ */
+MZ_EXPORT int mz_save_compacted(mz_ctx *c, mz_doc *d, const char *path)
+{
+    pdf_write_options opts = pdf_default_write_options;
+    opts.do_use_objstms = 1;
+    opts.do_garbage = 3;
+    opts.do_compress = 1;
+    opts.do_compress_images = 1;
+    opts.do_compress_fonts = 1;
+
+    fz_try(c->fz)
+        pdf_save_document(c->fz, d->pdf, path, &opts);
+    fz_catch(c->fz) {
+        mz_record(c);
+        return MZ_ERR;
+    }
+    return MZ_OK;
+}
+
+/*
  * Renders one page to an RGB pixmap and hands back the samples.
  *
  * The buffer is owned by MuPDF until mz_free_pixmap is called; the caller must
