@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   AZURE_MAX_DOCUMENT_BYTES,
   AzureRecognitionRefused,
+  POLL_MIN_INTERVAL_MS,
   azureAcceptsBytes,
+  pollDelay,
   recogniseThroughAzure,
 } from './ocrAzure.js';
 
@@ -437,5 +439,83 @@ describe('the Azure recogniser leaves no copy behind (owner, 2026-09-18)', () =>
       () => undefined,
     );
     expect(deleted).toStrictEqual([]);
+  });
+});
+
+describe('how often the Azure recogniser polls', () => {
+  /** A `running` answer that asks for a wait. */
+  function runningAfter(seconds: string): () => Response {
+    return (): Response =>
+      new Response(JSON.stringify({ status: 'running' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', 'retry-after': seconds },
+      });
+  }
+
+  /** A clock whose sleeps are recorded and whose time moves by exactly what was slept. */
+  function recordingClock(): { sleep: (ms: number) => Promise<void>; now: () => number; slept: number[] } {
+    let time = 0;
+    const slept: number[] = [];
+    return {
+      slept,
+      sleep: (ms) => {
+        slept.push(ms);
+        time += ms;
+        return Promise.resolve();
+      },
+      now: () => time,
+    };
+  }
+
+  it('reads Retry-After in both of RFC 9110’s forms, and never goes under the floor', () => {
+    expect(pollDelay('5', 0)).toBe(5_000);
+    expect(pollDelay(new Date(10_000).toUTCString(), 0)).toBe(10_000);
+    // THE FLOOR: a service asking for one second still gets two, and so does no header.
+    expect(pollDelay('1', 0)).toBe(POLL_MIN_INTERVAL_MS);
+    expect(pollDelay(null, 0)).toBe(POLL_MIN_INTERVAL_MS);
+    // A MALFORMED HEADER costs the floor, never a zero-second loop.
+    expect(pollDelay('soon', 0)).toBe(POLL_MIN_INTERVAL_MS);
+    expect(pollDelay('-3', 0)).toBe(POLL_MIN_INTERVAL_MS);
+  });
+
+  it('waits what the 202 and each running answer ask for, before each poll', async () => {
+    const start = new Response(null, {
+      status: 202,
+      headers: { 'operation-location': POLL_URL, 'retry-after': '3' },
+    });
+    const { fetchImpl } = service(start, [
+      runningAfter('4'),
+      polled('succeeded', [{ words: [], lines: [] }]),
+    ]);
+    const clock = recordingClock();
+    await recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, clock);
+
+    expect(clock.slept).toStrictEqual([3_000, 4_000]);
+  });
+
+  it('CONTROL: with no Retry-After anywhere, every wait is the two-second floor', async () => {
+    // Without this, the case above passes for a poller that ignored the header and happened to
+    // wait what the fixture asked — and this is the one that would have read 1,000 until today.
+    const { fetchImpl } = service(accepted(), [
+      polled('running'),
+      polled('succeeded', [{ words: [], lines: [] }]),
+    ]);
+    const clock = recordingClock();
+    await recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, clock);
+
+    expect(clock.slept).toStrictEqual([POLL_MIN_INTERVAL_MS, POLL_MIN_INTERVAL_MS]);
+  });
+
+  it('reports a timeout NOW when the asked-for wait would pass the bound, without waiting it', async () => {
+    const { fetchImpl, asked } = service(accepted(), [runningAfter('600')]);
+    const clock = recordingClock();
+    const refused = await recogniseThroughAzure(CREDENTIALS, { png: PNG, ...FRAME, fetchImpl }, clock).catch(
+      (error: unknown) => error,
+    );
+
+    expect((refused as AzureRecognitionRefused).reason).toBe('timed-out');
+    // One poll, after the floor; the ten-minute wait was refused rather than slept.
+    expect(clock.slept).toStrictEqual([POLL_MIN_INTERVAL_MS]);
+    expect(asked).toHaveLength(2);
   });
 });

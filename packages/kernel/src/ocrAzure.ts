@@ -91,17 +91,61 @@ const MODEL = 'prebuilt-read';
  * How long to keep polling before giving up, and how often.
  *
  * The service answers `202` with an `Operation-Location` and the analysis runs
- * asynchronously, so there is no response to await. Ninety seconds at one
- * second is a bound on a single region of a single page — enough for a slow day
- * at the service and short enough that a reader is not left with a control that
- * has been busy for ten minutes.
+ * asynchronously, so there is no response to await. Ninety seconds is a bound on a
+ * single region of a single page — enough for a slow day at the service and short
+ * enough that a reader is not left with a control that has been busy for ten minutes.
+ *
+ * **How often is the service's to say, with a floor** (owner, 2026-09-19, settled from
+ * the authority): the `202` and each `running` answer may carry `Retry-After`, and
+ * that is how long to wait; where it is absent or shorter, the wait is two seconds.
+ * Both from Microsoft's *Service quotas and limits* page for Document Intelligence
+ * (learn.microsoft.com, `…/document-intelligence/service-limits`, dated 2026-09-08, read
+ * 2026-09-19): *"we recommend not calling the get analyze response more than once every
+ * 2 seconds"*, and the analyze response's `retry-after` *"indicates how long you should
+ * wait"*. The free tier's Get limit is 1 per second on the same page. This polled every
+ * second until 2026-09-19. {@link pollDelay} is the one reading of it.
  *
  * **A timeout is reported as a timeout**, never as an empty recognition: an
  * empty `RecognisedPage` is a real answer meaning *no text here*, and a run that
- * gave up must not be able to produce it.
+ * gave up must not be able to produce it. A `Retry-After` that would carry the next
+ * poll past the bound is the same timeout, reported now rather than after a wait
+ * whose answer could not be used.
  */
-const POLL_INTERVAL_MS = 1_000;
+export const POLL_MIN_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 90_000;
+
+/** RFC 9110's IMF-fixdate, the one date form a sender may generate; see {@link pollDelay}. */
+const IMF_FIXDATE =
+  /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/u;
+
+/**
+ * How long to wait before the next poll: the response's `Retry-After`, never less than
+ * {@link POLL_MIN_INTERVAL_MS}.
+ *
+ * RFC 9110 §10.2.3 gives the header two forms — a count of seconds, or an HTTP date —
+ * and both are read. A value that is neither is ignored rather than trusted, so a
+ * malformed header costs the floor and never a zero-second loop.
+ *
+ * **The date form is read only in IMF-fixdate** (`Sun, 06 Nov 1994 08:49:37 GMT`), the
+ * form RFC 9110 §5.6.7 requires senders to generate. `Date.parse` alone is not a
+ * grammar: it answered `-3` with a date three thousand years before now, and so a
+ * wait of a millennium, when this was first tested.
+ *
+ * @param header the response's `Retry-After`, or `null`
+ * @param now the clock, in milliseconds, for the date form
+ */
+export function pollDelay(header: string | null, now: number): number {
+  if (header === null) return POLL_MIN_INTERVAL_MS;
+  const trimmed = header.trim();
+  let asked: number | undefined;
+  if (/^\d+$/u.test(trimmed)) {
+    asked = Number(trimmed) * 1000;
+  } else if (IMF_FIXDATE.test(trimmed)) {
+    const at = Date.parse(trimmed);
+    if (!Number.isNaN(at)) asked = at - now;
+  }
+  return asked === undefined ? POLL_MIN_INTERVAL_MS : Math.max(POLL_MIN_INTERVAL_MS, asked);
+}
 
 /** Why a recognition did not happen. */
 export type AzureRefusal =
@@ -217,7 +261,7 @@ async function startAnalysis(
   credentials: AzureCredentials,
   png: Uint8Array,
   fetchImpl: typeof fetch,
-): Promise<string> {
+): Promise<{ readonly location: string; readonly retryAfter: string | null }> {
   let response: Response;
   try {
     response = await fetchImpl(url, {
@@ -258,7 +302,8 @@ async function startAnalysis(
       'The service accepted the page and named no Operation-Location, so there is nothing to poll.',
     );
   }
-  return location;
+  // THE FIRST WAIT IS THE 202's, which is where the service first says how long.
+  return { location, retryAfter: response.headers.get('retry-after') };
 }
 
 /**
@@ -275,10 +320,21 @@ async function pollUntilDone(
   fetchImpl: typeof fetch,
   sleep: (ms: number) => Promise<void>,
   now: () => number,
+  firstRetryAfter: string | null,
 ): Promise<AnalyzeAnswer> {
   const deadline = now() + POLL_TIMEOUT_MS;
+  let retryAfter = firstRetryAfter;
 
   for (;;) {
+    const wait = pollDelay(retryAfter, now());
+    if (now() + wait > deadline) {
+      throw new AzureRecognitionRefused(
+        'timed-out',
+        `The analysis did not finish within ${String(POLL_TIMEOUT_MS / 1000)} seconds.`,
+      );
+    }
+    await sleep(wait);
+
     let response: Response;
     try {
       response = await fetchImpl(location, {
@@ -321,13 +377,7 @@ async function pollUntilDone(
       );
     }
 
-    if (now() >= deadline) {
-      throw new AzureRecognitionRefused(
-        'timed-out',
-        `The analysis did not finish within ${String(POLL_TIMEOUT_MS / 1000)} seconds.`,
-      );
-    }
-    await sleep(POLL_INTERVAL_MS);
+    retryAfter = response.headers.get('retry-after');
   }
 }
 
@@ -409,11 +459,11 @@ export async function recogniseThroughAzure(
 ): Promise<RecognisedPage> {
   const fetchImpl = request.fetchImpl ?? fetch;
   const url = analyzeUrl(credentials.endpoint);
-  const location = await startAnalysis(url, credentials, request.png, fetchImpl);
+  const { location, retryAfter } = await startAnalysis(url, credentials, request.png, fetchImpl);
 
   let answer: AnalyzeAnswer;
   try {
-    answer = await pollUntilDone(location, credentials, fetchImpl, clock.sleep, clock.now);
+    answer = await pollUntilDone(location, credentials, fetchImpl, clock.sleep, clock.now, retryAfter);
   } catch (cause) {
     // THE ANALYSIS FAILED, AND ITS RESULT IS DELETED ANYWAY. The poll's refusal is the
     // one a reader needs, so it keeps its reason; a delete that also failed is added to

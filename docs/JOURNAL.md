@@ -892,6 +892,69 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Azure polls as the service asks; LLLLLL-3 closed; a red board from a stand-in bridge
+
+**Azure polling, settled from the authority.** Microsoft's *Service quotas and limits* page for
+Document Intelligence (dated 2026-09-08, read today): *"we recommend not calling the get analyze
+response more than once every 2 seconds"*, and the analyze response's `retry-after` *"indicates how
+long you should wait"*. `ocrAzure.ts` polled every second. It now waits `pollDelay`: the 202's and
+each `running` answer's `Retry-After`, never under two seconds, and a wait that would pass the
+90-second bound is the timeout reported at once. **The first test found a defect in the first
+draft**: `Date.parse('-3')` answers a date three thousand years ago, so a malformed header meant a
+millennium's wait; the date form is now read only in RFC 9110's IMF-fixdate. Cases: both header
+forms, the floor, two malformed values, the waits taken ([3000, 4000] against a control of two
+floors), and a ten-minute ask refused without sleeping. **Mutated**: without the floor, one case
+red. **Live**: `npm run probe:azure` passed on the new polling — the word read, its box over the
+drawing, the result deleted (404 after).
+
+**LLLLLL-3 closed**: `mupdfSpecs.test.ts` holds each engine's table to exactly the kinds declared
+for it, as sets from both sides, and reaches the unrouted-kind refusal in both — **through a cast,
+because the parameter type already refuses the call** (typecheck said so on the first draft), so the
+runtime refusal stands behind the type for a caller that escaped it. A MuPDF kind is the control
+that the lookup refuses nothing it should accept. Mutated: the refusal removed, one case red.
+
+**Red board at `e447d46`, fixed in `fe1ed17`.** Every Playwright case failed on both platforms: the
+page bridge the suites inject carried `invoke` alone, while the preload has exposed `invoke` and
+`subscribe` since ADR-0082. The close path is the first thing to subscribe at mount, so the renderer
+threw on start. The stand-in is now typed as `MonsteraBridge`. **Would my local run have caught it?
+No** — the pre-push pair runs neither `test:a11y` nor `test:visual`, and CI's accessibility step is
+where it surfaced. Three Playwright cases fail only inside the full local run and pass alone
+(`pagePosition`, a start-screen shortcut, a redaction preview) — recorded, not bumped.
+
+---
+
+## 2026-09-19 — Email done on the owner's run; Simple MAPI unmeasured; veraPDF provisioned
+
+**Email**: the owner ran the Share sheet live and it sent the PDF to Copilot with the right file
+name. The row is done on that result.
+
+**The second route the owner asked about, *Send with your mail program* (Simple MAPI), was
+measured first and is not built.** A probe (`scratchpad/mapi/mapiProbe.mjs`, `MAPISendMailW` with
+the PDF attached, modeless dialog, sending nothing) launched the registered client — Outlook
+classic, the machine's `HKLM\Software\Clients\Mail` default, started 04:10:23 by the call — and did
+not return within 120 s. Outlook's only window was its own question, read from the window tree:
+*"Outlook couldn't start last time… Do you want to start in safe mode?"* So *does a MAPI call reach
+the default mail program from this application* is answered as far as **launching** it, and not
+as far as a compose window with the attachment. That dialog is left for the owner; this session
+has no access to Outlook and does not answer questions in someone's mail program.
+
+**Before any build, B4**: by the MAPI stub's documented design the client's own DLL loads into the
+calling process (not measured — the call never returned to list modules), and §9.17 keeps
+third-party native code out of `main`. The Share sheet stays the one route.
+
+**PDF/A-2b's owed script, `npm run provision:verapdf`**: veraPDF 1.30.2's installer and Temurin JRE
+21.0.12.1, each digest-pinned and verified against its committed, fingerprint-pinned key through
+`openpgpVerify.mjs`, installed headless under `.tools/`. Development only, as ADR-0075 decides, so no
+notice entry. **`scripts/research/pdfaValidate.mjs`** validates an export beside its source and
+refuses to report unless the source FAILS: yesterday's live export passed as 2b with its source
+failing 4 rules, and the export given as its own "source" was refused (exit 3).
+
+**An escape-guard false positive, recorded and not fixed** (no tooling work): `node
+node_modules/typescript/bin/tsc -p tsconfig.scripts.json` is refused as `node -p`, though the
+flag follows the script path and belongs to `tsc`. `npm run typecheck` is the project's verb anyway.
+
+---
+
 ## 2026-09-19 — Closing with unsaved changes asks, by every route; Electron's default menu is gone
 
 **The owner's answer to the 2026-09-18 finding**: always ask *Save / Don't save / Cancel* —
