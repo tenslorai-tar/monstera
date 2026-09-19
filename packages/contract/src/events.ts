@@ -56,6 +56,13 @@ export const EVENTS = {
       refusal: z.enum(['no-key', 'unauthorised', 'rejected', 'unreachable', 'unreadable']).optional(),
     })
     .strict(),
+
+  /**
+   * The platform asked the window to close, and main is holding it until the renderer has asked
+   * about every document with unsaved changes. The answer is `window.close`, or nothing — a
+   * Cancel leaves the window open. Empty: the renderer knows which documents it holds.
+   */
+  'window.close-requested': z.object({}).strict(),
 } as const;
 
 export type EventMap = typeof EVENTS;

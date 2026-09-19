@@ -43,6 +43,24 @@ export const RENDERER_WEB_PREFERENCES = {
 } as const;
 
 /**
+ * Whether the renderer may open Chromium's developer tools: never in a packaged build.
+ *
+ * ## Two locks, because the menu was only one of the routes
+ *
+ * Electron's default menu carried *Toggle Developer Tools* on Ctrl+Shift+I, and the shell now
+ * sets no menu (`main.ts`). That closes the accelerator and not the capability:
+ * `webContents.openDevTools()` from anything in main would still open them. `devTools: false` in
+ * the window's preferences is Electron's own refusal, so a packaged build has no route to them
+ * whatever calls what. A development run keeps them, because the build tooling and the
+ * harnesses are where they are needed.
+ *
+ * @param packaged `app.isPackaged`, passed in so the decision is testable without a runtime.
+ */
+export function devToolsAllowed(packaged: boolean): boolean {
+  return !packaged;
+}
+
+/**
  * What the window paints before the renderer's first frame, and during resize.
  *
  * ## It is `--canvas`, and it was `#000000` while the page painted `#141618`

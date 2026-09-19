@@ -78,7 +78,9 @@ import {
   findDuplicatePagesCommand,
   insertBlankPageCommand,
   rotatePageCommand,
+  closeTabCommand,
   saveCommand,
+  saveDocument,
   undoCommand,
   zoomCommand,
 } from './commands/documentCommands.js';
@@ -219,6 +221,11 @@ import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
 import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
 import { persistSettings } from './settingsSync.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
+import {
+  CLOSE_UNSAVED_DIALOG,
+  CLOSE_UNSAVED_DIALOG_ID,
+  CLOSE_UNSAVED_RESULT,
+} from './dialogs/closeUnsaved.js';
 import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
@@ -451,6 +458,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         ENHANCE_OUTCOME_DIALOG,
         SCAN_OUTCOME_DIALOG,
         SAVE_PROBLEM_DIALOG,
+        CLOSE_UNSAVED_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
         DELETE_PAGES_DIALOG,
@@ -919,7 +927,13 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const zoomMode = view?.zoom ?? DEFAULT_ZOOM;
 
   /**
-   * Closes one document: the tab, its store, and what main holds for it.
+   * Releases documents: each tab, its store, and what main holds for it.
+   *
+   * ## It RELEASES and never asks, and only `requestClose` below calls it
+   *
+   * Called directly it was the defect of 2026-09-18: a tab's × dropped a document holding
+   * unsaved changes with no question. So the asking lives in one place and every route — the
+   * ×, Ctrl+W, the window's close, quitting — goes through that place.
    *
    * ## All three, and the third is the one a renderer-only close would miss
    *
@@ -931,11 +945,13 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    *
    * ## The neighbour to the LEFT, and it is decided before the list changes
    *
-   * Closing the focused tab has to leave the reader somewhere. The tab to its
-   * left is what every editor does and what a reader reaches for next; the
+   * Closing the focused tab has to leave the reader somewhere. The nearest surviving
+   * tab to its left is what every editor does and what a reader reaches for next; the
    * first tab would send someone closing the fifth of six back to the start.
-   * Reading the index from `tabs` rather than from the filtered list is what
-   * makes that expressible: after the filter, the position is gone.
+   * Reading the index from the order before the filter is what makes that
+   * expressible: after the filter, the position is gone. The active tab is updated
+   * from its CURRENT value, since the close path may have activated another since;
+   * the ORDER is the one the close began with, which a modal question keeps still.
    *
    * ## The failure is REPORTED rather than swallowed
    *
@@ -945,26 +961,111 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * this build has already stopped tracking; what must not happen is that the
    * incident goes nowhere.
    */
-  const closeTab = useCallback(
-    async (docId: DocId): Promise<void> => {
-      const at = tabs.findIndex((tab) => tab.docId === docId);
-      if (at < 0) return;
+  const releaseTabs = useCallback(
+    async (docIds: readonly DocId[]): Promise<void> => {
+      const released = new Set(docIds);
+      const order = tabs;
+      setTabs((current) => current.filter((tab) => !released.has(tab.docId)));
+      setActiveId((current) => {
+        if (current === undefined || !released.has(current)) return current;
+        const at = order.findIndex((tab) => tab.docId === current);
+        const left = order
+          .slice(0, Math.max(0, at))
+          .reverse()
+          .find((tab) => !released.has(tab.docId));
+        // `undefined` for the LAST tab: there is no document to arrive at.
+        return (left ?? order.find((tab) => !released.has(tab.docId)))?.docId;
+      });
 
-      const remaining = tabs.filter((tab) => tab.docId !== docId);
-      setTabs(remaining);
-      if (docId === activeId) {
-        const neighbour = remaining[Math.max(0, at - 1)]?.docId;
-        // `setActiveId` directly for the LAST tab, because there is no document
-        // to activate and `activate` is about arriving somewhere.
-        if (neighbour === undefined) setActiveId(undefined);
-        else activate(neighbour);
+      for (const docId of docIds) {
+        stores.close(docId);
+        const answer = await client['document.close']({ docId });
+        if (!answer.ok) void ask(COMMAND_PROBLEM_DIALOG_ID, answer.error);
       }
-      stores.close(docId);
-
-      const answer = await client['document.close']({ docId });
-      if (!answer.ok) void ask(COMMAND_PROBLEM_DIALOG_ID, answer.error);
     },
-    [activate, activeId, ask, client, stores, tabs],
+    [ask, client, stores, tabs],
+  );
+
+  /**
+   * THE ONE CLOSE PATH: every way a document closes goes through here (owner, 2026-09-19).
+   *
+   * ## Save / Don't save / Cancel, for each document with unsaved changes
+   *
+   * Each document is asked about in turn, with its tab brought to the front so the question
+   * is about something on screen. **Nothing is released until every answer is in**: a Cancel
+   * at the third of four documents leaves all four open, which is *Cancel leaves everything
+   * open* read for the several-document case. *Save* runs the one save (`saveDocument`) and a
+   * save that does not land stops the close — invariant 18's *a failed save never loses work*
+   * — with the save's own problem dialog saying why. *Don't save* discards that document only.
+   *
+   * **One question per document rather than one list**, for quitting with several: each
+   * answer can fail on its own (a save refused because another tab holds the file), and a
+   * refusal has to be reported against the document it belongs to, on screen, before the next
+   * question — a list would need a result per row and a second dialog to explain it.
+   *
+   * *Save As* for a document with no file is not a branch here because the state does not
+   * exist: every document `DocumentService` opens comes from a file, and every import saves
+   * before it opens (`document.newFromMarkdown`' shape).
+   *
+   * ## Main answers "unsaved", inside the document's lane
+   *
+   * The renderer tracks no dirty flag of its own — that would be a second opinion about what
+   * main holds (B3a), and the stale answer is *clean*, which closes without asking.
+   * `document-not-open` means nothing is there to lose; any other failure is read as unsaved,
+   * which fails towards a question rather than towards a loss.
+   *
+   * @returns whether every document named was released — `false` after a Cancel, a dismissed
+   *   question or a save that did not land.
+   */
+  const [closing, setClosing] = useState(false);
+  const requestClose = useCallback(
+    async (docIds: readonly DocId[]): Promise<boolean> => {
+      // ONE AT A TIME: a second close while a question is on screen — the caption's × pressed
+      // twice — would ask about the same document twice. State rather than a ref, because this
+      // function is handed to a command built during render; the question is asynchronous, so
+      // the re-render that carries `true` lands before anyone can press again.
+      if (closing) return false;
+      setClosing(true);
+      try {
+        for (const docId of docIds) {
+          const tab = tabs.find((candidate) => candidate.docId === docId);
+          if (tab === undefined) continue;
+          const answer = await client['document.unsaved']({ docId });
+          const unsaved = answer.ok
+            ? answer.value.unsaved
+            : answer.error.code !== 'document-not-open';
+          if (!unsaved) continue;
+
+          activate(docId);
+          const choice = CLOSE_UNSAVED_RESULT.safeParse(
+            await ask(CLOSE_UNSAVED_DIALOG_ID, { name: tab.name }),
+          );
+          // DISMISSED IS CANCEL: the platform's × or Escape must never be the destructive answer.
+          if (!choice.success || choice.data === 'cancel') return false;
+          if (choice.data === 'save' && !(await saveDocument({ client, ask }, docId))) return false;
+        }
+        await releaseTabs(docIds);
+        return true;
+      } finally {
+        setClosing(false);
+      }
+    },
+    [activate, ask, client, closing, releaseTabs, tabs],
+  );
+
+  // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
+  // document through the one path, then `window.close`. A Cancel answers nothing and the
+  // window stays.
+  useEffect(
+    () =>
+      subscribe('window.close-requested', () => {
+        void (async (): Promise<void> => {
+          if (await requestClose(tabs.map((tab) => tab.docId))) {
+            await client['window.close']({});
+          }
+        })();
+      }),
+    [client, requestClose, subscribe, tabs],
   );
 
   /**
@@ -1614,6 +1715,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),
+        closeTabCommand({ close: (docId) => requestClose([docId]) }),
         saveCopyCommand({ client, onApplied: applied, ask }),
         exportFormDataJsonCommand({ client, onApplied: applied, ask }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
@@ -1696,6 +1798,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       navigator,
       openCommand,
       openDeps,
+      requestClose,
       togglePalette,
       opened,
       readTool,
@@ -1796,7 +1899,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           activeId={activeId}
           onSelect={activate}
           onClose={(docId) => {
-            void closeTab(docId);
+            void requestClose([docId]);
           }}
           // THE REGISTERED COMMAND'S OWN `run`, not a second way to open a
           // document. The strip is where *open another* belongs — it exists

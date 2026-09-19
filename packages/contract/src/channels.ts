@@ -1287,6 +1287,30 @@ export const channels = {
     }),
   ),
 
+  /**
+   * Whether an open document holds changes its file does not — asked before every close.
+   *
+   * ## A query in the document's LANE, which is why it is a channel and not a field
+   *
+   * `DocumentContext.isDirty` explains why there is no service-level answer: read outside the
+   * lane it can race a command that bumps, and the stale answer is **clean**, which closes
+   * without asking and loses work. So the renderer's one close path asks here, per document,
+   * immediately before it decides, rather than tracking a flag of its own that would be a
+   * second opinion about what main holds (B3a).
+   *
+   * **Conservative, `isDirty`'s trade**: an undo back to the saved content still answers
+   * `true`. It fails towards a question nobody needed, never towards a lost edit.
+   *
+   * `document-not-open` is declared because a tab can outlive its document by a moment — a
+   * second close of the same tab — and that is an answer (nothing to lose), not a defect.
+   */
+  'document.unsaved': channel(
+    'Answers whether an open document has changes its file does not.',
+    z.object({ docId: docIdSchema }),
+    z.object({ unsaved: z.boolean() }),
+    ['document-not-open', 'document-busy'],
+  ),
+
   'document.execute': channel(
     'Applies one command to an open document, returning the version it produced.',
     // THE RENDERABLE SUBSET, not the whole union. `insertImagePage` carries an
@@ -4157,6 +4181,27 @@ export const channels = {
       height: z.number().int().min(24).max(64),
     }),
     z.object({ applied: z.boolean() }),
+  ),
+
+  /**
+   * The renderer has resolved every open document, and the window may now close.
+   *
+   * ## The second half of a close the PLATFORM started
+   *
+   * The caption's ×, Alt+F4, the taskbar's *Close window*, a quit and Windows' own shutdown all
+   * reach main as the window's close, which main holds and turns into the
+   * `window.close-requested` event. The renderer then runs its one close path — asking *Save /
+   * Don't save / Cancel* for each document with unsaved changes — and calls this only when every
+   * answer let the close proceed. A Cancel anywhere means this is never called and the window
+   * stays, which is the whole of the owner's *Cancel leaves everything open*.
+   *
+   * **It carries nothing and decides nothing in main.** The questions were the renderer's; main
+   * lets the next close through. `closing: false` is a harness with no window attached.
+   */
+  'window.close': channel(
+    'Closes the window, after the renderer has resolved every document with unsaved changes.',
+    z.object({}),
+    z.object({ closing: z.boolean() }),
   ),
 } as const;
 

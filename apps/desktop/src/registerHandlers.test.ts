@@ -133,6 +133,9 @@ function handlers() {
     titleBarOverlay: () => {
       throw new Error('registration cases must not reach the window');
     },
+    confirmClose: () => {
+      throw new Error('registration cases must not reach the window');
+    },
     revealLog: () => {
       throw new Error('registration cases must not reach the log');
     },

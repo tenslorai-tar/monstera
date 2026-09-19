@@ -130,6 +130,8 @@ export interface BrowserShim {
   revealedLog: () => number;
   /** Every overlay the renderer asked main to paint, in order — the title bar's colours as it computed them. */
   titleBarOverlays: () => readonly { readonly color: string; readonly symbolColor: string; readonly height: number }[];
+  /** How many times the renderer told main the window may close — `revealedLog`'s reason for a count. */
+  windowCloses: () => number;
 }
 
 /**
@@ -711,6 +713,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const secrets: Record<string, string> = { ...(options.secrets ?? {}) };
   let revealedLog = 0;
   const titleBarOverlays: { readonly color: string; readonly symbolColor: string; readonly height: number }[] = [];
+  let windowCloses = 0;
+  /** The version each document was last saved at; absent until its first save. */
+  const savedAt = new Map<string, number>();
 
   /**
    * What a command reports the document's new size as.
@@ -917,6 +922,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'document.close': ({ docId }) => Promise.resolve(ok({ closed: versions.delete(docId) })),
 
     /**
+     * Unsaved: saved at a version other than the current one, or never saved with a command
+     * still on its log. An APPROXIMATION of main's `savedVersion !== version` — the shim does
+     * not track the version a document opened at — and the difference is in the direction
+     * main's rule already errs: an undo back to the opening content answers clean here and
+     * unsaved there. Fixtures that need *unsaved* apply a command, which both answer the same.
+     */
+    'document.unsaved': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const saved = savedAt.get(docId);
+      const unsaved = saved === undefined ? (undoable.get(docId) ?? 0) > 0 : saved !== current;
+      return Promise.resolve(ok({ unsaved }));
+    },
+
+    /**
      * The recent list, from the fixture.
      *
      * **Handles rather than paths, exactly as the real one answers.** A shim
@@ -1041,6 +1061,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         );
       }
 
+      savedAt.set(docId, current);
       return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(current) }));
     },
 
@@ -1815,6 +1836,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       titleBarOverlays.push(overlay);
       return Promise.resolve(ok({ applied: true }));
     },
+    // COUNTED, and answered as a window would: a browser has no window to close, and what a case
+    // can assert is that the renderer said so — and how often.
+    'window.close': () => {
+      windowCloses += 1;
+      return Promise.resolve(ok({ closing: true }));
+    },
     // A REAL DICTIONARY, three words long. The shim runs in a browser and
     // cannot read `dictionary-en` off disk, and the two obvious answers are
     // both worse than a fixture: `unknown-dictionary` would make every spelling
@@ -1863,5 +1890,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     incidents,
     revealedLog: () => revealedLog,
     titleBarOverlays: () => [...titleBarOverlays],
+    windowCloses: () => windowCloses,
   };
 }

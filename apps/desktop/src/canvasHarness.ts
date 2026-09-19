@@ -604,6 +604,12 @@ export async function reportCanvasPixels(
       overlaysPainted.push(overlay);
       window.setTitleBarOverlay(overlay);
     },
+    close: () => {
+      window.close();
+    },
+    // NOBODY TO ASK: this harness closes its window when its reading is done, and a held close
+    // would leave it waiting on a question no case answers.
+    askToClose: () => false,
   });
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 

@@ -1,5 +1,5 @@
-import type { ContractHandlers, IncidentSink } from '@monstera/contract';
-import { app, ipcMain, session } from 'electron';
+import { type ContractHandlers, type IncidentSink, checkEvent } from '@monstera/contract';
+import { Menu, app, ipcMain, session } from 'electron';
 
 import type { TitleBarOverlay } from './contractHandlers.js';
 import { registerContractHandlers } from './registerHandlers.js';
@@ -89,11 +89,24 @@ export interface ShellDependencies {
    * `applied: false` there by declaration.
    */
   readonly attachWindow: (window: ShellWindow) => void;
+  /**
+   * The platform asked the window to close: `true` lets it through, `false` means hold it —
+   * the renderer has been asked about unsaved work and answers on `window.close`
+   * (`windowClose.ts`).
+   */
+  readonly closeRequested: () => boolean;
 }
 
 /** The part of a `BrowserWindow` the shell's handlers use — structural, so `composition.ts` imports no Electron. */
 export interface ShellWindow {
   readonly setTitleBarOverlay: (overlay: TitleBarOverlay) => void;
+  /** Closes the window, raising its `close` again. */
+  readonly close: () => void;
+  /**
+   * Pushes `window.close-requested` to the page. `false` when there is no page to ask — crashed
+   * or destroyed — and then the gate lets the close through.
+   */
+  readonly askToClose: () => boolean;
 }
 
 /**
@@ -128,9 +141,42 @@ export function startShell(build: () => ShellDependencies): void {
   // startup and `whenReady` is not early enough to hear it.
   reportProcessFailures(app, deps.failures);
 
+  // NO APPLICATION MENU, set before `ready` because Electron installs its default one AT ready
+  // when none was set. That default was live until 2026-09-19 and it is not neutral: its
+  // accelerators are Ctrl+W (*Close*, which closed the WINDOW — every document at once, with no
+  // question about unsaved work), Ctrl+R and F5 (*Reload*, which drops the renderer's every
+  // store), Ctrl+Shift+I (*Toggle Developer Tools*) and Alt (a menu bar). This application's
+  // chrome is the ribbon and the command registry; Ctrl+W is the registry's *Close tab*, and
+  // the other three have no business in a shipped build. `null` rather than a menu of our own,
+  // because a second place commands are wired is what the registry exists to forbid.
+  Menu.setApplicationMenu(null);
+
   void app.whenReady().then(() => {
     const window = createMainWindow(session.defaultSession, deps.failures);
-    deps.attachWindow(window);
+    deps.attachWindow({
+      setTitleBarOverlay: (overlay) => {
+        window.setTitleBarOverlay(overlay);
+      },
+      close: () => {
+        window.close();
+      },
+      askToClose: () => {
+        const contents = window.webContents;
+        if (contents.isDestroyed() || contents.isCrashed()) return false;
+        contents.send('window.close-requested', checkEvent('window.close-requested', {}));
+        return true;
+      },
+    });
+    // EVERY PLATFORM ROUTE TO CLOSING passes one of these two. `app.quit()` closes each window
+    // and abandons the quit when a `close` is prevented, so a quit is a `close` here; Windows'
+    // shutdown and log-off arrive as `query-session-end`, whose prevention is what makes
+    // Windows show *this app is preventing shutdown* rather than ending the process.
+    window.on('close', (event) => {
+      if (!deps.closeRequested()) event.preventDefault();
+    });
+    window.on('query-session-end', (event) => {
+      if (!deps.closeRequested()) event.preventDefault();
+    });
     registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 
     app.on('second-instance', () => {

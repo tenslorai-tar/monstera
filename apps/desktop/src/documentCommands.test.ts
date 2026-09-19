@@ -1014,6 +1014,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           secrets: { available: () => false, read: () => ({}), write: () => undefined },
           revealLog: () => Promise.resolve(false),
           titleBarOverlay: () => false,
+          confirmClose: () => false,
           readDictionary: () => Promise.resolve(null),
           ocrLanguages: () => Promise.resolve([]),
         })['document.viewModel'],

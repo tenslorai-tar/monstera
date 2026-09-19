@@ -1179,6 +1179,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
+  'document.unsaved': () => Promise.resolve(ok({ unsaved: true })),
   'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
   'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
@@ -1267,6 +1268,7 @@ export const handlers: ContractHandlers = {
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
+  'window.close': () => Promise.resolve(ok({ closing: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({
@@ -1314,6 +1316,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
+  'document.unsaved': () => Promise.resolve(ok({ unsaved: true })),
   'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
   'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
@@ -1400,6 +1403,7 @@ export const handlers: ContractHandlers = {
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
+  'window.close': () => Promise.resolve(ok({ closing: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({
@@ -1522,6 +1526,7 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.close': () => Promise.resolve(ok({ closed: true })),
+  'document.unsaved': () => Promise.resolve(ok({ unsaved: true })),
   'document.unlock': () => Promise.resolve(ok({ kind: 'not-locked' as const })),
   'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
@@ -1608,6 +1613,7 @@ export const shim: ContractClient = {
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
+  'window.close': () => Promise.resolve(ok({ closing: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({

@@ -310,6 +310,9 @@ const handlers: ContractHandlers = {
   // handler answering `false` unconditionally satisfies the schema and tells
   // every caller their close did nothing.
   'document.close': () => Promise.resolve(ok({ closed: true })),
+  // `true`, the answer that makes the close path ASK: `false` is also what a handler that
+  // ignored the lane and defaulted would produce.
+  'document.unsaved': () => Promise.resolve(ok({ unsaved: true })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   // Echoes what it was handed, so a case can assert the values SURVIVED the
   // boundary rather than that the call was accepted. A settings payload is the
@@ -329,6 +332,7 @@ const handlers: ContractHandlers = {
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
+  'window.close': () => Promise.resolve(ok({ closing: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({

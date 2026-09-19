@@ -184,6 +184,7 @@ import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.
 import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
+import { createCloseGate } from './windowClose.js';
 
 /**
  * Everything creating a contained engine host needs that this file may not hold.
@@ -1192,6 +1193,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
    */
   let shellWindow: ShellWindow | null = null;
 
+  /**
+   * The window's half of closing with unsaved work (`windowClose.ts`). Built over the holder
+   * above, so a harness with no window asks nobody and holds nothing.
+   */
+  const closeGate = createCloseGate({
+    ask: () => shellWindow?.askToClose() ?? false,
+    close: () => {
+      shellWindow?.close();
+    },
+  });
+
   return {
     // `pickDocument` is a PARAMETER, not an import, and that is what keeps this
     // file's stated property true: nothing here imports Electron, so the whole
@@ -1247,7 +1259,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         shellWindow.setTitleBarOverlay(overlay);
         return true;
       },
+      confirmClose: () => {
+        if (shellWindow === null) return false;
+        closeGate.confirm();
+        return true;
+      },
     }),
+    closeRequested: closeGate.onCloseRequested,
     incidents: log?.incidents ?? reportIncident,
     failures,
     attachWindow: (window) => {

@@ -80,6 +80,8 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
       return Promise.resolve(ok(opens.shift() ?? { kind: 'cancelled' as const }));
     }
     if (id === 'document.close') return Promise.resolve(ok({ closed: true }));
+    // CLEAN: these cases are about tabs, and closing one here must not stop to ask.
+    if (id === 'document.unsaved') return Promise.resolve(ok({ unsaved: false }));
     if (id === 'document.recent') {
       return Promise.resolve(ok({ entries: [], lastExitClean: true }));
     }

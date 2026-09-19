@@ -220,6 +220,11 @@ export function createContractHandlers(deps: {
    * the declared answer where no window is attached.
    */
   readonly titleBarOverlay: (overlay: TitleBarOverlay) => boolean;
+  /**
+   * Lets the window's next close through and closes it — the renderer has resolved every
+   * document with unsaved changes (`windowClose.ts`). `false` where no window is attached.
+   */
+  readonly confirmClose: () => boolean;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
@@ -244,6 +249,7 @@ export function createContractHandlers(deps: {
     'document.recent': recentHandler(deps),
     'document.openRecent': openRecentHandler(deps),
     'document.close': closeHandler({ documents: deps.documents, recent: deps.recent }),
+    'document.unsaved': unsavedHandler(deps.documents),
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
@@ -378,6 +384,7 @@ export function createContractHandlers(deps: {
     },
     'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
     'window.titleBarOverlay': (overlay) => Promise.resolve(ok({ applied: deps.titleBarOverlay(overlay) })),
+    'window.close': () => Promise.resolve(ok({ closing: deps.confirmClose() })),
   };
 }
 
@@ -2001,6 +2008,27 @@ function closeHandler(deps: {
     // would be one a recovery never offered.
     deps.recent.closed(docId);
     return ok({ closed: wasOpen });
+  };
+}
+
+/**
+ * Whether a document has changes its file does not, read IN ITS LANE.
+ *
+ * `DocumentContext.isDirty` is the one reader of `savedVersion !== version`, and the lane is
+ * what keeps a command that is bumping from producing a stale **clean** — the answer that
+ * closes without asking. Matched on the class for the two declared codes, like every other
+ * per-document handler here.
+ */
+function unsavedHandler(documents: DocumentService): ContractHandlers['document.unsaved'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.unsaved']>>> => {
+    try {
+      const { value } = await documents.run(docId, (context) => Promise.resolve(context.isDirty()));
+      return ok({ unsaved: value });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      throw thrown;
+    }
   };
 }
 

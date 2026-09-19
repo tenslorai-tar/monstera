@@ -4,9 +4,21 @@ import {
   CONTENT_SECURITY_POLICY,
   PERMITTED_PERMISSIONS,
   RENDERER_WEB_PREFERENCES,
+  devToolsAllowed,
   isPermittedNavigation,
   isPermittedPermission,
 } from './windowPolicy.js';
+
+describe('developer tools', () => {
+  it('are refused in a packaged build', () => {
+    expect(devToolsAllowed(true)).toBe(false);
+  });
+
+  // CONTROL: a constant `false` would pass the case above and lock the harnesses out too.
+  it('stay available to a development run', () => {
+    expect(devToolsAllowed(false)).toBe(true);
+  });
+});
 
 describe('renderer web preferences', () => {
   // ARCHITECTURE §2's list, item for item. Reading the constant back is worth

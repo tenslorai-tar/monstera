@@ -141,6 +141,7 @@ import {
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
+  CLOSE_TAB_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
   ZOOM_IN_TITLE,
@@ -1687,21 +1688,71 @@ export function saveCommand(deps: {
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      const answer = await deps.client['document.save']({ docId: context.docId });
-      if (!answer.ok) {
-        reportProblem(deps, answer.error);
-        return;
-      }
-      if (answer.value.kind === 'saved') return;
-      // FLATTENED HERE, where both fields exist, rather than in the dialog. The
-      // channel answers two shapes describing one thing; the dialog's schema
-      // takes one enum, so its body switches once and a sixth outcome is a
-      // compile error rather than a branch that renders nothing.
-      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
-      });
+      await saveDocument(deps, context.docId);
     },
   };
+}
+
+/**
+ * Closes the focused document's tab — Ctrl+W, and the palette's *Close tab*.
+ *
+ * ## Through the ONE close path, which is passed in
+ *
+ * Until 2026-09-19 Ctrl+W belonged to Electron's default menu, whose *Close* closed the whole
+ * window with no question about unsaved work. The shell now sets no menu and the chord is this
+ * registered command, whose `run` is `App.tsx`' `requestClose` — the same path the tab's × and
+ * the window's close take, so asking *Save / Don't save / Cancel* happens in one place.
+ */
+export function closeTabCommand(deps: {
+  readonly close: (docId: DocId) => Promise<unknown>;
+}): UiCommand {
+  return {
+    id: 'document.close-tab',
+    icon: 'X',
+    title: CLOSE_TAB_TITLE,
+    shortcut: 'Ctrl+W',
+    placements: [],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      await deps.close(context.docId);
+    },
+  };
+}
+
+/**
+ * Saves one document and reports what went wrong, answering whether the file now holds it.
+ *
+ * ## ONE SAVE, with two callers
+ *
+ * The Save command above, and the close path's *Save* answer (`App.tsx`' `requestClose`). The
+ * second must not close a document whose save did not land — invariant 18's *a failed save
+ * never loses work* — so it needs the outcome, and a copy of this body there would be a second
+ * opinion about which outcomes are problems and which dialog each gets (B3a).
+ *
+ * @returns `true` only for `saved`.
+ */
+export async function saveDocument(
+  deps: {
+    readonly client: ContractClient;
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  },
+  docId: DocId,
+): Promise<boolean> {
+  const answer = await deps.client['document.save']({ docId });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return false;
+  }
+  if (answer.value.kind === 'saved') return true;
+  // FLATTENED HERE, where both fields exist, rather than in the dialog. The
+  // channel answers two shapes describing one thing; the dialog's schema
+  // takes one enum, so its body switches once and a sixth outcome is a
+  // compile error rather than a branch that renders nothing.
+  void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+    outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
+  });
+  return false;
 }
 
 /**

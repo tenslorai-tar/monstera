@@ -1264,6 +1264,12 @@ export const OCR_PROGRESS = messageKey('task.ocr');
 export const ENHANCE_PROGRESS = messageKey('task.enhance');
 export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
+export const CLOSE_TAB_TITLE = messageKey('command.close-tab.title');
+export const CLOSE_UNSAVED_TITLE = messageKey('dialog.close-unsaved.title');
+export const CLOSE_UNSAVED_QUESTION = messageKey('dialog.close-unsaved.question');
+export const CLOSE_UNSAVED_SAVE = messageKey('dialog.close-unsaved.save');
+export const CLOSE_UNSAVED_DISCARD = messageKey('dialog.close-unsaved.discard');
+export const CLOSE_UNSAVED_CANCEL = messageKey('dialog.close-unsaved.cancel');
 export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
 export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
 export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
@@ -2724,6 +2730,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // their edits"* — a user meeting a refusal needs to know first that their
   // work is still there, before anything about why.
   [SAVE_WORK_INTACT]: 'Your changes are still open and unsaved. Nothing has been lost.',
+  [CLOSE_TAB_TITLE]: 'Close tab',
+  [CLOSE_UNSAVED_TITLE]: 'Unsaved changes',
+  // THE DOCUMENT BY NAME, because quitting asks once per document and the name is what says
+  // which one this is. The buttons name their actions, so no answer depends on reading this.
+  [CLOSE_UNSAVED_QUESTION]: '“{name}” has changes that are not saved. Save them before closing?',
+  [CLOSE_UNSAVED_SAVE]: 'Save',
+  [CLOSE_UNSAVED_DISCARD]: 'Don’t save',
+  [CLOSE_UNSAVED_CANCEL]: 'Cancel',
   // "Undo history" and not "history": the document's own history is what a
   // reader will assume, and this dialog is about neither the file nor its
   // contents.

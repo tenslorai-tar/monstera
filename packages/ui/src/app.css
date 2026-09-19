@@ -2182,6 +2182,25 @@ textarea {
 }
 
 /*
+ * Closing with unsaved changes: the question, then its three answers in one row, Save first
+ * because it is the one that loses nothing.
+ */
+.m-close-unsaved {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.m-close-unsaved p {
+  margin: 0;
+}
+
+.m-close-unsaved__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+/*
  * The command-problem dialog: one sentence, and for `internal` a labelled
  * reference beneath it. The reference is `--muted` and the sentence is not,
  * because the sentence is what the user acts on and the id is what they quote.

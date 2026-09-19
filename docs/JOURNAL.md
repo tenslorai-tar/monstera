@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Closing with unsaved changes asks, by every route; Electron's default menu is gone
+
+**The owner's answer to the 2026-09-18 finding**: always ask *Save / Don't save / Cancel* —
+the tab's ×, Ctrl+W, closing the window and quitting; sidecars stay crash-only.
+
+**One close path**, `requestClose` in `App.tsx`, and nothing else releases a tab. It asks main
+`document.unsaved` per document — `isDirty`, inside the lane, so the renderer keeps no flag of
+its own — and releases nothing until every answer is in. **Several documents are asked one at
+a time, not as a list**, with each tab brought forward, because each *Save* can fail on its own
+and its refusal belongs on screen against that document. *Save As for a document with no file*
+was settled from the record: no such document exists (`documentService.ts`, every import saves
+before it opens).
+
+**The window's half is a gate in main** (`windowClose.ts`): the platform's `close` — caption ×,
+Alt+F4, taskbar, `app.quit()` — and Windows' `query-session-end` are held and pushed to the
+renderer as `window.close-requested`; `window.close` lets exactly the next one through. A page
+that is crashed or gone cannot hold the window.
+
+**Ctrl+W closed the WINDOW because Electron's default menu was live** — it also carried Reload
+(F5, Ctrl+R) and Toggle Developer Tools. `Menu.setApplicationMenu(null)` before `ready`; Ctrl+W
+is now the registry's *Close tab*; `devTools` is refused in a packaged build.
+
+**Proven**: `AppClose.test.tsx`, ten cases over the ×, Ctrl+W and the pushed window close, each
+"it asked" case beside a control that closes a clean document without asking. **Mutated**: with
+the question skipped, 7 fail and the 3 controls pass. `windowClose.test.ts` (4) and two
+composition-root cases hold the gate's two ends to one object. **Live** in the built app: every
+answer on every route above, the saved rotation read back by MuPDF and on reopen, the discarded
+file byte-identical. **Not live**: Alt+F4 and shutdown (the tool has no system-key grant), and a
+packaged build's refusal of DevTools, which is asserted on `devToolsAllowed` only.
+
+---
+
 ## 2026-09-19 — Stage audit of `e08a99f..3fab823` — findings LLLLLL-1 to LLLLLL-5
 
 29 commits, 191 files: Stage 9's provider registry, model lists, chat adapters, the event seam

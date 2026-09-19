@@ -8,8 +8,13 @@ import { EVENTS, EVENT_IDS, MAX_EVENT_TEXT, checkEvent, subscribeToEvent } from 
  */
 
 describe('the event registry', () => {
-  it('declares the assistant’s two events and nothing else', () => {
-    expect(EVENT_IDS).toStrictEqual(['ai.delta', 'ai.done']);
+  it('declares the assistant’s two events and the window’s close request, and nothing else', () => {
+    expect(EVENT_IDS).toStrictEqual(['ai.delta', 'ai.done', 'window.close-requested']);
+  });
+
+  it('carries nothing on a close request, and refuses anything added to it', () => {
+    expect(EVENTS['window.close-requested'].safeParse({}).success).toBe(true);
+    expect(EVENTS['window.close-requested'].safeParse({ docId: 'x' }).success).toBe(false);
   });
 
   it('bounds a delta’s text and refuses an empty one', () => {

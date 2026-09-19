@@ -1,13 +1,14 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { BrowserWindow, type Session, type WebContents } from 'electron';
+import { BrowserWindow, type Session, type WebContents, app } from 'electron';
 
 import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js';
 import {
   CONTENT_SECURITY_POLICY,
   RENDERER_WEB_PREFERENCES,
   WINDOW_BACKGROUND,
+  devToolsAllowed,
   isPermittedNavigation,
   isPermittedPermission,
 } from './windowPolicy.js';
@@ -139,7 +140,12 @@ export function createMainWindow(target: Session, failures: ShellFailureSink): B
     // are the one moment the two can differ.
     titleBarStyle: 'hidden',
     titleBarOverlay: true,
-    webPreferences: { ...RENDERER_WEB_PREFERENCES, preload: PRELOAD, session: target },
+    webPreferences: {
+      ...RENDERER_WEB_PREFERENCES,
+      devTools: devToolsAllowed(app.isPackaged),
+      preload: PRELOAD,
+      session: target,
+    },
   });
 
   // Subscribed HERE, where the contents is born, so a window that exists is a

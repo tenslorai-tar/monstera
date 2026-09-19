@@ -248,6 +248,7 @@ describe('browser shim', () => {
       'document.textLines',
       'document.undo',
       'document.unlock',
+      'document.unsaved',
       'document.viewModel',
       'docusign.retrieve',
       'docusign.send',
@@ -257,6 +258,7 @@ describe('browser shim', () => {
       'settings.save',
       'settings.saveSecret',
       'spelling.dictionary',
+      'window.close',
       'window.titleBarOverlay',
     ]);
   });

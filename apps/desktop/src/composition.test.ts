@@ -70,10 +70,50 @@ describe('the title bar overlay, through the assembled handlers', () => {
       setTitleBarOverlay: (given) => {
         painted.push(given);
       },
+      close: () => undefined,
+      askToClose: () => false,
     });
     const after = await deps.handlers['window.titleBarOverlay'](overlay);
     expect(after).toStrictEqual({ ok: true, value: { applied: true } });
     expect(painted).toStrictEqual([overlay]);
+  });
+});
+
+describe('closing the window, through the assembled handlers and the shell’s hook', () => {
+  it('holds the platform’s close and asks the page, then lets exactly the confirmed close through', async () => {
+    // THE JOIN ONLY THIS ROOT MAKES: `closeRequested` (what main.ts binds to the window's close)
+    // and `window.close` (what the renderer calls) are two ends of one gate, and a root that built
+    // two gates would pass each end's own test while never letting a confirmed close through.
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    let asked = 0;
+    let closed = 0;
+    deps.attachWindow({
+      setTitleBarOverlay: () => undefined,
+      close: () => {
+        closed += 1;
+      },
+      askToClose: () => {
+        asked += 1;
+        return true;
+      },
+    });
+
+    expect(deps.closeRequested()).toBe(false);
+    expect(asked).toBe(1);
+
+    const answer = await deps.handlers['window.close']({});
+    expect(answer).toStrictEqual({ ok: true, value: { closing: true } });
+    expect(closed).toBe(1);
+    expect(deps.closeRequested()).toBe(true);
+    // CONTROL: the confirmed close did not ask again.
+    expect(asked).toBe(1);
+  });
+
+  it('answers closing:false and closes nothing when no window is attached', async () => {
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    expect(await deps.handlers['window.close']({})).toStrictEqual({ ok: true, value: { closing: false } });
+    // With no page to ask, the platform's close goes through rather than hanging.
+    expect(deps.closeRequested()).toBe(true);
   });
 });
 
