@@ -892,6 +892,59 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — `main` red on a docs commit: the MuPDF host's fixed cost crossed `base 128 MB`, and the gate was right
+
+**CI at `55216b4` failed one step**, *The measured roles are inside §9.17's budgets*, on one
+line (read from the job's public annotation): `mupdf-host-real` baseline **129.0 MB** against
+`base 128 MB` on the image-heavy fixture; the object-dense one read 124.6 MB in the same run.
+`55216b4` changed two documents and no code. The previous push was green, so the figure had
+been sitting a megabyte under the line and a runner's spread carried it over.
+
+**The gate was right and the number is not what moved.** FEATURES' deferred `base 128 MB` row
+records this cell at **85.44–90.03 MB over 114 CI runs** on 2026-09-01, and warns that 128
+detects only a regression of ~38 MB or more. The host grew by ~35–40 MB across three weeks of
+channels and no commit looked. Raising the number is what §9.17 forbids in terms.
+
+**Mechanism, measured** (a fresh Node process per module, forced collection, 2026-09-19):
+
+- **Every engine host imported `@monstera/contract`'s root**, which builds the renderer's whole
+  channel map at load: `channels.js` +33.2 MB against `commands.js` +19.1 MB. zod gives each
+  schema instance its own method closures (heap snapshot: 56,661 closures, 26,142 contexts),
+  so the cost is per schema and grows with every channel. The root read **10.3 MB at
+  `f6eddab`** (2026-09-01), **30.9 MB at `1586ffd`** (2026-09-13) and **33.3 MB at `55216b4`**,
+  three readings each, within 0.4 MB. No host serves a renderer channel.
+- **The MuPDF host took `localMupdfExecution` from `commandSpecs.js`**, which spreads pdf-lib's,
+  PDFium's and the signing writer's tables and so loads their libraries: `commandSpecs.js`
+  +72.6 MB against `mupdfWriter.js` +52.7 MB. The PDFium host already imported
+  `pdfiumSpecs.js` directly for this reason; MuPDF's table had never been split out.
+
+**The fix is where the hosts import from, not a number.** `@monstera/contract/host` is the
+contract without `channels.ts`, `events.ts` and the bridge; `ocrLanguageSchema` and
+`ocrEngineSchema`, the one thing a host needed from `channels.ts`, moved down into
+`schemas.ts`. Sixteen host-graph modules take their values from the new entry.
+`mupdfSpecs.ts` holds MuPDF's table and execution, `commandSpecs.ts` spreads it like the
+other three, and the host imports it.
+
+**Measured on the build machine, `npm run perf:gate`, fresh build on each side** (the change
+stashed for the first): `mupdf-host-real` baseline **126.9 / 125.8 MB → 110.4 / 110.8 MB** on the
+two fixtures. An earlier "before" of 178 MB came from a build the freshness check refused as
+stale and is not a reading. What the remaining ~20 MB of growth since 2026-09-01 is was not
+attributed.
+
+**The proof, `proof:hostload`**, walks each host entry's EMITTED graph — source cannot tell
+`import { type X }`, which loads the root, from `import type`, which does not. No module in
+any host's graph names the contract root, the contract's host entry reaches neither
+`channels.js` nor `events.js`, and the MuPDF host reaches no other writer's table. Three
+controls prove the walk can see each thing it claims absent. **Mutated**: one module back on
+the root and the host back on `commandSpecs.js` turned four cases red; restored, 13/13.
+
+**Would CI have caught it?** It did; this is the gate doing its job. The row's feared outcome —
+*a baseline is the wrong detector for this role* — is not what happened: the baseline caught a
+real 40 MB regression. What it could not say was when, because the drift crossed the line at a
+docs commit three weeks after it began.
+
+---
+
 ## 2026-09-18 — Office import, step 1: conversion runs without `Fonts/`; this machine cannot say what it loses
 
 **The owner's step 1**: does conversion need the install tree's `Fonts/` (127 files, 51 MB,

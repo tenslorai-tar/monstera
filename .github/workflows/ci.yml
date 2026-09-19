@@ -726,6 +726,12 @@ jobs:
       - name: Prove DocumentService does not load the native shim
         run: node scripts/ci/annotate.mjs scripts/proofs/kernelLoad.proof.mjs
 
+      # The same emitted-graph question asked of the ENGINE HOSTS. The contained MuPDF host's
+      # fixed cost crossed §9.17's base 128 MB on this job at 55216b4 (129.0 MB), because every
+      # host loaded the contract's renderer channel map and the MuPDF host every writer's specs.
+      - name: Prove no engine host loads the renderer contract or another writer
+        run: node scripts/ci/annotate.mjs scripts/proofs/hostLoad.proof.mjs
+
       - name: Prove the composition root's ceiling is ADR-0007's
         run: node scripts/ci/annotate.mjs scripts/proofs/composition.proof.mjs
 

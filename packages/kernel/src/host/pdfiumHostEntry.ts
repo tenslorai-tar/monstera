@@ -1,4 +1,4 @@
-import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
+import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import {
   localPdfiumExecution,

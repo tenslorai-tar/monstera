@@ -53,11 +53,6 @@ export {
   // than a checklist.
   MAX_AFFIX_BYTES,
   MAX_DICTIONARY_BYTES,
-  // The OCR language set's SCHEMA. The set itself moved to `schemas.ts` on
-  // 2026-09-11 — `ocrPage`'s payload needs it and a command schema cannot import
-  // `channels.ts` back — and is exported below, from where it now lives.
-  ocrEngineSchema,
-  ocrLanguageSchema,
   SPELLING_LANGUAGES,
   type SpellingLanguage,
   spellingLanguageSchema,
@@ -296,6 +291,8 @@ export {
   type DocumentAccess,
   OCR_ENGINES,
   OCR_LANGUAGES,
+  ocrEngineSchema,
+  ocrLanguageSchema,
   type OcrEngine,
   type OcrLanguage,
   docIdSchema,

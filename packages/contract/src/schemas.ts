@@ -151,6 +151,15 @@ export const OCR_LANGUAGES = [
 export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
 
 /**
+ * {@link OCR_LANGUAGES} as a schema, derived rather than respelt.
+ *
+ * Here rather than in `channels.ts` because every engine host validates it, and a host
+ * that reaches `channels.ts` builds the renderer's whole channel map at load (see
+ * `host.ts`).
+ */
+export const ocrLanguageSchema = z.enum(OCR_LANGUAGES);
+
+/**
  * Which recogniser answers — **the request names it, and nothing else chooses**.
  *
  * [ADR-0052](../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
@@ -183,6 +192,9 @@ export const OCR_ENGINES = ['tesseract', 'azure', 'claude'] as const;
 
 /** One of {@link OCR_ENGINES}. */
 export type OcrEngine = (typeof OCR_ENGINES)[number];
+
+/** {@link OCR_ENGINES} as a schema, derived rather than respelt; beside it for `ocrLanguageSchema`'s reason. */
+export const ocrEngineSchema = z.enum(OCR_ENGINES);
 
 /**
  * The engines that execute in `main`, because their input must reach a network —

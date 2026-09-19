@@ -4,7 +4,7 @@ import {
   MIN_IMAGE_QUALITY,
   MIN_SNAPSHOT_SCALE,
   type PageImageFormat,
-} from '@monstera/contract';
+} from '@monstera/contract/host';
 import { ColorSpace, Matrix, type Pixmap } from 'mupdf';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';

@@ -1,6 +1,6 @@
 import type { PDFDocument } from '@cantoo/pdf-lib';
 
-import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract';
+import { type CommandOfKind, MAX_PAGE_COORDINATE } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';

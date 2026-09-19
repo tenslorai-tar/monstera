@@ -7,7 +7,7 @@ import {
   encodeFrame,
   hostRequestSchema,
   wrapHandlers,
-} from '@monstera/contract';
+} from '@monstera/contract/host';
 
 /**
  * The engine host's runtime loop: bytes in, dispatch, bytes out (ADR-0023 §4).

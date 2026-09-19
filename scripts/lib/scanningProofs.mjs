@@ -89,6 +89,7 @@ import { proofScripts } from './proofCoverage.mjs';
 export const SCANNING_PROOFS = Object.freeze([
   'proof:electronimports',
   'proof:kernelload',
+  'proof:hostload',
   'proof:emittedtemplates',
   'proof:stackowner',
   'proof:jobplacement',
@@ -110,7 +111,7 @@ export const SCANNING_PROOFS = Object.freeze([
  * from the very collection it is meant to anchor, and a number computed from a
  * collection cannot disagree with it.
  */
-export const SCANNING_PROOF_COUNT = 9;
+export const SCANNING_PROOF_COUNT = 10;
 
 /**
  * ENUMERATING a directory — the signal, and the first two were wrong.

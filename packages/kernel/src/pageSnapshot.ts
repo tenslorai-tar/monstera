@@ -1,4 +1,4 @@
-import { type AnnotationRect, MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract';
+import { type AnnotationRect, MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE } from '@monstera/contract/host';
 import type { Rotation } from '@monstera/shared';
 import { ColorSpace, DrawDevice, Matrix, Pixmap } from 'mupdf';
 

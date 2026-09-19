@@ -23,7 +23,7 @@
  * `main` past its whole memory budget — threat model §2's decode bomb.
  */
 
-import { MAX_IMPORT_IMAGE_PIXELS } from '@monstera/contract';
+import { MAX_IMPORT_IMAGE_PIXELS } from '@monstera/contract/host';
 
 /** A PNG file's first eight bytes. */
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;

@@ -1,4 +1,4 @@
-import { MAX_REDACT_MATCHES_PER_PAGE, type PdfRedactImages } from '@monstera/contract';
+import { MAX_REDACT_MATCHES_PER_PAGE, type PdfRedactImages } from '@monstera/contract/host';
 import type * as mupdf from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';

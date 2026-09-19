@@ -1,4 +1,4 @@
-import { PDF_PERMISSIONS, type CommandOfKind, type PdfPermission } from '@monstera/contract';
+import { PDF_PERMISSIONS, type CommandOfKind, type PdfPermission } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';

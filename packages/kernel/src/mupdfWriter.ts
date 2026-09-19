@@ -8,7 +8,7 @@ import type {
   SavePurpose,
 } from './engineSeam.js';
 import { DocumentLocked } from './engineSeam.js';
-import { DOCUMENT_ACCESS_VALUES } from '@monstera/contract';
+import { DOCUMENT_ACCESS_VALUES } from '@monstera/contract/host';
 
 /**
  * The structural writer of record, behind the engine seam.

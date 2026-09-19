@@ -3,7 +3,7 @@ import {
   type ChannelMap,
   type Handlers,
   type IncidentSink,
-} from '@monstera/contract';
+} from '@monstera/contract/host';
 
 import { type HostTermination, createHostRuntime } from './runtime.js';
 

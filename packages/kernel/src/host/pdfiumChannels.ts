@@ -8,7 +8,7 @@ import {
   recolorPageObjectsSchema,
   replaceAllTextSchema,
   replaceTextObjectSchema,
-} from '@monstera/contract';
+} from '@monstera/contract/host';
 
 import type { CommandPrior } from '../commandLog.js';
 import type { DeclaredCommands } from '../commandDeclarations.js';

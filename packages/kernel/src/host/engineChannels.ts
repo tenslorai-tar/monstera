@@ -44,7 +44,7 @@ import {
   rotatePagesSchema,
   setLayerVisibilitySchema,
   swapPagesSchema,
-} from '@monstera/contract';
+} from '@monstera/contract/host';
 import { z } from 'zod';
 
 import { HUMAN_CHECKS } from '../accessibilityRules.js';

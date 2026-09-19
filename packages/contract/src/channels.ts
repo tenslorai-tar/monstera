@@ -35,8 +35,8 @@ import {
   MAX_DOCUSIGN_RECIPIENT_FIELD,
   MAX_DOCUSIGN_SIGNERS,
   MAX_DOCUSIGN_SUBJECT,
-  OCR_ENGINES,
   OCR_LANGUAGES,
+  ocrLanguageSchema,
   SECRET_SETTING_IDS,
   docIdSchema,
   docVersionSchema,
@@ -322,12 +322,6 @@ export const MAX_MODEL_ID = 128;
 export const MAX_MODELS = 512;
 export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
-
-/** {@link OCR_LANGUAGES} as a schema, derived rather than respelt. */
-export const ocrLanguageSchema = z.enum(OCR_LANGUAGES);
-
-/** {@link OCR_ENGINES} as a schema, derived rather than respelt. */
-export const ocrEngineSchema = z.enum(OCR_ENGINES);
 
 /** {@link SPELLING_LANGUAGES} as a schema, derived rather than respelt. */
 export const spellingLanguageSchema = z.enum(SPELLING_LANGUAGES);

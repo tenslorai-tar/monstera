@@ -6,7 +6,7 @@ import {
   MAX_PAGE_COORDINATE,
   channel,
   insertImagePageSchema,
-} from '@monstera/contract';
+} from '@monstera/contract/host';
 
 import { byteImageWire, hostAreaChannels, outputNameSchema, sessionSchema } from './engineChannels.js';
 

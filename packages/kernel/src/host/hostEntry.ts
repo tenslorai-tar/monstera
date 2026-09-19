@@ -1,9 +1,9 @@
-import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
+import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import { checkAccessibility } from '../accessibilityCheck.js';
 import { readInterchangeAnnotations, serialiseAnnotationData } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
-import { localMupdfExecution } from '../commandSpecs.js';
+import { localMupdfExecution } from '../mupdfSpecs.js';
 import { accessFor, mupdfWriter } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
 import { readPageGeometry } from '../pageGeometry.js';
