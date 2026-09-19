@@ -120,3 +120,11 @@ their names and text are not recorded.
   cases on generated grids (a ruled grid whose third column is the separating
   assertion, since reading 1's two-column answer is what a read without `vectors`
   produces), the request mapping, and the query in `main`.
+
+## 2026-09-19 — Decision 5 is superseded by ADR-0086
+
+The owner took the route this ADR left open: a scanned table is read by **Azure's Layout model**
+and by **Claude asked for structured output**, and Tesseract is dropped for tables because its
+only table would be the grid over word boxes this ADR and ADR-0034 refuse
+([ADR-0086](0086-a-scanned-table-is-read-by-a-service-that-answers-tables.md)). Decisions 1–4 —
+the automatic engine and its `table` read — are unchanged.
