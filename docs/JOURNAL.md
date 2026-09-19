@@ -892,6 +892,100 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Stage audit of `e08a99f..3fab823` — findings LLLLLL-1 to LLLLLL-5
+
+29 commits, 191 files: Stage 9's provider registry, model lists, chat adapters, the event seam
+(ADR-0082) and the assistant tab (ADR-0083); the palette, render-cancel, page-position and
+recovery-harness fixes; ADR-0084's display declaration; ADR-0085 and the handwriting engine's
+removal; Azure's delete, the byte limits, Stage 8's live runs, and the host-load fix. The gate
+refused the next commit at 203 files, which is why this audit is here now. `npm run audit:scope`
+named 10 proofs added, 42 modified, 3 removed, 12 source files added and 76 changed.
+
+### 1. Root cause or workaround
+
+Every fix states a mechanism in its commit: the undo crash was a session captured before a
+checkpoint restore recycled it; the second-save refusal was `openedIdentity` never moving after
+an atomic rename; the palette closed by no route because it was not the dialog primitive; the
+host's growth was the contract root's channel map and every writer's specs. None regenerates.
+**One workaround shape was avoided on the record**: the budget breach was not answered by raising
+`base 128 MB`, which §9.17 forbids in terms.
+
+### 2. The hard shape
+
+The close path (next commit) is tested with two documents, one question cancelled after another
+answered, because a single document cannot show that *nothing* is released. The byte-limit
+redraw is tested at its floor and at its retake bound, not only on a raster that fits.
+
+### 2a. Coverage moved by how something is proven
+
+The three proofs **removed** leave with the engine they proved (`ocrHandwriting.proof.mjs`,
+`ocrHandwriting.test.ts`, `handwritingArtefacts.test.ts`); the handwriting arm's boundary refusal
+is kept as a case in `ocrChannel.test.ts`. The 42 modified proofs were read for deletions: every
+removed line outside comments is a handwriting stub, fixture or grant entry (the container-grant
+proof's *six optional entries* became five). Nothing was loosened.
+
+### 3. Would CI have caught it — and what could this machine not see?
+
+**CI caught what nothing here looked at** — **LLLLLL-2**: the contained MuPDF host's fixed cost
+went from 85–90 MB (2026-09-01) to 124.6–129.0 MB, and CI failed §9.17's gate on a commit that
+changed only documents. No audit item re-reads a role's baseline per range, so ~40 MB arrived
+across three weeks unseen. Fixed in `3fab823` for the two routes found, with `proof:hostload`;
+**what remains open is the class**: a third heavy import reaches the host silently until the gate
+crosses again, now ~18 MB away (110.4 MB against 128 here).
+
+### 4. Non-vacuous proofs, and the branches nothing reaches
+
+`proof:hostload` was mutated twice (one import back on the root, the host back on
+`commandSpecs.js`): four cases red. **LLLLLL-3**: `mupdfSpecs.ts`' `specFor` refuses a command
+not routed to MuPDF, and no case reaches that branch — `pdfiumSpecs.ts` has the same shape. Open;
+the case is owed with the next change to either file.
+
+### 4a. Resolution tests
+
+`rasterWithinLimit` is tested at a raster that fits (with the control that nothing is drawn a
+second time), at its floor and at its retake bound. The host-load measurement separated its two
+readings before it reported one: the contract root at `f6eddab`, `1586ffd` and `55216b4` read
+10.3, 30.9 and 33.3 MB, three times each within 0.4 MB.
+
+### 4b. Searches
+
+`hostLoad`'s walk has three positive controls, each an entry known to reach what the hosts must
+not. `retiredCaches` reports a cache it could not read rather than calling it absent.
+
+### 4c. Derived counts
+
+`hostLoad` declares `cases: 13` as a literal; `SCANNING_PROOF_COUNT` moved 9 → 10 in the same
+commit as the roster gained `proof:hostload` — two edits, as the anchor intends.
+
+### 5. Executed, or asserted
+
+**Executed**: Azure's delete live (204, then 404); the handwriting measurement; every Stage 8 row's
+live run named in its row; `perf:gate` before and after the host fix on fresh builds. **Asserted
+only**: that a packaged build refuses DevTools (`devToolsAllowed`, a unit case); Alt+F4 and
+Windows shutdown reaching the close gate (the tool has no system-key grant).
+
+### 6. Architecture before the feature
+
+Four B4 amendments, each in its own commit ahead of its build: ADR-0082 (`1cdfa02` → `f2e471f`),
+ADR-0083 (`f0052e0` → `6d30a9a`), ADR-0084 (`cce8081` → `2e802a0`), ADR-0085 (`fa86f2e` →
+`7d8eed5`). `@monstera/contract/host` is a leaf entry of the kind `./bridge` already is, enforced by
+a proof rather than by a seam change.
+
+### 7. Documents against code
+
+**LLLLLL-1**: `proof:enginesurface` reads 31 non-test importers, 10 loading and 21 type-only, 132
+members — against *thirty* in `CLAUDE.md` and `docs/ARCHITECTURE.md`. The growth to 32 happened
+inside `fcee46e..e08a99f` (`accessibilityCheck.ts`, `annotationInterchange.ts`), whose audit had
+this measurement in its item 7; this range removed one. Corrected in this commit, and the digest
+records it as the fourth occurrence. **LLLLLL-4**: no FEATURES row existed for closing with
+unsaved changes, so the defect — live since Stage 1 — had no row to be wrong in; the next commit
+adds one.
+
+**LLLLLL-5, the process record**: the escape guard denied three of my commands today (`echo` into
+a log, `python -c`/`node -p` to read JSON, `sed` into a file). All reflexes; nothing damaged.
+
+---
+
 ## 2026-09-19 — `main` red on a docs commit: the MuPDF host's fixed cost crossed `base 128 MB`, and the gate was right
 
 **CI at `55216b4` failed one step**, *The measured roles are inside §9.17's budgets*, on one

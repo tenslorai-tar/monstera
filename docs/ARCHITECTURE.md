@@ -612,7 +612,7 @@ reached natively, as a shared
 library built from source and bound with koffi behind a thin flat-C shim —
 never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
 bare specifier `mupdf`, which resolves to the npm package's
-`dist/mupdf-wasm.wasm`; **thirty non-test modules do so (2026-09-14), and a search for
+`dist/mupdf-wasm.wasm`; **thirty-one non-test modules do so (2026-09-19), and a search for
 `monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
 built, is scanned by four security proofs, and is loaded by nothing the product
 runs.
@@ -640,15 +640,15 @@ which is what the measurement above says and what a reader must not infer their
 way past.
 
 **AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09, re-measured
-2026-09-11, 2026-09-13 and again 2026-09-14** (ADR-0010's correction of the first
-date; `npm run proof:enginesurface`). The thirty modules call **132 distinct MuPDF
+2026-09-11, 2026-09-13, 2026-09-14 and again 2026-09-19** (ADR-0010's correction of the first
+date; `npm run proof:enginesurface`). The thirty-one modules call **132 distinct MuPDF
 members**, of which `PDFAnnotation` declares 41, `PDFObject` 23, `PDFDocument` 20
 and `PDFWidget` 15 — an object model. The shim exports **24** C functions and
 hands back an opaque handle by design, so most of the 132 have nothing to move
 onto and must be written behind an ABI that does not exist yet. Only **ten** of
-the thirty load an engine at all; the other twenty spell `import type`,
+the thirty-one load an engine at all; the other twenty-one spell `import type`,
 are erased by the compiler, and operate on handles those ten opened. So
-changing the engine changes every one of the thirty **bodies** and not one of
+changing the engine changes every one of the thirty-one **bodies** and not one of
 their first lines — the count that reads like the work is a count of the thing
 that does not have to change.
 
