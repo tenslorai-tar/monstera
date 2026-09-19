@@ -211,6 +211,9 @@ function CompareView({
       // `undefined` rather than passing the setting through: the setting is
       // about how the reader's document is drawn, and this pane is not that.
       secondRasteriser={undefined}
+      // NO PAGE MENU: this pane shows ANOTHER document, and every page item acts on the document
+      // whose context it is handed — rotating page 3 here would rotate the reader's page 3.
+      pageMenu={undefined}
     />
   );
 }

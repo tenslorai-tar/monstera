@@ -1,5 +1,5 @@
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
@@ -40,6 +40,7 @@ import {
   emailCommand,
   exportPdfaCommand,
   optimizeCommand,
+  closeOthersCommand,
   exportTextCommand,
   exportWordCommand,
   generateTocCommand,
@@ -2241,6 +2242,33 @@ describe('delete pages — the mutation-dialog gate', () => {
 
         expect(asked).toStrictEqual(spoken);
       }
+    });
+  });
+
+  describe('close other tabs (§7, the tab menu)', () => {
+    const OTHER = asDocId('doc-2');
+    const THIRD = asDocId('doc-3');
+    const tab = (docId: DocId, name: string) => ({ docId, name, version: asDocVersion(1), byteLength: 1 });
+    const TABS = [tab(DOC, 'a.pdf'), tab(OTHER, 'b.pdf'), tab(THIRD, 'c.pdf')];
+
+    it('closes every open document BUT the one it was opened on, through the one close path, in one call', async () => {
+      const closed: (readonly string[])[] = [];
+      await closeOthersCommand({
+        close: (docIds) => {
+          closed.push(docIds);
+          return Promise.resolve(true);
+        },
+      }).run({ ...CONTEXT, docId: OTHER, openDocuments: TABS });
+
+      // THE RIGHT-CLICKED TAB IS KEPT, not the one on show: `CONTEXT.docId` is DOC, and a command
+      // that kept the focused document would close OTHER here.
+      expect(closed).toStrictEqual([[DOC, THIRD]]);
+    });
+
+    it('CONTROL: is hidden where nothing else is open, and shown where something is', () => {
+      const command = closeOthersCommand({ close: () => Promise.resolve(true) });
+      expect(command.when?.({ ...CONTEXT, openDocuments: [tab(DOC, 'a.pdf')] })).toBe(false);
+      expect(command.when?.({ ...CONTEXT, openDocuments: TABS })).toBe(true);
     });
   });
 

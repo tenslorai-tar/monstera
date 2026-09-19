@@ -1285,6 +1285,7 @@ export const ENHANCE_PROGRESS = messageKey('task.enhance');
 export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
 export const CLOSE_TAB_TITLE = messageKey('command.close-tab.title');
+export const CLOSE_OTHERS_TITLE = messageKey('command.close-others.title');
 export const CLOSE_UNSAVED_TITLE = messageKey('dialog.close-unsaved.title');
 export const CLOSE_UNSAVED_QUESTION = messageKey('dialog.close-unsaved.question');
 export const CLOSE_UNSAVED_SAVE = messageKey('dialog.close-unsaved.save');
@@ -2778,6 +2779,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // work is still there, before anything about why.
   [SAVE_WORK_INTACT]: 'Your changes are still open and unsaved. Nothing has been lost.',
   [CLOSE_TAB_TITLE]: 'Close tab',
+  [CLOSE_OTHERS_TITLE]: 'Close other tabs',
   [CLOSE_UNSAVED_TITLE]: 'Unsaved changes',
   // THE DOCUMENT BY NAME, because quitting asks once per document and the name is what says
   // which one this is. The buttons name their actions, so no answer depends on reading this.

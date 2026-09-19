@@ -147,6 +147,7 @@ import {
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
+  CLOSE_OTHERS_TITLE,
   CLOSE_TAB_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
@@ -688,8 +689,13 @@ export function rotatePageCommand(
     icon,
     // THE TABLE'S OWN `order`, so the three rotations sit in the ribbon in the
     // sequence it already fixed. A second number here would be a second opinion
-    // about how the three relate.
-    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order }],
+    // about how the three relate. The PAGE MENU carries the quarter turn only
+    // (the owner's list, 2026-09-19: *rotate*), and the page it rotates is the
+    // one right-clicked, because the menu hands that page in as `context.page`.
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order },
+      ...(quarterTurns === 1 ? [{ surface: 'context-menu', context: 'page', order: 10 } as const] : []),
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       // BOTH, and neither is redundant. A document with no current page is a
@@ -731,6 +737,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
     title: INSERT_BLANK_PAGE_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 10 },
+      { surface: 'context-menu', context: 'page', order: 20 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -805,6 +812,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
     title: DELETE_PAGE_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
+      { surface: 'context-menu', context: 'page', order: 40 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1717,11 +1725,40 @@ export function closeTabCommand(deps: {
     icon: 'X',
     title: CLOSE_TAB_TITLE,
     shortcut: 'Ctrl+W',
-    placements: [],
+    // THE TAB MENU, where the context is the right-clicked tab's document — so *Close* closes that
+    // tab, not the one on show.
+    placements: [{ surface: 'context-menu', context: 'tab', order: 10 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       await deps.close(context.docId);
+    },
+  };
+}
+
+/**
+ * Closes every open document but the one the tab menu was opened on — the owner's *close others*.
+ *
+ * Through the one close path (`requestClose` in `App.tsx`), handed the whole list: each document
+ * with unsaved changes asks Save / Don't save / Cancel as it would alone, and a Cancel stops there
+ * with that document and the rest still open. The list is `openDocuments`, the shell's own — never
+ * a second list of what is open.
+ *
+ * Hidden where there is nothing else to close, rather than present and inert.
+ */
+export function closeOthersCommand(deps: {
+  readonly close: (docIds: readonly DocId[]) => Promise<unknown>;
+}): UiCommand {
+  return {
+    id: 'document.close-others',
+    icon: 'X',
+    title: CLOSE_OTHERS_TITLE,
+    placements: [{ surface: 'context-menu', context: 'tab', order: 20 }],
+    when: (context) => context.docId !== undefined && context.openDocuments.some((tab) => tab.docId !== context.docId),
+    run: async (context): Promise<void> => {
+      const kept = context.docId;
+      if (kept === undefined) return;
+      await deps.close(context.openDocuments.filter((tab) => tab.docId !== kept).map((tab) => tab.docId));
     },
   };
 }
@@ -1813,6 +1850,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
     title: EXTRACT_PAGES_COMMAND_TITLE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 40 },
+      { surface: 'context-menu', context: 'page', order: 30 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {

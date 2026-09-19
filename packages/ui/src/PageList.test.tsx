@@ -305,6 +305,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -337,6 +338,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -388,6 +390,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -423,6 +426,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -465,6 +469,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -498,6 +503,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -527,6 +533,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -568,6 +575,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -600,6 +608,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -645,6 +654,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -705,6 +715,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      pageMenu: undefined,
     };
     const { rerender } = render(<PageList {...props} view={viewDrawing()} version={VERSION} />);
     await settle();
@@ -746,6 +757,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();
@@ -784,6 +796,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} startAt={2} />);
     const scrolled = recordScrolls(container);
@@ -816,6 +829,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
     await settle();
@@ -858,6 +872,7 @@ describe('PageList', () => {
       unit: 'in' as const,
       search: undefined,
       secondRasteriser: undefined,
+      pageMenu: undefined,
     };
     const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
     await settle();
@@ -916,6 +931,7 @@ describe('PageList', () => {
           unit="in"
           search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
         />,
       );
       await settle();
@@ -944,6 +960,7 @@ describe('PageList', () => {
             unit="in"
             search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
           />,
         );
         await Promise.resolve();
@@ -983,6 +1000,7 @@ describe('PageList', () => {
             unit="in"
             search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
           />,
         );
         await act(async () => {
@@ -1009,6 +1027,7 @@ describe('PageList', () => {
             unit="in"
             search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
           />,
         );
 
@@ -1053,6 +1072,7 @@ describe('PageList', () => {
         unit="in"
         search={undefined}
         secondRasteriser={undefined}
+        pageMenu={undefined}
       />,
     );
     await settle();

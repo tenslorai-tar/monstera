@@ -80,6 +80,7 @@ import {
   insertBlankPageCommand,
   rotatePageCommand,
   closeTabCommand,
+  closeOthersCommand,
   saveCommand,
   saveDocument,
   undoCommand,
@@ -284,6 +285,7 @@ import type { SettingsStore } from './settingsStore.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
+import { ContextMenuArea } from './surfaces/ContextMenu.js';
 import { Ribbon } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
@@ -1733,6 +1735,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
+        closeOthersCommand({ close: requestClose }),
         saveCopyCommand({ client, onApplied: applied, ask }),
         exportFormDataJsonCommand({ client, onApplied: applied, ask }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
@@ -1912,6 +1915,18 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           status bar and every command below refer to. */}
       <TitleBar registry={registry} context={context} settings={settings}>
         <DocumentTabs
+          // §7's TAB MENU, with the right-clicked tab's document as the context's — so *Close* closes
+          // that tab. Its page and version are the focused document's only when it IS the focused
+          // one: a tab in the background has no page on show, and an item must not act on another's.
+          menu={(docId, contents) => (
+            <ContextMenuArea
+              registry={registry}
+              context={docId === context.docId ? context : { ...context, docId, version: undefined, page: undefined, pageCount: undefined }}
+              menus={['tab']}
+            >
+              {contents}
+            </ContextMenuArea>
+          )}
           tabs={tabs}
           activeId={activeId}
           onSelect={activate}
@@ -2027,6 +2042,18 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           // `PageCanvas`' row beside the page area (design pass D).
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
           quickToolbar={<QuickToolbar registry={registry} context={context} settings={settings} />}
+          // §7's PAGE MENU, with the page right-clicked as the context's page — so every item acts on
+          // that page and every `when` is asked about it. On the page holding the selected annotations
+          // the annotation group comes first: the selection's page is where its actions belong.
+          pageMenu={(page, element) => (
+            <ContextMenuArea
+              registry={registry}
+              context={{ ...context, page }}
+              menus={selection?.page === page ? ['annotation', 'page'] : ['page']}
+            >
+              {element}
+            </ContextMenuArea>
+          )}
           contextPanel={
             <ContextPanel
               assistant={
@@ -2304,10 +2331,17 @@ function PageCanvas({
   panels,
   contextPanel,
   quickToolbar,
+  pageMenu,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
   readonly onVersionMoved: (next: OpenDocument) => void;
+  /**
+   * Wraps a thumbnail or a page slot in the page context menu for that page (§7), built by `App`
+   * where the registry is. Handed to this document's thumbnails and both of its panes; never to the
+   * compare pane, whose pages belong to another document.
+   */
+  readonly pageMenu: (page: number, element: ReactElement) => ReactNode;
   readonly onCurrentPage: (page: number) => void;
   readonly mode: ZoomMode;
   readonly onZoom: (next: (shown: number) => ZoomMode) => void;
@@ -2510,6 +2544,7 @@ function PageCanvas({
             onJump={onJump}
             onMove={onMove}
             onSwap={onSwap}
+            pageMenu={pageMenu}
           />
         }
       />
@@ -2555,6 +2590,7 @@ function PageCanvas({
         // absent rasteriser and for one that answers `null`, so the two states
         // reach the same code and neither can leave a page blank.
         secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+        pageMenu={pageMenu}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
           One document, two scrollers: a pane that opened its own view would
@@ -2639,6 +2675,9 @@ function PageCanvas({
               // halves were rasterised differently would show a difference the
               // document does not have.
               secondRasteriser={secondRenderer ? secondRasteriser : undefined}
+              // THE SAME DOCUMENT, so the same page menu: a page right-clicked in either pane is a
+              // page of this document.
+              pageMenu={pageMenu}
             />
           ) : null}
         </div>

@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { Fragment, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
@@ -62,7 +62,15 @@ export function Thumbnails({
   onJump,
   onMove,
   onSwap,
+  pageMenu,
 }: {
+  /**
+   * Wraps one thumbnail in the page context menu for THAT page (§7) — the shell's
+   * `ContextMenuArea`, handed down so this strip never names the registry. Optional for
+   * `onMove`'s reason: a strip with no document commands behind it, the compare pane's,
+   * renders no menu rather than one whose items act on the other document.
+   */
+  readonly pageMenu?: ((page: number, thumbnail: ReactElement) => ReactNode) | undefined;
   /**
    * Where the strip reads each page's rotation — the same read the spine takes
    * ({@link usePageRotations}), so a page turned in the document is turned here.
@@ -116,7 +124,8 @@ export function Thumbnails({
 
   return (
     <nav className="m-thumbnails" aria-label={i18n._(THUMBNAILS_LABEL)}>
-      {Array.from({ length: pageCount }, (_, page) => (
+      {Array.from({ length: pageCount }, (_, page) => {
+        const thumbnail = (
         <button
           key={page}
           type="button"
@@ -182,7 +191,11 @@ export function Thumbnails({
             rotation={rotations.get(page)}
           />
         </button>
-      ))}
+        );
+        // THE KEY ON THE OUTERMOST ELEMENT, so wrapping a thumbnail in its menu does not make React
+        // treat every page as new on each render.
+        return pageMenu === undefined ? thumbnail : <Fragment key={page}>{pageMenu(page, thumbnail)}</Fragment>;
+      })}
     </nav>
   );
 }

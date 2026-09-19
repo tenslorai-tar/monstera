@@ -2200,6 +2200,49 @@ textarea {
   gap: var(--space-4);
 }
 
+/* §7's context menus: the dialog surface's roles at a menu's density, and the palette's row. Portaled to the end of
+   the body, as the dialogs are, so it stacks above the page without a z-index of its own. */
+.m-context-menu-region {
+  display: contents;
+}
+
+.m-context-menu {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 200px;
+  padding: var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elevation-3);
+}
+
+.m-context-menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-4);
+  cursor: pointer;
+  outline: none;
+}
+
+.m-context-menu-item[data-highlighted] {
+  background: var(--surface2);
+}
+
+.m-context-menu-separator {
+  block-size: 1px;
+  margin: var(--space-4) 0;
+  background: var(--border);
+}
+
+.m-context-menu-chord {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
 /* The Save-a-smaller-copy dialog: the close-unsaved dialog's stack and its action row. */
 .m-optimize {
   display: grid;

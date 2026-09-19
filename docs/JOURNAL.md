@@ -892,6 +892,42 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Right-click menus, unit 1: the surface, the page and tab menus; and a red board
+
+**The surface.** `placement.ts` had the four contexts and `projections.ts` built them, and nothing
+rendered one: `annotate.delete-selection` was the only command placed, and a right-click did
+nothing. `ContextMenuArea` renders the model over Base UI's context menu, names no command, and
+takes the context of what was right-clicked — so items act on the thumbnail's or slot's own page
+and the tab's own document. It wraps with `display: contents`, adding no box to the layout. The
+page menu is per slot, not around the scroller: over several visible pages a menu about "the
+current page" would act on a page other than the one pointed at. The compare pane gets none.
+
+**Placements, one line each**: rotate (the quarter turn), insert blank, extract, delete on the
+page; close tab on the tab; and `document.close-others`, new, which hands `requestClose` every
+other open document, so each unsaved one asks as it would alone.
+
+**Cases**: 4 surface (a right-click opens the context's commands in order; the chosen one runs
+against the page it was handed, 3, not the one on show; groups with a separator; nothing placed
+means no menu), 1 strip (each tab's controls go to the menu with that tab's own document, with
+the second tab active so a menu given the active id is red), 2 command, 1 through the real `App`
+(only *Close tab* with one document open), and 1 rendered in Chromium for **both keys** —
+Shift+F10 and the Menu key, which the screen tool cannot press.
+
+**Live**: page 2 rotated from its thumbnail's menu while page 1 was on show, page 1 unturned;
+Shift+F10 opened the menu on a focused thumbnail; *Close other tabs* on the second tab asked about
+the first's unsaved rotation and closed it, leaving one tab.
+
+**Owed**: the selected-text menu, which needs a text-selection model the renderer does not have
+(`hasSelection` is always false); annotation edit, reply, properties and copy; *open side by side*,
+which needs a view of two documents — the split view shows one document twice.
+
+**Red at `357f78a`, fixed in `743766c`**: the rendered start-screen case held the logo to the
+retired portrait master's ratio. It now asserts the logo is drawn at the image's own natural ratio,
+which is ADR-0002's property for any artwork; the hero stretched in CSS reddens it. The push that
+went red had run the visual suite and not `test:a11y` after a commit that changed rendered images.
+
+---
+
 ## 2026-09-19 — Three owner-supplied logos become the brand masters
 
 The owner's three artworks moved from the repository root into `assets/brand` under their own

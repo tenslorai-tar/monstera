@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { asDocId } from '@monstera/shared';
+import { type DocId, asDocId } from '@monstera/shared';
 import { render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,6 +21,7 @@ const NOTHING = {
   onSelect: (): void => undefined,
   onClose: (): void => undefined,
   onOpen: (): void => undefined,
+  menu: (_docId: DocId, contents: ReactElement): ReactNode => contents,
 };
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
@@ -106,5 +107,31 @@ describe('DocumentTabs', () => {
     );
 
     expect(container.querySelector('.m-tabs')).toBeNull();
+  });
+
+  it('hands EACH tab’s own controls to the menu with THAT tab’s document (§7)', () => {
+    // The tab menu acts on the document it is handed, so a strip that passed the active document
+    // for every tab would close the one on show from any tab's *Close*. The active tab here is the
+    // SECOND, so a menu given the active id each time is red.
+    const wrapped: DocId[] = [];
+    const { container } = render(
+      <Wrapped>
+        <DocumentTabs
+          {...NOTHING}
+          tabs={TABS}
+          activeId={SECOND}
+          menu={(docId, contents) => {
+            wrapped.push(docId);
+            return <span data-menu-for={docId}>{contents}</span>;
+          }}
+        />
+      </Wrapped>,
+    );
+
+    expect(wrapped).toStrictEqual([FIRST, SECOND]);
+    // THE CONTROLS ARE INSIDE THEIR OWN TAB'S MENU, and the list keeps `<li>` as its only children.
+    expect(container.querySelector(`[data-menu-for="${FIRST}"] [data-tab-select="${FIRST}"]`)).not.toBeNull();
+    expect(container.querySelector(`[data-menu-for="${SECOND}"] [data-tab-close="${SECOND}"]`)).not.toBeNull();
+    expect([...container.querySelectorAll('.m-tab-list > *')].every((child) => child.tagName === 'LI')).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import type { ContractClient, RenderableCommand } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
-import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
@@ -225,6 +225,14 @@ export interface PageListProps {
    * leave every test green and the setting dead.
    */
   readonly secondRasteriser: SecondRasteriser | undefined;
+  /**
+   * Wraps one page's slot in the page context menu for THAT page (§7), or `undefined` for a pane
+   * with no document commands behind it. Per slot rather than around the scroller, because the
+   * reader can see several pages at once: a menu over the whole list would act on the current page
+   * whichever page was right-clicked — `SHOWN_PAGE`'s defect, arriving through a gesture. Required
+   * and `| undefined` for `secondRasteriser`'s reason.
+   */
+  readonly pageMenu: ((page: number, slot: ReactElement) => ReactNode) | undefined;
 }
 
 /**
@@ -302,6 +310,7 @@ export function PageList({
   drawing,
   search,
   secondRasteriser,
+  pageMenu,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
@@ -690,7 +699,8 @@ export function PageList({
       {rulers && viewport !== undefined ? (
         <Rulers unit={unit} zoom={shown} size={viewport} origin={pageOrigin} />
       ) : null}
-      {Array.from({ length: pageCount }, (_, page) => (
+      {Array.from({ length: pageCount }, (_, page) => {
+        const slot = (
         <PageSlot
           key={page}
           page={page}
@@ -727,7 +737,10 @@ export function PageList({
           search={search}
           secondRasteriser={secondRasteriser}
         />
-      ))}
+        );
+        // THE KEY ON THE OUTERMOST ELEMENT, `Thumbnails`' reason.
+        return pageMenu === undefined ? slot : <Fragment key={page}>{pageMenu(page, slot)}</Fragment>;
+      })}
     </div>
   );
 }

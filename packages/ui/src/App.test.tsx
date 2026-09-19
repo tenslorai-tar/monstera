@@ -807,6 +807,25 @@ describe('App', () => {
       expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [0] });
     });
 
+    it('the TAB MENU opens on a right-click with the registered tab commands, and Close tab closes (§7)', async () => {
+      // THROUGH THE REAL APPLICATION, because the registration lives here: a command that was never
+      // registered, or a strip handed the wrong document, passes every unit case and shows no menu.
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      const tab = document.querySelector(`[data-tab-select="${DOC}"]`);
+      if (tab === null) throw new Error('no tab for the open document');
+      await act(async () => {
+        fireEvent.contextMenu(tab, { clientX: 10, clientY: 10 });
+        await Promise.resolve();
+      });
+
+      const items = await screen.findAllByRole('menuitem');
+      // ONE DOCUMENT OPEN, so *Close other tabs* is hidden rather than present and inert.
+      expect(items.map((item) => item.getAttribute('data-command'))).toStrictEqual(['document.close-tab']);
+    });
+
     it('THE THREE ROTATIONS SEND THREE DIFFERENT ANGLES, not one control three times', async () => {
       // D2's rotate row is a surface over the command Stage 0 declared, and the
       // whole of what a surface can get wrong is the argument. A factory that

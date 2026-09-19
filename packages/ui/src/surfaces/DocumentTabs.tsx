@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { DocId } from '@monstera/shared';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 import { TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL } from '../messages/en.js';
 
@@ -66,7 +66,14 @@ export function DocumentTabs({
   onSelect,
   onClose,
   onOpen,
+  menu,
 }: {
+  /**
+   * Wraps one tab's controls in the tab context menu for THAT document (§7) — the shell's
+   * `ContextMenuArea`, handed in so the strip never names the registry. Around the tab's CONTENTS
+   * rather than the `<li>`, so the list keeps list items as its only children.
+   */
+  readonly menu: (docId: DocId, contents: ReactElement) => ReactNode;
   readonly tabs: readonly DocumentTab[];
   readonly activeId: DocId | undefined;
   readonly onSelect: (docId: DocId) => void;
@@ -97,6 +104,7 @@ export function DocumentTabs({
               className={showing ? 'm-tab m-tab-current' : 'm-tab'}
               data-tab={tab.docId}
             >
+              {menu(tab.docId, <>
               <button
                 type="button"
                 className="m-tab-name"
@@ -133,6 +141,7 @@ export function DocumentTabs({
                     name is what a screen reader announces. */}
                 {'×'}
               </button>
+              </>)}
             </li>
           );
         })}

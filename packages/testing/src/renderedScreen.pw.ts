@@ -531,6 +531,37 @@ async function threePagePdf(): Promise<Uint8Array> {
   return document.save();
 }
 
+test('the PAGE MENU opens from the keyboard on a focused thumbnail — Shift+F10 AND the Menu key (§7)', async ({
+  page,
+}) => {
+  // The owner's keyboard route. Both keys reach Base UI's trigger as a keyboard-invoked `contextmenu`
+  // on the focused element, and neither can be pressed by the screen tool used for live runs, so
+  // this is where the Menu key is exercised at all — in the production build, in Chromium.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e2');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  const second = page.locator('[data-thumb-page="1"]');
+  await expect(second).toBeVisible();
+  const items = page.getByRole('menuitem');
+
+  for (const key of ['Shift+F10', 'ContextMenu']) {
+    await second.focus();
+    await page.keyboard.press(key);
+    await expect(items.first(), key).toBeVisible();
+    // THE OWNER'S PAGE ITEMS, from the registry, in their placement order.
+    await expect(items, key).toHaveText(['Rotate page', 'Insert blank page', 'Extract pages…', 'Delete page']);
+    await page.keyboard.press('Escape');
+    await expect(items, key).toHaveCount(0);
+  }
+});
+
 test('the STATUS BAR projects page navigation and zoom, and each control changes what it says', async ({
   page,
 }) => {
