@@ -1,4 +1,4 @@
-import { BRIDGE_KEY } from '@monstera/contract';
+import { BRIDGE_KEY, type MonsteraBridge } from '@monstera/contract';
 import type { Page } from '@playwright/test';
 
 import { createBrowserShim } from './browserShim.js';
@@ -97,15 +97,22 @@ export async function bridge(
   });
 
   await page.addInitScript((key: string) => {
-    Object.defineProperty(window, key, {
-      value: {
-        invoke: (channel: string, params: unknown) =>
-          (
-            window as unknown as {
-              __monsteraInvoke: (c: string, p: unknown) => Promise<unknown>;
-            }
-          ).__monsteraInvoke(channel, params),
-      },
-    });
+    // THE WHOLE BRIDGE, typed as the preload's, so a member the product's bridge gains is a
+    // compile error here rather than a page that crashes on its first use of it. This held
+    // `invoke` alone until 2026-09-19, while the preload has carried `subscribe` since
+    // ADR-0082; nothing subscribed at mount until the close path did, and every Playwright
+    // case then failed on a renderer that could not start. `main` pushes nothing to a page
+    // served by the shim, so a subscription here receives nothing and unsubscribes cleanly —
+    // the state `App`'s own default subscriber is in.
+    const shape: MonsteraBridge = {
+      invoke: (channel: string, params: unknown) =>
+        (
+          window as unknown as {
+            __monsteraInvoke: (c: string, p: unknown) => Promise<unknown>;
+          }
+        ).__monsteraInvoke(channel, params),
+      subscribe: () => () => undefined,
+    };
+    Object.defineProperty(window, key, { value: shape });
   }, BRIDGE_KEY);
 }
