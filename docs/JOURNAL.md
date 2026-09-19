@@ -892,6 +892,22 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Guards red at `7e7a24f` on a case whose failure could not be read
+
+`proof:checklocal`'s *a survivor is seen ADVANCING, then killed, then seen still* failed on
+`ubuntu-latest` (read from the job's annotation): *"Survivors: 2, of which seen alive then stilled:
+1 (detached)"*. The push changed nothing that proof reads, and it was green at `fe1ed17`. **The
+mechanism is not established, and the reason is the finding**: the case reported a count, so it
+cannot say whether the ordinary survivor was never seen advancing (a fixture that expired, or a
+tick stretched past the 2 s budget) or was seen advancing and did not go still after the kill.
+Those are different defects. It now prints each survivor's readings — advancing before the kill,
+and the two ticks after it — so the next occurrence names its half. Checked with the file's own
+control: the cleanup budget at 0 reddens the case and prints *detached: advancing before the kill
+false, ticks after it 5 then 5*. No budget moved. Passes locally, 74 of 74; the next push re-runs
+Guards.
+
+---
+
 ## 2026-09-19 — Azure polls as the service asks; LLLLLL-3 closed; a red board from a stand-in bridge
 
 **Azure polling, settled from the authority.** Microsoft's *Service quotas and limits* page for

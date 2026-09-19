@@ -1373,6 +1373,13 @@ try {
 
     /** @type {string[]} */
     const stopped = [];
+    // EACH SURVIVOR'S TWO READINGS, printed on a failure. The case read only *1 of 2* when it
+    // went red on ubuntu-latest at 7e7a24f (2026-09-19), which cannot say whether a survivor was
+    // never seen advancing — a fixture that expired, or a tick stretched past the budget — or was
+    // seen advancing and did not go still after the kill. Those are different defects, and an
+    // annotation is the only place a runner's failure can be read from this seat.
+    /** @type {string[]} */
+    const readings = [];
     for (const { label, probe } of survivors) {
       const wasAlive = seenAdvancing(probe);
 
@@ -1390,6 +1397,9 @@ try {
       const later = probe.tick();
       const wentStill = settled !== null && later !== null && later === settled;
 
+      readings.push(
+        `${label}: advancing before the kill ${String(wasAlive)}, ticks after it ${String(settled)} then ${String(later)}`,
+      );
       if (wasAlive && wentStill) stopped.push(label);
     }
 
@@ -1403,7 +1413,7 @@ try {
         `still one — and it is POLLED for up to ${String(CLEANUP_ADVANCE_BUDGET_MS)}ms, so a ` +
         `slow tick is not read as a dead process. Survivors: ${String(survivors.length)}, of ` +
         `which seen alive then stilled: ${String(stopped.length)} ` +
-        `(${stopped.join(', ') || 'none'}).`,
+        `(${stopped.join(', ') || 'none'}).\n      ${readings.join('\n      ')}`,
     );
   }
 
