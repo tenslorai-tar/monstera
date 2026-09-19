@@ -54,7 +54,16 @@ export type EngineHostKind = 'mupdf' | 'pdfium' | 'compose';
  */
 export type EngineHostProgram =
   | { readonly kind: 'mupdf' }
-  | { readonly kind: 'compose' }
+  | {
+      readonly kind: 'compose';
+      /**
+       * The absolute path to `monstera_mupdf.dll`, for Optimize (ADR-0087), or `null` where
+       * the launcher passed none. `pdfium`'s rule for its library: resolved by whoever knows
+       * where a provisioned binary is, never searched for here. `null` is a real state — the
+       * host still composes imports, and Optimize answers `unavailable`.
+       */
+      readonly shimPath: string | null;
+    }
   | {
       readonly kind: 'pdfium';
       /**
@@ -119,5 +128,8 @@ export function hostCommandArguments(
   pipeName: string,
 ): readonly string[] {
   if (program.kind === 'pdfium') return [entryPath, pipeName, program.libraryPath];
+  // THE SHIM'S PATH SECOND, where there is one: `composeHostEntry.ts` reads `argv[3]` and binds it
+  // at its start, and reads its absence as *Optimize is unavailable*.
+  if (program.kind === 'compose' && program.shimPath !== null) return [entryPath, pipeName, program.shimPath];
   return [entryPath, pipeName];
 }

@@ -311,12 +311,17 @@ is wrong** — fix the boundary, not the test.
   that links it.
 
   **AND UNTIL 2026-09-08 IT SCANNED THE WRONG ARTEFACT.** This line said *"scans
-  the shipped binary"*, and that binary was `monstera_mupdf.dll` — which nothing
-  in the application loads. Every MuPDF consumer in `packages/kernel` imports the
-  bare specifier `mupdf`, resolving to the npm package's WASM build:
+  the shipped binary"*, and that binary was `monstera_mupdf.dll` — which the
+  document pipeline does not load. Every MuPDF consumer in `packages/kernel` imports
+  the bare specifier `mupdf`, resolving to the npm package's WASM build:
   thirty-one non-test modules (2026-09-19), against zero references to `monstera_mupdf`
-  anywhere under `packages/` or `apps/`. So the mechanism this paragraph offers as the
-  invariant's evidence was reading a file the shipped pipeline never opens.
+  anywhere under `packages/` or `apps/` until that date. So the mechanism this paragraph
+  offers as the invariant's evidence was reading a file the document pipeline never opens.
+
+  **Since 2026-09-19 one thing does load it: Optimize, in the compose host, through
+  `mupdfRaw.ts`** ([ADR-0087](docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)),
+  on runs whose launcher passed its path — never a packaged build yet. So the scan now
+  reads both engines the product loads, and the document pipeline is still WASM.
 
   Nothing about it looked wrong, and that is the transferable part: **a positive
   control proves an instrument can see the file it was given; it can never say

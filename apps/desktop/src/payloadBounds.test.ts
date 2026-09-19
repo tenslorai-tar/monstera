@@ -301,6 +301,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.email': 'needs an engine session and the Windows Share sheet',
   // The PDF/A export's ask is a `DocId`; the document is converted and streamed in main.
   'document.exportPdfa': 'needs an engine session, a save dialog and the contained converter',
+  // THE ANSWER IS A KIND AND UP TO THREE INTEGERS — two sizes and a version — whatever the
+  // document's size; the copy stays in the compose host's area and is streamed to disk by main,
+  // never sent to the renderer (ADR-0087).
+  'document.optimizeMeasure': 'needs an engine session and the compose host with the native library',
+  'document.optimize': 'needs an engine session, a save dialog and the compose host with the native library',
   'document.insertImage': 'needs an engine session and an image picker',
   // THE ASK IS NOTHING, OR A `DocId` AND ONE INDEX, and the source never crosses:
   // main picks and reads the Markdown file, the compose host sets it, and main

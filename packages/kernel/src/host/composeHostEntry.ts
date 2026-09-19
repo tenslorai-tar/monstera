@@ -1,11 +1,16 @@
+import { existsSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import { composeCsv } from '../csvCompose.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
+import { MupdfOpenRefused, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
-import { createComposeHandlers } from './composeHandlers.js';
+import { type ImageOptimizer, createComposeHandlers } from './composeHandlers.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
 import { startEngineHost } from './hostBody.js';
@@ -57,7 +62,43 @@ function pipeNameFrom(argv: readonly string[]): string {
 
 const pipeName = pipeNameFrom(process.argv);
 
+/**
+ * The native MuPDF library's path, when the factory was given one — its second argument, as
+ * PDFium's host takes `pdfium.dll`'s. ABSENT is a real state and not a refusal, unlike the pipe:
+ * this host composes imports without it, and Optimize answers `unavailable`. Empty is absent, for
+ * `pdfiumLibraryPath`'s measured reason — a shell expanding an unset variable passes `''`.
+ */
+const shimPath = process.argv[3] === undefined || process.argv[3].length === 0 ? null : process.argv[3];
+
+// BOUND AT STARTUP, for `pdfiumHostEntry.ts`' reason: a first bind inside a handler would put a
+// load failure inside a person's Optimize answer rather than in this host's start.
+if (shimPath !== null) openMupdfShim(shimPath);
+
+/**
+ * The native rewriter over one area, or `null` where no library was bound.
+ *
+ * The paths are the area's directories and two names the channel's schema validated, so this
+ * opens nothing the area does not hold. MuPDF failing to OPEN the document is the document's
+ * answer; a failure at any later step is a fault and propagates.
+ */
+const optimize: ImageOptimizer | null =
+  shimPath === null
+    ? null
+    : async (area, from, into, setting) => {
+        const input = join(area.snapshotDirectory, from);
+        const output = join(area.outputDirectory, into);
+        if (!existsSync(input)) return { kind: 'missing' };
+        try {
+          rewriteImages(input, output, setting);
+        } catch (error) {
+          if (error instanceof MupdfOpenRefused) return { kind: 'unreadable' };
+          throw error;
+        }
+        return { kind: 'optimized', bytes: (await stat(output)).size };
+      };
+
 const handlers = createComposeHandlers({
+  optimize,
   // AREAS, NOT SESSIONS. This host holds no parse between calls, and it holds the
   // granted directories anyway (ADR-0048 Decision 2): a call that carried its own
   // directories would be a channel through which a confused main could redirect

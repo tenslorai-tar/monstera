@@ -268,6 +268,8 @@ export function createContractHandlers(deps: {
     'document.print': printHandler(deps.commands),
     'document.email': emailHandler(deps.commands),
     'document.exportPdfa': exportPdfaHandler(deps.commands),
+    'document.optimizeMeasure': optimizeMeasureHandler(deps.commands),
+    'document.optimize': optimizeHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
@@ -1379,6 +1381,52 @@ function exportPdfaHandler(commands: DocumentCommands): ContractHandlers['docume
         case 'write-failed':
         case 'unavailable':
         case 'failed':
+          return ok({ kind: outcome.kind });
+      }
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** Optimize's measurement (ADR-0087): the command's three answers as they are. */
+function optimizeMeasureHandler(commands: DocumentCommands): ContractHandlers['document.optimizeMeasure'] {
+  return async ({ docId, setting }): Promise<Awaited<ReturnType<ContractHandlers['document.optimizeMeasure']>>> => {
+    try {
+      const measured = await commands.optimizeMeasure(docId, setting);
+      if (measured.kind === 'measured') {
+        return ok({ kind: 'measured', version: measured.version, before: measured.before, after: measured.after } as const);
+      }
+      return ok({ kind: measured.kind });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** Optimize's copy (ADR-0087): a copy's outcomes, plus not-smaller, changed, unreadable and unavailable. */
+function optimizeHandler(commands: DocumentCommands): ContractHandlers['document.optimize'] {
+  return async ({ docId, setting, version }): Promise<Awaited<ReturnType<ContractHandlers['document.optimize']>>> => {
+    try {
+      const outcome = await commands.optimize(docId, setting, version);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      switch (outcome.kind) {
+        case 'copied':
+          return ok({ kind: 'copied', bytes: outcome.bytes, before: outcome.before } as const);
+        case 'refused':
+          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'not-smaller':
+          return ok({ kind: 'not-smaller', before: outcome.before, after: outcome.after } as const);
+        case 'write-failed':
+        case 'changed':
+        case 'unreadable':
+        case 'unavailable':
           return ok({ kind: outcome.kind });
       }
     } catch (thrown) {

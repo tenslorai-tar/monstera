@@ -39,6 +39,7 @@ import {
   printCommand,
   emailCommand,
   exportPdfaCommand,
+  optimizeCommand,
   exportTextCommand,
   exportWordCommand,
   generateTocCommand,
@@ -2240,6 +2241,110 @@ describe('delete pages — the mutation-dialog gate', () => {
 
         expect(asked).toStrictEqual(spoken);
       }
+    });
+  });
+
+  describe('save a smaller copy (ADR-0087)', () => {
+    const MEASURED = { kind: 'measured', version: asDocVersion(7), before: 200_000, after: 120_000 } as const;
+
+    /**
+     * Runs the command answering the dialog from `answers` in turn, recording every ask and every
+     * tracked task — `cancelled` aborts each task's signal as it starts, the reader's cancel.
+     */
+    async function running(
+      answered: Record<string, unknown>,
+      answers: unknown[],
+      cancelled = false,
+    ): Promise<{
+      sent: { id: string; params: unknown }[];
+      asked: { id: string; props: unknown }[];
+      tasks: string[];
+    }> {
+      const { client, sent } = recording(answered);
+      const asked: { id: string; props: unknown }[] = [];
+      const tasks: string[] = [];
+      await optimizeCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(id === 'dialog.optimize' ? answers.shift() : undefined);
+        },
+        track: (label, total) => {
+          tasks.push(`start:${label}:${String(total)}`);
+          const controller = new AbortController();
+          if (cancelled) controller.abort();
+          return {
+            signal: controller.signal,
+            step: (done) => tasks.push(`step:${String(done)}`),
+            end: () => tasks.push('end'),
+          };
+        },
+      }).run(CONTEXT);
+      return { sent, asked, tasks };
+    }
+
+    it('SHOWS the check as a running task, and ends it', async () => {
+      const { tasks } = await running({ 'document.optimizeMeasure': MEASURED }, [{ kind: 'measure', setting: 'high' }, undefined]);
+      expect(tasks).toStrictEqual(['start:task.optimize-checking:1', 'step:1', 'end']);
+    });
+
+    it('a CANCELLED check opens the dialog again for nothing, and saves nothing', async () => {
+      const { asked, sent } = await running({ 'document.optimizeMeasure': MEASURED }, [{ kind: 'measure', setting: 'high' }], true);
+      expect(asked).toHaveLength(1);
+      expect(sent.map((each) => each.id)).toStrictEqual(['document.optimizeMeasure']);
+    });
+
+    it('measures the setting chosen, shows the sizes, and saves at THE VERSION MEASURED', async () => {
+      const { sent, asked } = await running(
+        { 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'copied', bytes: 120_000, before: 200_000 } },
+        [
+          { kind: 'measure', setting: 'medium' },
+          { kind: 'save', setting: 'medium' },
+        ],
+      );
+
+      expect(asked).toStrictEqual([
+        { id: 'dialog.optimize', props: { setting: 'high', measured: null } },
+        { id: 'dialog.optimize', props: { setting: 'medium', measured: { before: 200_000, after: 120_000 } } },
+      ]);
+      // THE VERSION IS THE MEASUREMENT'S, 7, and not the context's 1: it is what makes a save of
+      // an edited document answer `changed` rather than write sizes nobody was shown.
+      expect(sent).toStrictEqual([
+        { id: 'document.optimizeMeasure', params: { docId: DOC, setting: 'medium' } },
+        { id: 'document.optimize', params: { docId: DOC, setting: 'medium', version: asDocVersion(7) } },
+      ]);
+    });
+
+    it('CONTROL: a dismissed dialog sends nothing at all', async () => {
+      const { sent } = await running({}, [undefined]);
+      expect(sent).toStrictEqual([]);
+    });
+
+    it('says so for no library, an unreadable document, a document that moved, and a refused destination', async () => {
+      for (const [answered, outcome] of [
+        [{ 'document.optimizeMeasure': { kind: 'unavailable' } }, 'optimize-unavailable'],
+        [{ 'document.optimizeMeasure': { kind: 'unreadable' } }, 'optimize-unreadable'],
+        [{ 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'changed' } }, 'optimize-changed'],
+        [{ 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'refused', openElsewhere: 1 } }, 'contested'],
+      ] as const) {
+        const { asked } = await running(answered, [
+          { kind: 'measure', setting: 'high' },
+          { kind: 'save', setting: 'high' },
+        ]);
+        expect(asked.at(-1), outcome).toStrictEqual({ id: 'dialog.save-problem', props: { outcome } });
+      }
+    });
+
+    it('shows main’s own sizes again when it answers not-smaller, and writes nothing', async () => {
+      const { asked } = await running(
+        { 'document.optimizeMeasure': MEASURED, 'document.optimize': { kind: 'not-smaller', before: 200_000, after: 210_000 } },
+        [{ kind: 'measure', setting: 'low' }, { kind: 'save', setting: 'low' }, undefined],
+      );
+      expect(asked.at(-1)).toStrictEqual({
+        id: 'dialog.optimize',
+        props: { setting: 'low', measured: { before: 200_000, after: 210_000 } },
+      });
     });
   });
 

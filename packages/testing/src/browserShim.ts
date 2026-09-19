@@ -676,6 +676,9 @@ const SHIM_AFFIX = 'SET UTF-8\n';
  */
 const SHIM_WORDS = '3\ndocument\npage\nspelling\n';
 
+/** What the shim's Optimize answers per setting, out of 100,000 bytes — one size each. */
+const SHIM_OPTIMIZED = { high: 90_000, medium: 80_000, low: 50_000 } as const;
+
 /**
  * Builds a browser-side contract client backed by an in-memory stub.
  *
@@ -1343,6 +1346,24 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
       return Promise.resolve(ok({ kind: 'unavailable' as const }));
+    },
+    // OPTIMIZE'S SHIM (ADR-0087): no rewriter runs in a browser, so the sizes are fixed per
+    // setting — distinct, so a case can tell which setting reached the channel — at the version
+    // the shim holds, and a save at any other version answers `changed`, as main's does.
+    'document.optimizeMeasure': ({ docId, setting }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const version = versions.get(docId);
+      if (version === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(
+        ok({ kind: 'measured' as const, version: asDocVersion(version), before: 100_000, after: SHIM_OPTIMIZED[setting] }),
+      );
+    },
+    'document.optimize': ({ docId, setting, version }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const held = versions.get(docId);
+      if (held === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      if (held !== version) return Promise.resolve(ok({ kind: 'changed' as const }));
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: SHIM_OPTIMIZED[setting], before: 100_000 }));
     },
     // THE PRINT'S SHIM: a browser has no system print dialog to show, which is main's
     // `unavailable` answer for a platform without one.

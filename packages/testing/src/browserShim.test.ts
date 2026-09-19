@@ -224,6 +224,8 @@ describe('browser shim', () => {
       'document.open',
       'document.openFromUrl',
       'document.openRecent',
+      'document.optimize',
+      'document.optimizeMeasure',
       'document.pageBarcodes',
       'document.pageLinks',
       'document.pageObjects',

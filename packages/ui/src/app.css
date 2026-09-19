@@ -2200,6 +2200,22 @@ textarea {
   gap: var(--space-4);
 }
 
+/* The Save-a-smaller-copy dialog: the close-unsaved dialog's stack and its action row. */
+.m-optimize {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.m-optimize p {
+  margin: 0;
+}
+
+.m-optimize__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
 /*
  * The command-problem dialog: one sentence, and for `internal` a labelled
  * reference beneath it. The reference is `--muted` and the sentence is not,

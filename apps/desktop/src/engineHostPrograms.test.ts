@@ -76,7 +76,7 @@ describe('the engine host programs', () => {
     ).toStrictEqual(['C:\\k\\pdfiumHostEntry.js', '\\\\.\\pipe\\q', 'C:\\t\\pdfium.dll']);
   });
 
-  it('gives MuPDF’s host and the compose host no third argument at all', () => {
+  it('gives MuPDF’s host, and a compose host with no shim, no third argument at all', () => {
     // THE CONTROL for the case above, and it is not the same assertion twice: a
     // builder that appended a library path unconditionally would satisfy every
     // PDFium expectation there, and the other entries ignore what they do not
@@ -84,9 +84,14 @@ describe('the engine host programs', () => {
     // their command line for anything on the machine to read out of the process
     // list.
     expect(hostCommandArguments({ kind: 'mupdf' }, 'entry', 'pipe')).toHaveLength(2);
-    expect(hostCommandArguments({ kind: 'compose' }, 'composeHostEntry.js', 'pipe')).toStrictEqual([
-      'composeHostEntry.js',
-      'pipe',
-    ]);
+    expect(
+      hostCommandArguments({ kind: 'compose', shimPath: null }, 'composeHostEntry.js', 'pipe'),
+    ).toStrictEqual(['composeHostEntry.js', 'pipe']);
+  });
+
+  it('gives the compose host the shim’s path THIRD, where it read `argv[3]` (ADR-0087)', () => {
+    expect(
+      hostCommandArguments({ kind: 'compose', shimPath: 'C:\\s\\monstera_mupdf.dll' }, 'composeHostEntry.js', 'pipe'),
+    ).toStrictEqual(['composeHostEntry.js', 'pipe', 'C:\\s\\monstera_mupdf.dll']);
   });
 });

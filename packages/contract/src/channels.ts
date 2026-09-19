@@ -42,6 +42,7 @@ import {
   docVersionSchema,
   fileHandleSchema,
   COMPOSE_REFUSALS,
+  OPTIMIZE_SETTING_NAMES,
   URL_FETCH_REFUSALS,
   PAGE_IMAGE_FORMATS,
   MIN_PAGE_IMAGE_DPI,
@@ -2012,6 +2013,71 @@ export const channels = {
       z.object({ kind: z.literal('write-failed') }),
       z.object({ kind: z.literal('unavailable') }),
       z.object({ kind: z.literal('failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Measures what Optimize would make of the document at one setting — D10's *Optimize*,
+   * MuPDF's own image rewriter in the compose host
+   * ([ADR-0087](../../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)).
+   *
+   * ## A measurement, and nothing is kept
+   *
+   * The copy is written in the host's area, its size read, and the copy removed: the answer is
+   * the two sizes and the version they were measured at. `document.optimize` then writes the
+   * copy by rewriting again, carrying that version — so no rewritten document is held in `main`
+   * between the two calls, and a document that moved in between answers `changed` rather than
+   * saving sizes nobody was shown. The rewrite is deterministic, and slower than holding a file
+   * by one rewrite: at most 2.5 s on the corpus (2026-09-19).
+   */
+  'document.optimizeMeasure': channel(
+    'Measures the size of an optimized copy of the document at one setting, keeping nothing.',
+    z.object({ docId: docIdSchema, setting: z.enum(OPTIMIZE_SETTING_NAMES) }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('measured'),
+        version: docVersionSchema,
+        before: z.number().int().nonnegative(),
+        after: z.number().int().nonnegative(),
+      }),
+      /** MuPDF could not open the document to rewrite it — its encryption, for one. */
+      z.object({ kind: z.literal('unreadable') }),
+      /** No native library was provisioned for this run. */
+      z.object({ kind: z.literal('unavailable') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Writes an optimized copy of the document to a file the user picks, at the setting and the
+   * version `document.optimizeMeasure` answered (ADR-0087 Decision 1).
+   *
+   * **A result that is not smaller is never written**: `not-smaller` carries both sizes, and no
+   * picker opens when the version has moved (`changed`). The open document is not changed.
+   */
+  'document.optimize': channel(
+    'Writes an optimized copy of the document to a file the user picks, only if it is smaller.',
+    z
+      .object({ docId: docIdSchema, setting: z.enum(OPTIMIZE_SETTING_NAMES), version: docVersionSchema })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('copied'),
+        bytes: z.number().int().nonnegative(),
+        before: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+      z.object({
+        kind: z.literal('not-smaller'),
+        before: z.number().int().nonnegative(),
+        after: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('changed') }),
+      z.object({ kind: z.literal('unreadable') }),
+      z.object({ kind: z.literal('unavailable') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

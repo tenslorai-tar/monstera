@@ -892,6 +892,50 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Optimize built on ADR-0087, and done on a live run
+
+**The path.** Home › File › *Save a smaller copy…* asks for High, Medium or Low. *Check the size*
+sends `document.optimizeMeasure`: `main` flushes the document, writes the bytes into the compose
+host's area, and the host calls `mz_rewrite_images` then `mz_save_compacted` through
+`mupdfRaw.ts` — the first product code to load `monstera_mupdf.dll`. `main` checks the host's
+byte count against the file, then discards the copy and answers both sizes and the version.
+*Choose where to save…* appears only when the copy is smaller; it sends that version back, and
+`main` refuses a moved document before any picker, rewrites again, refuses a copy that is not
+smaller, streams the file to the destination, and discards it whatever happened. The setting
+crosses the host pipe as three bounded integers. A host started without the DLL answers
+`unavailable` itself: the launcher passes the path only when `shimBuildState` says the DLL was
+built from the source on disk, so a stale DLL cannot take the imports down with it.
+
+**Cases**: 5 compose-host (the area, names and setting reach the rewriter; unreadable; missing;
+unavailable with nothing called; a fault is `internal`; the schema's bounds with a control), 2
+command-line, 6 in `main`, 6 command, 4 dialog. **Mutated**: the version check before the picker
+removed, and the discard in `finally` removed — four cases red between them.
+
+**Live, in the running application**: an 88,801-byte two-page document with an oversized JPEG
+showed *Now 87 kB. The copy would be 35 kB, 60% smaller*, saved as 35,809 bytes; the copy has the
+same text on both pages, page 1 within 0.04/255, and it opened as its own tab. The original was
+untouched, and saving over the open original was refused.
+
+**Two defects the run found, one fixed.** The first check starts the compose host and took over
+six seconds, with the dialog closed and nothing saying work was under way — read by me, running it,
+as a failure. The check is now a running task in the status bar, with a cancel that genuinely
+stops the wait; seen live. **Not fixed, queued**: quitting the application ended once in two with
+exit code 134 — a fatal `napi_throw` from `abandonOperation` in the pipe reader's worker. The
+mechanism is not established.
+
+**Also recorded**: the save-problem dialog's first line says *your changes are still open and
+unsaved* for a refused copy, which has no changes — shared by every copy export. And the escape
+guard denied `node -p` once in this work, used for a read; `find` answered instead.
+
+**A red sweep that was mine, not the code's.** The first pre-push sweep of this feature failed
+`barcode.test.ts` on its 5 s timeout, and it failed again run alone. Two processes of this session
+were still running: a `grep` over the session transcript moved to the background hours earlier
+(8,532 CPU-seconds), and the child of a `find` over `/` whose shell had been stopped while the
+`find` itself was not. With both stopped the file passed 8 of 8, unchanged. The timeout was not
+raised. Stopping a task's shell does not stop what it spawned; check for the process by name.
+
+---
+
 ## 2026-09-19 — Office import, steps 2 and 3: the other GPL v2 sections, a subset, and the first contained cause
 
 **The count.** `license.txt` in the provisioned 26.8.0 tree carries 28 *Jump to GPL Version 2*

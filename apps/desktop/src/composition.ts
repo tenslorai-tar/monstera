@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -14,6 +15,7 @@ import {
   MAX_TABLE_CELLS,
   MAX_TABLE_CELL_TEXT,
   type NetworkOcrEngine,
+  OPTIMIZE_SETTINGS,
   ENGINE_HOST_MAX_IN_FLIGHT,
   type ClientApi,
   type IncidentSink,
@@ -134,6 +136,7 @@ import {
   EngineUnavailableError,
   MissingSessionError,
   NetworkKeyMissing,
+  type OptimizeSource,
 } from './documentCommands.js';
 import { timestampTransport } from './timestampTransport.js';
 
@@ -1193,6 +1196,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     layoutText: layoutTextPlatform === null ? null : createLayoutTextSource(layoutTextPlatform, failures),
     // PDF/A-2b, the contained Ghostscript — `null` where it cannot run, for layout text's reason (ADR-0075).
     pdfa: pdfaPlatform === null ? null : createPdfaSource(pdfaPlatform, failures),
+    // OPTIMIZE, MuPDF's image rewriter in the compose host (ADR-0087). A host started without the
+    // native library answers `unavailable` itself, so this is `null` only where there is no host.
+    optimizer: composeHost === null ? null : composeHost.optimize,
     // THE PRINT DIALOG, from `entry.ts` for the pickers' reason (ADR-0074).
     print,
     // THE SHARE SHEET, from `entry.ts` for the print dialog's reason (ADR-0080).
@@ -2508,6 +2514,7 @@ function composeHostBinding(
     page: { readonly width: number; readonly height: number },
   ) => Promise<ComposedImport>;
   readonly composeImages: NonNullable<ComposeImages>;
+  readonly optimize: OptimizeSource;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -2703,6 +2710,54 @@ function composeHostBinding(
           written.map((name) => rm(join(area.snapshotDirectory, name), { force: true })),
         );
       }
+    },
+
+    // AN OPTIMIZED COPY (ADR-0087): the document's bytes into the area, MuPDF's rewriter in the
+    // host, and the copy left in the output directory for the caller to stream or discard. The
+    // input goes whatever the call answered, for `compose`'s reason. The count the host reported
+    // is held to the file's size before anything is streamed, which separates *the host wrote
+    // nothing* from *the read found nothing* without reading the copy into `main`.
+    optimize: async (pdf, setting) => {
+      const built = await ensure();
+      const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+      const from = areas.mintName();
+      const into = areas.mintName();
+      const copyPath = join(area.outputDirectory, into);
+      const discard = (): Promise<void> => rm(copyPath, { force: true });
+
+      await writeFile(join(area.snapshotDirectory, from), pdf);
+      const answer = await built.client['engine/optimize']({
+        session: built.session,
+        from,
+        into,
+        ...OPTIMIZE_SETTINGS[setting],
+      }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
+
+      if (!answer.ok) {
+        await discard();
+        throw new Error(`the compose host could not optimize the document: ${answer.error.code}`);
+      }
+      if (answer.value.kind !== 'optimized') return { kind: answer.value.kind };
+
+      const written = (await stat(copyPath)).size;
+      if (written !== answer.value.bytes) {
+        await discard();
+        throw new Error(
+          `the compose host reported ${String(answer.value.bytes)} bytes and the copy holds ` +
+            `${String(written)}, so the copy is not the one it wrote.`,
+        );
+      }
+
+      // REMOVED ONCE READ, and by `discard` otherwise; both are a forced removal, so a caller
+      // that does both — a stream read to its end, then its `finally` — removes nothing twice.
+      async function* output(): AsyncIterable<Uint8Array> {
+        try {
+          for await (const chunk of createReadStream(copyPath)) yield chunk as Uint8Array;
+        } finally {
+          await discard();
+        }
+      }
+      return { kind: 'optimized', bytes: written, output: output(), discard };
     },
 
     close: async () => {

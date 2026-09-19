@@ -70,6 +70,7 @@ import {
   printCommand,
   emailCommand,
   exportPdfaCommand,
+  optimizeCommand,
   exportPowerPointCommand,
   exportTextCommand,
   exportWordCommand,
@@ -184,6 +185,7 @@ import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
 import { EXPORT_PAGE_IMAGES_DIALOG } from './dialogs/exportPageImages.js';
 import { EXPORT_EXCEL_DIALOG } from './dialogs/exportExcel.js';
 import { SERVICE_REFUSED_DIALOG } from './dialogs/serviceRefused.js';
+import { OPTIMIZE_DIALOG } from './dialogs/optimize.js';
 import { PDFA_REMOVALS_DIALOG } from './dialogs/pdfaRemovals.js';
 import { PAGE_BARCODES_DIALOG } from './dialogs/pageBarcodes.js';
 import { PLACE_BARCODE_DIALOG } from './dialogs/placeBarcode.js';
@@ -511,6 +513,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         SERVICE_REFUSED_DIALOG,
         PRINT_DIALOG,
         PDFA_REMOVALS_DIALOG,
+        OPTIMIZE_DIALOG,
         PAGE_BARCODES_DIALOG,
         COMPARE_DOCUMENTS_DIALOG,
         ACCESSIBILITY_DIALOG,
@@ -1724,6 +1727,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         printCommand({ client, onApplied: applied, ask }),
         emailCommand({ client, onApplied: applied, ask }),
         exportPdfaCommand({ client, onApplied: applied, ask }),
+        optimizeCommand({ client, onApplied: applied, ask, track }),
         generateTocCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),

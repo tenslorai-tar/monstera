@@ -3,6 +3,7 @@ import type {
   ContractClient,
   FormDataFormat,
   FormDataImportFormat,
+  OptimizeSetting,
   RenderableCommand,
   SignaturePlacement,
 } from '@monstera/contract';
@@ -62,6 +63,8 @@ import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
 import type { ExportPageImagesAnswer } from '../dialogs/exportPageImagesResult.js';
 import { EXPORT_EXCEL_DIALOG_ID, type ExportExcelAnswer } from '../dialogs/exportExcel.js';
 import { SERVICE_REFUSED_DIALOG_ID } from '../dialogs/serviceRefused.js';
+import { OPTIMIZE_DIALOG_ID, type OptimizeAnswer } from '../dialogs/optimize.js';
+import type { TrackTask } from '../runningTask.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
@@ -139,6 +142,8 @@ import {
   PRINT_COMMAND_TITLE,
   EMAIL_COMMAND_TITLE,
   EXPORT_PDFA_COMMAND_TITLE,
+  OPTIMIZE_CHECKING,
+  OPTIMIZE_COMMAND_TITLE,
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
@@ -2130,6 +2135,104 @@ export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
         case 'write-failed':
         case 'refused':
           void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested' });
+      }
+    },
+  };
+}
+
+/**
+ * Saves a smaller copy — D10's *Optimize*, MuPDF's own image rewriter in the compose host
+ * ([ADR-0087](../../../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)).
+ *
+ * ## Measure, show, then save — and nothing is held between
+ *
+ * The dialog answers *check the size* or *save*. Checking asks main for the two sizes and the
+ * version they were measured at, and the dialog opens again showing them; saving sends that
+ * version back, so a document edited in between answers *changed* rather than writing a copy of
+ * something nobody was shown. *Save* is offered only where the copy would be smaller, and main
+ * refuses a larger one again on its side.
+ *
+ * A dismissed dialog dispatches nothing more; a dismissed save dialog is main's `cancelled`.
+ */
+export function optimizeCommand(
+  deps: DocumentCommandDeps & {
+    /**
+     * The status bar's running task, while a size is checked. MEASURED 2026-09-19 in the running
+     * application: the first check starts the compose host and took over six seconds, during
+     * which the dialog was closed and nothing said work was under way — read, by the person
+     * running it, as a failure. The cancel is real: a measurement keeps nothing, so cancelling
+     * stops the wait and the dialog is not opened again.
+     */
+    readonly track: TrackTask;
+  },
+): UiCommand {
+  return {
+    id: 'document.optimize',
+    icon: 'Shrink',
+    title: OPTIMIZE_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 47 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      const { docId } = context;
+      if (docId === undefined) return;
+
+      let setting: OptimizeSetting = 'high';
+      let measured: { before: number; after: number; version: DocVersion } | null = null;
+      for (;;) {
+        const chosen = (await deps.ask(OPTIMIZE_DIALOG_ID, {
+          setting,
+          measured: measured === null ? null : { before: measured.before, after: measured.after },
+        })) as OptimizeAnswer | undefined;
+        if (chosen === undefined) return;
+
+        if (chosen.kind === 'measure' || measured === null || chosen.setting !== setting) {
+          const task = deps.track(OPTIMIZE_CHECKING, 1);
+          let answer: Awaited<ReturnType<ContractClient['document.optimizeMeasure']>>;
+          try {
+            answer = await deps.client['document.optimizeMeasure']({ docId, setting: chosen.setting });
+            task.step(1);
+          } finally {
+            task.end();
+          }
+          if (task.signal.aborted) return;
+          if (!answer.ok) {
+            reportProblem(deps, answer.error);
+            return;
+          }
+          if (answer.value.kind !== 'measured') {
+            void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: `optimize-${answer.value.kind}` });
+            return;
+          }
+          setting = chosen.setting;
+          measured = { before: answer.value.before, after: answer.value.after, version: answer.value.version };
+          continue;
+        }
+
+        const saved = await deps.client['document.optimize']({ docId, setting, version: measured.version });
+        if (!saved.ok) {
+          reportProblem(deps, saved.error);
+          return;
+        }
+        const outcome = saved.value;
+        switch (outcome.kind) {
+          case 'copied':
+          case 'cancelled':
+            return;
+          case 'not-smaller':
+            // THE SIZES MOVED from the ones shown, which a deterministic rewrite of the same
+            // version should not do — shown again, from main's own reading, and nothing written.
+            measured = { before: outcome.before, after: outcome.after, version: measured.version };
+            continue;
+          case 'changed':
+          case 'unreadable':
+          case 'unavailable':
+            void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: `optimize-${outcome.kind}` });
+            return;
+          case 'write-failed':
+          case 'refused':
+            void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: outcome.kind === 'write-failed' ? 'write-failed' : 'contested' });
+            return;
+        }
       }
     },
   };

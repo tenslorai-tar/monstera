@@ -204,6 +204,17 @@ export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
 export const EXPORT_PDFA_COMMAND_TITLE = messageKey('command.export-pdfa.title');
 export const PDFA_REMOVALS_TITLE = messageKey('dialog.pdfa-removals.title');
+export const OPTIMIZE_COMMAND_TITLE = messageKey('command.optimize.title');
+export const OPTIMIZE_TITLE = messageKey('dialog.optimize.title');
+export const OPTIMIZE_QUALITY = messageKey('dialog.optimize.quality');
+export const OPTIMIZE_HIGH = messageKey('dialog.optimize.high');
+export const OPTIMIZE_MEDIUM = messageKey('dialog.optimize.medium');
+export const OPTIMIZE_LOW = messageKey('dialog.optimize.low');
+export const OPTIMIZE_MEASURE = messageKey('dialog.optimize.measure');
+export const OPTIMIZE_SIZES = messageKey('dialog.optimize.sizes');
+export const OPTIMIZE_NOT_SMALLER = messageKey('dialog.optimize.not-smaller');
+export const OPTIMIZE_SAVE = messageKey('dialog.optimize.save');
+export const OPTIMIZE_KEEPS = messageKey('dialog.optimize.keeps');
 export const PDFA_REMOVALS_SAVED = messageKey('dialog.pdfa-removals.saved');
 export const PDFA_REMOVALS_CONVERTER_WORDS = messageKey('dialog.pdfa-removals.converter-words');
 export const PDFA_REMOVALS_TAGS = messageKey('dialog.pdfa-removals.tags');
@@ -264,6 +275,7 @@ export const IMPORT_ANNOTATIONS_UNREADABLE = messageKey('dialog.import-annotatio
 export const IMPORT_ANNOTATIONS_TOO_LARGE = messageKey('dialog.import-annotations.too-large');
 export const COMPARE_COMMAND_TITLE = messageKey('command.compare-documents.title');
 export const COMPARE_PROGRESS = messageKey('task.compare-documents');
+export const OPTIMIZE_CHECKING = messageKey('task.optimize-checking');
 export const COMPARE_DOCUMENTS_TITLE = messageKey('dialog.compare-documents.title');
 export const COMPARE_DOCUMENTS_LABEL = messageKey('dialog.compare-documents.label');
 export const COMPARE_DOCUMENTS_APPLY = messageKey('dialog.compare-documents.apply');
@@ -1293,6 +1305,9 @@ export const SAVE_NO_TABLES_NO_TEXT = messageKey('dialog.save-problem.no-tables-
 export const SAVE_REVIEW_CHANGED = messageKey('dialog.save-problem.review-changed');
 export const SAVE_PDFA_UNAVAILABLE = messageKey('dialog.save-problem.pdfa-unavailable');
 export const SAVE_PDFA_FAILED = messageKey('dialog.save-problem.pdfa-failed');
+export const SAVE_OPTIMIZE_UNAVAILABLE = messageKey('dialog.save-problem.optimize-unavailable');
+export const SAVE_OPTIMIZE_UNREADABLE = messageKey('dialog.save-problem.optimize-unreadable');
+export const SAVE_OPTIMIZE_CHANGED = messageKey('dialog.save-problem.optimize-changed');
 export const SAVE_PRINT_UNAVAILABLE = messageKey('dialog.save-problem.print-unavailable');
 export const SAVE_PRINT_FAILED = messageKey('dialog.save-problem.print-failed');
 export const SAVE_EMAIL_UNAVAILABLE = messageKey('dialog.save-problem.email-unavailable');
@@ -2295,6 +2310,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
   [EXPORT_PDFA_COMMAND_TITLE]: 'Export as PDF/A…',
   [PDFA_REMOVALS_TITLE]: 'Saved as PDF/A',
+  [OPTIMIZE_COMMAND_TITLE]: 'Save a smaller copy…',
+  [OPTIMIZE_TITLE]: 'Save a smaller copy',
+  [OPTIMIZE_QUALITY]: 'Image quality',
+  [OPTIMIZE_HIGH]: 'High',
+  [OPTIMIZE_MEDIUM]: 'Medium',
+  [OPTIMIZE_LOW]: 'Low — the smallest file',
+  [OPTIMIZE_MEASURE]: 'Check the size',
+  [OPTIMIZE_SIZES]: 'Now {before}. The copy would be {after}, {percent}% smaller.',
+  [OPTIMIZE_NOT_SMALLER]: 'Now {before}. The copy would be {after}, which is not smaller, so it would not be saved.',
+  [OPTIMIZE_SAVE]: 'Choose where to save…',
+  [OPTIMIZE_KEEPS]: 'The open document is not changed. Only pictures are made smaller.',
   [PDFA_REMOVALS_SAVED]: 'The PDF/A file was saved. To meet the archival standard, some things were left out of it.',
   [PDFA_REMOVALS_CONVERTER_WORDS]: 'In the words of the converter, Ghostscript:',
   [PDFA_REMOVALS_TAGS]: 'This document had tags that let screen readers follow it. The PDF/A file does not keep them.',
@@ -2361,6 +2387,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Nothing was added. Monstera reads comment files up to {megabytes} MB, and that one is larger.',
   [COMPARE_COMMAND_TITLE]: 'Compare documents…',
   [COMPARE_PROGRESS]: 'Comparing pages',
+  [OPTIMIZE_CHECKING]: 'Checking the size of a smaller copy',
   [COMPARE_DOCUMENTS_TITLE]: 'Compare documents',
   [COMPARE_DOCUMENTS_LABEL]: 'Compare this document with',
   [COMPARE_DOCUMENTS_APPLY]: 'Compare',
@@ -2887,6 +2914,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_NO_TABLES]: 'No tables with ruled lines were found in this document, so no file was written.',
   [SAVE_PDFA_UNAVAILABLE]: 'PDF/A export needs a component that is not installed with this copy of Monstera, so no file was written.',
   [SAVE_PDFA_FAILED]: 'This document could not be converted to PDF/A, so no file was written. Save a copy… still works.',
+  [SAVE_OPTIMIZE_UNAVAILABLE]: 'Saving a smaller copy needs a component that is not installed with this copy of Monstera, so no file was written.',
+  [SAVE_OPTIMIZE_UNREADABLE]: 'This document could not be read to make a smaller copy — a password-protected document is one reason — so no file was written.',
+  [SAVE_OPTIMIZE_CHANGED]: 'The document changed after its size was checked, so no file was written. Check the size again.',
   [SAVE_PRINT_UNAVAILABLE]: 'Printing needs the system print dialog, which this copy of Monstera cannot open here, so nothing was printed.',
   [SAVE_PRINT_FAILED]: 'The printer did not accept the document, so it was cancelled and nothing more was sent. Check the printer, then print again.',
   [SAVE_EMAIL_UNAVAILABLE]: 'Emailing uses the Windows Share sheet, which this copy of Monstera cannot open here, so nothing was shared.',

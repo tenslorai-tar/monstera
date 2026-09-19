@@ -393,6 +393,20 @@ export function createPdfaPlatform(base: EngineHostPlatform): ConverterPlatform 
   };
 }
 
+/**
+ * Where `monstera_mupdf.dll` is, for Optimize (ADR-0087), or `null`.
+ *
+ * {@link pdfiumLibraryPath}' shape and its reasons: the launcher answers it, empty is absent, and
+ * `null` is the packaged state until packaging resolves the path. Read HERE ONLY, into the compose
+ * host's command line: the host then answers Optimize `unavailable` itself, so `main` never forms
+ * a second opinion about whether the library is there.
+ */
+function mupdfShimPath(): string | null {
+  const supplied = process.env['MONSTERA_MUPDF_SHIM'];
+  if (supplied === undefined || supplied.length === 0) return null;
+  return supplied;
+}
+
 export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostPlatform | null {
   const container = hostContainerSid(ENGINE_HOST_CONTAINER.compose);
   if (!container.ok) return null;
@@ -409,7 +423,9 @@ export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostP
           program: {
             runs: 'electron-node',
             executablePath: binary,
-            commandArguments: [...hostCommandArguments({ kind: 'compose' }, entry, pipeName)],
+            commandArguments: [
+              ...hostCommandArguments({ kind: 'compose', shimPath: mupdfShimPath() }, entry, pipeName),
+            ],
           },
           workingDirectory: dirname(binary),
           containerName: ENGINE_HOST_CONTAINER.compose,

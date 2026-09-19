@@ -464,6 +464,29 @@ export type UrlFetchRefusal = (typeof URL_FETCH_REFUSALS)[number];
 export type ComposeRefusal = (typeof COMPOSE_REFUSALS)[number];
 
 /**
+ * Optimize's three settings, by the name a person picks, and what each asks MuPDF's image
+ * rewriter for ([ADR-0087](../../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)
+ * Decision 3): the JPEG quality for images stored lossy, and the dpi above which a colour or grey
+ * image is subsampled, and to what.
+ *
+ * Measured 2026-09-19 over the eleven-document corpus (`scripts/research/imageRewrite.mjs`):
+ * −10.6%, −11.6% and −25.6% in total, every page count held, 4 of 4 tagged documents keeping
+ * their structure tree. One table, read by the renderer for the names, by `main` for the numbers
+ * it sends, and by the host's channel for the bounds.
+ */
+export const OPTIMIZE_SETTINGS = {
+  high: { quality: 85, over: 300, to: 200 },
+  medium: { quality: 70, over: 225, to: 150 },
+  low: { quality: 50, over: 150, to: 100 },
+} as const;
+
+/** The setting names, in the order the dialog offers them, *high* first. */
+export const OPTIMIZE_SETTING_NAMES = ['high', 'medium', 'low'] as const satisfies readonly (keyof typeof OPTIMIZE_SETTINGS)[];
+
+/** One of {@link OPTIMIZE_SETTING_NAMES}. */
+export type OptimizeSetting = (typeof OPTIMIZE_SETTING_NAMES)[number];
+
+/**
  * The secrets a person may store and the renderer may learn are STORED — never a
  * value.
  *

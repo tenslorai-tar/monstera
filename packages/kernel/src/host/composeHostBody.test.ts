@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   ENGINE_HOST_FRAME_MAX_BYTES,
@@ -12,7 +12,7 @@ import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
 import type { ImportImage } from '../imageCompose.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
-import { createComposeHandlers } from './composeHandlers.js';
+import { type ImageOptimizer, createComposeHandlers } from './composeHandlers.js';
 import { ENGINE_SESSION_ID_MAX_CHARS } from './engineChannels.js';
 import type { HostArea } from './engineHandlers.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
@@ -110,6 +110,18 @@ function start(
 ) {
   const calls: string[] = [];
   const handlers = createComposeHandlers({
+    // THE AREA'S DIRECTORIES, THE TWO NAMES AND THE SETTING, recorded, so a case can assert the
+    // handler handed the rewriter what the request named rather than something else.
+    optimize:
+      optimizer === null
+        ? null
+        : (area, from, into, setting) => {
+            calls.push(
+              `optimize:${area.snapshotDirectory}|${from}->${area.outputDirectory}|${into}:` +
+                `${String(setting.quality)}/${String(setting.over)}/${String(setting.to)}`,
+            );
+            return optimizer === null ? Promise.reject(new Error('unreachable')) : optimizer(area, from, into, setting);
+          },
     areas: createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7)),
     files: {
       readSnapshot: (directory, name) => {
@@ -175,6 +187,9 @@ function start(
 /** The one stream every `start` in this file uses, replaced per case. */
 let stream = stubStream();
 
+/** The rewriter every `start` binds, set by a case before it opens its area; `null` is none bound. */
+let optimizer: ImageOptimizer | null = () => Promise.resolve({ kind: 'optimized', bytes: 1234 });
+
 /** The response inside one frame, with the header stripped by the contract's constant. */
 function answerIn(frame: Uint8Array | undefined): unknown {
   if (frame === undefined) throw new Error('no frame was written');
@@ -230,6 +245,7 @@ describe('the compose host channel set', () => {
         'engine/compose-images',
         'engine/compose-markdown',
         'engine/open',
+        'engine/optimize',
         'engine/probe-containment',
       ].sort(),
     );
@@ -440,5 +456,74 @@ describe('the compose host body', () => {
     expect(answerIn(stream.sent[1])).toMatchObject({
       body: { ok: false, error: { code: 'no-such-session' } },
     });
+  });
+});
+
+describe('the compose host — Optimize, MuPDF’s native image rewriter (ADR-0087)', () => {
+  const MEDIUM = { quality: 70, over: 225, to: 150 };
+  const optimizeRequest = (session: string, setting: Record<string, number> = MEDIUM): Uint8Array =>
+    request('z1', 'engine/optimize', { session, from: IN, into: OUT, ...setting });
+
+  afterEach(() => {
+    optimizer = () => Promise.resolve({ kind: 'optimized', bytes: 1234 });
+  });
+
+  it('hands the rewriter the AREA, both names and the setting, and answers the count it wrote', async () => {
+    const { session, calls } = await openArea(emptyFiles());
+
+    stream.feed(optimizeRequest(session));
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'optimized', bytes: 1234 } } });
+    expect(calls).toStrictEqual([`optimize:C:\\snap|${IN}->C:\\out|${OUT}:70/225/150`]);
+  });
+
+  it('answers MuPDF refusing the document as unreadable, and a missing source as the transport’s', async () => {
+    optimizer = () => Promise.resolve({ kind: 'unreadable' });
+    const first = await openArea(emptyFiles());
+    stream.feed(optimizeRequest(first.session));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unreadable' } } });
+
+    optimizer = () => Promise.resolve({ kind: 'missing' });
+    const second = await openArea(emptyFiles());
+    stream.feed(optimizeRequest(second.session));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'asset-missing' } } });
+  });
+
+  it('answers UNAVAILABLE with no library bound, and calls nothing', async () => {
+    optimizer = null;
+    const { session, calls } = await openArea(emptyFiles());
+
+    stream.feed(optimizeRequest(session));
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'unavailable' } } });
+    expect(calls).toStrictEqual([]);
+  });
+
+  it('does NOT dress a rewriter FAULT up as an answer — it is internal, with an incident', async () => {
+    optimizer = () => Promise.reject(new Error('MuPDF could not save the copy: disk full'));
+    const { session, calls } = await openArea(emptyFiles());
+
+    stream.feed(optimizeRequest(session));
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'internal' } } });
+    expect(calls).toContain('incident:engine/optimize');
+  });
+
+  it('refuses a target at or above its threshold, or one without a threshold — and CONTROL: accepts both 0', () => {
+    const params = composeChannels['engine/optimize'].params;
+    const base = { session: 'a'.repeat(TOKEN_BYTES * 2), from: IN, into: OUT, quality: 70 };
+    expect(params.safeParse({ ...base, over: 225, to: 150 }).success).toBe(true);
+    expect(params.safeParse({ ...base, over: 0, to: 0 }).success).toBe(true);
+    for (const [over, to] of [[150, 150], [150, 225], [0, 150], [225, 0]] as const) {
+      expect(params.safeParse({ ...base, over, to }).success, `${String(over)}/${String(to)}`).toBe(false);
+    }
+    for (const quality of [0, 101, 70.5]) {
+      expect(params.safeParse({ ...base, quality, over: 0, to: 0 }).success, String(quality)).toBe(false);
+    }
   });
 });

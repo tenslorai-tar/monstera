@@ -544,3 +544,16 @@ them.
 So the figure has an expiry and it is an event, not a symbol: **any range that
 adds a kernel module reaching the engine owes a re-run.** One command, and it
 prints the whole table.
+
+## Correction, 2026-09-19 — the shim has its first product consumer
+
+The 2026-09-08 correction above says the shim *"is loaded by nothing"* the product
+runs. That was true when written and stops being true with
+[ADR-0087](0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md):
+Optimize binds `monstera_mupdf.dll` in the **compose host**, through
+`packages/kernel/src/mupdfRaw.ts`, for two new exports — `mz_rewrite_images` and
+`mz_save_compacted` — on runs whose launcher passed the DLL's path. It is not the
+migration: no document-pipeline adapter moved, the thirty-one modules still reach
+the WASM build, and `mupdfRaw.ts` binds the five exports Optimize calls and no more.
+What it does change is that the four security proofs scanning the DLL now read a
+binary the product loads.

@@ -20,6 +20,7 @@ import {
   MAX_TABLE_CELLS,
   type SERVICE_REFUSALS,
   type TABLE_ENGINES,
+  type OptimizeSetting,
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
   type ComposeRefusal,
@@ -1924,6 +1925,12 @@ export interface DocumentCommandsParts {
    */
   readonly pdfa: PdfaSource | null;
   /**
+   * MuPDF's image rewriter in the compose host (ADR-0087) — or `null` where there is no compose
+   * host at all, and Optimize then answers `unavailable` before any work. A host without the
+   * native library answers `unavailable` itself.
+   */
+  readonly optimizer: OptimizeSource | null;
+  /**
    * The system print dialog and the printer it answers (ADR-0074) — or `null` where
    * there is none, and a print then answers `unavailable` before any dialog.
    */
@@ -1949,6 +1956,46 @@ export type ExportTextOutcome =
   | CopyOutcome
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'failed'; readonly detail: string };
+
+/**
+ * How an optimized copy is made (ADR-0087): the document's bytes and one setting in, the copy's
+ * size and a stream of it out — or MuPDF's refusal to open the document.
+ *
+ * The copy lives in the compose host's area until it is streamed or discarded; the caller does one
+ * or the other, and the stream removes the file once read, so no copy outlives the call that made
+ * it. Composed where the host is, which is `composition.ts`.
+ */
+export type OptimizeSource = (
+  pdf: Uint8Array,
+  setting: OptimizeSetting,
+) => Promise<
+  | {
+      readonly kind: 'optimized';
+      readonly bytes: number;
+      readonly output: AsyncIterable<Uint8Array>;
+      readonly discard: () => Promise<void>;
+    }
+  | { readonly kind: 'unreadable' }
+  // THE HOST'S OWN ANSWER when it was started without the native library. Passed on rather than
+  // decided here: the host's command line is the one reading of whether the library was
+  // provisioned, and a second reading in `main` could disagree with it.
+  | { readonly kind: 'unavailable' }
+>;
+
+/** What measuring an optimized copy answered. */
+export type OptimizeMeasurement =
+  | { readonly kind: 'measured'; readonly version: DocVersion; readonly before: number; readonly after: number }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'unavailable' };
+
+/** What writing an optimized copy did. */
+export type OptimizeOutcome =
+  | { readonly kind: 'copied'; readonly bytes: number; readonly before: number }
+  | Exclude<CopyOutcome, { readonly kind: 'copied' }>
+  | { readonly kind: 'not-smaller'; readonly before: number; readonly after: number }
+  | { readonly kind: 'changed' }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'unavailable' };
 
 /** What a PDF/A-2b export did: a copy's outcomes, with what the conversion removed; or no converter; or no PDF/A. */
 export type ExportPdfaOutcome =
@@ -2006,6 +2053,7 @@ export class DocumentCommands {
   readonly #pickText: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
+  readonly #optimizer: OptimizeSource | null;
   readonly #print: PrintDestination | null;
   readonly #share: ShareDestination | null;
   readonly #pickOffice: PickOffice;
@@ -2068,6 +2116,7 @@ export class DocumentCommands {
     this.#pickText = parts.pickText;
     this.#layoutText = parts.layoutText;
     this.#pdfa = parts.pdfa;
+    this.#optimizer = parts.optimizer;
     this.#print = parts.print;
     this.#share = parts.share;
     this.#pickOffice = parts.pickOffice;
@@ -3783,6 +3832,91 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * What an optimized copy at `setting` would weigh, against the document's bytes now
+   * (ADR-0087). Keeps nothing: the copy is discarded once its size is read.
+   *
+   * `before` is the size of the bytes a save would write — `flush`'s — not of the file on disk,
+   * because those are what is rewritten, and a document edited since it was opened would
+   * otherwise be compared with a file that no longer describes it.
+   */
+  async optimizeMeasure(docId: DocId, setting: OptimizeSetting): Promise<OptimizeMeasurement> {
+    if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'optimize');
+    const optimizer = this.#optimizer;
+    if (optimizer === null) return { kind: 'unavailable' };
+
+    const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeMeasurement> => {
+      const pdf = await this.#currentBytes(docId);
+      const copy = await optimizer(pdf, setting);
+      if (copy.kind !== 'optimized') return copy;
+      await copy.discard();
+      return { kind: 'measured', version: context.version, before: pdf.length, after: copy.bytes };
+    });
+    return value;
+  }
+
+  /**
+   * Writes an optimized copy at `setting`, rewriting again, when the document is still at the
+   * `version` it was measured at and the copy is smaller (ADR-0087 Decision 1).
+   *
+   * ## The version is checked twice, and the size once more
+   *
+   * Before the picker, so a document that moved since the sizes were shown asks for no file; and
+   * inside the lane, because it can move while the save dialog is open. The size is compared
+   * again on the copy this call made, because that copy is the one written — a measurement is
+   * about the bytes it was taken of, and *a result larger than the input is never saved* is a
+   * rule about what is written.
+   *
+   * It does NOT touch the document: no command, no log entry, no version bump.
+   */
+  async optimize(docId: DocId, setting: OptimizeSetting, version: DocVersion): Promise<OptimizeOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'optimize');
+    const optimizer = this.#optimizer;
+    if (optimizer === null) return { kind: 'unavailable' };
+
+    const moved = await this.#documents.run(docId, (context) => Promise.resolve(context.version !== version));
+    if (moved.value) return { kind: 'changed' };
+
+    const destination = await this.#copy.pick(suggest);
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeOutcome> => {
+      if (context.version !== version) return { kind: 'changed' };
+      const pdf = await this.#currentBytes(docId);
+      const copy = await optimizer(pdf, setting);
+      if (copy.kind !== 'optimized') return copy;
+      // DISCARDED WHATEVER HAPPENS, not only on the not-smaller branch: a contested destination
+      // answers before the stream is opened, and a copy of the person's document would otherwise
+      // stay in a directory a contained process can read. `discard` is idempotent.
+      try {
+        if (copy.bytes >= pdf.length) return { kind: 'not-smaller', before: pdf.length, after: copy.bytes };
+        const outcome = await writeStreamedDocument(
+          this.#save.deps,
+          this.#copy.checkTarget,
+          () => Promise.resolve(copy.output),
+          destination,
+        );
+        return outcome.kind === 'copied' ? { kind: 'copied', bytes: outcome.bytes, before: pdf.length } : outcome;
+      } finally {
+        await copy.discard();
+      }
+    });
+    return value;
+  }
+
+  /**
+   * The bytes a save would write now, inside a lane the caller already holds: the poisoned and
+   * missing-session checks every export makes, then `flush`.
+   */
+  async #currentBytes(docId: DocId): Promise<Uint8Array> {
+    const failures = this.#engine.poisoned(docId);
+    if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+    const sessions = this.#engine.sessions(docId);
+    if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return this.#save.flush(docId, sessions);
   }
 
   /**

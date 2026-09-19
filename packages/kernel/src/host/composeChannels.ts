@@ -83,8 +83,55 @@ const composeResultSchema = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
+/**
+ * The highest dpi a subsampling bound may name. Twice the 1,200 dpi a print is ever asked for, so
+ * no setting a person could want is refused, and a bound past it is a request this build did not
+ * write.
+ */
+const MAX_REWRITE_DPI = 2400;
+
 export const composeChannels = {
   ...hostAreaChannels(byteImageWire),
+
+  /**
+   * Rewrites a document's images through MuPDF's own rewriter and writes the copy into the area
+   * ([ADR-0087](../../../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)).
+   *
+   * ## Three integers, never an option string
+   *
+   * The setting arrives as the shim's own three numbers, bounded here, so nothing a pipe carries
+   * is a string MuPDF would parse. A subsampling target must sit below its threshold, or both be
+   * zero — the shim refuses the other shapes too, and refusing them at the schema is what makes a
+   * shim refusal a fault rather than a request this channel let through.
+   *
+   * ## `unreadable` and `unavailable` are answers
+   *
+   * `unreadable`: MuPDF could not open the document — a fact about the document, such as its
+   * encryption. `unavailable`: this host was started without the native library, which is every
+   * packaged build until packaging resolves its path. Neither is a fault in this build.
+   */
+  'engine/optimize': channel(
+    'Rewrites the images of a document from the area and writes the copy into the area.',
+    z
+      .object({
+        session: sessionSchema,
+        from: outputNameSchema,
+        into: outputNameSchema,
+        quality: z.number().int().min(1).max(100),
+        over: z.number().int().min(0).max(MAX_REWRITE_DPI),
+        to: z.number().int().min(0).max(MAX_REWRITE_DPI),
+      })
+      .strict()
+      .refine((request) => (request.over === 0 ? request.to === 0 : request.to > 0 && request.to < request.over), {
+        message: 'a subsampling target sits below its threshold, or both are 0',
+      }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('optimized'), bytes: z.number().int().nonnegative() }).strict(),
+      z.object({ kind: z.literal('unreadable') }).strict(),
+      z.object({ kind: z.literal('unavailable') }).strict(),
+    ]),
+    ['no-such-session', 'asset-missing'],
+  ),
 
   /**
    * Sets a Markdown source as a new PDF.

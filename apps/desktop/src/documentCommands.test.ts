@@ -82,7 +82,7 @@ import {
   snapshotRegion,
   withDocument,
 } from '@monstera/kernel/engine';
-import { type DocId, asDocId, asDocVersion } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
@@ -128,6 +128,7 @@ import {
   type DocumentPageTables,
   type ExcelReview,
   type NetworkTableReader,
+  type OptimizeSource,
   DocumentPoisonedError,
   type DocumentRestore,
   type DocumentFlush,
@@ -700,6 +701,8 @@ const INERT = {
   share: null,
   // NO PDF/A CONVERTER, the state of a machine that has not provisioned one.
   pdfa: null,
+  // NO COMPOSE HOST, the state of a platform without one; an Optimize case supplies its own.
+  optimizer: null,
   pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
   directory: noDirectory,
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
@@ -2029,6 +2032,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly share?: ShareDestination | null;
       readonly images?: PageImageRequest[];
       readonly pdfa?: PdfaSource | null;
+      readonly optimizer?: OptimizeSource | null;
       /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
       readonly copyTo?: string | null;
       /** A page's structure nodes in place of the real read; absent, the real read. */
@@ -2044,6 +2048,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       print: options.print ?? null,
       share: options.share ?? null,
       pdfa: options.pdfa ?? null,
+      optimizer: options.optimizer ?? null,
       ...(options.structure === undefined
         ? {}
         : {
@@ -2340,6 +2345,106 @@ describe('exportText — the document’s words, streamed one page at a time', (
     it('CONTROL: answers UNAVAILABLE before any dialog where no converter is provisioned', async () => {
       const { commands } = exportingTo(null, { pdfa: null });
       expect(await commands.exportPdfa(textDoc)).toStrictEqual({ kind: 'unavailable' });
+    });
+  });
+
+  describe('a smaller copy (ADR-0087)', () => {
+    const FLUSHED = new Uint8Array(1000).fill(0x25);
+    const COPY = '%PDF-1.7 smaller';
+
+    /** A rewriter answering `bytes`, recording what it was given and every discard. */
+    function rewriter(answer: 'optimized' | 'unreadable' | 'unavailable', bytes = COPY.length) {
+      const given: { pdf: Uint8Array; setting: string }[] = [];
+      let discards = 0;
+      const source: OptimizeSource = (pdf, setting) => {
+        given.push({ pdf, setting });
+        if (answer !== 'optimized') return Promise.resolve({ kind: answer });
+        return Promise.resolve({
+          kind: 'optimized',
+          bytes,
+          output: (async function* () {
+            yield await Promise.resolve(new TextEncoder().encode(COPY));
+          })(),
+          discard: () => {
+            discards += 1;
+            return Promise.resolve();
+          },
+        });
+      };
+      return { source, given, discards: () => discards };
+    }
+
+    const versionOf = async (commands: DocumentCommands): Promise<DocVersion> =>
+      (await commands.pageTables(textDoc, 0)).version;
+
+    it('MEASURES the save’s flush at the setting asked, answers both sizes and the version, and keeps nothing', async () => {
+      const { source, given, discards } = rewriter('optimized', 600);
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
+
+      const measured = await commands.optimizeMeasure(textDoc, 'medium');
+
+      expect(measured).toStrictEqual({ kind: 'measured', version: await versionOf(commands), before: 1000, after: 600 });
+      expect(given).toStrictEqual([{ pdf: FLUSHED, setting: 'medium' }]);
+      expect(discards()).toBe(1);
+    });
+
+    it('WRITES the copy when it is smaller, at the version measured, and discards it after', async () => {
+      const destination = join(mkdtempSync(join(directory, 'optimize-')), 'smaller.pdf');
+      const { source, discards } = rewriter('optimized');
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+
+      const outcome = await commands.optimize(textDoc, 'high', await versionOf(commands));
+
+      expect(outcome).toStrictEqual({ kind: 'copied', bytes: COPY.length, before: 1000 });
+      expect(readFileSync(destination, 'latin1')).toBe(COPY);
+      expect(discards()).toBe(1);
+    });
+
+    it('writes NOTHING for a copy that is not smaller, answering both sizes', async () => {
+      const destination = join(mkdtempSync(join(directory, 'optimize-')), 'larger.pdf');
+      const { source, discards } = rewriter('optimized', 1000);
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED), copyTo: destination });
+
+      expect(await commands.optimize(textDoc, 'high', await versionOf(commands))).toStrictEqual({
+        kind: 'not-smaller',
+        before: 1000,
+        after: 1000,
+      });
+      expect(existsSync(destination)).toBe(false);
+      expect(discards()).toBe(1);
+    });
+
+    it('answers CHANGED before any picker, rewriting nothing, for a version the document is not at', async () => {
+      const { source, given } = rewriter('optimized');
+      // NO `copyTo`: the picker REFUSES, so reaching it fails this case rather than passing it.
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
+
+      const moved = asDocVersion(Number(await versionOf(commands)) + 1);
+      expect(await commands.optimize(textDoc, 'high', moved)).toStrictEqual({ kind: 'changed' });
+      expect(given).toStrictEqual([]);
+    });
+
+    it('discards the copy when the destination is CONTESTED, which answers before the stream opens', async () => {
+      const destination = join(mkdtempSync(join(directory, 'optimize-')), 'held.pdf');
+      const { source, discards } = rewriter('optimized');
+      const { commands } = exportingTo(null, {
+        optimizer: source,
+        flush: () => Promise.resolve(FLUSHED),
+        copyTo: destination,
+        checkTarget: () => Promise.resolve({ kind: 'contested', others: [asDocId('other')] }),
+      });
+
+      expect((await commands.optimize(textDoc, 'high', await versionOf(commands)))?.kind).toBe('refused');
+      expect(discards()).toBe(1);
+    });
+
+    it('passes on the HOST’S unreadable and unavailable, and answers unavailable itself with no host', async () => {
+      for (const answer of ['unreadable', 'unavailable'] as const) {
+        const { commands } = exportingTo(null, { optimizer: rewriter(answer).source, flush: () => Promise.resolve(FLUSHED) });
+        expect(await commands.optimizeMeasure(textDoc, 'low')).toStrictEqual({ kind: answer });
+      }
+      const { commands } = exportingTo(null, { optimizer: null });
+      expect(await commands.optimizeMeasure(textDoc, 'low')).toStrictEqual({ kind: 'unavailable' });
     });
   });
 

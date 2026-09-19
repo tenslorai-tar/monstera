@@ -4,15 +4,16 @@ A flat C ABI over MuPDF, bound with koffi. This is the seam
 [ADR-0010](../../docs/DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)
 mandates; it is not a helper or an optimisation.
 
-> **NOTHING IN THE APPLICATION LOADS THIS LIBRARY TODAY, measured 2026-09-08.**
-> Every MuPDF consumer in `packages/kernel` imports the bare specifier `mupdf`,
-> which resolves to the npm package's WASM build; a search for
-> `monstera_mupdf` across `packages/` and `apps/` returns zero. Its callers are
-> the security proofs and the research instruments. ADR-0010's correction of
-> that date records the open decision — the adapters move here, or the ADR is
-> amended to the reach the product has — and says why nothing may be built on
-> either reading until it is taken. This note is here because a reader arriving
-> at a seam described as mandated will otherwise assume it is in use.
+> **ONE THING IN THE APPLICATION LOADS THIS LIBRARY: Optimize, since 2026-09-19.**
+> The compose host binds it through `packages/kernel/src/mupdfRaw.ts` for
+> `mz_rewrite_images` and `mz_save_compacted`, where the launcher passed its path
+> ([ADR-0087](../../docs/DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)).
+> **The document pipeline does not**: every MuPDF consumer in `packages/kernel`
+> imports the bare specifier `mupdf`, which resolves to the npm package's WASM
+> build. The decision to move the adapters here is taken (ADR-0010's correction
+> of 2026-09-08) and the migration is not built. This note is here because a
+> reader arriving at a seam described as mandated will otherwise assume the
+> whole pipeline runs through it.
 
 ## Why a shim exists at all
 

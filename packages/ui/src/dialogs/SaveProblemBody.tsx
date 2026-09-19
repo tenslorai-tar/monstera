@@ -15,6 +15,9 @@ import {
   SAVE_LAYOUT_UNAVAILABLE,
   SAVE_NO_TABLES,
   SAVE_NO_TABLES_NO_TEXT,
+  SAVE_OPTIMIZE_CHANGED,
+  SAVE_OPTIMIZE_UNAVAILABLE,
+  SAVE_OPTIMIZE_UNREADABLE,
   SAVE_PDFA_FAILED,
   SAVE_PDFA_UNAVAILABLE,
   SAVE_PRINT_FAILED,
@@ -41,7 +44,10 @@ type SaveProblem =
   | 'email-unavailable'
   | 'email-failed'
   | 'pdfa-unavailable'
-  | 'pdfa-failed';
+  | 'pdfa-failed'
+  | 'optimize-unavailable'
+  | 'optimize-unreadable'
+  | 'optimize-changed';
 
 /**
  * The message for one outcome.
@@ -89,6 +95,11 @@ const MESSAGE: Readonly<Record<SaveProblem, MessageKey>> = {
   // A PDF/A EXPORT's two, layout text's reason: no converter here, and one that made no PDF/A.
   'pdfa-unavailable': SAVE_PDFA_UNAVAILABLE,
   'pdfa-failed': SAVE_PDFA_FAILED,
+  // OPTIMIZE's three (ADR-0087): no native library here, MuPDF could not open the document, and
+  // a document that moved after its sizes were shown.
+  'optimize-unavailable': SAVE_OPTIMIZE_UNAVAILABLE,
+  'optimize-unreadable': SAVE_OPTIMIZE_UNREADABLE,
+  'optimize-changed': SAVE_OPTIMIZE_CHANGED,
 };
 
 /**

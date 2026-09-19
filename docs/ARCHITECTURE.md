@@ -614,8 +614,12 @@ never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
 bare specifier `mupdf`, which resolves to the npm package's
 `dist/mupdf-wasm.wasm`; **thirty-one non-test modules do so (2026-09-19), and a search for
 `monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
-built, is scanned by four security proofs, and is loaded by nothing the product
-runs.
+built, is scanned by four security proofs, and was loaded by nothing the product
+runs **until 2026-09-19, when Optimize became its one consumer**: the compose host
+binds it through `mupdfRaw.ts` for `pdf_rewrite_images`, where the launcher passed
+its path, and never in `main`
+([ADR-0087](DECISIONS/0087-optimize-is-mupdfs-native-image-rewriter-in-the-compose-host.md)).
+The document pipeline — every module counted above — still reaches the WASM build.
 
 The clause about the held handle stayed true throughout, which is why the
 sentence survived review: a compound claim whose live half vouches for its dead

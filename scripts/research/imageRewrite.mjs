@@ -27,20 +27,15 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+
+import * as pdfLib from '@cantoo/pdf-lib';
+import * as mupdf from 'mupdf';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { requireCurrentShim } from '../lib/shimBinary.mjs';
 
 const ROOT = repoRoot();
-const kernelRequire = createRequire(join(ROOT, 'packages', 'kernel', 'package.json'));
-const mupdf = await import(pathToFileURL(kernelRequire.resolve('mupdf')).href);
 const koffi = createRequire(join(ROOT, 'package.json'))('koffi');
-const pdfLibModule = await import(
-  pathToFileURL(createRequire(join(ROOT, 'apps', 'desktop', 'package.json')).resolve('@cantoo/pdf-lib')).href
-);
-/** @type {any} */
-const pdfLib = pdfLibModule.PDFDocument === undefined ? pdfLibModule.default : pdfLibModule;
 
 /** The three settings: JPEG quality for lossy images, and subsample above `over` dpi to `to`. */
 const SETTINGS = [
@@ -107,7 +102,8 @@ function meanDifference(a, b) {
   if (a.w !== b.w || a.h !== b.h) throw new Error(`page 1 rendered ${String(a.w)}x${String(a.h)} before and ${String(b.w)}x${String(b.h)} after`);
   if (a.pixels.length === 0) throw new Error('an empty render is a detached view, not a page');
   let total = 0;
-  for (let i = 0; i < a.pixels.length; i += 1) total += Math.abs(a.pixels[i] - b.pixels[i]);
+  if (a.pixels.length !== b.pixels.length) throw new Error('the two renders hold different sample counts');
+  for (const [i, value] of a.pixels.entries()) total += Math.abs(value - (b.pixels[i] ?? Number.NaN));
   return total / a.pixels.length;
 }
 
