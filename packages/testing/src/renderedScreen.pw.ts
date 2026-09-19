@@ -857,15 +857,23 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
 test('the START SCREEN draws the supplied logo, the hero lines, one primary Open with its chord, and a footer', async ({
   page,
 }) => {
-  // §10.3's start screen; ADR-0002: the supplied artwork, in a portrait box, never stretched. The production build is
-  // the subject — an asset route is proven only where the bundle and its CSP load it.
+  // §10.3's start screen; ADR-0002: the supplied artwork, never stretched. The production build is the subject — an
+  // asset route is proven only where the bundle and its CSP load it.
   await bridge(page);
   await page.goto('/');
 
-  const measure = async (image: import('@playwright/test').Locator): Promise<{ natural: number; width: number; height: number }> =>
+  const measure = async (
+    image: import('@playwright/test').Locator,
+  ): Promise<{ natural: number; naturalRatio: number; width: number; height: number }> =>
     image.evaluate((element) => {
       const box = element.getBoundingClientRect();
-      return { natural: (element as HTMLImageElement).naturalWidth, width: box.width, height: box.height };
+      const img = element as HTMLImageElement;
+      return {
+        natural: img.naturalWidth,
+        naturalRatio: img.naturalHeight === 0 ? 0 : img.naturalWidth / img.naturalHeight,
+        width: box.width,
+        height: box.height,
+      };
     });
 
   const hero = page.getByRole('img', { name: 'Monstera' });
@@ -874,12 +882,15 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);
   expect(drawn.height).toBeCloseTo(84, 0);
-  // PORTRAIT AND UNSTRETCHED: the master is 1652 × 2050.
-  expect(drawn.width / drawn.height).toBeCloseTo(1652 / 2050, 1);
+  // UNSTRETCHED: drawn at the image's OWN ratio. This asserted the portrait master's 1652 × 2050 until the owner's
+  // square masters replaced it on 2026-09-19 and it failed on a correct drawing — a ratio written down is a claim about
+  // one artwork, and the image's own ratio is the property ADR-0002 states for any.
+  expect(drawn.width / drawn.height).toBeCloseTo(drawn.naturalRatio, 1);
 
   const title = await measure(page.locator('.m-title-bar__logo'));
   expect(title.natural).toBeGreaterThan(0);
   expect(title.height).toBeCloseTo(26, 0);
+  expect(title.width / title.height).toBeCloseTo(title.naturalRatio, 1);
 
   await expect(page.getByText('PDF EDITOR')).toBeVisible();
   await expect(page.getByText('Built For The Way You Work')).toBeVisible();
