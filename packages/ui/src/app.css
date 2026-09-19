@@ -114,7 +114,7 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
-/* ADR-0002's portrait box: the brand's height, and the width the image's own ratio gives it — never stretched. */
+/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. */
 .m-title-bar__logo {
   flex: none;
   block-size: var(--logo-title);
@@ -216,7 +216,7 @@ textarea {
   line-height: 0;
 }
 
-/* ADR-0002's portrait box: the brand's height, and the width the image's own ratio gives it — never stretched. */
+/* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. */
 .m-start-logo {
   block-size: var(--logo-hero);
   inline-size: auto;

@@ -90,6 +90,7 @@
     "proof:lintignores": "node scripts/proofs/lintIgnores.proof.mjs",
     "brand:generate": "node scripts/brand/generateAssets.mjs",
     "brand:check": "node scripts/brand/generateAssets.mjs --check",
+    "proof:brandshape": "node scripts/proofs/brandShape.proof.mjs",
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
     "proof:composition": "node scripts/proofs/composition.proof.mjs",
     "proof:shell": "node scripts/proofs/shell.proof.mjs",

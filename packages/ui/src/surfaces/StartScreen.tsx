@@ -40,10 +40,10 @@ import { startScreenModel } from './projections.js';
  *
  * ## The hero is the supplied artwork, and it is not a command
  *
- * ADR-0002: the composite logo is used as supplied, so there is no text wordmark —
+ * ADR-0002: the owner's artwork is used as supplied, so there is no text wordmark —
  * the artwork carries the name, and it is this heading's accessible name. The
- * derivative is `assets/brand/logo-hero.png`, generated from the master and
- * imported, so the bundle carries 34 KB rather than the master's 4.4 MB. "PDF
+ * derivative is `assets/brand/logo-hero.png`, generated from the wordmark master
+ * and imported, so the bundle carries 17 KB rather than the master's 1.6 MB. "PDF
  * EDITOR" and the tagline stay beneath it.
  *
  * ## A GRID of what this build can do, not a grid of what it will

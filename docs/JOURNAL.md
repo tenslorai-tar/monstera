@@ -892,6 +892,48 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-19 — Three owner-supplied logos become the brand masters
+
+The owner's three artworks moved from the repository root into `assets/brand` under their own
+names, and nothing was committed from the root. **Measured before anything was derived**: all
+three are 2048 × 2048 RGBA with four transparent corners; the wordmark and mark-only versions
+carry transparent margins of 131, 144, 314 and 302 px (top, bottom, left, right); the square is a
+full-bleed tile whose folded corner is transparent.
+
+`generateAssets.mjs` now names one master per output in a table — the wordmark for the README
+(256 px) and the start screen (168 px), the mark alone for the title bar (52 px, drawn at 26), the
+tile for `logo.ico` — which is this build's reading of the file names, written into ADR-0002's
+note so the owner can move a line. `brand:check` also refuses a master with no alpha channel or
+an opaque corner: `brandShape.mjs`, one function its two callers take, and `proof:brandshape`
+with four cases — the three real masters pass, a no-alpha image and a one-opaque-corner image are
+refused by name, and an opaque centre with clear corners passes. Mutated so every master passes:
+the corner case goes red. The retired `logo.png` leaves the tree.
+
+**Blocked**: *verify Explorer shows the file-type icon on an installed build*. No packaging
+configuration exists in the repository — nothing declares a file association and no installer
+has been built — so there is no installed build to look at, and a file-type `.ico` would have no
+consumer. The trigger is packaging.
+
+Every visual baseline carries the title bar, so all of them change; they are regenerated in their
+own commit.
+
+---
+
+## 2026-09-19 — Annotation import: no public Acrobat-exported file found
+
+The row owes an XFDF or FDF that Acrobat exported, published with its source. Searched: the web
+for Acrobat-exported XFDF samples (vendor guides and SDK pages, no files); Apache PDFBox's issue
+tracker, where XFDF attachments sit beside import defects — PDFBOX-4628 (`c0.xfdf`, 19 kB) and
+PDFBOX-3646 (`sample.xfdf`, 2 kB) both carry one, and **neither says which application exported
+it**. XFDF has no producer field, so a file's origin is only what its publisher states; inferring
+Acrobat from its shape would be the guess the row exists to avoid. Blocked on a source, not on
+code. What would clear it: a file the owner exports from Acrobat, or a publisher that says so.
+
+The Office font-loss measurement is **not blocked and not started**, deliberately: it matters only
+once a contained import runs, and the second contained cause is still unnamed.
+
+---
+
 ## 2026-09-19 — Optimize built on ADR-0087, and done on a live run
 
 **The path.** Home › File › *Save a smaller copy…* asks for High, Medium or Low. *Check the size*

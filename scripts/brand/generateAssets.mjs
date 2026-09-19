@@ -1,25 +1,27 @@
 // @ts-check
 /**
- * Derives every logo size the project needs from the one master.
+ * Derives every logo size the project needs from the owner's three masters.
  *
- * `assets/brand/logo.png` is the single source of truth (B3). Everything below
- * is generated from it, so a size can never drift from the artwork it is
- * supposed to represent, and adding a size is a line here rather than a new
- * binary in the repository.
+ * Each output has exactly one master, named in {@link OUTPUTS} (B3): a size can never drift from
+ * the artwork it represents, and adding a size is a line here rather than a new binary in the
+ * repository. The masters are the owner's (ADR-0002, and its note of 2026-09-19): this script
+ * resizes and converts them and never alters a mark.
  *
- * Two of the outputs are committed rather than built on demand, and the reason
- * is specific: GitHub renders README.md with no build step, so a display asset
- * has to exist as a file. Committing a *generated* file is acceptable where
- * regenerating it is one command and CI can prove it matches; committing a
- * hand-made one is not, because nothing then ties it to the master.
+ * - `monstera_new_logo.png` — the mark with its wordmark, for where the name is legible;
+ * - `monstera_logo_no_text.png` — the mark alone, for sizes where a word cannot be read;
+ * - `monstera_logo_square.png` — the full-bleed tile, for the application icon.
  *
- * The artwork is portrait (aspect ratio 0.806) and ADR-0002 forbids distorting
- * it. Square outputs are produced by fitting inside the box and padding with
- * transparency — never by stretching.
+ * Which master feeds which output is this build's reading of those names, recorded in ADR-0002's
+ * note so the owner can move a line rather than rediscover the choice.
+ *
+ * Some outputs are committed rather than built on demand, and the reason is specific: GitHub
+ * renders README.md with no build step, the renderer imports its two sizes, and packaging needs an
+ * `.ico` on disk. Committing a *generated* file is acceptable where regenerating it is one command
+ * and CI proves it matches; committing a hand-made one is not.
  *
  * Usage: node scripts/brand/generateAssets.mjs [--check]
- *   --check  regenerate into memory and fail if the committed files differ.
- *            This is what stops a derived asset silently going stale.
+ *   --check  regenerate into memory and fail if a committed file differs, or if a master is not
+ *            the shape every output assumes — an alpha channel and transparent corners.
  */
 
 import { createHash } from 'node:crypto';
@@ -31,40 +33,42 @@ import pngToIco from 'png-to-ico';
 import sharp from 'sharp';
 
 import { formatError } from '../lib/reportError.mjs';
+import { shapeProblem } from './brandShape.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BRAND = join(REPO_ROOT, 'assets', 'brand');
-const MASTER = join(BRAND, 'logo.png');
+
+/** The owner's masters, by the role each plays. */
+const MASTERS = {
+  wordmark: 'monstera_new_logo.png',
+  mark: 'monstera_logo_no_text.png',
+  tile: 'monstera_logo_square.png',
+};
 
 /**
- * Committed derivatives.
+ * Committed outputs, each from one master.
  *
- * `logo-256.png` is what README.md and the docs display: 256 px on its long
- * edge keeps a 132 px render crisp on a 2x display without shipping a
- * multi-megabyte image to every reader of the repository front page.
+ * `logo-256.png` is what README.md displays: 256 px keeps a 132 px render crisp on a 2x display
+ * without shipping a megabyte to every reader of the front page. `logo-hero.png` and
+ * `logo-title.png` are what the RENDERER draws — the start screen's hero at 84 px and the title
+ * bar at 26 px (`tokens.css`) — each at twice that so a 2x display draws real pixels. The masters
+ * are square, so each is a square of `size`; the title bar takes the mark without its word, which
+ * at 26 px is a smudge rather than a name.
  *
- * `logo-title.png` and `logo-hero.png` are what the RENDERER displays — the
- * title bar at 26 px tall and the start screen's hero at 84 px (`README.md` in
- * this directory, ADR-0002) — each at twice that height so a 2x display draws
- * them from real pixels. Width is what `sharp` is given; the height follows the
- * 1652 × 2050 master: 42 wide is 52 tall, 135 wide is 168. The renderer imports
- * them from here, so the bundle carries these and never the 4.4 MB master.
- *
- * @type {readonly {file: string, width: number}[]}
+ * @type {readonly {file: string, master: keyof typeof MASTERS, size: number}[]}
  */
-const DERIVATIVES = [
-  { file: 'logo-256.png', width: 206 },
-  { file: 'logo-title.png', width: 42 },
-  { file: 'logo-hero.png', width: 135 },
+const OUTPUTS = [
+  { file: 'logo-256.png', master: 'wordmark', size: 256 },
+  { file: 'logo-hero.png', master: 'wordmark', size: 168 },
+  { file: 'logo-title.png', master: 'mark', size: 52 },
 ];
 
-/** Square sizes packed into the Windows .ico used by the packaged app. */
+/** Square sizes packed into the Windows `.ico` the packaged application carries, from the tile. */
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
 /**
- * Fits the portrait artwork inside a square of `size`, padding with
- * transparency. `fit: 'contain'` preserves the aspect ratio; the alternative,
- * 'fill', would stretch it, which ADR-0002 rules out.
+ * A square of `size` from a master. `fit: 'contain'` preserves the aspect ratio and pads with
+ * transparency; the alternative, `fill`, would stretch a mark, which ADR-0002 rules out.
  *
  * @param {Buffer} master
  * @param {number} size
@@ -72,21 +76,9 @@ const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
  */
 function square(master, size) {
   return sharp(master)
-    .resize(size, size, {
-      fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    })
+    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png({ compressionLevel: 9 })
     .toBuffer();
-}
-
-/**
- * @param {Buffer} master
- * @param {number} width
- * @returns {Promise<Buffer>}
- */
-function scaled(master, width) {
-  return sharp(master).resize({ width }).png({ compressionLevel: 9 }).toBuffer();
 }
 
 /**
@@ -98,53 +90,52 @@ function digest(buffer) {
 }
 
 async function main() {
-  const master = await readFile(MASTER);
-  const meta = await sharp(master).metadata();
-  process.stderr.write(`master: ${meta.width ?? '?'}x${meta.height ?? '?'}\n`);
-
   const check = process.argv.includes('--check');
   /** @type {string[]} */
   const stale = [];
 
-  for (const { file, width } of DERIVATIVES) {
-    const generated = await scaled(master, width);
-    const path = join(BRAND, file);
+  /** @type {Record<keyof typeof MASTERS, Buffer>} */
+  const masters = {
+    wordmark: await readFile(join(BRAND, MASTERS.wordmark)),
+    mark: await readFile(join(BRAND, MASTERS.mark)),
+    tile: await readFile(join(BRAND, MASTERS.tile)),
+  };
+  for (const [role, bytes] of Object.entries(masters)) {
+    const problem = await shapeProblem(bytes);
+    if (problem !== null) stale.push(`${MASTERS[/** @type {keyof typeof MASTERS} */ (role)]} (${problem})`);
+  }
 
+  for (const { file, master, size } of OUTPUTS) {
+    const generated = await square(masters[master], size);
+    const path = join(BRAND, file);
     if (check) {
       const existing = await readFile(path).catch(() => null);
-      if (existing === null || digest(existing) !== digest(generated)) {
-        stale.push(file);
-      }
+      if (existing === null || digest(existing) !== digest(generated)) stale.push(file);
       continue;
     }
-
     await writeFile(path, generated);
-    process.stderr.write(`  wrote ${file} (${width}px wide, ${generated.length} bytes)\n`);
+    process.stderr.write(`  wrote ${file} (${String(size)} px from ${MASTERS[master]}, ${String(generated.length)} bytes)\n`);
   }
 
   const icoPath = join(BRAND, 'logo.ico');
-  const squares = await Promise.all(ICO_SIZES.map((size) => square(master, size)));
-  const ico = await pngToIco(squares);
-
+  const ico = await pngToIco(await Promise.all(ICO_SIZES.map((size) => square(masters.tile, size))));
   if (check) {
     const existing = await readFile(icoPath).catch(() => null);
     if (existing === null || digest(existing) !== digest(ico)) stale.push('logo.ico');
   } else {
     await writeFile(icoPath, ico);
-    process.stderr.write(`  wrote logo.ico (${ICO_SIZES.join(', ')} px, ${ico.length} bytes)\n`);
+    process.stderr.write(`  wrote logo.ico (${ICO_SIZES.join(', ')} px from ${MASTERS.tile}, ${String(ico.length)} bytes)\n`);
   }
 
-  if (check && stale.length > 0) {
+  if (stale.length > 0) {
     process.stderr.write(
-      `\nGenerated brand assets are out of date: ${stale.join(', ')}\n\n` +
+      `\nBrand assets are not what their masters produce: ${stale.join(', ')}\n\n` +
         `  Run:  node scripts/brand/generateAssets.mjs\n\n` +
-        `They are committed only because GitHub renders README.md with no build ` +
-        `step. A committed derivative that no longer matches its master is the ` +
-        `drift that having one source of truth exists to prevent.\n`,
+        `A committed output that no longer matches its master is the drift one source per ` +
+        `output exists to prevent; a master of the wrong shape is the owner's to replace.\n`,
     );
     return 1;
   }
-
   return 0;
 }
 

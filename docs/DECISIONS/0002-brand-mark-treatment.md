@@ -82,3 +82,27 @@ Consequently:
   and libraries, which are provisioned by hash-pinned download — and the
   pre-commit guard admits it explicitly as allowlisted brand artwork under the
   5 MB ceiling.
+
+## Note, 2026-09-19 — three owner-supplied masters replace `logo.png`
+
+The owner supplied three new artworks and asked for them to be moved into `assets/brand`, with
+the generator and `brand:check` extended. They change two things this record says:
+
+- **A mark-only asset now exists.** *"Request a separate mark-only asset"* was rejected above
+  because the owner had said none was coming; `monstera_logo_no_text.png` is that asset. The
+  decision's rule is unchanged — every mark is the owner's, and this build resizes and converts
+  and never draws one.
+- **The artwork is square, not portrait.** All three are 2048 × 2048 RGBA, measured that day,
+  with four transparent corners; the wordmark and mark-only versions carry transparent margins
+  (131, 144, 314 and 302 px on the top, bottom, left and right), and the tile is full-bleed
+  with a transparent folded corner. The *portrait box* consequence above no longer applies.
+
+**Which master feeds which output is this build's reading of the file names**, not an
+instruction, and is written in one table (`OUTPUTS` in `scripts/brand/generateAssets.mjs`) so the
+owner can move a line: the wordmark version for the README and the start screen, where the name
+is legible; the mark alone for the title bar at 26 px; the tile for `logo.ico`. The mark alone is
+also the natural file-type icon — a document-shaped mark — and is not generated as one until
+packaging declares a file association, because nothing would consume it.
+
+`logo.png` is retired from the tree and kept by the history. `brand:check` now also refuses a
+master with no alpha channel or an opaque corner (`brandShape.mjs`, `proof:brandshape`).

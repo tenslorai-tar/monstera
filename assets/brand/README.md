@@ -12,17 +12,26 @@ protects users rather than the project.
 
 | File | Size | Origin | Used by |
 |---|---|---|---|
-| `logo.png` | 1652 × 2050, RGBA | **master — supplied by the owner** | the source every other asset is derived from |
-| `logo-256.png` | 206 × 256 | generated | `README.md` and docs |
-| `logo-title.png` | 42 × 52 | generated | the title bar, drawn at 26 px |
-| `logo-hero.png` | 135 × 168 | generated | the start screen's hero, drawn at 84 px |
-| `logo.ico` | 16/24/32/48/64/128/256 px | generated | packaged app icon, file association |
+| `monstera_new_logo.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark with its wordmark | `logo-256.png`, `logo-hero.png` |
+| `monstera_logo_no_text.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark alone | `logo-title.png`; the file-type icon when packaging lands |
+| `monstera_logo_square.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the full-bleed tile | `logo.ico` |
+| `logo-256.png` | 256 × 256 | generated | `README.md` and docs |
+| `logo-title.png` | 52 × 52 | generated | the title bar, drawn at 26 px |
+| `logo-hero.png` | 168 × 168 | generated | the start screen's hero, drawn at 84 px |
+| `logo.ico` | 16/24/32/48/64/128/256 px | generated | the packaged application's icon |
+
+Which master feeds which output is this build's reading of the owner's file names, recorded in
+[ADR-0002](../../docs/DECISIONS/0002-brand-mark-treatment.md)'s note of 2026-09-19 — moving one
+is a line in `OUTPUTS`. The previous master, `logo.png` (1652 × 2050), was retired that day and
+lives in the history.
 
 ## Rules
 
-- **`logo.png` is the single source of truth.** Everything else here is
-  produced from it by `scripts/brand/generateAssets.mjs`. Adding a size is a
-  line in that script, never a new binary committed by hand.
+- **Each output has exactly one master**, named in `OUTPUTS` in
+  `scripts/brand/generateAssets.mjs`. Adding a size is a line in that script,
+  never a new binary committed by hand. `brand:check` also refuses a master
+  with no alpha channel or an opaque corner (`scripts/brand/brandShape.mjs`,
+  proven by `proof:brandshape`).
 
   ```bash
   npm run brand:generate    # rewrite the derived assets
@@ -35,23 +44,21 @@ protects users rather than the project.
   committed derivative cannot silently drift from the master — which is the
   failure mode that having one source of truth exists to prevent.
 
-- **Never edit the master, and never derive a new *mark* from it.** Brand
+- **Never edit a master, and never derive a new *mark* from one.** Brand
   identity is supplied by the project owner; see
   [ADR-0002](../../docs/DECISIONS/0002-brand-mark-treatment.md). Resizing and
   format conversion are permitted and are done by the script, so they are
   reproducible rather than checked-in guesswork.
 
-- **The artwork is portrait (aspect ratio 0.806), not square.** Square outputs
-  fit inside the box and pad with transparency. **Never stretch it** — mount
-  points reserve a portrait box and letterbox within it.
+- **The masters are square, and outputs never stretch them.** Square outputs
+  are produced by fitting inside the box and padding with transparency.
 
-- **Do not ship `logo.png` to the renderer.** It is 4.4 MB; the start-screen
-  hero is 84 px and the title bar 26 px. The UI consumes derived sizes.
+- **Do not ship a master to the renderer.** Each is 1.5–2.2 MB; the
+  start-screen hero is 84 px and the title bar 26 px. The UI consumes derived
+  sizes.
 
 ## Archival master
 
-A 3304 × 4100 export exists and is **deliberately not in this repository** —
-at 15.5 MB it exceeds the 5 MB pre-commit ceiling, and nothing needs it: the
-largest requirement is roughly 1240 px, a Microsoft Store tile at 400% scaling.
-It is retained by Tenslor Inc. outside version control. Request it if an asset
-ever genuinely needs more than the 2050 px master provides.
+The 2048 px masters cover the largest requirement, roughly 1240 px for a
+Microsoft Store tile at 400% scaling. A larger export of the retired portrait
+mark (3304 × 4100, 15.5 MB) is retained by Tenslor Inc. outside version control.
