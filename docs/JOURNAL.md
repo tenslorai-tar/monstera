@@ -892,6 +892,77 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — The machine witness could not tell a saturated machine from a blind instrument
+
+`npm run local` sealed **failed** with two reds, and both were the same sentence
+the harness printed itself: `machine: 99% busy (99% of 4 cores — this machine had
+company)`. The company was the developer's browser, twenty-six renderer processes
+on a four-core machine. Neither red was a regression, and one of them was a real
+defect in an instrument.
+
+**`proof:boundaries` timed out at 222.1 s** and passes alone at 161 s — the same
+shape as `proof:provision`, which timed out in the previous sweep at the harness's
+180 s default and passes alone at 130 s. Nothing is raised: both are proofs whose
+cost sits near a bound that contention crosses, and the response the harness
+itself names is `--only`, not a bigger number. **What the timeout left behind is
+worth more than the timeout**: `packages/ui/src/__boundary_probe__.ts`, a
+gitignored file that breaks `npm run build` and `npm run typecheck` while
+`git status` reads clean. A `finally` does not run when a script is killed at its
+timeout. The next run swept it and said so; a run that had not would have been
+diagnosed as a broken build.
+
+**`proof:machinewitness` FAILED, and that one is the finding.** Its load-bearing
+case spins a core for 400 ms and requires the machine's busy fraction to read
+higher than an idle interval of the same length. `busyFraction` is machine-wide,
+so one more busy core can raise it by at most `1 / cores` — and an interval that
+left less than one core's worth idle has nowhere for that rise to go. The extra
+work displaces work already queued instead of adding to the total, and the
+fraction comes back unmoved.
+
+So on a saturated machine the case reported *the instrument is blind* for what was
+really *the machine could not be looked at*. **Those are the two outputs this
+project separates everywhere else**, and here they were one.
+
+Measured rather than reasoned, and the instrument that convicted it is the harness
+itself: `checkLocal.mjs` records a `busy` fraction per script, and this proof exits
+0 at `busy` 0.19 and 0.27 and exits 1 at `busy` 1.00. The field that explains the
+failure was already being written into every run's rows.
+
+The repair is a **precondition, never a weaker assertion** — widening the
+comparison to tolerate a saturated machine would be the loosened check Rule 0
+bans. `canSeeOneMoreCore` is a named export of the instrument itself, because the
+rule is about what the instrument can resolve and a line in the caller would be
+the next caller's to re-derive (B3a). It is checked against the **quiet** interval,
+which is the one that has to hold the headroom; keyed on the loaded one it would
+be asking whether the spin had already happened.
+
+**This is a reduction where the machine is loaded, and it is stated rather than
+slipped in** (audit item 2a). The pair no longer runs at all there — it records as
+*not applicable*, which the roster prints by name and the harness tallies apart
+from the passes, so the run reads `7 passed, 1 not applicable` instead of a green
+8. A skipped case that vanished from the list would be the same defect one layer
+up.
+
+Three mutations, and the third is the one that decides it:
+
+| mutation | what happened |
+|---|---|
+| the predicate always answers *no* | the CONTROL goes red, and the skip body executes — the branch a quiet machine never reaches |
+| the branch is forced to skip | `7 passed, 1 not applicable`, exit 0, the case named in the list |
+| `busyFraction` returns a constant | **the resolution test still goes red** |
+
+The third is what says the guard did not swallow its own subject. A constant 0.5
+leaves two idle cores, so the precondition passes and the comparison still runs
+and still fails. A guard keyed on the loaded reading would have skipped exactly
+there, which is the version of this fix that would have read identically and
+covered nothing.
+
+**CI never ran this proof.** It lives under `scripts/lib/` rather than
+`scripts/proofs/`, and no workflow names it — so `main` was never at risk and no
+board reading would ever have shown it. What it cost instead is the thing worth
+recording: a check that goes red whenever a browser is open is a check whose reds
+stop being read, and it sits in the sweep that gates every push.
+
 ## 2026-09-20 — Centring an overflowing page put 859 pixels of it where nothing could scroll
 
 **The defect.** `.m-page-list` is a column flex stack, so `align-items` centres each page on the

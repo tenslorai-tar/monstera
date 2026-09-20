@@ -11,21 +11,50 @@
  * core deliberately spinning and once without, and the busy fraction must be
  * **higher** for the busy one. Mutating `busyFraction` to return a constant
  * reddens it, which a case asserting only *a number came back* would not.
+ *
+ * ## That pair has a PRECONDITION, and it used to be unstated (2026-09-20)
+ *
+ * The comparison is machine-wide, so it can only separate the two intervals when
+ * the quiet one left at least one core idle — `canSeeOneMoreCore` carries the
+ * arithmetic. On a saturated machine the spin has nowhere to rise into, and this
+ * file reported *the instrument is blind* for what was really *the machine could
+ * not be looked at*: the two outputs this project keeps apart everywhere else.
+ *
+ * Measured, and the harness's own field is the witness: `npm run local` records a
+ * `busy` fraction per script, and this proof exits 0 at `busy` 0.19 and 0.27 and
+ * exits 1 at `busy` 1.00, on a 4-core machine whose company was a browser.
+ *
+ * **This is a REDUCTION where the machine is loaded and it is stated rather than
+ * slipped in** (audit item 2a). On a saturated machine the pair no longer runs at
+ * all; it records as *not applicable*, which the roster prints and the harness
+ * tallies separately from a pass. The two controls below are what stop that
+ * becoming a permanent skip — a predicate that always answered *no* would make
+ * this file green for ever, which is the same defect one layer up.
  */
 
 import { createRoster } from './passRoster.mjs';
-import { busyFraction, describeMachine, sampleCpu, witnessMachine } from './machineWitness.mjs';
+import {
+  busyFraction,
+  canSeeOneMoreCore,
+  describeMachine,
+  idleCores,
+  sampleCpu,
+  witnessMachine,
+} from './machineWitness.mjs';
 
 /** @type {string[]} */
 const failures = [];
 
 /**
- * Six, a literal, measured by running this file.
+ * Eight, a literal, measured by running this file.
  *
  * Not `CASES.length` (finding FFFFFF-2): deleting a case and its label together
  * shrinks a derived count and its roster agrees, where a literal cannot.
+ *
+ * Six until 2026-09-20, when the resolution test's precondition gained the two
+ * controls that keep it from skipping for ever.
  */
-const DECLARED_CASES = 6;
+const DECLARED_CASES = 8;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -84,12 +113,50 @@ try {
   spin(INTERVAL_MS);
   const loaded = busyWitness();
 
+  // THE PRECONDITION IS CHECKED AGAINST THE QUIET INTERVAL, which is the one that
+  // has to hold the headroom. Checking the loaded one instead would ask whether the
+  // spin had already happened, which is the question this case exists to answer.
+  const RESOLUTION =
+    'THE RESOLUTION TEST: a spinning core reads busier than an idle interval of the same length';
+  if (canSeeOneMoreCore(quiet)) {
+    check(
+      RESOLUTION,
+      quiet.busy !== null && loaded.busy !== null && loaded.busy > quiet.busy,
+      `idle=${JSON.stringify(quiet)} busy=${JSON.stringify(loaded)}. The two intervals are the ` +
+        `same ${String(INTERVAL_MS)} ms and one of them had a core pinned. An instrument that ` +
+        'cannot separate them would answer every question about a slow run with the same number.',
+    );
+  } else {
+    // NOT A PASS. The roster prints this as *nothing to check* and the harness
+    // tallies it apart from the passes, so a run that could not look reads as one.
+    process.stdout.write(
+      `  the quiet interval left ${JSON.stringify(idleCores(quiet))} of ` +
+        `${String(quiet.cores)} cores idle, so a pinned core could not have raised the ` +
+        'fraction. The comparison is not attempted rather than answered.\n',
+    );
+    roster.record(roster.mark(), RESOLUTION, false);
+  }
+
+  // THE PRECONDITION'S OWN PAIR, on CONSTRUCTED readings rather than by waiting for
+  // a machine in either state — item 4b, and the only way the loaded side is
+  // reachable on a quiet machine at all.
   check(
-    'THE RESOLUTION TEST: a spinning core reads busier than an idle interval of the same length',
-    quiet.busy !== null && loaded.busy !== null && loaded.busy > quiet.busy,
-    `idle=${JSON.stringify(quiet)} busy=${JSON.stringify(loaded)}. The two intervals are the ` +
-      `same ${String(INTERVAL_MS)} ms and one of them had a core pinned. An instrument that ` +
-      'cannot separate them would answer every question about a slow run with the same number.',
+    'a saturated interval is reported as one a pinned core could not show in',
+    !canSeeOneMoreCore({ busy: 1, cores: 4 }) && !canSeeOneMoreCore({ busy: 0.9, cores: 4 }),
+    `busy=1 → ${String(canSeeOneMoreCore({ busy: 1, cores: 4 }))}, busy=0.9 of 4 cores → ` +
+      `${String(canSeeOneMoreCore({ busy: 0.9, cores: 4 }))}. 0.9 of four cores leaves 0.4 of a ` +
+      'core, and one more busy core cannot fit in it.',
+  );
+
+  // THE CONTROL, and it is the load-bearing half: without it a predicate that
+  // always answered *no* would skip the resolution test on every machine for ever
+  // and this file would be green having measured nothing.
+  check(
+    'CONTROL: an interval with a core to spare is NOT reported as unseeable',
+    canSeeOneMoreCore({ busy: 0.2, cores: 4 }) && canSeeOneMoreCore({ busy: 0.75, cores: 4 }),
+    `busy=0.2 → ${String(canSeeOneMoreCore({ busy: 0.2, cores: 4 }))}, busy=0.75 of 4 cores → ` +
+      `${String(canSeeOneMoreCore({ busy: 0.75, cores: 4 }))}. 0.75 leaves exactly one core, ` +
+      'which is the boundary the arithmetic gives and not a number chosen to pass.',
   );
 
   check(

@@ -112,6 +112,49 @@ export function witnessMachine() {
 }
 
 /**
+ * How many cores' worth of an interval went idle.
+ *
+ * `null` when the interval carries no reading at all, for {@link busyFraction}'s
+ * reason: an absence is not a zero, and a zero here reads as *every core was
+ * busy*, which is the opposite end of the same scale.
+ *
+ * @param {{ busy: number | null, cores: number }} witness
+ * @returns {number | null}
+ */
+export function idleCores(witness) {
+  if (witness.busy === null) return null;
+  return (1 - witness.busy) * witness.cores;
+}
+
+/**
+ * Whether an interval like this one leaves room for ONE MORE BUSY CORE to show.
+ *
+ * ## The rule, and why it is a named thing rather than a line in a caller
+ *
+ * {@link busyFraction} is machine-wide, so pinning one more core raises it by at
+ * most `1 / cores`. An interval that left **less than one core's worth idle** has
+ * nowhere for that rise to go: the extra work displaces work already queued
+ * instead of adding to the total, and the fraction comes back unmoved.
+ *
+ * So a comparison across such an interval produces the same reading whether the
+ * instrument works or not — *could not look* and *looked and saw nothing* arrive
+ * as one output, which is the failure this project separates everywhere else.
+ * The bound is derived from the arithmetic above and is not a tuned threshold;
+ * measured 2026-09-20, `npm run local` on this 4-core machine reports
+ * `busy: 1` for its own scripts, which is `idleCores` of 0.
+ *
+ * Callers use this to decide whether a busy-versus-quiet comparison can be
+ * *made*, never to decide what it means once it has been.
+ *
+ * @param {{ busy: number | null, cores: number }} witness
+ * @returns {boolean}
+ */
+export function canSeeOneMoreCore(witness) {
+  const idle = idleCores(witness);
+  return idle !== null && idle >= 1;
+}
+
+/**
  * One line a human reads, for a row that already carries the seconds.
  *
  * @param {{ busy: number | null, cores: number }} witness
