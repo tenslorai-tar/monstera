@@ -1291,6 +1291,7 @@ export const COPY_SELECTION_TITLE = messageKey('command.text-copy.title');
 export const HIGHLIGHT_SELECTION_TITLE = messageKey('command.text-highlight.title');
 export const UNDERLINE_SELECTION_TITLE = messageKey('command.text-underline.title');
 export const STRIKEOUT_SELECTION_TITLE = messageKey('command.text-strikeout.title');
+export const COMMENT_SELECTION_TITLE = messageKey('command.text-comment.title');
 export const REDACT_SELECTION_TITLE = messageKey('command.text-redact.title');
 export const SEARCH_SELECTION_TITLE = messageKey('command.text-search.title');
 export const CLOSE_UNSAVED_TITLE = messageKey('dialog.close-unsaved.title');
@@ -2792,6 +2793,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HIGHLIGHT_SELECTION_TITLE]: 'Highlight',
   [UNDERLINE_SELECTION_TITLE]: 'Underline',
   [STRIKEOUT_SELECTION_TITLE]: 'Strikethrough',
+  // ADD, because the item opens a box to write in rather than turning something on. "Comment"
+  // alone reads as a state a person might be toggling off the second time they meet it.
+  [COMMENT_SELECTION_TITLE]: 'Add comment',
   // MARK, and the word is the point: the words are still in the file until the burn-in runs, and a
   // label reading "Redact" would tell a reader they are gone.
   [REDACT_SELECTION_TITLE]: 'Mark for redaction',

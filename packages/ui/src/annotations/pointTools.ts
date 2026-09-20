@@ -66,6 +66,47 @@ import type { TextToolDeps } from './textTools.js';
 const NOTE_COLOUR: AnnotationColour = [1, 0.8, 0.2];
 
 /**
+ * One note, as a command — the tool's builder, and the selected-text menu's.
+ *
+ * ## Why this is a function and not two object literals
+ *
+ * `markupCommand` already stands in exactly this relation to the markup menu
+ * items: the drag tool and the menu entry send the SAME command, so neither
+ * decides what a highlight is. *Comment* on a selection is the same feature
+ * reached a second way, and a literal copied into `textSelectionCommands.ts`
+ * would put the note's colour, its default and its draft shape in two files —
+ * where they agree until one of them is changed (B3a).
+ *
+ * The COLOUR is the part that would have drifted first. It resolves through the
+ * style, so a person who has chosen one gets theirs and a person who has not
+ * gets the yellow a note is recognisable by; a second literal would have
+ * inherited whichever of those two the copier was looking at.
+ *
+ * @param page The page the note is placed on.
+ * @param at Where its icon sits, in PDF user space.
+ * @param text What the note says — already parsed by the dialog's result.
+ * @param style The style the next annotation is drawn in.
+ */
+export function stickyNoteCommand(
+  page: number,
+  at: { readonly x: number; readonly y: number },
+  text: string,
+  style: AnnotationStyle,
+): RenderableCommand {
+  return {
+    kind: 'addAnnotation',
+    page,
+    annotation: {
+      type: 'sticky-note',
+      at,
+      text,
+      colour: style.colour(NOTE_COLOUR),
+      opacity: style.opacity,
+    },
+  };
+}
+
+/**
  * What a caret is drawn in.
  *
  * The shape tools' red rather than the note's yellow, and the difference is
@@ -132,21 +173,10 @@ export function stickyNoteTool(deps: TextToolDeps & { readonly style: Annotation
       // unchanged either way.
       if (!answered.success) return undefined;
 
-      return {
-        kind: 'addAnnotation',
-        page,
-        annotation: {
-          type: 'sticky-note',
-          at,
-          text: answered.data.text,
-          // NOTE_COLOUR IS NOW WHAT THE TOOL WOULD USE ON ITS OWN, which is the
-          // yellow every viewer draws a comment marker in. A person who has
-          // chosen a colour gets theirs; one who has not gets a note that still
-          // looks like a note.
-          colour: deps.style.colour(NOTE_COLOUR),
-          opacity: deps.style.opacity,
-        },
-      };
+      // THROUGH THE SHARED BUILDER, which the selected-text menu's *Comment*
+      // also calls. See {@link stickyNoteCommand} for why the draft is not
+      // written out here.
+      return stickyNoteCommand(page, at, answered.data.text, deps.style);
     },
     preview: noPreview,
   };

@@ -8,6 +8,7 @@ import type { TextSelection } from '../TextLayer.js';
 import { STROKE } from '../annotations/shapeTools.js';
 import {
   type TextSelectionDeps,
+  commentSelectionCommand,
   copySelectionCommand,
   markupSelectionCommands,
   redactSelectionCommand,
@@ -76,16 +77,24 @@ describe('the selected-text commands', () => {
     expect(copies).toStrictEqual([1]);
   });
 
-  it('CONTROL: with NOTHING selected every item is hidden, and a run sends nothing', () => {
+  it('CONTROL: with NOTHING selected every item is hidden, and a run sends nothing', async () => {
     const { deps, placed, searched } = recording(undefined);
     const all = [
       copySelectionCommand(deps),
       ...markupSelectionCommands(deps),
+      commentSelectionCommand({ ...deps, ask: () => Promise.resolve({ text: 'never asked for' }) }),
       redactSelectionCommand(deps),
       searchSelectionCommand(deps),
     ];
-    expect(all.map((command) => command.when?.(CONTEXT))).toStrictEqual([false, false, false, false, false, false]);
-    for (const command of all) void command.run(CONTEXT);
+    // SEVEN FALSES, written out rather than derived from `all.length`: a count taken from the list
+    // under test agrees with any item quietly leaving it.
+    expect(all.map((command) => command.when?.(CONTEXT))).toStrictEqual([false, false, false, false, false, false, false]);
+    // `comment` is the one that could place something ASYNCHRONOUSLY, and its stub answers a valid
+    // note — so if it ran despite `when`, the await below is what lets the placement land before
+    // the assertion rather than after the test has ended.
+    // `Promise.resolve` because `run` answers `void | Promise<void>` — most of these are
+    // synchronous, and handing that union straight to an aggregator is what the lint rule refuses.
+    await Promise.all(all.map((command) => Promise.resolve(command.run(CONTEXT))));
     expect(placed).toStrictEqual([]);
     expect(searched).toStrictEqual([]);
   });
@@ -110,11 +119,60 @@ describe('the selected-text commands', () => {
     expect(first?.kind === 'addAnnotation' ? first.page : undefined).toBe(2);
   });
 
+  it('COMMENT asks for the note, then places it at the selection’s START', async () => {
+    // The point is the whole question: a note is an icon at a point and the selection is a run, so
+    // the command has to reduce one to the other. `from` is where the gesture began — the same
+    // rule `stickyNoteTool` applies to a click that slid — and the selection above has two
+    // different ends so a command that took `to` is red rather than indistinguishable.
+    const { deps, placed } = recording(SELECTION);
+    const asked: { id: string; props: unknown }[] = [];
+    await commentSelectionCommand({
+      ...deps,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve({ text: 'check this against Q3' });
+      },
+    }).run(CONTEXT);
+
+    expect(asked).toStrictEqual([{ id: 'dialog.annotation-note', props: {} }]);
+    const first = placed[0];
+    expect(first?.kind === 'addAnnotation' ? first.annotation : undefined).toStrictEqual({
+      type: 'sticky-note',
+      at: { x: 72, y: 700 },
+      text: 'check this against Q3',
+      // THE NOTE'S OWN YELLOW, which is what says the menu and the tool share a builder: a copied
+      // literal would most likely have carried the shape tools' STROKE, as every other item here
+      // does.
+      colour: [1, 0.8, 0.2],
+      opacity: 1,
+    });
+    expect(first?.kind === 'addAnnotation' ? first.page : undefined).toBe(2);
+  });
+
+  it('CONTROL: a DISMISSED note dialog places nothing, and the dialog was still opened', async () => {
+    // Without this, the case above passes for a command that places a note whatever the dialog
+    // answers — and *dismissed* and *never asked* are the same observation unless the ask is
+    // counted, so both are asserted here.
+    const { deps, placed } = recording(SELECTION);
+    let opened = 0;
+    await commentSelectionCommand({
+      ...deps,
+      ask: () => {
+        opened += 1;
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toBe(1);
+    expect(placed).toStrictEqual([]);
+  });
+
   it('every item is placed in the SELECTION menu, in the owner’s order', () => {
     const { deps } = recording(SELECTION);
     const all = [
       copySelectionCommand(deps),
       ...markupSelectionCommands(deps),
+      commentSelectionCommand({ ...deps, ask: () => Promise.resolve(undefined) }),
       redactSelectionCommand(deps),
       searchSelectionCommand(deps),
     ];
@@ -127,7 +185,7 @@ describe('the selected-text commands', () => {
       ['text.highlight', 'selection', 20],
       ['text.underline', 'selection', 30],
       ['text.strikeout', 'selection', 40],
-      // 50 IS THE OWED *comment*, which is why redact is 60 rather than the next number.
+      ['text.comment', 'selection', 50],
       ['text.redact', 'selection', 60],
       ['text.search', 'selection', 70],
     ]);

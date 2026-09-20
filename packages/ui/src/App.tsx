@@ -293,6 +293,7 @@ import {
   type TextSelectionDeps,
   copySelectionCommand,
   markupSelectionCommands,
+  commentSelectionCommand,
   redactSelectionCommand,
   searchSelectionCommand,
 } from './commands/textSelectionCommands.js';
@@ -1823,6 +1824,10 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           return [
             copySelectionCommand(textDeps),
             ...markupSelectionCommands(textDeps),
+            // ASK IS THIS COMMAND'S ALONE, not a member of `TextSelectionDeps`: it is the only
+            // item in this menu that opens a dialog, and widening the shared interface would
+            // hand five commands a capability none of them may use.
+            commentSelectionCommand({ ...textDeps, ask }),
             redactSelectionCommand(textDeps),
             searchSelectionCommand(textDeps),
           ];

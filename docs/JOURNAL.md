@@ -892,6 +892,56 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — *Add comment* on selected text, and the note you can write but cannot read
+
+**The feature.** §7's owed *comment*, at order 50 between *Strikethrough* and *Mark for redaction* —
+the owner's order for this menu. It opens the sticky note's own dialog and places the note at the
+selection's **start**.
+
+**The question that had to be answered first was what a comment IS here**, and the record answered
+it rather than a preference. Two readings lead to materially different work: a text markup carrying
+`/Contents`, which is what Acrobat's *Add note to text* makes, or a sticky note anchored at the
+selection. `textMarkupDraft` in `packages/contract` carries `from`, `to`, `colour` and `opacity` and
+**no text field**, so the first reading is a contract change with no row asking for one. The second
+is a feature this platform already has, reached a second way. So the second.
+
+**One builder, not two literals.** `stickyNoteCommand(page, at, text, style)` now lives in
+`pointTools.ts` and both the tool's `commit` and the menu item call it. That is `markupCommand`'s
+arrangement exactly, and the part that would have drifted first is the **colour**: it resolves
+through the style so a person who has chosen one gets theirs and a person who has not gets the
+yellow a note is recognisable by. A copied literal would have inherited whichever of those two the
+copier had in front of them — and every other item in this menu carries the shape tools' red.
+
+**Where a note goes, and what that gives up.** A `/Text` is an icon at a point — MuPDF normalises it
+to a fixed 20-by-20 box — so a run has to be reduced to one point and there is no arrangement in
+which the note covers the words. `from` is that point, for `stickyNoteTool`'s own reason: it is
+where the gesture began, and a hand that selected right-to-left still meant the word it started on.
+What is given up is that **the note is beside the run and not attached to it** — nothing in the file
+records which words it was about. Stated here rather than discovered by whoever wonders later.
+
+**Live, 2026-09-20**, on the packaged shell against `render-standard-font.pdf`: the menu drew Copy,
+Highlight, Underline, Strikethrough, **Add comment**, Mark for redaction, Search for this, then the
+page group. The dialog opened, the note landed as a yellow icon at the selection's start, *Save a
+copy* wrote `/Subtype /Text` with `/Contents (check this against Q3)` and a `/Popup`, and reopening
+that copy drew the icon again.
+
+**And the live run found what the pair could not: clicking the note does nothing.** The text is in
+the file and no surface in this application shows it. That is not a defect in this command — the
+mark is correct, saved and portable, and any reader opens it — but it means a note here is
+**write-only**, which is the plainest possible argument for the *edit* item this row still owes. The
+pair of tests could never have found it: one asserts the command reaches the document and the other
+asserts the item dispatches it, and *nothing reads it back* is a question about a surface that does
+not exist.
+
+**A second thing the live run nearly cost.** *Save a copy* opened on the fixtures directory with
+`render-standard-font copy.pdf` filled in, one keypress from writing an untracked binary into
+`packages/testing/fixtures/generated/`. It went to `%TEMP%` instead, and the close gate was answered
+*Don't save* so the fixture itself stayed untouched — checked with `git status` afterwards rather
+than assumed. **A live run writes to real paths, and the dialog's default is the directory you
+opened from.**
+
+---
+
 ## 2026-09-20 — A red that named the budget line and meant a directory left in %TEMP% three weeks earlier
 
 **How it presented.** The pre-push sweep went red on one check of 157:

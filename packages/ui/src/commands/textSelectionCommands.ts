@@ -1,9 +1,13 @@
 import type { RenderableCommand } from '@monstera/contract';
 
+import { stickyNoteCommand } from '../annotations/pointTools.js';
 import { STROKE } from '../annotations/shapeTools.js';
 import { type MarkupType, markupCommand } from '../annotations/textMarkupTools.js';
 import type { AnnotationStyle } from '../annotations/annotationStyle.js';
+import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
+import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import {
+  COMMENT_SELECTION_TITLE,
   COPY_SELECTION_TITLE,
   HIGHLIGHT_SELECTION_TITLE,
   REDACT_SELECTION_TITLE,
@@ -83,6 +87,61 @@ export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCom
       deps.place(markupCommand(type, selection.page, selection.from, selection.to, deps.style()));
     },
   }));
+}
+
+/**
+ * A COMMENT on the selected text — the sticky note, placed where the selection begins.
+ *
+ * ## It is the note tool's feature reached a second way, not a second feature
+ *
+ * The same dialog collects the text, and {@link stickyNoteCommand} builds the same draft, so a note
+ * written from the menu and one placed with the tool are one command with one colour rule. The
+ * markups' arrangement exactly — a menu item that decided what a note was would be the second
+ * wiring place the registry exists to forbid.
+ *
+ * ## WHERE it goes: the selection's start, which is where the person began
+ *
+ * A note is an icon at a point, not a run — MuPDF normalises a `/Text` to a fixed 20-by-20 box —
+ * so a selection has to be reduced to one point and there is no arrangement in which it covers the
+ * words. `from` is that point for `stickyNoteTool`'s own reason: it is where the gesture started
+ * rather than where it ended, and a hand that selected right-to-left still meant the word it began
+ * on.
+ *
+ * **What this gives up, stated rather than discovered later:** the note is anchored beside the text
+ * and not TO it, so editing the page does not carry it along, and nothing in the file records which
+ * run it was about. A markup carrying `/Contents` would — and text markups in this contract carry
+ * no text field, so that is a contract change with no row asking for one. This row asked for
+ * *comment*, and a note at the selection is the feature this platform already has.
+ *
+ * ## Asked, then placed, and a dismissal leaves nothing
+ *
+ * The selection is read BEFORE the dialog opens, which is `stickyNoteTool`'s rule about the
+ * transform arriving one gesture earlier: a person who dismisses the dialog has changed nothing,
+ * and a person who selects something else while it is open still gets the note they asked for.
+ */
+export function commentSelectionCommand(
+  deps: TextSelectionDeps & { readonly ask: (id: string, props: unknown) => Promise<unknown> },
+): UiCommand {
+  return {
+    id: 'text.comment',
+    title: COMMENT_SELECTION_TITLE,
+    placements: [{ surface: 'context-menu', context: 'selection', order: 50 }],
+    when: selected(deps),
+    run: async (context): Promise<void> => {
+      const selection = deps.selection();
+      if (context.docId === undefined || selection === undefined) return;
+      const style = deps.style();
+      const answered = ANNOTATION_TEXT_RESULT.safeParse(
+        await deps.ask(ANNOTATION_NOTE_DIALOG_ID, {}),
+      );
+      // A DISMISSED DIALOG AND A REFUSED ANSWER ARE BOTH NOTHING TO BUILD FROM, which is the
+      // platform's gate and `stickyNoteTool`'s comment on it: a parse failure here means the id
+      // resolved to a dialog answering another shape, a registration defect rather than a person's
+      // doing, and the page is unchanged either way.
+      if (!answered.success) return;
+      deps.place(stickyNoteCommand(selection.page, selection.from, answered.data.text, style));
+    },
+  };
 }
 
 /**
