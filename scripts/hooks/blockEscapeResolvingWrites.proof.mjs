@@ -148,15 +148,17 @@ const failures = [];
  * direction the rule warns about: *derive from a set only when the failure you
  * fear makes that set BIGGER*, and here the fear is a rule going quiet.
  *
- * **325, a literal, measured 2026-09-16 by running this file** — 304 until the
- * flag-cluster repair of that date, which split the inline-interpreter rule in
+ * **361, a literal, measured 2026-09-20 by running this file** — 304 until the
+ * flag-cluster repair of 2026-09-16, which split the inline-interpreter rule in
  * two and added occurrence 9's own command with its three siblings and their
- * controls. Adding a rule is now a two-line diff — the rule, and this number —
- * and removing one is a red check rather than a smaller total nobody compares.
- * That cost is the mechanism, not a nuisance: this is the guard `CLAUDE.md`
- * calls *the* mechanism for a rule broken nine times.
+ * controls; 325 until occurrence 10, when the program rules moved into a set
+ * BOTH shells take and every one of their probes started running against
+ * PowerShell as well. Adding a rule is a two-line diff — the rule, and this
+ * number — and removing one is a red check rather than a smaller total nobody
+ * compares. That cost is the mechanism, not a nuisance: this is the guard
+ * `CLAUDE.md` calls *the* mechanism for a rule broken ten times.
  */
-const DECLARED_CASES = 325;
+const DECLARED_CASES = 364;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -466,6 +468,26 @@ mustBlock('an eval flag behind a flag that takes a value', 'node -r esm -e "cons
 // case is a false negative in a fail-closed guard. Loud and costing one retyped
 // command, against silent and being the failure this guard exists to prevent.
 mustBlock('PINNED FALSE POSITIVE: a script whose own argument is -e', 'node scripts/build.mjs -e production');
+// THE SECOND PINNED REFUSAL, and its argument is stronger than the one above
+// because an occurrence measures it. A command word MENTIONED inside another
+// program's quoted argument denies, and the obvious cure — require the command
+// word at a command position, so `node` must open a command or follow a
+// separator — WOULD HAVE RE-OPENED OCCURRENCE 10: what ran on 2026-09-20 was
+// `Measure-Command { node -e "1" }`, where `node` sits inside a brace block and
+// opens nothing. So the position of an interpreter is not a thing this guard
+// may reason about, and a mention is indistinguishable from an invocation by
+// any test it is allowed to make.
+//
+// Met on 2026-09-20 by a `--exercise "…"` string for the hook-probe recorder
+// that quoted the gate command. It costs a reworded sentence.
+mustBlock(
+  'PINNED FALSE POSITIVE: an interpreter named inside another command’s quoted argument',
+  'npm run probe:hook -- escape@PreToolUse fired --exercise "denied a node -e call"',
+);
+mustAllow(
+  'CONTROL: the same recorder call whose argument names no interpreter',
+  'npm run probe:hook -- escape@PreToolUse fired --exercise "denied an inline evaluation"',
+);
 // THE CONTROLS THAT KEEP THE SCAN INSIDE ONE COMMAND. Without the separator
 // exclusion these deny, and a guard that blocks an ordinary `sed -e` in a
 // compound is a guard someone turns off.

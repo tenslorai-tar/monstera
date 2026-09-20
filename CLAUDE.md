@@ -663,7 +663,7 @@ These were given directly and bind every agent on this project.
   `python -c`. Use the file-editing tools. This rule used to say "prose or
   documentation", and that scoping was wrong: the mechanism is that *the tool
   rewrites the bytes on the way past*, which has nothing to do with what the
-  file contains. It has now happened **nine times**. The first five:
+  file contains. It has now happened **ten times**. The first five:
 
   1. backticks swallowed a package name;
   2. `\a` and `\b` became BEL and BACKSPACE, and the text rendered as though the
@@ -740,6 +740,35 @@ These were given directly and bind every agent on this project.
   wanted newlines, the bytes were checked and were correct — which is occurrence
   7's lesson exactly: the mechanism fires whether or not the outcome happens to
   matter, and judging by outcome is how a habit is concluded safe.
+
+  **A TENTH, ON 2026-09-20, AND THE HOLE WAS THE SAME SHAPE ONE LAYER UP: A
+  REPAIR THAT STAYED IN THE ONE RULE SET IT WAS MADE FOR.** `node -e "1"` ran
+  from the **PowerShell** tool, inside a `Measure-Command { … }` block, typed
+  mid-task while timing something unrelated. The guard was live and had denied an
+  `Out-File` in the same session an hour earlier.
+
+  The dispatcher picks **one** rule set by tool name —
+  `toolName === 'PowerShell' ? POWERSHELL_RULES : SHELL_RULES` — and every
+  interpreter rule had only ever been written into the Bash set. So `node -e`,
+  `python -c`, `perl -0pi -e` and `sed -i` were all unguarded **from the shell
+  this repository runs nearly everything through on Windows**, for as long as the
+  two sets have existed. Occurrence 9 was one rule not learning what the `node`
+  rule had learnt; this is one rule SET not knowing the other exists.
+
+  Nothing about reading the file showed it: both sets are complete and careful
+  about their own subject, and the split reads as *Bash things here, PowerShell
+  things there* — which is true of the grammar and false of the programs. **A
+  taxonomy is a claim, and this one was never checked against the question it
+  decides:** a heredoc is something a shell does, `node -e` is something a shell
+  RUNS, and only the first belongs to one tool.
+
+  The rules are now split by what a rule is about rather than by which tool
+  asked: `PROGRAM_RULES` — the interpreters, the in-place editors and the
+  redirecting producers — is taken by **both** dispatch paths, so a rule added
+  there cannot reach one shell and miss the other. Verified by running the exact
+  occurrence-10 command afterwards and being denied. The proof's declared case
+  count went 325 → 361 on its own, because every program rule's probes now run
+  against PowerShell too.
 
   **Mechanism, not intention.** Two mechanisms now, and the second exists
   because the first sentence of this paragraph used to end differently.

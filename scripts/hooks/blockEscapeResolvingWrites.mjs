@@ -458,8 +458,30 @@ function afterFlags(command, flag) {
  */
 const CLUSTERABLE = String.raw`[0-9placnsw.]`;
 
-/** Commands whose own evaluation resolves escapes before anything is written. */
-export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
+/**
+ * Rules that name a PROGRAM and its flags, which every shell can run.
+ *
+ * ## Why this set exists: the guard was half-blind on the shell this repository uses most
+ *
+ * The rules were split by TOOL — `SHELL_RULES` for Bash, `POWERSHELL_RULES` for PowerShell — and
+ * the dispatcher picks exactly one. The interpreters were only ever written into the Bash set, so
+ * **`node -e`, `python -c`, `perl -0pi -e` and `sed -i` all ran unimpeded from the PowerShell
+ * tool**, which is the tool this project runs nearly everything through on Windows. Measured
+ * 2026-09-20 by tripping it: `node -e "1"` inside a `Measure-Command { … }` block executed, typed
+ * mid-task while timing something unrelated. Occurrence 10 of the standing rule, and the first to
+ * go past a guard that was live and had just denied an `Out-File` in the same session.
+ *
+ * It is the shape the rule's own history keeps naming: **a repair that stayed where it was made.**
+ * Occurrence 9 was one rule not learning what the `node` rule had learned; this is one rule SET not
+ * knowing the other exists. So the split is now by what a rule is ABOUT rather than by which tool
+ * asked: a program and its flags belong to both shells, and only grammar — heredocs, here-strings,
+ * `$'…'`, cmdlets — belongs to one.
+ *
+ * A rule added here reaches both dispatch paths, which is what keeps the next interpreter rule from
+ * being written into one of them (B3a: a named thing with callers, rather than a paragraph its
+ * author has to remember).
+ */
+const PROGRAM_RULES = /** @type {readonly Rule[]} */ ([
   {
     // `(?:[^\s;&|]+\s+)*` IS A FALSE-NEGATIVE REPAIR, found by tripping it.
     //
@@ -624,6 +646,17 @@ export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     what: 'awk writing to a file',
     instead: "use Write. awk's printf resolves the same escapes.",
   },
+]);
+
+/**
+ * Commands whose own evaluation resolves escapes before anything is written.
+ *
+ * The programs above, plus the constructs that are Bash GRAMMAR — a heredoc, a here-string and
+ * `$'…'` are things the shell does, not programs it runs, so they have no meaning to PowerShell and
+ * stay here.
+ */
+export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
+  ...PROGRAM_RULES,
   {
     // An UNQUOTED heredoc delimiter: `<<EOF` expands $variables and backticks.
     // `<<'EOF'` and `<<"EOF"` are excluded — the first expands nothing.
@@ -702,8 +735,15 @@ export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   },
 ]);
 
-/** PowerShell reaches the same failure through different names. */
+/**
+ * PowerShell reaches the same failure through different names — AND through the same programs.
+ *
+ * `PROGRAM_RULES` first, because it is what this set was missing: a PowerShell command line runs
+ * `node`, `python`, `perl` and `sed` exactly as a Bash one does, and until 2026-09-20 none of them
+ * was checked here. See that set's header for the measurement.
+ */
 export const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
+  ...PROGRAM_RULES,
   {
     // Tee-Object joins the list for the same reason bash's rule covers `| tee`:
     // it writes its input to a file. Its absence was the same half-fix shape as
@@ -905,13 +945,14 @@ async function main() {
     `Blocked: this command writes a file through ${violation.what}, which resolves escape ` +
       `sequences on the way past.\n\n` +
       `Instead: ${violation.instead}\n\n` +
-      `This is a standing rule in CLAUDE.md and it has been broken nine times. The rule used to ` +
+      `This is a standing rule in CLAUDE.md and it has been broken ten times. The rule used to ` +
       `be the only defence for the classes guardFiles.mjs cannot see — a swallowed word, a real ` +
       `newline, an octal escape — and five of the first six happened while it said so. The last ` +
-      `two went through HOLES in this guard rather than past the rule: a quoted heredoc feeding ` +
-      `an interpreter (2026-09-04), and a flag cluster beginning with a digit — perl -0pi — ` +
-      `behind which the eval flag was no longer the first token (2026-09-16). There is no ` +
-      `override; an escape hatch here would be a workaround with a config flag on it.`,
+      `three went through HOLES in this guard rather than past the rule: a quoted heredoc feeding ` +
+      `an interpreter (2026-09-04); a flag cluster beginning with a digit — perl -0pi — behind ` +
+      `which the eval flag was no longer the first token (2026-09-16); and every interpreter rule ` +
+      `living in the Bash set alone, so they were unguarded from PowerShell (2026-09-20). There ` +
+      `is no override; an escape hatch here would be a workaround with a config flag on it.`,
   );
 }
 

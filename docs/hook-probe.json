@@ -5,13 +5,13 @@
       "event": "PreToolUse",
       "outcome": "fired",
       "certifies": "detection",
-      "exercise": "an interpreter reading a quoted heredoc, occurrence 8's own command, denied 2026-09-04",
+      "exercise": "CLAUDE.md's verbatim Stage 0 gate command — the inline-evaluation call in the fenced block beneath the standing rule — run as an ordinary PowerShell command and denied. It exercises the dispatch path occurrence 10 walked past: every program rule now reaches PowerShell as well as Bash.",
       "evidence": "The hook produced its own output. Nothing that failed to load it can do that.",
-      "recordedAt": "2026-09-16T08:11:51.505Z",
+      "recordedAt": "2026-09-20T12:10:23.931Z",
       "sessionStartedAt": "2026-08-28T12:07:52.861Z",
-      "inputsLastChangedAt": "2026-09-04T08:11:46+02:00",
+      "inputsLastChangedAt": "2026-09-16T10:17:42+02:00",
       "verdict": {
-        "digest": "b441a3b5cf2e36c23de940608e8771f173319776931fda19fd4f0309fce0e9fd",
+        "digest": "1b4b40c83710b0f4700d9902342424c525addd23d91c1a831e6f98180f680649",
         "inputs": [
           {
             "name": "file:.claude/settings.json",
@@ -19,7 +19,7 @@
           },
           {
             "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
-            "digest": "7b03dcad4459b4b4d84a4ea64cbca7b62ac68d47d4f7a452704330aa35c13526"
+            "digest": "29d87d421a33b010b8ac86767297ebb6962c41d61e5bfe562ad635cc6f78981c"
           }
         ]
       }

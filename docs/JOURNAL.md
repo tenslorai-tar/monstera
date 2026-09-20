@@ -892,6 +892,63 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — Occurrence 10: the escape guard was blind on the shell this repository uses most
+
+**What happened.** `node -e "1"` ran, from the **PowerShell** tool, inside a `Measure-Command { … }`
+block, typed mid-task while timing whether a grant I had added was what slowed a proof. The guard
+was live: it had denied an `Out-File` in the same session an hour before.
+
+**Mechanism.** The hook picks ONE rule set by tool name —
+`toolName === 'PowerShell' ? POWERSHELL_RULES : SHELL_RULES` — and every interpreter rule had only
+ever been written into the Bash set. So `node -e`, `python -c`, `perl -0pi -e` and `sed -i` were
+unguarded from PowerShell for as long as the two sets have existed, which on Windows is the shell
+almost every command in this session went through. The PowerShell set was not thin: it carries
+`Set-Content`, `Out-File`, `Tee-Object`, `[IO.File]::WriteAll`, here-strings, `New-Item -Value` and
+a bare string redirected to a file. It was complete about **PowerShell's own grammar** and silent
+about programs.
+
+**Why nothing showed it.** The split reads as *Bash things here, PowerShell things there*, and that
+is true of grammar and false of programs: a heredoc is something a shell DOES, `node -e` is
+something a shell RUNS. **A taxonomy is a claim**, and this one was never checked against the
+question it decides. It is occurrence 9's shape one layer up — there, a repair that stayed in the
+one rule it was made for; here, a whole rule set that does not know the other exists.
+
+**The fix.** `PROGRAM_RULES` — the interpreters, the in-place editors, the redirecting producers —
+is now taken by both dispatch paths, and only grammar stays shell-specific. A rule added there
+cannot reach one shell and miss the other.
+
+**Evidence, in the self-certifying direction.** The exact occurrence-10 command, re-run after the
+change, was denied — and a denial cannot come from a guard that did not load. The proof's declared
+count went 325 → 361 **on its own**, because every program rule's probes now run against PowerShell
+as well; that number is a literal, so the increase was a red check demanding to be read rather than
+a total nobody compares.
+
+**The one that got away is worth naming too.** The command was harmless — `node -e "1"` prints
+nothing and writes nothing — which is occurrence 7's lesson for the third time: the mechanism fires
+whether or not the outcome happens to matter, and judging by outcome is how a habit is concluded
+safe. What made this one visible was timing an unrelated thing and reading the output.
+
+**A second pinned false positive, found by re-running the gate.** Editing the hook expired the
+probe record — the evidence is keyed to the hook's bytes — so the Stage 0 command was run again and
+denied. Writing up what exercised it then tripped the guard on the *description*: an `--exercise`
+string that quoted the gate command names an interpreter and its eval flag, and `afterFlags` cannot
+tell a mention inside another program's quoted argument from an invocation.
+
+The obvious cure is the one to refuse. Requiring the command word to sit at a **command position**
+would have re-opened occurrence 10 itself: what ran was `Measure-Command { node -e "1" }`, where the
+interpreter opens no command and follows no separator. So an interpreter's position is not something
+this guard may reason about, and the false positive is pinned with that occurrence as its argument,
+against a control whose argument names no interpreter. It costs a reworded sentence.
+
+**And the record carried a stale label for a moment.** `exercise` is inherited between recordings by
+design — it is a property of the mechanism — so the fresh entry came back describing occurrence 8's
+heredoc from 2026-09-04 beside today's timestamp. The recorder's own instruction covers it (*pass it
+again when the way you exercise it changed*), and it had changed. Worth noting because the shape is
+this project's usual one: a field that is right to inherit reads as observed once the timestamp
+beside it moves.
+
+---
+
 ## 2026-09-20 — Redacting selected text, and the burn-in that threw on any page carrying a highlight
 
 **The feature.** *Mark for redaction* in the selected-text menu (§7's owed row): one command carrying
