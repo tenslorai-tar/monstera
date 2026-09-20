@@ -892,6 +892,45 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — Centring an overflowing page put 859 pixels of it where nothing could scroll
+
+**The defect.** `.m-page-list` is a column flex stack, so `align-items` centres each page on the
+**horizontal** cross axis. That is right while a page is narrower than its pane and a trap once it
+is wider: centring an overflowing item pushes it past **both** edges, and the start-side overflow
+has no scroll position that reveals it, because `scrollLeft` has no values below zero.
+
+**Measured in the production build**, one page at 400% in a 1236 px pane: the canvas was 1600 px
+wide sitting at viewport x = **−93** against a pane content origin of **88.7**, so 182 px of the
+page's left side could not be reached by any scroll. `scrollWidth` was **1418** rather than 1600 —
+the scrollable range covered the end-side overflow only — and `list.scrollLeft = -9999` clamped to
+0. An annotation over there could be neither seen nor clicked. In the Playwright pane it is worse:
+**859 px** unreachable at the same zoom.
+
+**The fix is one word.** `align-items: safe center` centres while the item fits and falls back to
+`start` when it does not, which is what the keyword exists for. After: the canvas's left edge equals
+the pane's content origin, `unreachableLeft` is 0 and `scrollWidth` is the full 1600.
+
+**How it was found is worth more than the fix.** It was not being looked for. It surfaced while
+disproving a *different* defect I had reported — a click that would not select an annotation —
+because the honest way to test that claim was to read every coordinate out of the DOM rather than
+aim at the screen, and the coordinates said the page's left edge was somewhere no scroll could go.
+The false finding was the cost of getting here; the record above keeps both.
+
+**The case is in `renderedScreen.pw.ts` and only that suite could hold it.** A page's width, its
+pane's width and a scroll range are real layout, and the unit suites render into jsdom, which lays
+nothing out. Its load-bearing line is the vacuity guard: with a page **narrower** than its pane
+there is no overflow, centring is correct, and every other assertion passes against a stylesheet
+with the defect still in it.
+
+**And the mutation nearly lied.** Reverting the CSS and re-running the case, it **passed** — the
+Playwright server was serving the previous bundle. Rebuilding first, the same case reported *859 px
+of the page sit left of the pane with the scroller home*. A mutation test that skips the build is
+testing the artefact it was already testing, which is this project's standing note about confirming
+the artefact carries the change, met here in the one step where a green result would have retired a
+real case as vacuous.
+
+---
+
 ## 2026-09-20 — *Edit comment*, the first invertible command on the annotation walk, and a click that selects nothing
 
 **The feature.** §7's owed *edit*, first in the annotation menu — the owner's order is edit, reply,
@@ -944,6 +983,44 @@ correctly on its face, and the overlay does call `commit` for a zero-travel gest
 reaches the tool. Spawned as its own work: it is pre-existing, it affects *Edit*, *Properties* and
 *Delete* equally, and `eraserTool.ts` carries a comment saying the eraser and the select tool must
 agree about which mark a pixel picks — which is now worth checking rather than assuming.
+
+**CORRECTION, 2026-09-20, later the same day: the paragraph above is WITHDRAWN. There is no defect
+in the click path, and the instrument that produced the finding was me.** Measured through CDP, with
+every coordinate read from the DOM instead of aimed at through a half-scale screenshot: a click at
+the measured centre of a note's box selects it at **1×, 1.5×, 3× and 4×**. The three "misses" each
+trace to the point not being over the overlay at all —
+
+- at 100% and 150% the note's hit box is **10 CSS pixels square** (MuPDF clamps a `/Text` to a
+  10-point box, pinned in `pageAnnotations.test.ts` as `[40, 190, 50, 200]` for an anchor at
+  `(40, 200)`), and I was aiming at it by eye from a downscaled screenshot;
+- at 4× the point I clicked was covered by the **open Find panel** — `elementsFromPoint` named a
+  `LABEL` inside `form.m-find-bar` as the topmost element there;
+- after collapsing that, by the page being clipped (below), and then by the note sitting **outside
+  the window viewport**, where `elementsFromPoint` answers an empty array.
+
+The claim that *the box is offset from where the icon draws* was the worst of it, and it was
+checkable all along: `SelectionLayer` draws its rectangle through the **same**
+`toViewport(pdfPoint(…), overlayTransform(geometry))` the hit test uses, so the drawn box **is** the
+hit-test box. Measured at 1×: box at viewport 635.84–645.84 × 165–175, icon at 636.84–644.84 ×
+166–174 — the box contains the icon with a pixel to spare. At 4×, 88.3–128.3 × 237–277 against
+91.3–125.3 × 240–274. They agree at every zoom.
+
+**The eraser agrees too, and that is measured rather than read.** With the eraser active, a click at
+the exact point the select tool had selected from removed the note — 826 yellow pixels to 0. The
+reading that said they could not disagree was right for the right reason: `covers()` and the click
+branch are the same arithmetic on the same rect, differing only in `startOf(gesture)` versus
+`marquee.x0/y0`, which are equal for a zero-travel click.
+
+**What the investigation did find is a different defect, and a real one** — the entry below.
+
+**The transferable part is about the instrument, not the tool.** A 10-CSS-pixel target aimed at
+through a screenshot scaled to half size is about five pixels of slack, and *nothing selected* is
+the same observation for a miss and for a broken hit test. Three times I read the reassuring
+explanation — the product is wrong — because the alternative required admitting the aim was mine.
+**When a UI observation is about a target smaller than the error in how you are pointing at it,
+the pointing is the instrument and it has not been resolution-tested** (audit item 4a, arriving
+somewhere nobody had applied it). The fix is not to be more careful: it is to read the coordinates
+out of the DOM and click those, which is what settled this in four calls.
 
 **Two things this cost that are worth carrying.**
 

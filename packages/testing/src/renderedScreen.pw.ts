@@ -711,6 +711,70 @@ test('the STATUS BAR projects page navigation and zoom, and each control changes
   expect(lefts).toStrictEqual([...lefts].sort((a, b) => a - b));
 });
 
+test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge', async ({
+  page,
+}) => {
+  // WHAT CENTRING DOES TO AN OVERFLOWING ITEM, which is the defect this exists for.
+  // `.m-page-list` is a column flex stack, so `align-items` centres each page on the horizontal
+  // cross axis. Centring something WIDER than its container pushes it past both edges, and the
+  // start-side overflow has no scroll position that reveals it — `scrollLeft` has no values below
+  // zero. Measured in the production build before the fix, one page at 400% in a 1236 px pane:
+  // 182 px of the page's left side were unreachable and `scrollWidth` was 1418 against a 1600 px
+  // page. `align-items: safe center` falls back to `start` exactly when the item overflows.
+  //
+  // ONLY THIS CAN SEE IT. The unit suites render into jsdom, which lays nothing out; a page's
+  // width, its pane's width and a scroll range are all real layout, so a case that could catch
+  // this had to be here.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e4');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  const bar = page.getByRole('status', { name: 'Document status' });
+  await bar.getByRole('slider', { name: 'Zoom level' }).fill('4');
+  await expect(bar.locator('.m-status-zoom')).toHaveText('400%');
+
+  const reach = await page.evaluate(() => {
+    const list = document.querySelector('.m-page-list');
+    const canvas = document.querySelector('canvas.m-page');
+    if (list === null || canvas === null) return null;
+    // SCROLLED HOME FIRST, because the question is whether the left edge can be reached AT ALL:
+    // a pane that happens to be scrolled right would hide the defect behind a scroll position.
+    list.scrollLeft = 0;
+    const pane = list.getBoundingClientRect();
+    const drawn = canvas.getBoundingClientRect();
+    return {
+      pageWiderThanPane: drawn.width > list.clientWidth,
+      // How far the page's left edge sits OUTSIDE the pane's content origin with the scroller
+      // already home. Anything above zero is page nobody can scroll to.
+      unreachableLeft: Math.round(Math.max(0, pane.left + list.clientLeft - drawn.left)),
+      scrollWidth: list.scrollWidth,
+      pageWidth: Math.round(drawn.width),
+    };
+  });
+
+  expect(reach).not.toBeNull();
+  // THE VACUITY GUARD, and it is the load-bearing line: with a page NARROWER than its pane there
+  // is no overflow, centring is correct, and every assertion below passes for a stylesheet with
+  // the defect still in it.
+  expect(
+    reach?.pageWiderThanPane,
+    'this case needs a page wider than its pane, or it asserts nothing',
+  ).toBe(true);
+  expect(
+    reach?.unreachableLeft,
+    `${String(reach?.unreachableLeft)} px of the page sit left of the pane with the scroller home`,
+  ).toBe(0);
+  // THE SAME FACT FROM THE OTHER SIDE: a scrollable width that does not cover the page is the
+  // range the start-side overflow was missing from.
+  expect(reach?.scrollWidth).toBeGreaterThanOrEqual(reach?.pageWidth ?? 0);
+});
+
 test("at its MINIMUM width the document panel's strip still holds every tab and the chevron", async ({
   page,
 }) => {

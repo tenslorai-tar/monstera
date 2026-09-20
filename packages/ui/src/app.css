@@ -1698,7 +1698,28 @@ textarea {
 .m-page-list {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /*
+   * SAFE, and the word is load-bearing: without it the left edge of a zoomed
+   * page cannot be reached at all.
+   *
+   * This is a column stack, so `align-items` centres each page on the
+   * HORIZONTAL cross axis — right while a page is narrower than the pane, and a
+   * trap once it is wider. Centring an overflowing item pushes it past BOTH
+   * edges, and the start-side overflow is unreachable: `scrollLeft` has no
+   * values below zero, so nothing can scroll to it.
+   *
+   * Measured 2026-09-20 in the production build, one page at 400% in a 1236 px
+   * pane: the canvas was 1600 px wide sitting at x = -93 against a content
+   * origin of 88.7, so **182 px of the page's left side had no scroll position
+   * that reveals them** — `scrollWidth` was 1418 rather than 1600, covering the
+   * end-side overflow only, and `scrollLeft = -9999` clamped to 0. An
+   * annotation there could be neither seen nor clicked.
+   *
+   * `safe` says: centre while it fits, and fall back to `start` when it does
+   * not. The page then begins at the content origin and the whole of it is
+   * reachable by scrolling, which is what every other viewer does at high zoom.
+   */
+  align-items: safe center;
   gap: var(--space-16);
   /*
    * BORDER-BOX, because 100% has to include the padding below. Content-box made the list
