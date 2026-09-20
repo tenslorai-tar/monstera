@@ -75,15 +75,28 @@ export function useVisiblePages(
   const [visible, setVisible] = useState<ReadonlySet<number>>(new Set([seed]));
 
   /**
-   * A callback ref per page.
+   * A callback ref per page, and the SAME one for that page on every render.
    *
    * React calls it with `null` on unmount, which is the one moment the observer
    * must stop watching an element that no longer exists — an observer holding
    * elements from a closed document keeps them alive and reports intersections
    * for pages nothing will draw.
+   *
+   * **Minted once per page and kept**, because a ref callback of a new identity
+   * is detached and re-attached by React on every render: the old one is called
+   * with `null` and the new one with the element. Here that is an `unobserve`
+   * and an `observe`, and a browser answers every `observe` with an initial
+   * report — so each render caused a report, each report a render, and the
+   * scroller re-rendered at frame rate for as long as a document was open. On a
+   * cold engine that loop queued one view-model read per render and saturated
+   * the document's lane before the text layer's first read arrived, which
+   * refused it as busy and left the page with nothing to select.
    */
+  const pageRefs = useRef(new Map<number, RefCallback<HTMLElement>>());
   const slotRef = useCallback((page: number): RefCallback<HTMLElement> => {
-    return (element: HTMLElement | null): void => {
+    const minted = pageRefs.current.get(page);
+    if (minted !== undefined) return minted;
+    const attach = (element: HTMLElement | null): void => {
       const known = slots.current.get(page);
       if (known !== undefined && observer.current !== null) observer.current.unobserve(known);
       if (element === null) {
@@ -94,11 +107,17 @@ export function useVisiblePages(
       element.dataset['page'] = String(page);
       if (observer.current !== null) observer.current.observe(element);
     };
+    pageRefs.current.set(page, attach);
+    return attach;
   }, []);
 
   useEffect(() => {
     const seen = new IntersectionObserver(
       (entries) => {
+        // THE PREVIOUS SET WHEN NOTHING MOVED. A report is not a change — a browser
+        // sends one for every `observe`, and a scroll can report pages that were
+        // already in — and a new Set holding the same pages is a new value to every
+        // reader keyed on it, each of which then asks the kernel again.
         setVisible((current) => {
           const next = new Set(current);
           for (const entry of entries) {
@@ -109,7 +128,8 @@ export function useVisiblePages(
             if (entry.isIntersecting) next.add(page);
             else next.delete(page);
           }
-          return next;
+          const moved = next.size !== current.size || [...next].some((page) => !current.has(page));
+          return moved ? next : current;
         });
       },
       { rootMargin: margin },
