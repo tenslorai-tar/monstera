@@ -9,10 +9,15 @@ import { PLAIN_STYLE } from '../annotations/annotationStyle.js';
 const PLAIN_ITEM = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
 import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
+import { ALL_SETTINGS } from '../settings/all.js';
+import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
+import { SettingsRegistry } from '../registries/settings.js';
+import { SettingsStore } from '../settingsStore.js';
 import {
   deleteSelectionCommand,
   nudgeSelectionCommands,
   rectangleToolCommand,
+  selectionPropertiesCommand,
   shapeToolCommands,
 } from './annotationCommands.js';
 
@@ -294,8 +299,64 @@ describe('deleteSelectionCommand', () => {
       onPlace: () => undefined,
     });
     expect(command.shortcut).toBe('Delete');
+    // LAST in the owner's order for that menu — edit, reply, properties, copy, delete — which is
+    // why this is 50 rather than 10, with the gaps held for the items still owed.
     expect(command.placements).toStrictEqual([
-      { surface: 'context-menu', context: 'annotation', order: 10 },
+      { surface: 'context-menu', context: 'annotation', order: 50 },
+    ]);
+  });
+});
+
+describe('selectionPropertiesCommand', () => {
+  const SELECTION = {
+    page: 2,
+    version: asDocVersion(7),
+    items: [{ index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, style: PLAIN_ITEM }],
+  };
+
+  function deps(selection: typeof SELECTION | undefined): {
+    readonly settings: SettingsStore;
+    readonly selection: () => typeof SELECTION | undefined;
+    readonly onDelete: () => undefined;
+    readonly onPlace: () => undefined;
+  } {
+    return {
+      settings: new SettingsStore(new SettingsRegistry(ALL_SETTINGS)),
+      selection: () => selection,
+      onDelete: () => undefined,
+      onPlace: () => undefined,
+    };
+  }
+
+  it('OPENS the panel on its properties tab, rather than toggling either value', () => {
+    // Under a pointer on a mark, a toggle would hide the properties half the time. Asserted as
+    // both values, because opening a shut panel on the assistant's tab shows the wrong thing.
+    const built = deps(SELECTION);
+    built.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
+    built.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+
+    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+
+    expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
+    expect(built.settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('properties');
+
+    // AND RUNNING IT AGAIN LEAVES IT OPEN — the control a toggle would fail.
+    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+    expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
+  });
+
+  it('is HIDDEN with nothing selected, and writes nothing when run anyway', () => {
+    const built = deps(undefined);
+    built.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
+
+    expect(selectionPropertiesCommand(built).when?.(WITH_DOCUMENT)).toBe(false);
+    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+    expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(false);
+  });
+
+  it('sits in the annotation menu between reply and copy, where the owner’s order puts it', () => {
+    expect(selectionPropertiesCommand(deps(SELECTION)).placements).toStrictEqual([
+      { surface: 'context-menu', context: 'annotation', order: 30 },
     ]);
   });
 });

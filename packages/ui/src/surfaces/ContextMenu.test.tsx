@@ -8,6 +8,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
+import { SettingsRegistry } from '../registries/settings.js';
+import { ALL_SETTINGS } from '../settings/all.js';
+import { CONTEXT_PANEL_OPEN_SETTING } from '../settings/layout.js';
+import { SettingsStore } from '../settingsStore.js';
+import { selectionPropertiesCommand } from '../commands/annotationCommands.js';
 import { ContextMenuArea } from './ContextMenu.js';
 
 /**
@@ -122,6 +127,50 @@ describe('ContextMenuArea', () => {
       child.getAttribute('role') === 'separator' ? '|' : (child.getAttribute('data-command') ?? '?'),
     );
     expect(order).toStrictEqual(['t.close', '|', 't.rotate', 't.delete']);
+  });
+
+  it('the ANNOTATION menu’s Properties opens the panel — the real command, through the real surface', async () => {
+    // The wired pair's UI half for `annotate.properties`: its own file proves what the command
+    // writes, and this proves the menu item reaches it. Both halves are needed — a projection
+    // that listed it and dispatched nothing reads identically here.
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
+    const selection = {
+      page: 0,
+      version: asDocVersion(1),
+      items: [{ index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, style: { colour: [1, 0, 0] as const, opacity: 1, borderWidth: 2 } }],
+    };
+    const registry = new CommandRegistry([
+      selectionPropertiesCommand({
+        settings,
+        selection: () => selection,
+        onDelete: () => undefined,
+        onPlace: () => undefined,
+      }),
+    ]);
+
+    render(
+      <Wrapped>
+        <ContextMenuArea registry={registry} context={CONTEXT} menus={['annotation']}>
+          <div data-testid="region">a note</div>
+        </ContextMenuArea>
+      </Wrapped>,
+    );
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('region'), { clientX: 20, clientY: 20 });
+      await Promise.resolve();
+    });
+
+    const item = (await screen.findAllByRole('menuitem'))[0];
+    if (item === undefined) throw new Error('the annotation menu shows no item');
+    expect(item.getAttribute('data-command')).toBe('annotate.properties');
+    expect(settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(item);
+      await Promise.resolve();
+    });
+    expect(settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
   });
 
   it('CONTROL: a region with nothing placed in its context renders its children and NO menu', async () => {

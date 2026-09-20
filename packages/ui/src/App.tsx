@@ -241,6 +241,7 @@ import { SELECT_TOOL_ID } from './annotations/selectTool.js';
 import {
   deleteSelectionCommand,
   nudgeSelectionCommands,
+  selectionPropertiesCommand,
   shapeToolCommands,
 } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
@@ -1840,6 +1841,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           claudeReady: () => claudeKeyStored,
         }),
         deleteSelectionCommand(selectionDeps),
+        selectionPropertiesCommand({ ...selectionDeps, settings }),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),

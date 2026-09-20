@@ -26,6 +26,8 @@ import {
 } from '../annotations/measureTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
+import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
+import type { SettingsStore } from '../settingsStore.js';
 import {
   PLACE_BARCODE_TOOL_ID,
   PLACE_IMAGE_TOOL_ID,
@@ -54,6 +56,7 @@ import {
   CALLOUT_TOOL_TITLE,
   CLOUD_TOOL_TITLE,
   DELETE_SELECTION_TITLE,
+  SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
   FORM_FIELD_CHECKBOX_TOOL_TITLE,
@@ -436,13 +439,46 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
   return {
     id: 'annotate.delete-selection',
     title: DELETE_SELECTION_TITLE,
-    placements: [{ surface: 'context-menu', context: 'annotation', order: 10 }],
+    // LAST IN THE ANNOTATION MENU, which is the owner's order for it (§7's row, 2026-09-19):
+    // edit, reply, properties, copy, delete. The numbers between are what the owed items take.
+    placements: [{ surface: 'context-menu', context: 'annotation', order: 50 }],
     shortcut: 'Delete',
     when: () => deps.selection() !== undefined,
     run: (): void => {
       const selection = deps.selection();
       if (selection === undefined) return;
       deps.onDelete(selection);
+    },
+  };
+}
+
+/**
+ * The selected marks' PROPERTIES: the right panel, open, on the tab that holds them.
+ *
+ * ## It opens rather than toggles, and that is what a menu item may do
+ *
+ * `view.toggle-context-panel` is the panel's own command and flips it — right for a chord and for
+ * the status bar's chrome group, wrong under a pointer on a mark: half the time *Properties* would
+ * hide the properties. So this one sets both values it needs rather than inverting either, and the
+ * panel's two settings stay the single owners of what is on screen (the tab strip and a command
+ * move the same value, which is `ContextPanel`'s own rule).
+ *
+ * Nothing about the selection is written here: the panel already draws the selected marks' styles,
+ * so what this command does is make that visible. A version that copied the selection into the
+ * panel would be the second wiring place the registry exists to forbid.
+ */
+export function selectionPropertiesCommand(
+  deps: SelectionCommandDeps & { readonly settings: SettingsStore },
+): UiCommand {
+  return {
+    id: 'annotate.properties',
+    title: SELECTION_PROPERTIES_TITLE,
+    placements: [{ surface: 'context-menu', context: 'annotation', order: 30 }],
+    when: () => deps.selection() !== undefined,
+    run: (): void => {
+      if (deps.selection() === undefined) return;
+      deps.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
+      deps.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
     },
   };
 }

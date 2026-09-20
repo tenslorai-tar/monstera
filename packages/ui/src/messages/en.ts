@@ -781,6 +781,7 @@ export const LINK_PAGE_EMPTY = messageKey('dialog.link-page.empty');
 export const LINK_PAGE_TOO_LONG = messageKey('dialog.link-page.too-long');
 export const LINK_PAGE_NOT_A_NUMBER = messageKey('dialog.link-page.not-a-number');
 export const DELETE_SELECTION_TITLE = messageKey('command.annotate.delete-selection');
+export const SELECTION_PROPERTIES_TITLE = messageKey('command.annotate.properties');
 export const NUDGE_LEFT_TITLE = messageKey('command.annotate.nudge-left');
 export const NUDGE_RIGHT_TITLE = messageKey('command.annotate.nudge-right');
 export const NUDGE_UP_TITLE = messageKey('command.annotate.nudge-up');
@@ -1949,6 +1950,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINK_PAGE_TOO_LONG]: 'That is not a page number.',
   [LINK_PAGE_NOT_A_NUMBER]: 'Type a page number, counting from 1.',
   [DELETE_SELECTION_TITLE]: 'Delete selected annotations',
+  [SELECTION_PROPERTIES_TITLE]: 'Properties',
   // ONE NAME FOR BOTH STEPS. The coarse nudge is the same command with Shift
   // held, and a second entry reading *Move selection left further* would be
   // catalogue noise for a distinction the chord already makes.

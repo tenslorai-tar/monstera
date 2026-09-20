@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — The annotation menu's *Properties*, and why it opens rather than toggles
+
+**One placement, and the panel's own settings do the rest.** `annotate.properties` sets
+`appearance.context-panel-open` and the panel's tab, so the right panel shows the selected marks'
+styles — which it already draws. Nothing about the selection is copied anywhere: a command that
+handed the panel a selection would be the second wiring place the registry exists to forbid.
+
+**It does not reuse `view.toggle-context-panel`,** and the reason is what makes it a separate
+command rather than a second placement on that one. A toggle is right for a chord and for the status
+bar's chrome group; under a pointer on a mark it hides the properties half the time. So this sets
+both values rather than inverting either, and running it twice leaves the panel open — which is the
+control the unit case asserts.
+
+*Delete* moved to order 50, because the owner's order for that menu is edit, reply, properties,
+copy, delete; 10, 20 and 40 are held for the three still owed.
+
+**The pair**: `annotationCommands.test.ts` — both values written, hidden with nothing selected and
+writing nothing when run anyway, and the placement; `ContextMenu.test.tsx` — the real command in a
+real registry, projected into the annotation menu, clicked, and the setting observed. A `run` that
+returns early reddens all three.
+
+**Live**: a highlight selected with *Select annotations*, right-clicked, *Properties* chosen — the
+panel opened on its properties tab showing *One annotation selected* and that mark's controls.
+
+**Two notes from doing it.** The first attempt clicked *Delete* instead, because the screen and the
+page disagree about coordinates on this display; the mark came back with one undo, and the rest of
+the run drove the page through the debugging port at the item's own measured position. And the menu
+groups stack as designed: with text selected AND a mark selected, both groups appear, so clearing
+the text selection is part of reaching the annotation group.
+
+---
+
 ## 2026-09-20 — Provisioning disarmed the contained host, and the grant it needed was a command somebody ran by hand
 
 **Symptom, in the product.** Every document opened poisoned: no page drawn, no text layer, no command
