@@ -796,6 +796,12 @@ export const ANNOTATION_NOTE_LABEL = messageKey('dialog.annotation-note.label');
 export const ANNOTATION_NOTE_APPLY = messageKey('dialog.annotation-note.apply');
 export const ANNOTATION_NOTE_EMPTY = messageKey('dialog.annotation-note.empty');
 export const ANNOTATION_NOTE_TOO_LONG = messageKey('dialog.annotation-note.too-long');
+export const ANNOTATION_EDIT_TITLE = messageKey('dialog.annotation-edit.title');
+export const ANNOTATION_EDIT_LABEL = messageKey('dialog.annotation-edit.label');
+export const ANNOTATION_EDIT_APPLY = messageKey('dialog.annotation-edit.apply');
+export const ANNOTATION_EDIT_EMPTY = messageKey('dialog.annotation-edit.empty');
+export const ANNOTATION_EDIT_TOO_LONG = messageKey('dialog.annotation-edit.too-long');
+export const EDIT_SELECTION_TITLE = messageKey('command.annotate.edit-selection');
 export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
@@ -1973,6 +1979,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATION_NOTE_APPLY]: 'Add note',
   [ANNOTATION_NOTE_EMPTY]: 'Type the comment this note should hold.',
   [ANNOTATION_NOTE_TOO_LONG]: 'That is too long for one note. Shorten it, or use several.',
+  // EDITING, so the words say *change* rather than *add*: the field opens
+  // holding what the mark already says, and a button reading "Add" over a
+  // pre-filled box describes something the command does not do.
+  [ANNOTATION_EDIT_TITLE]: 'Edit comment',
+  [ANNOTATION_EDIT_LABEL]: 'Comment',
+  [ANNOTATION_EDIT_APPLY]: 'Save comment',
+  // NOT "type a comment" — there was one a moment ago, and a person who cleared
+  // the box is being told what happens next rather than what they forgot.
+  [ANNOTATION_EDIT_EMPTY]: 'A comment cannot be empty. To remove it, delete the mark instead.',
+  [ANNOTATION_EDIT_TOO_LONG]: 'That is too long for one comment. Shorten it, or use several.',
+  [EDIT_SELECTION_TITLE]: 'Edit comment…',
   [TOOL_TEXT_BOX_TITLE]: 'Text box',
   [TOOL_STICKY_NOTE_TITLE]: 'Note',
   [TOOL_CARET_TITLE]: 'Insertion mark',

@@ -15,6 +15,7 @@ import type { Brand } from '@monstera/shared';
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage, PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
+import type { PriorAnnotationText } from './pageAnnotations.js';
 // TYPE-ONLY, and here that is load-bearing rather than habitual: this module is
 // reached from `main` and `pdfiumTextEdit.js` reaches koffi and `pdfium.dll`.
 // The import is erased, so the edge the header above warns about is not
@@ -481,6 +482,25 @@ export interface CommandPrior {
    * page, widget, value — rather than a value the invert has to place.
    */
   readonly fillFormField: PriorFieldValue;
+  /**
+   * What an annotation said before it was rewritten.
+   *
+   * **The first entry on the ANNOTATION walk that is not `never`**, and it is
+   * {@link fillFormField}'s reason arriving one walk over rather than a new
+   * one: what stopped `removeAnnotation`, `placeAnnotation` and
+   * `styleAnnotation` was that each names a LIST, and this table carries one
+   * value per command. An edit names one index, because there is one box to
+   * type in and one string to put somewhere.
+   *
+   * It carries the page and index as well as the string, for
+   * {@link PriorFieldValue}'s reason: an inverse RESTORES rather than derives,
+   * so the whole instruction travels rather than half of it being rebuilt from
+   * the command being undone.
+   *
+   * An empty string is a value here, not an absence — a mark that carried no
+   * text is restored to carrying none.
+   */
+  readonly editAnnotationText: PriorAnnotationText;
   /**
    * **`never`**, and it is {@link removeAnnotation}'s reason with a second
    * structure attached rather than a new one.

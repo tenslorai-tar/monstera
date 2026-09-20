@@ -24,11 +24,14 @@ import {
   applyPlaceImage,
   applyRemoveAnnotation,
   applyStyleAnnotation,
+  applyEditAnnotationText,
   captureAddAnnotation,
   capturePlaceAnnotation,
   capturePlaceImage,
   captureRemoveAnnotation,
   captureStyleAnnotation,
+  captureEditAnnotationText,
+  invertEditAnnotationText,
   readAnnotations,
 } from './pageAnnotations.js';
 
@@ -1874,6 +1877,147 @@ describe('applyStyleAnnotation', () => {
  * TWO values: a case on one number passes a writer that hard-codes it, and the
  * default of 1 is the number MuPDF would produce with nothing called at all.
  */
+describe('applyEditAnnotationText rewrites what one annotation says', () => {
+  /** A note carrying a sentence, so *before* is a string somebody could have typed. */
+  const SAID: Extract<AnnotationDraft, { type: 'sticky-note' }> = {
+    type: 'sticky-note',
+    at: { x: 40, y: 200 },
+    text: 'what it said before',
+    colour: [1, 0.8, 0.2],
+    opacity: 1,
+  };
+
+  /**
+   * `/Contents` on each annotation, read back through pdf-lib rather than MuPDF.
+   *
+   * **`/Popup` entries are skipped, and finding out why is what this comment is
+   * for.** `update()` on a `/Text` makes the note's popup window — a second
+   * object in `/Annots` whose `/Contents` is empty and is not the note's. It
+   * appeared here as a trailing `''` the first time these cases ran, and the
+   * same object is visible in a file this feature saved live.
+   *
+   * Skipping it keeps this reader aligned with the walk the COMMAND indexes
+   * into: MuPDF's `getAnnotations()` does not answer popups either, so a reader
+   * that counted them would number the annotations differently from the
+   * handles, which is the one disagreement ADR-0041 exists to prevent.
+   */
+  async function saidBy(bytes: Uint8Array): Promise<readonly string[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const said: string[] = [];
+    for (const ref of annots.asArray()) {
+      const entry = document.context.lookup(ref);
+      if (!(entry instanceof PDFDict)) throw new Error('an /Annots entry is not a dictionary');
+      if (entry.lookup(PDFName.of('Subtype')) === PDFName.of('Popup')) continue;
+      const contents = entry.lookup(PDFName.of('Contents'));
+      said.push(
+        contents instanceof PDFString || contents instanceof PDFHexString
+          ? contents.decodeText()
+          : '',
+      );
+    }
+    return said;
+  }
+
+  async function edited(bytes: Uint8Array, index: number, text: string): Promise<Uint8Array> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applyEditAnnotationText(session, {
+        kind: 'editAnnotationText',
+        page: 0,
+        index,
+        text,
+        version: asDocVersion(1),
+      });
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('stores the new text, read back through a different library', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    expect(await saidBy(await edited(drawn, 0, 'what it says now'))).toStrictEqual([
+      'what it says now',
+    ]);
+  });
+
+  it('LEAVES THE ONE BESIDE IT ALONE, which is what makes the first mean anything', async () => {
+    // `applyStyleAnnotation`'s control, for the same reason: a command that
+    // wrote every annotation on the page satisfies the case above, and *every*
+    // is what a loop over the page's annotations does when the handle is
+    // ignored. The second note says something different so the assertion can
+    // tell "untouched" from "written with the same string".
+    const two = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SAID })),
+      command({ annotation: { ...SAID, text: 'the other note' } }),
+    );
+    expect(await saidBy(await edited(two, 0, 'what it says now'))).toStrictEqual([
+      'what it says now',
+      'the other note',
+    ]);
+  });
+
+  it('CLEARS it when the text is empty, which is what an undo may ask for', async () => {
+    // The schema permits an empty string where every draft that CREATES a
+    // text-bearing annotation requires a character, and the caller that needs
+    // it is the INVERSE rather than a person: a document may already hold a
+    // mark carrying no text, and editing that one captures `''` as its prior.
+    // The dialog refuses a blank answer for the same reason the note dialog
+    // does; this apply must still be able to put `''` back.
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    expect(await saidBy(await edited(drawn, 0, ''))).toStrictEqual(['']);
+  });
+
+  it('refuses an index this page does not have', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    await expect(edited(drawn, 4, 'nowhere')).rejects.toThrow(RangeError);
+  });
+
+  it('CAPTURES what it said before, and the INVERSE puts that back', async () => {
+    // The first invertible command on this walk, so this is the case that says
+    // the declaration is true rather than aspirational. Both halves run against
+    // one session: capture, apply, invert, read.
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    const session = await mupdfWriter.open(drawn);
+    try {
+      const captured = await captureEditAnnotationText(session, {
+        kind: 'editAnnotationText',
+        page: 0,
+        index: 0,
+        text: 'what it says now',
+        version: asDocVersion(1),
+      });
+      expect(captured.captured).toBe(true);
+      // THE PRIOR IS NOT THE COMMAND'S OWN STRING, which is what stops the
+      // round trip below from passing for an inverse built from the intent
+      // rather than from the document. `setLayerVisibility`'s lesson: an
+      // inverse RESTORES rather than derives.
+      if (!captured.captured) throw new Error('the capture refused');
+      expect(captured.prior.text).toBe('what it said before');
+
+      await applyEditAnnotationText(session, {
+        kind: 'editAnnotationText',
+        page: 0,
+        index: 0,
+        text: 'what it says now',
+        version: asDocVersion(1),
+      });
+      expect(await saidBy(await mupdfWriter.serialise(session))).toStrictEqual([
+        'what it says now',
+      ]);
+
+      await invertEditAnnotationText(session, captured.prior);
+      expect(await saidBy(await mupdfWriter.serialise(session))).toStrictEqual([
+        'what it said before',
+      ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
 describe('applyAddAnnotation writes the opacity it was given', () => {
   /** `/CA` on the first annotation, or `null` when the key is absent. */
   async function opacityOf(bytes: Uint8Array): Promise<number | null> {

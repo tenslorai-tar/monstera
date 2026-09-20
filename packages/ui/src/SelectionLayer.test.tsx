@@ -30,9 +30,11 @@ const SELECTION: AnnotationSelection = {
     {
       index: 1,
       rect: { x0: 60, y0: 350, x1: 100, y1: 390 },
-      // Carried by the selection for the comment styles panel; this layer draws
-      // the box and reads nothing of it.
+      // Carried by the selection for the comment styles panel and the *Edit*
+      // item; this layer draws the box and reads none of the three.
       style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+      kind: 'square',
+      contents: '',
     },
   ],
 };

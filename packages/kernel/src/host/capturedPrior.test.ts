@@ -72,6 +72,33 @@ beforeAll(async () => {
   text.setText('Ada');
   const first = document.getPages()[0];
   if (first === undefined) throw new Error('the fixture must have a first page');
+
+  // A NOTE, for the layer group's reason one kind further along:
+  // `editAnnotationText`'s capture throws on a page with no annotation at the
+  // index it names. **The widget below does not serve**, which is the part
+  // worth stating — MuPDF filters widgets out of `getAnnotations()`, so these
+  // two objects sit in two disjoint walks and each is index 0 of its own
+  // (ADR-0041 measured that filtering from the other side).
+  //
+  // It carries `/Contents` so the captured prior is a string somebody could
+  // have typed rather than the empty one a fresh mark would give — an empty
+  // prior parses and would make the case pass for a capture that read nothing.
+  //
+  // Written BEFORE `addToPage`, which appends to whatever `/Annots` the page
+  // already has: the other order would replace the widget array and leave
+  // `fillFormField` with nothing at its own index.
+  const note = context.register(
+    context.obj({
+      Type: PDFName.of('Annot'),
+      Subtype: PDFName.of('Text'),
+      Rect: context.obj([20, 20, 40, 40]),
+      Contents: PDFString.of('what it said before'),
+    }),
+  );
+  const annotations = PDFArray.withContext(context);
+  annotations.push(note);
+  first.node.set(PDFName.of('Annots'), annotations);
+
   text.addToPage(first, { x: 20, y: 240, width: 120, height: 20, font });
 
   base = await document.save({ useObjectStreams: false });
@@ -133,6 +160,17 @@ const COMMANDS: { readonly [K in InvertibleKind]: CommandOfKind<K> } = {
     // THE VERSION THE BUS COMPARES, not one this file checks: `capture` is
     // called below directly, and the staleness refusal happens before the bus
     // reaches a spec. Any version parses here.
+    version: asDocVersion(1),
+  },
+  editAnnotationText: {
+    kind: 'editAnnotationText',
+    page: 0,
+    index: 0,
+    // DIFFERENT FROM WHAT THE FIXTURE'S NOTE HOLDS, which is this map's own
+    // rule at the top: a command that left the text alone would produce a prior
+    // equal to the command's own string, and an inverse that carried either one
+    // would parse and pass.
+    text: 'what it says now',
     version: asDocVersion(1),
   },
 };

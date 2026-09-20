@@ -1306,6 +1306,32 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  editAnnotationText: {
+    kind: 'editAnnotationText',
+    display: 'image',
+    // `/Contents` is a key on an object in `/Annots`, and for a `FreeText` the
+    // appearance stream MuPDF regenerates from it is that object's — the
+    // annotation rows' classification exactly.
+    writer: 'mupdf',
+    // THE FIRST INVERTIBLE COMMAND ON THIS WALK, and the reason is the payload
+    // rather than the format: `CommandPrior` carries one value per command, and
+    // what stopped the three neighbours above is that each names a LIST. An
+    // edit names one index and one string. `fillFormField` reached the same
+    // conclusion first on the widget walk.
+    invertible: true,
+    undo: 'inverse',
+    // One key and an appearance stream, and no clock — the same measurement
+    // `addAnnotation` records for the object it creates.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // Its payload points into an answer `document.annotations` gave at one
+    // version, as the three commands above do.
+    targets: 'annotation',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   addLink: {
     kind: 'addLink',
     display: 'image',

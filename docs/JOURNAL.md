@@ -892,6 +892,73 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — *Edit comment*, the first invertible command on the annotation walk, and a click that selects nothing
+
+**The feature.** §7's owed *edit*, first in the annotation menu — the owner's order is edit, reply,
+properties, copy, delete. It opens a dialog **holding what the mark already says** and sends
+`editAnnotationText`, a new contract command.
+
+**It is invertible, and that was not a choice so much as a consequence.** `removeAnnotation`,
+`placeAnnotation` and `styleAnnotation` all declare `invertible: false`, and the reason recorded in
+each is the same: `CommandPrior` carries one value per command and each of those names a **list**.
+An edit names one index and one string, because there is one box to type in — so the prior is one
+string and the table has always been able to hold it. `fillFormField` reached the identical
+conclusion on the widget walk and its comment says so; this is that sentence cashed one walk over.
+
+The declaration is what the kernel proof asserts rather than a claim in prose: capture, apply,
+invert, read, in one session, with the captured prior asserted to be **different** from the
+command's own text — an inverse built from the intent rather than from the document would pass
+otherwise.
+
+**What the renderer may and may not decide.** `/Contents` is legal on every markup subtype, so the
+apply has no allowlist — a kernel-side list of text-bearing kinds would be a second opinion about
+the format (B3a). The surface has one, and it answers a different question: *which marks does this
+application draw the text of*. Four kinds qualify — the note and the three whose appearance IS their
+text. A highlight carrying a comment is a real thing in the format and nothing here shows one, so
+offering *Edit* on a highlight would be a control whose effect a person cannot see. **The trigger
+for widening that list is a surface, not a subtype.**
+
+**The empty string is the inverse's, not a person's.** The schema permits one where every draft that
+creates a text-bearing annotation requires a character. The first version of that comment said
+refusing it would leave deleting the mark as the only way to unsay something — which was wrong, and
+corrected before it shipped: the note dialog's argument (an icon a reader clicks to be shown
+nothing) applies just as well to emptying one, so the dialog refuses a blank answer too. What needs
+`''` is undo, restoring a mark that genuinely carried no text.
+
+**Live, 2026-09-20.** The annotation menu drew *Edit comment…*, *Properties*, *Delete selected
+annotations*, then the page group. The dialog opened prefilled with `first draft of the comment` and
+its button read *Save comment*. After saving, a copy carried
+`/Contents(second draft, rewritten)`; after **Ctrl+Z**, a second copy carried
+`/Contents(first draft of the comment)`. That is the first inverse on this walk, observed end to
+end.
+
+**And the live run found a defect that has nothing to do with this feature.** With the select tool
+active, **a click on the note's icon does not select it** — the properties panel keeps reading
+*Select annotations to change how they look*. Reproduced at 100% zoom at two points on the icon and
+at 4× zoom at its centre. A marquee drag over the icon selects it; so does a small marquee **clear
+of the icon**, down and to its right. So the box the tool hit-tests against is not where the icon is
+drawn, and the click path is missing it rather than being broken on its own.
+
+The mechanism is **not** established and is deliberately not guessed at here. The click branch reads
+correctly on its face, and the overlay does call `commit` for a zero-travel gesture, so the click
+reaches the tool. Spawned as its own work: it is pre-existing, it affects *Edit*, *Properties* and
+*Delete* equally, and `eraserTool.ts` carries a comment saying the eraser and the select tool must
+agree about which mark a pixel picks — which is now worth checking rather than assuming.
+
+**Two things this cost that are worth carrying.**
+
+- **`npm run build` is what typechecks a test file.** The new UI cases were green under vitest while
+  the tree did not compile: an `as const` fixture had type `kind: 'sticky-note'` exactly, and the
+  two cases that vary that field stopped fitting the parameter. Vitest does not typecheck, so a
+  green run says nothing about it.
+- **The compiler walked me through the registration.** Adding the command to the contract produced
+  errors in the routing table, the host's derived command union, the captured-prior schema, the
+  staleness list and three coverage tests — each one a place the seam requires an entry. That is
+  ADR-0039's derivation doing exactly what it is for: a command routed to a writer cannot be half
+  registered.
+
+---
+
 ## 2026-09-20 — *Add comment* on selected text, and the note you can write but cannot read
 
 **The feature.** §7's owed *comment*, at order 50 between *Strikethrough* and *Mark for redaction* —

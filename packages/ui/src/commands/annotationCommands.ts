@@ -24,8 +24,10 @@ import {
   MEASURE_DISTANCE_TOOL_ID,
   MEASURE_PERIMETER_TOOL_ID,
 } from '../annotations/measureTools.js';
-import type { AnnotationSelection } from '../annotations/selectTool.js';
+import type { AnnotationSelection, SelectedAnnotation } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
+import { ANNOTATION_EDIT_DIALOG_ID } from '../dialogs/annotationEdit.js';
+import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import {
@@ -56,6 +58,7 @@ import {
   CALLOUT_TOOL_TITLE,
   CLOUD_TOOL_TITLE,
   DELETE_SELECTION_TITLE,
+  EDIT_SELECTION_TITLE,
   SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
@@ -448,6 +451,99 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
       const selection = deps.selection();
       if (selection === undefined) return;
       deps.onDelete(selection);
+    },
+  };
+}
+
+/**
+ * Which subtypes this build offers to EDIT the text of.
+ *
+ * ## An allowlist in the surface, and not in the command
+ *
+ * `/Contents` is legal on every markup subtype, and `applyEditAnnotationText`
+ * writes it without asking what the mark is — a kernel-side list would be a
+ * second opinion about the format (B3a). What this list decides is a different
+ * question: **which marks does this application draw the text of**, so that
+ * *Edit* is offered where a person will see their change and hidden where the
+ * text would go into the file and nowhere else.
+ *
+ * The four here are the ones whose words are visible: a note's popup, and the
+ * three subtypes whose appearance IS their text. A highlight carrying a comment
+ * is a real thing in the format and this build has no surface that shows one,
+ * so offering *Edit* on a highlight would be a control whose effect a person
+ * cannot see — the display-only defect with the pieces the other way round.
+ *
+ * **The trigger for widening it is a surface, not a subtype**: the day anything
+ * renders a markup's comment, the kind joins this list in that commit.
+ */
+const EDITABLE_TEXT_KINDS: ReadonlySet<string> = new Set([
+  'sticky-note',
+  'text-box',
+  'typewriter',
+  'callout',
+]);
+
+/**
+ * Rewrites what ONE selected mark says.
+ *
+ * ## First in the annotation menu, and singular where its neighbours are not
+ *
+ * *Delete* and the styles panel act on everything selected, because deleting
+ * four marks is one decision. Editing is not: there is one box to type in, so
+ * the item is hidden unless exactly one mark is selected rather than acting on
+ * the first of several — which would be a control that quietly picks.
+ *
+ * ## The text comes from the SELECTION, not from a read
+ *
+ * `selection.items[0].contents` was carried out of the walk that produced the
+ * handles, so the dialog opens holding text from the same answer the index
+ * points into. A command that fetched it when the item was clicked would be a
+ * second reader of that walk (B3a) and could answer at a version the handle no
+ * longer names.
+ *
+ * ## The version travels with the command
+ *
+ * `editAnnotationText` declares `targets: 'annotation'`, so the bus refuses it
+ * if the document has moved since the walk — the same staleness rule
+ * *Delete* and the styles panel meet. The version sent is the selection's,
+ * which is the one the index is a position in.
+ */
+export function editSelectionCommand(
+  deps: SelectionCommandDeps & {
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  },
+): UiCommand {
+  const only = (): SelectedAnnotation | undefined => {
+    const selection = deps.selection();
+    if (selection?.items.length !== 1) return undefined;
+    const item = selection.items[0];
+    return item !== undefined && EDITABLE_TEXT_KINDS.has(item.kind) ? item : undefined;
+  };
+  return {
+    id: 'annotate.edit-selection',
+    title: EDIT_SELECTION_TITLE,
+    // FIRST, which is the owner's order for this menu: edit, reply, properties,
+    // copy, delete.
+    placements: [{ surface: 'context-menu', context: 'annotation', order: 10 }],
+    when: () => only() !== undefined,
+    run: async (): Promise<void> => {
+      const selection = deps.selection();
+      const item = only();
+      if (selection === undefined || item === undefined) return;
+      const answered = ANNOTATION_TEXT_RESULT.safeParse(
+        await deps.ask(ANNOTATION_EDIT_DIALOG_ID, { text: item.contents }),
+      );
+      // A DISMISSED DIALOG AND A REFUSED ANSWER ARE BOTH NOTHING TO SEND, which
+      // is the platform's gate — and here it also covers the person who cleared
+      // the box, because the result schema refuses a blank string.
+      if (!answered.success) return;
+      deps.onPlace({
+        kind: 'editAnnotationText',
+        page: selection.page,
+        index: item.index,
+        text: answered.data.text,
+        version: selection.version,
+      });
     },
   };
 }

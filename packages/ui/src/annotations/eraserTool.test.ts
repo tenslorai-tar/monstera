@@ -37,12 +37,20 @@ const VERSION = asDocVersion(7);
  */
 const PLAIN = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
 
+/**
+ * The rest of what the walk answers, which this tool reads none of.
+ *
+ * The comment above applies to all three together: the eraser decides from the
+ * rectangle alone, so these are inputs the code under test never touches.
+ */
+const CARRIED = { style: PLAIN, kind: 'square', contents: '' } as const;
+
 /** An annotation covering PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const NEAR: ErasableAnnotation = {
   page: 3,
   index: 1,
   rect: { x0: 60, y0: 350, x1: 100, y1: 390 },
-  style: PLAIN,
+  ...CARRIED,
 };
 
 /** One covering PDF x 160–200, which is nowhere near the clicks below. */
@@ -50,7 +58,7 @@ const FAR: ErasableAnnotation = {
   page: 3,
   index: 2,
   rect: { x0: 160, y0: 150, x1: 200, y1: 190 },
-  style: PLAIN,
+  ...CARRIED,
 };
 
 function erasing(snapshot: AnnotationSnapshot | undefined): {
@@ -152,7 +160,7 @@ describe('eraserTool', () => {
     // wherever the person clicked.
     const { click } = erasing({
       version: VERSION,
-      annotations: [{ page: 3, index: 0, rect: null, style: PLAIN }],
+      annotations: [{ page: 3, index: 0, rect: null, ...CARRIED }],
     });
     expect(await click([40, 40])).toBeUndefined();
   });

@@ -79,6 +79,10 @@ export interface SelectedAnnotation {
    * longer name.
    */
   readonly style: ErasableAnnotation['style'];
+  /** Its subtype, carried from the walk for {@link style}'s reason. */
+  readonly kind: ErasableAnnotation['kind'];
+  /** What it says now, carried from the walk for {@link style}'s reason. */
+  readonly contents: ErasableAnnotation['contents'];
 }
 
 /**
@@ -344,7 +348,13 @@ export function selectTool(deps: SelectDeps): UiTool {
             });
 
       const items = picked
-        .map((entry) => ({ index: entry.index, rect: entry.rect, style: entry.style }))
+        .map((entry) => ({
+          index: entry.index,
+          rect: entry.rect,
+          style: entry.style,
+          kind: entry.kind,
+          contents: entry.contents,
+        }))
         .filter((entry): entry is SelectedAnnotation => entry.rect !== null);
 
       deps.onSelect(

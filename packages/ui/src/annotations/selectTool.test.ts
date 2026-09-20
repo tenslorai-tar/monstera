@@ -29,13 +29,21 @@ const VERSION = asDocVersion(7);
 
 /** The style the selection carries through to the comment styles panel. */
 const PLAIN = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
+/**
+ * Everything the walk answers beside a handle and a box.
+ *
+ * One constant rather than three fields repeated at a dozen sites, so what the
+ * selection carries can grow without this file gaining a dozen edits. None of
+ * these cases reads any of it — they are about which boxes a marquee picks.
+ */
+const CARRIED = { style: PLAIN, kind: 'square', contents: '' } as const;
 
 /** PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const A_RECT: AnnotationRect = { x0: 60, y0: 350, x1: 100, y1: 390 };
-const A: ErasableAnnotation = { page: 3, index: 1, rect: A_RECT, style: PLAIN };
+const A: ErasableAnnotation = { page: 3, index: 1, rect: A_RECT, ...CARRIED };
 /** PDF x 160–200, y 150–190 — screen (220,420) to (300,500). */
 const B_RECT: AnnotationRect = { x0: 160, y0: 150, x1: 200, y1: 190 };
-const B: ErasableAnnotation = { page: 3, index: 2, rect: B_RECT, style: PLAIN };
+const B: ErasableAnnotation = { page: 3, index: 2, rect: B_RECT, ...CARRIED };
 
 function selecting(
   annotations: readonly ErasableAnnotation[] | undefined,
@@ -73,7 +81,7 @@ describe('selectTool', () => {
     const { drag, chosen } = selecting([A, B]);
     await drag([40, 40]);
     expect(chosen).toStrictEqual([
-      { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, style: PLAIN }] },
+      { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] },
     ]);
   });
 
@@ -125,7 +133,7 @@ describe('selectTool', () => {
     // `rect: null` is *no place*, not *the whole page*. A marquee that swept the
     // page would otherwise collect it, and the selection would carry an item a
     // layer cannot draw.
-    const { drag, chosen } = selecting([{ page: 3, index: 0, rect: null, style: PLAIN }]);
+    const { drag, chosen } = selecting([{ page: 3, index: 0, rect: null, ...CARRIED }]);
     await drag([0, 0], [500, 700]);
     expect(chosen).toStrictEqual([undefined]);
   });
@@ -173,7 +181,7 @@ describe('selectTool', () => {
   it('MOVES the selection when the drag starts inside it', async () => {
     // A drag that begins on something already selected is an edit, not a pick.
     // Asked before the read, because what is selected is state this tool holds.
-    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, style: PLAIN }] };
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
     const { drag, chosen } = selecting([A, B], selected);
     // (40, 40) is inside A; (60, 40) is 20 pixels right, which at zoom 2 is 10
     // points in PDF space and nothing at all vertically.
@@ -194,8 +202,8 @@ describe('selectTool', () => {
       page: 3,
       version: VERSION,
       items: [
-        { index: 1, rect: A_RECT, style: PLAIN },
-        { index: 2, rect: B_RECT, style: PLAIN },
+        { index: 1, rect: A_RECT, ...CARRIED },
+        { index: 2, rect: B_RECT, ...CARRIED },
       ],
     };
     const { drag } = selecting([A, B], selected);
@@ -213,7 +221,7 @@ describe('selectTool', () => {
     // dragging to (140, 140) must keep (20, 20) fixed — an implementation that
     // used the drag's own two ends would produce the box (100,100)–(140,140),
     // which is a different rectangle entirely.
-    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, style: PLAIN }] };
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
     const { drag } = selecting([A], selected);
     expect(await drag([100, 100], [140, 140])).toStrictEqual({
       kind: 'placeAnnotation',
@@ -231,8 +239,8 @@ describe('selectTool', () => {
       page: 3,
       version: VERSION,
       items: [
-        { index: 1, rect: A_RECT, style: PLAIN },
-        { index: 2, rect: B_RECT, style: PLAIN },
+        { index: 1, rect: A_RECT, ...CARRIED },
+        { index: 2, rect: B_RECT, ...CARRIED },
       ],
     };
     const { drag } = selecting([A, B], selected);
@@ -244,7 +252,7 @@ describe('selectTool', () => {
     // A press that did not travel is not a drag. Without this the tool commits a
     // zero-length placement — a version bump, an undo entry and a document that
     // is byte-identical — every time somebody clicks what is already selected.
-    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, style: PLAIN }] };
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
     const { drag, chosen } = selecting([A], selected);
     expect(await drag([40, 40])).toBeUndefined();
     expect(chosen[0]?.items.map((item) => item.index)).toStrictEqual([1]);
@@ -254,14 +262,14 @@ describe('selectTool', () => {
     // The control for the two above: the same tool, the same selection, a press
     // that begins on empty paper. If this produced a placement the tool would
     // have become impossible to select with once anything was selected.
-    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, style: PLAIN }] };
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
     const { drag, chosen } = selecting([A, B], selected);
     expect(await drag([200, 400], [400, 600])).toBeUndefined();
     expect(chosen[0]?.items.map((item) => item.index)).toStrictEqual([2]);
   });
 
   it('ignores a selection belonging to another page', async () => {
-    const selected = { page: 9, version: VERSION, items: [{ index: 1, rect: A_RECT, style: PLAIN }] };
+    const selected = { page: 9, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
     const { drag } = selecting([A], selected);
     expect(await drag([40, 40], [60, 40])).toBeUndefined();
   });

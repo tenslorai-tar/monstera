@@ -45,6 +45,9 @@ import {
   invertRemoveAnnotation,
   invertStyleAnnotation,
   applyStyleAnnotation,
+  applyEditAnnotationText,
+  captureEditAnnotationText,
+  invertEditAnnotationText,
 } from './pageAnnotations.js';
 import {
   applyImportFormData,
@@ -294,6 +297,15 @@ export const mupdfSpecs = {
     apply: applyStyleAnnotation,
     capture: captureStyleAnnotation,
     invert: invertStyleAnnotation,
+  },
+  editAnnotationText: {
+    // `invertible: true` comes in through the spread and this table reads it,
+    // as it does for `fillFormField` below: `invert` is reachable here where
+    // every other annotation neighbour's throws.
+    ...declaredCommands.editAnnotationText,
+    apply: applyEditAnnotationText,
+    capture: captureEditAnnotationText,
+    invert: invertEditAnnotationText,
   },
   addLink: {
     ...declaredCommands.addLink,

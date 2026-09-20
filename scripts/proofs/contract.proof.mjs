@@ -794,7 +794,31 @@ const IMPORT_LAYER_SPEC = `  importPageAsLayer: {
   },`;
 
 /**
- * The newest kind, and the one the `missing a command kind` case now omits.
+ * THE NEWEST KIND, and the one the `missing a command kind` case now omits.
+ *
+ * **The first fixture here that is invertible with `undo: 'inverse'`**, which is why it is worth
+ * a sentence rather than being filler like its neighbours: every other spec in this file declares
+ * `invertible: false`, so the complete-table case was compiling a table in which the two axes'
+ * *true* combination appeared nowhere. It is the annotation walk's first — one index and one
+ * string, where its three neighbours each name a list.
+ */
+const EDIT_ANNOTATION_TEXT_SPEC = `  editAnnotationText: {
+    kind: 'editAnnotationText',
+    writer: 'mupdf',
+    apply: applyEditAnnotationText,
+    capture: captureEditAnnotationText,
+    invert: invertEditAnnotationText,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason; it was the newest kind until
+ * `editAnnotationText`.
  *
  * `importFormData`'s shape exactly — MuPDF, checkpoint, reapply-intent, a picked file's bytes —
  * because it reads a file into annotations the way that command reads one into fields (ADR-0077).
@@ -1036,6 +1060,9 @@ const SPEC_IMPORTS = `import {
   applyImportAnnotations,
   captureImportAnnotations,
   invertImportAnnotations,
+  applyEditAnnotationText,
+  captureEditAnnotationText,
+  invertEditAnnotationText,
   applyAddAnnotation,
   captureAddAnnotation,
   invertAddAnnotation,
@@ -1784,6 +1811,7 @@ ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
 ${IMPORT_ANNOTATIONS_SPEC}
+${EDIT_ANNOTATION_TEXT_SPEC}
 };
 `,
   },
@@ -1801,7 +1829,8 @@ ${IMPORT_ANNOTATIONS_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `importAnnotations` on 2026-09-17; `importPageAsLayer` on 2026-09-14; `straightenScans` on
+    // table has to grow. `editAnnotationText` on 2026-09-20; `importAnnotations` on
+    // 2026-09-17; `importPageAsLayer` on 2026-09-14; `straightenScans` on
     // 2026-09-13; `promoteFormObjects`
     // and `replaceAllText` on 2026-09-10, and
     // `deletePageObjects` with `placePageObject` and `recolorPageObjects` the
@@ -1824,8 +1853,11 @@ ${IMPORT_ANNOTATIONS_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one. It fired
     // the same way on `importPageAsLayer`, TS2739 naming it and `straightenScans`.
+    // AND AGAIN on `editAnnotationText` (2026-09-20), TS2739 naming it and
+    // `importAnnotations` — three for three, which is the case working rather
+    // than a nuisance: the wrong code is the reminder.
     because:
-      /Property 'importAnnotations' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'editAnnotationText' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1890,6 +1922,7 @@ ${REPLACE_ALL_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
+${IMPORT_ANNOTATIONS_SPEC}
 };
 `,
   },
@@ -3205,7 +3238,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // (both 2026-09-11), and 38 through 42 since `setDocumentProtection`,
     // `applyRedactions`, `markMatchesForRedaction`, `sanitizeDocument` and
     // `signDocument` (all 2026-09-12), 43 since `straightenScans` (2026-09-13), and 44
-    // since `importPageAsLayer` (2026-09-14), and 45 since `importAnnotations` (2026-09-17).
+    // since `importPageAsLayer` (2026-09-14), 45 since `importAnnotations` (2026-09-17), and
+    // 46 since `editAnnotationText` (2026-09-20).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -3223,7 +3257,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 41 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 42 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

@@ -78,6 +78,23 @@ export interface ErasableAnnotation {
     readonly opacity: number;
     readonly borderWidth: number | null;
   };
+  /**
+   * What subtype it is, as the walk names it.
+   *
+   * **The eraser does not read this either** — it is the select tool's, whose
+   * *Edit* item is hidden for a mark whose kind this build cannot put text on.
+   * Shared for the same reason `style` is: a second row type differing by one
+   * field would be two shapes over one channel answer.
+   */
+  readonly kind: string;
+  /**
+   * What it says — `/Contents`, as the walk answers it.
+   *
+   * Carried rather than re-read for {@link SelectedAnnotation}'s version
+   * reason: a selection is a set of handles at ONE version, and text fetched
+   * later would describe a document those handles may no longer name.
+   */
+  readonly contents: string;
 }
 
 /** What the walk answered, and the version it answered at. */

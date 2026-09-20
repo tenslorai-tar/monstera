@@ -29,6 +29,9 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 const ITEM = {
   index: 1,
   rect: { x0: 0, y0: 0, x1: 10, y1: 10 },
+  // CARRIED BY THE SELECTION for the *Edit* item; this panel reads neither.
+  kind: 'square',
+  contents: '',
   style: { colour: [0, 0, 1], opacity: 0.5, borderWidth: 3 },
 } as const;
 

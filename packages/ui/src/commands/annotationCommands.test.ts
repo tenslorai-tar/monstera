@@ -4,9 +4,18 @@ import { GROUP_MARKUP } from '../messages/en.js';
 import { describe, expect, it } from 'vitest';
 
 import { PLAIN_STYLE } from '../annotations/annotationStyle.js';
+import type { AnnotationSelection, SelectedAnnotation } from '../annotations/selectTool.js';
 
 /** The style a selected annotation carries. These cases do not read it. */
 const PLAIN_ITEM = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
+/**
+ * Everything a selected annotation carries besides its handle and its box.
+ *
+ * Spread into each fixture rather than written three times, so a field the
+ * selection gains is added here once. `contents` is the only one any case below
+ * reads, and only the *Edit* ones do.
+ */
+const CARRIED = { style: PLAIN_ITEM, kind: 'square', contents: '' } as const;
 import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -15,6 +24,7 @@ import { SettingsRegistry } from '../registries/settings.js';
 import { SettingsStore } from '../settingsStore.js';
 import {
   deleteSelectionCommand,
+  editSelectionCommand,
   nudgeSelectionCommands,
   rectangleToolCommand,
   selectionPropertiesCommand,
@@ -235,8 +245,8 @@ describe('deleteSelectionCommand', () => {
     page: 2,
     version: asDocVersion(7),
     items: [
-      { index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, style: PLAIN_ITEM },
-      { index: 4, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, style: PLAIN_ITEM },
+      { index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, ...CARRIED },
+      { index: 4, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, ...CARRIED },
     ],
   };
 
@@ -307,11 +317,112 @@ describe('deleteSelectionCommand', () => {
   });
 });
 
+describe('editSelectionCommand', () => {
+  // DECLARED TYPES rather than inferred: with `as const` the fixture's type is
+  // `kind: 'sticky-note'` and `index: 1` exactly, and the two cases below that
+  // vary those fields stop fitting the parameter. `npm run build` is what says
+  // so — vitest does not typecheck, so the cases were green while the tree did
+  // not compile.
+  const NOTE: SelectedAnnotation = {
+    index: 1,
+    rect: { x0: 0, y0: 0, x1: 10, y1: 10 },
+    style: PLAIN_ITEM,
+    kind: 'sticky-note',
+    contents: 'what it said before',
+  };
+  const SELECTION: AnnotationSelection = {
+    page: 2,
+    version: asDocVersion(7),
+    items: [NOTE],
+  };
+
+  function editing(selection: AnnotationSelection | undefined, answer: unknown) {
+    const placed: unknown[] = [];
+    const asked: { id: string; props: unknown }[] = [];
+    return {
+      placed,
+      asked,
+      command: editSelectionCommand({
+        selection: () => selection,
+        onDelete: () => undefined,
+        onPlace: (command) => placed.push(command),
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(answer);
+        },
+      }),
+    };
+  }
+
+  it('opens the dialog HOLDING what the mark says, and sends the new text at the selection’s version', async () => {
+    // Three numbers the command must not invent: the page and index come from
+    // the selection rather than the context, and the version is the one the
+    // walk answered at — the bus refuses the command if the document moved.
+    const { command, placed, asked } = editing(SELECTION, { text: 'what it says now' });
+    await command.run(WITH_DOCUMENT);
+
+    expect(asked).toStrictEqual([
+      { id: 'dialog.annotation-edit', props: { text: 'what it said before' } },
+    ]);
+    expect(placed).toStrictEqual([
+      {
+        kind: 'editAnnotationText',
+        page: 2,
+        index: 1,
+        text: 'what it says now',
+        version: asDocVersion(7),
+      },
+    ]);
+  });
+
+  it('CONTROL: a dismissed dialog sends nothing, and the dialog was still opened', async () => {
+    // Without the second half, this passes for a command that never asked —
+    // dismissed and never-opened are the same observation unless the ask is
+    // counted.
+    const { command, placed, asked } = editing(SELECTION, undefined);
+    await command.run(WITH_DOCUMENT);
+    expect(asked).toHaveLength(1);
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('is HIDDEN for a kind whose text this build does not DRAW', async () => {
+    // A highlight may carry a comment in the format, and nothing here renders
+    // one — so offering *Edit* on it would be a control whose effect a person
+    // cannot see. The run is asserted too: a `when` that hid the item while the
+    // command still acted would be caught by nothing else.
+    const highlight = { ...SELECTION, items: [{ ...NOTE, kind: 'highlight' }] };
+    const { command, placed } = editing(highlight, { text: 'ignored' });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(false);
+    await command.run(WITH_DOCUMENT);
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('is HIDDEN when TWO marks are selected, rather than editing the first', async () => {
+    // There is one box to type in. A command that acted on `items[0]` would
+    // quietly pick one of the two, which is worse than not offering the item.
+    const two = { ...SELECTION, items: [NOTE, { ...NOTE, index: 4 }] };
+    const { command, placed } = editing(two, { text: 'ignored' });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(false);
+    await command.run(WITH_DOCUMENT);
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('is HIDDEN with nothing selected', () => {
+    expect(editing(undefined, undefined).command.when?.(WITH_DOCUMENT)).toBe(false);
+  });
+
+  it('sits FIRST in the annotation menu, where the owner’s order puts it', () => {
+    expect(editing(SELECTION, undefined).command.placements).toStrictEqual([
+      { surface: 'context-menu', context: 'annotation', order: 10 },
+    ]);
+  });
+});
+
 describe('selectionPropertiesCommand', () => {
   const SELECTION = {
     page: 2,
     version: asDocVersion(7),
-    items: [{ index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, style: PLAIN_ITEM }],
+    items: [{ index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, ...CARRIED }],
   };
 
   function deps(selection: typeof SELECTION | undefined): {
@@ -365,7 +476,7 @@ describe('nudgeSelectionCommands', () => {
   const SELECTION = {
     page: 2,
     version: asDocVersion(7),
-    items: [{ index: 1, rect: { x0: 10, y0: 20, x1: 30, y1: 40 }, style: PLAIN_ITEM }],
+    items: [{ index: 1, rect: { x0: 10, y0: 20, x1: 30, y1: 40 }, ...CARRIED }],
   };
 
   function nudging(selection: typeof SELECTION | undefined): {

@@ -1958,6 +1958,99 @@ export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
  * checkpoint is honest and cheap: a restyle changes three keys and an appearance
  * stream.
  */
+/**
+ * What one annotation said, and which one to say it to again.
+ *
+ * {@link PriorFieldValue}'s shape on the annotation walk, and carried whole for
+ * the same reason: an inverse RESTORES rather than derives, so the instruction
+ * that puts the text back travels complete rather than being reassembled from
+ * the command the undo is undoing.
+ */
+export interface PriorAnnotationText {
+  readonly page: number;
+  readonly index: number;
+  readonly text: string;
+}
+
+/**
+ * Rewrites what one annotation says.
+ *
+ * ## `/Contents` is universal on a markup annotation, so no subtype is refused
+ *
+ * The PDF specification puts `/Contents` on every markup subtype — for a note
+ * it is what the popup shows, for a `FreeText` it is the text drawn on the
+ * page, and for a highlight it is the comment attached to the run. There is no
+ * subtype in the walk that has nowhere to put a string, which is why this apply
+ * has no allowlist and why the one in {@link applyStyleAnnotation} beside it
+ * needs a `hasBorder` question and this does not.
+ *
+ * **Widgets cannot arrive here** and that is not this function's doing: MuPDF
+ * filters them out of `getAnnotations()`, so an index in this walk can never
+ * name a form field (ADR-0041 measured it from the other side).
+ *
+ * ## The appearance is regenerated, and for one subtype that is the whole point
+ *
+ * `update()` is the same line every neighbour ends on, with a stronger reason
+ * here: for a `FreeText` the contents ARE the appearance, so without it the
+ * dictionary says one thing and the `/AP` keeps drawing the old sentence. For a
+ * `/Text` the icon does not change, and calling it anyway is what keeps this
+ * loop free of a per-subtype branch that would be wrong the day a tool writes a
+ * kind nobody added to it.
+ */
+export const applyEditAnnotationText: Apply<'mupdf', 'editAnnotationText'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'editAnnotationText'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const annotation = annotationAt(loaded, command.index);
+    annotation.setContents(command.text);
+    annotation.update();
+  });
+
+/**
+ * Records what the annotation said before, so the edit can be undone exactly.
+ *
+ * **The second invertible command on either walk, and the first on this one.**
+ * `fillFormField` was the first and its reason transfers unchanged: a
+ * `CommandPrior` entry carries one value per command, and what stopped
+ * `removeAnnotation`, `placeAnnotation` and `styleAnnotation` was that each
+ * names a LIST. This one names a single index, because there is one box to type
+ * in and one string to put somewhere — so the prior is one string and the table
+ * has always been able to hold it.
+ *
+ * Nothing is refused. `getContents()` answers a string for every annotation in
+ * the walk, including an empty one for a mark that has never carried text, and
+ * an empty prior is a legitimate restoring instruction rather than an absence —
+ * which is why {@link editAnnotationTextSchema} permits an empty string where
+ * the drafts require at least one character.
+ */
+export function captureEditAnnotationText(
+  session: MupdfSession,
+  command: CommandOfKind<'editAnnotationText'>,
+): Promise<CaptureResult<PriorAnnotationText>> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const annotation = annotationAt(loaded, command.index);
+    return {
+      captured: true,
+      prior: { page: command.page, index: command.index, text: annotation.getContents() },
+    };
+  });
+}
+
+/** Puts back what the annotation said, through the same write the apply uses. */
+export const invertEditAnnotationText: Invert<'mupdf', 'editAnnotationText'> = (
+  session,
+  inverse,
+) =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, inverse.page, document.countPages());
+    const annotation = annotationAt(loaded, inverse.index);
+    annotation.setContents(inverse.text);
+    annotation.update();
+  });
+
 export function captureStyleAnnotation(
   session: MupdfSession,
   command: CommandOfKind<'styleAnnotation'>,

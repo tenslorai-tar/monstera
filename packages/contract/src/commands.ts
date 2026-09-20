@@ -2555,6 +2555,59 @@ export const styleAnnotationSchema = z.object({
 });
 
 /**
+ * Rewrites what ONE annotation says — its `/Contents`.
+ *
+ * ## Singular, where its three neighbours are plural, and that is the intent
+ *
+ * `removeAnnotation`, `placeAnnotation` and `styleAnnotation` all take a list,
+ * because deleting, nudging and restyling a marquee of four marks is one
+ * decision a person makes once. **Rewriting text is not**: there is one box to
+ * type in and one string to put somewhere, and a payload naming four indices
+ * would either have to carry four strings — four decisions in one command — or
+ * put the same sentence in all of them, which is not an operation anybody
+ * intends. So the index is singular, and a surface that wants to edit four
+ * marks sends four commands and gets four undo entries, which is what a person
+ * who typed four different things expects to be able to step back through.
+ *
+ * ## The renderer may NOT say which subtypes carry text
+ *
+ * The payload is an index and a string. Whether the annotation at that index
+ * has anywhere to put it is the kernel's question, answered from the subtype it
+ * finds — a renderer-side list of text-bearing kinds would be a second opinion
+ * about the format (B3a), and it would be wrong on the day a tool writes a kind
+ * nobody added to it. A surface still hides the control for a mark that carries
+ * no text; that is a `when` predicate over the walk's own `kind`, which is a
+ * different thing from the command deciding what is legal.
+ *
+ * ## An EMPTY string is allowed, and the INVERSE is who needs it
+ *
+ * The drafts that create a text-bearing annotation spell `min(1)`, because a
+ * note with nothing in it is the display-only defect at document scale: a
+ * marker a reader clicks to find nothing. That argument is about a person
+ * making one, and it applies just as well to a person emptying one — so the
+ * dialog behind this command refuses a blank answer exactly as the note dialog
+ * does.
+ *
+ * What needs the empty string is **undo**. A document may already hold a mark
+ * carrying no text — another tool wrote it, or a person typed into a shape —
+ * and editing that one captures `''` as its prior. An inverse RESTORES rather
+ * than derives, so the schema has to be able to carry the state the document
+ * was actually in, which is not the same set as the states a person may ask
+ * for.
+ */
+export const editAnnotationTextSchema = z.object({
+  kind: z.literal('editAnnotationText'),
+  /** Zero-based index of the page it sits on. */
+  page: z.number().int().nonnegative(),
+  /** Its position in the walk that produced the answer this names. */
+  index: z.number().int().nonnegative(),
+  /** What it should say. Bounded by the same number a draft's text is. */
+  text: z.string().max(MAX_ANNOTATION_TEXT),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
+/**
  * How many form fields one deletion may name.
  *
  * {@link MAX_REMOVED_ANNOTATIONS}' argument on the other walk: this is *how
@@ -4024,6 +4077,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   placeImageSchema,
   addLinkSchema,
   styleAnnotationSchema,
+  editAnnotationTextSchema,
   fillFormFieldSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
@@ -4139,6 +4193,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // it was given — `removeAnnotation`'s shape with an appearance instead of a
   // deletion.
   styleAnnotationSchema,
+  // RENDERABLE, and the same shape with a SINGULAR index and a string a person
+  // typed. What it cannot express is whether the mark at that index has
+  // anywhere to put the string: the subtype decides, and the kernel is what
+  // reads it.
+  editAnnotationTextSchema,
   // RENDERABLE, and it is `removeAnnotation`'s shape on the other walk: the
   // renderer names a row of an answer it was given and says what that field
   // should hold. The value is a string a person typed or a boolean, bounded by
@@ -4390,6 +4449,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'removeAnnotation') return command.version;
   if (command.kind === 'placeAnnotation') return command.version;
   if (command.kind === 'styleAnnotation') return command.version;
+  if (command.kind === 'editAnnotationText') return command.version;
   if (command.kind === 'fillFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
@@ -4411,7 +4471,11 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
  * a real kind, and saying so is what stopped the sibling above from spending a
  * range asserting nothing.
  */
-export type NamesAnAnnotation = 'removeAnnotation' | 'placeAnnotation' | 'styleAnnotation';
+export type NamesAnAnnotation =
+  | 'removeAnnotation'
+  | 'placeAnnotation'
+  | 'styleAnnotation'
+  | 'editAnnotationText';
 const _thatNameIsACommandKind: NamesAnAnnotation extends CommandKind ? true : never = true;
 void _thatNameIsACommandKind;
 

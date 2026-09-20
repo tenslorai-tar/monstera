@@ -7,6 +7,7 @@ import {
   placeImageSchema,
   deleteFormFieldsSchema,
   fieldFillSchema,
+  MAX_ANNOTATION_TEXT,
   fillFormFieldSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
@@ -34,6 +35,7 @@ import {
   PAGE_IMAGE_FORMATS,
   placeAnnotationSchema,
   styleAnnotationSchema,
+  editAnnotationTextSchema,
   removeAnnotationSchema,
   replacePageSchema,
   importPageAsLayerSchema,
@@ -801,6 +803,26 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
         .strict(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('editAnnotationText'),
+      /**
+       * What an annotation said, and which one to say it to again.
+       *
+       * The member above's shape on the annotation walk. **An empty string is a
+       * value here**, not an absence: a mark that carried no text is restored
+       * to carrying none, which is why the bound has no `min(1)` where the
+       * drafts that CREATE a text-bearing annotation do.
+       */
+      prior: z
+        .object({
+          page: z.number().int().nonnegative(),
+          index: z.number().int().nonnegative(),
+          text: z.string().max(MAX_ANNOTATION_TEXT),
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 
 /**
@@ -957,6 +979,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   // the payload arrives here on its own, and the one field removed is named.
   placeImageSchema.omit({ bytes: true }),
   styleAnnotationSchema,
+  editAnnotationTextSchema,
   addLinkSchema,
   fillFormFieldSchema,
   deleteFormFieldsSchema,

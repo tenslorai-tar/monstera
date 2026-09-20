@@ -85,6 +85,18 @@ export interface AnnotationTextFormProps {
    * rather than meeting a control that closes and does nothing.
    */
   readonly validate?: (value: string) => MessageKey | undefined;
+  /**
+   * What the field starts with. Empty for the two dialogs that CREATE a mark.
+   *
+   * *Edit* is the caller with something to put here, and the value is the text
+   * the selection carried from the walk rather than a read taken now — a
+   * selection is a set of handles at one version, and text fetched when the
+   * dialog opened would describe a document those handles may no longer name.
+   *
+   * The initial value is seeded into state once and then owned by the field, so
+   * a person's typing is never overwritten by a re-render.
+   */
+  readonly initial?: string;
   /** The dialog's own `resolve`. */
   readonly resolve: (answer: AnnotationTextAnswer) => void;
 }
@@ -96,10 +108,11 @@ export function AnnotationTextForm({
   tooLong,
   limit = MAX_ANNOTATION_TEXT,
   validate,
+  initial = '',
   resolve,
 }: AnnotationTextFormProps): ReactElement {
   const { _ } = useLingui();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initial);
 
   const trimmed = text.trim();
   const over = trimmed.length > limit;
