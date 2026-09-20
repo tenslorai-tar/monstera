@@ -892,6 +892,78 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — A red that named the budget line and meant a directory left in %TEMP% three weeks earlier
+
+**How it presented.** The pre-push sweep went red on one check of 157:
+
+```
+FAILED  proof:perfbudget (311.1s)
+    Performance-budget gate proof — 1 failure(s): mupdf-host-real: a baseline
+    budget below its measured fixed cost turns the gate red
+```
+
+That sentence points at §9.17's budget line and at the gate's reading of it. Both were correct.
+
+**The three readings that located it.** Run it alone and it passed — with the three
+`mupdf-host-real` cases marked *NOT MEASURED on this runner*, which is the reassuring answer and
+reads as a platform that cannot do the thing. `npm run perf:gate` measured that same role fine
+moments later, at 109.1 MB. Three observations of one role: skipped, one case red, all green. So the
+subject was intermittency, not a budget.
+
+Five `perf:gate` runs gave **two refusals in ten host measurements**, and the refusal carried its
+own mechanism:
+
+> the handed pair was not created: snapshot: the snapshot directory already exists, so it carries a
+> DACL this run did not write. It is not adopted: a directory left by an earlier session may already
+> be granted to a container, and reusing it would hand the host a grant nobody in this run made.
+
+**Mechanism.** `roleMupdfHost.mjs --host` composed its session root from the process PID and named
+the handed pair `ad-<the same PID in hex>` inside it. A run that dies before its `finally` — a
+timed-out proof, an interrupted sweep — leaks that pair. Windows recycles PIDs. So a later run
+drawing a recycled one composed the identical path, found the leftover, and
+`createSessionDirectories` refused it. **The refusal is the mechanism working and must not be
+softened**; the defect is that two runs can compose the same path at all.
+
+Measured under `%TEMP%`: **535** leaked roots, oldest 2026-08-30, newest that morning, of which
+**98** still held a file. Removing all 534 by hand succeeded with zero failures, which says the
+locks that defeated the removals were transient rather than DACL — the same conclusion the script's
+own cleanup comment had reached once before.
+
+**Fix.** `mkdtempSync` in `hostSessionRoot.mjs`: a root no other run holds, created rather than
+chosen, so a collision is unrepresentable instead of checked (B5). After: **ten of ten** measured
+across five runs, zero roots left behind.
+
+**What it does NOT fix, recorded so nobody reads it as closed.** A killed run still leaks its pair —
+nothing a process can be killed before can prevent that. The product answers the same class from the
+other side, sweeping its one session root at startup (`engineHostPlatform.ts`). A harness cannot
+copy that move: several measurements run concurrently under `npm run local`, and a sweep of every
+sibling would delete a live run's root. So a leak stays possible and is now harmless to the next
+run, which is the property the intermittency needed.
+
+**The proof and why its control is a reimplementation.** *Two mints differ* is satisfied by
+implementations that were never broken, so alone it separates nothing. `hostSessionRoot.proof.mjs`
+keeps `pidKeyedRootPathForControl` — the spelling that was replaced — and asserts the original
+defect is still reproducible beside the assertion that the shipped mint does not have it. A third
+case builds a stale directory at exactly the path a recycled PID would choose and requires a fresh
+mint to be unaffected; its own control asserts that same directory IS what the old spelling picks,
+without which it passes on a run where nothing stale was ever created. Verified by reverting the
+mint: case 1 goes red and the other three stay green.
+
+**Two things transfer, and the second is the one worth keeping.**
+
+- **A red can name a subject it has no knowledge of.** The failing assertion's message was written
+  by someone reasoning about budget terms, because that is what the case is *for*. Nothing in it
+  could mention a directory, so the message was confidently about the wrong thing — a symptom
+  recorded as a cause, in the one place a reader trusts most.
+- **The skip and the failure were the same event landing in different sub-runs.** The proof runs the
+  gate several times per role; a refusal in the *baseline* run marks the cases skipped, and a
+  refusal in one of the five differential runs makes that case red. So the same defect produced the
+  alarming output a third of the time and the reassuring one the rest — and *NOT MEASURED on this
+  runner* is indistinguishable from a platform that legitimately cannot measure. The skip path drops
+  the gate's `reason` string entirely, which is why `perf:gate` had it and the proof did not.
+
+---
+
 ## 2026-09-20 — Occurrence 10: the escape guard was blind on the shell this repository uses most
 
 **What happened.** `node -e "1"` ran, from the **PowerShell** tool, inside a `Measure-Command { … }`

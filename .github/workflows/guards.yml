@@ -342,6 +342,21 @@ jobs:
       - name: Prove the FEATURES row-length ratchet can see, pair and refuse
         run: node scripts/ci/annotate.mjs scripts/proofs/rowLengthRatchet.proof.mjs
 
+      # And that two host measurements cannot compose the same session root. The
+      # role script keyed its root on the PID, a run killed before its `finally`
+      # leaks the handed pair, and Windows recycles PIDs — so a later run was
+      # refused by `createSessionDirectories` for a directory three weeks old.
+      # Measured 2026-09-20: two refusals in ten host measurements, surfacing as
+      # `mupdf-host-real` being unmeasurable, which `proof:perfbudget` reported
+      # as a RED case blaming the budget line. Here rather than the shim job
+      # because it creates no handed pair and no container: it mints temp
+      # directories, so there is nothing Win32 about it. The load-bearing case is
+      # the control, which reproduces the collision with the spelling this
+      # replaced — without it, "two mints differ" passes for an implementation
+      # that simply had not collided yet.
+      - name: Prove two host measurements cannot share a session root
+        run: node scripts/ci/annotate.mjs scripts/proofs/hostSessionRoot.proof.mjs
+
       # The picker's gate is the only evidence `documentPicker.ts` has ever
       # executed, and that evidence is a JSON file in the repository — so every
       # way of getting it wrong produces something that reads like evidence: no

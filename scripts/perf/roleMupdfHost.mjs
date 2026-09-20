@@ -151,8 +151,7 @@
  *        node scripts/perf/roleMupdfHost.mjs --no-document
  */
 
-import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -166,6 +165,7 @@ import { requireCurrentShim } from '../lib/shimBinary.mjs';
 // makes the site unverifiable rather than wrong. Caught by that check on this
 // file's first run, which is what it is for.
 import { electronBinaryPath } from '../provision/electron.mjs';
+import { mintHostSessionRoot } from './hostSessionRoot.mjs';
 import { peakRssBytes, peakWorkingSetOf, reportPeak, reportPeakOf } from './peakRss.mjs';
 
 const ROOT = repoRoot();
@@ -397,11 +397,13 @@ async function measureHost() {
   const container = pipes.hostContainerSid(CONTAINER);
   if (!container.ok) throw new Error(`could not resolve the container SID: ${container.error}`);
 
-  // Under the system temp directory rather than the repository, because the
-  // handed pair gets its own DACL naming the container and nothing else here
-  // should inherit that.
-  const root = join(tmpdir(), `monstera-role-host-${String(process.pid)}`);
-  mkdirSync(root, { recursive: true });
+  // UNIQUE PER RUN, and it was composed from this process's PID until
+  // 2026-09-20. `hostSessionRoot.mjs` carries the mechanism: a run that dies
+  // before the `finally` below leaks its handed pair, Windows recycles PIDs, and
+  // a later run drawing a recycled one is refused by `createSessionDirectories`
+  // — correctly — for a directory three weeks old. Two refusals in ten host
+  // measurements, measured 2026-09-20.
+  const root = mintHostSessionRoot();
   const hostLogPath = join(root, 'host.log');
 
   // LOWER-CASE HEX AND HYPHENS ONLY. The name is concatenated into a path and
