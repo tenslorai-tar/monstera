@@ -293,6 +293,7 @@ import {
   type TextSelectionDeps,
   copySelectionCommand,
   markupSelectionCommands,
+  redactSelectionCommand,
   searchSelectionCommand,
 } from './commands/textSelectionCommands.js';
 import { Ribbon } from './surfaces/Ribbon.js';
@@ -1819,7 +1820,12 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
               setFindSeed((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
             },
           };
-          return [copySelectionCommand(textDeps), ...markupSelectionCommands(textDeps), searchSelectionCommand(textDeps)];
+          return [
+            copySelectionCommand(textDeps),
+            ...markupSelectionCommands(textDeps),
+            redactSelectionCommand(textDeps),
+            searchSelectionCommand(textDeps),
+          ];
         })(),
         zoomCommand('in', { onZoom: changeZoom }),
         zoomCommand('out', { onZoom: changeZoom }),

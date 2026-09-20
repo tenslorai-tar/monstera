@@ -723,9 +723,43 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
   },
   redact: {
     subtype: 'Redact',
-    bounds: (draft, transform) => placedRect(draft.rect, transform),
-    degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
-    write: (annotation, draft, transform): void => {
+    bounds: (draft, transform) =>
+      placedRect(
+        draft.over === 'region'
+          ? draft.rect
+          : { x0: draft.from.x, y0: draft.from.y, x1: draft.to.x, y1: draft.to.y },
+        transform,
+      ),
+    degenerate: (draft) =>
+      draft.over === 'region'
+        ? draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1
+        : draft.from.x === draft.to.x && draft.from.y === draft.to.y,
+    write: (annotation, draft, transform, on): void => {
+      if (draft.over === 'text') {
+        // THE ENGINE RESOLVES THE LINES, `markupKind`'s rule and its reason: the rectangle a
+        // selection sweeps is not the selection, and MuPDF owns the answer to what lies between
+        // two points. Measured 2026-09-20, MuPDF 1.28.0: a mark whose quads name the middle line
+        // of three, with a rect spanning all three, burns in ONLY the middle line — and the same
+        // rect with no quads takes all three. So the quads are what `applyRedactions` acts on.
+        const [from, to] = placedPoints([draft.from, draft.to], transform);
+        if (from === undefined || to === undefined) throw new Error('a selection has two ends');
+        const quads = on.page.toStructuredText().highlight(from, to, MAX_MARKUP_QUADS);
+        if (quads.length === 0) {
+          throw new RangeError(
+            'that selection caught no text, so there is nothing to redact. A text redaction names ' +
+              'a run of words: over a picture, a scanned page or a margin there is nothing for it ' +
+              'to remove, and a mark that removes nothing is the worst place for one.',
+          );
+        }
+        for (const quad of quads) annotation.addQuadPoint(quad);
+        // THE QUADS' OWN BOX rather than the drag's, so the rect and the quads cannot disagree
+        // about where this mark is. An annotation with no rect has no place on the page.
+        const xs = quads.flatMap((quad) => [quad[0], quad[2], quad[4], quad[6]]);
+        const ys = quads.flatMap((quad) => [quad[1], quad[3], quad[5], quad[7]]);
+        annotation.setRect([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+        annotation.setColor([...draft.colour]);
+        return;
+      }
       // TWO CALLS, and the two it does NOT make are measured rather than
       // chosen: MuPDF 1.28.0 refuses `setBorderWidth` on a Redact with "Redact
       // annotations have no BS property" and `setInteriorColor` with "no IC

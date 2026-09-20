@@ -1291,6 +1291,7 @@ export const COPY_SELECTION_TITLE = messageKey('command.text-copy.title');
 export const HIGHLIGHT_SELECTION_TITLE = messageKey('command.text-highlight.title');
 export const UNDERLINE_SELECTION_TITLE = messageKey('command.text-underline.title');
 export const STRIKEOUT_SELECTION_TITLE = messageKey('command.text-strikeout.title');
+export const REDACT_SELECTION_TITLE = messageKey('command.text-redact.title');
 export const SEARCH_SELECTION_TITLE = messageKey('command.text-search.title');
 export const CLOSE_UNSAVED_TITLE = messageKey('dialog.close-unsaved.title');
 export const CLOSE_UNSAVED_QUESTION = messageKey('dialog.close-unsaved.question');
@@ -2791,6 +2792,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HIGHLIGHT_SELECTION_TITLE]: 'Highlight',
   [UNDERLINE_SELECTION_TITLE]: 'Underline',
   [STRIKEOUT_SELECTION_TITLE]: 'Strikethrough',
+  // MARK, and the word is the point: the words are still in the file until the burn-in runs, and a
+  // label reading "Redact" would tell a reader they are gone.
+  [REDACT_SELECTION_TITLE]: 'Mark for redaction',
   [SEARCH_SELECTION_TITLE]: 'Search for this',
   [CLOSE_UNSAVED_TITLE]: 'Unsaved changes',
   // THE DOCUMENT BY NAME, because quitting asks once per document and the name is what says

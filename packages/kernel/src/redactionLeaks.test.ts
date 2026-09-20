@@ -272,6 +272,72 @@ describe('the redaction leak corpus', () => {
   }
 });
 
+describe('a page that also carries a TEXT MARKUP', () => {
+  /**
+   * The fixture: the secret, and a highlight over the line above it.
+   *
+   * A `/Highlight` has no `/Rect` — MuPDF answers `getRect` on one with *"Highlight annotations
+   * have no Rect property"* and throws — so the burn-in's own sweep for objects under a mark threw
+   * on any page carrying one. Found by a live run on 2026-09-20: the command answered `internal`
+   * and the renderer said *Something went wrong inside Monstera*, naming nothing.
+   */
+  async function withHighlight(overSecret: boolean): Promise<Uint8Array> {
+    const bytes = await fixture(async (document) => {
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      const page = document.getPages()[0];
+      page?.drawText(SECRET, { font, size: 18, x: SECRET_BOX.x, y: SECRET_BOX.y });
+      page?.drawText('Ordinary paragraph text', { font, size: 18, x: 72, y: 300 });
+    });
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await withDocument(session, (document) => {
+        const page = document.loadPage(0);
+        const highlight = page.createAnnotation('Highlight');
+        // In MuPDF's y-down page space, as `mark` converts: over the secret, or over the other line.
+        const top = PAGE[1] - (overSecret ? SECRET_BOX.y + 20 : 320);
+        highlight.addQuadPoint([72, top, 380, top, 72, top + 20, 380, top + 20]);
+        highlight.setColor([1, 0.9, 0.2]);
+        highlight.update();
+      });
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  /** How many annotations of each type the page carries, read back through MuPDF. */
+  async function typesOn(bytes: Uint8Array): Promise<readonly string[]> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      return await withDocument(session, (document) =>
+        document.loadPage(0).getAnnotations().map((annotation) => annotation.getType()),
+      );
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('BURNS IN AT ALL, where asking a markup for a rectangle used to throw', async () => {
+    // The live failure, as a case: the mark is over the secret and the page also holds a highlight.
+    // Before the fix this rejected, so the assertion is that it resolves AND removed the secret —
+    // a version that swallowed the throw would leave the words in the file.
+    const burned = await burnIn(await withHighlight(true), SECRET_BOX);
+    expect(await secretSites(burned)).toStrictEqual([]);
+  });
+
+  it('takes the markup that sits UNDER the mark, as it takes every other covered object', async () => {
+    const burned = await burnIn(await withHighlight(true), SECRET_BOX);
+    expect(await typesOn(burned)).toStrictEqual([]);
+  });
+
+  it('CONTROL: a markup ELSEWHERE on the page survives the same burn-in', async () => {
+    // Without this, "the markup is gone" would be satisfied by a burn-in that deletes every
+    // annotation on the page — which is a different command from the one being tested.
+    const burned = await burnIn(await withHighlight(false), SECRET_BOX);
+    expect(await typesOn(burned)).toStrictEqual(['Highlight']);
+  });
+});
+
 describe('the redaction leak corpus: XMP and Info metadata', () => {
   // NO REGION CAN BE MATCHED TO METADATA, so a burn-in anywhere removes it whole
   // (ADR-0079) and a mark elsewhere is not a control here: its control is a serialise

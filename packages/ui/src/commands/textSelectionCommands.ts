@@ -1,10 +1,12 @@
 import type { RenderableCommand } from '@monstera/contract';
 
+import { STROKE } from '../annotations/shapeTools.js';
 import { type MarkupType, markupCommand } from '../annotations/textMarkupTools.js';
 import type { AnnotationStyle } from '../annotations/annotationStyle.js';
 import {
   COPY_SELECTION_TITLE,
   HIGHLIGHT_SELECTION_TITLE,
+  REDACT_SELECTION_TITLE,
   SEARCH_SELECTION_TITLE,
   STRIKEOUT_SELECTION_TITLE,
   UNDERLINE_SELECTION_TITLE,
@@ -81,6 +83,50 @@ export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCom
       deps.place(markupCommand(type, selection.page, selection.from, selection.to, deps.style()));
     },
   }));
+}
+
+/**
+ * MARKS the selected text for removal — the redact tool's kind, placed by a selection.
+ *
+ * ## It marks, and marking is the whole of it
+ *
+ * The burn-in is a different command with a different save mode (ADR-0008 rule 1), and this one
+ * must never be mistaken for it: the words are still in the file until *Apply redactions* runs.
+ *
+ * ## Two ends rather than a box, and the engine decides the lines
+ *
+ * `markupSelectionCommands`' rule, and for a redaction it is the difference between removing what
+ * somebody selected and removing the rectangle their selection swept — which over two part-width
+ * lines is everything between them. Measured 2026-09-20, MuPDF 1.28.0: the stored quads are what
+ * `applyRedactions` acts on, so the marked run is what goes.
+ */
+export function redactSelectionCommand(deps: TextSelectionDeps): UiCommand {
+  return {
+    id: 'text.redact',
+    title: REDACT_SELECTION_TITLE,
+    placements: [{ surface: 'context-menu', context: 'selection', order: 60 }],
+    when: selected(deps),
+    run: (context): void => {
+      const selection = deps.selection();
+      if (context.docId === undefined || selection === undefined) return;
+      const style = deps.style();
+      deps.place({
+        kind: 'addAnnotation',
+        page: selection.page,
+        annotation: {
+          type: 'redact',
+          over: 'text',
+          from: selection.from,
+          to: selection.to,
+          // THE DRAG TOOL'S OWN DEFAULT, resolved through the style exactly as `redactTool` does,
+          // so a mark made from the menu and one swept with the tool are the same colour. No border
+          // width: MuPDF refuses one on a Redact, and the draft has no field for it.
+          colour: style.colour(STROKE),
+          opacity: style.opacity,
+        },
+      });
+    },
+  };
 }
 
 /** Searches the document for the selected text, in the Search panel. */

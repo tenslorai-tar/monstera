@@ -101,9 +101,23 @@ function overlaps(a: mupdf.Rect, b: mupdf.Rect): boolean {
  * them too. A deleted widget leaves its field with an empty `/Kids` still holding
  * the value, so the tree is pruned the way `deleteFormFields` prunes it.
  *
- * **Through MuPDF's own calls** — `getRect` answers the marks and the objects in one
+ * **Through MuPDF's own calls** — {@link boxOf} answers the marks and the objects in one
  * frame, and `deleteAnnotation` keeps the loaded page's own list in step, which an
  * edit to the raw `/Annots` array would not.
+ *
+ * ## NOT `getRect` on every annotation, and that was a THROWN command
+ *
+ * A text markup has no `/Rect`: MuPDF answers `getRect` on a `/Highlight` with *"Highlight
+ * annotations have no Rect property"* and throws. This loop asked every annotation for one, so
+ * **applying a redaction on any page that also carried a highlight, an underline or a strikeout
+ * failed** — the command answered `internal`, the renderer showed *Something went wrong inside
+ * Monstera*, and nothing said which object it had tripped over. Found by a live run on 2026-09-20,
+ * on a page marked from the selected-text menu; reproduced with the region tool on the same page,
+ * so it belongs to the burn-in rather than to either gesture.
+ *
+ * The page's own read-back already knew — `pageAnnotations.ts` records that `hasRect()` is false on
+ * all three markups, which is why the eraser and the select tool see them through `getBounds`. So
+ * this asks the same question the same way.
  *
  * **LINKS ARE NOT HERE, because the engine already removes them.** Measured
  * 2026-09-17: with a link-removal loop disabled, and with links also excluded from
@@ -115,18 +129,29 @@ function removeCoveredObjects(document: mupdf.PDFDocument, page: mupdf.PDFPage):
   const annotations = page.getAnnotations();
   const marks = annotations
     .filter((annotation) => annotation.getType() === 'Redact')
-    .map((annotation) => annotation.getRect());
+    .map((annotation) => boxOf(annotation));
   const covered = (box: mupdf.Rect): boolean => marks.some((mark) => overlaps(mark, box));
 
   for (const annotation of annotations) {
-    if (annotation.getType() !== 'Redact' && covered(annotation.getRect())) {
+    if (annotation.getType() !== 'Redact' && covered(boxOf(annotation))) {
       page.deleteAnnotation(annotation);
     }
   }
   for (const widget of page.getWidgets()) {
-    if (covered(widget.getRect())) page.deleteAnnotation(widget);
+    if (covered(boxOf(widget))) page.deleteAnnotation(widget);
   }
   pruneEmptyFields(document);
+}
+
+/**
+ * Where an annotation is, for a kind that may carry no `/Rect`.
+ *
+ * See {@link removeCoveredObjects} for what asking the wrong way cost. `getBounds` answers for
+ * every kind — it is the box MuPDF draws the object in — and for one that does have a rect the two
+ * agree, so this is not a second opinion about placement but the one question asked safely.
+ */
+function boxOf(annotation: mupdf.PDFAnnotation | mupdf.PDFWidget): mupdf.Rect {
+  return annotation.hasRect() ? annotation.getRect() : annotation.getBounds();
 }
 
 /**

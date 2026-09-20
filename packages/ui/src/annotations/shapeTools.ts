@@ -319,7 +319,9 @@ export const redactTool = (style: AnnotationStyle): UiTool =>
     // spread is taken apart here rather than dropping a field the type would
     // reject — which is the compile error doing its job.
     const { colour, opacity } = styled(style);
-    return { type: 'redact', rect, colour, opacity };
+    // `over: 'region'` — this tool sweeps a box. The selected-text menu's redaction sends the same
+    // kind with the run's two ends, and the draft union makes a draft carrying both unwritable.
+    return { type: 'redact', over: 'region', rect, colour, opacity };
   });
 export const lineAnnotationTool = (style: AnnotationStyle): UiTool =>
   lineTool(LINE_TOOL_ID, 'none', style);

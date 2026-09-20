@@ -892,6 +892,58 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — Redacting selected text, and the burn-in that threw on any page carrying a highlight
+
+**The feature.** *Mark for redaction* in the selected-text menu (§7's owed row): one command carrying
+the run's two ends, which MuPDF resolves into the quads the burn-in acts on. It is the markups'
+shape, and for a redaction the difference is what gets removed — the rectangle a selection sweeps
+across two part-width lines covers everything between them.
+
+**Measured before building any of it** (MuPDF 1.28.0): a `/Redact` whose quads name the middle line
+of three, with a rect spanning all three, removes **only** the middle line; the same rect with the
+quads left off removes all three. So the quads decide, and a text redaction can be a mark rather
+than a box. The first run of that instrument reported *nothing removed* for every case — it passed
+MuPDF's leave-the-text value, which is the option the product calls the defect. The control that
+found it is the one the second version carries: a rect-only mark that must remove all three.
+
+**Where it went in the contract.** `redact` is now a union on `over`: `'region'` carries a rect,
+`'text'` carries two ends, and a draft holding both cannot be written down (zod 4 supports the
+nested discriminated union; checked in a scratch script, including that it refuses a draft with both
+shapes and one with neither). The reader-facing names gain nothing — a redaction is one kind
+whatever placed it, so the compile-time pair *every draft is nameable* / *every name is written*
+still holds. That pair is what refused the first design, where `redact-text` was its own draft type.
+
+**Then the live run failed.** *Something went wrong inside Monstera*, reference `i1`, and the log
+said `engine/apply: internal`. Reproduced outside the host, where the message survives:
+`Highlight annotations have no Rect property`.
+
+`removeCoveredObjects` — the sweep that takes annotations and widgets sitting under a mark — asked
+every annotation for `getRect()`. **A text markup has none.** So applying a redaction on any page
+that also carried a highlight, an underline or a strikeout threw, and had done since that sweep was
+written; the region tool fails identically, which is how the defect was placed on the burn-in rather
+than on either gesture. The page's own read-back already knew: `pageAnnotations.ts` records that
+`hasRect()` is false on all three, which is why the eraser and the select tool use `getBounds`.
+`boxOf` now asks the same way.
+
+**Cases**: three in `redactionLeaks.test.ts` — the burn-in completes and removes the secret on a page
+carrying a highlight; the markup under the mark goes with it; and the control, a markup elsewhere,
+survives, so *the markup is gone* is not satisfied by a burn-in that deletes every annotation. All
+three are red under the old `getRect`, with the original message. In `pageAnnotations.test.ts`: one
+line of quads for a run, two for a run across two lines, the region gesture storing none, and the
+refusal for a selection that caught no text. In `pageRedact.test.ts`: the burn-in of a marked run,
+with a note on what it cannot separate and why.
+
+**Live**: selected *The quarterly tota*, marked it from the menu, applied — the words are gone from
+the page's text, the rest of the line reads *ls are listed on the next page*, the cover is drawn,
+and the highlight that overlapped the mark went with it.
+
+**What the second defect says about the first.** A feature that made a gesture easier to reach found
+a fault that had nothing to do with it: a text redaction is placed on a page where somebody has been
+marking things up, which is exactly the page the burn-in could not finish on. The rule worth keeping
+is not about redaction — it is that **a new way to reach an old path is a new sample of that path**.
+
+---
+
 ## 2026-09-20 — The annotation menu's *Properties*, and why it opens rather than toggles
 
 **One placement, and the panel's own settings do the rest.** `annotate.properties` sets

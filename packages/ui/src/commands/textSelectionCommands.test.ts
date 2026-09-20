@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vitest';
 import { styleFrom } from '../annotations/annotationStyle.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
+import { STROKE } from '../annotations/shapeTools.js';
 import {
   type TextSelectionDeps,
   copySelectionCommand,
   markupSelectionCommands,
+  redactSelectionCommand,
   searchSelectionCommand,
 } from './textSelectionCommands.js';
 
@@ -76,16 +78,46 @@ describe('the selected-text commands', () => {
 
   it('CONTROL: with NOTHING selected every item is hidden, and a run sends nothing', () => {
     const { deps, placed, searched } = recording(undefined);
-    const all = [copySelectionCommand(deps), ...markupSelectionCommands(deps), searchSelectionCommand(deps)];
-    expect(all.map((command) => command.when?.(CONTEXT))).toStrictEqual([false, false, false, false, false]);
+    const all = [
+      copySelectionCommand(deps),
+      ...markupSelectionCommands(deps),
+      redactSelectionCommand(deps),
+      searchSelectionCommand(deps),
+    ];
+    expect(all.map((command) => command.when?.(CONTEXT))).toStrictEqual([false, false, false, false, false, false]);
     for (const command of all) void command.run(CONTEXT);
     expect(placed).toStrictEqual([]);
     expect(searched).toStrictEqual([]);
   });
 
+  it('REDACT marks the selection’s run, by its two ends and in the redact tool’s colour', () => {
+    // The gesture is what differs from the drag tool, and the draft says so: `over: 'text'` with
+    // the run's ends, which the kernel resolves into the line quads the burn-in acts on. A draft
+    // carrying a rectangle here would be a different member of the union and would not compile.
+    const { deps, placed } = recording(SELECTION);
+    void redactSelectionCommand(deps).run(CONTEXT);
+
+    const first = placed[0];
+    expect(first?.kind === 'addAnnotation' ? first.annotation : undefined).toStrictEqual({
+      type: 'redact',
+      over: 'text',
+      from: { x: 72, y: 700 },
+      to: { x: 210, y: 700 },
+      colour: STROKE,
+      opacity: 1,
+    });
+    // THE SELECTION'S PAGE, not the context's — the context above holds a different one on purpose.
+    expect(first?.kind === 'addAnnotation' ? first.page : undefined).toBe(2);
+  });
+
   it('every item is placed in the SELECTION menu, in the owner’s order', () => {
     const { deps } = recording(SELECTION);
-    const all = [copySelectionCommand(deps), ...markupSelectionCommands(deps), searchSelectionCommand(deps)];
+    const all = [
+      copySelectionCommand(deps),
+      ...markupSelectionCommands(deps),
+      redactSelectionCommand(deps),
+      searchSelectionCommand(deps),
+    ];
     const placed = all.map((command) => {
       const placement = command.placements.find((each) => each.surface === 'context-menu');
       return placement?.surface === 'context-menu' ? [command.id, placement.context, placement.order] : [command.id];
@@ -95,6 +127,8 @@ describe('the selected-text commands', () => {
       ['text.highlight', 'selection', 20],
       ['text.underline', 'selection', 30],
       ['text.strikeout', 'selection', 40],
+      // 50 IS THE OWED *comment*, which is why redact is 60 rather than the next number.
+      ['text.redact', 'selection', 60],
       ['text.search', 'selection', 70],
     ]);
   });

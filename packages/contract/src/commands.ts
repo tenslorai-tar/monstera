@@ -1502,26 +1502,51 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
+  // ------------------------------------------------------------------
+  // ONE STORED KIND, TWO GESTURES, as a union inside this union.
+  //
+  // `/Subtype /Redact` — a MARK, and marking is the whole of it. Burning a redaction in is a full
+  // rewrite with object GC and no prior revisions
+  // ([ADR-0008](../../../docs/DECISIONS/0008-save-mode-is-determined-by-purpose.md) rule 1),
+  // because an incremental save leaves the covered content readable by walking the xref chain.
+  // That is a different command with a different save mode, and this one must never be mistaken
+  // for it: a mark says *this is to be removed* and removes nothing.
+  //
+  // **NO BORDER WIDTH** on either member, and it is a measurement rather than an omission: MuPDF
+  // 1.28.0 answers `setBorderWidth` on a Redact with *"Redact annotations have no BS property"*,
+  // and `setInteriorColor` with *"no IC property"*. A field the writer of record refuses is the
+  // display-only sin inside a payload — a value a person could set that nothing could apply.
+  //
+  // The nesting is what keeps the reader-facing names honest: a redaction is one kind whatever
+  // placed it, so `AnnotationKindName` gains nothing, and the pair of compile-time checks below
+  // this union (*every draft is nameable*, *every name is written*) still hold.
+  // ------------------------------------------------------------------
+  z.discriminatedUnion('over', [
   z
     .object({
-      /**
-       * `/Subtype /Redact` — a MARK, and marking is the whole of it.
-       *
-       * Burning a redaction in is a full rewrite with object GC and no prior
-       * revisions ([ADR-0008](../../../docs/DECISIONS/0008-save-mode-is-determined-by-purpose.md)
-       * rule 1), because an incremental save leaves the covered content
-       * readable by walking the xref chain. That is a different command with a
-       * different save mode, and this one must never be mistaken for it: a
-       * mark says *this is to be removed* and removes nothing.
-       *
-       * **NO BORDER WIDTH**, unlike every other outline here, and it is a
-       * measurement rather than an omission: MuPDF 1.28.0 answers
-       * `setBorderWidth` on a Redact with *"Redact annotations have no BS
-       * property"*, and `setInteriorColor` with *"no IC property"*. A field the
-       * writer of record refuses is the display-only sin inside a payload — a
-       * value a person could set that nothing could apply.
-       */
       type: z.literal('redact'),
+      /**
+       * WHICH GESTURE PLACED IT, and it is a discriminator rather than a flag.
+       *
+       * A mark over a region carries the rectangle it swept; a mark over selected text carries the
+       * run's two ends and lets the engine resolve the lines, exactly as a highlight does
+       * (`markupKind`) — because the rectangle a selection sweeps is not the selection: two lines
+       * taken from the middle of one to the middle of the next cover two part-width lines, and
+       * their bounding box covers everything between. MuPDF's `StructuredText.highlight` is the one
+       * answer to *what text lies between these points*, and a second opinion here would disagree
+       * with the highlight drawn over the same words (B3a).
+       *
+       * **Measured 2026-09-20, MuPDF 1.28.0**: a `/Redact` whose quads name the middle line of
+       * three, with a rect spanning all three, removes **only** the middle line; the same rect with
+       * no quads removes all three. So the stored quads decide what `applyRedactions` takes, and a
+       * text redaction removes the words a person selected rather than the box their gesture swept.
+       *
+       * The two shapes are two members of this union rather than optional fields, so a draft
+       * carrying a rectangle AND two ends cannot be written down (B5). What is STORED is one kind
+       * either way — the page's read-back names both `redact`, because the difference is the
+       * gesture and not the object, and a reader is told what the object is.
+       */
+      over: z.literal('region'),
       /** The region marked for removal, in PDF user space. */
       rect: annotationRectSchema,
       /** What the mark is outlined in until it is applied. */
@@ -1529,6 +1554,20 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       opacity: annotationOpacitySchema,
     })
     .strict(),
+  z
+    .object({
+      /** `/Subtype /Redact` over a run of text. See the region member above for the whole reason. */
+      type: z.literal('redact'),
+      over: z.literal('text'),
+      /** Where the selected run starts and ends, in PDF user space. */
+      from: annotationPointSchema,
+      to: annotationPointSchema,
+      /** What the mark is outlined in until it is applied. */
+      colour: annotationColourSchema,
+      opacity: annotationOpacitySchema,
+    })
+    .strict(),
+  ]),
   z
     .object({
       /**

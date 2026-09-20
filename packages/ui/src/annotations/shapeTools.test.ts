@@ -144,6 +144,9 @@ describe('the box tools', () => {
       page: 3,
       annotation: {
         type: 'redact',
+        // WHICH GESTURE: this tool sweeps a box, and the selected-text menu sends the same kind
+        // with a run's two ends. The union makes a draft carrying both unwritable.
+        over: 'region',
         rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
         colour: [0.85, 0.15, 0.15],
         opacity: 1,

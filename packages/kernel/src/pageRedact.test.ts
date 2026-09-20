@@ -3,6 +3,7 @@ import * as mupdf from 'mupdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
+import { applyAddAnnotation } from './pageAnnotations.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import {
   applyApplyRedactions,
@@ -107,6 +108,59 @@ describe('applyRedactions', () => {
       // the page's content stream to nothing would pass the line above and take
       // the whole page with it.
       expect(first).toContain(KEPT);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a mark placed over SELECTED TEXT burns in that run, and the line beside it stays', async () => {
+    // The selected-text menu's redaction (§7) end to end: `applyAddAnnotation` resolves the run's
+    // quads through MuPDF, and this is what those quads do when the burn-in runs.
+    //
+    // The two lines sit 60 points apart and the marked run is the FIRST. A build that stored the
+    // selection's swept rectangle rather than its quads would take both — and a rectangle across
+    // one line looks identical to a quad across one line, which is why the fixture marks the first
+    // line while asserting on the second.
+    const session = await mupdfWriter.open(written);
+    try {
+      await applyAddAnnotation(session, {
+        kind: 'addAnnotation',
+        page: 0,
+        annotation: {
+          type: 'redact',
+          over: 'text',
+          // Across the middle of the first line, stopping short of its end: the quads reach the
+          // end of the run, which is what makes this a text selection rather than a region.
+          from: { x: 74, y: 706 },
+          to: { x: 120, y: 706 },
+          colour: [0.85, 0.15, 0.15],
+          opacity: 1,
+        },
+      });
+      await applyApplyRedactions(session, {
+        kind: 'applyRedactions',
+        pages: [0],
+        cover: 'solid',
+        images: 'pixels',
+      });
+
+      const [first] = await readBack(session);
+      // WHAT WAS SELECTED, AND ONLY THAT. Measured here 2026-09-20: MuPDF's quads for a run inside
+      // one line cover the selected CHARACTERS, not the whole line — so marking from x 74 to x 120
+      // takes "Salary" and leaves the figure beside it. That is what a text redaction should do,
+      // and it is the assertion a region mark over the line's box would fail.
+      expect(first).not.toContain('Salary');
+      expect(first).toContain('91000');
+      // AND THE NEXT LINE IS UNTOUCHED: a command that rewrote the page's content stream to
+      // nothing would satisfy the line above and take everything with it.
+      expect(first).toContain(KEPT);
+      //
+      // WHAT THIS CASE CANNOT SAY: that the stored QUADS rather than the rect decided it. Measured
+      // 2026-09-20 by deleting the `addQuadPoint` loop — this case still passed, because
+      // `applyAddAnnotation` has already set a rect from the draft's bounds and MuPDF burns that
+      // in. The quads are separated in `pageAnnotations.test.ts`, where one line stores eight
+      // numbers, two lines sixteen, and the region gesture none; that file's case is red under the
+      // same mutation.
     } finally {
       await mupdfWriter.close(session);
     }

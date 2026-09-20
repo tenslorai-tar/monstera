@@ -279,8 +279,9 @@ const SQUARE: Extract<AnnotationDraft, { type: 'square' }> = {
 };
 
 /** The same box as {@link SQUARE}, and no border width — see the schema. */
-const REDACT: Extract<AnnotationDraft, { type: 'redact' }> = {
+const REDACT: Extract<AnnotationDraft, { type: 'redact'; over: 'region' }> = {
   type: 'redact',
+  over: 'region',
   rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
   colour: [1, 0, 0],
   opacity: 1,
@@ -2173,6 +2174,61 @@ describe('applyAddAnnotation writes text markup as runs of text', () => {
     const drawn = await drawnOn(blank, command({ annotation: HIGHLIGHT }));
     const listed = await onSession(drawn, (session) => readAnnotations(session));
     expect(listed.annotations).toHaveLength(1);
+  });
+
+  it('a REDACTION over selected text stores the run’s quads, and spans two lines as two', async () => {
+    // The markups' claim on the one kind where being wrong removes a reader's words: a mark placed
+    // over a selection names the runs, not the box the selection swept. Two lines is the case that
+    // separates them — a rectangle would be eight numbers here.
+    const overOne = await drawnOn(
+      await withText(),
+      command({
+        annotation: { type: 'redact', over: 'text', from: { x: 22, y: 256 }, to: { x: 100, y: 252 }, colour: [0.85, 0.15, 0.15], opacity: 1 },
+      }),
+    );
+    expect(await quadsOf(overOne)).toHaveLength(8);
+
+    const overTwo = await drawnOn(
+      await withText(),
+      command({
+        annotation: { type: 'redact', over: 'text', from: { x: 22, y: 256 }, to: { x: 100, y: 232 }, colour: [0.85, 0.15, 0.15], opacity: 1 },
+      }),
+    );
+    expect(await quadsOf(overTwo)).toHaveLength(16);
+
+    // AND IT IS LISTED AS A REDACTION, the same kind the drag tool writes: the gesture is not part
+    // of what the object is, so a reader is told what is on the page.
+    const listed = await onSession(overOne, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.kind)).toStrictEqual(['redact']);
+  });
+
+  it('CONTROL: the REGION redaction stores no quads, so the case above is about the gesture', async () => {
+    // Without this, "eight numbers" above would be satisfied by a build that stored a rectangle as
+    // quads for both gestures — and the two would be indistinguishable in the file.
+    const drawn = await drawnOn(
+      await withText(),
+      command({
+        annotation: { type: 'redact', over: 'region', rect: { x0: 20, y0: 230, x1: 120, y1: 260 }, colour: [0.85, 0.15, 0.15], opacity: 1 },
+      }),
+    );
+    expect(await quadsOf(drawn)).toStrictEqual([]);
+  });
+
+  it('a redaction over NO text is refused, and leaves nothing behind', async () => {
+    // The markups' refusal, on the kind where the silent version is worst: a mark that removes
+    // nothing, over a page where a reader was told their words would go.
+    const page = await withText();
+    await expect(
+      drawnOn(
+        page,
+        command({
+          annotation: { type: 'redact', over: 'text', from: { x: 5, y: 60 }, to: { x: 60, y: 55 }, colour: [0.85, 0.15, 0.15], opacity: 1 },
+        }),
+      ),
+    ).rejects.toThrow(/caught no text/u);
+
+    const listed = await onSession(page, (session) => readAnnotations(session));
+    expect(listed.annotations).toHaveLength(0);
   });
 
   it('writes the three subtypes the format names, and lists them apart', async () => {
