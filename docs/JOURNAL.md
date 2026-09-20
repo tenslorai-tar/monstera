@@ -1071,6 +1071,18 @@ a fault that had nothing to do with it: a text redaction is placed on a page whe
 marking things up, which is exactly the page the burn-in could not finish on. The rule worth keeping
 is not about redaction — it is that **a new way to reach an old path is a new sample of that path**.
 
+**Correction, 2026-09-20, before the push.** This landed without `test:a11y`, which a commit
+changing the renderer owes, and that suite had one red: `renderedScreen.pw.ts` pins the
+selected-text menu's rows exhaustively, and the new *Mark for redaction* row is an eleventh the list
+did not name. The assertion was stale rather than wrong — the row sits between *Strikethrough* and
+*Search for this*, which is the owner's order for this menu — and it is corrected in the same range.
+
+Worth recording because the pre-push pair is conditional (*add `test:a11y` and `test:visual` when
+renderer or rendered images change*) and a conditional step is one whose condition gets evaluated by
+whoever is in a hurry. It cost nothing here only because the later sweep ran it. An exhaustive list
+is the right shape and it is what made this loud: a registration landing in the wrong group, or a
+second placement on one command, arrives as an extra row rather than as nothing.
+
 ---
 
 ## 2026-09-20 — The annotation menu's *Properties*, and why it opens rather than toggles

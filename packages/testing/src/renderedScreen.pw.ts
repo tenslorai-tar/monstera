@@ -594,6 +594,12 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
     'Highlight',
     'Underline',
     'Strikethrough',
+    // BETWEEN STRIKETHROUGH AND SEARCH, which is the owner's order for this menu
+    // rather than an order this list invents: copy, highlight, underline,
+    // strikethrough, comment, redact, search. The list is exhaustive on purpose —
+    // a registration that lands in the wrong group, or a second placement on one
+    // command, shows up here as an extra row rather than as nothing.
+    'Mark for redaction',
     'Search for this',
     'Rotate page',
     'Insert blank page',
