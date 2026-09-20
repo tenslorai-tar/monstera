@@ -106,6 +106,8 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
       );
     }
     if (id === 'log.reveal') return Promise.resolve(ok({ revealed: false }));
+    // The shell announces its close subscription on every mount (`windowClose.ts`).
+    if (id === 'window.closeListening') return Promise.resolve(ok({ acknowledged: true }));
     throw new Error(`this fixture has no answer for ${id}`);
   });
   return { client: built, sent };

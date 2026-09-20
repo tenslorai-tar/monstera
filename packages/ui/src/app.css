@@ -2478,11 +2478,12 @@ textarea {
   position: absolute;
   color: transparent;
   white-space: pre;
+  /* The origin for the horizontal fit `TextLayer.tsx`'s `fitLines` writes: the
+     element is the box the engine reported, and a width does not narrow the
+     glyphs inside it — a wider substitute font runs past the end of its own
+     line, and a selection drifts further from the pointer with every word, until
+     the text is scaled to the box from its left edge. */
   transform-origin: 0 0;
-  /* The line is stretched to the box the engine reported, so the glyphs land
-     where the ink is whatever font the browser substitutes. Without this a
-     wider substitute font runs past the end of its own line and a selection
-     drifts further from the pointer with every word. */
   inline-size: 100%;
   block-size: 100%;
 }

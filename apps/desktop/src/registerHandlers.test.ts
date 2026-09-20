@@ -136,6 +136,12 @@ function handlers() {
     confirmClose: () => {
       throw new Error('registration cases must not reach the window');
     },
+    copySelection: () => {
+      throw new Error('registration cases must not reach the window');
+    },
+    closeListening: () => {
+      throw new Error('registration cases must not reach the window');
+    },
     revealLog: () => {
       throw new Error('registration cases must not reach the log');
     },

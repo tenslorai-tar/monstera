@@ -89,6 +89,9 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   },
   'document.recent': { entries: [], lastExitClean: true },
   'log.reveal': { revealed: false },
+  // The shell announces its close subscription at mount (`windowClose.ts`); a fixture with no
+  // answer for it makes every case here carry an unhandled rejection.
+  'window.closeListening': { acknowledged: true },
   // AN UNDO MOVES THE VERSION, which remounts the scroller exactly as a retry does — and moves no
   // page, so the reader's page is the same number afterwards (a move would remap it, correctly).
   'document.undo': { kind: 'undone' as const, version: asDocVersion(2), byteLength: 2048 },

@@ -261,6 +261,8 @@ describe('browser shim', () => {
       'settings.saveSecret',
       'spelling.dictionary',
       'window.close',
+      'window.closeListening',
+      'window.copy',
       'window.titleBarOverlay',
     ]);
   });

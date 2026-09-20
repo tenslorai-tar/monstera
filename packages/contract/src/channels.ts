@@ -4324,6 +4324,47 @@ export const channels = {
     z.object({}),
     z.object({ closing: z.boolean() }),
   ),
+
+  /**
+   * The renderer is subscribed to `window.close-requested` and will answer one.
+   *
+   * ## Why main needs telling, and what it does before it is told
+   *
+   * A pushed event reaches whoever is listening WHEN IT IS SENT; `ipcRenderer` replays nothing. So
+   * a close requested before the renderer's subscription exists — Windows' own shutdown moments
+   * after launch, or `proof:shell`'s quit at `app.whenReady()` — reaches a page that is there and
+   * hears nothing, and the gate then holds the window for an answer that cannot come (measured
+   * 2026-09-19: the harness hung past 120 s). Until this call arrives the gate lets a close
+   * through instead of asking, which loses nothing: documents open through the renderer, so a page
+   * short of its own subscription holds none.
+   *
+   * Idempotent, and sent again whenever the subscription is rebuilt — the renderer's effect
+   * re-runs as tabs change, and *this page is listening* is the same fact each time.
+   */
+  'window.closeListening': channel(
+    'The renderer is listening for close requests and will answer one.',
+    z.object({}),
+    z.object({ acknowledged: z.boolean() }),
+  ),
+
+  /**
+   * Copies the page's current selection, exactly as Ctrl+C does — the selected-text menu's *Copy*.
+   *
+   * ## Chromium's own copy, run from main, and it carries NO TEXT
+   *
+   * The renderer has two ways to reach the clipboard itself and neither is open to it: the async
+   * clipboard API asks for `clipboard-sanitized-write`, which ARCHITECTURE §2 does not grant (the
+   * window is permitted `media` alone), and `document.execCommand` is deprecated. `webContents.copy()`
+   * runs the browser's copy command on whatever is selected, so what reaches the clipboard is decided
+   * by the one thing that already decides it for the chord — the browser — rather than by a string
+   * this side assembles (B3a). Nothing crosses but the request. `copied: false` is a harness with no
+   * window attached.
+   */
+  'window.copy': channel(
+    'Copies the current selection in the window, as the copy chord does.',
+    z.object({}),
+    z.object({ copied: z.boolean() }),
+  ),
 } as const;
 
 export type Channels = typeof channels;

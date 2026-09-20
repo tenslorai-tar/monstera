@@ -131,6 +131,10 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // here would put rows in front of cases that are about something else, and
   // `lastExitClean: false` would put a recovery offer there.
   'document.recent': { entries: [], lastExitClean: true },
+  // The shell announces its close subscription on every mount (`windowClose.ts`), so every case
+  // here reaches it; without an answer of the channel's own shape the envelope fails validation
+  // and each case carries an unhandled rejection.
+  'window.closeListening': { acknowledged: true },
 };
 
 function recordingClient(answer: unknown): {
@@ -163,11 +167,16 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // the start screen's footer shows the running build's version, so the shell
   // asks once when it mounts — a surface loading its own data, never a reader
   // using a control.
+  // `window.closeListening` joins them, and for the same kind of reason: the shell tells main its
+  // close subscription exists (`windowClose.ts`), which is the shell wiring itself up rather than a
+  // reader using a control. That it is sent AT ALL is `AppClose.test.tsx`' case, where the
+  // announcement is the subject instead of noise to be removed.
   return calls.filter(
     (id) =>
       id !== 'document.recent' &&
       id !== 'settings.loadSecrets' &&
-      id !== 'app.info',
+      id !== 'app.info' &&
+      id !== 'window.closeListening',
   );
 }
 
@@ -206,6 +215,9 @@ function answeringClient(answers: Readonly<Record<string, unknown>>): {
 
 /** The answers a case needs to reach a document with the toolbar showing. */
 const OPEN_DOCUMENT_ANSWERS = {
+  // `OTHER_ANSWERS`' reason: the shell announces its close subscription on every mount, and these
+  // fixtures throw on a channel they have no answer for.
+  'window.closeListening': { acknowledged: true },
   'document.open': {
     kind: 'opened' as const,
     docId: DOC,

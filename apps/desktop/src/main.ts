@@ -107,6 +107,8 @@ export interface ShellWindow {
    * or destroyed — and then the gate lets the close through.
    */
   readonly askToClose: () => boolean;
+  /** Runs the browser's copy on the page's current selection — `webContents.copy()`. */
+  readonly copy: () => void;
 }
 
 /**
@@ -165,6 +167,9 @@ export function startShell(build: () => ShellDependencies): void {
         if (contents.isDestroyed() || contents.isCrashed()) return false;
         contents.send('window.close-requested', checkEvent('window.close-requested', {}));
         return true;
+      },
+      copy: () => {
+        window.webContents.copy();
       },
     });
     // EVERY PLATFORM ROUTE TO CLOSING passes one of these two. `app.quit()` closes each window

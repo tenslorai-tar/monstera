@@ -77,7 +77,13 @@ export async function bridge(
   page: Page,
   options: Parameters<typeof createBrowserShim>[0] = {},
 ): Promise<void> {
-  const shim = createBrowserShim(options);
+  // THE PAGE'S OWN COPY, standing in for main's `webContents.copy()`: whatever is selected in the
+  // page when the channel is called, not a string the renderer sent.
+  const shim = createBrowserShim({
+    copySelection: () =>
+      page.evaluate(() => navigator.clipboard.writeText(document.getSelection()?.toString() ?? '')),
+    ...options,
+  });
 
   // The client is keyed by channel; the bridge is keyed by string. The cast is
   // that one fact and nothing wider — `any` would also erase the parameter and

@@ -132,6 +132,8 @@ export interface BrowserShim {
   titleBarOverlays: () => readonly { readonly color: string; readonly symbolColor: string; readonly height: number }[];
   /** How many times the renderer told main the window may close — `revealedLog`'s reason for a count. */
   windowCloses: () => number;
+  /** How many times the renderer told main it is listening for close requests. */
+  closeListenings: () => number;
 }
 
 /**
@@ -364,6 +366,12 @@ export interface BrowserShimOptions {
    * renderer asked for page 2. A page with no entry holds no text.
    */
   readonly pageLines?: readonly (readonly string[])[];
+
+  /**
+   * What `window.copy` copies through — main's attached window, for a shim that has a page.
+   * Absent, the channel answers `copied: false`, main's own answer with no window attached.
+   */
+  readonly copySelection?: () => Promise<void>;
 
   /**
    * Which pages carry a picture and no text, indexed by page.
@@ -717,6 +725,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   let revealedLog = 0;
   const titleBarOverlays: { readonly color: string; readonly symbolColor: string; readonly height: number }[] = [];
   let windowCloses = 0;
+  let closeListenings = 0;
   /** The version each document was last saved at; absent until its first save. */
   const savedAt = new Map<string, number>();
 
@@ -1863,6 +1872,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       windowCloses += 1;
       return Promise.resolve(ok({ closing: true }));
     },
+    // MAIN'S SHAPE: main copies through the window it was attached to and answers `false` with
+    // none, and this shim — which runs beside the page, not in it — copies through the one its
+    // caller hands it. `pageBridge.ts` hands one that copies the page's selection AT THE MOMENT OF
+    // THE CALL, so a renderer that lost the selection before asking copies an empty string.
+    // COUNTED, as `window.close` is: a browser has no gate to tell, and what a case can assert is
+    // that the renderer said it was listening — which is the half this side owns.
+    'window.closeListening': () => {
+      closeListenings += 1;
+      return Promise.resolve(ok({ acknowledged: true }));
+    },
+    'window.copy': async () => {
+      if (options.copySelection === undefined) return ok({ copied: false });
+      await options.copySelection();
+      return ok({ copied: true });
+    },
     // A REAL DICTIONARY, three words long. The shim runs in a browser and
     // cannot read `dictionary-en` off disk, and the two obvious answers are
     // both worse than a fixture: `unknown-dictionary` would make every spelling
@@ -1912,5 +1936,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     revealedLog: () => revealedLog,
     titleBarOverlays: () => [...titleBarOverlays],
     windowCloses: () => windowCloses,
+    closeListenings: () => closeListenings,
   };
 }

@@ -624,6 +624,16 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
   };
 }
 
+/**
+ * Shows §10.3's Search panel — the one route to it, taken by *Find* and by the selected-text menu's
+ * *Search*. The panel settings are the one owner of which panel shows, so a second spelling of
+ * these two lines would be a second opinion about how the Search panel is opened.
+ */
+export function showSearchPanel(settings: SettingsStore): void {
+  settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
+  settings.set(DOCUMENT_PANEL_SETTING.id, 'search');
+}
+
 export function findCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.find',
@@ -638,8 +648,7 @@ export function findCommand(deps: { readonly settings: SettingsStore }): UiComma
       // THE SEARCH PANEL FIRST. Since design pass C the find field lives in §10.3's
       // Search panel, one panel at a time, so with another panel showing there is no
       // field to focus. The setting is the one owner of which panel shows.
-      deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
-      deps.settings.set(DOCUMENT_PANEL_SETTING.id, 'search');
+      showSearchPanel(deps.settings);
       // AFTER THE RENDER the setting causes: `set` notifies synchronously and React
       // renders the panel on its next commit, so the field exists one frame later.
       requestAnimationFrame(() => {

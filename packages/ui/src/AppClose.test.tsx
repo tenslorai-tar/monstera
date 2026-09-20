@@ -78,6 +78,8 @@ function client(options: {
         return Promise.resolve(ok({ closed: true }));
       case 'window.close':
         return Promise.resolve(ok({ closing: true }));
+      case 'window.closeListening':
+        return Promise.resolve(ok({ acknowledged: true }));
       case 'document.recent':
         return Promise.resolve(ok({ entries: [], lastExitClean: true }));
       case 'document.readRange':
@@ -301,6 +303,26 @@ describe('Ctrl+W', () => {
 });
 
 describe('the window’s close, as main pushes it', () => {
+  it('TELLS MAIN IT IS LISTENING as it subscribes, so a close cannot be pushed to nobody', async () => {
+    // Main holds the window for an answer only once this has arrived (`windowClose.ts`), because a
+    // pushed request reaches whoever is subscribed when it is sent. Asserted BEFORE any document is
+    // opened: the announcement belongs to the subscription, not to having a document.
+    const { client: built, sent } = client({ unsaved: [] });
+    const driven = events();
+    render(<App client={built} settings={freshSettings()} subscribe={driven.subscribe} />);
+    await settle();
+
+    expect(called(sent, 'window.closeListening').length).toBeGreaterThanOrEqual(1);
+    // AND THE SUBSCRIPTION IS REALLY THERE: `push` throws where nothing subscribed, so this
+    // separates *said it is listening* from *is listening*.
+    await act(async () => {
+      driven.push('window.close-requested');
+      await Promise.resolve();
+    });
+    await settle();
+    expect(called(sent, 'window.close')).toHaveLength(1);
+  });
+
   it('CONTROL: with nothing unsaved, closes every document and then the window', async () => {
     const { client: built, sent } = client({ unsaved: [] });
     const driven = events();

@@ -1286,6 +1286,11 @@ export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
 export const CLOSE_TAB_TITLE = messageKey('command.close-tab.title');
 export const CLOSE_OTHERS_TITLE = messageKey('command.close-others.title');
+export const COPY_SELECTION_TITLE = messageKey('command.text-copy.title');
+export const HIGHLIGHT_SELECTION_TITLE = messageKey('command.text-highlight.title');
+export const UNDERLINE_SELECTION_TITLE = messageKey('command.text-underline.title');
+export const STRIKEOUT_SELECTION_TITLE = messageKey('command.text-strikeout.title');
+export const SEARCH_SELECTION_TITLE = messageKey('command.text-search.title');
 export const CLOSE_UNSAVED_TITLE = messageKey('dialog.close-unsaved.title');
 export const CLOSE_UNSAVED_QUESTION = messageKey('dialog.close-unsaved.question');
 export const CLOSE_UNSAVED_SAVE = messageKey('dialog.close-unsaved.save');
@@ -2780,6 +2785,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_WORK_INTACT]: 'Your changes are still open and unsaved. Nothing has been lost.',
   [CLOSE_TAB_TITLE]: 'Close tab',
   [CLOSE_OTHERS_TITLE]: 'Close other tabs',
+  [COPY_SELECTION_TITLE]: 'Copy',
+  [HIGHLIGHT_SELECTION_TITLE]: 'Highlight',
+  [UNDERLINE_SELECTION_TITLE]: 'Underline',
+  [STRIKEOUT_SELECTION_TITLE]: 'Strikethrough',
+  [SEARCH_SELECTION_TITLE]: 'Search for this',
   [CLOSE_UNSAVED_TITLE]: 'Unsaved changes',
   // THE DOCUMENT BY NAME, because quitting asks once per document and the name is what says
   // which one this is. The buttons name their actions, so no answer depends on reading this.

@@ -1292,6 +1292,16 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         closeGate.confirm();
         return true;
       },
+      copySelection: () => {
+        if (shellWindow === null) return false;
+        shellWindow.copy();
+        return true;
+      },
+      closeListening: () => {
+        if (shellWindow === null) return false;
+        closeGate.listening();
+        return true;
+      },
     }),
     closeRequested: closeGate.onCloseRequested,
     incidents: log?.incidents ?? reportIncident,

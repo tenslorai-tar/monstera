@@ -335,6 +335,8 @@ const handlers: ContractHandlers = {
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
   'window.titleBarOverlay': () => Promise.resolve(ok({ applied: true })),
   'window.close': () => Promise.resolve(ok({ closing: true })),
+  'window.copy': () => Promise.resolve(ok({ copied: true })),
+  'window.closeListening': () => Promise.resolve(ok({ acknowledged: true })),
   'spelling.dictionary': () =>
     Promise.resolve(
       ok({

@@ -1,5 +1,5 @@
 import { type LineMatch, findInLines, toPdf, toViewport, viewportPoint } from '@monstera/shared';
-import { type ReactElement, useEffect, useRef } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform, unscaledTransform } from './annotations/annotationSpace.js';
@@ -47,6 +47,98 @@ export interface TextLayerProps {
    * an environment that has no `CSS.highlights` at all.
    */
   readonly painter?: HighlightPainter | null | undefined;
+}
+
+/** Text a person has selected on one page, and the two ends of the run in PDF user space. */
+export interface TextSelection {
+  /** The page, zero-based. */
+  readonly page: number;
+  /** The selected text, as the browser copies it, trimmed. Never empty. */
+  readonly text: string;
+  /** Where the run starts and ends, in PDF user space — what the markup tools send. */
+  readonly from: { readonly x: number; readonly y: number };
+  readonly to: { readonly x: number; readonly y: number };
+}
+
+/**
+ * Each mounted layer's page and its viewport-to-PDF conversion, keyed by the layer's ELEMENT.
+ *
+ * By element rather than by page, because split view mounts two layers for one page at different
+ * zooms: the selection resolves through the layer it actually sits in. A `WeakMap`, so a layer that
+ * unmounts without its effect's cleanup running still takes its entry with it.
+ */
+const LAYERS = new WeakMap<Element, { readonly page: number; readonly toPdf: (x: number, y: number) => { x: number; y: number } }>();
+
+/**
+ * The text a person has selected, if the browser's selection lies inside ONE page's text layer.
+ *
+ * The selection is the platform's (the component's header below): this reads it and converts, and
+ * decides nothing about where a run starts or stops. The two ends are the first and last rectangle
+ * the range occupies — the start of the first, the end of the last, each at mid-height — converted
+ * through the layer's own transform; MuPDF then resolves the text between them, as it does for a
+ * drag. A selection across two pages is not one run on one page, and answers `undefined`.
+ *
+ * The rectangles are only where the ink is because each line's text is FITTED to its box
+ * (`fitLines`): unfitted, a substitute font wider than the page's own put every point read here
+ * further right than the glyph it stood for, and a highlight of *The quarterly totals* ran on
+ * through *are lis*.
+ *
+ * @param selection the browser's selection; `document.getSelection()` by default
+ */
+export function readTextSelection(selection: Selection | null = globalThis.document.getSelection()): TextSelection | undefined {
+  if (selection === null || selection.isCollapsed || selection.rangeCount === 0) return undefined;
+  const layerOf = (node: Node | null): Element | null =>
+    (node instanceof Element ? node : (node?.parentElement ?? null))?.closest('[data-text-layer]') ?? null;
+  const layer = layerOf(selection.anchorNode);
+  if (layer === null || layer !== layerOf(selection.focusNode)) return undefined;
+  const entry = LAYERS.get(layer);
+  if (entry === undefined) return undefined;
+  const text = selection.toString().trim();
+  if (text === '') return undefined;
+
+  const rects = [...selection.getRangeAt(0).getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
+  const first = rects[0];
+  const last = rects.at(-1);
+  if (first === undefined || last === undefined) return undefined;
+  const origin = layer.getBoundingClientRect();
+  return {
+    page: entry.page,
+    text,
+    from: entry.toPdf(first.left - origin.left, (first.top + first.bottom) / 2 - origin.top),
+    to: entry.toPdf(last.right - origin.left, (last.top + last.bottom) / 2 - origin.top),
+  };
+}
+
+/** One 2d context for measuring text, made on first use; `null` where there is none (happy-dom). */
+let measuring: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * Scales each line's text horizontally so it spans exactly its box.
+ *
+ * The page's own font is not available here, so the browser draws each line in a substitute —
+ * measured 2026-09-19 on a 16 pt Helvetica line in the live app: the box is 334 px and the
+ * substitute runs 437 px, 31% past the ink. Widening the element does not narrow its glyphs, so the
+ * text is measured in the font it is actually drawn in and scaled by *box ÷ natural*, which is how
+ * PDF.js fits its own text layer.
+ *
+ * Written onto the elements rather than rendered, because the font it measures in is a computed
+ * style that exists only after layout, and a state set from a layout effect to feed it back is a
+ * second render React's own lint refuses. `transform` is a property this component's render never
+ * sets, so a re-render cannot overwrite it.
+ *
+ * Where there is no 2d context the lines are left unscaled, which is where they were.
+ */
+function fitLines(root: HTMLElement): void {
+  measuring ??= root.ownerDocument.createElement('canvas').getContext('2d');
+  const context = measuring;
+  if (context === null) return;
+  for (const element of root.querySelectorAll<HTMLElement>('.m-text-line')) {
+    const style = getComputedStyle(element);
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const natural = context.measureText(element.textContent).width;
+    const box = Number.parseFloat(style.width);
+    element.style.transform = natural > 0 && box > 0 ? `scaleX(${String(box / natural)})` : '';
+  }
 }
 
 /**
@@ -130,6 +222,32 @@ export function TextLayer({
   painter,
 }: TextLayerProps): ReactElement | null {
   const container = useRef<HTMLDivElement | null>(null);
+
+  // THIS LAYER'S CONVERSION, registered against its element for `readTextSelection`. The same
+  // transform the lines below are placed with, so a point read off the layer maps back through
+  // exactly the conversion that put the text there.
+  useEffect(() => {
+    const root = container.current;
+    if (root === null) return undefined;
+    const shownNow = overlayTransform(geometry);
+    LAYERS.set(root, {
+      page,
+      toPdf: (x, y) => {
+        const point = toPdf(viewportPoint(x, y), shownNow);
+        return { x: point.x, y: point.y };
+      },
+    });
+    return (): void => {
+      LAYERS.delete(root);
+    };
+  }, [geometry, page, lines.length]);
+
+  // FITTED AFTER LAYOUT AND BEFORE PAINT, so no frame shows the unfitted text under a drag. Again
+  // on a new zoom: the font size is the box's height, and the substitute's width does not scale
+  // with it exactly.
+  useLayoutEffect(() => {
+    if (container.current !== null) fitLines(container.current);
+  }, [geometry, lines]);
   // THE DEFAULT IS RESOLVED IN THE EFFECT, not here: `sharedPainter` reads
   // `globalThis`, and reading it during render would fix the answer before a
   // test could arrange an environment. `undefined` means "ask"; an explicit

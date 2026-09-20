@@ -610,6 +610,9 @@ export async function reportCanvasPixels(
     // NOBODY TO ASK: this harness closes its window when its reading is done, and a held close
     // would leave it waiting on a question no case answers.
     askToClose: () => false,
+    copy: () => {
+      window.webContents.copy();
+    },
   });
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 

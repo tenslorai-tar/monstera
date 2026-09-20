@@ -28,6 +28,7 @@ import {
   signDocument,
   snapshotRegion,
   findCommand,
+  showSearchPanel,
   fitCommand,
   deletePageCommand,
   cropPagesCommand,
@@ -286,6 +287,13 @@ import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { ContextMenuArea } from './surfaces/ContextMenu.js';
+import { type TextSelection, readTextSelection } from './TextLayer.js';
+import {
+  type TextSelectionDeps,
+  copySelectionCommand,
+  markupSelectionCommands,
+  searchSelectionCommand,
+} from './commands/textSelectionCommands.js';
 import { Ribbon } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
@@ -411,6 +419,39 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * bar clears this when the document closes.
    */
   const [search, setSearch] = useState<SearchHighlight | null>(null);
+  /**
+   * What the find field is asked to search for by the selected-text menu's *Search* (§7) — a text
+   * and a counter, so the same text asked twice searches twice.
+   */
+  const [findSeed, setFindSeed] = useState<{ readonly text: string; readonly nonce: number } | undefined>(undefined);
+  /**
+   * The text selected in the focused document's text layer, as `readTextSelection` answers it on
+   * every `selectionchange`. State rather than a read at the moment of the right-click, because the
+   * menu's groups are decided when the region renders: a selection that re-renders nothing would
+   * leave the selected-text items out of the menu opened over it.
+   */
+  const [textSelection, setTextSelection] = useState<TextSelection | undefined>(undefined);
+  useEffect(() => {
+    const read = (): void => {
+      const next = readTextSelection();
+      // THE SAME SELECTION IS NOT A NEW ONE: `selectionchange` fires on every step of a drag, and a
+      // new object each time would re-render the shell for a selection that did not change.
+      setTextSelection((current) =>
+        current?.page === next?.page &&
+        current?.text === next?.text &&
+        current?.from.x === next?.from.x &&
+        current?.from.y === next?.from.y &&
+        current?.to.x === next?.to.x &&
+        current?.to.y === next?.to.y
+          ? current
+          : next,
+      );
+    };
+    document.addEventListener('selectionchange', read);
+    return (): void => {
+      document.removeEventListener('selectionchange', read);
+    };
+  }, []);
   /**
    * The long command currently running, for the status bar.
    *
@@ -1063,17 +1104,20 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
   // document through the one path, then `window.close`. A Cancel answers nothing and the
   // window stays.
-  useEffect(
-    () =>
-      subscribe('window.close-requested', () => {
-        void (async (): Promise<void> => {
-          if (await requestClose(tabs.map((tab) => tab.docId))) {
-            await client['window.close']({});
-          }
-        })();
-      }),
-    [client, requestClose, subscribe, tabs],
-  );
+  useEffect(() => {
+    const stop = subscribe('window.close-requested', () => {
+      void (async (): Promise<void> => {
+        if (await requestClose(tabs.map((tab) => tab.docId))) {
+          await client['window.close']({});
+        }
+      })();
+    });
+    // AND MAIN IS TOLD THERE IS NOW SOMEBODY TO ASK. A pushed request reaches whoever is
+    // listening when it is sent, so until this arrives the gate lets a close through rather than
+    // holding the window for an answer that was delivered to nobody (`windowClose.ts`).
+    void client['window.closeListening']({});
+    return stop;
+  }, [client, requestClose, subscribe, tabs]);
 
   /**
    * The magnification the reader asked for, as a MODE.
@@ -1757,6 +1801,25 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
         findCommand({ settings }),
+        // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
+        // tools' own style; *Search* opens the Search panel and seeds the find field.
+        ...(() => {
+          const textDeps: TextSelectionDeps = {
+            selection: () => textSelection,
+            place: dispatch,
+            style: () => style,
+            // THE BROWSER'S OWN COPY, run by main on this window: the selection is still the
+            // page's (the menu keeps it), and what it copies as is what the chord would copy.
+            copy: () => {
+              void client['window.copy']({});
+            },
+            search: (text) => {
+              showSearchPanel(settings);
+              setFindSeed((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
+            },
+          };
+          return [copySelectionCommand(textDeps), ...markupSelectionCommands(textDeps), searchSelectionCommand(textDeps)];
+        })(),
         zoomCommand('in', { onZoom: changeZoom }),
         zoomCommand('out', { onZoom: changeZoom }),
         fitCommand('width', { onZoom: changeZoom }),
@@ -1828,6 +1891,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       selectionDeps,
       settings,
       track,
+      // THE SELECTED-TEXT MENU reads these three: the selection its `when` asks about, the one
+      // dispatcher, and the style a markup is drawn in.
+      textSelection,
+      dispatch,
+      style,
     ]);
 
   /**
@@ -1867,7 +1935,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     () => ({
       docId: open?.docId,
       version: open?.version,
-      hasSelection: false,
+      // TEXT SELECTED in the focused document's text layer — the selected-text menu's condition.
+      hasSelection: textSelection !== undefined,
       dirty: false,
       // WHERE THE READER IS, told by the scroller. `undefined` with no document
       // rather than a defaulted `FIRST_PAGE.kernel`: a command that ran against
@@ -1884,7 +1953,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       // answer `pageCount`'s note above is about.
       openDocuments: tabs,
     }),
-    [currentPage, open, pageCount, tabs],
+    [currentPage, open, pageCount, tabs, textSelection],
   );
 
   useShortcuts(registry, context);
@@ -2049,7 +2118,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
             <ContextMenuArea
               registry={registry}
               context={{ ...context, page }}
-              menus={selection?.page === page ? ['annotation', 'page'] : ['page']}
+              menus={[
+                ...(textSelection?.page === page ? (['selection'] as const) : []),
+                ...(selection?.page === page ? (['annotation'] as const) : []),
+                'page',
+              ]}
             >
               {element}
             </ContextMenuArea>
@@ -2133,6 +2206,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
                 pageCount={pageCount}
                 onJump={navigator.jumpTo}
                 onHighlight={setSearch}
+                seed={findSeed}
                 commands={{ client, onApplied: applied, ask }}
               />
             ),

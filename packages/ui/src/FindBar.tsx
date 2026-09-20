@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { type ReactElement, useCallback, useEffect, useId, useRef, useState } from 'react';
 
-import type { ContractClient } from '@monstera/contract';
+import { type ContractClient, MAX_QUERY_LENGTH } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import { type DocumentMatch, searchDocument } from './documentSearch.js';
@@ -144,6 +144,13 @@ export interface FindBarProps {
    * every existing test of the find half to supply a dispatcher it does not use.
    */
   readonly commands?: DocumentCommandDeps | undefined;
+  /**
+   * A query to search for now — the selected-text menu's *Search* (§7). `nonce` changes on every
+   * ask, so searching the same selection twice searches twice. The text is cut to the channel's
+   * `MAX_QUERY_LENGTH` here, where the query is set, so a long selection searches its start rather
+   * than being refused. Optional for `commands`' reason.
+   */
+  readonly seed?: { readonly text: string; readonly nonce: number } | undefined;
 }
 
 /**
@@ -221,6 +228,7 @@ export function FindBar({
   onJump,
   onHighlight,
   commands,
+  seed,
 }: FindBarProps): ReactElement | null {
   const { _ } = useLingui();
   const [query, setQuery] = useState('');
@@ -248,6 +256,19 @@ export function FindBar({
   // controller for its whole life. Kept so the cancel button can reach the walk
   // that is running rather than one a re-render rebuilt.
   const walk = useRef<AbortController | null>(null);
+
+  // A NEW SEED BECOMES THE QUERY IN THE RENDER THAT RECEIVES IT — React's pattern for adjusting
+  // state to a changed prop, by comparing with the one last seen, rather than an effect that sets
+  // state and renders again. Keyed by the nonce, so the same text asked twice is two seeds.
+  const seedQuery = seed === undefined ? undefined : seed.text.slice(0, MAX_QUERY_LENGTH);
+  const [seededNonce, setSeededNonce] = useState<number | undefined>(undefined);
+  if (seed !== undefined && seedQuery !== undefined && seed.nonce !== seededNonce) {
+    setSeededNonce(seed.nonce);
+    setQuery(seedQuery);
+  }
+  // WHICH SEED HAS BEEN SEARCHED, written only by the effect below: `search` reads `query` from
+  // state, so it runs from the render that holds the seeded query, once per seed.
+  const searchedNonce = useRef<number | undefined>(undefined);
 
   const search = useCallback(async (): Promise<void> => {
     if (docId === undefined || page === undefined) return;
@@ -286,6 +307,12 @@ export function FindBar({
       asked: { query, options },
     });
   }, [client, docId, options, page, query]);
+
+  useEffect(() => {
+    if (seed === undefined || searchedNonce.current === seed.nonce || query !== seedQuery) return;
+    searchedNonce.current = seed.nonce;
+    void search();
+  }, [query, search, seed, seedQuery]);
 
   /**
    * Replaces every occurrence of the query across the document.

@@ -72,10 +72,32 @@ describe('the title bar overlay, through the assembled handlers', () => {
       },
       close: () => undefined,
       askToClose: () => false,
+      copy: () => undefined,
     });
     const after = await deps.handlers['window.titleBarOverlay'](overlay);
     expect(after).toStrictEqual({ ok: true, value: { applied: true } });
     expect(painted).toStrictEqual([overlay]);
+  });
+});
+
+describe('copying the selection, through the assembled handlers', () => {
+  it('answers copied:false before a window is attached, then runs the attached window’s copy exactly once', async () => {
+    // The overlay case's join, for the selected-text menu's *Copy*: asserted as the CALL the window
+    // received, because `copied: true` from a root that wired the handler to nothing reads the same.
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    expect(await deps.handlers['window.copy']({})).toStrictEqual({ ok: true, value: { copied: false } });
+
+    let copies = 0;
+    deps.attachWindow({
+      setTitleBarOverlay: () => undefined,
+      close: () => undefined,
+      askToClose: () => false,
+      copy: () => {
+        copies += 1;
+      },
+    });
+    expect(await deps.handlers['window.copy']({})).toStrictEqual({ ok: true, value: { copied: true } });
+    expect(copies).toBe(1);
   });
 });
 
@@ -96,7 +118,12 @@ describe('closing the window, through the assembled handlers and the shell’s h
         asked += 1;
         return true;
       },
+      copy: () => undefined,
     });
+
+    // THE RENDERER SAYS IT IS LISTENING FIRST, as it does at mount: before that the gate lets a
+    // close through rather than spending a request on a page that is not subscribed.
+    expect(await deps.handlers['window.closeListening']({})).toStrictEqual({ ok: true, value: { acknowledged: true } });
 
     expect(deps.closeRequested()).toBe(false);
     expect(asked).toBe(1);
@@ -107,6 +134,26 @@ describe('closing the window, through the assembled handlers and the shell’s h
     expect(deps.closeRequested()).toBe(true);
     // CONTROL: the confirmed close did not ask again.
     expect(asked).toBe(1);
+  });
+
+  it('lets the platform’s close through while the renderer has NOT said it is listening, asking nobody', () => {
+    // The join only this root makes, and the one `proof:shell` hung on: a quit that arrives
+    // before the page subscribes must not be held for an answer that was delivered to nobody.
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    let asked = 0;
+    deps.attachWindow({
+      setTitleBarOverlay: () => undefined,
+      close: () => undefined,
+      askToClose: () => {
+        asked += 1;
+        return true;
+      },
+      copy: () => undefined,
+    });
+
+    expect(deps.closeRequested()).toBe(true);
+    // ASSERTED AS THE CALL: a root that asked and let the close through anyway reads the same here.
+    expect(asked).toBe(0);
   });
 
   it('answers closing:false and closes nothing when no window is attached', async () => {

@@ -225,6 +225,16 @@ export function createContractHandlers(deps: {
    * document with unsaved changes (`windowClose.ts`). `false` where no window is attached.
    */
   readonly confirmClose: () => boolean;
+  /**
+   * Runs the browser's copy on the window's current selection (`webContents.copy()`), answering
+   * whether a window took it. Injected and required for {@link titleBarOverlay}'s reason.
+   */
+  readonly copySelection: () => boolean;
+  /**
+   * The renderer has subscribed to close requests. Answers whether the gate took it — `false`
+   * where no window is attached, as its neighbours do.
+   */
+  readonly closeListening: () => boolean;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
@@ -387,6 +397,8 @@ export function createContractHandlers(deps: {
     'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
     'window.titleBarOverlay': (overlay) => Promise.resolve(ok({ applied: deps.titleBarOverlay(overlay) })),
     'window.close': () => Promise.resolve(ok({ closing: deps.confirmClose() })),
+    'window.copy': () => Promise.resolve(ok({ copied: deps.copySelection() })),
+    'window.closeListening': () => Promise.resolve(ok({ acknowledged: deps.closeListening() })),
   };
 }
 

@@ -67,7 +67,17 @@ export function ContextMenuArea({
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Positioner>
-          <ContextMenu.Popup className="m-context-menu">
+          <ContextMenu.Popup
+            className="m-context-menu"
+            // A PRESS IN THE MENU LEAVES THE PAGE'S SELECTION ALONE. A mousedown's default action
+            // moves the document's selection to where it lands, so clicking *Copy* emptied the very
+            // selection the item was about to copy — measured 2026-09-19: the selection was `""`
+            // when the command ran. Base UI takes its items from pointer and click events and moves
+            // focus itself, so neither needs the default this cancels.
+            onMouseDown={(event) => {
+              event.preventDefault();
+            }}
+          >
             {groups.flatMap(({ menu, entries }, index) => [
               ...(index === 0 ? [] : [<ContextMenu.Separator key={`separator-${menu}`} className="m-context-menu-separator" />]),
               ...entries.map((entry) => (

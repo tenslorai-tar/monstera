@@ -892,6 +892,114 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — A close pushed to a page that is not listening yet: `proof:shell` hung, and so would Windows' shutdown
+
+**Found by the sweep, not by a feature.** `npm run local` failed on `proof:shell` alone, and it failed
+identically with every uncommitted change stashed — so it was HEAD's, not the range's. The quit probe
+spawns the harness and waits 120 s; it hung, three runs out of three with nothing else running.
+
+**The markers say where.** `WINDOW_CREATED, REQUESTED, BEFORE_QUIT, TEARDOWN_START, TICK, DONE,
+BEFORE_QUIT` — and then nothing: no `will-quit`, the window still open, and (through a debugging port
+attached to the hung run) the page fully mounted, start screen rendered, bridge present, no document
+open.
+
+**Mechanism.** Main asks the page to confirm a close by pushing `window.close-requested` **once**.
+`ipcRenderer` replays nothing, so a request sent before the renderer's subscription exists reaches a
+page that is there and hears nothing — and `windowClose.ts` then holds the window for a
+`window.close` that cannot come. The harness requests its quit at `app.whenReady()`, about 1.5 s
+before the renderer mounts. In the shipped app the same loss is Windows' own shutdown arriving
+moments after launch: the app would hold it, which is what *this app is preventing shutdown* looks
+like. It became reachable when the renderer-confirmed close landed earlier this session; `proof:shell`
+last ran on 2026-09-16, and no run since selected it.
+
+**The fix is the gate's rule, not a retry.** The renderer calls `window.closeListening` where it
+subscribes, and until that arrives `onCloseRequested` lets the close through **without asking** —
+there is no queued request to deliver late and no second delivery path for one (B5). Nothing is lost
+by the earlier close: a document opens through the renderer, so a page short of its own subscription
+holds none. `ask` is not even reached, which is what the cases assert — a build that asked and let
+the close through anyway produces the same `true` and still spends the one request nobody heard.
+
+**Cases**: `windowClose.test.ts` — a close before the announcement goes through and `ask` is not
+called, and the same gate holds once it arrives (so the first line is a state, not a gate that never
+asks); the crashed-page case now announces first, because *listening and gone* is not *never
+listened*. `composition.test.ts` — the same join at the root, where the handler and the gate meet.
+`AppClose.test.tsx` — the renderer announces at mount, before any document, and the pushed request is
+then acted on (its `push` throws where nothing subscribed, which separates *said it is listening*
+from *is listening*). **Live evidence: `proof:shell` goes from a 120 s hang to 14 cases passed**,
+including *the SHIPPED app.quit() is DEFERRED until the teardown settles*.
+
+**Two things worth carrying.** A proof that no recent range selected is a proof nobody has run — the
+affected-proof set is computed from changed files, and the file that broke this was not one of the
+files `proof:shell` reads. And `ask`'s answer was a **compound claim**: *there was a page to send to*
+read as *somebody will answer*, which is the shape `CLAUDE.md` item 7 names, inside a function
+signature rather than a comment.
+
+---
+
+## 2026-09-19 — Right-click menus, unit 2: selected text; and three defects under it, one a render loop since 2026-09-02
+
+**The menu.** *Copy*, *Highlight*, *Underline*, *Strikethrough* and *Search for this*, placed in the
+`selection` context. The selection is the browser's own, in the text layer; `readTextSelection`
+reads its first and last rectangle through the layer's own transform, and the markups send the drag
+tools' command through the one `markupCommand` builder the tools now share. *Search for this* opens
+the Search panel and seeds the find field. *Comment* and *redact* are owed.
+
+It passed in the rendered harness and failed live three different ways, and each was a real defect.
+
+**1. On a cold first open there was no text layer at all.** Measured with a logpoint on the text
+hook in the live bundle: the read was refused `document-busy`. A second logpoint on the bridge
+counted **66 calls at open, 61 of them `document.viewModel`** — past the lane's 64. Mechanism:
+`ref={slotRef(page)}` made a new ref callback every render; React detaches the old one and attaches
+the new, so each render was an `unobserve` and an `observe`; a browser answers every `observe` with
+a report; `useVisiblePages` stored a new Set for every report, changed or not; and a new Set is a
+new render. **The scroller re-rendered at frame rate for as long as a document was open** — 40
+distinct sets in 2 s on an idle page, one page in all of them — on the spine and the thumbnail strip,
+since `215fb1d` and `762d23f`. Warm, the first view-model answer stopped the reads before the lane
+filled; cold, they piled up. No test saw it because every file's observer double stays quiet on
+`observe`, where the browser does not. Fixed at both ends: one ref per page for the hook's life, and
+a report that moves nothing keeps the same Set. `useVisiblePages.test.tsx`'s double reports on
+`observe`, as a browser does; each fix has its own control, each reddened by its own mutation
+(`[3, 3, 0, 0]` rounds; 6 observes against 2; a new Set for page 0 reported in again). After: 9
+calls at open, 2 view-model reads, the layer present, 1 set in 2 s.
+
+**2. The layer's glyphs ran 31% past their boxes.** A 16 pt Helvetica line boxed at 334 px was drawn
+437 px wide in the substitute font, so a highlight of *The quarterly totals* ran on through *are lis*.
+The component's doc said its text was *"scaled horizontally to fill"* and the stylesheet said the
+line was *"stretched to the box"* — `inline-size` widens the element, not the glyphs, and no
+`scaleX` was ever applied; `transform-origin: 0 0` waited for one. `fitLines` measures each line in
+the font it is drawn in and scales by box ÷ natural, as PDF.js does. Rendered case: glyphs span the
+box within 1 px; with the fit off, 153 and 127 px in 100 px boxes.
+
+**3. Pressing *Copy* cleared the selection it copied.** Probed live: when the command ran the
+selection was `""`. A mousedown's default moves the selection; *Highlight* had worked only because
+`selectionchange` is queued behind the click. The popup now cancels its mousedown's default. The
+rendered case puts a sentinel on the clipboard and requires the selected text after *Copy*; without
+the fix what was copied was `""`.
+
+**And *Copy* is not the renderer's to perform.** It first called `document.execCommand('copy')`,
+which lint refused as deprecated; the async clipboard asks for `clipboard-sanitized-write`, which
+§2's permission set (`media` alone) does not grant. So it is a new channel, `window.copy`, carrying
+nothing: main runs `webContents.copy()` on its window — the browser's own copy of the selection, the
+thing Ctrl+C already runs, so what a selection copies as has one authority. `composition.test.ts`
+asserts the attached window's copy is called exactly once, and `copied: false` with none. The shim
+lives in Node beside the page, so it is handed a copier by `pageBridge.ts`, as main is handed its
+window. Lint also refused a `setState` in `FindBar`'s seed effect; the seed now becomes the query
+during render, and a case moving the page under a standing seed proves it searches once.
+
+**Live after**: the highlight landed on the selected words, survived save and reopen; *Search for
+this* filled the field and painted both matches — the earlier *two matches, nothing painted* was
+defect 1. Copy by chord pasted correctly; by menu, the rendered case.
+
+**What went wrong on my side**: I rebuilt `dist` under a running app, and its next lazy chunk was
+gone, so the window went blank on close. Also found: I had inserted the new selection code between
+`TextLayer`'s doc comment and the function, orphaning the comment; moved.
+
+**Not closed**: `AppTabs.test.tsx` cases run 3–5.5 s against the 5 s default on this tree and 3.2–4.6
+s at `81eedc6`; the spread is wider than any difference measured, the stall is already recorded
+above as owned by a queued investigation, and the timeout is not raised.
+
+---
+
 ## 2026-09-19 — Right-click menus, unit 1: the surface, the page and tab menus; and a red board
 
 **The surface.** `placement.ts` had the four contexts and `projections.ts` built them, and nothing

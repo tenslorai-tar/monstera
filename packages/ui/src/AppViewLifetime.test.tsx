@@ -116,6 +116,8 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
       truncated: false,
       kind: 'empty' as const,
     },
+    // The shell announces its close subscription on every mount (`windowClose.ts`).
+    'window.closeListening': { acknowledged: true },
   };
   return createClient(channels, (id) => {
     const answer = answers[id];

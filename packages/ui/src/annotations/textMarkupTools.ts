@@ -57,12 +57,45 @@ export const STRIKEOUT_TOOL_ID = 'annotate.strikeout';
  */
 const MINIMUM_DRAG = 4;
 
-function markupTool(
-  id: string,
-  type: 'highlight' | 'underline' | 'strikeout',
-  own: AnnotationColour,
+/** The three markups and each one's own colour, for whatever names a run of text by its two ends. */
+export const MARKUP_COLOURS = {
+  highlight: HIGHLIGHT_COLOUR,
+  underline: MARKUP_COLOUR,
+  strikeout: MARKUP_COLOUR,
+} as const satisfies Record<'highlight' | 'underline' | 'strikeout', AnnotationColour>;
+
+export type MarkupType = keyof typeof MARKUP_COLOURS;
+
+/**
+ * The command that marks up the text between two points on a page — the ONE builder for it, taken
+ * by the drag tools below and by the selected-text menu (§7). Both name a run by its two ends and
+ * let MuPDF resolve the text between, so a second builder would be a second opinion about what a
+ * markup command carries.
+ */
+export function markupCommand(
+  type: MarkupType,
+  page: number,
+  from: { readonly x: number; readonly y: number },
+  to: { readonly x: number; readonly y: number },
   style: AnnotationStyle,
-): UiTool {
+): RenderableCommand {
+  return {
+    kind: 'addAnnotation',
+    page,
+    annotation: {
+      type,
+      from: { x: from.x, y: from.y },
+      to: { x: to.x, y: to.y },
+      // THE HIGHLIGHTER'S YELLOW IS ITS OWN, resolved through the style: a
+      // person who has chosen nothing gets a highlighter that highlights,
+      // and one who has chosen gets what they chose on all three.
+      colour: style.colour(MARKUP_COLOURS[type]),
+      opacity: style.opacity,
+    },
+  };
+}
+
+function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiTool {
   const moved = (gesture: Gesture): boolean => {
     const from = startOf(gesture);
     const to = endOf(gesture);
@@ -77,22 +110,7 @@ function markupTool(
       transform: PageTransform,
     ): RenderableCommand | undefined => {
       if (!moved(gesture)) return undefined;
-      const from = toPdf(startOf(gesture), transform);
-      const to = toPdf(endOf(gesture), transform);
-      return {
-        kind: 'addAnnotation',
-        page,
-        annotation: {
-          type,
-          from: { x: from.x, y: from.y },
-          to: { x: to.x, y: to.y },
-          // THE HIGHLIGHTER'S YELLOW IS ITS OWN, resolved through the style: a
-          // person who has chosen nothing gets a highlighter that highlights,
-          // and one who has chosen gets what they chose on all three.
-          colour: style.colour(own),
-          opacity: style.opacity,
-        },
-      };
+      return markupCommand(type, page, toPdf(startOf(gesture), transform), toPdf(endOf(gesture), transform), style);
     },
     preview: (gesture: Gesture): ToolPreview | undefined => {
       if (!moved(gesture)) return undefined;
@@ -108,8 +126,8 @@ function markupTool(
 /** The three text markups, in the order their controls appear. */
 export function textMarkupTools(style: AnnotationStyle): readonly UiTool[] {
   return [
-    markupTool(HIGHLIGHT_TOOL_ID, 'highlight', HIGHLIGHT_COLOUR, style),
-    markupTool(UNDERLINE_TOOL_ID, 'underline', MARKUP_COLOUR, style),
-    markupTool(STRIKEOUT_TOOL_ID, 'strikeout', MARKUP_COLOUR, style),
+    markupTool(HIGHLIGHT_TOOL_ID, 'highlight', style),
+    markupTool(UNDERLINE_TOOL_ID, 'underline', style),
+    markupTool(STRIKEOUT_TOOL_ID, 'strikeout', style),
   ];
 }

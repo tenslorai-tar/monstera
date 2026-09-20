@@ -45,6 +45,9 @@ export {
   MAX_SERVICE_DETAIL,
   MAX_TEXT_LAYER_LINE,
   MAX_TEXT_LAYER_LINES,
+  // THE SEARCH QUERY'S BOUND, exported because the selected-text menu seeds the find field with a
+  // selection, and cutting it to the channel's own bound keeps a long selection from being refused.
+  MAX_QUERY_LENGTH,
   // NAMED BECAUSE THE KERNEL SEAM NOW READS IT TOO. ADR-0040's extension hands
   // a command's apply the outline as pre-read data, so this shape has a reader
   // that is not a channel; a second declaration there would be two of one thing.

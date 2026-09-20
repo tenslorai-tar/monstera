@@ -104,6 +104,8 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // that it answered something.
     titleBarOverlay: () => false,
     confirmClose: () => false,
+    copySelection: () => false,
+    closeListening: () => false,
     revealLog: () => {
       revealed.push(true);
       return Promise.resolve(true);
@@ -357,6 +359,8 @@ describe('document.open', () => {
           revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
+      copySelection: () => false,
+      closeListening: () => false,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
         }),
@@ -540,6 +544,8 @@ describe('the recent list', () => {
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
+      copySelection: () => false,
+      closeListening: () => false,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
     });
@@ -590,6 +596,8 @@ describe('log.reveal', () => {
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
+      copySelection: () => false,
+      closeListening: () => false,
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
     });

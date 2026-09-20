@@ -151,6 +151,8 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     revealLog: () => Promise.resolve(false),
     titleBarOverlay: () => false,
     confirmClose: () => false,
+    copySelection: () => false,
+    closeListening: () => false,
     readDictionary: () => Promise.resolve(null),
     ocrLanguages: () => Promise.resolve([]),
   });
@@ -196,6 +198,8 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'log.reveal': 'answers a boolean',
   'window.titleBarOverlay': 'answers a boolean; two colours and a height go in, and no document contributes',
   'window.close': 'carries nothing and answers a boolean',
+  'window.copy': 'carries nothing and answers a boolean',
+  'window.closeListening': 'carries nothing and answers a boolean',
   'document.unsaved': 'one DocId in, one boolean out',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its
   // size is the language's, fixed at build time, bounded by MAX_AFFIX_BYTES and

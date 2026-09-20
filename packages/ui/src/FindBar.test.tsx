@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { type ContractClient, MAX_QUERY_LENGTH, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -436,5 +436,58 @@ describe('FindBar replace-all', () => {
     // AND THE FIND HALF IS STILL THERE, so this is not passing on a bar that
     // rendered nothing at all.
     expect(container.querySelector('[data-find-input]')).not.toBeNull();
+  });
+});
+
+describe('a SEEDED search — the selected-text menu’s *Search for this*', () => {
+  function seeded(client: ContractClient, seed: { text: string; nonce: number }, page = 1): ReactElement {
+    return (
+      <Wrapped>
+        <FindBar client={client} docId={DOC} page={page} pageCount={PAGES} onJump={vi.fn()} onHighlight={vi.fn()} seed={seed} />
+      </Wrapped>
+    );
+  }
+
+  it('fills the field with the seed and searches the page on show ONCE; moving page with the same seed searches nothing', async () => {
+    const { client, asked } = clientAnswering();
+    const seed = { text: 'hit', nonce: 1 };
+    const { container, rerender } = render(seeded(client, seed));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(only(container, '[data-find-input]', HTMLInputElement).value).toBe('hit');
+    expect(asked).toStrictEqual([1]);
+
+    // THE SEED STAYS SET after it is acted on, and a new page gives `search` a new identity, which
+    // re-runs the effect that searches. The seed was a request for one search, not a standing one.
+    rerender(seeded(client, seed, 2));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asked).toStrictEqual([1]);
+  });
+
+  it('the SAME TEXT under a new nonce is a second request, and searches again', async () => {
+    const { client, asked } = clientAnswering();
+    const { rerender } = render(seeded(client, { text: 'hit', nonce: 1 }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    rerender(seeded(client, { text: 'hit', nonce: 2 }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asked).toStrictEqual([1, 1]);
+  });
+
+  it('a seed LONGER THAN THE CHANNEL TAKES is searched by its start, not refused', async () => {
+    const { client, asked } = clientAnswering();
+    const long = 'h'.repeat(MAX_QUERY_LENGTH + 40);
+    const { container } = render(seeded(client, { text: long, nonce: 1 }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(only(container, '[data-find-input]', HTMLInputElement).value).toHaveLength(MAX_QUERY_LENGTH);
+    expect(asked).toStrictEqual([1]);
   });
 });

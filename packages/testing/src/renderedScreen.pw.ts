@@ -562,6 +562,84 @@ test('the PAGE MENU opens from the keyboard on a focused thumbnail — Shift+F10
   }
 });
 
+test('SELECTED TEXT opens the selected-text menu above the page’s, in the owner’s order (§7)', async ({ page }) => {
+  // A real mouse drag over the text layer, in the production build: the selection is the browser's,
+  // `readTextSelection` reads it through the layer's own transform, and the menu's groups are
+  // decided from it. Each step asserts on its own, so a failure names the step that broke.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    pageLines: [['Quarterly totals for the north', 'Nothing further is owed']],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  const line = page.locator('[data-text-layer="0"] [data-text-line="0"]');
+  await expect(line).toHaveCount(1);
+  const box = await line.boundingBox();
+  if (box === null) throw new Error('the first line has no box');
+  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => document.getSelection()?.toString().trim() ?? '')).not.toBe('');
+
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await expect(page.getByRole('menuitem').first()).toBeVisible();
+  await expect(page.getByRole('menuitem')).toHaveText([
+    'CopyCtrl+C',
+    'Highlight',
+    'Underline',
+    'Strikethrough',
+    'Search for this',
+    'Rotate page',
+    'Insert blank page',
+    'Extract pages…',
+    'Delete page',
+  ]);
+
+  // COPY BY POINTER puts the selected text on the clipboard. A sentinel goes there first, so a
+  // Copy that copied nothing leaves it standing rather than passing on an empty clipboard — which
+  // is what the menu did while pressing an item cleared the selection it was about to copy.
+  const selected = await page.evaluate(() => document.getSelection()?.toString() ?? '');
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.evaluate(() => navigator.clipboard.writeText('sentinel'));
+  await page.getByRole('menuitem', { name: 'Copy' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
+});
+
+test('each TEXT-LAYER LINE’S GLYPHS SPAN ITS BOX, so a selection lands on the ink it covers', async ({ page }) => {
+  // The shim boxes every line at 100 x 12 display units, and a 30-character line in the substitute
+  // font runs well past that unfitted — so this fixture separates a fitted layer from an unfitted
+  // one, which a line the substitute happened to draw at its box's width would not.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e4');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    pageLines: [['Quarterly totals for the north', 'Nothing further is owed']],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('[data-text-layer="0"] [data-text-line]')).toHaveCount(2);
+
+  const spans = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-text-layer="0"] [data-text-line]')].map((line) => {
+      const glyphs = document.createRange();
+      glyphs.selectNodeContents(line);
+      return {
+        box: Math.round(Number.parseFloat(getComputedStyle(line).width)),
+        glyphs: Math.round(glyphs.getBoundingClientRect().width),
+      };
+    }),
+  );
+  expect(spans.every(({ box, glyphs }) => box > 0 && Math.abs(box - glyphs) <= 1), JSON.stringify(spans)).toBe(true);
+});
+
 test('the STATUS BAR projects page navigation and zoom, and each control changes what it says', async ({
   page,
 }) => {
