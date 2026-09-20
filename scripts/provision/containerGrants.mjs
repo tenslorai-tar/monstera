@@ -75,7 +75,6 @@
  * Usage: node scripts/provision/containerGrants.mjs [--revoke | --check]
  */
 
-import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -87,16 +86,23 @@ import { pdfiumLibrary } from './pdfium.mjs';
 import { ghostscriptRoot } from './ghostscript.mjs';
 import { popplerRoot } from './poppler.mjs';
 import { tessdataDirectory } from './tessdata.mjs';
+import {
+  ALL_APPLICATION_PACKAGES,
+  grantOne,
+  namesApplicationPackages,
+  readAcl,
+  revokeOne,
+} from '../lib/containerGrant.mjs';
 
 /**
- * `ALL APPLICATION PACKAGES`, by SID rather than by name.
+ * The principal, and the icacls primitives, from the one module that spells them.
  *
- * The display name is localised — a German Windows renders it
- * `ALLE ANWENDUNGSPAKETE` — and an `icacls` argument written as a name fails on
- * those machines with a message about an unknown principal. The SID is the same
- * everywhere, which is why the spike uses it and why this does.
+ * They moved to `scripts/lib/containerGrant.mjs` on 2026-09-20 so that `electron.mjs` can re-grant
+ * the tree it republishes without importing this file, which imports `electron.mjs` for the path.
+ * Re-exported here because six research scripts and this file's own proof already read them from
+ * this module, and a second import site for one constant is the drift B3a is about.
  */
-export const ALL_APPLICATION_PACKAGES = 'S-1-15-2-1';
+export { ALL_APPLICATION_PACKAGES, namesApplicationPackages, readAcl } from '../lib/containerGrant.mjs';
 
 /**
  * What a contained host must reach, each derived from the resolver that owns it.
@@ -282,52 +288,12 @@ function workspacePackages(root) {
   return found.sort();
 }
 
-/**
- * The DACL for one path, or null when it cannot be read.
- *
- * **Null is not "no ACEs".** `icacls` answers *Access is denied* without
- * elevation on some trees, and treating that as an empty ACL would report the
- * reassuring answer for a path nobody looked at.
- *
- * @param {string} path
- * @returns {string | null}
+/*
+ * `readAcl`, `namesApplicationPackages`, `grantOne` and `revokeOne` live in
+ * `scripts/lib/containerGrant.mjs` and are imported above. Their reasons — why the SID and the
+ * display name are both matched, and why a null ACL is not "no ACEs" — are stated there, beside the
+ * code, rather than restated here where they would drift.
  */
-export function readAcl(path) {
-  const result = spawnSync('icacls', [path], { encoding: 'utf8' });
-  if (result.status !== 0) return null;
-  return `${result.stdout ?? ''}`;
-}
-
-/**
- * Whether a DACL names the application-package principal.
- *
- * Matched on the SID **and** on the canonical display name, because `icacls`
- * renders a known SID by name and an unknown one numerically — so a search for
- * either alone finds nothing on half the machines it runs on, and "found
- * nothing" is this function's reassuring answer.
- *
- * @param {string} acl
- * @returns {boolean}
- */
-export function namesApplicationPackages(acl) {
-  return acl.includes(ALL_APPLICATION_PACKAGES) || /ALL APPLICATION PACKAGES/iu.test(acl);
-}
-
-/** @param {string} path @param {string} rights */
-function grantOne(path, rights) {
-  return spawnSync(
-    'icacls',
-    [path, '/grant', `*${ALL_APPLICATION_PACKAGES}:(OI)(CI)(${rights})`],
-    { encoding: 'utf8' },
-  );
-}
-
-/** @param {string} path */
-function revokeOne(path) {
-  return spawnSync('icacls', [path, '/remove:g', `*${ALL_APPLICATION_PACKAGES}`], {
-    encoding: 'utf8',
-  });
-}
 
 /**
  * @typedef {{

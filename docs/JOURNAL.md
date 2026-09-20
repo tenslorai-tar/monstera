@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-20 — Provisioning disarmed the contained host, and the grant it needed was a command somebody ran by hand
+
+**Symptom, in the product.** Every document opened poisoned: no page drawn, no text layer, no command
+reaching an engine. The shell log had the reason and nothing else did —
+*the engine host was refused at connect … The host said: `Invalid file descriptor to ICU data
+received`*. The host process is created and dies before its first line.
+
+**Mechanism.** `provision:electron` re-extracts the runtime on every run, deliberately: the archive
+is verified against the pin and the tree rebuilt from it, so nothing has to reason about where a
+tree came from. **An extracted tree carries the archive's inheritance and no AppContainer ACE.** The
+contained host's token is granted on `ALL APPLICATION PACKAGES`, so after a re-extraction it cannot
+execute the image or read `icudtl.dat` — measured with `icacls`: SYSTEM, Administrators and this
+user, and no package principal at all. Provisioning ran at 04:55; the next two opens poisoned their
+documents.
+
+**The grant existed. Nothing called it.** `containerGrants.mjs`' own header states the rule —
+ADR-0027, *the thing that installs an artefact owns its state*, and *`electron.mjs` puts the runtime
+in place, so the ACEs that make it executable by a contained token belong beside it*. The call was
+never written: the grant was `npm run provision:grants`, a command a person runs. **A rule stated in
+the module that would have to be called is not a mechanism** — the same shape as a digest that
+describes a lint rule nobody registered.
+
+`provisionElectron` now grants the tree it publishes and prints what the ACL says afterwards. Not
+fatal on a machine where `icacls` cannot write: the grant is a development affordance (production is
+MSIX's per-package ACE), so a failure prints the repair rather than throwing, but it never passes in
+silence.
+
+**Where the code went.** `containerGrants.mjs` imports every provisioner to build the SET of paths,
+so `electron.mjs` calling into it would be a cycle. The primitive — grant one path, decide from the
+ACL read back — moved to `scripts/lib/containerGrant.mjs`, which neither imports, and both take it
+from there. One implementation of *grant and read back*, which is what B3a asks for.
+
+**Evidence.** Revoked the ACE on the runtime (`icacls /remove:g`, read back: absent), ran
+`npm run provision:electron`, read it back: `ALL APPLICATION PACKAGES:(I)(RX)`, and the provisioner
+printed that the contained host may execute it. The app then opened the document with its text layer
+present and no host failure in the log. `proof:containergrants` carries the automated halves — the
+primitive grants a fresh directory and answers from the ACL, an absent path is *not granted* rather
+than done, and the provisioner names it — with a control that a fresh directory does not already
+name the principal, so the grant case separates. The end-to-end half is the hand measurement above,
+because it republishes the runtime a running sweep is using.
+
+**What it cost, and the tell.** An hour of live verification chasing a renderer that was fine: the
+pages were grey and the menus appeared inert, and the first three explanations — a render loop, a
+hung renderer, a broken compositor — were all wrong. What settled it was asking the renderer for its
+own screenshot through the debugging port: it showed the page drawn and the menu open, while the
+screen showed neither. **Ask the subject what it sees before theorising about why it looks wrong.**
+
+---
+
 ## 2026-09-20 — A close pushed to a page that is not listening yet: `proof:shell` hung, and so would Windows' shutdown
 
 **Found by the sweep, not by a feature.** `npm run local` failed on `proof:shell` alone, and it failed

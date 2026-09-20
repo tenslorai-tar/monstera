@@ -49,6 +49,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
+import { grantPath } from '../lib/containerGrant.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { PLAIN_NODE_EXTENSIONS, SCAN_DATA_EXTENSIONS } from '../lib/plainNodeScope.mjs';
 import {
@@ -602,6 +603,37 @@ export async function provisionElectron({ root = REPO_ROOT, key = platformKey() 
       );
     }
   }
+
+  // AND THE TREE IS GRANTED TO THE CONTAINED TOKEN AGAIN, because THIS function is what took the
+  // grant away.
+  //
+  // An extracted tree carries the archive's inheritance and no AppContainer ACE, so every
+  // re-extraction — and this one re-extracts on every run, deliberately, for the verification
+  // reason above — leaves a runtime the engine host cannot execute. `containerGrants.mjs`' own
+  // header already says the ACEs belong beside this install (ADR-0027: the thing that installs an
+  // artefact owns its state), and until 2026-09-20 nothing here called it: the grant existed only
+  // as a command somebody ran by hand, so a provisioning run silently disarmed the host.
+  //
+  // Measured that day: `provision:electron` ran at 04:55 and the next two document opens poisoned
+  // their documents, the host dying before its first line with
+  // `Invalid file descriptor to ICU data received` in a log nobody reads. `icacls` on the binary
+  // named SYSTEM, Administrators and the user — no package principal at all.
+  //
+  // Windows only, and NOT fatal: the grant is a development affordance (production is MSIX's
+  // per-package ACE), and a machine where `icacls` cannot write must still end with a provisioned
+  // runtime rather than an exception. What it must not do is stay silent, so the failure is
+  // printed with the command that repairs it.
+  if (process.platform === 'win32') {
+    const { granted, detail } = grantPath({ path: electronRoot(root), rights: 'RX' });
+    process.stdout.write(
+      granted
+        ? `  ok  the contained host may execute this runtime (ALL APPLICATION PACKAGES: RX)\n`
+        : `  !!  this runtime is NOT readable by a contained host: ${detail}\n` +
+          `      Every document will be poisoned with an ICU error in the shell log.\n` +
+          `      Run \`npm run provision:grants\`.\n`,
+    );
+  }
+
   return binary;
 }
 

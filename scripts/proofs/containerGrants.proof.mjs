@@ -22,7 +22,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -43,10 +43,11 @@ import {
   namesApplicationPackages,
   readAcl,
 } from '../provision/containerGrants.mjs';
+import { grantPath } from '../lib/containerGrant.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 17 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** The program a contained host runs, which the grant set must cover. */
 const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
@@ -319,6 +320,59 @@ try {
     `the ACL still named ${ALL_APPLICATION_PACKAGES} after removal. A provisioning step that ` +
       `grants and cannot un-grant leaves ACEs behind naming a principal nothing uses.`,
     windows,
+  );
+
+  // ------------------------------------------------------------------
+  // THE INSTALLER'S OBLIGATION. An extracted tree carries the archive's inheritance and no
+  // package ACE, so `provisionElectron` must re-grant what it republishes — until 2026-09-20 it
+  // did not, and a provisioning run silently left a runtime the contained host cannot execute:
+  // every document poisoned, the reason only in the shell log.
+  //
+  // The end-to-end half — revoke, provision, read the ACL — is a hand measurement recorded in the
+  // journal rather than a case here, because it republishes the runtime this repository is using
+  // while other steps of a sweep are running against it. What IS automated is the two halves that
+  // can go wrong silently: the primitive decides from the read-back, and the installer names it.
+  // ------------------------------------------------------------------
+  const fresh = mkdtempSync(join(tmpdir(), 'monstera-grant-one-'));
+  let onFresh;
+  let onAbsent;
+  let aclBefore;
+  try {
+    aclBefore = readAcl(fresh);
+    onFresh = grantPath({ path: fresh, rights: 'RX' });
+    onAbsent = grantPath({ path: join(fresh, 'nothing-here'), rights: 'RX' });
+  } finally {
+    rmSync(fresh, { recursive: true, force: true });
+  }
+
+  check(
+    'CONTROL: a freshly made directory does NOT name the principal, so the case below separates',
+    aclBefore !== null && !namesApplicationPackages(aclBefore),
+    `a new directory already named ${ALL_APPLICATION_PACKAGES} (or its ACL was unreadable), so ` +
+      `granting it would pass whether or not the grant did anything.`,
+    windows,
+  );
+  check(
+    'grantPath grants ONE path and answers from the ACL',
+    onFresh?.granted === true,
+    `grantPath answered ${JSON.stringify(onFresh)} for a directory it had just granted.`,
+    windows,
+  );
+  check(
+    'and an ABSENT path is answered as not granted rather than as done',
+    onAbsent?.granted === false,
+    `grantPath answered ${JSON.stringify(onAbsent)} for a path that does not exist. A publisher ` +
+      `that read that as success would report a runtime the host cannot execute.`,
+    windows,
+  );
+  check(
+    'the ELECTRON PROVISIONER calls it, so a republished tree is granted again',
+    /grantPath\(\{\s*path:\s*electronRoot\(root\)/u.test(
+      readFileSync(join(repoRoot(), 'scripts', 'provision', 'electron.mjs'), 'utf8'),
+    ),
+    `scripts/provision/electron.mjs does not grant the tree it publishes. Every run of ` +
+      `provision:electron re-extracts, and an extracted tree names no package principal — so the ` +
+      `engine host dies at startup with an ICU error and every document is poisoned.`,
   );
 
   if (failures.length > 0) {
