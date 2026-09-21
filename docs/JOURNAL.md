@@ -892,6 +892,30 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Answers render as Markdown, built from tokens so no answer HTML exists
+
+The owner's assistant specification says rendered Markdown; answers were shown as plain text.
+
+**The parser question was already answered in the record.** ADR-0060 measured three parsers on
+hostile input, one per process: `marked` aborted Node on 2,000 nested list levels, `micromark`
+ran past 90 s on two inputs, and `markdown-it` answered all eight in under half a second, its
+`maxNesting` of 100 bounding the descent. An answer is text a remote model chose, and a renderer
+that hung on it would hang the window, so `answerMarkdown.tsx` takes `markdown-it` 15.0.2 — the
+version the import host already pins, so the lockfile gained a dependency edge and no package.
+
+**No HTML string is ever produced.** The module only TOKENISES; each token becomes an element
+from a fixed tag list, no attribute is copied from the answer, and anything else contributes its
+text. Links and images show their words; headings move down two levels to sit under the panel's;
+code never passes through the citation splitter, so `[p. 3]` quoted in code stays literal.
+
+**A mutation that did not bite, and what it said.** Turning markdown-it's `html` option ON left
+the raw-HTML case green: the renderer shows `html_inline` and `html_block` tokens as text like any
+other, so the flag is not the guard — the tag list is. Adding `a` to the tag list reddens the link
+case. The file's comment said the flag was what made raw HTML arrive as text; it now says it is
+not the guard, and why.
+
+---
+
 ## 2026-09-21 — Nothing draws over a dialog, and the probe that could not see the ruler
 
 The second defect recorded as not chased: the page's vertical ruler drew over an open dialog.

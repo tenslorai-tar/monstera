@@ -383,6 +383,27 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(screen.getByText(/It is set out on/u).tagName).toBe('SPAN');
   });
 
+  it('shows an answer as RENDERED MARKDOWN, and a citation inside a list item still goes to its page', async () => {
+    const went: number[] = [];
+    const { sent, push } = await drawn({ focused: focusedOn(), onGoTo: (page) => went.push(page) });
+    type('List the deadlines');
+    await send();
+    const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+
+    // Streamed in pieces, as a provider sends it: the structure exists only in the whole text.
+    push('ai.delta', { subscription, text: '## Deadlines\n\n- Notice by **1 May** [p. 2]\n' });
+    push('ai.delta', { subscription, text: '- Payment <script>x</script>\n' });
+    push('ai.done', { subscription, stopped: false });
+
+    const answer = document.querySelector('.m-assistant__answer');
+    expect(answer?.querySelector('h4')?.textContent).toBe('Deadlines');
+    expect(answer?.querySelectorAll('li')).toHaveLength(2);
+    expect(answer?.querySelector('strong')?.textContent).toBe('1 May');
+    expect(answer?.querySelector('script')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+    expect(went).toStrictEqual([1]);
+  });
+
   it('keeps ONE CONVERSATION PER DOCUMENT: switching tabs shows the other document’s, and switching back restores it', async () => {
     const a = focusedOn(DOC_A);
     const b = focusedOn(DOC_B);

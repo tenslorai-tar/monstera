@@ -13,6 +13,7 @@ import {
 import type { DocId } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
 import {
+  Fragment,
   type ReactElement,
   useCallback,
   useEffect,
@@ -23,6 +24,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 
+import { answerElements } from './answerMarkdown.js';
 import type { AssistantRequest, ReplyTarget } from './assistantRequest.js';
 import type { EventSubscriber } from './bridge.js';
 import type { ConversationTurn, DocumentStore } from './documentStores.js';
@@ -359,26 +361,32 @@ export function AssistantPanel({
       : pages;
   };
 
-  /** An answer's text, with each `[p. N]` citation a link to that page. */
-  const answerText = (text: string): ReactElement[] =>
-    citationsIn(text).map((piece, at) =>
-      'cited' in piece && onGoTo !== undefined ? (
-        <button
-          aria-label={i18n._(ASSISTANT_CITATION, { page: pdfjsPageOf(piece.cited) })}
-          className="m-assistant__citation"
-          data-assistant-citation={piece.cited}
-          key={at}
-          onClick={() => {
-            onGoTo(piece.cited);
-          }}
-          type="button"
-        >
-          {piece.label}
-        </button>
-      ) : (
-        <span key={at}>{'cited' in piece ? piece.label : piece.text}</span>
-      ),
-    );
+  /**
+   * A run of an answer's plain text, with each `[p. N]` citation a link to that page. The
+   * Markdown around it is {@link answerElements}'; this is only ever handed text, never code.
+   */
+  const answerText = (text: string, key: string): ReactElement => (
+    <Fragment key={key}>
+      {citationsIn(text).map((piece, at) =>
+        'cited' in piece && onGoTo !== undefined ? (
+          <button
+            aria-label={i18n._(ASSISTANT_CITATION, { page: pdfjsPageOf(piece.cited) })}
+            className="m-assistant__citation"
+            data-assistant-citation={piece.cited}
+            key={at}
+            onClick={() => {
+              onGoTo(piece.cited);
+            }}
+            type="button"
+          >
+            {piece.label}
+          </button>
+        ) : (
+          <span key={at}>{'cited' in piece ? piece.label : piece.text}</span>
+        ),
+      )}
+    </Fragment>
+  );
 
   const quickStarts = [
     { key: ASSISTANT_QUICK_SUMMARISE, scope: 'document' },
@@ -486,7 +494,13 @@ export function AssistantPanel({
             <span className="m-assistant__who">
               {i18n._(turn.role === 'user' ? ASSISTANT_YOU : ASSISTANT_ASSISTANT)}
             </span>
-            <p className="m-assistant__text">{turn.role === 'assistant' ? answerText(turn.text) : turn.text}</p>
+            {turn.role === 'assistant' ? (
+              // RENDERED MARKDOWN, the owner's specification: headings, lists, tables, code —
+              // built as elements from the tokens, so no HTML from the answer reaches the page.
+              <div className="m-assistant__text m-assistant__answer">{answerElements(turn.text, answerText)}</div>
+            ) : (
+              <p className="m-assistant__text">{turn.text}</p>
+            )}
             {turn.sent !== undefined && turn.sent !== null && (
               <p className="m-assistant__sent" data-assistant-sent="">
                 {sentLine(turn.sent)}
