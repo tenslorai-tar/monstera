@@ -100,6 +100,7 @@ describe('applyRedactions', () => {
         pages: [0],
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
 
       const [first] = await readBack(session);
@@ -142,6 +143,7 @@ describe('applyRedactions', () => {
         pages: [0],
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
 
       const [first] = await readBack(session);
@@ -179,6 +181,7 @@ describe('applyRedactions', () => {
         pages: [0],
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
 
       const [first, second] = await readBack(session);
@@ -199,6 +202,7 @@ describe('applyRedactions', () => {
         pages: 'all',
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
 
       const [first, second] = await readBack(session);
@@ -220,6 +224,7 @@ describe('applyRedactions', () => {
           pages: [0, 7],
           cover: 'solid',
           images: 'pixels',
+          keepTitle: false,
         }),
       ).rejects.toThrow(/page 7 of a document with 2 pages/u);
     } finally {
@@ -240,6 +245,7 @@ describe('applyRedactions', () => {
         pages: [0],
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
       const bytes = await mupdfWriter.serialise(session);
       const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
@@ -276,6 +282,7 @@ describe('applyRedactions', () => {
         pages: 'all',
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
       const [first, second] = await readBack(session);
       expect(first).not.toContain('91000');
@@ -306,6 +313,7 @@ describe('applyRedactions', () => {
         pages: 'all',
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
       const [first, second] = await readBack(session);
       expect(first).toContain(SECRET);
@@ -331,6 +339,7 @@ describe('applyRedactions', () => {
         pages: [0],
         cover: 'solid',
         images: 'pixels',
+        keepTitle: false,
       });
       const [first] = await readBack(session);
       expect(first).not.toContain('Salary');

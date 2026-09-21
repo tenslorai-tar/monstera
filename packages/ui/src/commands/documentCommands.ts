@@ -3284,6 +3284,10 @@ export function applyRedactionsCommand(deps: DocumentCommandDeps): UiCommand {
         pages: answer.pages === 'all' ? 'all' : [...answer.pages],
         cover: answer.cover,
         images: answer.images,
+        // THE DIALOG'S ANSWER, never a default chosen here. A `?? false` at this
+        // call site would be a second place deciding what happens to the title,
+        // and it would go on compiling the day the dialog stopped sending it.
+        keepTitle: answer.keepTitle,
       });
     },
   };

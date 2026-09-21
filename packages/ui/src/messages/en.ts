@@ -1182,6 +1182,8 @@ export const APPLY_REDACTIONS_COVER = messageKey('dialog.apply-redactions.cover'
 export const APPLY_REDACTIONS_COVER_SOLID = messageKey('dialog.apply-redactions.cover-solid');
 export const APPLY_REDACTIONS_COVER_NONE = messageKey('dialog.apply-redactions.cover-none');
 export const APPLY_REDACTIONS_IMAGES = messageKey('dialog.apply-redactions.images');
+export const APPLY_REDACTIONS_KEEP_TITLE = messageKey('dialog.apply-redactions.keep-title');
+export const APPLY_REDACTIONS_KEEP_TITLE_WARNS = messageKey('dialog.apply-redactions.keep-title-warns');
 export const APPLY_REDACTIONS_IMAGES_PIXELS = messageKey('dialog.apply-redactions.images-pixels');
 export const APPLY_REDACTIONS_IMAGES_REMOVE = messageKey('dialog.apply-redactions.images-remove');
 export const APPLY_REDACTIONS_APPLY = messageKey('dialog.apply-redactions.apply');
@@ -2686,8 +2688,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
 
   [APPLY_REDACTIONS_COMMAND_TITLE]: 'Apply redactions',
   [APPLY_REDACTIONS_TITLE]: 'Apply redactions',
+  // THE TITLE CAME OUT OF THIS SENTENCE when the checkbox below it arrived
+  // (2026-09-21). It read "title, author and other properties are removed too",
+  // which is a compound claim whose first clause the new control can falsify —
+  // the half-true sentence nobody flags, in the one dialog where being wrong
+  // about what is removed is the whole risk. The title is the checkbox's to
+  // describe, and it does.
   [APPLY_REDACTIONS_WARNS]:
-    'The marked content is removed from the document, not covered over, with any comments and form fields under the marks. The document’s title, author and other properties are removed too. The only way back is Undo, in this session.',
+    'The marked content is removed from the document, not covered over, with any comments and form fields under the marks. The document’s author, subject and other properties are removed too. The only way back is Undo, in this session.',
   [APPLY_REDACTIONS_SCOPE]: 'Apply to',
   [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
   [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',
@@ -2697,6 +2705,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [APPLY_REDACTIONS_IMAGES]: 'Images under a mark',
   [APPLY_REDACTIONS_IMAGES_PIXELS]: 'Blank only the covered part',
   [APPLY_REDACTIONS_IMAGES_REMOVE]: 'Remove the whole image',
+  // THE LABEL NAMES THE RISK, not the field. *Keep the title* describes a
+  // setting; this describes a decision, which is what an off-by-default box
+  // beside an irreversible act has to do.
+  [APPLY_REDACTIONS_KEEP_TITLE]: 'Keep the document’s title',
+  [APPLY_REDACTIONS_KEEP_TITLE_WARNS]:
+    'A title can itself contain what you are redacting — or say it in other words. Everything else about the document is removed either way.',
   [APPLY_REDACTIONS_APPLY]: 'Apply redactions',
 
   [REDACT_MATCHES_COMMAND_TITLE]: 'Mark matches for redaction',

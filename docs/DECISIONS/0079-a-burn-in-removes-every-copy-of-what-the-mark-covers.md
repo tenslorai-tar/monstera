@@ -60,3 +60,28 @@ document someone meant to share.
 
 Keep the document's title (or all of its metadata) as an option in the redaction confirm dialog,
 off by default? Answering yes is a payload field, a dialog control and a case in the corpus.
+
+## Answered, 2026-09-21 — the TITLE, off by default
+
+The owner's answer: a checkbox in the confirm dialog, off by default, worded so it says a title can
+itself contain what was redacted. Built the same day as `applyRedactions.keepTitle`, a checkbox in
+`ApplyRedactionsBody`, and three cases in the leak corpus.
+
+**The title alone, not "all of its metadata"** — the question offered both and only one was taken.
+Author, subject and keywords are fields a redacted document has no reason to keep, and the whole
+point of the loss recorded above is that they are the ones most likely to restate what was removed.
+So this is one field rather than a *keep metadata* flag.
+
+**Rebuilt, never pruned.** The kernel reads `/Title`, deletes the Info dictionary as before, and
+writes a **fresh** one carrying that single key. Pruning the original would keep every entry this
+build has not thought about, and the mutation test says so rather than the paragraph: with the
+pruning implementation, `/CreationDate`, `/Creator`, `/ModDate` and `/Producer` all survive a
+burn-in. The difference is a filter against an allowlist.
+
+**A document with no title gets no Info at all**, rather than one carrying an empty title.
+
+**What the option gives up is still true and is now a choice somebody makes.** The paragraph above
+stands: no region maps to metadata, so nothing checks whether the kept title contains the secret.
+The dialog says that in the words a person reads, and the corpus holds a case in each direction —
+the title kept and everything else gone, and the box off leaving no title at all, which is what
+stops the first from passing for a removal that had quietly stopped running.

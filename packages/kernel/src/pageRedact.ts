@@ -193,10 +193,41 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
       burned = true;
     }
     if (burned) {
+      // READ BEFORE THE DELETE, and only when it is wanted: `/Title` has to come
+      // out of the dictionary this is about to remove.
+      const kept = command.keepTitle ? titleOf(document) : undefined;
       document.getTrailer().get('Root').delete('Metadata');
       document.getTrailer().delete('Info');
+      // A FRESH INFO CARRYING ONE KEY, never the original kept and pruned. The
+      // dictionary a document arrives with may hold entries nothing here names —
+      // a producer string, a creation date, a private key — and editing it in
+      // place would keep whichever of those this build has not thought about.
+      // Building a new one makes the set that survives exactly the set written
+      // here, which is the difference between a filter and an allowlist.
+      if (kept !== undefined) {
+        const info = document.newDictionary();
+        info.put('Title', document.newString(kept));
+        document.getTrailer().put('Info', document.addObject(info));
+      }
     }
   });
+
+/**
+ * The document's `/Title`, or `undefined` when it has none worth keeping.
+ *
+ * `undefined` rather than an empty string for the absent case, so the caller
+ * writes no Info at all rather than one carrying an empty title — a dictionary
+ * that exists to hold a value it does not have is a difference a reader would
+ * have to explain.
+ */
+function titleOf(document: mupdf.PDFDocument): string | undefined {
+  const info = document.getTrailer().get('Info');
+  if (info.isNull() || !info.isDictionary()) return undefined;
+  const title = info.get('Title');
+  if (title.isNull() || !title.isString()) return undefined;
+  const text = title.asString();
+  return text === '' ? undefined : text;
+}
 
 /**
  * A COUNT IS NOT OFFERED, and this is the record of that rather than an

@@ -38,6 +38,16 @@ export const APPLY_REDACTIONS_RESULT = z
     pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
     cover: z.enum(PDF_REDACT_COVERS),
     images: z.enum(PDF_REDACT_IMAGES),
+    /**
+     * Whether the title survives — ADR-0079's open question, answered by the
+     * owner 2026-09-21 and built as one field rather than a *keep metadata* flag.
+     *
+     * **Required here, not optional with a default.** A result schema whose
+     * absent value meant *remove* would read the same as one whose absent value
+     * meant *keep*, and only one of those leaks. The body spells it on every
+     * answer.
+     */
+    keepTitle: z.boolean(),
   })
   .strict();
 

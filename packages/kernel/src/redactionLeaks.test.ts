@@ -68,7 +68,7 @@ function mark(session: MupdfSession, box: Box): Promise<void> {
 }
 
 /** Opens `bytes`, marks `box`, burns in, and answers the serialised result. */
-async function burnIn(bytes: Uint8Array, box: Box): Promise<Uint8Array> {
+async function burnIn(bytes: Uint8Array, box: Box, keepTitle = false): Promise<Uint8Array> {
   const session = await mupdfWriter.open(bytes);
   try {
     await mark(session, box);
@@ -77,6 +77,7 @@ async function burnIn(bytes: Uint8Array, box: Box): Promise<Uint8Array> {
       pages: [0],
       cover: 'solid',
       images: 'pixels',
+      keepTitle,
     });
     return await mupdfWriter.serialise(session);
   } finally {
@@ -355,6 +356,55 @@ describe('the redaction leak corpus: XMP and Info metadata', () => {
 
   it('a burn-in removes the XMP packet and the Info dictionary', async () => {
     expect(await secretSites(await burnIn(await metadata(), SECRET_BOX))).toStrictEqual([]);
+  });
+
+  // KEEPING THE TITLE IS THE OWNER'S OPTION (ADR-0079, answered 2026-09-21), and it is
+  // the one choice here that can carry a secret out — so it gets the corpus's own
+  // treatment: what survives is asserted by NAME, not by a count.
+  const titled = () =>
+    fixture(async (document) => {
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      onPage(document).drawText('Payroll', { font, size: 18, x: 76, y: 698 });
+      document.setTitle('The 2026 pay review');
+      document.setAuthor('A. Clerk');
+      document.setSubject(SECRET);
+      document.setKeywords([SECRET]);
+    });
+
+  /** The Info dictionary's entries after a burn-in, as keys. */
+  async function infoKeys(bytes: Uint8Array): Promise<readonly string[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const info = document.context.lookup(document.context.trailerInfo.Info);
+    if (!(info instanceof PDFDict)) return [];
+    return [...info.keys()].map((key) => key.asString()).sort();
+  }
+
+  it('KEEPS ONLY THE TITLE when asked, and takes author, subject and keywords with it', async () => {
+    const burned = await burnIn(await titled(), SECRET_BOX, true);
+    // THE SET, not just the presence of Title. A version that kept the original Info and
+    // pruned the fields it knows about would pass an assertion that Title survives, and
+    // would carry every entry this build has never heard of straight through.
+    expect(await infoKeys(burned)).toStrictEqual(['/Title']);
+    const document = await PDFDocument.load(burned, { updateMetadata: false });
+    expect(document.getTitle()).toBe('The 2026 pay review');
+    // AND THE SECRET IS STILL GONE. The title is the only thing kept, so a subject and
+    // keywords carrying it must not survive on the back of the option.
+    expect(await secretSites(burned)).toStrictEqual([]);
+  });
+
+  it('CONTROL: with the box off, the same document keeps no title at all', async () => {
+    // Without this the case above cannot separate *the option worked* from *the title
+    // survives a burn-in anyway*, which is what a removal that had quietly stopped
+    // running would look like.
+    const burned = await burnIn(await titled(), SECRET_BOX, false);
+    expect(await infoKeys(burned)).toStrictEqual([]);
+    expect(await secretSites(burned)).toStrictEqual([]);
+  });
+
+  it('keeps NOTHING when the document has no title, rather than an empty one', async () => {
+    // `metadata()` sets a subject and no title. An Info dictionary written to hold a
+    // value it does not have is a difference a reader would have to explain.
+    expect(await infoKeys(await burnIn(await metadata(), SECRET_BOX, true))).toStrictEqual([]);
   });
 });
 

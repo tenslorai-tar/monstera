@@ -892,6 +892,246 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Stage audit of `3fab823..57de0e0` — findings MMMMMM-1 to MMMMMM-6
+
+34 commits, 198 files: the close-with-unsaved-changes row and the removal of Electron's
+default menu, veraPDF and the email run, Azure's polling and the Excel table engines,
+ADR-0087's Optimize, the Office-import licence subset, the owner's three logos, the four
+right-click menus, and this session's annotation work.
+
+**MMMMMM-1 — a row was blocked on a dependency that already existed, and nothing could
+have found it.** §7's menu row recorded *open side by side* as owed because it *"needs a
+two-document view"*. Side-by-side compare landed 2026-09-03 and is row 66 of the same
+document. Nothing falsified the claim: the dependency was **satisfied** eighteen days
+earlier, and no range ever touched both the sentence and the work that met it — NNN-4's
+hole pointing the other way. **This is KKKKKK-7's class two audits later** (*a row marked
+blocked on a question the owner had already answered*), which makes it the shape rather
+than the instance: **a blocked row is the one nobody re-reads, because its status cell
+explains why there is nothing to see.** Closed in 57de0e0.
+
+**MMMMMM-2 — a hand-picked test run hid a red, and the control it hid was working
+perfectly.** `commandDeclarations.test.ts` asserts, as an independent spelled-out list,
+exactly which kinds declare a target. Adding `replyToAnnotation` with `targets:
+'annotation'` reddens it by design. Every unit was proven with chosen `npx vitest run
+<file>` invocations, and that file was never among them — the red surfaced only when this
+audit ran `npm run test`, four commits later. The defect is the habit, not the check:
+*my local sweep is not CI's set* is already written down, and the list that was picked
+looked complete because it named every file the change had **edited**. The one it broke
+was a file it did not touch. Fixed in this commit; 3500 tests pass.
+
+**MMMMMM-3 — an instrument could not separate *the machine could not be looked at* from
+*the instrument is blind*, and CI never ran it.** `proof:machinewitness`'s resolution test
+spins a core and requires the machine's busy fraction to rise; on a saturated machine
+there is no headroom for it to rise into. It exits 0 at `busy` 0.19 and 0.27 and 1 at
+`busy` 1.00 — measured from the harness's own per-script field. It lives under
+`scripts/lib/` and no workflow names it, so `main` was never at risk and no board reading
+would ever have shown it. Closed in a948cf3, with the reduction stated (audit item 2a).
+
+**MMMMMM-4 — a dialog contradicted a control added beneath it.** The redaction confirm's
+standing warning read *"The document's title, author and other properties are removed
+too"*, and the new keep-the-title checkbox makes the first clause false — in the one
+dialog where being wrong about what is removed is the entire risk. The half-true compound
+sentence, produced by adding a control and not re-reading the paragraph above it. No check
+can see it: both sentences are true English and only their conjunction is wrong. Found by
+reading the live run's screen text. Closed in this commit.
+
+**MMMMMM-5 — the engine-surface figures were re-run and have NOT moved, and that is
+recorded deliberately.** 31 kernel modules import `mupdf`, ten as value imports, calling
+**132** distinct members — `PDFAnnotation` 41, `PDFObject` 23, `PDFDocument` 20,
+`PDFWidget` 15. Identical to what `CLAUDE.md` states. This measurement went stale four
+times (FFFFFF-4, GGGGGG-14, HHHHHH-12, LLLLLL-1), each time because a range added a
+kernel module and no commit reopened the figure; LLLLLL-1's own finding was that the
+previous audit did not run it. A range that adds an annotation command and moves nothing
+is the outcome the check exists to distinguish from a range that nobody measured, and the
+two look identical in a document.
+
+**MMMMMM-6 — an owner-stated claim has gone half stale.** The standing instruction says
+*NOTICE still omits PDFium and LibreOffice*. **PDFium is in NOTICE** and has been since
+the PDFium host landed. LibreOffice is absent and is **not yet owed**: Office import is
+blocked, nothing ships, and the Stage 10 row carries the obligation. Reported so it is not
+chased as outstanding work.
+
+### What this audit did NOT do, stated rather than implied
+
+The range carries **40 modified proofs**, and CLAUDE.md calls that the load-bearing
+column. This audit read the diffs of those with **deletions** — where a check's meaning
+can change — plus every proof in the commits written this session, and ran the full unit
+suite. It did not read all forty diffs line by line. MMMMMM-2 came out of the ones it did
+read, which is the argument for the column rather than for the completeness of this pass;
+a later audit relying on this entry should treat the addition-only proofs in
+`3fab823..57de0e0` as unread.
+
+### 1. Root cause or workaround
+
+Every fix in the session's own commits states a mechanism. The centred-overflow defect
+was `align-items: center` on a column flex container, measured at 859 px unreachable. The
+machine witness was an unstated precondition, repaired as a precondition and **not** by
+widening the comparison — the loosened check Rule 0 names. The `proof:provision` and
+`proof:boundaries` timeouts were diagnosed as contention (79.5 s and 114 s alone against
+180 s and 222 s under load) and **nothing was raised**; the harness's own `--only` is the
+response it names. No repair here can regenerate, and no override stands in for missing
+coverage.
+
+### 2. The hard shape
+
+The reply was proven against a mark that is **not first in the walk** (`answers: 1`),
+which a command that always replied to index 0 satisfies otherwise; against a `/Group`
+relationship, which is `/IRT` meaning something else; and against a parent with no `/Rect`
+of its own, through the reader four subtypes need. Keeping the title was proven against a
+document **with no title**, which is the shape that produces an Info dictionary holding
+nothing. *Open side by side* was proven with the right-clicked tab **different** from the
+focused one, which is the only arrangement that can fail.
+
+### 2a. Coverage moved by how something is proven
+
+**One reduction, stated.** `proof:machinewitness`'s resolution pair no longer runs on a
+saturated machine: it records as *not applicable*, which the roster prints by name and the
+harness tallies apart from passes. On a quiet machine it runs and still bites — verified
+by mutating `busyFraction` to a constant, which leaves two idle cores and so passes the
+new precondition and fails the comparison. Two controls stop the skip becoming permanent.
+
+### 3. Would CI have caught it — and what could this machine not see?
+
+**MMMMMM-3: no.** `proof:machinewitness` is under `scripts/lib/` and no workflow names it,
+so that defect could never have reddened the board. **MMMMMM-2: yes** — the full unit
+suite runs on both matrix legs, and that red would have surfaced on the next push; what it
+cost was four commits of a broken tree that nothing local reported. **MMMMMM-1 and
+MMMMMM-4: neither** — a stale dependency claim and a half-true sentence are not
+machine-checkable, and both were found by reading. The five `unverifiable` proofs in the
+local sweep (`editfidelity`, `lineagreement`, `textbounds`, `ocrrecognise`,
+`scannedpages`) are red on the job that passes the require flag, so they are a gap in this
+machine's evidence and not in the board's.
+
+### 4. Non-vacuous proofs, and the branches nothing reaches
+
+Every unit added in the session was mutation-tested, and the direction was chosen so the
+mutation is not what absence produces. The reply's `/RT` check: dropping it reddens the
+`/Group` control. Keeping the title: pruning the original Info instead of rebuilding it
+leaves `/CreationDate`, `/Creator`, `/ModDate` and `/Producer` alive. *Open side by side*:
+dropping the split-view write empties the pane, which the picker assertion catches — and
+only after a rebuild, because the first run of that case was against a stale bundle from a
+`build` that had exited 2 while `vitest` passed. The machine witness's skip branch was
+forced, because a quiet machine never reaches it.
+
+### 4a. Resolution tests
+
+`scripts/research/annotationReply.mjs` was written to answer four questions **before** a
+line of the feature existed, and the load-bearing one is whether `put` writes a reference
+or copies the dictionary inline — the two are indistinguishable downstream, since both
+save, reopen and read back as a dictionary under `/IRT`. It reports which entry the
+reference resolves to, never that the key is present.
+`scripts/research/redactionTitle.mjs` reports Info **keys** as well as the title, for the
+same reason: a title surviving beside an author is a different outcome from a title
+surviving alone.
+
+### 4b. Searches and their positive controls
+
+`npm run sweep:prose` was used for *reply*, *in reply to*, *comment thread* and *threaded*
+before treating the item as unspecified, and each run printed `control found` — the
+instrument refusing to report while blinded. The searches that found nothing are recorded
+as *searched and absent* rather than as *not specified*. `grep` over the documents is what
+produced MMMMMM-1 and MMMMMM-6, both of which are the reassuring answer's opposite: a
+claim that was there and was wrong.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+Three new independent claims, all deliberately **not** derived. The declaration table's
+target list is spelled out, which is why adding a command reddened it (MMMMMM-2) —
+`KINDS.filter(...)` on both sides would have agreed silently. The redaction case asserts
+the Info **key set**. The side-by-side case asserts the settings id as the literal
+`'viewing.split'` rather than reading `SPLIT_VIEW_SETTING.id`, because an assertion built
+from the constant the command uses agrees with it whichever setting that is.
+
+### 5. Executed, or asserted?
+
+**Executed:** the `/IRT` round trip through MuPDF and back through pdf-lib; the reply,
+the redaction and the page-scroll behaviour in the packaged shell; the Info keys of a
+live-saved file; the engine-surface figures; the board at `a948cf3`; 3500 unit tests, 45
+rendered-screen cases, 4 visual cases. **Asserted and not executed:** that *open side by
+side* behaves in the packaged shell — it is proven at rendered-screen level only, because
+a second document can be opened solely through a native file dialog no instrument drives,
+and that is recorded on the row rather than implied. Also asserted: that the `Acrobat_test.pdf`
+in the project root came from Acrobat — it carries no producer string, so the filename is
+a name somebody chose and the annotation-interchange row stays blocked.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No amendment was needed and none was taken. Every unit registered into an existing seam:
+`replyToAnnotation` through `declaredCommands`, `mupdfSpecs` and the derived per-writer
+wire union — which refused to compile until the kind was added, working as designed;
+*open side by side* as one placement on one command, writing the value the compare picker
+already owns; `keepTitle` as a field on an existing payload. Next free ADR is still 0088.
+ADR-0079 gained an **answer** beneath its open question rather than an edit over it.
+
+### 7. Do the documents still match the code?
+
+MMMMMM-1, MMMMMM-4, MMMMMM-5 and MMMMMM-6 are this item's findings. Also checked and
+**true**: the assistant row's claim that the two-document ask needs split view's owed
+*focus follows the pane* — only comments name it, so it is genuinely unbuilt; and the
+dirty-close row against `windowPolicy.ts`'s `devToolsAllowed(packaged)`, which is the
+mechanism that row claims. Four FEATURES rows were edited to be currently true, with the
+detail moved to the entries above them and each kept inside the 250-word target.
+
+## 2026-09-21 — A redaction may keep the title, and pruning would have kept four things nobody asked for
+
+ADR-0079 left the owner a question in writing: keep the document's title, or all of
+its metadata, as an option in the redaction confirm dialog, off by default? The
+owner's answer is **the title**, and the ADR carries the answer beneath the
+question rather than in place of it.
+
+Half the question was declined, and that half matters. Author, subject and keywords
+are the fields most likely to restate what was just removed — the ADR's own reason
+for deleting metadata whole is that a title *"saying the same thing in other words"*
+passes any check. So this is one field, not a *keep metadata* flag.
+
+## The implementation that looks identical and leaks
+
+The obvious version keeps the existing Info dictionary and deletes the fields it
+knows about. It passes an assertion that the title survived, and it is wrong: a
+document's Info may hold entries this build has never named. **Measured, by
+mutating to exactly that version: `/CreationDate`, `/Creator`, `/ModDate` and
+`/Producer` all survive a burn-in.**
+
+So the kernel reads `/Title`, deletes Info as before, and writes a **fresh**
+dictionary carrying that one key. The difference is a filter against an allowlist,
+and the corpus asserts the **set** of keys rather than the presence of the title —
+which is what makes the mutation visible at all. A document with no title gets no
+Info, rather than one built to hold a value it does not have.
+
+Three cases, and the middle one is the control: the title kept and everything else
+gone; the box off leaving **no** title at all, without which the first passes for a
+removal that had quietly stopped running; and no title in, no Info out.
+
+## The field is required, and that is the whole guard
+
+`keepTitle` is not optional with a default. A payload where absence meant *keep*
+would turn every caller that forgot into a leak, and one where absence meant
+*remove* reads identically at every call site. Adding it reddened eleven existing
+call sites, which is the compile error doing the work a default would have hidden.
+The dispatch passes the dialog's answer with no `?? false` beside it, because that
+would be a second place deciding what happens to the title.
+
+## And the dialog contradicted itself for about an hour
+
+The confirm dialog's standing warning read *"The document's title, author and other
+properties are removed too."* The checkbox underneath it can now make the first
+clause false — **in the one dialog where being wrong about what is removed is the
+entire risk.** It is the half-true compound sentence this project keeps writing
+about, produced here by adding a control and not re-reading the paragraph above it.
+The title came out of that sentence; the checkbox's own note owns it now.
+
+Found by reading the live run's screen text, not by a check. Nothing could have
+caught it: both sentences are true English and only their conjunction is wrong.
+
+## Live
+
+Marked through the real selected-text menu, applied through the real dialog with
+the box ticked, saved, and read back with pdf-lib: `Salary band G7 confi` gone from
+the page with the unmarked line intact, `infoKeys ["/Title"]`, title
+*The 2026 pay review*, author and subject `null` — and the subject had been the
+secret. The box read `false` before it was clicked, which is the default asserted
+rather than assumed.
+
 ## 2026-09-21 — *Open side by side* was blocked on a view that already existed
 
 §7's menu row recorded this item as owed because it *"needs a two-document view"*.

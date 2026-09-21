@@ -3209,7 +3209,7 @@ describe('protectDocumentCommand', () => {
         onApplied: () => undefined,
         ask: (id, props) => {
           opened.push({ id, props });
-          return Promise.resolve({ pages: 'all', cover: 'none', images: 'remove' });
+          return Promise.resolve({ pages: 'all', cover: 'none', images: 'remove', keepTitle: true });
         },
       }).run(CONTEXT);
 
@@ -3231,6 +3231,12 @@ describe('protectDocumentCommand', () => {
               // sent `solid`/`pixels` would dispatch exactly as correctly.
               cover: 'none',
               images: 'remove',
+              // NOR IS THIS, and it is the one where the default is the SAFE
+              // side: a command that dropped the dialog's answer and sent
+              // `false` would look right on every screen and quietly remove a
+              // title the person asked to keep. `true` here is what makes the
+              // assertion able to fail.
+              keepTitle: true,
             },
           },
         },

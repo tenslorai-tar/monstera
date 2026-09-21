@@ -15,6 +15,8 @@ import {
   APPLY_REDACTIONS_COVER_NONE,
   APPLY_REDACTIONS_COVER_SOLID,
   APPLY_REDACTIONS_IMAGES,
+  APPLY_REDACTIONS_KEEP_TITLE,
+  APPLY_REDACTIONS_KEEP_TITLE_WARNS,
   APPLY_REDACTIONS_IMAGES_PIXELS,
   APPLY_REDACTIONS_IMAGES_REMOVE,
   APPLY_REDACTIONS_SCOPE,
@@ -66,9 +68,13 @@ export default function ApplyRedactionsBody({
   const scopeId = useId();
   const coverId = useId();
   const imagesId = useId();
+  const titleId = useId();
   const [scope, setScope] = useState<'all' | 'page'>('page');
   const [cover, setCover] = useState<PdfRedactCover>('solid');
   const [images, setImages] = useState<PdfRedactImages>('pixels');
+  // OFF. ADR-0079's answer: removal is the side that cannot leak, so keeping the
+  // title is something a person asks for rather than something they have to notice.
+  const [keepTitle, setKeepTitle] = useState(false);
 
   return (
     <div className="m-apply-redactions">
@@ -127,10 +133,31 @@ export default function ApplyRedactionsBody({
         </select>
       </label>
 
+      {/* OFF, AND THE LABEL SAYS WHAT IT RISKS. The other three controls choose between
+          outcomes that are all safe; this one chooses to keep something a burn-in would
+          otherwise remove, so the words have to carry the reason rather than name the
+          field — a checkbox reading *Keep the title* is a setting, and one reading what
+          a title can contain is a decision. A checkbox and not a select because it is
+          the only control here whose two states are not peers: off is the safe side and
+          stays the default however often somebody wants the other. */}
+      <label className="m-document-choice" htmlFor={titleId}>
+        <input
+          checked={keepTitle}
+          data-redact-keep-title=""
+          id={titleId}
+          onChange={(event) => {
+            setKeepTitle(event.target.checked);
+          }}
+          type="checkbox"
+        />
+        {_(APPLY_REDACTIONS_KEEP_TITLE)}
+      </label>
+      <p className="m-apply-redactions__note">{_(APPLY_REDACTIONS_KEEP_TITLE_WARNS)}</p>
+
       <Button
         label={APPLY_REDACTIONS_APPLY}
         onClick={() => {
-          resolve({ pages: scope === 'all' ? 'all' : [page], cover, images });
+          resolve({ pages: scope === 'all' ? 'all' : [page], cover, images, keepTitle });
         }}
         variant="primary"
       />

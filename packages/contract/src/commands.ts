@@ -3216,6 +3216,29 @@ export const applyRedactionsSchema = z.object({
   pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
   cover: z.enum(PDF_REDACT_COVERS),
   images: z.enum(PDF_REDACT_IMAGES),
+  /**
+   * Whether the document's **title** survives the burn-in.
+   *
+   * ## The owner's answer to ADR-0079's open question, 2026-09-21
+   *
+   * A burn-in removes the XMP packet and the Info dictionary whole, because no
+   * region maps to metadata and matching the removed text against it would be a
+   * search whose silence is the reassuring answer — a title saying the same
+   * thing in other words passes it. What that costs is a document that loses its
+   * title, author, subject and keywords, which is a visible loss on a file
+   * somebody meant to share. The ADR recorded the trade and left the choice.
+   *
+   * **The title alone, and never the rest.** Keeping the whole Info dictionary
+   * would carry author, subject and keywords with it, and those are fields a
+   * redacted document has no reason to keep. So this is one field rather than a
+   * *keep metadata* flag: the kernel rebuilds an Info carrying only `/Title`.
+   *
+   * **`false` is not a default anyone may skip.** The surface spells it out on
+   * every call, because the safe side is removal and a payload where absence
+   * meant *keep* would make every caller that forgot into a leak. The dialog's
+   * checkbox is off, and says a title can itself contain what was redacted.
+   */
+  keepTitle: z.boolean(),
 });
 
 /**
