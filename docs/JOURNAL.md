@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — The window went blank because one boundary covered one area
+
+The previous entry recorded it as observed and not chased: a rebuild under the running app
+replaced the chunk the comment dialog's lazy import named, and the window went blank rather than
+showing the error screen, on a row that reads *done*.
+
+**Mechanism**: the only `ErrorBoundary` wrapped the page area. `DialogHost` renders outside it,
+and `Suspense` rethrows a lazy import's rejection into the render, so the failure reached the
+root and React unmounted the whole tree. The same was true of any throw in the title bar, the
+ribbon, the start screen or the status bar. The row's cases all threw inside the view, which is
+the one place that was covered.
+
+**Fix, the class and not the dialog**: a boundary inside `App` around the whole window, so a
+retry keeps the open tabs, and one around each dialog body, with no retry because React caches a
+rejected lazy import. `ViewProblem` takes the scope and the sentences follow it.
+
+**Proven by**: `DialogHost.test` opens a dialog whose import rejects and finds the problem inside
+the dialog, the window still there and the dialog closable; `AppErrorBoundary.test` throws in the
+status bar (a key only it resolves) and asserts the window's fallback, then that a retry leaves
+the document open. Each case fails with its boundary removed — run both ways.
+
+**A test-order trap found on the way**: the new App case passed alone and failed in the file,
+because lingui MERGES into a catalogue it already holds and the view's case had loaded the same
+invented locale with the key present. It takes a locale of its own.
+
+---
+
 ## 2026-09-21 — The assistant about a document, and four defects the live run found
 
 The owed half of the assistant row: an *Asking about* line, page references, *Ask AI · Explain ·

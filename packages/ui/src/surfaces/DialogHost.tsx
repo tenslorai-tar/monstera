@@ -2,8 +2,10 @@ import type { MessageKey } from '@monstera/shared';
 import { Suspense, useCallback, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
+import { ErrorBoundary } from '../ErrorBoundary.js';
 import { Dialog } from '../primitives/Dialog.js';
 import type { DialogRegistry } from '../registries/dialogs.js';
+import { ViewProblem } from './ViewProblem.js';
 
 /**
  * The ONE dialog mount point, derived from the dialog registry (§7).
@@ -204,7 +206,14 @@ export function DialogHost({
       {/* The entry mounts itself. `declareDialog` built this closure where the
           schema and the component were still the same type, so nothing is cast
           here — see EEEEE-2 in the entry's own comment. */}
-      <Suspense fallback={pending}>{entry.mount(open.props, onResolve)}</Suspense>
+      {/* A BOUNDARY PER DIALOG BODY. A body that throws, or a lazy chunk that fails to
+          load — Suspense rethrows the import's rejection into the render — otherwise
+          reaches the root, and React unmounts the whole window: measured blank on
+          2026-09-21, a chunk the build had replaced. Keyed on the open dialog, so the
+          next one starts clean. */}
+      <ErrorBoundary key={open.id} fallback={() => <ViewProblem scope="dialog" />}>
+        <Suspense fallback={pending}>{entry.mount(open.props, onResolve)}</Suspense>
+      </ErrorBoundary>
     </Dialog>
   );
 }

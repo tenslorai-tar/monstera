@@ -173,6 +173,14 @@ textarea {
   overflow-y: auto;
 }
 
+/* THE WINDOW'S FALLBACK, in the body's area across the rail's column: the title bar and the
+   ribbon are inside the boundary that failed, so nothing else holds a row above it. */
+.m-window-problem {
+  grid-area: body;
+  grid-column: 1 / -1;
+  padding: var(--space-24);
+}
+
 .m-status-bar {
   grid-area: status;
 }

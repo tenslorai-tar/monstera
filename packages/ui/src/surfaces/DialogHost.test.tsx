@@ -3,10 +3,11 @@ import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
 import { act, render as renderBare, screen } from '@testing-library/react';
 import { lazy, useState, type ReactElement, type ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { activateCatalogue, i18n } from '../i18n.js';
+import { DIALOG_PROBLEM_BODY, DIALOG_PROBLEM_TITLE } from '../messages/en.js';
 import { DialogRegistry, declareDialog } from '../registries/dialogs.js';
 import { DialogHost, useDialogHost } from './DialogHost.js';
 
@@ -89,7 +90,21 @@ const pickEntry = declareDialog({
   ),
 });
 
-const registry = new DialogRegistry([renameEntry, pickEntry]);
+/**
+ * A dialog whose chunk FAILS TO LOAD — the failure measured live on 2026-09-21, when a rebuild
+ * replaced the chunk a running window's lazy import named. A rejected import is not a test-only
+ * shape: Suspense rethrows it into the render, which is where any lazy body fails.
+ */
+const brokenEntry = declareDialog({
+  id: 'dialog.broken',
+  title: messageKey('dialog.broken.title'),
+  props: z.object({}),
+  component: lazy<() => ReactElement>(() =>
+    Promise.reject(new Error('Failed to fetch dynamically imported module')),
+  ),
+});
+
+const registry = new DialogRegistry([renameEntry, pickEntry, brokenEntry]);
 
 /**
  * A real catalogue, because the host no longer takes a resolver.
@@ -106,6 +121,9 @@ const CLOSE = messageKey('action.close.label');
 activateCatalogue('en', {
   [RENAME_TITLE]: 'Rename document',
   [PICK_TITLE]: 'Pick a page',
+  [messageKey('dialog.broken.title')]: 'Broken dialog',
+  [DIALOG_PROBLEM_TITLE]: 'This could not be opened.',
+  [DIALOG_PROBLEM_BODY]: 'Nothing was changed.',
   [CLOSE]: 'Close',
 });
 
@@ -233,6 +251,30 @@ describe('DialogHost', () => {
     // would leave its state saying a dialog is open while the primitive had
     // closed, and the next open of a DIFFERENT dialog would then do nothing.
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a body that FAILS TO LOAD shows the problem inside the dialog, and the window survives', async () => {
+    // React reports a caught error on the console as well; the case is about what renders.
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    render(<Harness id="dialog.broken" props={{}} />);
+    screen.getByRole('button', { name: 'Open' }).click();
+
+    // INSIDE the dialog, so the reader is told where the failure is and can close it. Without
+    // the host's boundary the rejection reached the root and nothing rendered at all — the
+    // Open button below disappeared with it.
+    const dialog = await screen.findByRole('dialog', { name: 'Broken dialog' });
+    const alert = await screen.findByRole('alert');
+    expect(dialog.contains(alert)).toBe(true);
+    expect(alert.textContent).toContain('This could not be opened.');
+    // `hidden`: the modal makes the rest of the window inert, which is not the same as gone.
+    expect(screen.getByRole('button', { name: 'Open', hidden: true })).toBeTruthy();
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Close' }).click();
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    quiet.mockRestore();
   });
 
   /**

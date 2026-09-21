@@ -607,6 +607,10 @@ export const TAB_OPEN_ANOTHER = messageKey('surface.tabs.open-another');
 export const VIEW_PROBLEM_TITLE = messageKey('surface.view-problem.title');
 export const VIEW_PROBLEM_BODY = messageKey('surface.view-problem.body');
 export const VIEW_PROBLEM_RETRY = messageKey('surface.view-problem.retry');
+export const WINDOW_PROBLEM_TITLE = messageKey('surface.window-problem.title');
+export const WINDOW_PROBLEM_BODY = messageKey('surface.window-problem.body');
+export const DIALOG_PROBLEM_TITLE = messageKey('surface.dialog-problem.title');
+export const DIALOG_PROBLEM_BODY = messageKey('surface.dialog-problem.body');
 export const START_TITLE = messageKey('surface.start.title');
 export const START_PRODUCT = messageKey('surface.start.product');
 export const START_TAGLINE = messageKey('surface.start.tagline');
@@ -1745,6 +1749,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // makes *try again* worth pressing.
   [VIEW_PROBLEM_BODY]: 'Your file is unchanged. Trying again returns to the same page.',
   [VIEW_PROBLEM_RETRY]: 'Try again',
+  [WINDOW_PROBLEM_TITLE]: 'Part of this window stopped working.',
+  // The documents are held in main, and the tabs naming them live above the boundary, so
+  // both survive a retry — which is what the sentence promises.
+  [WINDOW_PROBLEM_BODY]: 'Your open documents are unchanged. Trying again redraws the window.',
+  [DIALOG_PROBLEM_TITLE]: 'This could not be opened.',
+  // NO RETRY IN A DIALOG: React caches a lazy body's failed import, so opening it again
+  // fails the same way until the application restarts — and the sentence says so.
+  [DIALOG_PROBLEM_BODY]: 'Nothing was changed. Close this, and restart Monstera if it happens again.',
   [START_TITLE]: 'Monstera',
   // §10.3's hero, word for word, and ADR-0002 keeps both lines beneath the supplied artwork.
   [START_PRODUCT]: 'PDF EDITOR',

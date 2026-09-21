@@ -1,10 +1,38 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { VIEW_PROBLEM_BODY, VIEW_PROBLEM_RETRY, VIEW_PROBLEM_TITLE } from '../messages/en.js';
+import type { MessageKey } from '@monstera/shared';
+
+import {
+  DIALOG_PROBLEM_BODY,
+  DIALOG_PROBLEM_TITLE,
+  VIEW_PROBLEM_BODY,
+  VIEW_PROBLEM_RETRY,
+  VIEW_PROBLEM_TITLE,
+  WINDOW_PROBLEM_BODY,
+  WINDOW_PROBLEM_TITLE,
+} from '../messages/en.js';
 
 /**
- * What a reader sees when the document view throws mid-render.
+ * Where the boundary that caught the failure sits, which decides what survived.
+ *
+ * - `document`: the page area's boundary; the reader's document, page and zoom live above it.
+ * - `window`: the application's outermost boundary, inside `App`, so the open tabs survive.
+ * - `dialog`: one dialog's body. There is no retry, because React caches a lazy body's failed
+ *   import and a second mount fails identically; the dialog's own close button is the way out.
+ */
+export type ProblemScope = 'document' | 'window' | 'dialog';
+
+const TEXT: Readonly<Record<ProblemScope, { readonly title: MessageKey; readonly body: MessageKey }>> = {
+  document: { title: VIEW_PROBLEM_TITLE, body: VIEW_PROBLEM_BODY },
+  window: { title: WINDOW_PROBLEM_TITLE, body: WINDOW_PROBLEM_BODY },
+  dialog: { title: DIALOG_PROBLEM_TITLE, body: DIALOG_PROBLEM_BODY },
+};
+
+/**
+ * What a reader sees when part of the window throws mid-render — the document view, the window
+ * around it, or one dialog's body ({@link ProblemScope}). The paragraphs below were written for
+ * the view and hold for the window; a dialog offers no retry.
  *
  * ## The strings live here and not in the boundary
  *
@@ -32,16 +60,24 @@ import { VIEW_PROBLEM_BODY, VIEW_PROBLEM_RETRY, VIEW_PROBLEM_TITLE } from '../me
  * something the reader just did, and there is nothing else on screen that
  * answers them.
  */
-export function ViewProblem({ onRetry }: { readonly onRetry: () => void }): ReactElement {
+export function ViewProblem(
+  props:
+    | { readonly scope?: 'document' | 'window'; readonly onRetry: () => void }
+    | { readonly scope: 'dialog' },
+): ReactElement {
   const { _ } = useLingui();
+  const scope = props.scope ?? 'document';
+  const text = TEXT[scope];
 
   return (
-    <div className="m-view-problem" role="alert">
-      <p className="m-view-problem-title">{_(VIEW_PROBLEM_TITLE)}</p>
-      <p>{_(VIEW_PROBLEM_BODY)}</p>
-      <button type="button" data-view-retry="true" onClick={onRetry}>
-        {_(VIEW_PROBLEM_RETRY)}
-      </button>
+    <div className="m-view-problem" role="alert" data-problem-scope={scope}>
+      <p className="m-view-problem-title">{_(text.title)}</p>
+      <p>{_(text.body)}</p>
+      {'onRetry' in props ? (
+        <button type="button" data-view-retry="true" onClick={props.onRetry}>
+          {_(VIEW_PROBLEM_RETRY)}
+        </button>
+      ) : null}
     </div>
   );
 }

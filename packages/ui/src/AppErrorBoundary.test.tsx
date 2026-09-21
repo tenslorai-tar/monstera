@@ -9,7 +9,7 @@ import { type MockInstance, afterEach, beforeEach, describe, expect, it, vi } fr
 import { App } from './App.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
-import { THUMBNAILS_LABEL } from './messages/en.js';
+import { STATUS_LABEL, THUMBNAILS_LABEL } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
@@ -354,6 +354,56 @@ describe('the error boundary around the document view, in App', () => {
     expect(container.querySelector('.m-thumbnails')).not.toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(container.querySelector('[data-view-retry]')).toBeNull();
+  });
+});
+
+/**
+ * THE WINDOW'S BOUNDARY, for a throw OUTSIDE the view.
+ *
+ * Until 2026-09-21 the view's boundary was the only one, and a throw anywhere else — a dialog's
+ * chunk, measured live — reached the root: React unmounted everything and the window went blank.
+ * The key here is `STATUS_LABEL`, which `StatusBar` alone resolves, and the status bar sits
+ * beside the view rather than in it, so this throw is out of the view boundary's reach by
+ * position. Without the window's boundary the render throws and nothing is left to query.
+ */
+describe('the error boundary around the whole window, in App', () => {
+  const WITHOUT_STATUS: Record<string, string> = Object.fromEntries(
+    Object.entries(EN).filter(([key]) => key !== STATUS_LABEL),
+  );
+
+  it('SHOWS THE PROBLEM for a throw outside the view, and a retry keeps the document open', async () => {
+    activateCatalogue('en', EN);
+    const { container } = render(<App client={client()} settings={freshSettings()} />);
+    await open();
+    expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
+
+    // A LOCALE OF ITS OWN: lingui merges into a catalogue it already holds, and the view's case
+    // loaded `INCOMPLETE_LOCALE` WITH this key — reusing it throws nothing when the file runs whole.
+    await act(async () => {
+      activateCatalogue('zy', WITHOUT_STATUS);
+      await Promise.resolve();
+    });
+
+    // THE WINDOW'S fallback, not the view's: the view did not fail.
+    expect(screen.getByRole('alert').textContent).toContain('Part of this window stopped working.');
+    expect(container.querySelector('[data-problem-scope="window"]')).not.toBeNull();
+
+    await act(async () => {
+      activateCatalogue('en', EN);
+      await Promise.resolve();
+    });
+    const retry = container.querySelector('[data-view-retry]');
+    if (!(retry instanceof HTMLButtonElement)) throw new Error('the fallback offers a retry');
+    await act(async () => {
+      retry.click();
+      await Promise.resolve();
+    });
+
+    // THE SEPARATING ASSERTION, for the reason the view's case gives: a boundary above `App`
+    // would come back to the start screen with nothing open.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
+    expect(container.querySelector('.m-start-screen')).toBeNull();
   });
 });
 

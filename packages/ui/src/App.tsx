@@ -2076,6 +2076,22 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   }, [settings]);
 
   return (
+    // THE WINDOW'S BOUNDARY, the outermost one, and INSIDE this component for the reason the
+    // page area's is (§10.5a): the tabs, the focused document and the dialog state live above
+    // it, so a retry redraws the window around what was open. Before it, the page area's was
+    // the only one, so a throw in the title bar, the ribbon, the start screen or a panel
+    // outside the view reached the root and React unmounted everything — a blank window,
+    // measured 2026-09-21. A throw in THIS function's own body is still out of reach: a
+    // boundary catches its children, never its parent.
+    <ErrorBoundary
+      fallback={({ reset }) => (
+        <main className="m-document-surface">
+          <div className="m-window-problem">
+            <ViewProblem scope="window" onRetry={reset} />
+          </div>
+        </main>
+      )}
+    >
     <main className="m-document-surface" data-layout={layoutMode}>
       {/* THE TITLE BAR, drawn in every mode and with no document too: the
           command search and the layout switcher are the application's, not a
@@ -2368,6 +2384,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         onResolve={resolveDialog}
       />
     </main>
+    </ErrorBoundary>
   );
 }
 
