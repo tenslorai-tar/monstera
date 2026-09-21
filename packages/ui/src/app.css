@@ -67,6 +67,13 @@ textarea {
 .m-document-surface {
   /* The containing block for Studio's overlay tool strip (`.m-ribbon__tools--overlay`). */
   position: relative;
+  /*
+   * THE WINDOW IS ONE STACKING CONTEXT, so no z-index inside it can rise above a dialog or a menu. Those are
+   * portaled to the end of the body with no z-index and win by order alone; without this the ruler's 1 and the
+   * overlay's 2 competed in the root context, where any number beats none — measured 2026-09-21, the ruler drawn
+   * over an open dialog. A z-index written here tomorrow is confined by the same line.
+   */
+  isolation: isolate;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;

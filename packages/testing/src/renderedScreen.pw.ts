@@ -972,6 +972,56 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   await expect(dialog.getByRole('heading', { name: 'Settings' })).toBeInViewport();
 });
 
+test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits under the modal layer', async ({ page }) => {
+  // THE CLASS, seen live 2026-09-21: the vertical ruler drew over an open dialog. The dialogs and menus are portaled
+  // to the end of the body with no z-index, so they win by order alone — and the ruler (1), the loupe (2) and
+  // Studio's overlay (2) each carried a z-index into the ROOT stacking context, where any number beats none.
+  // The assertion is about every element with a z-index, not about the ruler: a hit test at each one's centre must
+  // land on the dialog or its backdrop. The rulers are on so at least one such element exists — the premise is
+  // asserted, since a window with none would pass by having nothing to test.
+  //
+  // THE HIT TEST IS BLIND WITHOUT ONE CHANGE, and the first version of this case passed on the broken build for it:
+  // the ruler is `pointer-events: none`, so `elementFromPoint` looks straight through it to the backdrop and reports
+  // the answer hoped for. The probe turns pointer events on for the element under test, which makes the hit test
+  // answer PAINT order — the thing asserted — and the CONTROL below proves it can see the ruler with no dialog open.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, { 'viewing.rulers': true }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-ruler').first()).toBeVisible();
+
+  const probe = (): Promise<{ stacked: number; self: number; over: string[] }> =>
+    page.evaluate(() => {
+      const stacked = [...document.querySelectorAll<HTMLElement>('#root *')].filter(
+        (element) => getComputedStyle(element).zIndex !== 'auto' && element.getBoundingClientRect().width > 0,
+      );
+      let self = 0;
+      const over = stacked.flatMap((element) => {
+        const box = element.getBoundingClientRect();
+        const x = Math.min(Math.max(box.left + box.width / 2, 0), window.innerWidth - 1);
+        const y = Math.min(Math.max(box.top + box.height / 2, 0), window.innerHeight - 1);
+        const before = element.style.pointerEvents;
+        element.style.pointerEvents = 'auto';
+        const hit = document.elementFromPoint(x, y);
+        element.style.pointerEvents = before;
+        if (hit !== null && element.contains(hit)) self += 1;
+        return hit !== null && hit.closest('.m-dialog, .m-dialog__backdrop') === null ? [element.className] : [];
+      });
+      return { stacked: stacked.length, self, over };
+    });
+
+  // CONTROL: with no dialog, the probe finds every stacked element on top at its own centre.
+  const alone = await probe();
+  expect(alone.stacked).toBeGreaterThan(0);
+  expect(alone.self).toBe(alone.stacked);
+
+  await page.keyboard.press('F1');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+  const withDialog = await probe();
+  expect(withDialog.stacked).toBe(alone.stacked);
+  expect(withDialog.over).toStrictEqual([]);
+});
+
 test('the SETTINGS dialog sets the default annotation colour with NO DOCUMENT open, and it holds when reopened', async ({
   page,
 }) => {

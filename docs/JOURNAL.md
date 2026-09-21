@@ -892,6 +892,29 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Nothing draws over a dialog, and the probe that could not see the ruler
+
+The second defect recorded as not chased: the page's vertical ruler drew over an open dialog.
+
+**Mechanism**: dialogs and menus are portaled to the end of `<body>` with no z-index, so they paint
+above the window by DOM order alone. The ruler (`z-index: 1`), the loupe (2) and Studio's overlay
+(2) are positioned with a number, and nothing between them and the root formed a stacking context —
+so they competed in the ROOT context, where any number paints above `auto`. **Fix, the class**:
+`.m-document-surface` is `isolation: isolate`, one stacking context for the whole window, so no
+z-index written inside it — today's three or tomorrow's — can reach above a portaled layer.
+
+**The first version of the proof passed on the broken build.** It hit-tested the centre of every
+element carrying a z-index and required the dialog or its backdrop on top. The ruler is
+`pointer-events: none`, so `elementFromPoint` looked straight through it to the backdrop and
+answered what was hoped for — CLAUDE.md 4b's search that cannot see, in a hit test. A dump of the
+stacking chain showed the backdrop as the hit at the ruler's centre while the ruler was painted
+there. The probe now switches pointer events on for the element under test, so the hit test
+answers paint order, and a **control** runs the same probe with no dialog open and requires every
+stacked element to be found on top of itself. On the unfixed build it names both rulers; with the
+fix it passes; the a11y and visual suites pass whole (47 and 4).
+
+---
+
 ## 2026-09-21 — The window went blank because one boundary covered one area
 
 The previous entry recorded it as observed and not chased: a rebuild under the running app
