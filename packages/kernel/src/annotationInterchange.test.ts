@@ -9,6 +9,7 @@ import {
   NoImportableAnnotationsError,
   UnreadableAnnotationDataError,
   applyImportAnnotations,
+  canonicalDefaultAppearance,
   parseAnnotationData,
   readInterchangeAnnotations,
   readInterchangeRecordsAt,
@@ -233,6 +234,66 @@ describe('annotation interchange — exported and imported through all three for
     });
   }
 
+  /**
+   * ANOTHER PROGRAM'S FILE, in the shapes PDF-XChange Editor 10.7.5 wrote (measured 2026-09-21 on
+   * the owner's export; the file itself is not committed). Written inline so the case carries the
+   * shape and not the file.
+   */
+  describe('another program’s XFDF', () => {
+    const XCHANGE = new TextEncoder().encode(
+      '<?xml version="1.0" encoding="UTF-8"?><xfdf xmlns="http://ns.adobe.com/xfdf/" xml:space="preserve"><annots>' +
+        '<text icon="Comment" page="0" rect="69.36,695.9,89.36,713.9" color="#FFEE58">' +
+        '<contents-richtext><body xmlns="http://www.w3.org/1999/xhtml" style="font-size:12pt"><p><span>first &amp; line</span></p><p>second   line</p></body></contents-richtext>' +
+        '<popup open="yes" page="0" rect="12.6,690.8,192.6,780.1"/></text>' +
+        '<square interior-color="#FFEE58" IT="Highlight" blendmode="Multiply" page="0" rect="139.9,698.8,358.7,712.7" width="0"/>' +
+        '<square page="0" rect="288.1,721.8,371.4,767.4" color="#FF0000"/>' +
+        '</annots></xfdf>',
+    );
+
+    async function importedDictionaries(): Promise<{ subtype: string; hasC: boolean; contents: string | null }[]> {
+      return withSession(blank, async (session) => {
+        await applyImportAnnotations(session, { kind: 'importAnnotations', format: 'xfdf', bytes: XCHANGE });
+        return withDocument(session, (document) =>
+          document
+            .loadPage(0)
+            .getAnnotations()
+            .map((annotation) => {
+              const object = annotation.getObject();
+              const contents = object.get('Contents');
+              return {
+                subtype: object.get('Subtype').asName(),
+                hasC: object.get('C').isArray(),
+                contents: contents.isString() ? contents.asString() : null,
+              };
+            }),
+        );
+      });
+    }
+
+    it('takes a note’s text from its RICH TEXT when it carries no plain contents', async () => {
+      const [note] = await importedDictionaries();
+      // The words, a line per paragraph, entities decoded, runs of spaces collapsed — no markup.
+      expect(note).toMatchObject({ subtype: 'Text', contents: 'first & line\nsecond line' });
+    });
+
+    it('leaves a square with no colour WITHOUT a border colour, and CONTROL: one with a colour keeps it', async () => {
+      const [, area, outlined] = await importedDictionaries();
+      expect(area).toMatchObject({ subtype: 'Square', hasC: false });
+      expect(outlined).toMatchObject({ subtype: 'Square', hasC: true });
+    });
+
+    it('CONTROL: a note with no colour still takes a colour, so its icon is not invisible', async () => {
+      const bytes = new TextEncoder().encode(
+        '<?xml version="1.0"?><xfdf><annots><text page="0" rect="10,10,30,30"><contents>plain</contents></text></annots></xfdf>',
+      );
+      const hasColour = await withSession(blank, async (session) => {
+        await applyImportAnnotations(session, { kind: 'importAnnotations', format: 'xfdf', bytes });
+        return withDocument(session, (document) => document.loadPage(0).getAnnotations()[0]?.getObject().get('C').isArray());
+      });
+      expect(hasColour).toBe(true);
+    });
+  });
+
   it('is reproducible: one file applied twice to the same bytes gives the same bytes', async () => {
     const exported = serialiseAnnotationData(EXPECTED, 'json');
     const once = async (): Promise<Uint8Array> =>
@@ -269,6 +330,33 @@ describe('annotation interchange — exported and imported through all three for
       expect(result.count).toBe(EXPECTED.length);
     });
 
+    it('reads a default appearance in ANOTHER PROGRAM’S ORDER, and stores the one canonical form', () => {
+      // PDF-XChange Editor 10.7.5's typewriter box, as its XFDF export writes it (measured 2026-09-21):
+      // colour before font. The format fixes no order, and this whole file was refused over it.
+      const text = new TextEncoder().encode(
+        '<?xml version="1.0"?><xfdf><annots><freetext page="0" rect="182.7,741.6,276.3,755.2">' +
+          '<contents>Typed text</contents><defaultappearance>0 0 0 rg /F1 12 Tf</defaultappearance>' +
+          '</freetext></annots></xfdf>',
+      );
+      const [record] = parseAnnotationData(text, 'xfdf');
+      expect(record?.defaultAppearance).toBe('/F1 12 Tf 0 0 0 rg');
+    });
+
+    it('CONTROL: this build’s own order, spaced loosely, reads as the same canonical form, and a Tf alone is enough', () => {
+      expect(canonicalDefaultAppearance('/Helv 12 Tf 0 0 0 rg')).toBe('/Helv 12 Tf 0 0 0 rg');
+      expect(canonicalDefaultAppearance('  /Helv  12\nTf\t0.5 g ')).toBe('/Helv 12 Tf 0.5 g');
+      expect(canonicalDefaultAppearance('0 0 0 1 k /Cour 0 Tf')).toBe('/Cour 0 Tf 0 0 0 1 k');
+      expect(canonicalDefaultAppearance('/Helv 9 Tf')).toBe('/Helv 9 Tf');
+    });
+
+    it('reads leading and a stroke colour too, the shape another program’s free-text box carried', () => {
+      // Measured 2026-09-21 as a shape only: `N TL /F N Tf N N N rg N N N RG`.
+      expect(canonicalDefaultAppearance('14 TL /Helv 12 Tf 0 0 0 rg 1 0 0 RG')).toBe('/Helv 12 Tf 0 0 0 rg 1 0 0 RG 14 TL');
+      // Six places on the size, as that box wrote it; seven is still refused.
+      expect(canonicalDefaultAppearance('/Helv 10.125000 Tf 0 g')).toBe('/Helv 10.125000 Tf 0 g');
+      expect(canonicalDefaultAppearance('/Helv 10.1250000 Tf 0 g')).toBeNull();
+    });
+
     it('a highlight with no quadrilaterals, which would draw nothing', () => {
       const text = new TextEncoder().encode(
         '<?xml version="1.0"?><xfdf><annots><highlight page="0" rect="1,1,2,2"/></annots></xfdf>',
@@ -287,6 +375,25 @@ describe('annotation interchange — exported and imported through all three for
       const record = { ...EXPECTED[5], defaultAppearance: '/Helv 12 Tf 0 0 0 rg q 1 0 0 1 0 0 cm Q' };
       const bytes = new TextEncoder().encode(JSON.stringify({ format: 'monstera-annotations', version: 1, annotations: [record] }));
       expect(() => parseAnnotationData(bytes, 'json')).toThrow(UnreadableAnnotationDataError);
+    });
+
+    it('refuses each default appearance that is not one Tf and at most one colour', () => {
+      for (const text of [
+        '/Helv 12 Tf 0 0 0 rg /Helv 10 Tf',
+        '0 g 0 0 0 rg /Helv 12 Tf',
+        '/Helv Tf 0 g',
+        '/Helv 12 Tf 0 0 rg',
+        '/Helv 12 0 Tf',
+        'BT /Helv 12 Tf ET',
+        '0 0 0 rg',
+        '/Helv 12 Tf 0',
+        '/Helv 12 Tf 12 TL 14 TL',
+        '/Helv 12 Tf /F2 TL',
+        '/Helv 12 Tf q',
+        '',
+      ]) {
+        expect(canonicalDefaultAppearance(text), text).toBeNull();
+      }
     });
 
     it('a file with nothing this build exchanges — the wrong file, most likely', async () => {

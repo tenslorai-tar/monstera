@@ -892,6 +892,65 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Another program's comment files, live: three defects, one limit
+
+The annotation import/export row owed *a file from Acrobat* and was blocked for want of one. The
+owner supplied exports from **PDF-XChange Editor 10.7.5, build 403, dated 27 October 2025, by
+PDF-XChange Co Ltd** (read from the owner's About screen), and ruled that an independent, widely
+used implementation satisfies the check's purpose — reading a dialect that is not ours. The files
+sit in `packages/testing/fixtures/generated/`, which is gitignored, and none is committed:
+
+| file | bytes | sha256 |
+|---|---|---|
+| `text-page.pdf` | 9,450 | `8b087d41f345610b607361c54974f94b444b90acea200fbf644200d5dd737070` |
+| `text-page.xfdf` | 4,355 | `1c147a979a9bae74eea3448cdd61f78ac1bb62d7186ec6b922f289b516aab45f` |
+| `pdf_test_page.fdf` | 4,320 | `87c02184d8dcc489cbc92919796e708bd23db5df5d72fc9ceb09f1c4c57952e9` |
+
+All three hashes matched before anything was read. **Acrobat itself is still untested.**
+
+**The fixture would have passed an import that did nothing.** `text-page.pdf` already carries the
+seven comments — in object streams, so a byte search for `/Annots` counted zero. The comparison
+script found all seven in the untouched file at 0.0000 pt, which made it a positive control and
+disqualified the file as a target. Both targets were copies with every annotation removed, and the
+script then reported seven MISSING — so a pass could come only from the import.
+
+**The first import refused the whole file.** The typewriter box's `/DA` is `0 0 0 rg /F1 12 Tf`,
+colour first. Our schema was a regular expression of MuPDF's own output — font, then colour — which
+is a second opinion about a format whose 12.7.3.3 fixes no order (B3a). `canonicalDefaultAppearance`
+now reads operands and operators: one `Tf`, at most one fill colour, one stroke colour and one of
+each text-state operator, anything else refused, written back in one canonical order. The owner's
+second sample then showed the same reader too narrow twice more — `TL` and `RG` in a free-text
+`/DA`, and a font size with six places where the pattern allowed four — and the document reader,
+which keeps what the schema accepts, had silently dropped that box's appearance from its record.
+
+**Then two fidelity defects, found by dumping both dictionaries side by side:**
+
+- **A sticky note arrived with no text.** PDF-XChange, like Acrobat, writes a note's text only in
+  `<contents-richtext>`, and the reader read `<contents>` alone. It now reads the rich text's
+  WORDS — a line per paragraph, entities decoded, no markup interpreted — when no plain text exists.
+- **An area highlight gained a red border.** Its author wrote a fill, no `/C` and a zero-width
+  border; the import left MuPDF's authoring default, red. For the subtypes whose `/C` is a stroke
+  (square, circle, line, polygon, polyline, ink) an absent colour now stays absent; a note or text
+  markup still takes MuPDF's colour, since a viewer supplies one there. A comment in the code had
+  defended the red as "rather than an invisible one" — true only when nothing else draws the mark.
+
+**Result, read by MuPDF from the saved files after a close and reopen in the app**: seven of seven
+from each of XFDF and FDF. Highlight, both squares and the typewriter box within 0.0001 pt; the
+underline's quadrilaterals and the line's endpoints exact, their boxes grown by the line width,
+which MuPDF recomputes; the note's corner exact and its box 18 pt wide against PDF-XChange's 20,
+MuPDF's own icon. **One thing is not carried**: PDF-XChange draws the area highlight with Multiply
+blending, and MuPDF's annotation API has no blend mode — its appearance is Normal — so the fill
+arrives opaque over the text. A stated limit, not a fix.
+
+**The owner's in-document sample** (`Acrobat_test.pdf`, never committed, content never quoted):
+two highlights, an ink drawing and a free-text box. The app lists all four; the kernel's reader
+returns four records; exported and imported through XFDF, FDF and JSON into a copy with none, all
+four return with quadrilaterals and strokes exact, text and appearance unchanged, colour within
+4e-5 (XFDF's eight bits) and 2e-7 (FDF). MuPDF's `getRect` refuses on text markup in this file —
+a scratch lister stumbled on it — which is why the kernel reads the raw dictionary.
+
+---
+
 ## 2026-09-21 — A comment is not "text the person selected"
 
 The last of the four not chased. *Draft a reply with AI* sent the note's contents under the

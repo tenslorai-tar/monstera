@@ -88,6 +88,13 @@ export interface XfdfAnnotation {
   readonly element: string;
   readonly attributes: ReadonlyMap<string, string>;
   readonly contents: string | undefined;
+  /**
+   * The WORDS of `<contents-richtext>`, one line per paragraph, with none of its markup. Acrobat
+   * and PDF-XChange Editor write a note's text there and may write no `<contents>` at all —
+   * measured 2026-09-21, PDF-XChange 10.7.5's sticky note — so a reader of `<contents>` alone
+   * drops the text, which is worse than the formatting this build does not exchange.
+   */
+  readonly richText: string | undefined;
   /** Each `<gesture>` under `<inklist>`, in order. */
   readonly gestures: readonly string[];
   readonly defaultAppearance: string | undefined;
@@ -224,6 +231,7 @@ function readAnnots(cursor: Cursor, found: XfdfAnnotation[], depth: number): voi
       throw new XfdfRefusedError(`it carries more than ${String(MAX_ANNOTATIONS)} annotations`);
     }
     let contents: string | undefined;
+    let richText: string | undefined;
     let defaultAppearance: string | undefined;
     const gestures: string[] = [];
     if (!tag.selfClosing) {
@@ -233,6 +241,7 @@ function readAnnots(cursor: Cursor, found: XfdfAnnotation[], depth: number): voi
         const name = localName(child.name);
         if (child.selfClosing) continue;
         if (name === 'contents') contents = readBoundedText(cursor, MAX_CONTENTS_TEXT, 'a <contents>');
+        else if (name === 'contents-richtext') richText = readRichTextWords(cursor, depth + 2);
         else if (name === 'defaultappearance') {
           defaultAppearance = readBoundedText(cursor, MAX_TEXT, 'a <defaultappearance>');
         }
@@ -245,8 +254,65 @@ function readAnnots(cursor: Cursor, found: XfdfAnnotation[], depth: number): voi
         throw new XfdfRefusedError(`the attribute "${name}" is longer than ${String(MAX_GEOMETRY_TEXT)} characters`);
       }
     }
-    found.push({ element: localName(tag.name), attributes: tag.attributes, contents, gestures, defaultAppearance });
+    found.push({ element: localName(tag.name), attributes: tag.attributes, contents, richText, gestures, defaultAppearance });
   }
+}
+
+/** The XHTML elements that end a line of a note's text. */
+const LINE_ELEMENTS: ReadonlySet<string> = new Set(['p', 'div', 'br', 'li']);
+
+/**
+ * The words under `<contents-richtext>`, to its close tag: text and CDATA kept, whitespace runs
+ * collapsed as HTML collapses them, a line between paragraphs, and every tag read only for its
+ * name. Nothing is interpreted — no style, no attribute — so this is the text a person typed and
+ * not a rendering of it. The same depth bound, declaration refusal and length bound as the rest.
+ */
+function readRichTextWords(cursor: Cursor, depth: number): string {
+  let out = '';
+  const walk = (level: number): void => {
+    if (level > MAX_DEPTH) throw new XfdfTooDeepError();
+    for (;;) {
+      if (out.length > MAX_CONTENTS_TEXT) {
+        throw new XfdfRefusedError(`a <contents-richtext> is longer than ${String(MAX_CONTENTS_TEXT)} characters`);
+      }
+      if (cursor.at >= cursor.text.length) throw new XfdfRefusedError('it ends in the middle of a <contents-richtext>');
+      const rest = cursor.text;
+      if (rest.startsWith('<![CDATA[', cursor.at)) {
+        const end = rest.indexOf(']]>', cursor.at);
+        if (end === -1) throw new XfdfRefusedError('an unterminated CDATA section');
+        out += rest.slice(cursor.at + '<![CDATA['.length, end).replace(/\s+/gu, ' ');
+        cursor.at = end + ']]>'.length;
+      } else if (rest.startsWith('<!--', cursor.at)) {
+        consumeThrough(cursor, '-->', 'an unterminated comment');
+      } else if (rest.startsWith('<?', cursor.at)) {
+        consumeThrough(cursor, '?>', 'an unterminated processing instruction');
+      } else if (rest.startsWith('<!DOCTYPE', cursor.at)) {
+        throw new XfdfDoctypeError();
+      } else if (rest.startsWith('<!', cursor.at)) {
+        throw new XfdfRefusedError('it carries a declaration this reader does not accept');
+      } else if (rest.startsWith('<', cursor.at)) {
+        const tag = readTag(cursor, MAX_GEOMETRY_TEXT + 1);
+        // REFUSED, not skipped: the cursor is ON the `<`, so skipping to the next `<` would not move.
+        if (tag === null) throw new XfdfRefusedError('a <contents-richtext> holds a `<` that begins no tag');
+        if (tag.kind === 'close') {
+          if (LINE_ELEMENTS.has(localName(tag.name))) out += '\n';
+          return;
+        }
+        if (LINE_ELEMENTS.has(localName(tag.name))) out += '\n';
+        if (!tag.selfClosing) walk(level + 1);
+      } else {
+        const next = rest.indexOf('<', cursor.at);
+        out += unescape(rest.slice(cursor.at, next === -1 ? undefined : next)).replace(/\s+/gu, ' ');
+        cursor.at = next === -1 ? rest.length : next;
+      }
+    }
+  };
+  walk(depth);
+  return out
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join('\n');
 }
 
 /** An `<inklist>`'s `<gesture>` texts. */

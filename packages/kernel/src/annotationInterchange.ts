@@ -82,11 +82,83 @@ const LINE_ENDINGS = [
 /** The icons a `/Text` note may name (PDF 32000-1, 12.5.6.4). */
 const NOTE_ICONS = ['Comment', 'Key', 'Note', 'Help', 'NewParagraph', 'Paragraph', 'Insert'] as const;
 
+/** A font resource name a default appearance may use. */
+const FONT_NAME = /^\/[A-Za-z][A-Za-z0-9]{0,31}$/u;
 /**
- * A default appearance this build accepts: a font resource, a size and one colour operator —
- * what MuPDF writes. Anything longer is content-stream syntax from a stranger's file.
+ * A font size: up to three digits and six places — `0` is the format's *auto*. SIX, as a colour
+ * component has, because a PDF real has no fixed precision and producers write six: a free-text
+ * box from another program carried `N.NNNNNN Tf`, and four places refused it (2026-09-21).
  */
-const DEFAULT_APPEARANCE = /^\/[A-Za-z][A-Za-z0-9]{0,31} \d{1,3}(\.\d{1,4})? Tf( -?\d{0,3}(\.\d{1,6})?){1,4} (g|rg|k)$/u;
+const FONT_SIZE = /^\d{1,3}(\.\d{1,6})?$/u;
+/** A colour component as the old pattern admitted one. */
+const COMPONENT = /^-?\d{0,3}(\.\d{1,6})?$/u;
+/**
+ * The operators a default appearance may carry besides `Tf`, each with its operand count, in the
+ * order the canonical form writes them. A fill colour (one of `g rg k`) and a stroke colour (one of
+ * `G RG K`) are a slot each; the text-state operators are one number each. Measured 2026-09-21: a
+ * free-text box from another program carried `TL` and `RG` as well, legal and harmless, and the
+ * narrower reader silently dropped the whole appearance from its record.
+ */
+const APPEARANCE_OPERATORS: readonly { readonly slot: string; readonly operators: Readonly<Record<string, number>> }[] = [
+  { slot: 'fill', operators: { g: 1, rg: 3, k: 4 } },
+  { slot: 'stroke', operators: { G: 1, RG: 3, K: 4 } },
+  { slot: 'TL', operators: { TL: 1 } },
+  { slot: 'Tc', operators: { Tc: 1 } },
+  { slot: 'Tw', operators: { Tw: 1 } },
+  { slot: 'Tz', operators: { Tz: 1 } },
+  { slot: 'Ts', operators: { Ts: 1 } },
+];
+
+/**
+ * A default appearance, read as the format defines one, and written back in ONE order.
+ *
+ * PDF 32000-1 12.7.3.3 makes `/DA` a fragment of content stream that must hold a `Tf`; it fixes
+ * no order. This used to be a pattern of MuPDF's own output — font, size, `Tf`, then a colour —
+ * which is a second opinion about the format (B3a), and it refused the first file another program
+ * wrote: PDF-XChange Editor 10.7.5 puts the colour first, `0 0 0 rg /F1 12 Tf`, and the whole
+ * import was refused over one typewriter box (measured 2026-09-21).
+ *
+ * So the string is read as operands and operators: exactly one `Tf` with a font name and a size,
+ * and at most one of each slot in {@link APPEARANCE_OPERATORS}, each with its own count of
+ * numbers, in any order and any whitespace. Any other operator, a second `Tf` or a second of any
+ * slot, or an operand left over is refused — `q`, `cm`, `BT` and the rest are content-stream
+ * syntax from a stranger's file. The answer is the canonical form, `Tf` first and the slots in
+ * their listed order — `/F1 12 Tf 0 0 0 rg` — so a record's appearance has one spelling however
+ * it arrived.
+ *
+ * @returns the canonical string, or `null` when the text is not a default appearance this accepts.
+ */
+export function canonicalDefaultAppearance(text: string): string | null {
+  const tokens = text.split(/[\0\t\n\f\r ]+/u).filter((token) => token !== '');
+  let font: string | null = null;
+  const slots = new Map<string, string>();
+  let operands: string[] = [];
+  for (const token of tokens) {
+    const entry = APPEARANCE_OPERATORS.find((each) => each.operators[token] !== undefined);
+    if (token === 'Tf') {
+      const [name, size] = operands;
+      if (font !== null || operands.length !== 2 || name === undefined || size === undefined) return null;
+      if (!FONT_NAME.test(name) || !FONT_SIZE.test(size)) return null;
+      font = `${name} ${size} Tf`;
+    } else if (entry !== undefined) {
+      if (slots.has(entry.slot) || operands.length !== entry.operators[token]) return null;
+      if (!operands.every((operand) => operand !== '' && operand !== '-' && COMPONENT.test(operand))) return null;
+      slots.set(entry.slot, `${operands.join(' ')} ${token}`);
+    } else if (FONT_NAME.test(token) || COMPONENT.test(token)) {
+      operands.push(token);
+      continue;
+    } else {
+      return null;
+    }
+    operands = [];
+  }
+  if (font === null || operands.length > 0) return null;
+  const rest = APPEARANCE_OPERATORS.flatMap((each) => {
+    const written = slots.get(each.slot);
+    return written === undefined ? [] : [written];
+  });
+  return [font, ...rest].join(' ');
+}
 
 /** A PDF date as annotations carry one: `D:` and up to the format's fields. */
 const PDF_DATE = /^D:\d{4}[0-9+\-Z']{0,19}$/u;
@@ -122,7 +194,18 @@ export const interchangeAnnotationSchema = z
     line: z.tuple([coordinate, coordinate, coordinate, coordinate]).optional(),
     lineEndings: z.tuple([z.enum(LINE_ENDINGS), z.enum(LINE_ENDINGS)]).optional(),
     icon: z.enum(NOTE_ICONS).optional(),
-    defaultAppearance: z.string().max(128).regex(DEFAULT_APPEARANCE).optional(),
+    defaultAppearance: z
+      .string()
+      .max(128)
+      .transform((text, context) => {
+        const canonical = canonicalDefaultAppearance(text);
+        if (canonical === null) {
+          context.addIssue({ code: 'custom', message: 'a default appearance is one Tf and at most one colour operator' });
+          return z.NEVER;
+        }
+        return canonical;
+      })
+      .optional(),
   })
   .strict()
   .superRefine((record, context) => {
@@ -643,7 +726,10 @@ function xfdfCandidate(element: XfdfAnnotation): unknown[] {
   if (opacity !== undefined) candidate.opacity = Number(opacity);
   const width = get('width');
   if (width !== undefined) candidate.borderWidth = Number(width);
+  // THE PLAIN TEXT WHEN THERE IS ONE, and otherwise the rich text's words — a note from Acrobat or
+  // PDF-XChange may carry only the rich form, and dropping it lost the note's whole text.
   if (element.contents !== undefined) candidate.contents = element.contents;
+  else if (element.richText !== undefined && element.richText !== '') candidate.contents = element.richText;
   const title = get('title');
   if (title !== undefined) candidate.author = title;
   const subject = get('subject');
@@ -800,13 +886,23 @@ function realArray(document: PDFDocument, numbers: readonly number[]): PDFObject
 }
 
 /**
+ * The subtypes whose `/C` is the colour of their STROKE — a border or a line — so an absent `/C`
+ * means that stroke is not drawn (PDF 32000-1, 12.5.6.8–12.5.6.13). A record without a colour for
+ * one of these keeps it absent. The rest — a note's icon, text markup, a text box — are drawn in
+ * a viewer's default when `/C` is absent, and keep the colour MuPDF gives a new annotation.
+ */
+const STROKE_COLOURED: ReadonlySet<InterchangeSubtype> = new Set(['Square', 'Circle', 'Line', 'Polygon', 'PolyLine', 'Ink']);
+
+/**
  * The record's entries, onto a dictionary MuPDF just created. Every entry the record lacks is left
- * as MuPDF made it, so an imported square with no colour takes the engine's default rather than
- * an invisible one.
+ * as MuPDF made it, EXCEPT a stroke colour (above): MuPDF gives a new square a red border, and an
+ * area highlight from PDF-XChange — a fill with no `/C` and a zero-width border — arrived outlined
+ * in red that its author never drew (measured 2026-09-21).
  */
 function writeEntries(document: PDFDocument, dictionary: PDFObject, record: InterchangeAnnotation): void {
   dictionary.put('Rect', realArray(document, record.rect));
   if (record.colour !== undefined) dictionary.put('C', realArray(document, record.colour));
+  else if (STROKE_COLOURED.has(record.subtype)) dictionary.delete('C');
   if (record.interiorColour !== undefined) dictionary.put('IC', realArray(document, record.interiorColour));
   if (record.opacity !== undefined) dictionary.put('CA', document.newReal(record.opacity));
   if (record.borderWidth !== undefined) {
