@@ -892,6 +892,43 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — The contained stall's second cause: a named pipe the container may not create
+
+The Office import row carried *a second, unnamed cause* after the install-folder listing was
+granted by hand: no dialog, no PDF, one thread running, 7.6 s of CPU in 100 s. The owner asked for
+one access trace. A kernel trace (Process Monitor, ETW) needs an elevated session and this one is
+medium integrity, so the question was answered the way the first cause was — a probe in the
+converter's own container, with the uncontained run as control.
+
+**The candidate came from LibreOffice's source, already saved from step 3**: `desktop`'s
+`officeipcthread.cxx`, `PipeIpcThread::enable`. A desktop office always enables its single-instance
+IPC (`RequestHandler::Enable(true)` in `app.cxx`), which creates a named pipe; if the create fails
+it opens one; if that fails with anything but *connection refused* or *invalid*, it sleeps 10 ms
+and loops. `sal/osl/w32/pipe.cxx` (read at `master` today) names it `\\.\pipe\OSL_PIPE_…`, beside
+a named mutex, and opens with `WaitNamedPipeW` then `CreateFileW`.
+
+**Measured** (`scratchpad/office/pipeProbe.mjs`, the same session pair and launch as the step-3
+probe):
+
+| | uncontained (control) | contained |
+|---|---|---|
+| named mutex, as osl makes one | ok | ok |
+| CREATE `\\.\pipe\OSL_PIPE_…` | ok | **error 5** |
+| OPEN a pipe that does not exist | error 2 | error 2 |
+| CREATE `\\.\pipe\LOCAL\…` | ok | ok |
+
+So inside, the create is refused and the open finds nothing, every 10 ms, for ever — the idle
+spin the wait chain showed. What is read rather than measured: that osl maps error 2 to neither of
+the two errors that end the loop; the source's structure says so, and the CPU signature agrees.
+
+**Why this is where the item stops, as the owner ruled it would**: Windows confines an
+AppContainer's named pipes to its own `LOCAL\` namespace, no capability grants the global one, and
+LibreOffice's pipe name is built in code with no option to change it. No grant this container can
+make fixes it. The choice is the owner's: keep LibreOffice and reroute — a different containment,
+or a build whose pipe name sits under `LOCAL\` — or drop Office import.
+
+---
+
 ## 2026-09-21 — Another program's comment files, live: three defects, one limit
 
 The annotation import/export row owed *a file from Acrobat* and was blocked for want of one. The
