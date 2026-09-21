@@ -48,6 +48,9 @@ import {
   applyEditAnnotationText,
   captureEditAnnotationText,
   invertEditAnnotationText,
+  applyReplyToAnnotation,
+  captureReplyToAnnotation,
+  invertReplyToAnnotation,
 } from './pageAnnotations.js';
 import {
   applyImportFormData,
@@ -306,6 +309,12 @@ export const mupdfSpecs = {
     apply: applyEditAnnotationText,
     capture: captureEditAnnotationText,
     invert: invertEditAnnotationText,
+  },
+  replyToAnnotation: {
+    ...declaredCommands.replyToAnnotation,
+    apply: applyReplyToAnnotation,
+    capture: captureReplyToAnnotation,
+    invert: invertReplyToAnnotation,
   },
   addLink: {
     ...declaredCommands.addLink,

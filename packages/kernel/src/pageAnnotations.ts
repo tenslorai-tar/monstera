@@ -1418,6 +1418,17 @@ export interface ListedAnnotation {
    * would act on.
    */
   readonly rect: AnnotationRect | null;
+  /**
+   * Which mark on this page this one ANSWERS, by its index in this same walk,
+   * or `null` — PDF 32000-1 §12.5.6.2's `/IRT` with `/RT /R`.
+   *
+   * Resolved here rather than passed on as an object number, for {@link index}'s
+   * reason: the walk position is the only identity this boundary has, and a
+   * second one valid against the file instead of against this answer's version
+   * would be an identity nothing downstream could use. {@link replyTargetOf}
+   * carries what the four `null` cases are and why `/RT` decides.
+   */
+  readonly inReplyTo: number | null;
   readonly kind: AnnotationKindName;
   /**
    * What it is drawn in — `/C`, `/CA` and `/BS`'s width.
@@ -1609,12 +1620,24 @@ export function readAnnotations(
       // it is the page's, not the annotation's, and building it per entry would
       // read the boxes once per mark on a page that may carry hundreds.
       const transform = frameOf(loaded);
-      for (const annotation of loaded.getAnnotations()) {
+      const marks = loaded.getAnnotations();
+      // WHERE EACH MARK SITS, BY OBJECT NUMBER, built before the walk because
+      // `/IRT` may point FORWARD — a reply is free to precede the comment it
+      // answers in `/Annots`, and resolving as we went would report `null` for
+      // every one that does. Keyed per page, since an index is only meaningful
+      // against the page it was counted on.
+      const positionOf = new Map<number, number>();
+      for (const [at, annotation] of marks.entries()) {
+        const object = annotation.getObject();
+        if (object.isIndirect()) positionOf.set(object.asIndirect(), at);
+      }
+      for (const annotation of marks) {
         if (found.length >= MAX_LISTED) return { annotations: found, truncated: true };
         found.push({
           page,
           index: index++,
           rect: transform === null ? null : readRect(annotation, transform),
+          inReplyTo: replyTargetOf(annotation, positionOf),
           // `?? 'other'` IS THE WHOLE POINT of the closed union: a subtype this
           // build cannot name is listed rather than dropped, because a panel
           // that silently omitted a document's own comments would be worse than
@@ -1628,6 +1651,40 @@ export function readAnnotations(
     }
     return { annotations: found, truncated: false };
   });
+}
+
+/**
+ * Which mark in this page's walk an annotation ANSWERS, or `null`.
+ *
+ * ## `/RT` decides, and it is not decoration
+ *
+ * PDF 32000-1 §12.5.6.2 gives `/IRT` two meanings, separated by `/RT`: `/R`
+ * makes it a **reply**, `/Group` makes it one mark of a set that moves and
+ * deletes together. Both spell `/IRT`, so keying on that entry alone would
+ * report every grouped mark as a reply to its group's first member — a thread
+ * drawn over something nobody answered. Absent `/RT` means `/R`, which is the
+ * format's own default and is why the check is *not `/Group`* rather than
+ * *is `/R`*.
+ *
+ * ## `null` covers four different things on purpose
+ *
+ * No `/IRT`; an `/IRT` that is not a reference; a target on another page or
+ * outside the annotation walk entirely — a widget, or an object that is not an
+ * annotation. A hostile document can produce all of them, and every one of them
+ * means the same thing to a surface: *this is a mark, not an answer*. Inventing
+ * an index for a target the answer does not contain is the only outcome that
+ * could mislead, so the resolution is a lookup with no fallback.
+ */
+function replyTargetOf(
+  annotation: PDFAnnotation,
+  positionOf: ReadonlyMap<number, number>,
+): number | null {
+  const object = annotation.getObject();
+  const target = object.get('IRT');
+  if (target.isNull() || !target.isIndirect()) return null;
+  const relationship = object.get('RT');
+  if (!relationship.isNull() && relationship.isName() && relationship.asName() !== 'R') return null;
+  return positionOf.get(target.asIndirect()) ?? null;
 }
 
 /**
@@ -2050,6 +2107,93 @@ export const invertEditAnnotationText: Invert<'mupdf', 'editAnnotationText'> = (
     annotation.setContents(inverse.text);
     annotation.update();
   });
+
+/**
+ * Answers one annotation with another — PDF 32000-1 §12.5.6.2's reply.
+ *
+ * ## Every line here is the format's, and MuPDF declares none of them
+ *
+ * There is no `/IRT` accessor on `PDFAnnotation`, so the entries go onto the
+ * dictionary `getObject()` reaches — the route ADR-0077 already takes for
+ * annotation entries. Measured 2026-09-20
+ * (`scripts/research/annotationReply.mjs`) rather than assumed, because the
+ * dangerous answer was silent: `put` writes a **reference** to the parent's
+ * object, not an inline copy of its dictionary, and an inline copy would have
+ * saved, reopened and read back as a dictionary under `/IRT` while naming
+ * nothing.
+ *
+ * ## The reply is placed ON its parent, which is not a styling choice
+ *
+ * `/Popup`-less readers draw a `/Text` at its own rectangle, so a reply given a
+ * rectangle of its own is a second icon somewhere else on the page. Taking the
+ * parent's box is what makes the pair read as one thread, and it is why the
+ * payload carries no point to put it at.
+ *
+ * ## `markAuthored` runs on the reply and NEVER on the parent
+ *
+ * ADR-0043's mark says *this build wrote this annotation*, and answering a
+ * stranger's comment does not make their comment ours. The parent is read for
+ * its rectangle and its object number and is not written to at all — which also
+ * means a reply to a foreign mark leaves that mark byte-identical.
+ */
+export const applyReplyToAnnotation: Apply<'mupdf', 'replyToAnnotation'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'replyToAnnotation'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const parent = annotationAt(loaded, command.index);
+    const reply = loaded.createAnnotation('Text');
+    // THE PARENT'S OWN BOX, through the one reader that already answers *where
+    // is it now* — four subtypes refuse `getRect`, and a second spelling here
+    // would put a reply to an ink stroke at the origin.
+    reply.setRect(displayedBoxOf(parent));
+    reply.setContents(command.text);
+    const object = reply.getObject();
+    object.put('IRT', parent.getObject());
+    object.put('RT', document.newName('R'));
+    markAuthored(reply);
+    reply.update();
+  });
+
+/**
+ * Refuses, for {@link captureAddAnnotation}'s reason and in its words.
+ *
+ * A reply is an add: it mints an annotation whose walk index is not in the
+ * payload, so undoing it needs a handle this command never carried. The PAGE
+ * and the PARENT are both resolved first — an out-of-range page or index is a
+ * caller error, and a capture that refused without looking would have the bus
+ * take a checkpoint for a command that was going to throw anyway.
+ */
+export function captureReplyToAnnotation(
+  session: MupdfSession,
+  command: CommandOfKind<'replyToAnnotation'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    annotationAt(loaded, command.index);
+    return {
+      captured: false,
+      reason:
+        'a reply cannot be recorded as prior state: removing it again needs a handle naming ' +
+        'which annotation on the page it is, and this command mints an object whose identity ' +
+        'is not in its payload',
+    };
+  });
+}
+
+/**
+ * Unreachable, and required by {@link CommandSpec}'s shape.
+ *
+ * {@link invertAddAnnotation}'s reason exactly: `CommandPrior['replyToAnnotation']`
+ * is `never`, so nothing can construct an argument, and a quiet resolve would
+ * land a widening as an undo that silently did nothing.
+ */
+export const invertReplyToAnnotation: Invert<'mupdf', 'replyToAnnotation'> = (): Promise<void> => {
+  throw new Error(
+    'a reply has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};
 
 export function captureStyleAnnotation(
   session: MupdfSession,

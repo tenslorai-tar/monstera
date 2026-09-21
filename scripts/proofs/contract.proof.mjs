@@ -817,6 +817,29 @@ const EDIT_ANNOTATION_TEXT_SPEC = `  editAnnotationText: {
   },`;
 
 /**
+ * The newest kind, and the one the missing-kind case below now omits.
+ *
+ * `addAnnotation`'s axes rather than `editAnnotationText`'s, which is what makes it
+ * worth its own constant: it mints an annotation whose walk index is not in its
+ * payload, so it is `invertible: false` with a checkpoint undo — the neighbour above
+ * is the walk's one invertible command, and a copy of it here would have compiled a
+ * table in which the *true* combination appeared twice and this shape not at all.
+ */
+const REPLY_TO_ANNOTATION_SPEC = `  replyToAnnotation: {
+    kind: 'replyToAnnotation',
+    writer: 'mupdf',
+    apply: applyReplyToAnnotation,
+    capture: captureReplyToAnnotation,
+    invert: invertReplyToAnnotation,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
  * Filler, kept separate for {@link MOVE_SPEC}'s reason; it was the newest kind until
  * `editAnnotationText`.
  *
@@ -1063,6 +1086,9 @@ const SPEC_IMPORTS = `import {
   applyEditAnnotationText,
   captureEditAnnotationText,
   invertEditAnnotationText,
+  applyReplyToAnnotation,
+  captureReplyToAnnotation,
+  invertReplyToAnnotation,
   applyAddAnnotation,
   captureAddAnnotation,
   invertAddAnnotation,
@@ -1812,6 +1838,7 @@ ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
 ${IMPORT_ANNOTATIONS_SPEC}
 ${EDIT_ANNOTATION_TEXT_SPEC}
+${REPLY_TO_ANNOTATION_SPEC}
 };
 `,
   },
@@ -1829,7 +1856,8 @@ ${EDIT_ANNOTATION_TEXT_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `editAnnotationText` on 2026-09-20; `importAnnotations` on
+    // table has to grow. `replyToAnnotation` on 2026-09-21;
+    // `editAnnotationText` on 2026-09-20; `importAnnotations` on
     // 2026-09-17; `importPageAsLayer` on 2026-09-14; `straightenScans` on
     // 2026-09-13; `promoteFormObjects`
     // and `replaceAllText` on 2026-09-10, and
@@ -1855,9 +1883,12 @@ ${EDIT_ANNOTATION_TEXT_SPEC}
     // the same way on `importPageAsLayer`, TS2739 naming it and `straightenScans`.
     // AND AGAIN on `editAnnotationText` (2026-09-20), TS2739 naming it and
     // `importAnnotations` — three for three, which is the case working rather
-    // than a nuisance: the wrong code is the reminder.
+    // than a nuisance: the wrong code is the reminder. FOUR for four on
+    // `replyToAnnotation` (2026-09-21), TS2739 naming it and
+    // `editAnnotationText`, for the same reason each time: the table had not
+    // grown by the previous kind either.
     because:
-      /Property 'editAnnotationText' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'replyToAnnotation' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -1923,6 +1954,7 @@ ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
 ${IMPORT_ANNOTATIONS_SPEC}
+${EDIT_ANNOTATION_TEXT_SPEC}
 };
 `,
   },
@@ -3239,7 +3271,8 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // `applyRedactions`, `markMatchesForRedaction`, `sanitizeDocument` and
     // `signDocument` (all 2026-09-12), 43 since `straightenScans` (2026-09-13), and 44
     // since `importPageAsLayer` (2026-09-14), 45 since `importAnnotations` (2026-09-17), and
-    // 46 since `editAnnotationText` (2026-09-20).
+    // 46 since `editAnnotationText` (2026-09-20), and 47 since
+    // `replyToAnnotation` (2026-09-21).
     //
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
@@ -3257,7 +3290,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 42 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 43 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

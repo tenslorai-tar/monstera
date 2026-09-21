@@ -892,6 +892,86 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — A reply is PDF's own thread, and the wrong answer would have been the silent one
+
+§7's annotation menu owed *reply*, and the owner's block says the word and nothing
+else. That reads as an undecided design — where is a thread shown, what is a reply
+made of — and it is not: **PDF 32000-1 §12.5.6.2 already answers it.** A reply is an
+annotation carrying `/IRT`, an indirect reference to the mark it answers, and `/RT`
+set to `/R`. B3a's rule is to implement the authority rather than invent a scheme,
+and a scheme of ours would have shown every other reader a loose note sitting on top
+of the comment it answered.
+
+So the only open question was whether this engine can express it, and that is a
+measurement rather than a decision. MuPDF declares **no `/IRT` accessor at all**.
+`scripts/research/annotationReply.mjs` asked four things of the dictionary
+`getObject()` reaches:
+
+| question | answer |
+|---|---|
+| does `put` write a reference, or copy the parent's dictionary inline? | **a reference** — object 7, the parent's own number |
+| does it survive a save and a reopen? | yes, `/IRT -> 7`, `/RT /R` |
+| does the walk still enumerate both marks? | yes, and `/IRT` resolves to **walk index 0** |
+| does `update()` add a `/Popup` companion to the walk? | no; it stays at two |
+
+**The inline-copy answer is the one worth the script.** It also saves, also reopens,
+and also reads back as a dictionary under `/IRT` — so every assertion anyone would
+naturally write about a reply passes for it while the reply names nothing. That is
+why both the research script and the kernel cases report **which entry** `/IRT`
+resolves to and never that the key is present.
+
+## What the walk had to learn
+
+`/IRT` is an object reference and this boundary speaks in walk indices (ADR-0041), so
+the reader resolves one into the other and `document.annotations` gained
+`inReplyTo`. A raw object number would have been a second identity — valid against
+the file rather than against the answer's `version`, and meaningless to everything
+that already points with indices.
+
+Two things the resolution deliberately does not do. It does not report a target the
+walk has no entry for — `/IRT` may name a widget, a mark on another page, or an
+object that is not an annotation — because an index into a list the target is not in
+is the only outcome that could mislead. And **it does not key on `/IRT` alone.**
+`/RT` separates two meanings: `/R` is a reply, `/Group` is one mark of a set that
+moves and deletes together. A reader that ignored it reports every grouped mark as
+answering its group's first member — a thread drawn over something nobody replied to.
+The control for that is a case, and mutating the check away reddens it.
+
+## The `when` predicates are a pair that is deliberately not a pair
+
+*Edit comment…* is confined to the four subtypes this application DRAWS the text of,
+because a change a person cannot see is worse than an absent control. *Reply* is
+offered on **every** subtype, including a mark this build did not write: the reply is
+an annotation of its own carrying its own words, so answering a highlight, an ink
+stroke or a stranger's stamp all produce something visible. `markAuthored` runs on
+the reply alone, so the mark being answered comes out byte-identical. A case asserts
+the difference rather than a comment claiming it.
+
+## The live run, and the occluder that was not a defect this time
+
+Driven through the real menu on the packaged shell, and the panel afterwards read:
+
+```
+Note on page 1 | does this figure need a caption
+Note on page 1 | Reply | yes please add one below the figure   data-annotation-reply="0"
+```
+
+Saved, and the bytes read back through pdf-lib rather than the engine that wrote
+them: `{"at":1,...,"answers":0,"inline":false,"relationship":"/R"}`. That path —
+menu item, command, composition root, host, engine, reader, panel — is the stretch
+the wired-tools pair cannot cross from either end.
+
+**Two of the three failures along the way were the ones withdrawn yesterday**, met
+again and recognised. A click that reached `HTML` instead of a button: the window is
+800×600 and the target sat at y 642, outside the viewport. A click that landed on
+`m-dialog__backdrop`: the command palette was open over the point. Neither is a
+defect and both read exactly like one. `elementFromPoint` before every click is what
+separates them, and it costs one evaluation.
+
+The third was real and is somebody's to know: a recents entry whose file no longer
+exists does nothing at all, with no message. Not chased here — it is recorded as
+found, on a path a person can reach.
+
 ## 2026-09-20 — The machine witness could not tell a saturated machine from a blind instrument
 
 `npm run local` sealed **failed** with two reds, and both were the same sentence

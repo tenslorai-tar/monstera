@@ -1332,6 +1332,36 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  replyToAnnotation: {
+    kind: 'replyToAnnotation',
+    display: 'image',
+    // The annotation rows' classification: a reply is an object in `/Annots`
+    // carrying its own appearance stream, plus two entries — `/IRT` and `/RT` —
+    // on that same object. Nothing about it is page content.
+    writer: 'mupdf',
+    // `addAnnotation`'s *not yet*, in its own words: this mints an object whose
+    // walk index is not in the payload, so an inverse would have to name the
+    // annotation it created. The index this command DOES carry belongs to the
+    // mark being answered, which the command never changes — so it is no help
+    // at all to an undo, and reading it as one would remove the wrong mark.
+    invertible: false,
+    undo: 'checkpoint',
+    // Two names, a rectangle copied from the parent, a string, and an
+    // appearance stream — and no clock. `addAnnotation`'s measurement covers the
+    // object; the two entries added here are a name and a reference.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // Its payload points into an answer `document.annotations` gave at one
+    // version, as its four neighbours do. **The version check is about what the
+    // index POINTS AT**, not about what the command does to it: a document that
+    // has moved renumbers the walk, and a reply would then answer whichever mark
+    // had slid into that position.
+    targets: 'annotation',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   addLink: {
     kind: 'addLink',
     display: 'image',

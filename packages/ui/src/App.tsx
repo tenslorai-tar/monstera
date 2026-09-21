@@ -217,6 +217,7 @@ import { DOCUSIGN_SEND_DIALOG } from './dialogs/docusignSend.js';
 import { SIGNATURES_DIALOG } from './dialogs/signatures.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { ANNOTATION_EDIT_DIALOG } from './dialogs/annotationEdit.js';
+import { ANNOTATION_REPLY_DIALOG } from './dialogs/annotationReply.js';
 import { CALLOUT_DIALOG } from './dialogs/callout.js';
 import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
 import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
@@ -242,6 +243,7 @@ import { SELECT_TOOL_ID } from './annotations/selectTool.js';
 import {
   deleteSelectionCommand,
   editSelectionCommand,
+  replySelectionCommand,
   nudgeSelectionCommands,
   selectionPropertiesCommand,
   shapeToolCommands,
@@ -516,6 +518,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         ANNOTATION_TEXT_DIALOG,
         ANNOTATION_NOTE_DIALOG,
         ANNOTATION_EDIT_DIALOG,
+        ANNOTATION_REPLY_DIALOG,
         DOCUMENT_PASSWORD_DIALOG,
         PROTECT_DOCUMENT_DIALOG,
         APPLY_REDACTIONS_DIALOG,
@@ -1855,11 +1858,14 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           claudeReady: () => claudeKeyStored,
         }),
         deleteSelectionCommand(selectionDeps),
-        // ASK IS THIS COMMAND'S ALONE, `commentSelectionCommand`'s rule: it is
-        // the only item in the annotation menu that opens a dialog, and
-        // widening `SelectionCommandDeps` would hand every selection command a
-        // capability none of the others may use.
+        // ASK IS PASSED PER COMMAND, `commentSelectionCommand`'s rule: only the
+        // annotation-menu items that open a dialog receive it, and widening
+        // `SelectionCommandDeps` would hand every selection command a
+        // capability none of the others may use. *Corrected 2026-09-21:* this
+        // said *this command's alone*, which stopped being true when *Reply*
+        // joined it — the rule was never about there being one.
         editSelectionCommand({ ...selectionDeps, ask }),
+        replySelectionCommand({ ...selectionDeps, ask }),
         selectionPropertiesCommand({ ...selectionDeps, settings }),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),

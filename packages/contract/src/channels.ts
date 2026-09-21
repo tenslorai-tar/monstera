@@ -3399,6 +3399,35 @@ export const channels = {
              * computable set rather than a sentence in an invariant.
              */
             authored: z.boolean(),
+            /**
+             * The walk index of the annotation this one ANSWERS, or `null`.
+             *
+             * PDF 32000-1 §12.5.6.2's `/IRT` with `/RT /R` — a reply, in the
+             * format's own terms. Carried so a surface can show a thread rather
+             * than two marks stacked on one spot: without it a reply is
+             * indistinguishable from a loose note sitting on the comment it
+             * answers, which is what every panel here would have drawn.
+             *
+             * **Resolved to a walk index on this side of the boundary**, never
+             * handed over as an object number. The walk is the only identity
+             * this contract has for an annotation
+             * ([ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)),
+             * and a raw object number would be a second one — valid against the
+             * file rather than against this answer's `version`, and meaningless
+             * to everything that already speaks in indices.
+             *
+             * **`null` also covers a reference the walk does not contain**, and
+             * that is a real state rather than a defect: `/IRT` may point at a
+             * widget, at an annotation on another page, or at an object that is
+             * not an annotation at all. A reply to something this answer cannot
+             * name is listed as an ordinary mark, which is honest — the
+             * alternative is an index into a list the target is not in.
+             *
+             * Always on the SAME page, when it is present: `/IRT` naming a mark
+             * on another page is answered as `null` for that reason, since the
+             * index would be read against this entry's own page.
+             */
+            inReplyTo: z.number().int().nonnegative().nullable(),
           }),
         )
         .max(MAX_ANNOTATIONS)

@@ -464,6 +464,8 @@ export interface BrowserShimOptions {
     readonly index: number;
     readonly kind: AnnotationKindName;
     readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+    /** The walk index this mark answers, for a case about a thread. Absent is an ordinary mark. */
+    readonly inReplyTo?: number | null;
   }[];
 
   /**
@@ -1700,6 +1702,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
             style: { colour: [1, 0, 0], opacity: 1, borderWidth: null },
             contents: '',
             authored: true,
+            // SEEDABLE, unlike the three above it, because a thread is a
+            // relationship BETWEEN two seeded marks — a case about a reply row
+            // has to be able to say which mark the reply answers, and no plain
+            // value expresses that.
+            inReplyTo: annotation.inReplyTo ?? null,
           })),
           truncated: false,
         }),

@@ -1212,6 +1212,16 @@ textarea {
   white-space: nowrap;
 }
 
+/* The same treatment as the foreign badge beside it, and deliberately so: both
+   say what KIND of row this is rather than carrying the row's content, and a
+   second visual weight here would make one of two facts about the same row look
+   more important than the other. */
+.m-annotations-reply {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  white-space: nowrap;
+}
+
 .m-destination-page {
   color: var(--muted);
   font-variant-numeric: tabular-nums;

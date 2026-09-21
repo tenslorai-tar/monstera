@@ -802,6 +802,13 @@ export const ANNOTATION_EDIT_APPLY = messageKey('dialog.annotation-edit.apply');
 export const ANNOTATION_EDIT_EMPTY = messageKey('dialog.annotation-edit.empty');
 export const ANNOTATION_EDIT_TOO_LONG = messageKey('dialog.annotation-edit.too-long');
 export const EDIT_SELECTION_TITLE = messageKey('command.annotate.edit-selection');
+export const ANNOTATION_REPLY_TITLE = messageKey('dialog.annotation-reply.title');
+export const ANNOTATION_REPLY_LABEL = messageKey('dialog.annotation-reply.label');
+export const ANNOTATION_REPLY_APPLY = messageKey('dialog.annotation-reply.apply');
+export const ANNOTATION_REPLY_EMPTY = messageKey('dialog.annotation-reply.empty');
+export const ANNOTATION_REPLY_TOO_LONG = messageKey('dialog.annotation-reply.too-long');
+export const REPLY_SELECTION_TITLE = messageKey('command.annotate.reply-selection');
+export const ANNOTATIONS_REPLY_ROW = messageKey('panel.annotations.reply-row');
 export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
@@ -1990,6 +1997,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATION_EDIT_EMPTY]: 'A comment cannot be empty. To remove it, delete the mark instead.',
   [ANNOTATION_EDIT_TOO_LONG]: 'That is too long for one comment. Shorten it, or use several.',
   [EDIT_SELECTION_TITLE]: 'Edit comment…',
+  // ANSWERING SOMEBODY, so the words are about the exchange rather than about
+  // the page: the box collects a reply to a comment that is already there, and
+  // *Add note* over it would describe a mark of its own.
+  [ANNOTATION_REPLY_TITLE]: 'Reply',
+  [ANNOTATION_REPLY_LABEL]: 'Your reply',
+  [ANNOTATION_REPLY_APPLY]: 'Post reply',
+  [ANNOTATION_REPLY_EMPTY]: 'Type the reply this comment should get.',
+  [ANNOTATION_REPLY_TOO_LONG]: 'That is too long for one reply. Shorten it, or post several.',
+  [REPLY_SELECTION_TITLE]: 'Reply…',
+  // THE ROW SAYS IT IS AN ANSWER, because the panel is a flat list and two
+  // marks at the same spot are otherwise indistinguishable from a duplicate.
+  [ANNOTATIONS_REPLY_ROW]: 'Reply',
   [TOOL_TEXT_BOX_TITLE]: 'Text box',
   [TOOL_STICKY_NOTE_TITLE]: 'Note',
   [TOOL_CARET_TITLE]: 'Insertion mark',

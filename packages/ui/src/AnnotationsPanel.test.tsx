@@ -34,7 +34,16 @@ function clientAnswering(
   // would break a panel which had quietly started depending on a place.
   const rows = annotations.map((row) =>
     typeof row === 'object' && row !== null
-      ? { rect: null, style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 }, ...row }
+      ? {
+          rect: null,
+          style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+          // ANSWERING NOTHING BY DEFAULT, and before the spread so a case about
+          // a thread can say otherwise. Unlike the two above it this one IS
+          // read here, so the default is the ordinary case rather than a value
+          // no case asserts.
+          inReplyTo: null,
+          ...row,
+        }
       : row,
   );
   const client = createClient(channels, (id, params) => {
@@ -151,6 +160,25 @@ describe('AnnotationsPanel', () => {
     // The badge sits inside the row it describes, so this is what says the
     // panel labelled the foreign one rather than merely rendering one badge.
     expect(badges[0]?.closest('li')?.textContent).toContain('page 2');
+  });
+
+  it('marks a REPLY as one, and says which mark it answers', async () => {
+    // A reply carries its parent's rectangle, so both rows name the same kind
+    // on the same page — without this badge the list reads as having repeated
+    // itself. Both kinds of row are in the fixture for the foreign badge's
+    // reason: a panel that marked every row and a panel that marked none each
+    // satisfy half of the claim against a list carrying one annotation.
+    await panel([
+      { page: 0, index: 0, kind: 'sticky-note', contents: 'the question', authored: true },
+      { page: 0, index: 1, kind: 'sticky-note', contents: 'the answer', authored: true, inReplyTo: 0 },
+    ]);
+    const marks = document.querySelectorAll('[data-annotation-reply]');
+    expect(marks).toHaveLength(1);
+    // THE ANSWERED INDEX, not merely that something is a reply. A badge on the
+    // right row carrying the wrong target is the defect this could have, and
+    // asserting only the count cannot see it.
+    expect(marks[0]?.getAttribute('data-annotation-reply')).toBe('0');
+    expect(marks[0]?.closest('li')?.textContent).toContain('the answer');
   });
 
   it('says the list was CUT rather than showing a short list as complete', async () => {

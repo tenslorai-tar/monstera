@@ -25,6 +25,7 @@ import { SettingsStore } from '../settingsStore.js';
 import {
   deleteSelectionCommand,
   editSelectionCommand,
+  replySelectionCommand,
   nudgeSelectionCommands,
   rectangleToolCommand,
   selectionPropertiesCommand,
@@ -414,6 +415,95 @@ describe('editSelectionCommand', () => {
   it('sits FIRST in the annotation menu, where the owner’s order puts it', () => {
     expect(editing(SELECTION, undefined).command.placements).toStrictEqual([
       { surface: 'context-menu', context: 'annotation', order: 10 },
+    ]);
+  });
+});
+
+describe('replySelectionCommand', () => {
+  const NOTE: SelectedAnnotation = {
+    index: 1,
+    rect: { x0: 0, y0: 0, x1: 10, y1: 10 },
+    style: PLAIN_ITEM,
+    kind: 'sticky-note',
+    contents: 'what it said before',
+  };
+  const SELECTION: AnnotationSelection = {
+    page: 2,
+    version: asDocVersion(7),
+    items: [NOTE],
+  };
+
+  function replying(selection: AnnotationSelection | undefined, answer: unknown) {
+    const placed: unknown[] = [];
+    const asked: { id: string; props: unknown }[] = [];
+    return {
+      placed,
+      asked,
+      command: replySelectionCommand({
+        selection: () => selection,
+        onDelete: () => undefined,
+        onPlace: (command) => placed.push(command),
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(answer);
+        },
+      }),
+    };
+  }
+
+  it('opens an EMPTY dialog and sends the answer against the mark it answers', async () => {
+    const { command, placed, asked } = replying(SELECTION, { text: 'my answer' });
+    await command.run(WITH_DOCUMENT);
+
+    // THE EMPTY PROPS ARE THE ASSERTION, not an omission: pre-filling the
+    // parent's text would make *Reply* answer the comment by quoting it back,
+    // and that is the one way this command could differ from *Edit* invisibly.
+    expect(asked).toStrictEqual([{ id: 'dialog.annotation-reply', props: {} }]);
+    expect(placed).toStrictEqual([
+      {
+        kind: 'replyToAnnotation',
+        page: 2,
+        index: 1,
+        text: 'my answer',
+        version: asDocVersion(7),
+      },
+    ]);
+  });
+
+  it('CONTROL: a dismissed dialog sends nothing, and the dialog was still opened', async () => {
+    const { command, placed, asked } = replying(SELECTION, undefined);
+    await command.run(WITH_DOCUMENT);
+    expect(asked).toHaveLength(1);
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('is offered on a kind *Edit* is HIDDEN for, which is the difference between them', async () => {
+    // The pair's `when` predicates are deliberately not the same, and this is
+    // the case that says so rather than a comment claiming it. A highlight
+    // carries text this build does not draw — so *Edit* is hidden — while a
+    // reply to it is a mark of its own that a person can see.
+    const highlight = { ...SELECTION, items: [{ ...NOTE, kind: 'highlight' as const }] };
+    const { command, placed } = replying(highlight, { text: 'my answer' });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(true);
+    await command.run(WITH_DOCUMENT);
+    expect(placed).toHaveLength(1);
+  });
+
+  it('is HIDDEN when TWO marks are selected, rather than answering the first', async () => {
+    const two = { ...SELECTION, items: [NOTE, { ...NOTE, index: 4 }] };
+    const { command, placed } = replying(two, { text: 'ignored' });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(false);
+    await command.run(WITH_DOCUMENT);
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('is HIDDEN with nothing selected', () => {
+    expect(replying(undefined, undefined).command.when?.(WITH_DOCUMENT)).toBe(false);
+  });
+
+  it('sits SECOND in the annotation menu, where the owner’s order puts it', () => {
+    expect(replying(SELECTION, undefined).command.placements).toStrictEqual([
+      { surface: 'context-menu', context: 'annotation', order: 20 },
     ]);
   });
 });

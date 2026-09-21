@@ -27,6 +27,7 @@ import {
 import type { AnnotationSelection, SelectedAnnotation } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import { ANNOTATION_EDIT_DIALOG_ID } from '../dialogs/annotationEdit.js';
+import { ANNOTATION_REPLY_DIALOG_ID } from '../dialogs/annotationReply.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -59,6 +60,7 @@ import {
   CLOUD_TOOL_TITLE,
   DELETE_SELECTION_TITLE,
   EDIT_SELECTION_TITLE,
+  REPLY_SELECTION_TITLE,
   SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
@@ -539,6 +541,70 @@ export function editSelectionCommand(
       if (!answered.success) return;
       deps.onPlace({
         kind: 'editAnnotationText',
+        page: selection.page,
+        index: item.index,
+        text: answered.data.text,
+        version: selection.version,
+      });
+    },
+  };
+}
+
+/**
+ * Answers the selected mark — §7's *reply*, second in the annotation menu.
+ *
+ * ## Offered on EVERY subtype, where *Edit* is offered on four
+ *
+ * The two look like a pair and their `when` predicates are deliberately not the
+ * same. *Edit* is confined to the kinds this application DRAWS the text of,
+ * because a change a person cannot see is worse than an absent control. A reply
+ * is a mark of its own carrying its own text, so answering a highlight, an ink
+ * stroke or a stranger's stamp all produce something visible — there is no kind
+ * where the answer would go into the file and nowhere else.
+ *
+ * ## And it is offered on a mark this build did not write
+ *
+ * `authored` is not consulted. Answering somebody's comment writes a new
+ * annotation and does not touch theirs, which the kernel's apply is careful
+ * about: `markAuthored` runs on the reply alone, so a foreign mark comes out of
+ * this byte-identical.
+ *
+ * ## One mark, for `editSelectionCommand`'s reason
+ *
+ * A marquee of four and one reply is not an operation anybody intends — it is
+ * either four replies carrying one sentence, or a reply to whichever mark the
+ * loop reached first. The control is hidden rather than guessing.
+ */
+export function replySelectionCommand(
+  deps: SelectionCommandDeps & {
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  },
+): UiCommand {
+  const only = (): SelectedAnnotation | undefined => {
+    const selection = deps.selection();
+    if (selection?.items.length !== 1) return undefined;
+    return selection.items[0];
+  };
+  return {
+    id: 'annotate.reply-selection',
+    title: REPLY_SELECTION_TITLE,
+    // SECOND, which is the owner's order for this menu: edit, reply,
+    // properties, copy, delete.
+    placements: [{ surface: 'context-menu', context: 'annotation', order: 20 }],
+    when: () => only() !== undefined,
+    run: async (): Promise<void> => {
+      const selection = deps.selection();
+      const item = only();
+      if (selection === undefined || item === undefined) return;
+      // THE DIALOG OPENS EMPTY, which is the difference from *Edit* at the call
+      // site rather than in the dialog: an edit starts from what the mark says,
+      // and a reply starts from nothing because it is not that mark's text.
+      const answered = ANNOTATION_TEXT_RESULT.safeParse(
+        await deps.ask(ANNOTATION_REPLY_DIALOG_ID, {}),
+      );
+      if (!answered.success) return;
+      deps.onPlace({
+        kind: 'replyToAnnotation',
         page: selection.page,
         index: item.index,
         text: answered.data.text,

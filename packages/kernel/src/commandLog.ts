@@ -502,6 +502,21 @@ export interface CommandPrior {
    */
   readonly editAnnotationText: PriorAnnotationText;
   /**
+   * **`never`**, and it is {@link addAnnotation}'s statement rather than a new
+   * one: a reply mints an annotation whose walk index is not in the payload, so
+   * an inverse would have to name the mark this command created.
+   *
+   * **The index it carries is no help, and that is worth stating because it
+   * looks like one.** Every other entry here that names an index names the mark
+   * the command changes; this one names the mark being ANSWERED, which is left
+   * exactly as it was. An inverse built from it would delete the comment
+   * somebody replied to and leave the reply behind.
+   *
+   * It clears the day `addAnnotation`'s does, by the same change — a capture
+   * that reports where the minted annotation landed in the walk.
+   */
+  readonly replyToAnnotation: never;
+  /**
    * **`never`**, and it is {@link removeAnnotation}'s reason with a second
    * structure attached rather than a new one.
    *

@@ -2608,6 +2608,55 @@ export const editAnnotationTextSchema = z.object({
 });
 
 /**
+ * Answers one annotation with another — §7's *reply* on the annotation menu.
+ *
+ * ## The SHAPE is PDF's, not ours (B3a)
+ *
+ * PDF 32000-1 §12.5.6.2 already defines what a reply is: an annotation carrying
+ * `/IRT`, an indirect reference to the annotation it answers, and `/RT` set to
+ * `/R` to say the relationship is a reply rather than a grouped set. Nothing
+ * here is a design choice — a scheme of our own would be a second opinion about
+ * a question the format owns, and every other reader would show the reply as a
+ * loose note sitting on top of the one it answers.
+ *
+ * Measured 2026-09-20 (`scripts/research/annotationReply.mjs`), because a type
+ * declaration is not behaviour and MuPDF declares no `/IRT` accessor at all:
+ * putting the parent's object under `/IRT` writes a **reference** rather than
+ * copying the dictionary inline, the reference survives a save and a reopen,
+ * and the walk still enumerates both marks with `/IRT` resolving to the parent's
+ * walk index. The inline-copy answer was the one that would have been invisible
+ * — it also saves, also reopens, and reads back a dictionary under `/IRT`.
+ *
+ * ## `index` names the PARENT, and the reply's own identity is not in the payload
+ *
+ * Like {@link addAnnotationSchema}, this mints an annotation whose index nobody
+ * can predict, so its capture refuses and undo falls back to the checkpoint. The
+ * index it carries is the mark being ANSWERED, which is why this command belongs
+ * to {@link NamesAnAnnotation} and is refused when the document has moved.
+ *
+ * ## No `at`
+ *
+ * A reply is placed where the comment it answers is — that is what makes a
+ * thread a thread rather than two notes. The rectangle is read from the parent
+ * in the kernel; a payload carrying a point would let a surface put a reply
+ * somewhere its parent is not, which is a state no reader could draw sensibly.
+ */
+export const replyToAnnotationSchema = z.object({
+  kind: z.literal('replyToAnnotation'),
+  /** Zero-based index of the page the annotation being answered sits on. */
+  page: z.number().int().nonnegative(),
+  /** The ANSWERED mark's position in the walk that produced this answer. */
+  index: z.number().int().nonnegative(),
+  /**
+   * What the reply says. `min(1)` for the reason every draft spells it: a reply
+   * carrying nothing is a marker a reader opens to find no answer in it.
+   */
+  text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
+/**
  * How many form fields one deletion may name.
  *
  * {@link MAX_REMOVED_ANNOTATIONS}' argument on the other walk: this is *how
@@ -4078,6 +4127,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   addLinkSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
+  replyToAnnotationSchema,
   fillFormFieldSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,
@@ -4198,6 +4248,12 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // anywhere to put the string: the subtype decides, and the kernel is what
   // reads it.
   editAnnotationTextSchema,
+  // RENDERABLE, and the only draft-like command whose index names something it
+  // does NOT change. The reply's own identity is minted in the kernel, as every
+  // add's is; what crosses is which mark is being answered and what the answer
+  // says. Where it is PLACED is not expressible here on purpose — a reply sits
+  // where its parent does, read from the parent in the kernel.
+  replyToAnnotationSchema,
   // RENDERABLE, and it is `removeAnnotation`'s shape on the other walk: the
   // renderer names a row of an answer it was given and says what that field
   // should hold. The value is a string a person typed or a boolean, bounded by
@@ -4450,6 +4506,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'placeAnnotation') return command.version;
   if (command.kind === 'styleAnnotation') return command.version;
   if (command.kind === 'editAnnotationText') return command.version;
+  if (command.kind === 'replyToAnnotation') return command.version;
   if (command.kind === 'fillFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
@@ -4475,7 +4532,12 @@ export type NamesAnAnnotation =
   | 'removeAnnotation'
   | 'placeAnnotation'
   | 'styleAnnotation'
-  | 'editAnnotationText';
+  | 'editAnnotationText'
+  // THE ONE MEMBER WHOSE INDEX IS NOT THE MARK IT CHANGES. A reply names the
+  // annotation it ANSWERS, which is still a handle into this walk and still
+  // stale the moment the document moves — the staleness question is about what
+  // the index points at, never about what the command then does to it.
+  | 'replyToAnnotation';
 const _thatNameIsACommandKind: NamesAnAnnotation extends CommandKind ? true : never = true;
 void _thatNameIsACommandKind;
 

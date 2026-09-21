@@ -36,6 +36,7 @@ import {
   placeAnnotationSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
+  replyToAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
   importPageAsLayerSchema,
@@ -435,6 +436,17 @@ const engineAnnotationSchema = z
      * about to change, and it cannot derive this from anything it holds.
      */
     authored: z.boolean(),
+    /**
+     * The walk index of the mark this one answers, or `null` — PDF's `/IRT`
+     * with `/RT /R`, resolved against this same walk by the reader.
+     *
+     * It crosses for the handle's reason, one relationship along: the surface
+     * draws the thread, and nothing it holds could derive which mark a reply
+     * answers. **Nullable rather than optional**, as `rect` is and for the same
+     * stated reason — JSON carries no `undefined`, so an optional property
+     * would make the wire spelling differ from the reader's.
+     */
+    inReplyTo: z.number().int().nonnegative().nullable(),
   })
   .strict();
 
@@ -980,6 +992,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   placeImageSchema.omit({ bytes: true }),
   styleAnnotationSchema,
   editAnnotationTextSchema,
+  replyToAnnotationSchema,
   addLinkSchema,
   fillFormFieldSchema,
   deleteFormFieldsSchema,

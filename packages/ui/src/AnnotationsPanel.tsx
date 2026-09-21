@@ -27,6 +27,7 @@ import {
   ANNOTATIONS_KIND_TYPEWRITER,
   ANNOTATIONS_LABEL,
   ANNOTATIONS_REMOVE,
+  ANNOTATIONS_REPLY_ROW,
   ANNOTATIONS_ROW,
   ANNOTATIONS_TRUNCATED,
   ANNOTATIONS_UNAVAILABLE,
@@ -172,6 +173,22 @@ export function AnnotationsPanel({
                     kind: i18n._(KIND_LABELS[annotation.kind]),
                     page: pdfjsPageOf(annotation.page),
                   })}
+                  {annotation.inReplyTo === null ? null : (
+                    // AN ANSWER, AND NOT A DUPLICATE. A reply carries its
+                    // parent's rectangle, so the two rows name the same kind on
+                    // the same page and read as the list having repeated
+                    // itself. `data-annotation-reply` carries the ANSWERED
+                    // INDEX rather than the label, so a case asserts which mark
+                    // is being answered without matching on words a translator
+                    // owns — and the relationship is the thing worth asserting,
+                    // since a badge on the wrong row is exactly the defect.
+                    <span
+                      className="m-annotations-reply"
+                      data-annotation-reply={String(annotation.inReplyTo)}
+                    >
+                      {i18n._(ANNOTATIONS_REPLY_ROW)}
+                    </span>
+                  )}
                   {annotation.authored ? null : (
                     // THE `srcRef` MARK, RENDERED (ADR-0043). Shown on the
                     // foreign rows only: *we wrote this* is the ordinary case in
@@ -296,6 +313,14 @@ interface PanelAnnotation {
    * can see would be a second opinion about a fact the file carries.
    */
   readonly authored: boolean;
+  /**
+   * Which mark on its page this one ANSWERS, by walk index, or `null`.
+   *
+   * Resolved by the kernel's reader, never derived here: the relationship is
+   * `/IRT` in the file, and a renderer inferring it from two marks sharing a
+   * rectangle would call every stacked pair a thread.
+   */
+  readonly inReplyTo: number | null;
 }
 
 /**

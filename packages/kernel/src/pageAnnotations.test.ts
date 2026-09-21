@@ -32,6 +32,7 @@ import {
   captureStyleAnnotation,
   captureEditAnnotationText,
   invertEditAnnotationText,
+  applyReplyToAnnotation,
   readAnnotations,
 } from './pageAnnotations.js';
 
@@ -352,7 +353,7 @@ async function drawnOn(
  */
 function withoutPlace(listed: {
   readonly annotations: readonly ListedAnnotation[];
-}): readonly Omit<ListedAnnotation, 'rect' | 'style'>[] {
+}): readonly Omit<ListedAnnotation, 'rect' | 'style' | 'inReplyTo'>[] {
   return listed.annotations.map((entry) => ({
     page: entry.page,
     index: entry.index,
@@ -2015,6 +2016,179 @@ describe('applyEditAnnotationText rewrites what one annotation says', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+});
+
+describe('applyReplyToAnnotation answers a mark the way PDF defines a reply', () => {
+  /** The comment being answered, carrying a sentence somebody could have typed. */
+  const SAID: Extract<AnnotationDraft, { type: 'sticky-note' }> = {
+    type: 'sticky-note',
+    at: { x: 40, y: 200 },
+    text: 'what it said before',
+    colour: [1, 0.8, 0.2],
+    opacity: 1,
+  };
+
+  /**
+   * Every non-popup annotation's text, and what it answers — read back through
+   * pdf-lib, never through the engine that wrote it.
+   *
+   * **`/IRT` is reported as the ANSWERED ENTRY'S POSITION, resolved here from
+   * the reference**, which is what makes these cases able to fail. Asserting
+   * that `/IRT` is merely *present* would pass for an inline copy of the
+   * parent's dictionary — the one wrong answer the research script was written
+   * to rule out, because it also saves, also reopens, and also reads back as a
+   * dictionary under that key while naming nothing.
+   *
+   * `saidBy`'s popup filter, for its reason: the walk the command indexes into
+   * does not answer popups, so a reader that counted them would number these
+   * differently from the handles.
+   */
+  async function threadIn(
+    bytes: Uint8Array,
+  ): Promise<readonly { readonly text: string; readonly answers: number | null }[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const entries: { ref: PDFRef; dict: PDFDict }[] = [];
+    for (const ref of annots.asArray()) {
+      if (!(ref instanceof PDFRef)) throw new Error('an /Annots entry is not a reference');
+      const dict = document.context.lookup(ref, PDFDict);
+      if (dict.lookup(PDFName.of('Subtype')) === PDFName.of('Popup')) continue;
+      entries.push({ ref, dict });
+    }
+    return entries.map(({ dict }) => {
+      const contents = dict.lookup(PDFName.of('Contents'));
+      const target = dict.get(PDFName.of('IRT'));
+      const at =
+        target instanceof PDFRef
+          ? entries.findIndex((entry) => entry.ref.tag === target.tag)
+          : -1;
+      return {
+        text:
+          contents instanceof PDFString || contents instanceof PDFHexString
+            ? contents.decodeText()
+            : '',
+        answers: at === -1 ? null : at,
+      };
+    });
+  }
+
+  /** The walk's own answer for these bytes, through the reader under test. */
+  function listedFrom(
+    bytes: Uint8Array,
+  ): Promise<{ readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean }> {
+    return onSession(bytes, (session) => readAnnotations(session));
+  }
+
+  async function replied(bytes: Uint8Array, index: number, text: string): Promise<Uint8Array> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applyReplyToAnnotation(session, {
+        kind: 'replyToAnnotation',
+        page: 0,
+        index,
+        text,
+        version: asDocVersion(1),
+      });
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('adds a mark that POINTS AT the one it answers, by reference', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    expect(await threadIn(await replied(drawn, 0, 'my answer'))).toStrictEqual([
+      { text: 'what it said before', answers: null },
+      { text: 'my answer', answers: 0 },
+    ]);
+  });
+
+  it('CONTROL: a mark nobody answered reports no reply at all', async () => {
+    // Without this the case above cannot separate a working `/IRT` from a
+    // reader that reports `answers: 0` for everything — and `0` is a falsy
+    // index, which is exactly the value a broken resolution tends to produce.
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    expect(await threadIn(drawn)).toStrictEqual([
+      { text: 'what it said before', answers: null },
+    ]);
+  });
+
+  it('ANSWERS THE MARK IT WAS GIVEN, not whichever one is first', async () => {
+    // `applyEditAnnotationText`'s control, one relationship along: a command
+    // that always replied to annotation 0 satisfies the case above, because
+    // there is only one mark in it.
+    const two = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SAID })),
+      command({ annotation: { ...SAID, text: 'the other note' } }),
+    );
+    expect(await threadIn(await replied(two, 1, 'answering the second'))).toStrictEqual([
+      { text: 'what it said before', answers: null },
+      { text: 'the other note', answers: null },
+      { text: 'answering the second', answers: 1 },
+    ]);
+  });
+
+  it('places the reply ON the mark it answers, so the two read as one thread', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    const listed = await listedFrom(await replied(drawn, 0, 'my answer'));
+    // A `/Text` is clamped to a 10-point box, so both boxes are that clamp
+    // anchored at the same point — equality is the assertion, not proximity.
+    expect(listed.annotations[1]?.rect).toStrictEqual(listed.annotations[0]?.rect);
+  });
+
+  it('refuses an index this page does not have, before writing anything', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    await expect(replied(drawn, 4, 'nowhere')).rejects.toThrow(RangeError);
+  });
+
+  it('the WALK reports the reply against the index it answers', async () => {
+    // The kernel half of what the panel draws. `applyReplyToAnnotation` writes
+    // an object reference; `readAnnotations` has to turn that back into a
+    // position in ITS OWN walk, and the two are only the same number because
+    // the reader resolves it rather than passing an object number on.
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    const listed = await listedFrom(await replied(drawn, 0, 'my answer'));
+    expect(listed.annotations.map((entry) => entry.inReplyTo)).toStrictEqual([null, 0]);
+  });
+
+  it('CONTROL: a /Group relationship is NOT reported as a reply', async () => {
+    // `/IRT` means two different things and `/RT` is what separates them: `/R`
+    // is a reply, `/Group` is one mark of a set that moves together. A reader
+    // keyed on `/IRT` alone reports every grouped mark as answering its group's
+    // first member — a thread drawn over something nobody replied to.
+    const drawn = await drawnOn(await fixture(), command({ annotation: SAID }));
+    const session = await mupdfWriter.open(drawn);
+    let bytes: Uint8Array;
+    try {
+      await applyReplyToAnnotation(session, {
+        kind: 'replyToAnnotation',
+        page: 0,
+        index: 0,
+        text: 'grouped, not answering',
+        version: asDocVersion(1),
+      });
+      bytes = await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    const regrouped = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = regrouped.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    let changed = false;
+    for (const ref of annots.asArray()) {
+      if (!(ref instanceof PDFRef)) continue;
+      const dict = regrouped.context.lookup(ref, PDFDict);
+      if (dict.get(PDFName.of('IRT')) === undefined) continue;
+      dict.set(PDFName.of('RT'), PDFName.of('Group'));
+      changed = true;
+    }
+    // A VACUITY GUARD: with no `/IRT` found there is nothing to regroup, and
+    // the assertion below would pass against a document this case never built.
+    expect(changed).toBe(true);
+    const listed = await listedFrom(await regrouped.save({ updateFieldAppearances: false }));
+    expect(listed.annotations.map((entry) => entry.inReplyTo)).toStrictEqual([null, null]);
   });
 });
 
