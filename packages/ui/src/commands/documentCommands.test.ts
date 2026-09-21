@@ -2727,7 +2727,10 @@ describe('delete pages — the mutation-dialog gate', () => {
         params: { docId: DOC, layout: 'sheet-per-page', engine: 'claude', version: asDocVersion(5), edits: [] },
       });
       // PAGE 6 ZERO-BASED IS THE SEVENTH a person reads.
-      expect(spoken.at(-1)).toStrictEqual({ id: 'dialog.service-refused', props: { page: 7, detail: 'Claude said no.' } });
+      expect(spoken.at(-1)).toStrictEqual({
+        id: 'dialog.service-refused',
+        props: { page: 7, reason: 'rejected', detail: 'Claude said no.' },
+      });
     });
   });
 

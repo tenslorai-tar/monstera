@@ -917,6 +917,8 @@ export const ASSISTANT_NO_MODELS = messageKey('assistant.no-models');
 export const ASSISTANT_PROBLEM_UNAUTHORISED = messageKey('assistant.problem-unauthorised');
 export const ASSISTANT_PROBLEM_UNREACHABLE = messageKey('assistant.problem-unreachable');
 export const ASSISTANT_PROBLEM_REJECTED = messageKey('assistant.problem-rejected');
+/** Anthropic's account out of credit — one sentence for the assistant and Claude recognition alike. */
+export const ANTHROPIC_OUT_OF_CREDIT = messageKey('service.anthropic-out-of-credit');
 export const ASSISTANT_PROBLEM_UNREADABLE = messageKey('assistant.problem-unreadable');
 export const CONTEXT_PANEL_TAB_TITLES = {
   properties: CONTEXT_PANEL_TAB_PROPERTIES,
@@ -1425,6 +1427,10 @@ export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-tar
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
 export const PROBLEM_NOT_COPYABLE = messageKey('dialog.command-problem.not-copyable');
+export const PROBLEM_SERVICE_NO_KEY = messageKey('dialog.command-problem.service-no-key');
+export const PROBLEM_SERVICE_UNAUTHORISED = messageKey('dialog.command-problem.service-unauthorised');
+export const PROBLEM_SERVICE_UNAVAILABLE = messageKey('dialog.command-problem.service-unavailable');
+export const PROBLEM_SERVICE_REFUSED = messageKey('dialog.command-problem.service-refused');
 export const COPY_ANNOTATIONS_TITLE = messageKey('command.annotate.copy-selection');
 export const PASTE_ANNOTATIONS_TITLE = messageKey('command.annotate.paste');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
@@ -2150,6 +2156,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_PROBLEM_UNAUTHORISED]: 'The provider did not accept the key. Check it in Settings › AI, then ask again.',
   [ASSISTANT_PROBLEM_UNREACHABLE]: 'The provider could not be reached. Check the connection, then ask again.',
   [ASSISTANT_PROBLEM_REJECTED]: 'The provider refused the request, so nothing more arrived. What is above is what it sent.',
+  // THE OWNER'S WORDING, 2026-09-19, verbatim: people will meet this from the assistant and from
+  // Claude recognition, and it names the one place that fixes it.
+  [ANTHROPIC_OUT_OF_CREDIT]: 'Your Anthropic account is out of credit — add credit at console.anthropic.com',
   [ASSISTANT_PROBLEM_UNREADABLE]: 'The answer stopped part way. What is above is what arrived.',
   [CONTEXT_PANEL_RESIZE]: 'Resize the properties panel',
   [CONTEXT_PANEL_COLLAPSE]: 'Collapse the properties panel',
@@ -3188,6 +3197,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and that the rest of a mixed selection still would.
   [PROBLEM_NOT_COPYABLE]:
     'These marks can’t be copied. Image stamps and some annotations from other applications don’t copy; comments, shapes, drawings and highlights do.',
+  // A SERVICE'S ANSWER TO A REGION, each naming what the reader can do; out of credit is the
+  // assistant's own sentence, because it is one account whichever door it was met from.
+  [PROBLEM_SERVICE_NO_KEY]: 'No key is stored for this service. Add it in Settings; nothing was changed.',
+  [PROBLEM_SERVICE_UNAUTHORISED]: 'The service did not accept the stored key. Check it in Settings; nothing was changed.',
+  [PROBLEM_SERVICE_UNAVAILABLE]:
+    'The service could not be reached or is busy. Nothing was changed — try again in a moment.',
+  [PROBLEM_SERVICE_REFUSED]: 'The service did not read this area, so nothing was changed.',
   [COPY_ANNOTATIONS_TITLE]: 'Copy',
   [PASTE_ANNOTATIONS_TITLE]: 'Paste annotations',
   [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',

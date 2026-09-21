@@ -53,7 +53,11 @@ export const EVENTS = {
     .object({
       subscription: subscriptionIdSchema,
       stopped: z.boolean(),
-      refusal: z.enum(['no-key', 'unauthorised', 'rejected', 'unreachable', 'unreadable']).optional(),
+      // `out-of-credit` is Anthropic's account refusal, told apart from `rejected` because it is
+      // the one the person fixes by paying (anthropicCredit.ts).
+      refusal: z
+        .enum(['no-key', 'unauthorised', 'out-of-credit', 'rejected', 'unreachable', 'unreadable'])
+        .optional(),
     })
     .strict(),
 

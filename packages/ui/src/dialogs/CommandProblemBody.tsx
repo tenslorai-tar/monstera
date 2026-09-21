@@ -1,8 +1,14 @@
 import { useLingui } from '@lingui/react';
+import type { SERVICE_PROBLEMS } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
 import {
+  ANTHROPIC_OUT_OF_CREDIT,
+  PROBLEM_SERVICE_NO_KEY,
+  PROBLEM_SERVICE_REFUSED,
+  PROBLEM_SERVICE_UNAUTHORISED,
+  PROBLEM_SERVICE_UNAVAILABLE,
   PROBLEM_BUSY,
   PROBLEM_ENGINE_UNAVAILABLE,
   PROBLEM_RASTER_TOO_LARGE,
@@ -23,6 +29,7 @@ export type CommandProblem =
   | { readonly code: 'engine-unavailable' }
   | { readonly code: 'raster-too-large' }
   | { readonly code: 'not-copyable' }
+  | { readonly code: (typeof SERVICE_PROBLEMS)[number] }
   | { readonly code: 'internal'; readonly incident: string };
 
 /**
@@ -41,6 +48,11 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'engine-unavailable': PROBLEM_ENGINE_UNAVAILABLE,
   'raster-too-large': PROBLEM_RASTER_TOO_LARGE,
   'not-copyable': PROBLEM_NOT_COPYABLE,
+  'service-no-key': PROBLEM_SERVICE_NO_KEY,
+  'service-unauthorised': PROBLEM_SERVICE_UNAUTHORISED,
+  'service-out-of-credit': ANTHROPIC_OUT_OF_CREDIT,
+  'service-unavailable': PROBLEM_SERVICE_UNAVAILABLE,
+  'service-refused': PROBLEM_SERVICE_REFUSED,
   internal: PROBLEM_INTERNAL,
 };
 

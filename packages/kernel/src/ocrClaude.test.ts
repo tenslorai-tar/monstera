@@ -267,21 +267,36 @@ describe('recogniseThroughClaude', () => {
     ).rejects.toMatchObject({ reason });
   });
 
+  /** A refusal body in the shape the API documents. */
+  const refusal = (status: number, message: string): Response =>
+    new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } }), { status });
+
   it('carries the API’s own explanation, and CONTROL: a body with none leaves the status alone', async () => {
-    // THE MEASURED CASE: an exhausted credit balance is a 400, the same status as a
-    // malformed request, and only the explanation separates the two for a reader.
-    const credit = 'Your credit balance is too low to access the Anthropic API.';
-    const told = service(
-      () => new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: credit } }), { status: 400 }),
-    );
+    const malformed = 'messages.0.content: Field required';
+    const told = service(() => refusal(400, malformed));
     await expect(
       recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl: told.fetchImpl }),
-    ).rejects.toThrow(`the Claude API rejected the request (400): ${credit}`);
+    ).rejects.toThrow(`the Claude API rejected the request (400): ${malformed}`);
 
     const bare = service(() => new Response('not json', { status: 400 }));
     await expect(
       recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl: bare.fetchImpl }),
     ).rejects.toThrow(/^the Claude API rejected the request \(400\)$/u);
+  });
+
+  it('names an account out of credit, and CONTROL: the same words on a 401 stay a key problem', async () => {
+    // THE MEASURED CASE (2026-09-18): an exhausted balance is a 400, the status a malformed
+    // request has, and only the message separates them — the case above is that other 400.
+    const credit = 'Your credit balance is too low to access the Anthropic API.';
+    const broke = service(() => refusal(400, credit));
+    await expect(
+      recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl: broke.fetchImpl }),
+    ).rejects.toMatchObject({ reason: 'out-of-credit' });
+
+    const badKey = service(() => refusal(401, credit));
+    await expect(
+      recogniseThroughClaude(CREDENTIALS, { png: pngHeader(200, 300), ...FRAME, fetchImpl: badKey.fetchImpl }),
+    ).rejects.toMatchObject({ reason: 'unauthorised' });
   });
 
   it('refuses the whole answer when a box lies outside the raster', async () => {

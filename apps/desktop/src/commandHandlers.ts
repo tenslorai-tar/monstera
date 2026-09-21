@@ -1,4 +1,4 @@
-import type { ContractHandlers } from '@monstera/contract';
+import { type ContractHandlers, SERVICE_PROBLEM_OF } from '@monstera/contract';
 import {
   DocumentBusyError,
   DocumentNotOpenError,
@@ -7,7 +7,7 @@ import {
 } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 
-import { type DocumentCommands, DocumentPoisonedError } from './documentCommands.js';
+import { type DocumentCommands, DocumentPoisonedError, serviceReasonOf } from './documentCommands.js';
 
 /**
  * The first IPC handler, and the first code in this repository that answers
@@ -93,6 +93,12 @@ export function executeCommandHandler(
       // renderer needs is that this installation cannot do it and the document
       // is untouched; which engine is missing is ours.
       if (thrown instanceof UnregisteredWriterError) return err({ code: 'engine-unavailable' });
+      // A SERVICE'S ANSWER, from a region recognition's pre-read — an Anthropic account out of
+      // credit, a key the service refused, a service that is down. Each is the reader's to act
+      // on, and `internal` would send them to an incident log for an application working as
+      // built. The service's own sentence stays main-side; the code says which kind it was.
+      const service = serviceReasonOf(thrown);
+      if (service !== undefined) return err({ code: SERVICE_PROBLEM_OF[service] });
       throw thrown;
     }
   };

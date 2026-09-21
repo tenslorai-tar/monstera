@@ -189,6 +189,24 @@ describe('the assistant tab', () => {
     expect(screen.getByText('half an answer')).toBeTruthy();
   });
 
+  it('says an Anthropic account is out of credit in the owner’s words, and where to add it', async () => {
+    const { sent, push } = await drawn();
+    type('hello');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+
+    push('ai.done', { subscription, stopped: false, refusal: 'out-of-credit' });
+
+    expect(
+      screen.getByText('Your Anthropic account is out of credit — add credit at console.anthropic.com'),
+    ).toBeTruthy();
+    // CONTROL: not the sentence for a refused request, which would send nobody to pay.
+    expect(screen.queryByText(/refused the request/u)).toBeNull();
+  });
+
   it('says so when the chosen provider has no stored key', async () => {
     await drawn({ stored: [] });
     expect(screen.getByText(/no key stored/u)).toBeTruthy();

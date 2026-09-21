@@ -1,3 +1,4 @@
+import { SERVICE_PROBLEMS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -62,6 +63,8 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // Said rather than swallowed, because a Copy that did nothing looks like one that worked
     // until the paste finds an empty clipboard.
     z.object({ code: z.literal('not-copyable') }).strict(),
+    // A SERVICE'S ANSWER to a region recognition — `SERVICE_PROBLEMS` in the contract.
+    z.object({ code: z.enum(SERVICE_PROBLEMS) }).strict(),
     z.object({ code: z.literal('internal'), incident: z.string().min(1) }).strict(),
   ]),
   component: lazy(() => import('./CommandProblemBody.js')),

@@ -1,5 +1,7 @@
 import { AI_PROVIDERS, type AiProviderId } from '@monstera/contract';
 
+import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
+
 /**
  * Asking a provider, and reading the answer as it arrives
  * ([ADR-0081](../../../docs/DECISIONS/0081-an-ai-provider-is-a-declared-adapter-and-its-models-are-fetched.md)).
@@ -39,7 +41,7 @@ export interface ChatMessage {
 }
 
 /** Why an answer did not happen, or did not finish. */
-export type ChatRefusal = 'no-key' | 'unauthorised' | 'rejected' | 'unreachable' | 'unreadable';
+export type ChatRefusal = 'no-key' | 'unauthorised' | 'out-of-credit' | 'rejected' | 'unreachable' | 'unreadable';
 
 export interface ChatAnswer {
   readonly text: string;
@@ -243,6 +245,16 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
   }
 
   if (response.status === 401 || response.status === 403) return { text: '', stopped: false, refusal: 'unauthorised' };
+  // OUT OF CREDIT IS ITS OWN ANSWER, for Anthropic alone: its 400 is shared with a malformed
+  // request, and only one of the two is the person's to fix — by paying, which *rejected* never
+  // says. `anthropicCredit.ts` owns the reading, because the recognition engine asks it too.
+  if (
+    provider === 'anthropic' &&
+    response.status === 400 &&
+    isAnthropicOutOfCredit(response.status, await anthropicErrorMessage(response))
+  ) {
+    return { text: '', stopped: false, refusal: 'out-of-credit' };
+  }
   if (!response.ok) return { text: '', stopped: false, refusal: 'rejected' };
   if (response.body === null) return { text: '', stopped: false, refusal: 'unreadable' };
 

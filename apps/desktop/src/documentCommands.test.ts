@@ -31,7 +31,9 @@ import {
 } from '@monstera/contract';
 import {
   AzureRecognitionRefused,
+  ClaudeRecognitionRefused,
   CapabilityRegistry,
+  localPdfLibWriter,
   CommandBus,
   DocumentNotOpenError,
   type PageImageRequest,
@@ -94,6 +96,7 @@ import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import {
   DocumentCommands,
+  NetworkKeyMissing,
   type DocumentCommandsParts,
   type DocumentGeometry,
   type DocumentDestinationsReader,
@@ -1009,6 +1012,68 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     expect(result.error.code).toBe('internal');
     if (result.error.code !== 'internal') return;
     expect(seen[0]?.id).toBe(result.error.incident);
+  });
+
+  describe('a region recognition the SERVICE refused is a declared code, not `internal`', () => {
+    /** The Claude region tool's command, as `ocrRegionTool.ts` builds it. */
+    const claudeRegion: Command = {
+      kind: 'ocrPage',
+      page: 0,
+      language: 'eng',
+      engine: 'claude',
+      region: { x0: 72, y0: 72, x1: 300, y1: 200 },
+    };
+
+    /** Commands whose recognition pre-read answers with `thrown`, counting the calls. */
+    function refusedBy(thrown: Error): { commands: DocumentCommands; asked: () => number } {
+      let asked = 0;
+      const commands = new DocumentCommands({
+        ...LOCAL_READS,
+        ocr: () => {
+          asked += 1;
+          return Promise.reject(thrown);
+        },
+        documents: service,
+        // PDF-LIB AND A REAL FLUSH, because pdf-lib writes the recognised layer from the
+        // document's bytes: without either the bus refuses before the pre-read, and the service
+        // is never asked — which the count below is there to catch.
+        save: { ...noSaving, flush: sessionFlush },
+        bus: new CommandBus({ mupdf: localMupdfWriter, 'pdf-lib': localPdfLibWriter }),
+        engine: engine(),
+      });
+      return { commands, asked: () => asked };
+    }
+
+    it.each([
+      [new ClaudeRecognitionRefused('out-of-credit', 'the Anthropic account is out of credit (400)'), 'service-out-of-credit'],
+      [new ClaudeRecognitionRefused('unauthorised', 'the Claude API refused the key (401)'), 'service-unauthorised'],
+      [new AzureRecognitionRefused('timed-out', 'Azure did not finish'), 'service-unavailable'],
+      [new ClaudeRecognitionRefused('truncated', 'the answer was cut off'), 'service-refused'],
+      [new NetworkKeyMissing('claude'), 'service-no-key'],
+    ])('%s reaches the renderer as %s, with nothing logged', async (thrown, code) => {
+      const { sink, seen } = recorder();
+      const { commands, asked } = refusedBy(thrown);
+
+      const result = await wrapped(commands, sink)({ docId, command: claudeRegion });
+
+      // THE PRE-READ RAN: without it the code could come from anywhere upstream of the service.
+      expect(asked()).toBe(1);
+      expect(result).toStrictEqual({ ok: false, error: { code } });
+      expect(seen).toStrictEqual([]);
+    });
+
+    it('CONTROL: an ordinary throw from the same pre-read is still a defect, with an incident', async () => {
+      const { sink, seen } = recorder();
+      const { commands, asked } = refusedBy(new Error('not a service answer'));
+
+      const result = await wrapped(commands, sink)({ docId, command: claudeRegion });
+
+      expect(asked()).toBe(1);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('internal');
+      expect(seen).toHaveLength(1);
+    });
   });
 
   describe('the VIEW MODEL handler maps the same classes, and nothing had checked (RRRRR-1)', () => {

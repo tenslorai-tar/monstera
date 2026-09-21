@@ -134,6 +134,24 @@ describe('streamChat', () => {
     });
   }
 
+  it('names an Anthropic account out of credit, and only that', async () => {
+    const credit = 'Your credit balance is too low to access the Anthropic API.';
+    const answerTo = async (provider: 'anthropic' | 'openai', status: number, message: string) => {
+      const fetchImpl = (() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } }), { status }),
+        )) as unknown as typeof fetch;
+      return (await streamChat({ provider, model: 'm', key: 'k', messages: ASK, fetchImpl })).refusal;
+    };
+
+    expect(await answerTo('anthropic', 400, credit)).toBe('out-of-credit');
+    // CONTROLS, each the input the absent reading would also have to get right: Anthropic's
+    // other 400, the same words behind a bad key, and the same words from another provider.
+    expect(await answerTo('anthropic', 400, 'messages.0.content: Field required')).toBe('rejected');
+    expect(await answerTo('anthropic', 401, credit)).toBe('unauthorised');
+    expect(await answerTo('openai', 400, credit)).toBe('rejected');
+  });
+
   it('KEEPS what streamed when the stream ends badly', async () => {
     const broken = ((url: string) => {
       void url;

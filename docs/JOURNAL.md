@@ -892,6 +892,43 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Out of credit, in the owner's words, and a region tool that said "internal"
+
+The owner asked that an Anthropic account out of credit read *"Your Anthropic account is out of
+credit — add credit at console.anthropic.com"*, because people will meet it too. Measured
+2026-09-18 and recorded in `ocrClaude.ts`: the API answers **400** with the message *"Your credit
+balance is too low…"*, the same status and error type as a malformed request. Only the message
+separates them.
+
+**Two readers of that body already existed, or were about to.** `ocrClaude.ts` parsed the error
+body with a schema of its own; the chat needed the same reading. `anthropicCredit.ts` is now the
+only reader: the body's message, and whether a **400** says *credit balance*. The assistant's chat
+and the Claude recogniser both call it. A 401 whose words mention credit stays a key problem —
+paying would not fix it — and the recogniser's case asserts exactly that as its control.
+
+**Tracing where a recogniser's refusal reaches a person found the larger defect.** The tables
+export declared a `service-refused` outcome (ADR-0086). The **region tools** did not. Their
+recognition is a command's pre-read, and `executeCommandHandler` matched five classes and
+rethrew the rest. So every Claude or Azure refusal on a dragged box — out of credit, a refused
+key, a service that was down — reached the renderer as `internal`, with an incident id, for an
+application working as built. No case covered it: the kernel cases asserted the refusal was
+thrown with the right reason, and nothing asserted what the handler did with it.
+
+`document.execute` now declares five service codes (`SERVICE_PROBLEMS`), folded from the
+fourteen reasons by `SERVICE_PROBLEM_OF`, whose type makes a reason without a row a compile
+error. `serviceReasonOf` in `documentCommands.ts` is the one place a thrown value is recognised
+as a service's refusal; the tables export and the handler both take it. The channel still
+carries no free text.
+
+Proven by five cases through the real boundary, one per code, each asserting that the pre-read
+**ran** — the first draft passed nothing because the bus refused `engine-unavailable` before
+reaching it, since `ocrPage` writes through pdf-lib and the fixture's bus registered only MuPDF.
+A control asserts that an ordinary throw from the same pre-read is still `internal` with an
+incident. Removing the mapping reddens the five and leaves the control green. Removing the
+*credit balance* match reddens the kernel cases in both callers.
+
+---
+
 ## 2026-09-21 — Annotation copy and paste, and the three designs that were wrong on the way
 
 The annotation menu owed *copy*, and the Select row said what it waited on: *"clipboard

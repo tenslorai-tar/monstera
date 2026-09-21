@@ -3,6 +3,7 @@ import type { PdfPoint, Rotation } from '@monstera/shared';
 import { pageTransform, toPdf, viewportPoint } from '@monstera/shared';
 import { z } from 'zod';
 
+import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
 import { type RecognisedTable, recognisedTable } from './recognisedTables.js';
 
@@ -65,6 +66,7 @@ const MAX_OUTPUT_TOKENS = 16_000;
 /** Why a recognition did not happen. */
 export type ClaudeRefusal =
   | 'unauthorised'
+  | 'out-of-credit'
   | 'rejected'
   | 'unavailable'
   | 'unreachable'
@@ -240,9 +242,6 @@ const messageSchema = z.object({
   content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
 });
 
-/** An error response's body, as the API documents it: `{ type: 'error', error: { message } }`. */
-const errorSchema = z.object({ error: z.object({ message: z.string() }) });
-
 /** How much of the API's own explanation a refusal carries. */
 const EXPLANATION_MAX = 300;
 
@@ -251,21 +250,24 @@ const EXPLANATION_MAX = 300;
  *
  * A status alone hides what a reader can act on: *"Your credit balance is too low"*
  * and a malformed request are both a 400 (measured 2026-09-18), and only the first is
- * theirs to fix. Bounded, because the text is the peer's.
+ * theirs to fix. Read by `anthropicCredit.ts`, which the chat reads it with too; bounded
+ * here, because the text is the peer's and this one travels in a refusal.
  */
 async function explanationOf(response: Response): Promise<string | null> {
-  try {
-    const parsed = errorSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data.error.message.slice(0, EXPLANATION_MAX) : null;
-  } catch {
-    // A body that is not JSON carries no explanation; the status still says what happened.
-    return null;
-  }
+  return (await anthropicErrorMessage(response))?.slice(0, EXPLANATION_MAX) ?? null;
 }
 
-/** A refusal for an HTTP status, by the error types the API documents. */
+/**
+ * A refusal for an HTTP status, by the error types the API documents.
+ *
+ * Out of credit is asked FIRST, of the one reader both Anthropic callers share: it is a
+ * 400 like a malformed request, and only the message separates them.
+ */
 function refusalFor(status: number, explanation: string | null): ClaudeRecognitionRefused {
   const why = explanation === null ? '' : `: ${explanation}`;
+  if (isAnthropicOutOfCredit(status, explanation)) {
+    return new ClaudeRecognitionRefused('out-of-credit', `the Anthropic account is out of credit (${String(status)})${why}`);
+  }
   if (status === 401 || status === 403) {
     return new ClaudeRecognitionRefused('unauthorised', `the Claude API refused the key (${String(status)})${why}`);
   }

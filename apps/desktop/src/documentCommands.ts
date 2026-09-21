@@ -1157,19 +1157,30 @@ export class NetworkKeyMissing extends Error {
  * and rethrowing it sends it to the incident log rather than dressing it as a service's answer.
  */
 function serviceRefusal(engine: NetworkTableEngine, page: number, thrown: unknown): ServiceRefusal {
-  const refusal = (reason: ServiceRefusal['reason'], message: string): ServiceRefusal => ({
+  const reason = serviceReasonOf(thrown);
+  if (reason === undefined) throw thrown;
+  return {
     kind: 'service-refused',
     engine,
     page,
     reason,
-    detail: message.slice(0, MAX_SERVICE_DETAIL),
-  });
-  if (thrown instanceof AzureRecognitionRefused || thrown instanceof ClaudeRecognitionRefused) {
-    return refusal(thrown.reason, thrown.message);
-  }
-  if (thrown instanceof RecognisedTableRefused) return refusal('unplaceable', thrown.message);
-  if (thrown instanceof NetworkKeyMissing) return refusal('no-key', thrown.message);
-  throw thrown;
+    detail: (thrown as Error).message.slice(0, MAX_SERVICE_DETAIL),
+  };
+}
+
+/**
+ * Which service refusal a thrown value is, or `undefined` where it is none of the four known
+ * ones — and then a defect, which the caller rethrows.
+ *
+ * The one place a network engine's refusal is classified: the tables export reports it as
+ * `service-refused`, and `commandHandlers.ts` as a region recognition's declared code, and two
+ * lists of the four classes would be two opinions about which of them is a person's situation.
+ */
+export function serviceReasonOf(thrown: unknown): ServiceRefusal['reason'] | undefined {
+  if (thrown instanceof AzureRecognitionRefused || thrown instanceof ClaudeRecognitionRefused) return thrown.reason;
+  if (thrown instanceof RecognisedTableRefused) return 'unplaceable';
+  if (thrown instanceof NetworkKeyMissing) return 'no-key';
+  return undefined;
 }
 
 /** A page's refusal while the workbook streams, carrying which page, so it can be answered. */

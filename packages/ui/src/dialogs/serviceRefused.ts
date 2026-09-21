@@ -1,4 +1,4 @@
-import { MAX_SERVICE_DETAIL } from '@monstera/contract';
+import { MAX_SERVICE_DETAIL, SERVICE_REFUSALS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -18,6 +18,8 @@ export const SERVICE_REFUSED_DIALOG = declareDialog({
   props: z.object({
     /** The page a person reads, from 1. */
     page: z.number().int().positive(),
+    /** Which refusal — read for the one whose sentence is the application's rather than main's. */
+    reason: z.enum(SERVICE_REFUSALS),
     detail: z.string().max(MAX_SERVICE_DETAIL),
   }),
   component: lazy(() => import('./ServiceRefusedBody.js')),

@@ -244,6 +244,7 @@ export const SERVICE_REFUSALS = [
   'no-key',
   'not-https',
   'unauthorised',
+  'out-of-credit',
   'rejected',
   'unavailable',
   'unreachable',
@@ -255,6 +256,41 @@ export const SERVICE_REFUSALS = [
   'not-deleted',
   'unplaceable',
 ] as const;
+
+/**
+ * How `document.execute` reports a network engine's refusal — the region tools' recognition,
+ * which reaches the service from a command's pre-read (ADR-0051, ADR-0057).
+ *
+ * **Codes and no sentence**, because that channel carries no free text (`commandHandlers.ts`), so
+ * the reason is folded into the few a reader acts on differently: enter a key, fix the key, add
+ * credit, try later — and everything else, which is *the service did not read it*. Until this
+ * existed every one of them reached the renderer as `internal` with an incident id.
+ */
+export const SERVICE_PROBLEMS = [
+  'service-no-key',
+  'service-unauthorised',
+  'service-out-of-credit',
+  'service-unavailable',
+  'service-refused',
+] as const;
+
+/** Each refusal's code. A reason added above without a row here is a compile error. */
+export const SERVICE_PROBLEM_OF = {
+  'no-key': 'service-no-key',
+  'not-https': 'service-refused',
+  unauthorised: 'service-unauthorised',
+  'out-of-credit': 'service-out-of-credit',
+  rejected: 'service-refused',
+  unavailable: 'service-unavailable',
+  unreachable: 'service-unavailable',
+  'timed-out': 'service-unavailable',
+  refused: 'service-refused',
+  truncated: 'service-refused',
+  'too-large': 'service-refused',
+  'unreadable-answer': 'service-refused',
+  'not-deleted': 'service-refused',
+  unplaceable: 'service-refused',
+} as const satisfies Record<(typeof SERVICE_REFUSALS)[number], (typeof SERVICE_PROBLEMS)[number]>;
 
 /** How long a refusal's sentence may be: main's words plus the service's 300 of its own. */
 export const MAX_SERVICE_DETAIL = 600;
@@ -1385,7 +1421,16 @@ export const channels = {
     // same engine, so it declares the code too. The reason above is the half
     // that was load-bearing; the exclusivity was an observation about which
     // channels existed that day.
-    ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target', 'engine-unavailable'],
+    // THE SERVICE CODES are a region recognition's, the one command whose pre-read crosses the
+    // internet; `SERVICE_PROBLEMS` says why they are codes rather than a sentence.
+    [
+      'document-not-open',
+      'document-busy',
+      'document-poisoned',
+      'stale-target',
+      'engine-unavailable',
+      ...SERVICE_PROBLEMS,
+    ],
   ),
 
   /**

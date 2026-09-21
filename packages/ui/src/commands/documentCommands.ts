@@ -2253,7 +2253,11 @@ export function exportExcelCommand(
         return;
       }
       if (outcome.kind === 'service-refused') {
-        void deps.ask(SERVICE_REFUSED_DIALOG_ID, { page: pdfjsPageOf(outcome.page), detail: outcome.detail });
+        void deps.ask(SERVICE_REFUSED_DIALOG_ID, {
+          page: pdfjsPageOf(outcome.page),
+          reason: outcome.reason,
+          detail: outcome.detail,
+        });
         return;
       }
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
