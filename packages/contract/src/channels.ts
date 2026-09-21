@@ -6,6 +6,7 @@ import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } 
 import { subscriptionIdSchema } from './events.js';
 import {
   MAX_ANNOTATION_BORDER,
+  MAX_REMOVED_ANNOTATIONS,
   MAX_IMAGE_BYTES,
   MAX_IMAGE_PAGES,
   MAX_IMPORT_IMAGES,
@@ -2684,6 +2685,56 @@ export const channels = {
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('unreadable') }),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Copies named marks into the annotation clipboard, which MAIN holds (2026-09-21).
+   *
+   * The renderer is answered with counts and never with the marks: a paste is an
+   * `importAnnotations`, which carries bytes and is withheld from the renderer, so the records
+   * stay with the process allowed to mint one. `version` is the one the selection was read at —
+   * the handles are positions in that walk, and a document that has moved answers `stale`.
+   */
+  'document.copyAnnotations': channel(
+    'Copies the selected annotations so they can be pasted.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_REMOVED_ANNOTATIONS),
+      version: docVersionSchema,
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('copied'),
+        copied: z.number().int().positive(),
+        skipped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('nothing-copyable') }),
+      z.object({ kind: z.literal('stale') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Pastes the annotation clipboard onto one page — main mints the `importAnnotations`.
+   *
+   * `empty` is an answer rather than an error: nothing copied yet is a state a person is in, and
+   * the paste item hides itself on it anyway. `refused` is the importer refusing — the page gone.
+   */
+  'document.pasteAnnotations': channel(
+    'Pastes the copied annotations onto a page.',
+    z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('pasted'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('empty') }),
+      z.object({ kind: z.literal('refused') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

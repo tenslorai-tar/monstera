@@ -59,6 +59,7 @@ import {
 // the pre-host arrangement, and `/engine` is what makes that import say so
 // (ADR-0026).
 import {
+  copyAnnotationData,
   findDuplicatePages,
   readAnnotations,
   readFormFields,
@@ -110,6 +111,7 @@ import {
   type ImageSource,
   type ImportSource,
   type DocumentAnnotationsReader,
+  type DocumentAnnotationCopyReader,
   type DocumentFlatFieldsReader,
   type DocumentBarcodesReader,
   type AnnotationDataSource,
@@ -486,6 +488,20 @@ const localAnnotations: DocumentAnnotationsReader = (id, sessions) => {
   return readAnnotations(held);
 };
 
+const noAnnotationCopy: DocumentAnnotationCopyReader = () =>
+  Promise.reject(new Error('this case does not copy annotations'));
+
+/**
+ * The production composition of the clipboard's copy — a session lookup and `copyAnnotationData`,
+ * the way `composition.ts` assembles it — for `localAnnotations`' reason: what a case claims is
+ * that the clipboard holds THIS document's marks.
+ */
+const localAnnotationCopy: DocumentAnnotationCopyReader = (id, sessions, page, indices) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return copyAnnotationData(held, page, indices);
+};
+
 const noFormFields: DocumentFormFieldsReader = () =>
   Promise.reject(new Error('this case does not list form fields'));
 
@@ -664,6 +680,7 @@ const INERT = {
   signatures: () => Promise.reject(new Error('this case does not read signatures')),
   restore: noRestore,
   annotations: noAnnotations,
+  annotationCopy: noAnnotationCopy,
   formFields: noFormFields,
   flatFields: noFlatFields,
   barcodes: noBarcodes,
@@ -733,6 +750,7 @@ const LOCAL_READS = {
   destinations: localDestinations,
   layers: localLayers,
   annotations: localAnnotations,
+  annotationCopy: localAnnotationCopy,
   formFields: localFormFields,
   flatFields: localFlatFields,
   barcodes: localBarcodes,
@@ -1815,6 +1833,66 @@ describe('annotations exported to a file and imported from it, through the lane 
     const before = (await readInterchangeAnnotations(blankSession)).length;
     expect(await commands.importAnnotations(blankDoc, 'json')).toStrictEqual({ kind: 'unreadable' });
     expect(await readInterchangeAnnotations(blankSession)).toHaveLength(before);
+  });
+
+  /*
+   * THE ANNOTATION CLIPBOARD (2026-09-21) — held here in main because a paste is an
+   * `importAnnotations`, which the renderer may not send. These run LAST in this block: they add
+   * marks to the shared sessions, so they count before and after rather than assuming a page is
+   * empty, and the export cases above have already read what they needed.
+   */
+  const refuseData: AnnotationDataSource = {
+    ...localAnnotationData,
+    open: () => Promise.reject(new Error('a clipboard case picks no file')),
+  };
+
+  it('PASTE WITH NOTHING COPIED is empty, and adds nothing', async () => {
+    const commands = commandsWith(refuseData);
+    const before = (await readInterchangeAnnotations(blankSession)).length;
+    expect(await commands.pasteAnnotations(blankDoc, 0)).toStrictEqual({ kind: 'empty' });
+    expect(await readInterchangeAnnotations(blankSession)).toHaveLength(before);
+  });
+
+  it('a copy at a version the document has left is STALE, and the clipboard stays empty', async () => {
+    // The handles are positions in the walk the renderer's selection was read at. A document that
+    // has moved renumbers that walk, so a copy that went ahead would take a different mark.
+    const commands = commandsWith(refuseData);
+    const { version } = await commands.annotations(annotatedDoc);
+    const moved = asDocVersion(Number(version) + 1);
+    expect(await commands.copyAnnotations(annotatedDoc, 0, [0], moved)).toStrictEqual({ kind: 'stale' });
+    expect(await commands.pasteAnnotations(blankDoc, 0)).toStrictEqual({ kind: 'empty' });
+  });
+
+  it('COPIES a mark and PASTES it into ANOTHER document, where it lands un-nudged', async () => {
+    const commands = commandsWith(refuseData);
+    const { version } = await commands.annotations(annotatedDoc);
+    expect(await commands.copyAnnotations(annotatedDoc, 0, [0], version)).toStrictEqual({
+      kind: 'copied',
+      copied: 1,
+      skipped: 0,
+    });
+    const before = await readInterchangeAnnotations(blankSession);
+    const outcome = await commands.pasteAnnotations(blankDoc, 0);
+    expect(outcome.kind).toBe('pasted');
+    const after = await readInterchangeAnnotations(blankSession);
+    expect(after).toHaveLength(before.length + 1);
+    // THE NEWEST MARK IS LAST: the importer appends to `/Annots`, and the walk is `/Annots` order.
+    const added = after[after.length - 1];
+    expect(added?.contents).toBe('Check this (twice)');
+    // THE SAME PAGE NUMBER, A DIFFERENT DOCUMENT: exactly where the square was. This is the case
+    // the kernel's first rule failed, which inferred "its own page" from the page number alone.
+    expect(added?.rect).toStrictEqual([20, 20, 120, 80]);
+  });
+
+  it('pasted BACK onto its own page of its own document, it is NUDGED so it can be seen', async () => {
+    const commands = commandsWith(refuseData);
+    const { version } = await commands.annotations(annotatedDoc);
+    await commands.copyAnnotations(annotatedDoc, 0, [0], version);
+    const before = (await readInterchangeAnnotations(annotatedSession)).length;
+    expect((await commands.pasteAnnotations(annotatedDoc, 0)).kind).toBe('pasted');
+    const after = await readInterchangeAnnotations(annotatedSession);
+    expect(after).toHaveLength(before + 1);
+    expect(after[after.length - 1]?.rect).toStrictEqual([32, 8, 132, 68]);
   });
 });
 

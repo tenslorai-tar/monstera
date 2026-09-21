@@ -17,6 +17,7 @@ import {
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
+  HostAnnotationRecordsReader,
   HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
@@ -398,6 +399,34 @@ export function remoteMupdfAnnotations(
       await client['engine/annotations']({ session: sessions.handleFor(session) }),
     );
     return { annotations: answer.annotations, truncated: answer.truncated };
+  };
+}
+
+/**
+ * The clipboard's copy, over the boundary.
+ *
+ * **The reader's contract survives the pipe**: `HostAnnotationRecordsReader` throws a `RangeError`
+ * for a handle past the walk, the host answers that as `no-such-annotation`, and this turns it back
+ * into the same `RangeError`. Main then has one thing to catch whichever side of the pipe the
+ * reader ran on — a local reader and a remote one that failed differently would be two contracts
+ * behind one type, agreeing everywhere a selection is fresh.
+ */
+export function remoteMupdfAnnotationRecords(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostAnnotationRecordsReader {
+  return async (session, page, indices) => {
+    const result = await client['engine/annotation-records']({
+      session: sessions.handleFor(session),
+      page,
+      indices: [...indices],
+    });
+    if (!result.ok && result.error.code === 'no-such-annotation') {
+      throw new RangeError(
+        `An annotation on page ${String(page)} named by the copy is not in the walk any more.`,
+      );
+    }
+    return answered('engine/annotation-records', result);
   };
 }
 

@@ -3477,6 +3477,34 @@ export const importAnnotationsSchema = z.object({
     (value) => value instanceof Uint8Array && value.byteLength <= MAX_ANNOTATION_DATA_BYTES,
     { message: 'not annotation data this build will read, or larger than the bound' },
   ),
+  /**
+   * A PASTE: the page EVERY record lands on, overriding the page each record names, and whether to
+   * nudge them — the annotation clipboard (2026-09-21). Absent for a file import.
+   *
+   * ## One importer, not a second writer of annotations from records
+   *
+   * A paste is a set of interchange records written into a document, which is exactly what this
+   * command already is. A `pasteAnnotations` kind beside it would be a second path from a record
+   * to an annotation — two opinions about `writeEntries` the day either learns a subtype. So the
+   * clipboard mints THIS command in main, from records main read and held, and the renderer — for
+   * which this kind stays withheld — never holds a byte of them.
+   *
+   * ## `nudge` is MAIN'S decision, never inferred from a page number
+   *
+   * A copy written exactly over its original is a paste a person cannot see and will run again, so
+   * a paste onto the page it came from moves 12 points right and down, geometry and all. What
+   * decides that is *the same page of the same document*, and the kernel cannot see the second
+   * half: a record names a page, not a document. Inferring it from `record.page === page` was the
+   * first version, and it nudged a stamp copied from page 1 of one file onto page 1 of another.
+   * Main holds the clipboard and knows where it came from, so main says.
+   */
+  paste: z
+    .object({
+      page: z.number().int().nonnegative(),
+      nudge: z.boolean(),
+    })
+    .strict()
+    .optional(),
 });
 
 /**

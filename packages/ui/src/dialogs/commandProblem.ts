@@ -58,6 +58,10 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     z.object({ code: z.literal('stale-target') }).strict(),
     z.object({ code: z.literal('engine-unavailable') }).strict(),
     z.object({ code: z.literal('raster-too-large') }).strict(),
+    // A COPY OF MARKS THIS BUILD DOES NOT EXCHANGE — an image stamp, or a subtype it cannot name.
+    // Said rather than swallowed, because a Copy that did nothing looks like one that worked
+    // until the paste finds an empty clipboard.
+    z.object({ code: z.literal('not-copyable') }).strict(),
     z.object({ code: z.literal('internal'), incident: z.string().min(1) }).strict(),
   ]),
   component: lazy(() => import('./CommandProblemBody.js')),

@@ -267,6 +267,9 @@ function joined(
       accessibility: () => {
         throw new Error('the lifecycle half must not check accessibility');
       },
+      annotationRecords: () => {
+        throw new Error('the lifecycle half must not read annotation records');
+      },
     }),
     (incident) => incidents.push(incident),
   );
@@ -605,6 +608,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         accessibility: () => {
           throw new Error('the byte-size case must not check accessibility');
+        },
+        annotationRecords: () => {
+          throw new Error('the byte-size case must not read annotation records');
         },
       }),
       () => undefined,

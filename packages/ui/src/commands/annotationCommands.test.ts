@@ -1,4 +1,5 @@
-import { asDocId, asDocVersion } from '@monstera/shared';
+import { channels, createClient } from '@monstera/contract';
+import { asDocId, asDocVersion, ok } from '@monstera/shared';
 
 import { GROUP_MARKUP } from '../messages/en.js';
 import { describe, expect, it } from 'vitest';
@@ -23,6 +24,7 @@ import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settin
 import { SettingsRegistry } from '../registries/settings.js';
 import { SettingsStore } from '../settingsStore.js';
 import {
+  copyAnnotationsCommand,
   deleteSelectionCommand,
   editSelectionCommand,
   replySelectionCommand,
@@ -636,5 +638,91 @@ describe('nudgeSelectionCommands', () => {
     // A handler that returned early would already have swallowed the key.
     const { commands } = nudging(undefined);
     expect(commands.every((command) => command.when?.(WITH_DOCUMENT) === false)).toBe(true);
+  });
+});
+
+describe('copyAnnotationsCommand', () => {
+  const NOTE: SelectedAnnotation = {
+    index: 3,
+    rect: { x0: 0, y0: 0, x1: 10, y1: 10 },
+    style: PLAIN_ITEM,
+    kind: 'sticky-note',
+    contents: 'copy me',
+  };
+  const SELECTION: AnnotationSelection = {
+    page: 2,
+    version: asDocVersion(7),
+    items: [NOTE, { ...NOTE, index: 5, kind: 'square' }],
+  };
+
+  /** The command against a client answering `answer`, recording what was sent, asked and copied. */
+  function copying(selection: AnnotationSelection | undefined, answer: unknown) {
+    const sent: { id: string; params: unknown }[] = [];
+    const asked: { id: string; props: unknown }[] = [];
+    const copied: number[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok(answer));
+    });
+    return {
+      sent,
+      asked,
+      copied,
+      command: copyAnnotationsCommand({
+        selection: () => selection,
+        onDelete: () => undefined,
+        onPlace: () => undefined,
+        client,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+        onCopied: (count) => copied.push(count),
+      }),
+    };
+  }
+
+  it('asks main to copy EXACTLY the selection — its page, every index, and the version it was read at', async () => {
+    const { command, sent, copied } = copying(SELECTION, { kind: 'copied', copied: 2, skipped: 0 });
+    await command.run(WITH_DOCUMENT);
+    // THE SELECTION'S PAGE (2) AND VERSION (7), not the context's page (2 here by coincidence of
+    // the fixture) or version (1). The handles are positions in the walk the selection was read
+    // at, so sending the shell's current version would let a stale copy through.
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.copyAnnotations',
+        params: { docId: WITH_DOCUMENT.docId, page: 2, indices: [3, 5], version: asDocVersion(7) },
+      },
+    ]);
+    expect(copied).toStrictEqual([2]);
+  });
+
+  it('a selection with nothing exchangeable is TOLD so, and nothing is counted as copied', async () => {
+    // A Copy that did nothing looks exactly like one that worked until the paste finds nothing.
+    const { command, asked, copied } = copying(SELECTION, { kind: 'nothing-copyable' });
+    await command.run(WITH_DOCUMENT);
+    expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'not-copyable' } }]);
+    expect(copied).toStrictEqual([]);
+  });
+
+  it('a stale selection is told with the stale-target sentence, and nothing is counted', async () => {
+    const { command, asked, copied } = copying(SELECTION, { kind: 'stale' });
+    await command.run(WITH_DOCUMENT);
+    expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'stale-target' } }]);
+    expect(copied).toStrictEqual([]);
+  });
+
+  it('CONTROL: hidden with nothing selected, and sends nothing if run', async () => {
+    const { command, sent } = copying(undefined, { kind: 'copied', copied: 1, skipped: 0 });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(false);
+    await command.run(WITH_DOCUMENT);
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('sits FOURTH in the annotation menu, where the owner’s order puts it, and claims no chord', () => {
+    const { command } = copying(SELECTION, undefined);
+    expect(command.placements).toStrictEqual([{ surface: 'context-menu', context: 'annotation', order: 40 }]);
+    // Ctrl+C is the selected-text Copy; one chord cannot name two commands.
+    expect(command.shortcut).toBeUndefined();
   });
 });

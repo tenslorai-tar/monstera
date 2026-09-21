@@ -168,6 +168,7 @@ import {
   importAnnotationsFdfCommand,
   importAnnotationsJsonCommand,
   importAnnotationsXfdfCommand,
+  pasteAnnotationsCommand,
 } from './commands/annotationData.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
@@ -245,6 +246,7 @@ import {
   deleteSelectionCommand,
   editSelectionCommand,
   replySelectionCommand,
+  copyAnnotationsCommand,
   nudgeSelectionCommands,
   selectionPropertiesCommand,
   shapeToolCommands,
@@ -1317,6 +1319,16 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * focused when that memo last ran.
    */
   const readActiveId = useCallback(() => activeId, [activeId]);
+  /**
+   * How many marks main's clipboard holds, as the last copy reported it — the COUNT and never the
+   * marks, which stay in main because a paste is a command the renderer may not send.
+   *
+   * App state and not a setting, for `compareId`'s reason: main's clipboard is empty at every
+   * start, so a count that survived a restart would show *Paste* over nothing. Application-wide
+   * rather than per document, which is what lets a copy in one tab be pasted into another.
+   */
+  const [copiedCount, setCopiedCount] = useState(0);
+  const readHasCopied = useCallback(() => copiedCount > 0, [copiedCount]);
 
   /**
    * What a new annotation is drawn in — the four editing settings, resolved.
@@ -1814,6 +1826,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         importAnnotationsXfdfCommand({ client, onApplied: applied, ask }),
         importAnnotationsFdfCommand({ client, onApplied: applied, ask }),
         importAnnotationsJsonCommand({ client, onApplied: applied, ask }),
+        // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
+        pasteAnnotationsCommand({ client, onApplied: applied, ask, hasCopied: readHasCopied }),
         exportAnnotationsXfdfCommand({ client, onApplied: applied, ask }),
         exportAnnotationsFdfCommand({ client, onApplied: applied, ask }),
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask }),
@@ -1880,6 +1894,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // joined it — the rule was never about there being one.
         editSelectionCommand({ ...selectionDeps, ask }),
         replySelectionCommand({ ...selectionDeps, ask }),
+        copyAnnotationsCommand({ ...selectionDeps, client, ask, onCopied: setCopiedCount }),
         selectionPropertiesCommand({ ...selectionDeps, settings }),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
@@ -1913,6 +1928,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       // tab menu hands it. Rebuilding the registry when the focused tab changes
       // is the same cheap, deliberate cost the selection already pays.
       readActiveId,
+      // WHETHER *PASTE ANNOTATIONS* EXISTS, which changes when a copy succeeds.
+      readHasCopied,
       // THE PREDICATE'S TWO INPUTS: `cloudReady` closes over this render's
       // pair, so without these the cloud tool would stay hidden however many
       // keys were entered. The second is main's answer to *is a key stored*,

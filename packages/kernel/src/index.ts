@@ -115,6 +115,7 @@ export {
 export {
   type EngineHandlerParts,
   type HostAnnotationsReader,
+  type HostAnnotationRecordsReader,
   type HostBarcodesReader,
   type HostContainmentProbe,
   type HostFilesystem,
@@ -282,6 +283,7 @@ export {
   type AccessibilityReportOnWire,
   remoteMupdfAccessibility,
   remoteMupdfAnnotations,
+  remoteMupdfAnnotationRecords,
   remoteMupdfBarcodes,
   remoteMupdfExecution,
   remoteMupdfGeometry,

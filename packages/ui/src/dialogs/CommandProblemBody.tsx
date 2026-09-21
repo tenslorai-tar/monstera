@@ -6,6 +6,7 @@ import {
   PROBLEM_BUSY,
   PROBLEM_ENGINE_UNAVAILABLE,
   PROBLEM_RASTER_TOO_LARGE,
+  PROBLEM_NOT_COPYABLE,
   PROBLEM_INTERNAL,
   PROBLEM_NOT_OPEN,
   PROBLEM_POISONED,
@@ -21,6 +22,7 @@ export type CommandProblem =
   | { readonly code: 'stale-target' }
   | { readonly code: 'engine-unavailable' }
   | { readonly code: 'raster-too-large' }
+  | { readonly code: 'not-copyable' }
   | { readonly code: 'internal'; readonly incident: string };
 
 /**
@@ -38,6 +40,7 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'stale-target': PROBLEM_STALE_TARGET,
   'engine-unavailable': PROBLEM_ENGINE_UNAVAILABLE,
   'raster-too-large': PROBLEM_RASTER_TOO_LARGE,
+  'not-copyable': PROBLEM_NOT_COPYABLE,
   internal: PROBLEM_INTERNAL,
 };
 

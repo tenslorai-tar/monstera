@@ -8,6 +8,8 @@ import {
   deleteFormFieldsSchema,
   fieldFillSchema,
   MAX_ANNOTATION_TEXT,
+  MAX_ANNOTATION_DATA_BYTES,
+  MAX_REMOVED_ANNOTATIONS,
   fillFormFieldSchema,
   flattenFormFieldsSchema,
   setDocumentProtectionSchema,
@@ -2234,6 +2236,47 @@ export const engineChannels = {
       .object({ signatures: z.array(engineSignatureSchema).max(ENGINE_SIGNATURES_MAX) })
       .strict(),
     ['no-such-session', 'signatures-unreadable', 'signatures-failed'],
+  ),
+
+  /**
+   * The interchange records for named annotations — the annotation clipboard's copy (2026-09-21).
+   *
+   * ## The records cross to MAIN and stop there
+   *
+   * Main holds the clipboard, because a paste is an `importAnnotations` and that kind is withheld
+   * from the renderer (a command carrying bytes is unrepresentable there, B5). So this answer is
+   * read by main, kept by main, and minted back into a command by main; the renderer is told a
+   * count and never a record.
+   *
+   * ## Positional, with `null` for a mark that makes no record
+   *
+   * `readInterchangeRecordsAt`'s shape, so a caller can say WHICH of the marks it asked about is
+   * not exchangeable rather than lining up a shorter list by guesswork. Bounded by the removal
+   * bound, which is how many marks a person can select and act on at once.
+   */
+  'engine/annotation-records': channel(
+    'Reads the exchangeable entries of named annotations on one page.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_REMOVED_ANNOTATIONS),
+      })
+      .strict(),
+    z
+      .object({
+        /**
+         * The copyable records in the interchange's own JSON, or `''` when none was. TEXT rather
+         * than records because main keeps it without reading it — main may not load the module
+         * that owns the format — and bounded by the importer's own byte bound, since a paste
+         * hands exactly this to it.
+         */
+        json: z.string().max(MAX_ANNOTATION_DATA_BYTES),
+        /** Which of `indices` made it in, positionally — a mark this build does not exchange is `false`. */
+        copyable: z.array(z.boolean()).max(MAX_REMOVED_ANNOTATIONS),
+      })
+      .strict(),
+    ['no-such-session', 'no-such-annotation'],
   ),
 
   'engine/annotations': channel(

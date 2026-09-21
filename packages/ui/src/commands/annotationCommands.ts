@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { ContractClient, RenderableCommand } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 import {
@@ -29,6 +29,7 @@ import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import { ANNOTATION_EDIT_DIALOG_ID } from '../dialogs/annotationEdit.js';
 import { ANNOTATION_REPLY_DIALOG_ID } from '../dialogs/annotationReply.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
+import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import {
@@ -61,6 +62,7 @@ import {
   DELETE_SELECTION_TITLE,
   EDIT_SELECTION_TITLE,
   REPLY_SELECTION_TITLE,
+  COPY_ANNOTATIONS_TITLE,
   SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
@@ -661,6 +663,66 @@ export function replySelectionCommand(
         text: answered.data.text,
         version: selection.version,
       });
+    },
+  };
+}
+
+/**
+ * Copies the selected marks — §7's *copy*, fourth in the annotation menu.
+ *
+ * ## The marks go to MAIN, and this is told a count
+ *
+ * A paste is an `importAnnotations`, which carries bytes and is withheld from the renderer (B5), so
+ * main holds the clipboard and this command only names what to copy: the page, the walk indices
+ * and the version the selection was read at. `onCopied` is how the shell learns there is something
+ * to paste, so *Paste annotations* can appear — the count, never the marks.
+ *
+ * ## Every selected kind is offered, and the answer says what did not travel
+ *
+ * Which subtypes the interchange carries is the kernel's rule (`INTERCHANGE_SUBTYPES`), and a list
+ * of them here would be a second opinion that agrees until the kernel learns one more. So Copy is
+ * offered on any selection, and a selection with nothing exchangeable is TOLD so, through the
+ * command-problem dialog — a Copy that did nothing looks exactly like one that worked until the
+ * paste finds nothing. A stale selection is told the same way, with the sentence that already
+ * exists for a handle the document has moved past.
+ *
+ * No chord: Ctrl+C is the selected-text Copy, and one chord cannot name two commands.
+ */
+export function copyAnnotationsCommand(
+  deps: SelectionCommandDeps & {
+    readonly client: ContractClient;
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+    readonly onCopied: (count: number) => void;
+  },
+): UiCommand {
+  return {
+    id: 'annotate.copy-selection',
+    title: COPY_ANNOTATIONS_TITLE,
+    // FOURTH, the owner's order for this menu: edit, reply, properties, copy, delete.
+    placements: [{ surface: 'context-menu', context: 'annotation', order: 40 }],
+    when: () => deps.selection() !== undefined,
+    run: async (context): Promise<void> => {
+      const selection = deps.selection();
+      if (selection === undefined || context.docId === undefined) return;
+      const answer = await deps.client['document.copyAnnotations']({
+        docId: context.docId,
+        page: selection.page,
+        indices: selection.items.map((item) => item.index),
+        version: selection.version,
+      });
+      if (!answer.ok) {
+        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: answer.error.code });
+        return;
+      }
+      if (answer.value.kind === 'stale') {
+        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'stale-target' });
+        return;
+      }
+      if (answer.value.kind === 'nothing-copyable') {
+        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'not-copyable' });
+        return;
+      }
+      deps.onCopied(answer.value.copied);
     },
   };
 }

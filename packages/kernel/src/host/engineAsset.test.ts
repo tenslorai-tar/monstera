@@ -188,6 +188,9 @@ async function joined(): Promise<{
       accessibility: () => {
         throw new Error('unused');
       },
+      annotationRecords: () => {
+        throw new Error('unused');
+      },
     }),
     (incident) => incidents.push(incident),
   );

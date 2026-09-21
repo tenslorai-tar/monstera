@@ -11,6 +11,7 @@ import {
   applyImportAnnotations,
   parseAnnotationData,
   readInterchangeAnnotations,
+  readInterchangeRecordsAt,
   serialiseAnnotationData,
 } from './annotationInterchange.js';
 import type { MupdfSession } from './engineSeam.js';
@@ -303,5 +304,123 @@ describe('annotation interchange — exported and imported through all three for
       );
       expect(() => parseAnnotationData(fdf, 'fdf')).toThrow(UnreadableAnnotationDataError);
     });
+  });
+});
+
+describe('the annotation clipboard — records by walk handle, and a paste onto one page', () => {
+  /**
+   * A STAMP AHEAD OF A SQUARE, which is the whole reason the read is keyed by handle. A stamp is
+   * not an exchanged subtype, so the interchange read leaves it out and answers the square at
+   * position 0 — while the walk puts the square at index 1. A copy keyed by position would copy
+   * the square for a person who selected the stamp.
+   */
+  async function stampThenSquare(): Promise<Uint8Array> {
+    const document = await PDFDocument.create();
+    const page = document.addPage([612, 792]);
+    const { context } = document;
+    const refs = [
+      context.register(context.obj({ Type: 'Annot', Subtype: 'Stamp', Rect: [50, 50, 150, 100], Name: 'Draft' } as never)),
+      context.register(context.obj({ Type: 'Annot', Subtype: 'Square', Rect: [200, 200, 300, 260], C: [0, 0, 1] } as never)),
+    ];
+    page.node.set(PDFName.of('Annots'), context.obj(refs));
+    return document.save();
+  }
+
+  it('reads the mark AT each handle, with null in the place of one that makes no record', async () => {
+    const records = await withSession(await stampThenSquare(), (session) =>
+      readInterchangeRecordsAt(session, 0, [0, 1]),
+    );
+    expect(records[0]).toBeNull();
+    expect(records[1]?.subtype).toBe('Square');
+    expect(records[1]?.rect).toStrictEqual([200, 200, 300, 260]);
+  });
+
+  it('CONTROL: the whole-document read answers the square at position 0, which is why handles are used', async () => {
+    // Without this, the case above cannot separate a handle-keyed read from a positional one that
+    // happened to agree — and on a page with nothing left out, they always agree.
+    const all = await withSession(await stampThenSquare(), readInterchangeAnnotations);
+    expect(all.map((record) => record.subtype)).toStrictEqual(['Square']);
+  });
+
+  it('refuses a handle past the walk rather than answering for a mark that is not there', async () => {
+    await expect(
+      withSession(await stampThenSquare(), (session) => readInterchangeRecordsAt(session, 0, [2])),
+    ).rejects.toThrow(RangeError);
+  });
+
+  /** Imports one record as a paste, and answers what the target document then holds. */
+  async function pasted(
+    record: InterchangeAnnotation,
+    page: number,
+    nudge: boolean,
+  ): Promise<readonly InterchangeAnnotation[]> {
+    return withSession(blank, async (session) => {
+      await applyImportAnnotations(session, {
+        kind: 'importAnnotations',
+        format: 'json',
+        bytes: serialiseAnnotationData([record], 'json'),
+        paste: { page, nudge },
+      });
+      return readInterchangeAnnotations(session);
+    });
+  }
+
+  it('lands on the page the paste names, exactly where it was, when that is another page', async () => {
+    const square = EXPECTED[0];
+    if (square === undefined) throw new Error('no fixture record');
+    const after = await pasted(square, 1, false);
+    expect(after.map((record) => record.page)).toStrictEqual([1]);
+    expect(after[0]?.rect).toStrictEqual(square.rect);
+  });
+
+  it('is NUDGED 12 points right and down onto its own page — box AND geometry together', async () => {
+    // The highlight, because its quadrilaterals are geometry the box does not carry: moving the
+    // box alone would leave the ink where the original is, clipped to a rectangle somewhere else.
+    const highlight = EXPECTED[1];
+    if (highlight?.quadPoints === undefined) throw new Error('the fixture highlight carries no quadrilaterals');
+    const [after] = await pasted(highlight, highlight.page, true);
+    expect(after?.quadPoints).toStrictEqual(
+      highlight.quadPoints.map((value, at) => (at % 2 === 0 ? value + 12 : value - 12)),
+    );
+    // THE BOX IS MuPDF'S, NOT THE RECORD'S. Measured 2026-09-21: `update()` re-derives a
+    // highlight's `/Rect` from its quadrilaterals with its own padding, so the record's
+    // [72, 700, 272, 720] reads back as [79.29, 686.75, 288.71, 709.25] after the nudge. The
+    // assertion that survives that is relative: the same record pasted UN-nudged onto another
+    // page gives MuPDF's box for the original quads, and the derivation is translation-invariant,
+    // so the nudged box must be exactly that box moved by (12, −12).
+    const [elsewhere] = await pasted(highlight, 1, false);
+    if (elsewhere === undefined || after === undefined) throw new Error('a paste read back nothing');
+    const [ex0, ey0, ex1, ey1] = elsewhere.rect;
+    const moved = [ex0 + 12, ey0 - 12, ex1 + 12, ey1 - 12];
+    after.rect.forEach((value, at) => {
+      expect(value).toBeCloseTo(moved[at] ?? Number.NaN, 3);
+    });
+  });
+
+  it('CONTROL: the SAME PAGE NUMBER is not nudged unless the paste says so — another document', async () => {
+    // The case the first version of this rule failed. It inferred *its own page* from
+    // `record.page === page`, and a record names a page, not a document — so a mark copied from
+    // page 0 of one file and pasted onto page 0 of another moved twelve points for no reason.
+    const square = EXPECTED[0];
+    if (square === undefined) throw new Error('no fixture record');
+    const [after] = await pasted(square, square.page, false);
+    expect(after?.rect).toStrictEqual(square.rect);
+  });
+
+  it('CONTROL: a file import, with no page named, lands where each record says and is not nudged', async () => {
+    // The nudge must belong to a PASTE ONTO ITS OWN PAGE and to nothing else. A file whose records
+    // already name page 0 is not a copy of anything on page 0, and moving it would shift every
+    // imported comment by twelve points.
+    const square = EXPECTED[0];
+    if (square === undefined) throw new Error('no fixture record');
+    const after = await withSession(blank, async (session) => {
+      await applyImportAnnotations(session, {
+        kind: 'importAnnotations',
+        format: 'json',
+        bytes: serialiseAnnotationData([square], 'json'),
+      });
+      return readInterchangeAnnotations(session);
+    });
+    expect(after[0]?.rect).toStrictEqual(square.rect);
   });
 });

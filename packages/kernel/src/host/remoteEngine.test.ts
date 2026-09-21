@@ -15,7 +15,11 @@ import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { checkAccessibility } from '../accessibilityCheck.js';
-import { readInterchangeAnnotations, serialiseAnnotationData } from '../annotationInterchange.js';
+import {
+  copyAnnotationData,
+  readInterchangeAnnotations,
+  serialiseAnnotationData,
+} from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
@@ -306,6 +310,9 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       exportAnnotationData: async (session, format) =>
         serialiseAnnotationData(await readInterchangeAnnotations(session), format),
       accessibility: checkAccessibility,
+      // THE REAL READER, as its neighbours here are: this file drives the remote half against a
+      // host that reads, so the clipboard's copy is exercised over the pipe below.
+      annotationRecords: copyAnnotationData,
     }),
     (incident) => incidents.push(incident),
   );
@@ -714,6 +721,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         accessibility: () => {
           throw new Error('unused');
         },
+        annotationRecords: () => {
+          throw new Error('unused');
+        },
       }),
       (incident) => incidents.push(incident),
     );
@@ -836,6 +846,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         accessibility: () => {
           throw new Error('the rotation-refusal case must not check accessibility');
+        },
+        annotationRecords: () => {
+          throw new Error('the rotation-refusal case must not read annotation records');
         },
       }),
       (incident) => incidents.push(incident),

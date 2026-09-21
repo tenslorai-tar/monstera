@@ -1782,8 +1782,13 @@ export const invertPlaceImage: Invert<'mupdf', 'placeImage'> = (): Promise<void>
  * Refuses rather than guessing. An index past the end is a caller that built a
  * handle from something other than an answer this module gave, and the message
  * names the count so the reader can see which of the two numbers is wrong.
+ *
+ * **Exported 2026-09-21 for the annotation clipboard**, whose read takes the same
+ * handles and lives beside the interchange's reader. A second resolver of the same
+ * index there would be the second opinion this paragraph's B3a sentence names —
+ * and it would agree with this one on every document without a form.
  */
-function annotationAt(loaded: PDFPage, index: number): PDFAnnotation {
+export function annotationAt(loaded: PDFPage, index: number): PDFAnnotation {
   const walked = loaded.getAnnotations();
   const found = walked[index];
   if (found === undefined) {

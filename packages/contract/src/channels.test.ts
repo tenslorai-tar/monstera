@@ -149,6 +149,8 @@ const handlers: ContractHandlers = {
   'document.accessibilityCheck': () =>
     Promise.resolve(ok({ version: asDocVersion(1), rules: [], humanChecks: [] })),
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
+  'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
   'document.readRange': ({ begin, end }) =>

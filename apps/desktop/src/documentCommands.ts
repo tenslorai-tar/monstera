@@ -1676,6 +1676,34 @@ export type DocumentAnnotationsReader = (
   sessions: DocumentSessions,
 ) => Promise<{ readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean }>;
 
+/**
+ * Serialises one page's named marks for the clipboard, in the engine host — `copyAnnotationData`.
+ * Throws `RangeError` for an index the walk does not have, local or remote alike.
+ */
+export type DocumentAnnotationCopyReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  indices: readonly number[],
+) => Promise<{ readonly json: string; readonly copyable: readonly boolean[] }>;
+
+/** What {@link DocumentCommands.copyAnnotations} answers. */
+export type CopyAnnotationsOutcome =
+  /** The clipboard now holds `copied` marks; `skipped` were of kinds this build does not exchange. */
+  | { readonly kind: 'copied'; readonly copied: number; readonly skipped: number }
+  /** Every mark asked about is of a kind this build does not exchange. The clipboard is unchanged. */
+  | { readonly kind: 'nothing-copyable' }
+  /** The document moved since the selection was read, so the handles name other marks. */
+  | { readonly kind: 'stale' };
+
+/** What {@link DocumentCommands.pasteAnnotations} answers. */
+export type PasteAnnotationsOutcome =
+  | ({ readonly kind: 'pasted' } & Applied)
+  /** Nothing has been copied in this run of the application. */
+  | { readonly kind: 'empty' }
+  /** The importer refused — the page is gone, most likely. Nothing was added. */
+  | { readonly kind: 'refused' };
+
 /** The annotations, stamped with the version the lane read them at. */
 export interface DocumentAnnotations {
   readonly version: DocVersion;
@@ -1854,6 +1882,8 @@ export interface DocumentCommandsParts {
    * nothing else moving.
    */
   readonly annotations: DocumentAnnotationsReader;
+  /** Named marks serialised for the clipboard, in the engine host. */
+  readonly annotationCopy: DocumentAnnotationCopyReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
   /** One page's barcodes, read in the engine host (ADR-0076). */
@@ -2027,6 +2057,21 @@ export class DocumentCommands {
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
+  readonly #annotationCopy: DocumentAnnotationCopyReader;
+  /**
+   * The annotation clipboard: interchange JSON, held here and never sent to the renderer.
+   *
+   * Here because a paste is an `importAnnotations`, which carries bytes and is withheld from the
+   * renderer (B5), so main is the only process that may mint one. Application-wide rather than per
+   * document, which is what makes copying from one document and pasting into another work — the
+   * text names no document, only pages and entries. Empty until the first copy of this run; a
+   * clipboard that survived a restart would paste marks from a session nobody remembers.
+   *
+   * `from` is kept because the records cannot say it: a paste is nudged only back onto the page it
+   * came from IN THE DOCUMENT it came from, and a record names a page, never a document.
+   */
+  #clipboard: { readonly json: string; readonly from: { readonly docId: DocId; readonly page: number } } | null =
+    null;
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
   readonly #barcodes: DocumentBarcodesReader;
@@ -2090,6 +2135,7 @@ export class DocumentCommands {
     this.#signatures = parts.signatures;
     this.#restore = parts.restore;
     this.#annotations = parts.annotations;
+    this.#annotationCopy = parts.annotationCopy;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#barcodes = parts.barcodes;
@@ -3652,6 +3698,78 @@ export class DocumentCommands {
       }
       if (error instanceof DocumentNotOpenError) throw error;
       return { kind: 'unreadable' };
+    }
+  }
+
+  /**
+   * Copies named marks on one page into the clipboard this object holds.
+   *
+   * ## The version is checked against the LANE'S, after the read
+   *
+   * `version` is the one the renderer's selection was read at. The handles are positions in that
+   * walk, so if the document has moved they name other marks — and a copy that went ahead would put
+   * a stranger's annotation on the clipboard under the name of the one the person selected. The
+   * read happens inside the lane and the lane reports the version it ran at, so comparing the two
+   * afterwards is exact; the text read at a stale version is dropped rather than kept.
+   *
+   * A handle past the walk is the same staleness arriving a different way, and answers the same.
+   */
+  async copyAnnotations(
+    docId: DocId,
+    page: number,
+    indices: readonly number[],
+    version: DocVersion,
+  ): Promise<CopyAnnotationsOutcome> {
+    const { version: ranAt, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      try {
+        return await this.#annotationCopy(docId, sessions, page, indices);
+      } catch (thrown) {
+        // A HANDLE PAST THE WALK answers `undefined`, which is the one way this lane can produce no
+        // value — so it and a version mismatch meet in the same `stale` below.
+        if (!(thrown instanceof RangeError)) throw thrown;
+        return undefined;
+      }
+    });
+    if (value === undefined || ranAt !== version) return { kind: 'stale' };
+    const copied = value.copyable.filter(Boolean).length;
+    // THE CLIPBOARD IS LEFT ALONE when nothing was copyable, rather than emptied: a person who
+    // tries to copy a stamp this build does not exchange has not asked to lose what they copied
+    // a moment ago.
+    if (copied === 0) return { kind: 'nothing-copyable' };
+    this.#clipboard = { json: value.json, from: { docId, page } };
+    return { kind: 'copied', copied, skipped: value.copyable.length - copied };
+  }
+
+  /**
+   * Pastes the clipboard onto one page of a document — `importAnnotations`, minted here.
+   *
+   * The importer's own command with `onPage` set, never a second writer: the kernel moves every
+   * record to that page and nudges it where it is the page it came from. {@link importAnnotations}'
+   * catch and its reason, because a paste can be refused by exactly the apply that refuses a file.
+   */
+  async pasteAnnotations(docId: DocId, page: number): Promise<PasteAnnotationsOutcome> {
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'paste annotations');
+    }
+    const held = this.#clipboard;
+    if (held === null) return { kind: 'empty' };
+    try {
+      const applied = await this.execute(docId, {
+        kind: 'importAnnotations',
+        format: 'json',
+        bytes: new TextEncoder().encode(held.json),
+        // NUDGED ONLY BACK ONTO ITS OWN PAGE OF ITS OWN DOCUMENT, which only this object can tell.
+        paste: { page, nudge: held.from.docId === docId && held.from.page === page },
+      });
+      return { kind: 'pasted', ...applied };
+    } catch (error) {
+      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) throw error;
+      if (error instanceof DocumentNotOpenError) throw error;
+      return { kind: 'refused' };
     }
   }
 

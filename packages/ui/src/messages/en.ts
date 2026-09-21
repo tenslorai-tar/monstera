@@ -1424,6 +1424,9 @@ export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
 export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-target');
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
+export const PROBLEM_NOT_COPYABLE = messageKey('dialog.command-problem.not-copyable');
+export const COPY_ANNOTATIONS_TITLE = messageKey('command.annotate.copy-selection');
+export const PASTE_ANNOTATIONS_TITLE = messageKey('command.annotate.paste');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
 export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
 
@@ -3181,6 +3184,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // renderer asked for is a consequence of the zoom and the reader controls it.
   [PROBLEM_RASTER_TOO_LARGE]:
     'This page is too large to draw with the other renderer at this zoom. Zoom out, or turn the setting off.',
+  // WHAT CAN BE DONE, since the person chose these marks on purpose: which kinds do not travel,
+  // and that the rest of a mixed selection still would.
+  [PROBLEM_NOT_COPYABLE]:
+    'These marks can’t be copied. Image stamps and some annotations from other applications don’t copy; comments, shapes, drawings and highlights do.',
+  [COPY_ANNOTATIONS_TITLE]: 'Copy',
+  [PASTE_ANNOTATIONS_TITLE]: 'Paste annotations',
   [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',
   // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
   // §9 is why it is the only thing about the diagnostic that crosses.

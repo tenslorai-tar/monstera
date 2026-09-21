@@ -892,6 +892,75 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Annotation copy and paste, and the three designs that were wrong on the way
+
+The annotation menu owed *copy*, and the Select row said what it waited on: *"clipboard
+copy/paste, on a read carrying colour and geometry"*. **That read already existed.** ADR-0077's
+interchange record carries the box, the colours, the opacity, the text and the geometry each
+subtype is drawn from, for fourteen subtypes, with a writer proven round-trip. So copy and
+paste are that record and that importer — the precondition was met two days before anyone
+looked for it, the same shape as *open side by side* this morning.
+
+What took the time is that the obvious design was wrong three times, and each was found by
+reading a rule the project had already written rather than by a failing case.
+
+## One: the renderer may not hold the marks
+
+The first sketch had the renderer keep copied records and send them back in a paste. But
+`importAnnotations` is in `WithheldFromRenderer` — a command carrying bytes is unrepresentable
+in the renderer's union, *"main picks the file, reads it and mints the command"*. So **main
+holds the clipboard**: copy asks main to read and keep the records; paste asks main to mint
+the import. The renderer is told a count. A paste into a different document works because the
+clipboard is application-wide and the records name pages, not documents.
+
+## Two: main may not read the records either
+
+Main then needed to serialise records back into bytes. The interchange module imports MuPDF at
+its top, and ADR-0026's barrel discipline keeps the engine out of main; spelling the JSON by
+hand in main would be a second writer of a format `serialiseAnnotationData` owns. So the HOST
+serialises (`copyAnnotationData`), main keeps the TEXT without reading it, and a paste encodes
+it back to bytes — UTF-8 encoding being no opinion about the format.
+
+## Three: a page number cannot say "its own page"
+
+A mark pasted back onto the page it came from must move, or the copy sits invisibly on the
+original and gets pasted again. The first rule inferred that in the kernel from
+`record.page === paste.page` — and a record names a page, **not a document**, so a stamp copied
+from page 1 of one file onto page 1 of another would have moved twelve points for no reason. The
+main-level case written to prove cross-document paste is what showed it. The decision moved to
+main, which holds the clipboard and knows where it came from: `paste: { page, nudge }`. A kernel
+case now asserts the same page number with `nudge: false` lands exactly in place — the case the
+first rule fails.
+
+## And one that would have been a defect, avoided
+
+Paste was given Ctrl+V and then had it taken away. `useShortcuts` listens on the document with no
+rule for a focused text field, so a claimed Ctrl+V would steal the key from the find bar, every
+dialog field and the assistant's composer the moment anybody had copied a mark. Paste lives on
+the page menu and the palette until the dispatcher learns to leave editable targets alone; that is
+its own task, raised, because the existing Ctrl+C may already have the same fault.
+
+## Measured along the way
+
+MuPDF's `update()` re-derives a highlight's `/Rect` from its quadrilaterals with its own padding,
+so a nudged highlight's box is not the record's box plus twelve. The case compares against the
+same record pasted UN-nudged — the derivation is translation-invariant — and requires the
+quadrilaterals to move exactly.
+
+Every layer's own list noticed the two new channels: the host's channel literal (now nineteen
+MuPDF reads, which `docs/ARCHITECTURE.md` §3 is corrected to say in the same commit), the shim's
+channel anchor, the payload-bounds exclusions and three of the contract proof's handler maps.
+
+**Live**, on the packaged shell: a note placed, selected, *Copy* from the annotation menu — which
+now shows the owner's whole order, edit, reply, properties, copy, delete — and *Paste annotations*
+appearing in the page menu only after the copy. The canvas then held 66 note pixels, two icons of
+33, spanning 201–220 in both axes: the paste sat exactly 12 px right and down on a 400 px canvas
+of a 400 pt page. Saved, and both notes read back through pdf-lib.
+
+Two occluders met on the way and recognised by the check made a rule this morning: the Note tool
+at x 899 in an 800 px window, which is 7a's overflow measurement arriving as a missed click, and
+the right-hand panel lying over the page at this width.
+
 ## 2026-09-21 — Ribbon captions in one or two words, and the measurement that says it is not enough
 
 The owner's design pass opens with an instruction that needs no approval: *"Rewrite

@@ -146,6 +146,17 @@ export type HostAnnotationsReader = (session: MupdfSession) => Promise<{
 }>;
 
 /**
+ * The clipboard's copy — `copyAnnotationData`: the copyable records serialised in the interchange's
+ * own JSON, and which of `indices` made it in. Throws `RangeError` for an index past the walk, which
+ * the handler answers as `no-such-annotation`.
+ */
+export type HostAnnotationRecordsReader = (
+  session: MupdfSession,
+  page: number,
+  indices: readonly number[],
+) => Promise<{ readonly json: string; readonly copyable: readonly boolean[] }>;
+
+/**
  * Lists every AcroForm field. {@link HostAnnotationsReader}'s shape and its
  * reasons, over the walk that shares no entries with it: measured 2026-09-07, a
  * page carrying seven widgets answers zero annotations, so this cannot be a
@@ -420,6 +431,8 @@ export interface EngineHandlerParts {
   readonly destinations: HostDestinationsReader;
   readonly layers: HostLayersReader;
   readonly annotations: HostAnnotationsReader;
+  /** How this process reads named marks for the clipboard. `engine/annotation-records`. */
+  readonly annotationRecords: HostAnnotationRecordsReader;
   readonly formFields: HostFormFieldsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
@@ -453,6 +466,7 @@ export function createEngineHandlers({
   destinations,
   layers,
   annotations,
+  annotationRecords,
   formFields,
   duplicates,
   extract,
@@ -791,6 +805,21 @@ export function createEngineHandlers({
         ok: true,
         value: { annotations: [...listed.annotations], truncated: listed.truncated },
       };
+    },
+
+    'engine/annotation-records': async ({ session, page, indices }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        const copied = await annotationRecords(held.session, page, indices);
+        return { ok: true, value: { json: copied.json, copyable: [...copied.copyable] } };
+      } catch (thrown) {
+        // A HANDLE PAST THE WALK is the caller's stale selection, not a failure of this process:
+        // named, so main can say the marks moved rather than reporting an internal error. Every
+        // other throw is not this and is left to propagate.
+        if (thrown instanceof RangeError) return { ok: false, error: { code: 'no-such-annotation' } } as const;
+        throw thrown;
+      }
     },
 
     'engine/form-fields': async ({ session }) => {

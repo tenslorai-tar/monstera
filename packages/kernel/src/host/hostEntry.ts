@@ -1,7 +1,11 @@
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import { checkAccessibility } from '../accessibilityCheck.js';
-import { readInterchangeAnnotations, serialiseAnnotationData } from '../annotationInterchange.js';
+import {
+  copyAnnotationData,
+  readInterchangeAnnotations,
+  serialiseAnnotationData,
+} from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { localMupdfExecution } from '../mupdfSpecs.js';
 import { accessFor, mupdfWriter } from '../mupdfWriter.js';
@@ -150,6 +154,9 @@ const engineHandlers = createEngineHandlers({
     serialiseAnnotationData(await readInterchangeAnnotations(session), format),
   // AND THE PDF/UA-1 OBJECT RULES, a walk of MuPDF's objects (ADR-0078).
   accessibility: checkAccessibility,
+  // AND THE CLIPBOARD'S COPY, through the interchange's one reader of entries: the records go to
+  // main and stay there, so a paste can be minted where the importer is allowed to be.
+  annotationRecords: copyAnnotationData,
 });
 
 startEngineHost(

@@ -126,6 +126,7 @@ export {
   MAX_ANNOTATION_FONT,
   LINK_SCHEMES,
   MAX_ANNOTATION_TEXT,
+  MAX_REMOVED_ANNOTATIONS,
   MAX_LINK_URI,
   type AnnotationOpacity,
   type LinkTarget,

@@ -183,6 +183,7 @@ export {
 export {
   applyImportAnnotations,
   captureImportAnnotations,
+  copyAnnotationData,
   invertImportAnnotations,
   type InterchangeAnnotation,
   parseAnnotationData,

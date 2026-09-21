@@ -51,6 +51,7 @@ import {
   type HostExtract,
   type HostSnapshot,
   type HostAnnotationsReader,
+  type HostAnnotationRecordsReader,
   type BarcodeReport,
   type AccessibilityReportOnWire,
   type HostFlatFieldsReader,
@@ -93,6 +94,7 @@ import {
   remoteMupdfGeometry,
   remoteMupdfDestinations,
   remoteMupdfAnnotations,
+  remoteMupdfAnnotationRecords,
   remoteMupdfBarcodes,
   remoteMupdfAccessibility,
   remoteMupdfDuplicateReport,
@@ -960,6 +962,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.annotations(session);
     },
+    // THE CLIPBOARD'S COPY, composed here for the annotation list's reason: one page's named marks,
+    // serialised in the host, handed back to main to hold.
+    annotationCopy: (docId, sessions, page, indices) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.annotationCopy(session, page, indices);
+    },
     // THE FORM FIELD LIST, composed here for the annotation list's reason and
     // whole-document for its reason: a panel asks what a form asks for, which
     // is a question about all of it.
@@ -1399,6 +1408,8 @@ function engineSessionOpener(
   readonly signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   /** Every annotation in the document, from whichever host is live. */
   readonly annotations: HostAnnotationsReader;
+  /** Named marks serialised for the clipboard, from whichever host is live. */
+  readonly annotationCopy: HostAnnotationRecordsReader;
   readonly formFields: HostFormFieldsReader;
   /** One page's field candidates, from whichever host is live. */
   readonly flatFields: HostFlatFieldsReader;
@@ -1689,6 +1700,20 @@ function engineSessionOpener(
     return annotations(session);
   };
 
+  /** The clipboard copy's half of the same registration. See {@link pageText}. */
+  let annotationCopy: HostAnnotationRecordsReader | null = null;
+
+  const copyAnnotationsThroughHost: HostAnnotationRecordsReader = (session, page, indices) => {
+    if (annotationCopy === null) {
+      throw new Error(
+        'A clipboard copy reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return annotationCopy(session, page, indices);
+  };
+
   /** The form field list's half of the same registration. See {@link pageText}. */
   let formFields: HostFormFieldsReader | null = null;
 
@@ -1942,6 +1967,7 @@ function engineSessionOpener(
     layers = remoteMupdfLayers(client, remote);
     signatures = remoteMupdfSignatures(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
+    annotationCopy = remoteMupdfAnnotationRecords(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
     flatFields = remoteMupdfFlatFields(client, remote);
     barcodes = remoteMupdfBarcodes(client, remote);
@@ -2216,6 +2242,7 @@ function engineSessionOpener(
     layers: readLayersThroughHost,
     signatures: readSignaturesThroughHost,
     annotations: readAnnotationsThroughHost,
+    annotationCopy: copyAnnotationsThroughHost,
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
     barcodes: readBarcodesThroughHost,

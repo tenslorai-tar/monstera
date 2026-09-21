@@ -696,6 +696,8 @@ const SHIM_OPTIMIZED = { high: 90_000, medium: 80_000, low: 50_000 } as const;
  */
 export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim {
   const versions = new Map<string, number>();
+  /** How many marks main's clipboard would hold — `document.copyAnnotations`' count, nothing more. */
+  let clipboardCount = 0;
   /** How many entries each document's log would have to step back through. */
   const undoable = new Map<string, number>();
   const incidents: Incident[] = [];
@@ -1294,6 +1296,28 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({ kind: 'imported' as const, version, byteLength: chosen.byteLength, historyDropped: 0 }),
       );
+    },
+    /**
+     * The annotation clipboard, as main holds it: a count across calls and nothing a case can read
+     * back as marks, because the renderer never receives any. A copy at a version the shim has
+     * moved past answers `stale`, which is the one refusal a renderer case can provoke.
+     */
+    'document.copyAnnotations': ({ docId, indices, version }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      if (version !== current) return Promise.resolve(ok({ kind: 'stale' as const }));
+      clipboardCount = indices.length;
+      return Promise.resolve(ok({ kind: 'copied' as const, copied: indices.length, skipped: 0 }));
+    },
+    'document.pasteAnnotations': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      if (clipboardCount === 0) return Promise.resolve(ok({ kind: 'empty' as const }));
+      const version = asDocVersion(current + 1);
+      versions.set(docId, version);
+      return Promise.resolve(ok({ kind: 'pasted' as const, version, byteLength: 1, historyDropped: 0 }));
     },
     'document.exportFormData': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));

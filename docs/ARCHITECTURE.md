@@ -270,14 +270,16 @@ one engine:
 built without either** ([ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
 2026-09-09).
 
-**A host's reader set is its own engine's.** The twenty-five channels split
+**A host's reader set is its own engine's.** The twenty-six channels split
 **six engine-agnostic** — `probe-containment`, `open`, `close`, `apply`,
 `capture`, `invert` — one that belongs to the **live-session shape**,
-`serialise`, and **eighteen MuPDF document-model reads**:
+`serialise`, and **nineteen MuPDF document-model reads**:
 `page-geometry`, `page-text`, `page-links`, `destinations`, `layers`,
-`annotations`, `form-fields`, `exportFormData`, `exportAnnotations`, `flat-fields`,
+`annotations`, `annotation-records`, `form-fields`, `exportFormData`, `exportAnnotations`, `flat-fields`,
 `duplicate-pages`, `extract`, `snapshotRegion`, `pageImage`, `ocr-page`,
-`signatures`, `page-barcodes`, `accessibility-check`. **A second engine owes none of the eighteen.** `signatures` joined on
+`signatures`, `page-barcodes`, `accessibility-check`. **A second engine owes none of the nineteen.**
+`annotation-records` joined on 2026-09-21 with the annotation clipboard's copy, which reads the
+interchange's entries for named marks and hands them to main. `signatures` joined on
 2026-09-12 with D7's verification row, `pageImage` on 2026-09-14 with D10's
 page-images row, `page-barcodes` on 2026-09-17 with D10's barcode row
 ([ADR-0076](DECISIONS/0076-barcodes-are-zxing-cpps-read-in-the-engine-host-written-for-the-place-image-command.md)),
@@ -287,7 +289,9 @@ and `accessibility-check` with D8's accessibility check
 ([ADR-0078](DECISIONS/0078-the-accessibility-check-is-pdf-ua-object-rules-and-names-what-it-cannot-see.md)).
 This paragraph said *twenty* and *thirteen* until the audit of
 `622f794..4971b60`, and *twenty-one* and *fourteen* until the audit of
-`4971b60..09e0f74` — the names `coreChannels.test.ts` holds as a literal.
+`4971b60..09e0f74`, and *twenty-five* and *eighteen* until 2026-09-21, when the change that
+added the channel updated it in the same commit — the names `coreChannels.test.ts` holds as a
+literal, which is what reddened first.
 
 **`ocr-page` is the thirteenth, added 2026-09-11 with D6 row 2, and it arrived
 while this paragraph said twelve** — the count and the list were both written

@@ -18,6 +18,7 @@ import {
   RIBBON_COMMENTS_EXPORT_XFDF,
   RIBBON_COMMENTS_EXPORT_FDF,
   RIBBON_COMMENTS_EXPORT_JSON,
+  PASTE_ANNOTATIONS_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -112,6 +113,59 @@ function importAnnotationsCommand(
 }
 
 /** Import first in the group, each format's import beside its export: 10–15. */
+/**
+ * Pastes the annotation clipboard onto a page — §7's page menu and the palette.
+ *
+ * ## Main holds the clipboard, so this sends a PAGE and nothing else
+ *
+ * A paste is an `importAnnotations`, which carries bytes and is withheld from the renderer (B5).
+ * So the renderer never held the marks; it asks main to paste what main copied, and is answered
+ * exactly as a file import is — which is why this sits beside that command and handles the same
+ * outcomes the same way.
+ *
+ * ## Which page is the CONTEXT's
+ *
+ * From the page menu that is the page right-clicked; from the palette it is the page on show.
+ * `when` hides the item until something has been copied in this run, because a paste of nothing
+ * is a control that does nothing — and it is `hasCopied` that is asked, not main, since the
+ * renderer is told the count by every copy it made.
+ *
+ * ## NO Ctrl+V, deliberately
+ *
+ * `useShortcuts` listens on the document and has no rule for a focused text field, so a claimed
+ * Ctrl+V would take the key from every input in the application — the find bar, a dialog's field,
+ * the assistant's composer — from the moment a person had copied a mark. Paste stays on the page
+ * menu and the palette until the dispatcher learns to leave editable targets alone, which is its
+ * own change with its own cases.
+ */
+export function pasteAnnotationsCommand(
+  deps: DocumentCommandDeps & { readonly hasCopied: () => boolean },
+): UiCommand {
+  return {
+    id: 'annotate.paste',
+    title: PASTE_ANNOTATIONS_TITLE,
+    placements: [{ surface: 'context-menu', context: 'page', order: 25 }],
+    when: (context) => hasDocument(context) && deps.hasCopied(),
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = await deps.client['document.pasteAnnotations']({ docId: context.docId, page: context.page });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'empty') return;
+      if (answer.value.kind === 'refused') {
+        void deps.ask(IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID, { reason: 'unreadable' });
+        return;
+      }
+      deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+      if (answer.value.historyDropped > 0) {
+        void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
+      }
+    },
+  };
+}
+
 export const importAnnotationsXfdfCommand = importAnnotationsCommand(
   'xfdf',
   'document.import-annotations-xfdf',

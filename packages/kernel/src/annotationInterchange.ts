@@ -8,7 +8,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { fdfFile, pdfName, pdfString, xmlCanCarry, xmlEscaped } from './interchangeEncoding.js';
 import { withDocument } from './mupdfWriter.js';
-import { markAuthored } from './pageAnnotations.js';
+import { annotationAt, markAuthored, pageAt } from './pageAnnotations.js';
 import { type XfdfAnnotation, readXfdfAnnotations } from './xfdfReader.js';
 
 /**
@@ -169,6 +169,68 @@ export function readInterchangeAnnotations(session: MupdfSession): Promise<reado
     }
     return found;
   });
+}
+
+/**
+ * The interchange records for SPECIFIC annotations, named by their walk handles — what a copy
+ * reads before a paste writes it back through the one importer.
+ *
+ * ## Keyed by walk index, and never by position in {@link readInterchangeAnnotations}' answer
+ *
+ * That reader leaves out every annotation whose entries do not make a record, so its N-th entry
+ * is not the walk's N-th annotation on any page carrying a subtype outside the set. A copy keyed
+ * by position there would copy the NEXT mark whenever an unsupported one came before it — and
+ * agree with the walk on every document where nothing is left out, which is how that ships.
+ *
+ * So the handle resolves through `annotationAt`, the walk's own resolver, and the record through
+ * {@link candidateFrom} and {@link tolerantRecord}, the one reader of entries. Nothing here is a
+ * second opinion about either question.
+ *
+ * ## `null` for a mark that makes no record, in its place
+ *
+ * The answer is positional against `indices`, so a caller can say WHICH of the marks it asked
+ * about cannot be copied — a sticky note beside a stamp this build does not exchange — rather
+ * than receiving a shorter list it has to line up by guesswork.
+ */
+export function readInterchangeRecordsAt(
+  session: MupdfSession,
+  page: number,
+  indices: readonly number[],
+): Promise<readonly (InterchangeAnnotation | null)[]> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, page, document.countPages());
+    return indices.map((index) => tolerantRecord(candidateFrom(annotationAt(loaded, index).getObject(), page)));
+  });
+}
+
+/**
+ * What the clipboard's copy carries out of the host: the copyable records, already serialised in
+ * this module's own JSON, and which of the asked-for marks made it in.
+ *
+ * ## Serialised HERE, because main may not load this module
+ *
+ * Main holds the clipboard, and this module imports MuPDF at its top — so main importing it would
+ * load the engine into the process ADR-0026 keeps it out of. Main spelling the JSON by hand would
+ * be a second writer of a format {@link serialiseAnnotationData} owns (B3a), agreeing with it until
+ * either changes. So the host serialises, main keeps the TEXT without reading it, and a paste
+ * encodes that text back into the bytes `importAnnotations` takes. UTF-8 encoding is not an
+ * opinion about the format.
+ *
+ * `json` is the empty string when nothing asked for is exchangeable, rather than a file holding no
+ * annotations: a paste of that would be refused by the importer, and the clipboard should not hold
+ * something that can only fail.
+ */
+export async function copyAnnotationData(
+  session: MupdfSession,
+  page: number,
+  indices: readonly number[],
+): Promise<{ readonly json: string; readonly copyable: readonly boolean[] }> {
+  const records = await readInterchangeRecordsAt(session, page, indices);
+  const kept = records.filter((record): record is InterchangeAnnotation => record !== null);
+  return {
+    json: kept.length === 0 ? '' : new TextDecoder().decode(serialiseAnnotationData(kept, 'json')),
+    copyable: records.map((record) => record !== null),
+  };
 }
 
 /**
@@ -659,9 +721,61 @@ function parseFdf(bytes: Uint8Array): readonly InterchangeAnnotation[] {
  * page this document lacks changes nothing. Each annotation is created by MuPDF for its subtype,
  * given its entries raw in user space, marked as this build's, and drawn by `update()`.
  */
+/**
+ * How far a record pasted onto its own page moves, in PDF points — right and down.
+ *
+ * A copy written exactly over its original is invisible, and a person who cannot see a paste runs
+ * it again. Twelve points is one step of a typical 12-point line: far enough to read as a second
+ * mark, near enough to read as a copy OF that mark.
+ */
+const PASTE_NUDGE = 12;
+
+/**
+ * A record moved to the page a paste names, and nudged when the paste says so.
+ *
+ * WHETHER to nudge is the caller's, not inferred here: a record names a page and not a document,
+ * so `record.page === paste.page` cannot tell *pasted back onto its own page* from *pasted onto
+ * the same page number of another file* — and the first version, which inferred it, nudged the
+ * second. See `importAnnotationsSchema.paste`.
+ *
+ * EVERY coordinate the record carries moves together — the box, and the geometry the subtype is
+ * drawn from. Moving the box alone would leave a highlight's quadrilaterals, an ink stroke or a
+ * polygon where the original is while its rectangle sits somewhere else, which MuPDF would draw
+ * as a mark clipped to the wrong place.
+ */
+function retargeted(
+  record: InterchangeAnnotation,
+  paste: { readonly page: number; readonly nudge: boolean } | undefined,
+): InterchangeAnnotation {
+  if (paste === undefined) return record;
+  const onPage = paste.page;
+  if (!paste.nudge) return { ...record, page: onPage };
+  // PDF USER SPACE: y grows upward, so "down" is a subtraction.
+  const pairs = (numbers: readonly number[]): number[] =>
+    numbers.map((value, at) => (at % 2 === 0 ? value + PASTE_NUDGE : value - PASTE_NUDGE));
+  const [x0, y0, x1, y1] = record.rect;
+  return {
+    ...record,
+    page: onPage,
+    rect: [x0 + PASTE_NUDGE, y0 - PASTE_NUDGE, x1 + PASTE_NUDGE, y1 - PASTE_NUDGE],
+    ...(record.quadPoints === undefined ? {} : { quadPoints: pairs(record.quadPoints) }),
+    ...(record.inkList === undefined ? {} : { inkList: record.inkList.map(pairs) }),
+    ...(record.vertices === undefined ? {} : { vertices: pairs(record.vertices) }),
+    ...(record.line === undefined ? {} : { line: nudgedLine(record.line) }),
+  };
+}
+
+/** A line's two ends moved by the paste nudge, kept a four-tuple rather than cast back to one. */
+function nudgedLine(line: readonly [number, number, number, number]): [number, number, number, number] {
+  const [ax, ay, bx, by] = line;
+  return [ax + PASTE_NUDGE, ay - PASTE_NUDGE, bx + PASTE_NUDGE, by - PASTE_NUDGE];
+}
+
 export const applyImportAnnotations: Apply<'mupdf', 'importAnnotations'> = (session, command) =>
   withDocument(session, (document) => {
-    const records = parseAnnotationData(command.bytes, command.format);
+    const records = parseAnnotationData(command.bytes, command.format).map((record) =>
+      retargeted(record, command.paste),
+    );
     if (records.length === 0) throw new NoImportableAnnotationsError();
     const pages = document.countPages();
     for (const record of records) {

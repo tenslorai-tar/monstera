@@ -268,6 +268,8 @@ export function createContractHandlers(deps: {
     'document.exportFormData': exportFormDataHandler(deps.commands),
     'document.exportAnnotations': exportAnnotationsHandler(deps.commands),
     'document.importAnnotations': importAnnotationsHandler(deps.commands),
+    'document.copyAnnotations': copyAnnotationsHandler(deps.commands),
+    'document.pasteAnnotations': pasteAnnotationsHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands),
     'document.exportPageImages': exportPageImagesHandler(deps.commands),
@@ -1212,6 +1214,52 @@ function exportAnnotationsHandler(
       if (thrown instanceof EngineAnnotationDataExportFailed && thrown.detail === 'unrepresentable') {
         return ok({ kind: 'unrepresentable' } as const);
       }
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The clipboard's copy. The outcome crosses as it is — counts, never marks — and the three
+ * document states map to their codes, {@link importAnnotationsHandler}'s shape.
+ */
+function copyAnnotationsHandler(commands: DocumentCommands): ContractHandlers['document.copyAnnotations'] {
+  return async ({
+    docId,
+    page,
+    indices,
+    version,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.copyAnnotations']>>> => {
+    try {
+      return ok(await commands.copyAnnotations(docId, page, indices, version));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The clipboard's paste — main mints the import — mapped as the import is. */
+function pasteAnnotationsHandler(commands: DocumentCommands): ContractHandlers['document.pasteAnnotations'] {
+  return async ({
+    docId,
+    page,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.pasteAnnotations']>>> => {
+    try {
+      const outcome = await commands.pasteAnnotations(docId, page);
+      if (outcome.kind !== 'pasted') return ok({ kind: outcome.kind } as const);
+      return ok({
+        kind: 'pasted',
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        historyDropped: outcome.historyDropped,
+      } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
   };

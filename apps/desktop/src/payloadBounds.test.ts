@@ -361,6 +361,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // BOUNDED BY THE RULE SET — 32 rules of 16 pages each — never by the document.
   'document.accessibilityCheck': 'needs an engine session',
   'document.importAnnotations': 'needs an engine session and a file picker',
+  // THE CLIPBOARD ANSWERS COUNTS, never marks — the records stay in main — so neither answer can
+  // scale with anything: a copy is three numbers at most, a paste is a version and two counts.
+  'document.copyAnnotations': 'needs an engine session',
+  'document.pasteAnnotations': 'needs an engine session and a copy made first',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
   'document.pageBarcodes': 'needs an engine session',
   'document.searchPage': 'needs an engine session',

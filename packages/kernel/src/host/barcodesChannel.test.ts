@@ -97,6 +97,7 @@ async function joined(
       barcodes,
       exportAnnotationData: refuse('export annotations'),
       accessibility: refuse('check accessibility'),
+      annotationRecords: refuse('read annotation records'),
     }),
     () => undefined,
   );

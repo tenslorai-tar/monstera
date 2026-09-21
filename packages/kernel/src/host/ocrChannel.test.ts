@@ -177,6 +177,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       accessibility: () => {
         throw new Error('a recognition must not check accessibility');
       },
+      annotationRecords: () => {
+        throw new Error('a recognition must not read annotation records');
+      },
     }),
     (incident) => incidents.push(incident),
   );

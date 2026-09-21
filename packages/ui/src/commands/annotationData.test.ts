@@ -13,6 +13,7 @@ import {
   importAnnotationsFdfCommand,
   importAnnotationsJsonCommand,
   importAnnotationsXfdfCommand,
+  pasteAnnotationsCommand,
 } from './annotationData.js';
 
 /**
@@ -106,5 +107,41 @@ describe('the comment-file commands', () => {
     expect(exportAnnotationsJsonCommand(deps).placements).toStrictEqual([
       { surface: 'ribbon', section: 'review', group: GROUP_COMMENT_FILES, order: 15 },
     ]);
+  });
+});
+
+describe('pasteAnnotationsCommand — main mints the import from the clipboard it holds', () => {
+  it('sends the PAGE and nothing else, and a paste reaches the shell as an applied change', async () => {
+    const { deps, sent, applied } = harness({
+      kind: 'pasted',
+      version: asDocVersion(2),
+      byteLength: 4096,
+      historyDropped: 0,
+    });
+    // THE PAGE IS THE CONTEXT'S — 3 here, not the fixture's usual 0, so a command that hard-wired
+    // the first page would be caught — and no record crosses: the renderer never held any.
+    await pasteAnnotationsCommand({ ...deps, hasCopied: () => true }).run({ ...CONTEXT, page: 3, pageCount: 5 });
+    expect(sent).toStrictEqual([{ id: 'document.pasteAnnotations', params: { docId: DOC, page: 3 } }]);
+    expect(applied).toStrictEqual([{ version: asDocVersion(2), byteLength: 4096 }]);
+  });
+
+  it('a REFUSED paste reaches a person, through the import problem dialog', async () => {
+    const { deps, opened, applied } = harness({ kind: 'refused' });
+    await pasteAnnotationsCommand({ ...deps, hasCopied: () => true }).run(CONTEXT);
+    expect(opened).toStrictEqual([{ id: IMPORT_ANNOTATIONS_PROBLEM_DIALOG_ID, props: { reason: 'unreadable' } }]);
+    expect(applied).toStrictEqual([]);
+  });
+
+  it('CONTROL: hidden until something has been copied, and shown once it has', () => {
+    const { deps } = harness(undefined);
+    expect(pasteAnnotationsCommand({ ...deps, hasCopied: () => false }).when?.(CONTEXT)).toBe(false);
+    expect(pasteAnnotationsCommand({ ...deps, hasCopied: () => true }).when?.(CONTEXT)).toBe(true);
+  });
+
+  it('sits in the PAGE menu and claims NO chord — a claimed Ctrl+V would take the key from every text field', () => {
+    const { deps } = harness(undefined);
+    const command = pasteAnnotationsCommand({ ...deps, hasCopied: () => true });
+    expect(command.placements).toStrictEqual([{ surface: 'context-menu', context: 'page', order: 25 }]);
+    expect(command.shortcut).toBeUndefined();
   });
 });
