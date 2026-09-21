@@ -74,6 +74,22 @@ import {
   GROUP_MARKUP,
   GROUP_SIGNATURES,
   PLACE_BARCODE_TOOL_TITLE,
+  RIBBON_SNAPSHOT,
+  RIBBON_STRIKEOUT,
+  RIBBON_REDACT_MARK,
+  RIBBON_LINK_ADDRESS,
+  RIBBON_LINK_PAGE,
+  RIBBON_PLACE_IMAGE,
+  RIBBON_OCR_REGION,
+  RIBBON_CLOUD_REGION,
+  RIBBON_CLAUDE_REGION,
+  RIBBON_PLACE_BARCODE,
+  RIBBON_PLACE_SIGNATURE,
+  RIBBON_FIELD_TEXT,
+  RIBBON_FIELD_CHECKBOX,
+  RIBBON_FIELD_RADIO,
+  RIBBON_FIELD_DROPDOWN,
+  RIBBON_FIELD_LISTBOX,
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
@@ -204,7 +220,16 @@ export interface SelectionCommandDeps {
  */
 function toolCommand(
   id: string,
-  title: MessageKey,
+  /**
+   * The tool's name, or a PAIR where the ribbon needs a shorter one.
+   *
+   * A union rather than an eighth positional parameter: this factory already
+   * takes seven, and a caller passing `undefined` through four of them to reach
+   * an abbreviation is how a signature stops being readable. The pair also puts
+   * the two texts next to each other at the call site, which is where a reader
+   * can see that the short one does not contradict the long one.
+   */
+  title: MessageKey | { readonly full: MessageKey; readonly ribbon: MessageKey },
   /** The glyph the ribbon draws for this tool (§10.4), from the one closed set. */
   icon: IconName,
   order: number,
@@ -224,9 +249,11 @@ function toolCommand(
    */
   also?: () => boolean,
 ): UiCommand {
+  const named = typeof title === 'string' ? { full: title, ribbon: undefined } : title;
   return {
     id,
-    title,
+    title: named.full,
+    ...(named.ribbon === undefined ? {} : { ribbonTitle: named.ribbon }),
     icon,
     // ONE SURFACE, and §7's own example is why this is not two. *"Highlight
     // legitimately lives in Home › Quick tools, Comment › Markup, and the
@@ -267,7 +294,13 @@ export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(REDACT_TOOL_ID, REDACT_TOOL_TITLE, 'RectangleHorizontal', 45, deps);
+  return toolCommand(
+    REDACT_TOOL_ID,
+    { full: REDACT_TOOL_TITLE, ribbon: RIBBON_REDACT_MARK },
+    'RectangleHorizontal',
+    45,
+    deps,
+  );
 }
 
 /**
@@ -345,7 +378,13 @@ export function underlineToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(STRIKEOUT_TOOL_ID, STRIKEOUT_TOOL_TITLE, 'Strikethrough', 38, deps);
+  return toolCommand(
+    STRIKEOUT_TOOL_ID,
+    { full: STRIKEOUT_TOOL_TITLE, ribbon: RIBBON_STRIKEOUT },
+    'Strikethrough',
+    38,
+    deps,
+  );
 }
 
 /**
@@ -382,11 +421,23 @@ export function typewriterToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 export function linkAddressToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(LINK_ADDRESS_TOOL_ID, LINK_ADDRESS_TOOL_TITLE, 'Link', 53, deps);
+  return toolCommand(
+    LINK_ADDRESS_TOOL_ID,
+    { full: LINK_ADDRESS_TOOL_TITLE, ribbon: RIBBON_LINK_ADDRESS },
+    'Link',
+    53,
+    deps,
+  );
 }
 
 export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(LINK_PAGE_TOOL_ID, LINK_PAGE_TOOL_TITLE, 'Link2', 54, deps);
+  return toolCommand(
+    LINK_PAGE_TOOL_ID,
+    { full: LINK_PAGE_TOOL_TITLE, ribbon: RIBBON_LINK_PAGE },
+    'Link2',
+    54,
+    deps,
+  );
 }
 
 /**
@@ -809,7 +860,16 @@ export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
  * such factory somewhere else.
  */
 export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
-  return alsoOnThePill(toolCommand(SNAPSHOT_TOOL_ID, SNAPSHOT_TOOL_TITLE, 'Camera', 29, deps), 29);
+  return alsoOnThePill(
+    toolCommand(
+      SNAPSHOT_TOOL_ID,
+      { full: SNAPSHOT_TOOL_TITLE, ribbon: RIBBON_SNAPSHOT },
+      'Camera',
+      29,
+      deps,
+    ),
+    29,
+  );
 }
 
 /**
@@ -822,7 +882,13 @@ export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
  * object into it that survives the save.
  */
 export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(PLACE_IMAGE_TOOL_ID, PLACE_IMAGE_TOOL_TITLE, 'Image', 59, deps);
+  return toolCommand(
+    PLACE_IMAGE_TOOL_ID,
+    { full: PLACE_IMAGE_TOOL_TITLE, ribbon: RIBBON_PLACE_IMAGE },
+    'Image',
+    59,
+    deps,
+  );
 }
 
 /**
@@ -834,7 +900,7 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
  * signatures* at 20, so the group reads invisible, visible, verify.
  */
 export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(PLACE_SIGNATURE_TOOL_ID, PLACE_SIGNATURE_TOOL_TITLE, 'PenTool', 15, deps, {
+  return toolCommand(PLACE_SIGNATURE_TOOL_ID, { full: PLACE_SIGNATURE_TOOL_TITLE, ribbon: RIBBON_PLACE_SIGNATURE }, 'PenTool', 15, deps, {
     section: 'protect',
     group: GROUP_SIGNATURES,
   });
@@ -847,7 +913,7 @@ export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
  * given, like an inserted image or a Bates number, and the group reads make, then read.
  */
 export function placeBarcodeToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(PLACE_BARCODE_TOOL_ID, PLACE_BARCODE_TOOL_TITLE, 'QrCode', 10, deps, {
+  return toolCommand(PLACE_BARCODE_TOOL_ID, { full: PLACE_BARCODE_TOOL_TITLE, ribbon: RIBBON_PLACE_BARCODE }, 'QrCode', 10, deps, {
     section: 'organize',
     group: GROUP_BARCODES,
   });
@@ -867,7 +933,13 @@ export function placeBarcodeToolCommand(deps: ToolCommandDeps): UiCommand {
  * a test behind it.
  */
 export function ocrRegionToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(OCR_REGION_TOOL_ID, OCR_REGION_TOOL_TITLE, 'ScanSearch', 60, deps);
+  return toolCommand(
+    OCR_REGION_TOOL_ID,
+    { full: OCR_REGION_TOOL_TITLE, ribbon: RIBBON_OCR_REGION },
+    'ScanSearch',
+    60,
+    deps,
+  );
 }
 
 /**
@@ -880,7 +952,7 @@ export function ocrRegionToolCommand(deps: ToolCommandDeps): UiCommand {
 export function cloudRegionToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     CLOUD_REGION_TOOL_ID,
-    CLOUD_REGION_TOOL_TITLE,
+    { full: CLOUD_REGION_TOOL_TITLE, ribbon: RIBBON_CLOUD_REGION },
     'CloudUpload',
     62,
     deps,
@@ -899,7 +971,7 @@ export function cloudRegionToolCommand(deps: ToolCommandDeps): UiCommand {
 export function claudeRegionToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     CLAUDE_REGION_TOOL_ID,
-    CLAUDE_REGION_TOOL_TITLE,
+    { full: CLAUDE_REGION_TOOL_TITLE, ribbon: RIBBON_CLAUDE_REGION },
     'Sparkles',
     63,
     deps,
@@ -980,10 +1052,10 @@ export function formFieldToolCommands(deps: ToolCommandDeps): readonly UiCommand
   // FORMS › FIELDS, named once here rather than five times below.
   const fields = { section: 'forms', group: GROUP_FIELDS } as const;
   return [
-    toolCommand(FORM_FIELD_TEXT_TOOL_ID, FORM_FIELD_TEXT_TOOL_TITLE, 'TextCursor', 70, deps, fields),
-    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, FORM_FIELD_CHECKBOX_TOOL_TITLE, 'SquareCheck', 71, deps, fields),
-    toolCommand(FORM_FIELD_RADIO_TOOL_ID, FORM_FIELD_RADIO_TOOL_TITLE, 'CircleDot', 72, deps, fields),
-    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, FORM_FIELD_DROPDOWN_TOOL_TITLE, 'ChevronDown', 73, deps, fields),
-    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, FORM_FIELD_LISTBOX_TOOL_TITLE, 'List', 74, deps, fields),
+    toolCommand(FORM_FIELD_TEXT_TOOL_ID, { full: FORM_FIELD_TEXT_TOOL_TITLE, ribbon: RIBBON_FIELD_TEXT }, 'TextCursor', 70, deps, fields),
+    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, { full: FORM_FIELD_CHECKBOX_TOOL_TITLE, ribbon: RIBBON_FIELD_CHECKBOX }, 'SquareCheck', 71, deps, fields),
+    toolCommand(FORM_FIELD_RADIO_TOOL_ID, { full: FORM_FIELD_RADIO_TOOL_TITLE, ribbon: RIBBON_FIELD_RADIO }, 'CircleDot', 72, deps, fields),
+    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, { full: FORM_FIELD_DROPDOWN_TOOL_TITLE, ribbon: RIBBON_FIELD_DROPDOWN }, 'ChevronDown', 73, deps, fields),
+    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, { full: FORM_FIELD_LISTBOX_TOOL_TITLE, ribbon: RIBBON_FIELD_LISTBOX }, 'List', 74, deps, fields),
   ];
 }

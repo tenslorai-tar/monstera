@@ -221,7 +221,15 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
                   // icon is refused at construction, so `File` is never drawn for a
                   // command in the shipped graph.
                   icon={entry.command.icon ?? 'File'}
-                  label={entry.command.title}
+                  // THE SHORT FORM WHERE THERE IS ONE, and the full title as the
+                  // tooltip in exactly that case — so a tooltip appears on the
+                  // ribbon precisely where the caption is an abbreviation, and
+                  // never to repeat what is already under the pointer. Both texts
+                  // are the command's; this surface composes no string.
+                  label={entry.command.ribbonTitle ?? entry.command.title}
+                  description={
+                    entry.command.ribbonTitle === undefined ? undefined : entry.command.title
+                  }
                   onClick={() => {
                     // Not awaited, for `QuickToolbar`'s reason: a handler
                     // returning a promise would make React's event handling

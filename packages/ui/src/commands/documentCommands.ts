@@ -144,6 +144,37 @@ import {
   EXPORT_PDFA_COMMAND_TITLE,
   OPTIMIZE_CHECKING,
   OPTIMIZE_COMMAND_TITLE,
+  RIBBON_OPTIMIZE,
+  RIBBON_EXPORT_LAYOUT_TEXT,
+  RIBBON_EXPORT_WORD,
+  RIBBON_EXPORT_POWERPOINT,
+  RIBBON_EXPORT_EXCEL,
+  RIBBON_EXPORT_PDFA,
+  RIBBON_ROTATE_180,
+  RIBBON_ROTATE_270,
+  RIBBON_DESKEW,
+  RIBBON_PAGE_TRANSITION,
+  RIBBON_INSERT_BLANK,
+  RIBBON_INSERT_FROM_PDF,
+  RIBBON_GENERATE_TOC,
+  RIBBON_PAGE_BACKGROUND,
+  RIBBON_HEADER_FOOTER,
+  RIBBON_EXPORT_PAGE_IMAGES,
+  RIBBON_MERGE,
+  RIBBON_IMPORT_LAYER,
+  RIBBON_FIND_DUPLICATES,
+  RIBBON_EDIT_TEXT,
+  RIBBON_EDIT_OBJECT,
+  RIBBON_FLAT_FIELDS,
+  RIBBON_FORM_EXPORT_JSON,
+  RIBBON_FORM_EXPORT_XFDF,
+  RIBBON_FORM_EXPORT_FDF,
+  RIBBON_FORM_IMPORT_JSON,
+  RIBBON_FORM_IMPORT_XFDF,
+  RIBBON_FORM_IMPORT_FDF,
+  RIBBON_REDACT_MATCHES,
+  RIBBON_SAVE_COPY,
+  RIBBON_PROTECT_DOCUMENT,
   EXPORT_TEXT_COMMAND_TITLE,
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
@@ -681,22 +712,42 @@ export function findCommand(deps: { readonly settings: SettingsStore }): UiComma
  * together where the single one was.
  */
 const ROTATIONS = {
+  // ONE QUARTER TURN KEEPS ITS TITLE on the ribbon: *Rotate page* is already two
+  // words, and a caption of *Rotate* beside *Rotate 180°* would read as the
+  // general case rather than as the third member of a set.
   1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, icon: 'RotateCw', order: 10 },
-  2: { id: 'document.rotate-page-180', title: ROTATE_PAGE_180_TITLE, icon: 'RefreshCw', order: 11 },
-  3: { id: 'document.rotate-page-270', title: ROTATE_PAGE_270_TITLE, icon: 'RotateCcw', order: 12 },
+  2: {
+    id: 'document.rotate-page-180',
+    title: ROTATE_PAGE_180_TITLE,
+    ribbonTitle: RIBBON_ROTATE_180,
+    icon: 'RefreshCw',
+    order: 11,
+  },
+  3: {
+    id: 'document.rotate-page-270',
+    title: ROTATE_PAGE_270_TITLE,
+    ribbonTitle: RIBBON_ROTATE_270,
+    icon: 'RotateCcw',
+    order: 12,
+  },
 } as const satisfies Record<
   1 | 2 | 3,
-  { id: string; title: MessageKey; icon: IconName; order: number }
+  { id: string; title: MessageKey; ribbonTitle?: MessageKey; icon: IconName; order: number }
 >;
 
 export function rotatePageCommand(
   deps: DocumentCommandDeps,
   quarterTurns: 1 | 2 | 3 = 1,
 ): UiCommand {
-  const { id, title, icon, order } = ROTATIONS[quarterTurns];
+  const spec = ROTATIONS[quarterTurns];
+  const { id, title, icon, order } = spec;
   return {
     id,
     title,
+    // ONE OF THE THREE HAS NO SHORT FORM, so this reads it off the table rather
+    // than spelling it — `in` narrows where a property access on the union does
+    // not, and `exactOptionalPropertyTypes` refuses a bare `undefined` here.
+    ...('ribbonTitle' in spec ? { ribbonTitle: spec.ribbonTitle } : {}),
     icon,
     // THE TABLE'S OWN `order`, so the three rotations sit in the ribbon in the
     // sequence it already fixed. A second number here would be a second opinion
@@ -746,6 +797,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.insert-blank-page',
     icon: 'FilePlus',
     title: INSERT_BLANK_PAGE_TITLE,
+    ribbonTitle: RIBBON_INSERT_BLANK,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 10 },
       { surface: 'context-menu', context: 'page', order: 20 },
@@ -960,6 +1012,7 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.header-footer',
     icon: 'PanelTop',
     title: HEADER_FOOTER_COMMAND_TITLE,
+    ribbonTitle: RIBBON_HEADER_FOOTER,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 30 },
     ],
@@ -1036,6 +1089,7 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.page-transition',
     icon: 'Presentation',
     title: PAGE_TRANSITION_COMMAND_TITLE,
+    ribbonTitle: RIBBON_PAGE_TRANSITION,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 },
     ],
@@ -1115,6 +1169,7 @@ export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.deskew-pages',
     icon: 'RotateCwSquare',
     title: DESKEW_PAGES_COMMAND_TITLE,
+    ribbonTitle: RIBBON_DESKEW,
     placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1233,6 +1288,7 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.generate-toc',
     icon: 'ListOrdered',
     title: GENERATE_TOC_COMMAND_TITLE,
+    ribbonTitle: RIBBON_GENERATE_TOC,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 40 },
     ],
@@ -1286,6 +1342,7 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.merge',
     icon: 'Merge',
     title: MERGE_DOCUMENT_COMMAND_TITLE,
+    ribbonTitle: RIBBON_MERGE,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 60 },
     ],
@@ -1348,6 +1405,7 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.insert-from-pdf',
     icon: 'FileInput',
     title: INSERT_FROM_PDF_COMMAND_TITLE,
+    ribbonTitle: RIBBON_INSERT_FROM_PDF,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 20 },
     ],
@@ -1460,6 +1518,7 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.import-page-as-layer',
     icon: 'Layers',
     title: IMPORT_PAGE_AS_LAYER_COMMAND_TITLE,
+    ribbonTitle: RIBBON_IMPORT_LAYER,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 72 },
     ],
@@ -1509,6 +1568,7 @@ export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.page-background',
     icon: 'PaintBucket',
     title: PAGE_BACKGROUND_COMMAND_TITLE,
+    ribbonTitle: RIBBON_PAGE_BACKGROUND,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 10 },
     ],
@@ -1590,6 +1650,7 @@ export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand 
     id: 'document.find-duplicate-pages',
     icon: 'CopyCheck',
     title: FIND_DUPLICATES_COMMAND_TITLE,
+    ribbonTitle: RIBBON_FIND_DUPLICATES,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 80 },
     ],
@@ -2017,6 +2078,7 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.export-layout-text',
     icon: 'FileText',
     title: EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EXPORT_LAYOUT_TEXT,
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 41 }],
     when: hasDocument,
     run: (context) => runTextExport(deps, context, 'layout'),
@@ -2035,6 +2097,7 @@ export function exportWordCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.export-word',
     icon: 'FileText',
     title: EXPORT_WORD_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EXPORT_WORD,
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 42 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2067,6 +2130,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.export-powerpoint',
     icon: 'FileImage',
     title: EXPORT_POWERPOINT_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EXPORT_POWERPOINT,
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 43 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2116,6 +2180,7 @@ export function exportExcelCommand(
     id: 'document.export-excel',
     icon: 'FileSpreadsheet',
     title: EXPORT_EXCEL_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EXPORT_EXCEL,
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 44 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2209,6 +2274,7 @@ export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.export-pdfa',
     icon: 'FileCheck',
     title: EXPORT_PDFA_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EXPORT_PDFA,
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 46 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2270,6 +2336,7 @@ export function optimizeCommand(
     id: 'document.optimize',
     icon: 'Shrink',
     title: OPTIMIZE_COMMAND_TITLE,
+    ribbonTitle: RIBBON_OPTIMIZE,
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 47 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2447,6 +2514,7 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.export-page-images',
     icon: 'FileImage',
     title: EXPORT_PAGE_IMAGES_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EXPORT_PAGE_IMAGES,
     placements: [
       { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 55 },
     ],
@@ -2504,12 +2572,15 @@ function exportFormDataCommand(
   format: FormDataFormat,
   id: string,
   title: MessageKey,
+  /** The ribbon's own caption, two words; the full title becomes its tooltip. */
+  ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
 ): (deps: DocumentCommandDeps) => UiCommand {
   return (deps) => ({
     id,
     title,
+    ribbonTitle,
     icon,
     // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
     // caller's, so import and export interleave by the numbering that already
@@ -2543,6 +2614,7 @@ export const exportFormDataJsonCommand = exportFormDataCommand(
   'json',
   'document.export-form-data-json',
   EXPORT_FORM_DATA_JSON_TITLE,
+  RIBBON_FORM_EXPORT_JSON,
   32,
   'Braces',
 );
@@ -2550,6 +2622,7 @@ export const exportFormDataXfdfCommand = exportFormDataCommand(
   'xfdf',
   'document.export-form-data-xfdf',
   EXPORT_FORM_DATA_XFDF_TITLE,
+  RIBBON_FORM_EXPORT_XFDF,
   33,
   'FileCode',
 );
@@ -2557,6 +2630,7 @@ export const exportFormDataFdfCommand = exportFormDataCommand(
   'fdf',
   'document.export-form-data-fdf',
   EXPORT_FORM_DATA_FDF_TITLE,
+  RIBBON_FORM_EXPORT_FDF,
   34,
   'FileDown',
 );
@@ -2581,12 +2655,15 @@ function importFormDataCommand(
   format: FormDataImportFormat,
   id: string,
   title: MessageKey,
+  /** The ribbon's own caption, two words; the full title becomes its tooltip. */
+  ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
 ): (deps: DocumentCommandDeps) => UiCommand {
   return (deps) => ({
     id,
     title,
+    ribbonTitle,
     icon,
     // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
     // caller's, so import and export interleave by the numbering that already
@@ -2632,6 +2709,7 @@ export const importFormDataJsonCommand = importFormDataCommand(
   'json',
   'document.import-form-data-json',
   IMPORT_FORM_DATA_JSON_TITLE,
+  RIBBON_FORM_IMPORT_JSON,
   35,
   'FileUp',
 );
@@ -2639,6 +2717,7 @@ export const importFormDataXfdfCommand = importFormDataCommand(
   'xfdf',
   'document.import-form-data-xfdf',
   IMPORT_FORM_DATA_XFDF_TITLE,
+  RIBBON_FORM_IMPORT_XFDF,
   36,
   'FileUp',
 );
@@ -2646,6 +2725,7 @@ export const importFormDataFdfCommand = importFormDataCommand(
   'fdf',
   'document.import-form-data-fdf',
   IMPORT_FORM_DATA_FDF_TITLE,
+  RIBBON_FORM_IMPORT_FDF,
   37,
   'FileUp',
 );
@@ -2679,6 +2759,7 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.find-flat-fields',
     icon: 'SquareDashedMousePointer',
     title: FLAT_FIELDS_COMMAND_TITLE,
+    ribbonTitle: RIBBON_FLAT_FIELDS,
     placements: [
       { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 10 },
     ],
@@ -2732,6 +2813,7 @@ export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.save-copy',
     icon: 'SaveAll',
     title: SAVE_COPY_TITLE,
+    ribbonTitle: RIBBON_SAVE_COPY,
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 30 },
     ],
@@ -2804,6 +2886,7 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.replace-text-object',
     icon: 'Type',
     title: REPLACE_TEXT_OBJECT_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EDIT_TEXT,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2904,6 +2987,7 @@ export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.edit-page-object',
     icon: 'SquarePen',
     title: EDIT_PAGE_OBJECT_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EDIT_OBJECT,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -3233,6 +3317,7 @@ export function redactMatchesCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.redact-matches',
     icon: 'TextSearch',
     title: REDACT_MATCHES_COMMAND_TITLE,
+    ribbonTitle: RIBBON_REDACT_MATCHES,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 20 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -3317,6 +3402,7 @@ export function protectDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.protect',
     icon: 'Lock',
     title: PROTECT_DOCUMENT_COMMAND_TITLE,
+    ribbonTitle: RIBBON_PROTECT_DOCUMENT,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_ENCRYPTION, order: 10 }],
     when: hasDocument,
     run: async (context): Promise<void> => {

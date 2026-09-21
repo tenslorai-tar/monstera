@@ -851,7 +851,12 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      for (const name of ['Rotate page', 'Rotate page 180°', 'Rotate page 270°']) {
+      // THE RIBBON'S OWN CAPTIONS, which is what a person presses and what the
+      // accessible name is. Two of the three are abbreviations since the design
+      // pass (2026-09-21) and carry the full title as their description; a case
+      // naming the full title here would be looking for a string the ribbon does
+      // not put on the control.
+      for (const name of ['Rotate page', 'Rotate 180°', 'Rotate 270°']) {
         await pressCommand(name);
       }
 
@@ -938,7 +943,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await pressCommand('Find duplicate pages…');
+      await pressCommand('Duplicates…');
 
       // ONE-BASED IN THE LABEL. The model's `[0, 3]` reads as pages 1 and 4,
       // and a body that showed the indices would name two pages the reader
@@ -1015,7 +1020,7 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await pressCommand('Insert blank page');
+      await pressCommand('Blank page');
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);

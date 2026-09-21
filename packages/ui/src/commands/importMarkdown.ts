@@ -14,6 +14,11 @@ import {
   NEW_FROM_CSV_COMMAND_TITLE,
   NEW_FROM_IMAGES_COMMAND_TITLE,
   NEW_FROM_MARKDOWN_COMMAND_TITLE,
+  RIBBON_NEW_FROM_MARKDOWN,
+  RIBBON_NEW_FROM_CSV,
+  RIBBON_NEW_FROM_IMAGES,
+  RIBBON_NEW_FROM_CAMERA,
+  RIBBON_APPEND_MARKDOWN,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
@@ -132,6 +137,7 @@ export function newFromMarkdownCommand(deps: {
     id: 'document.new-from-markdown',
     icon: 'FileCode',
     title: NEW_FROM_MARKDOWN_COMMAND_TITLE,
+    ribbonTitle: RIBBON_NEW_FROM_MARKDOWN,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 10 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromMarkdown']({});
@@ -176,6 +182,7 @@ export function newFromCsvCommand(deps: {
     id: 'document.new-from-csv',
     icon: 'Sheet',
     title: NEW_FROM_CSV_COMMAND_TITLE,
+    ribbonTitle: RIBBON_NEW_FROM_CSV,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromCsv']({});
@@ -219,6 +226,7 @@ export function newFromImagesCommand(deps: {
     id: 'document.new-from-images',
     icon: 'Images',
     title: NEW_FROM_IMAGES_COMMAND_TITLE,
+    ribbonTitle: RIBBON_NEW_FROM_IMAGES,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 40 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromImages']({});
@@ -263,6 +271,7 @@ export function newFromCaptureCommand(deps: {
     id: 'document.new-from-camera',
     icon: 'Webcam',
     title: NEW_FROM_CAMERA_COMMAND_TITLE,
+    ribbonTitle: RIBBON_NEW_FROM_CAMERA,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 60 }],
     run: async (): Promise<void> => {
       const taken = CAMERA_CAPTURE_RESULT.safeParse(await deps.ask(CAMERA_CAPTURE_DIALOG_ID, {}));
@@ -318,6 +327,7 @@ export function appendMarkdownCommand(
     id: 'document.append-markdown',
     icon: 'ListPlus',
     title: APPEND_MARKDOWN_COMMAND_TITLE,
+    ribbonTitle: RIBBON_APPEND_MARKDOWN,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 20 }],
     when: hasDocument,
     run: async (context): Promise<void> => {

@@ -15,6 +15,10 @@ import {
   OCR_EXPORT_COMMAND_TITLE,
   OCR_PROGRESS,
   SCAN_COMMAND_TITLE,
+  RIBBON_OCR,
+  RIBBON_OCR_EXPORT,
+  RIBBON_ENHANCE,
+  RIBBON_STRAIGHTEN_PHOTOS,
 } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
@@ -83,6 +87,7 @@ export function recogniseTextCommand(
     id: 'document.ocr',
     icon: 'ScanText',
     title: OCR_COMMAND_TITLE,
+    ribbonTitle: RIBBON_OCR,
     // TOOLS › OCR, which `BUILD-PROMPT.md`:472 names for D6.
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 10 }],
     when: hasDocument,
@@ -151,6 +156,7 @@ export function enhanceScansCommand(
     id: 'document.enhance-scans',
     icon: 'WandSparkles',
     title: ENHANCE_COMMAND_TITLE,
+    ribbonTitle: RIBBON_ENHANCE,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 30 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
@@ -230,6 +236,7 @@ export function straightenScansCommand(
     id: 'document.straighten-scans',
     icon: 'ScanLine',
     title: SCAN_COMMAND_TITLE,
+    ribbonTitle: RIBBON_STRAIGHTEN_PHOTOS,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 40 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
@@ -363,6 +370,7 @@ export function exportSearchableCommand(
     id: 'document.export-searchable',
     icon: 'FileSearch',
     title: OCR_EXPORT_COMMAND_TITLE,
+    ribbonTitle: RIBBON_OCR_EXPORT,
     placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 20 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {

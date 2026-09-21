@@ -123,8 +123,48 @@ export interface CommandContext {
 export interface UiCommand {
   /** `<domain>.<name>`, matching a `MessageKey`'s grammar. Unique registry-wide. */
   readonly id: string;
-  /** The user-facing label, as a key. A literal is a compile error here. */
+  /**
+   * The user-facing label, as a key. A literal is a compile error here.
+   *
+   * **The full form**, and it stays the full form: the palette is searched, and a
+   * context menu has room for a sentence. {@link ribbonTitle} is what the ribbon
+   * draws instead where this is too long for it.
+   */
   readonly title: MessageKey;
+  /**
+   * One or two words, for the RIBBON only — the owner's design pass, 2026-09-21.
+   *
+   * ## Why the short form is the addition, rather than the long one
+   *
+   * The obvious shape is the other way round: shorten `title` and add a
+   * `description` carrying the sentence. It was built that way first and is worse
+   * in three ways, all of which the measurement or the record already answer.
+   *
+   * `title` reaches **every** surface. Shortening it shortens the command palette,
+   * which is searched rather than scanned, and the four context menus, where the
+   * owner's own row spells the items out in full — *Mark for redaction*, *Close
+   * other tabs*. Nothing about those surfaces was crowded; the ribbon was, and it
+   * is the only one the owner's complaint names.
+   *
+   * It also makes the sentence a **new string** for every command, where here it
+   * already exists and is already translated. And it makes the two texts
+   * independently editable, so they can drift into saying different things — which
+   * is the defect `Tooltip`'s original rule was written against.
+   *
+   * ## Absent means the title already fits
+   *
+   * `ToolButton` is then rendered with no tooltip at all rather than one repeating
+   * the caption: a tooltip that says what is already on screen is noise a pointer
+   * user cannot dismiss, and it adds nothing to the accessibility tree, since the
+   * visible caption is already the name. **So a tooltip appears on the ribbon
+   * exactly where the label is an abbreviation**, which is the rule a reader can
+   * learn rather than a per-button decision.
+   *
+   * Measured before the rule was applied, at 800 px: Organize asked for 2980 px,
+   * Comment 2642, Tools 2508, Forms 1611, Review 1428, Home 1366, Protect 896,
+   * Edit 800. Every section but one overflowed.
+   */
+  readonly ribbonTitle?: MessageKey;
   /**
    * The glyph a surface draws for this command, from the one closed set.
    *

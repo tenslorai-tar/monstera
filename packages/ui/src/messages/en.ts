@@ -1303,6 +1303,86 @@ export const TASK_CANCEL = messageKey('status.task.cancel');
 export const CLOSE_TAB_TITLE = messageKey('command.close-tab.title');
 export const CLOSE_OTHERS_TITLE = messageKey('command.close-others.title');
 export const OPEN_SIDE_BY_SIDE_TITLE = messageKey('command.open-side-by-side.title');
+
+/*
+ * RIBBON CAPTIONS — one or two words, the owner's design pass (2026-09-21).
+ *
+ * A separate key per command rather than a shortened `title`, because `title`
+ * reaches the palette and the four context menus too and nothing about those was
+ * crowded. `UiCommand.ribbonTitle` carries the reasoning; the full title becomes
+ * the button's tooltip in exactly the cases a key here exists.
+ *
+ * They are grouped by ribbon section, in the order the sweep reported them, so
+ * that a section's captions can be read as a set — which is how a person meets
+ * them. Two sections' import and export captions repeat across sections (Forms
+ * and Review both spell *Import XFDF…*); the group caption above them says which
+ * is which, and the tooltip says it in full.
+ */
+export const RIBBON_SAVE_COPY = messageKey('ribbon.save-copy');
+export const RIBBON_EXPORT_LAYOUT_TEXT = messageKey('ribbon.export-layout-text');
+export const RIBBON_EXPORT_WORD = messageKey('ribbon.export-word');
+export const RIBBON_EXPORT_POWERPOINT = messageKey('ribbon.export-powerpoint');
+export const RIBBON_EXPORT_EXCEL = messageKey('ribbon.export-excel');
+export const RIBBON_EXPORT_PDFA = messageKey('ribbon.export-pdfa');
+export const RIBBON_OPTIMIZE = messageKey('ribbon.optimize');
+export const RIBBON_SNAPSHOT = messageKey('ribbon.snapshot');
+export const RIBBON_STRIKEOUT = messageKey('ribbon.strikeout');
+export const RIBBON_REDACT_MARK = messageKey('ribbon.redact-mark');
+export const RIBBON_LINK_ADDRESS = messageKey('ribbon.link-address');
+export const RIBBON_LINK_PAGE = messageKey('ribbon.link-page');
+export const RIBBON_PLACE_IMAGE = messageKey('ribbon.place-image');
+export const RIBBON_OCR_REGION = messageKey('ribbon.ocr-region');
+export const RIBBON_CLOUD_REGION = messageKey('ribbon.cloud-region');
+export const RIBBON_CLAUDE_REGION = messageKey('ribbon.claude-region');
+export const RIBBON_EDIT_TEXT = messageKey('ribbon.edit-text');
+export const RIBBON_EDIT_OBJECT = messageKey('ribbon.edit-object');
+export const RIBBON_ROTATE_180 = messageKey('ribbon.rotate-180');
+export const RIBBON_ROTATE_270 = messageKey('ribbon.rotate-270');
+export const RIBBON_DESKEW = messageKey('ribbon.deskew');
+export const RIBBON_PAGE_TRANSITION = messageKey('ribbon.page-transition');
+export const RIBBON_PLACE_BARCODE = messageKey('ribbon.place-barcode');
+export const RIBBON_INSERT_BLANK = messageKey('ribbon.insert-blank');
+export const RIBBON_INSERT_FROM_PDF = messageKey('ribbon.insert-from-pdf');
+export const RIBBON_GENERATE_TOC = messageKey('ribbon.generate-toc');
+export const RIBBON_PAGE_BACKGROUND = messageKey('ribbon.page-background');
+export const RIBBON_HEADER_FOOTER = messageKey('ribbon.header-footer');
+export const RIBBON_EXPORT_PAGE_IMAGES = messageKey('ribbon.export-page-images');
+export const RIBBON_MERGE = messageKey('ribbon.merge');
+export const RIBBON_IMPORT_LAYER = messageKey('ribbon.import-layer');
+export const RIBBON_EDIT_EXTERNALLY = messageKey('ribbon.edit-externally');
+export const RIBBON_FIND_DUPLICATES = messageKey('ribbon.find-duplicates');
+export const RIBBON_FLAT_FIELDS = messageKey('ribbon.flat-fields');
+export const RIBBON_FORM_EXPORT_JSON = messageKey('ribbon.form-export-json');
+export const RIBBON_FORM_EXPORT_XFDF = messageKey('ribbon.form-export-xfdf');
+export const RIBBON_FORM_EXPORT_FDF = messageKey('ribbon.form-export-fdf');
+export const RIBBON_FORM_IMPORT_JSON = messageKey('ribbon.form-import-json');
+export const RIBBON_FORM_IMPORT_XFDF = messageKey('ribbon.form-import-xfdf');
+export const RIBBON_FORM_IMPORT_FDF = messageKey('ribbon.form-import-fdf');
+export const RIBBON_FIELD_TEXT = messageKey('ribbon.field-text');
+export const RIBBON_FIELD_CHECKBOX = messageKey('ribbon.field-checkbox');
+export const RIBBON_FIELD_RADIO = messageKey('ribbon.field-radio');
+export const RIBBON_FIELD_DROPDOWN = messageKey('ribbon.field-dropdown');
+export const RIBBON_FIELD_LISTBOX = messageKey('ribbon.field-listbox');
+export const RIBBON_COMMENTS_IMPORT_XFDF = messageKey('ribbon.comments-import-xfdf');
+export const RIBBON_COMMENTS_IMPORT_FDF = messageKey('ribbon.comments-import-fdf');
+export const RIBBON_COMMENTS_IMPORT_JSON = messageKey('ribbon.comments-import-json');
+export const RIBBON_COMMENTS_EXPORT_XFDF = messageKey('ribbon.comments-export-xfdf');
+export const RIBBON_COMMENTS_EXPORT_FDF = messageKey('ribbon.comments-export-fdf');
+export const RIBBON_COMMENTS_EXPORT_JSON = messageKey('ribbon.comments-export-json');
+export const RIBBON_PROTECT_DOCUMENT = messageKey('ribbon.protect-document');
+export const RIBBON_REDACT_MATCHES = messageKey('ribbon.redact-matches');
+export const RIBBON_PLACE_SIGNATURE = messageKey('ribbon.place-signature');
+export const RIBBON_DIAGNOSTICS = messageKey('ribbon.diagnostics');
+export const RIBBON_NEW_FROM_MARKDOWN = messageKey('ribbon.new-from-markdown');
+export const RIBBON_APPEND_MARKDOWN = messageKey('ribbon.append-markdown');
+export const RIBBON_NEW_FROM_CSV = messageKey('ribbon.new-from-csv');
+export const RIBBON_NEW_FROM_IMAGES = messageKey('ribbon.new-from-images');
+export const RIBBON_OPEN_FROM_URL = messageKey('ribbon.open-from-url');
+export const RIBBON_NEW_FROM_CAMERA = messageKey('ribbon.new-from-camera');
+export const RIBBON_OCR = messageKey('ribbon.ocr');
+export const RIBBON_OCR_EXPORT = messageKey('ribbon.ocr-export');
+export const RIBBON_ENHANCE = messageKey('ribbon.enhance');
+export const RIBBON_STRAIGHTEN_PHOTOS = messageKey('ribbon.straighten-photos');
 export const COPY_SELECTION_TITLE = messageKey('command.text-copy.title');
 export const HIGHLIGHT_SELECTION_TITLE = messageKey('command.text-highlight.title');
 export const UNDERLINE_SELECTION_TITLE = messageKey('command.text-underline.title');
@@ -2844,6 +2924,77 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // wording and it is also what a reader is asking for — the second pane is an
   // implementation of the request, not the request.
   [OPEN_SIDE_BY_SIDE_TITLE]: 'Open side by side',
+
+  // RIBBON CAPTIONS. Each one abbreviates the title above it, and the title is
+  // the tooltip — so the caption may be a word the sentence explains, and may
+  // never be a word that contradicts it.
+  [RIBBON_SAVE_COPY]: 'Save copy…',
+  [RIBBON_EXPORT_LAYOUT_TEXT]: 'Layout text…',
+  [RIBBON_EXPORT_WORD]: 'Word…',
+  [RIBBON_EXPORT_POWERPOINT]: 'PowerPoint…',
+  [RIBBON_EXPORT_EXCEL]: 'Excel…',
+  [RIBBON_EXPORT_PDFA]: 'PDF/A…',
+  // WHAT IT DOES, not what it is called elsewhere: *Save a smaller copy* is the
+  // sentence, and the one word for it is the one people search for.
+  [RIBBON_OPTIMIZE]: 'Compress…',
+  [RIBBON_SNAPSHOT]: 'Snapshot',
+  [RIBBON_STRIKEOUT]: 'Strikethrough',
+  [RIBBON_REDACT_MARK]: 'Redact',
+  [RIBBON_LINK_ADDRESS]: 'Web link',
+  [RIBBON_LINK_PAGE]: 'Page link',
+  [RIBBON_PLACE_IMAGE]: 'Image',
+  [RIBBON_OCR_REGION]: 'Recognise',
+  [RIBBON_CLOUD_REGION]: 'Azure OCR',
+  [RIBBON_CLAUDE_REGION]: 'Claude OCR',
+  [RIBBON_EDIT_TEXT]: 'Edit text',
+  [RIBBON_EDIT_OBJECT]: 'Edit object',
+  [RIBBON_ROTATE_180]: 'Rotate 180°',
+  [RIBBON_ROTATE_270]: 'Rotate 270°',
+  [RIBBON_DESKEW]: 'Straighten',
+  [RIBBON_PAGE_TRANSITION]: 'Transitions',
+  [RIBBON_PLACE_BARCODE]: 'Barcode',
+  [RIBBON_INSERT_BLANK]: 'Blank page',
+  [RIBBON_INSERT_FROM_PDF]: 'Insert PDF…',
+  [RIBBON_GENERATE_TOC]: 'Contents',
+  [RIBBON_PAGE_BACKGROUND]: 'Background',
+  [RIBBON_HEADER_FOOTER]: 'Headers…',
+  [RIBBON_EXPORT_PAGE_IMAGES]: 'Page images…',
+  [RIBBON_MERGE]: 'Merge…',
+  [RIBBON_IMPORT_LAYER]: 'As layer…',
+  [RIBBON_EDIT_EXTERNALLY]: 'External edit…',
+  [RIBBON_FIND_DUPLICATES]: 'Duplicates…',
+  [RIBBON_FLAT_FIELDS]: 'Find fields…',
+  [RIBBON_FORM_EXPORT_JSON]: 'Export JSON…',
+  [RIBBON_FORM_EXPORT_XFDF]: 'Export XFDF…',
+  [RIBBON_FORM_EXPORT_FDF]: 'Export FDF…',
+  [RIBBON_FORM_IMPORT_JSON]: 'Import JSON…',
+  [RIBBON_FORM_IMPORT_XFDF]: 'Import XFDF…',
+  [RIBBON_FORM_IMPORT_FDF]: 'Import FDF…',
+  [RIBBON_FIELD_TEXT]: 'Text field',
+  [RIBBON_FIELD_CHECKBOX]: 'Tick box',
+  [RIBBON_FIELD_RADIO]: 'Radio option',
+  [RIBBON_FIELD_DROPDOWN]: 'Dropdown',
+  [RIBBON_FIELD_LISTBOX]: 'List box',
+  [RIBBON_COMMENTS_IMPORT_XFDF]: 'Import XFDF…',
+  [RIBBON_COMMENTS_IMPORT_FDF]: 'Import FDF…',
+  [RIBBON_COMMENTS_IMPORT_JSON]: 'Import JSON…',
+  [RIBBON_COMMENTS_EXPORT_XFDF]: 'Export XFDF…',
+  [RIBBON_COMMENTS_EXPORT_FDF]: 'Export FDF…',
+  [RIBBON_COMMENTS_EXPORT_JSON]: 'Export JSON…',
+  [RIBBON_PROTECT_DOCUMENT]: 'Permissions…',
+  [RIBBON_REDACT_MATCHES]: 'Redact matches…',
+  [RIBBON_PLACE_SIGNATURE]: 'Signature',
+  [RIBBON_DIAGNOSTICS]: 'Diagnostics',
+  [RIBBON_NEW_FROM_MARKDOWN]: 'From Markdown…',
+  [RIBBON_APPEND_MARKDOWN]: 'Append Markdown…',
+  [RIBBON_NEW_FROM_CSV]: 'From CSV…',
+  [RIBBON_NEW_FROM_IMAGES]: 'From images…',
+  [RIBBON_OPEN_FROM_URL]: 'From URL…',
+  [RIBBON_NEW_FROM_CAMERA]: 'From camera…',
+  [RIBBON_OCR]: 'OCR pages',
+  [RIBBON_OCR_EXPORT]: 'Searchable copy',
+  [RIBBON_ENHANCE]: 'Clean up',
+  [RIBBON_STRAIGHTEN_PHOTOS]: 'Deskew photos',
   [COPY_SELECTION_TITLE]: 'Copy',
   [HIGHLIGHT_SELECTION_TITLE]: 'Highlight',
   [UNDERLINE_SELECTION_TITLE]: 'Underline',

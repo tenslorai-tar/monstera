@@ -12,6 +12,12 @@ import {
   IMPORT_ANNOTATIONS_FDF_TITLE,
   IMPORT_ANNOTATIONS_JSON_TITLE,
   IMPORT_ANNOTATIONS_XFDF_TITLE,
+  RIBBON_COMMENTS_IMPORT_XFDF,
+  RIBBON_COMMENTS_IMPORT_FDF,
+  RIBBON_COMMENTS_IMPORT_JSON,
+  RIBBON_COMMENTS_EXPORT_XFDF,
+  RIBBON_COMMENTS_EXPORT_FDF,
+  RIBBON_COMMENTS_EXPORT_JSON,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -30,12 +36,15 @@ function exportAnnotationsCommand(
   format: AnnotationDataFormat,
   id: string,
   title: MessageKey,
+  /** The ribbon's own caption, two words; the full title becomes its tooltip. */
+  ribbonTitle: MessageKey,
   order: number,
   icon: IconName,
 ): (deps: DocumentCommandDeps) => UiCommand {
   return (deps) => ({
     id,
     title,
+    ribbonTitle,
     icon,
     placements: [{ surface: 'ribbon', section: 'review', group: GROUP_COMMENT_FILES, order }],
     when: hasDocument,
@@ -63,11 +72,14 @@ function importAnnotationsCommand(
   format: AnnotationDataFormat,
   id: string,
   title: MessageKey,
+  /** The ribbon's own caption, two words; the full title becomes its tooltip. */
+  ribbonTitle: MessageKey,
   order: number,
 ): (deps: DocumentCommandDeps) => UiCommand {
   return (deps) => ({
     id,
     title,
+    ribbonTitle,
     icon: 'FileUp',
     placements: [{ surface: 'ribbon', section: 'review', group: GROUP_COMMENT_FILES, order }],
     when: hasDocument,
@@ -104,24 +116,28 @@ export const importAnnotationsXfdfCommand = importAnnotationsCommand(
   'xfdf',
   'document.import-annotations-xfdf',
   IMPORT_ANNOTATIONS_XFDF_TITLE,
+  RIBBON_COMMENTS_IMPORT_XFDF,
   10,
 );
 export const importAnnotationsFdfCommand = importAnnotationsCommand(
   'fdf',
   'document.import-annotations-fdf',
   IMPORT_ANNOTATIONS_FDF_TITLE,
+  RIBBON_COMMENTS_IMPORT_FDF,
   11,
 );
 export const importAnnotationsJsonCommand = importAnnotationsCommand(
   'json',
   'document.import-annotations-json',
   IMPORT_ANNOTATIONS_JSON_TITLE,
+  RIBBON_COMMENTS_IMPORT_JSON,
   12,
 );
 export const exportAnnotationsXfdfCommand = exportAnnotationsCommand(
   'xfdf',
   'document.export-annotations-xfdf',
   EXPORT_ANNOTATIONS_XFDF_TITLE,
+  RIBBON_COMMENTS_EXPORT_XFDF,
   13,
   'FileCode',
 );
@@ -129,6 +145,7 @@ export const exportAnnotationsFdfCommand = exportAnnotationsCommand(
   'fdf',
   'document.export-annotations-fdf',
   EXPORT_ANNOTATIONS_FDF_TITLE,
+  RIBBON_COMMENTS_EXPORT_FDF,
   14,
   'FileDown',
 );
@@ -136,6 +153,7 @@ export const exportAnnotationsJsonCommand = exportAnnotationsCommand(
   'json',
   'document.export-annotations-json',
   EXPORT_ANNOTATIONS_JSON_TITLE,
+  RIBBON_COMMENTS_EXPORT_JSON,
   15,
   'Braces',
 );

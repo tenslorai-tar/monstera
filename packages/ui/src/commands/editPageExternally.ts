@@ -7,7 +7,11 @@ import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { REIMPORT_EXTERNAL_EDIT_DIALOG_ID } from '../dialogs/reimportExternalEdit.js';
 import { REIMPORT_EXTERNAL_EDIT_RESULT } from '../dialogs/reimportExternalEditResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
-import { EDIT_PAGE_EXTERNALLY_COMMAND_TITLE, GROUP_PAGES } from '../messages/en.js';
+import {
+  EDIT_PAGE_EXTERNALLY_COMMAND_TITLE,
+  GROUP_PAGES,
+  RIBBON_EDIT_EXTERNALLY,
+} from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
@@ -84,6 +88,7 @@ export function editPageExternallyCommand(
     id: 'document.edit-page-externally',
     icon: 'ExternalLink',
     title: EDIT_PAGE_EXTERNALLY_COMMAND_TITLE,
+    ribbonTitle: RIBBON_EDIT_EXTERNALLY,
     placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 75 }],
     when: hasDocument,
     run: async (context): Promise<void> => {

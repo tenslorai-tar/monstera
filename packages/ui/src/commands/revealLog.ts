@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 
-import { GROUP_APPLICATION, REVEAL_LOG_TITLE } from '../messages/en.js';
+import { GROUP_APPLICATION, REVEAL_LOG_TITLE, RIBBON_DIAGNOSTICS } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
 /**
@@ -30,6 +30,7 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     id: 'log.reveal',
     icon: 'ScrollText',
     title: REVEAL_LOG_TITLE,
+    ribbonTitle: RIBBON_DIAGNOSTICS,
     // The start screen, because that is where somebody who cannot open their
     // document goes looking. A document-scoped placement would put the
     // diagnostics behind the thing that is failing.

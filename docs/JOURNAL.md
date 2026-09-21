@@ -892,6 +892,94 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Ribbon captions in one or two words, and the measurement that says it is not enough
+
+The owner's design pass opens with an instruction that needs no approval: *"Rewrite
+every ribbon label to one or two words; the full description moves to the tooltip.
+Then the ribbon must fit at the minimum window width without scrolling, in all
+three themes."* The first half is done. **The second half does not follow from it,
+and the numbers are why.**
+
+## What was measured first
+
+Before renaming anything, every section was swept in the packaged shell at the
+default 800×600 window — the tools strip's `scrollWidth` against its `clientWidth`:
+
+| section | needed | after the rename |
+|---|---|---|
+| Home | 1366 | **1034** |
+| Comment | 2642 | **2107** |
+| Edit | 800 | 800 |
+| Organize | 2980 | **2300** |
+| Forms | 1611 | **952** |
+| Review | 1428 | **986** |
+| Protect | 896 | **800** |
+| Tools | 2508 | **1840** |
+
+Seven of eight overflowed; two fit now. The rename is worth between 15% and 41% a
+section and **it cannot close the gap**, because the term that dominates is the
+button COUNT rather than the caption width. Measured on Tools before the change:
+23 buttons, 2396 px, 18 px of chrome each. Give every one a two-word caption of
+about 72 px and it still needs **2070**. Icon-only it would need 1058. Against 800.
+
+So Comment's 30 buttons and Organize's 29 need a layout answer — wrapping to rows,
+an overflow menu, or narrower buttons — and that is a design decision, which is
+7b's to approve rather than this item's to take.
+
+**And *the minimum window width* is not a thing this application has.** `window.ts`
+sets no `minWidth` and no `minHeight`; the 800×600 above is Electron's default, not
+a declared floor. The requirement cannot be checked until there is a number to check
+it against, and picking one is the owner's.
+
+## The shape that was built, and the one that was built first and thrown away
+
+The obvious design is to shorten `title` and add a `description` carrying the
+sentence. That was built, and it is wrong in three ways. `title` reaches **every**
+surface, so shortening it shortens the command palette — which is searched, not
+scanned — and the four context menus, where the owner's own row spells items out in
+full. Nothing about those was crowded. It also makes the sentence a **new string**
+per command when it already exists and is already translated, and it lets the two
+texts drift into saying different things.
+
+So the addition is the **short** form: `ribbonTitle` is the ribbon's caption, `title`
+stays the full form and becomes the tooltip **in exactly the cases a short form
+exists**. A button with no `ribbonTitle` is rendered with no tooltip at all, rather
+than one repeating the caption under the pointer. That gives a reader a rule instead
+of a per-button decision: on the ribbon, a tooltip means the caption is an
+abbreviation.
+
+## The accessibility half, which the tooltip did not provide
+
+Measured in the packaged shell with the popup open: the trigger carries
+`data-popup-open` and `data-base-ui-tooltip-trigger` and **no `aria-describedby`**.
+Base UI's tooltip reaches a pointer and nothing else. Abbreviating the caption would
+therefore have taken the sentence away from a screen-reader user and put nothing
+back — B9 makes that a defect rather than a shortfall.
+
+So the description is wired by hand: a visually hidden node carrying the full title,
+referenced by `aria-describedby`, **outside** the button. Inside, it would have
+become part of the accessible NAME, running the caption and the sentence together.
+Outside, the caption is the name and the sentence is the description — which is also
+what WCAG 2.5.3 needs, since an abbreviation is not a substring of what it stands
+for. It is present always rather than only while hovering, so the accessibility tree
+does not depend on where a pointer is.
+
+Read back from the running application: `Compress… :: Save a smaller copy…`,
+`Layout text… :: Export text with layout…`, and `Print… :: (no description)` —
+the unabbreviated ones carry none, which is the rule holding.
+
+## Three cases found the change, and that is the pair working
+
+`App.test.tsx` presses ribbon controls by name, and three did so by the full title.
+They failed with the helper's own sentence — *no control named "Insert blank page"
+in any ribbon section* — which is the error a rename should produce. They were
+updated to the captions rather than the helper being taught to accept either: the
+case presses what is on the screen, and a future rename should make somebody look.
+
+Baselines moved in all three themes and were regenerated after a build that
+completed; the suite's planted-change control reports 319 differing pixels, so a
+pass still means the screens matched.
+
 ## 2026-09-21 — Stage audit of `3fab823..57de0e0` — findings MMMMMM-1 to MMMMMM-6
 
 34 commits, 198 files: the close-with-unsaved-changes row and the removal of Electron's
