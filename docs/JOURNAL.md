@@ -892,6 +892,20 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — A comment is not "text the person selected"
+
+The last of the four not chased. *Draft a reply with AI* sent the note's contents under the
+`selection` scope, because the contract had no other scope that carries text, and the instruction
+chose its sentence from the scope — so the provider was told a note was selected text, and the
+model repeated it. The root is the missing scope, not the sentence: `comment` joins the contract
+with the selection's shape, the panel's line names it (*The comment on page 4*), and the
+instruction's sentences are a `Record` over the contract's scopes, so a scope added later cannot
+borrow another's words by falling through a ternary. ADR-0088 carries a dated correction.
+`askWindow.test` asserts a comment's instruction does not say *selected* and, as a control, that a
+selection's still does; `AssistantPanel.test` asserts the option's wording and the scope sent.
+
+---
+
 ## 2026-09-21 — Answers render as Markdown, built from tokens so no answer HTML exists
 
 The owner's assistant specification says rendered Markdown; answers were shown as plain text.

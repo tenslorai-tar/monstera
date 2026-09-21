@@ -31,6 +31,7 @@ import type { ConversationTurn, DocumentStore } from './documentStores.js';
 import {
   AI_PROVIDER_NAMES,
   ANTHROPIC_OUT_OF_CREDIT,
+  ASSISTANT_ABOUT_COMMENT,
   ASSISTANT_ABOUT_DOCUMENT,
   ASSISTANT_ABOUT_LABEL,
   ASSISTANT_ABOUT_NOTHING,
@@ -141,8 +142,11 @@ const PROBLEMS = {
   'no-key': ASSISTANT_NO_KEY,
 } as const;
 
-/** What the *Asking about* choice can be; a selection exists only when a command gave one. */
-type Scope = 'page' | 'document' | 'selection' | 'nothing';
+/**
+ * What the *Asking about* choice can be. A selection or a comment exists only when a command
+ * gave one, and is offered under its own name — the line and the instruction both say which.
+ */
+type Scope = 'page' | 'document' | 'selection' | 'comment' | 'nothing';
 
 const NO_SUBSCRIBE = (): (() => void) => () => undefined;
 const NO_TURNS: readonly ConversationTurn[] = [];
@@ -212,13 +216,17 @@ export function AssistantPanel({
   // the line can never name words from a file that is not in front of the reader.
   const docId = focused?.docId;
   const selection =
-    request?.about.scope === 'selection' && request.about.docId === docId ? request.about : null;
+    (request?.about.scope === 'selection' || request?.about.scope === 'comment') && request.about.docId === docId
+      ? request.about
+      : null;
   // THE PERSON'S CHOICE, stamped with the newest request it was made after: a request that
   // arrives later points the line, and a choice made after that request wins again.
   const requestedScope =
     request !== undefined && request.serial > chosen.after ? request.about.scope : undefined;
   const wanted = requestedScope ?? chosen.scope;
-  const scope: Scope = wanted === 'selection' && selection === null ? 'page' : wanted;
+  // A CARRIED SCOPE WITH NOTHING CARRYING IT falls back to the page — the request was about
+  // another document, or none arrived.
+  const scope: Scope = (wanted === 'selection' || wanted === 'comment') && selection?.scope !== wanted ? 'page' : wanted;
   const choose = (next: Scope): void => {
     setChosen({ scope: next, after: request?.serial ?? 0 });
   };
@@ -255,7 +263,7 @@ export function AssistantPanel({
   const aboutFor = useCallback(
     (chosen: Scope): AskAbout | undefined => {
       if (focused === undefined || chosen === 'nothing') return undefined;
-      if (chosen === 'selection') return selection ?? undefined;
+      if (chosen === 'selection' || chosen === 'comment') return selection ?? undefined;
       if (chosen === 'page') return { scope: 'page', docId: focused.docId, page: focused.page };
       return { scope: 'document', docId: focused.docId };
     },
@@ -451,8 +459,10 @@ export function AssistantPanel({
               value={scope}
             >
               {selection !== null && (
-                <option value="selection">
-                  {i18n._(ASSISTANT_ABOUT_SELECTION, { page: pdfjsPageOf(selection.page) })}
+                <option value={selection.scope}>
+                  {i18n._(selection.scope === 'comment' ? ASSISTANT_ABOUT_COMMENT : ASSISTANT_ABOUT_SELECTION, {
+                    page: pdfjsPageOf(selection.page),
+                  })}
                 </option>
               )}
               <option value="page">{i18n._(ASSISTANT_ABOUT_PAGE, { page: pdfjsPageOf(focused.page) })}</option>

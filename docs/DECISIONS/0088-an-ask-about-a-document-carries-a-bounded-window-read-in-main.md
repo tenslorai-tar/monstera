@@ -83,3 +83,12 @@ first.
   shape admits — the window is built by a loop over pages, and a range is a different start.
 - `ChatRequest` gains a `system` instruction, and each adapter's request shape carries it; the
   cases that pin those shapes grow by one field each.
+
+## Correction, 2026-09-21 — four scopes, not three: a comment is its own
+
+Decision 1 names three scopes, and *Draft a reply with AI* sent a comment's contents as a
+`selection`. The instruction then told the provider the note was *"text the person selected"*,
+and the model said so back in its answer (seen in the live run). A fourth scope, `comment`, has
+the selection's shape — the page and the text, sent because the renderer already holds it — and
+its own sentence. The instruction's sentences are a `Record` over the contract's scopes in
+`askWindow.ts`, so a fifth scope is a compile error until it has words of its own.

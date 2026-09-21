@@ -102,7 +102,8 @@ export function draftReplyCommand(deps: {
       if (context.docId === undefined || target === undefined) return;
       const { selection, item, text } = target;
       deps.ask(
-        { scope: 'selection', docId: context.docId, page: selection.page, text: text.slice(0, MAX_ASK_SELECTION) },
+        // A COMMENT, not a selection: the instruction names what the text is.
+        { scope: 'comment', docId: context.docId, page: selection.page, text: text.slice(0, MAX_ASK_SELECTION) },
         ASSISTANT_PROMPT_DRAFT_REPLY,
         { page: selection.page, index: item.index, version: selection.version },
       );

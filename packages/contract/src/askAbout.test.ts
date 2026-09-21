@@ -39,11 +39,14 @@ describe('what an ask may be about', () => {
   it('refuses a selection with no text, and a scope it does not name', () => {
     expect(askAboutSchema.safeParse({ scope: 'selection', docId: 'd', page: 0, text: '' }).success).toBe(false);
     expect(askAboutSchema.safeParse({ scope: 'library', docId: 'd' }).success).toBe(false);
+    // A comment carries its text as a selection does, so it is refused without one too.
+    expect(askAboutSchema.safeParse({ scope: 'comment', docId: 'd', page: 0 }).success).toBe(false);
   });
 
-  it('CONTROL: accepts each of the three scopes it declares', () => {
+  it('CONTROL: accepts each of the four scopes it declares', () => {
     for (const about of [
       { scope: 'selection', docId: 'd', page: 2, text: 'words' },
+      { scope: 'comment', docId: 'd', page: 2, text: 'a note' },
       { scope: 'page', docId: 'd', page: 2 },
       { scope: 'document', docId: 'd' },
     ]) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { askInstruction, readAskWindow, selectionWindow } from './askWindow.js';
+import { askInstruction, carriedWindow, readAskWindow } from './askWindow.js';
 
 /** A reader over fixed page texts that records every page it was asked for. */
 function pagesOf(texts: readonly string[]): { read: (page: number) => Promise<string>; asked: number[] } {
@@ -58,7 +58,7 @@ describe('the window an ask carries', () => {
   });
 
   it('a selection is its page marker and the selected words, reading nothing', () => {
-    const window = selectionWindow(6, 'the clause', 12);
+    const window = carriedWindow(6, 'the clause', 12);
     expect(window.text).toBe('[Page 7]\nthe clause');
     expect(window.sent).toMatchObject({ firstPage: 6, lastPage: 6, pageCount: 12, truncated: false });
   });
@@ -78,5 +78,13 @@ describe('the instruction a window travels in', () => {
   it('says when the window stopped early, so a summary of part is not read as the whole', async () => {
     const window = await readAskWindow([0, 1], 2, pagesOf(['a'.repeat(30), 'b'.repeat(30)]).read, 45);
     expect(askInstruction(window, 'document')).toContain('stops before the end');
+  });
+
+  it('calls a COMMENT a comment, and CONTROL: a selection is still called selected', () => {
+    const window = carriedWindow(0, 'Please check the date.', 1);
+    // Seen live 2026-09-21: a comment went as a selection, and the model said "the text you selected".
+    expect(askInstruction(window, 'comment')).toContain('a comment left on a PDF document');
+    expect(askInstruction(window, 'comment')).not.toContain('selected');
+    expect(askInstruction(window, 'selection')).toContain('the person selected');
   });
 });

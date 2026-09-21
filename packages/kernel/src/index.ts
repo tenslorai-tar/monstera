@@ -232,8 +232,8 @@ export {
   type AskWindow,
   type ReadPageText,
   askInstruction,
+  carriedWindow,
   readAskWindow,
-  selectionWindow,
 } from './askWindow.js';
 export {
   PROVIDERS_WITHOUT_A_LIST,

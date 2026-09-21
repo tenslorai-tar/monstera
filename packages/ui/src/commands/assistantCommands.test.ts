@@ -90,7 +90,8 @@ describe('Draft a reply with AI', () => {
 
     expect(asked).toStrictEqual([
       [
-        { scope: 'selection', docId: DOC, page: 2, text: 'Can we move the date?' },
+        // A COMMENT scope: the instruction must not call a note "text the person selected".
+        { scope: 'comment', docId: DOC, page: 2, text: 'Can we move the date?' },
         ASSISTANT_PROMPT_DRAFT_REPLY,
         { page: 2, index: 5, version: asDocVersion(7) },
       ],

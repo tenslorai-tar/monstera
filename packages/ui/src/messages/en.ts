@@ -954,6 +954,7 @@ export const ASSISTANT_ABOUT_LABEL = messageKey('assistant.about');
 export const ASSISTANT_ABOUT_PAGE = messageKey('assistant.about.page');
 export const ASSISTANT_ABOUT_DOCUMENT = messageKey('assistant.about.document');
 export const ASSISTANT_ABOUT_SELECTION = messageKey('assistant.about.selection');
+export const ASSISTANT_ABOUT_COMMENT = messageKey('assistant.about.comment');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
 export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
 export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
@@ -2237,6 +2238,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_ABOUT_PAGE]: 'This page ({page})',
   [ASSISTANT_ABOUT_DOCUMENT]: 'The whole document, up to {characters} characters',
   [ASSISTANT_ABOUT_SELECTION]: 'The text you selected on page {page}',
+  [ASSISTANT_ABOUT_COMMENT]: 'The comment on page {page}',
   [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
   // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
   // to a provider only on an explicit action, and the panel says which provider.

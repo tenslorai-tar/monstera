@@ -1,4 +1,4 @@
-import { type AskSent, MAX_ASK_CONTEXT, askPageMarker } from '@monstera/contract';
+import { type AskAbout, type AskSent, MAX_ASK_CONTEXT, askPageMarker } from '@monstera/contract';
 
 /**
  * The text an assistant ask carries about a document, and the instruction it travels in
@@ -65,11 +65,26 @@ export async function readAskWindow(
   return { text, sent: { firstPage, lastPage, pageCount, characters: text.length, truncated } };
 }
 
-/** A selection as a window: the page it was taken from, and the text a person selected. */
-export function selectionWindow(page: number, selected: string, pageCount: number): AskWindow {
-  const text = `${askPageMarker(page)}\n${selected}`;
+/**
+ * Text the renderer sent with the ask — a selection or a comment — as a window: the page it
+ * belongs to, and the text itself.
+ */
+export function carriedWindow(page: number, carried: string, pageCount: number): AskWindow {
+  const text = `${askPageMarker(page)}\n${carried}`;
   return { text, sent: { firstPage: page, lastPage: page, pageCount, characters: text.length, truncated: false } };
 }
+
+/**
+ * What the instruction says the text is, one sentence per scope. A `Record` over the contract's
+ * scopes, so a scope added there is a compile error here until it has its own words — a comment
+ * was once described as "text the person selected" because it borrowed the selection's.
+ */
+const WHAT: Readonly<Record<AskAbout['scope'], string>> = {
+  selection: 'Below is text the person selected in a PDF document.',
+  comment: 'Below is the text of a comment left on a PDF document.',
+  page: 'Below is text from a PDF document the person has open.',
+  document: 'Below is text from a PDF document the person has open.',
+};
 
 /**
  * The instruction a window travels in.
@@ -79,7 +94,7 @@ export function selectionWindow(page: number, selected: string, pageCount: numbe
  * when the window stopped early, because a model told nothing will summarise twelve pages of
  * forty as though they were all of it.
  */
-export function askInstruction(window: AskWindow, scope: 'selection' | 'page' | 'document'): string {
+export function askInstruction(window: AskWindow, scope: AskAbout['scope']): string {
   const { firstPage, lastPage, pageCount, truncated } = window.sent;
   const covered =
     firstPage === null || lastPage === null
@@ -87,10 +102,7 @@ export function askInstruction(window: AskWindow, scope: 'selection' | 'page' | 
       : firstPage === lastPage
         ? `It is from page ${String(firstPage + 1)} of ${String(pageCount)}.`
         : `It covers pages ${String(firstPage + 1)} to ${String(lastPage + 1)} of ${String(pageCount)}.`;
-  const what =
-    scope === 'selection'
-      ? 'Below is text the person selected in a PDF document.'
-      : 'Below is text from a PDF document the person has open.';
+  const what = WHAT[scope];
   const stopped = truncated
     ? ' The text stops before the end of what was asked about; say so if the answer may lie beyond it.'
     : '';

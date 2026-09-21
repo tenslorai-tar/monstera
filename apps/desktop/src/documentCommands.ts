@@ -91,8 +91,8 @@ import {
   findInPages,
   plainTextOf,
   type AskWindow,
+  carriedWindow,
   readAskWindow,
-  selectionWindow,
   structureOutlineOf,
   textLayerOf,
   saveDocument,
@@ -2410,7 +2410,9 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       const { pageCount } = await this.#geometry(docId, sessions, []);
-      if (about.scope === 'selection') return selectionWindow(about.page, about.text, pageCount);
+      if (about.scope === 'selection' || about.scope === 'comment') {
+        return carriedWindow(about.page, about.text, pageCount);
+      }
       // A PAGE PAST THE END READS NOTHING rather than asking the engine for a page it does not
       // have: the document may have lost pages between the menu and the ask.
       const pages =

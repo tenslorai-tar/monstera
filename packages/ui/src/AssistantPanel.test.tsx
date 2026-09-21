@@ -462,11 +462,30 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(screen.queryByRole('option', { name: /you selected/u })).toBeNull();
   });
 
+  it('names a COMMENT as a comment on the line, and asks with the comment scope', async () => {
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
+      replyTo: { page: 3, index: 2, version: asDocVersion(9) },
+    };
+    const { sent } = await drawn({ focused: focusedOn(), request });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('option', { name: 'The comment on page 4' })).toBeTruthy();
+    // CONTROL: the selection's wording is not borrowed.
+    expect(screen.queryByRole('option', { name: /you selected/u })).toBeNull();
+    const params = sent.find((entry) => entry.id === 'ai.ask')?.params as { about: { scope: string } };
+    expect(params.about.scope).toBe('comment');
+  });
+
   it('a drafted reply is POSTED only by a press, as replyToAnnotation on the note it answers', async () => {
     const posted: unknown[] = [];
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'selection', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
       prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
       replyTo: { page: 3, index: 2, version: asDocVersion(9) },
     };
@@ -491,7 +510,7 @@ describe('the assistant about a document (ADR-0088)', () => {
   it('a REMOUNT does not replay the last request — the live run’s re-sent draft', async () => {
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'selection', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
       prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
     };
     const focused = focusedOn();
@@ -528,7 +547,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     const posted: unknown[] = [];
     const request: AssistantRequest = {
       serial: 1,
-      about: { scope: 'selection', docId: DOC_A, page: 3, text: 'Can we move the date?' },
+      about: { scope: 'comment', docId: DOC_A, page: 3, text: 'Can we move the date?' },
       prompt: ASSISTANT_PROMPT_DRAFT_REPLY,
       replyTo: { page: 3, index: 2, version: asDocVersion(9) },
     };

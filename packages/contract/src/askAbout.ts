@@ -34,16 +34,27 @@ export const MAX_ASK_CONTEXT = 100_000;
 /** How much selected text an ask may carry — one turn's own bound. */
 export const MAX_ASK_SELECTION = 16_384;
 
-export const askAboutSchema = z.discriminatedUnion('scope', [
+/**
+ * Text the renderer already holds and sends with the ask: a selection, or a comment's contents.
+ *
+ * TWO SCOPES OF ONE SHAPE, because the instruction must say which it is. A comment used to go as
+ * a `selection`, and the provider was told the note was "text the person selected" — which the
+ * model then repeated back (seen live, 2026-09-21).
+ */
+const carried = <Scope extends 'selection' | 'comment'>(scope: Scope) =>
   z
     .object({
-      scope: z.literal('selection'),
+      scope: z.literal(scope),
       docId: docIdSchema,
       /** Zero-based, as every page index crossing the contract is. */
       page: z.number().int().nonnegative(),
       text: z.string().min(1).max(MAX_ASK_SELECTION),
     })
-    .strict(),
+    .strict();
+
+export const askAboutSchema = z.discriminatedUnion('scope', [
+  carried('selection'),
+  carried('comment'),
   z.object({ scope: z.literal('page'), docId: docIdSchema, page: z.number().int().nonnegative() }).strict(),
   z.object({ scope: z.literal('document'), docId: docIdSchema }).strict(),
 ]);
