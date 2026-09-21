@@ -27,6 +27,7 @@ import {
   type OcrRequest,
   type RecognisedPage,
 } from '../ocrRecognise.js';
+import type { PageFill } from '../cellFills.js';
 import type { PageLink } from '../pageLinks.js';
 import type { PageTextRead } from '../textStructure.js';
 import type { AccessibilityReport } from '../accessibilityRules.js';
@@ -84,6 +85,9 @@ export type HostPageLinksReader = (
   session: MupdfSession,
   page: number,
 ) => Promise<readonly PageLink[]>;
+
+/** Reads one page's filled shapes — what a table cell's background is joined from. */
+export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
 
 /**
  * Recognises one page's text and word boxes.
@@ -426,6 +430,8 @@ export interface EngineHandlerParts {
   readonly geometry: PageGeometryReader;
   readonly pageText: HostPageTextReader;
   readonly pageLinks: HostPageLinksReader;
+  /** A page's filled shapes. `engine/page-fills`. */
+  readonly pageFills: HostPageFillsReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
   readonly ocr: HostOcrReader;
   readonly destinations: HostDestinationsReader;
@@ -462,6 +468,7 @@ export function createEngineHandlers({
   geometry,
   pageText,
   pageLinks,
+  pageFills,
   ocr,
   destinations,
   layers,
@@ -753,6 +760,13 @@ export function createEngineHandlers({
       // the adapter already parsed either works or is a defect, including a
       // page index outside it.
       return { ok: true, value: { links: [...(await pageLinks(held.session, page))] } };
+    },
+
+    'engine/page-fills': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      return { ok: true, value: { fills: [...(await pageFills(held.session, page))] } };
     },
 
     'engine/destinations': async ({ session }) => {

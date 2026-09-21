@@ -58,6 +58,9 @@ const MUPDF_READS = [
   'engine/page-geometry',
   'engine/page-text',
   'engine/page-links',
+  // A PAGE'S FILLS ARE ONE OF MuPDF'S READS: drawing the page parses it, and a table cell's
+  // background is joined from them in main (`cellFills.ts`).
+  'engine/page-fills',
   // RECOGNITION IS ONE OF MuPDF'S READS, and that is §3's matrix rather than a
   // filing choice: it consumes a bitmap this engine produced, in the process
   // that produced it. A second engine owes none of it.
@@ -256,7 +259,7 @@ describe('the core channel set', () => {
 });
 
 describe('MuPDF’s channel map', () => {
-  it('is the core six, the live-session one, and its own nineteen reads', () => {
+  it('is the core six, the live-session one, and its own twenty reads', () => {
     expect(Object.keys(engineChannels).sort()).toStrictEqual(
       [...CORE, ...LIVE_SESSION, ...MUPDF_READS].sort(),
     );

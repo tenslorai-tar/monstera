@@ -130,6 +130,7 @@ export {
   type HostLayersReader,
   type HostOcrReader,
   type HostPageImage,
+  type HostPageFillsReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostSession,
@@ -301,9 +302,11 @@ export {
   remoteMupdfLayers,
   remoteMupdfSignatures,
   remoteMupdfOcr,
+  remoteMupdfPageFills,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
 } from './host/remoteEngine.js';
+export { type CellFill, type PageFill, cellFillOf, withCellFills } from './cellFills.js';
 export {
   type CanonicalPath,
   type FileIdentity,

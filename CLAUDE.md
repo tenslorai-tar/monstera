@@ -314,7 +314,7 @@ is wrong** — fix the boundary, not the test.
   the shipped binary"*, and that binary was `monstera_mupdf.dll` — which the
   document pipeline does not load. Every MuPDF consumer in `packages/kernel` imports
   the bare specifier `mupdf`, resolving to the npm package's WASM build:
-  thirty-one non-test modules (2026-09-19), against zero references to `monstera_mupdf`
+  thirty-two non-test modules (2026-09-21), against zero references to `monstera_mupdf`
   anywhere under `packages/` or `apps/` until that date. So the mechanism this paragraph
   offers as the invariant's evidence was reading a file the document pipeline never opens.
 
@@ -346,18 +346,18 @@ is wrong** — fix the boundary, not the test.
   `mupdfRaw.ts` **and** `pdfiumFfi.ts` as the two native-boundary adapters,
   :203 draws `pdfiumHost` as *"PDFium via koffi FFI"*, :399 provisions
   `pdfium.dll`, and :257 assigns in-place text editing to PDFium in both
-  columns. **The migration is not done**: thirty-one non-test kernel modules
+  columns. **The migration is not done**: thirty-two non-test kernel modules
   still import the bare specifier, and §9.17's budgets and the four proofs that
   scan `monstera_mupdf.dll` move with them.
 
   **AND THAT COUNT IS NOT ITS SIZE — that sentence was written as what is NOT yet
   settled, and was then read as the estimate.** Measured 2026-09-09, re-measured
-  2026-09-11, 2026-09-13, 2026-09-14 and again 2026-09-19 (`npm run proof:enginesurface`): those
-  modules call **132 distinct MuPDF members**, of which `PDFAnnotation` declares 41,
+  2026-09-11, 2026-09-13, 2026-09-14, 2026-09-19 and again 2026-09-21 (`npm run proof:enginesurface`): those
+  modules call **135 distinct MuPDF members**, of which `PDFAnnotation` declares 41,
   `PDFObject` 23, `PDFDocument` 20 and `PDFWidget` 15 — an object model the shim's
   **24** exports do not represent, because it hands back an opaque handle on
-  purpose. Only **ten** of the thirty-one load an engine; the other twenty-one spell
-  `import type`, are erased by the compiler, and work on handles those ten opened. **A count of import statements measured the thing that does not have to
+  purpose. Only **eleven** of the thirty-two load an engine; the other twenty-one spell
+  `import type`, are erased by the compiler, and work on handles those eleven opened. **A count of import statements measured the thing that does not have to
   change**, and the shape it produced — one line each — is the wrong shape by an
   order of magnitude. Ask what a count is a count *of* before it becomes a size.
 
@@ -386,6 +386,11 @@ is wrong** — fix the boundary, not the test.
   handwriting artefacts module took one away in the next range. **Making the re-run part
   of the audit did not make the audit run it** — the same shape one layer up. The member
   count held at 132 and the value imports at ten, which is why nothing downstream moved.
+
+  **AND A FIFTH, 31/10/132 → 32/11/135 on 2026-09-21**: `pageFills.ts` arrived as a VALUE
+  importer — a tracing device's fills, `ColorSpace`'s three type tests, a stroke-less
+  `Path.getBounds` — and the commit that added it re-ran the measurement, which is the
+  first time in five that the adding commit reopened the figure rather than an audit.
 
   **It does not gate Stage 5's editing rows either.** Those are PDFium's by
   :257; PDFium's API is flat C, needs no shim, is provisioned, and koffi binds

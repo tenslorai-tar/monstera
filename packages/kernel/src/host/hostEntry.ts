@@ -22,6 +22,7 @@ import { extractPages } from '../pageExtract.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { recognisePage } from '../ocrRecognise.js';
+import { readPageFills } from '../pageFills.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { cryptoBytes } from '../token.js';
@@ -116,6 +117,7 @@ const engineHandlers = createEngineHandlers({
   // structure it computed.
   pageText: readPageTextJson,
   pageLinks: readPageLinks,
+  pageFills: readPageFills,
   // RUNS HERE, and that is §3's matrix rather than a placement. Recognition
   // consumes a bitmap **we produced**, so the document-parse boundary invariant
   // 25 governs was already crossed by the rasteriser — and that rasteriser is

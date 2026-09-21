@@ -188,6 +188,31 @@ describe('spreadsheetParts', () => {
     expect(files['xl/styles.xml']).toContain('<borders count="1">');
   });
 
+  it('writes a cell’s BACKGROUND as a solid fill numbered after Excel’s two, shared by cells that match', async () => {
+    const yellow: TableCell = { lines: [line('Due')], fill: [1, 1, 0.4] };
+    const alsoYellow: TableCell = { lines: [line('Paid')], fill: [1, 1, 0.4] };
+    const grey: TableCell = { lines: [line('Head')], fill: [0.85, 0.85, 0.85] };
+    const files = await written(
+      [{ page: 0, edits: [], tables: [table([[grey], [yellow], [alsoYellow], [cell('plain')]])] }],
+      'sheet-per-page',
+    );
+    const styles = files['xl/styles.xml'] ?? '';
+
+    // Two fills of our own after `none` and `gray125`: equal colours share one.
+    expect(styles).toContain('<fills count="4">');
+    expect(styles).toContain('<fgColor rgb="FFD9D9D9"/>');
+    expect(styles).toContain('<fgColor rgb="FFFFFF66"/>');
+    expect(styles).toMatch(/fillId="2"[^>]*applyFill="1"/u);
+    expect(styles).toMatch(/fillId="3"[^>]*applyFill="1"/u);
+  });
+
+  it('CONTROL: cells with no fill, and a fill of null, declare only Excel’s two', async () => {
+    const none: TableCell = { lines: [line('x')], fill: null };
+    const files = await written([{ page: 0, edits: [], tables: [table([[cell('x'), none]])] }], 'sheet-per-page');
+    expect(files['xl/styles.xml']).toContain('<fills count="2">');
+    expect(files['xl/styles.xml']).not.toContain('applyFill');
+  });
+
   it('wraps a cell of several lines, each on its own line', async () => {
     const files = await written([{ page: 0, edits: [], tables: [table([[cell('first', 'second')]])] }], 'sheet-per-page');
     expect(files['xl/worksheets/sheet1.xml']).toContain('first\nsecond');

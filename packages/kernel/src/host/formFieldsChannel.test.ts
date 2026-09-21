@@ -155,6 +155,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       pageLinks: () => {
         throw new Error('a field read must not read the page links');
       },
+      pageFills: () => {
+        throw new Error('a field read must not read the page fills');
+      },
       ocr: () => {
         throw new Error('a field read must not recognise anything');
       },

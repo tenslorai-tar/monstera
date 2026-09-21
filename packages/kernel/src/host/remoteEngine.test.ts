@@ -26,8 +26,10 @@ import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
+import { readPageFills } from '../pageFills.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
+import { withCellFills } from '../cellFills.js';
 import { linesOf, parsePageStructure, parsePageTables, parsePageText } from '../textStructure.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
@@ -37,6 +39,7 @@ import {
   remoteMupdfExecution,
   remoteMupdfGeometry,
   remoteMupdfPageText,
+  remoteMupdfPageFills,
   remoteMupdfAccessibility,
   type SessionAssets,
   UnknownRemoteSession,
@@ -61,6 +64,7 @@ import {
 let flat: ByteImage;
 let tagged: ByteImage;
 let ruled: ByteImage;
+let shaded: ByteImage;
 
 beforeAll(async () => {
   const document = await PDFDocument.create();
@@ -84,6 +88,31 @@ beforeAll(async () => {
     });
   });
   ruled = await grid.save();
+
+  // THE SAME GRID WITH ITS HEADER ROW SHADED, filled and stroked as a table's shading is drawn.
+  const shadedGrid = await PDFDocument.create();
+  const shadedFont = await shadedGrid.embedFont(StandardFonts.Helvetica);
+  const shadedPage = shadedGrid.addPage([612, 792]);
+  [
+    ['Item', 'Qty', 'Price'],
+    ['Bolt', '12', '0.45'],
+  ].forEach((row, r) => {
+    row.forEach((text, c) => {
+      const x = 72 + c * 120;
+      const y = 700 - r * 24;
+      shadedPage.drawRectangle({
+        x,
+        y: y - 6,
+        width: 120,
+        height: 24,
+        borderColor: rgb(0, 0, 0),
+        borderWidth: 1,
+        ...(r === 0 ? { color: rgb(0.85, 0.85, 0.85) } : {}),
+      });
+      shadedPage.drawText(text, { x: x + 6, y, size: 11, font: shadedFont });
+    });
+  });
+  shaded = await shadedGrid.save();
 });
 
 /**
@@ -200,6 +229,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly remote: ReturnType<typeof remoteMupdfExecution>;
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
+  readonly pageFills: ReturnType<typeof remoteMupdfPageFills>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
   readonly requests: () => number;
@@ -280,6 +310,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       // what the HOST's document says rather than what a stub was told to say.
       pageText: readPageTextJson,
       pageLinks: readPageLinks,
+      pageFills: readPageFills,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
       // instantiates 2.8 MB of Tesseract WASM and takes about four seconds per
       // page, and no case in this file drives the channel — so the production
@@ -332,6 +363,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     remote: remoteMupdfExecution(client, sessions, NO_ASSETS),
     geometry: remoteMupdfGeometry(client, sessions),
     pageText: remoteMupdfPageText(client, sessions),
+    pageFills: remoteMupdfPageFills(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
     sessions,
     requests: () => requests,
@@ -455,6 +487,35 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // AND THE SUBSTRATE READ of the same page finds none, so the name decided it.
       expect(substrate.tables).toStrictEqual([]);
       expect(substrate.lines).toBe(tables.lines);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the FILL read crosses, and joined to the table read it shades the header row and nothing else', async () => {
+    const { session, token, pageText, pageFills } = await joined(shaded);
+    try {
+      // THE COMPOSITION ROOT'S JOIN, over the real host handlers and readers: two reads of one
+      // page, joined in main. A fill read that crossed nothing would leave every cell plain.
+      const tables = withCellFills(parsePageTables(await pageText(token, 0, 'table')).tables, await pageFills(token, 0));
+      const grey = [0.85, 0.85, 0.85];
+      expect(
+        tables.map((table) => table.rows.map((row) => row.map((cell) => cell.fill?.map((v) => Math.round(v * 100) / 100) ?? null))),
+      ).toStrictEqual([
+        [
+          [grey, grey, grey],
+          [null, null, null],
+        ],
+      ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: the unshaded grid crosses no fill at all', async () => {
+    const { session, token, pageFills } = await joined(ruled);
+    try {
+      expect(await pageFills(token, 0)).toStrictEqual([]);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -679,6 +740,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageLinks: () => {
           throw new Error('unused');
         },
+        pageFills: () => {
+          throw new Error('unused');
+        },
         ocr: () => {
           throw new Error('unused');
         },
@@ -804,6 +868,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageLinks: () => {
           throw new Error('the rotation-refusal case must not read page links');
+        },
+        pageFills: () => {
+          throw new Error('the rotation-refusal case must not read page fills');
         },
         ocr: () => {
           throw new Error('the rotation-refusal case must not recognise anything');

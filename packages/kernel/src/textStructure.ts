@@ -661,6 +661,11 @@ export function parsePageStructure(json: string): PageStructure {
 /** One cell of a found table: the lines the engine moved into it, in its order. */
 export interface TableCell {
   readonly lines: readonly TextLine[];
+  /**
+   * The cell's background as RGB in 0..1, `null` for none — joined from the page's drawing by
+   * `cellFills.ts`, which the table read cannot see. Absent where no drawing was read.
+   */
+  readonly fill?: readonly [number, number, number] | null;
 }
 
 /** Which edges of a cell the engine found a ruling line on. */

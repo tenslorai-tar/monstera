@@ -270,15 +270,17 @@ one engine:
 built without either** ([ADR-0048](DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md),
 2026-09-09).
 
-**A host's reader set is its own engine's.** The twenty-six channels split
+**A host's reader set is its own engine's.** The twenty-seven channels split
 **six engine-agnostic** — `probe-containment`, `open`, `close`, `apply`,
 `capture`, `invert` — one that belongs to the **live-session shape**,
-`serialise`, and **nineteen MuPDF document-model reads**:
-`page-geometry`, `page-text`, `page-links`, `destinations`, `layers`,
+`serialise`, and **twenty MuPDF document-model reads**:
+`page-geometry`, `page-text`, `page-links`, `page-fills`, `destinations`, `layers`,
 `annotations`, `annotation-records`, `form-fields`, `exportFormData`, `exportAnnotations`, `flat-fields`,
 `duplicate-pages`, `extract`, `snapshotRegion`, `pageImage`, `ocr-page`,
-`signatures`, `page-barcodes`, `accessibility-check`. **A second engine owes none of the nineteen.**
-`annotation-records` joined on 2026-09-21 with the annotation clipboard's copy, which reads the
+`signatures`, `page-barcodes`, `accessibility-check`. **A second engine owes none of the twenty.**
+`page-fills` joined on 2026-09-21 with the Excel row's cell backgrounds: a page's filled shapes,
+which main joins to the table read's cells. `annotation-records` joined the same day with the
+annotation clipboard's copy, which reads the
 interchange's entries for named marks and hands them to main. `signatures` joined on
 2026-09-12 with D7's verification row, `pageImage` on 2026-09-14 with D10's
 page-images row, `page-barcodes` on 2026-09-17 with D10's barcode row
@@ -289,7 +291,8 @@ and `accessibility-check` with D8's accessibility check
 ([ADR-0078](DECISIONS/0078-the-accessibility-check-is-pdf-ua-object-rules-and-names-what-it-cannot-see.md)).
 This paragraph said *twenty* and *thirteen* until the audit of
 `622f794..4971b60`, and *twenty-one* and *fourteen* until the audit of
-`4971b60..09e0f74`, and *twenty-five* and *eighteen* until 2026-09-21, when the change that
+`4971b60..09e0f74`, and *twenty-five* and *eighteen* until 2026-09-21, and *twenty-six* and
+*nineteen* until `page-fills` later that day — each time the change that
 added the channel updated it in the same commit — the names `coreChannels.test.ts` holds as a
 literal, which is what reddened first.
 
@@ -616,7 +619,7 @@ reached natively, as a shared
 library built from source and bound with koffi behind a thin flat-C shim —
 never as WASM"*. Measured: every MuPDF consumer in `packages/kernel` imports the
 bare specifier `mupdf`, which resolves to the npm package's
-`dist/mupdf-wasm.wasm`; **thirty-one non-test modules do so (2026-09-19), and a search for
+`dist/mupdf-wasm.wasm`; **thirty-two non-test modules do so (2026-09-21), and a search for
 `monstera_mupdf` across `packages/` and `apps/` returns zero.** The shim is
 built, is scanned by four security proofs, and was loaded by nothing the product
 runs **until 2026-09-19, when Optimize became its one consumer**: the compose host
@@ -648,15 +651,15 @@ which is what the measurement above says and what a reader must not infer their
 way past.
 
 **AND ITS SIZE IS NOT THE IMPORT COUNT, measured 2026-09-09, re-measured
-2026-09-11, 2026-09-13, 2026-09-14 and again 2026-09-19** (ADR-0010's correction of the first
-date; `npm run proof:enginesurface`). The thirty-one modules call **132 distinct MuPDF
+2026-09-11, 2026-09-13, 2026-09-14, 2026-09-19 and again 2026-09-21** (ADR-0010's correction of the first
+date; `npm run proof:enginesurface`). The thirty-two modules call **135 distinct MuPDF
 members**, of which `PDFAnnotation` declares 41, `PDFObject` 23, `PDFDocument` 20
 and `PDFWidget` 15 — an object model. The shim exports **24** C functions and
-hands back an opaque handle by design, so most of the 132 have nothing to move
-onto and must be written behind an ABI that does not exist yet. Only **ten** of
-the thirty-one load an engine at all; the other twenty-one spell `import type`,
-are erased by the compiler, and operate on handles those ten opened. So
-changing the engine changes every one of the thirty-one **bodies** and not one of
+hands back an opaque handle by design, so most of the 135 have nothing to move
+onto and must be written behind an ABI that does not exist yet. Only **eleven** of
+the thirty-two load an engine at all; the other twenty-one spell `import type`,
+are erased by the compiler, and operate on handles those eleven opened. So
+changing the engine changes every one of the thirty-two **bodies** and not one of
 their first lines — the count that reads like the work is a count of the thing
 that does not have to change.
 

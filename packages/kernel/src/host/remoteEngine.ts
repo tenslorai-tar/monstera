@@ -22,6 +22,7 @@ import type {
   HostFormFieldsReader,
   HostLayersReader,
   HostOcrReader,
+  HostPageFillsReader,
   HostPageLinksReader,
   HostPageTextReader,
 } from './engineHandlers.js';
@@ -288,6 +289,21 @@ export function remoteMupdfPageLinks(
       'engine/page-links',
       await client['engine/page-links']({ session: sessions.handleFor(session), page }),
     ).links;
+}
+
+/**
+ * One page's filled shapes, over the boundary — {@link remoteMupdfPageLinks}' shape, for its
+ * reason: the host builds a shape this build owns, and the client's schema bounds it.
+ */
+export function remoteMupdfPageFills(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostPageFillsReader {
+  return async (session, page) =>
+    answered(
+      'engine/page-fills',
+      await client['engine/page-fills']({ session: sessions.handleFor(session), page }),
+    ).fills;
 }
 
 /**

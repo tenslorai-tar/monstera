@@ -235,6 +235,15 @@ interface CellStyle {
   readonly borders: CellBorders | null;
   readonly format: string | null;
   readonly wrap: boolean;
+  /** A solid background as `FFRRGGBB`, or `null` for none. */
+  readonly fill: string | null;
+}
+
+/** A cell's RGB background as the ARGB hex SpreadsheetML's `fgColor` takes. */
+function argbOf(fill: TableCell['fill']): string | null {
+  if (fill === undefined || fill === null) return null;
+  const hex = fill.map((channel) => Math.round(Math.min(1, Math.max(0, channel)) * 255).toString(16).padStart(2, '0'));
+  return `FF${hex.join('').toUpperCase()}`;
 }
 
 /** The workbook's distinct cell styles, numbered as `cellXfs` lists them. */
@@ -261,6 +270,10 @@ class StyleTable {
     const borderIndex = new Map<string, number>();
     const formats: string[] = [];
     const formatIndex = new Map<string, number>();
+    // THE FIRST TWO FILLS ARE EXCEL'S: it reads index 1 as `gray125` whatever is written there,
+    // so a solid fill is numbered from 2.
+    const fills: string[] = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
+    const fillIndex = new Map<string, number>();
     const xfs: string[] = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
 
     for (const style of this.#styles) {
@@ -304,9 +317,19 @@ class StyleTable {
         }
       }
 
+      let fillId = 0;
+      if (style.fill !== null) {
+        const known = fillIndex.get(style.fill);
+        fillId = known ?? fills.length;
+        if (known === undefined) {
+          fillIndex.set(style.fill, fillId);
+          fills.push(`<fill><patternFill patternType="solid"><fgColor rgb="${style.fill}"/><bgColor indexed="64"/></patternFill></fill>`);
+        }
+      }
+
       xfs.push(
-        `<xf numFmtId="${String(numFmtId)}" fontId="${String(fontId)}" fillId="0" borderId="${String(borderId)}" xfId="0"` +
-          `${numFmtId === 0 ? '' : ' applyNumberFormat="1"'} applyFont="1"${borderId === 0 ? '' : ' applyBorder="1"'}` +
+        `<xf numFmtId="${String(numFmtId)}" fontId="${String(fontId)}" fillId="${String(fillId)}" borderId="${String(borderId)}" xfId="0"` +
+          `${numFmtId === 0 ? '' : ' applyNumberFormat="1"'} applyFont="1"${fillId === 0 ? '' : ' applyFill="1"'}${borderId === 0 ? '' : ' applyBorder="1"'}` +
           (style.wrap ? ' applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>' : '/>'),
       );
     }
@@ -315,7 +338,7 @@ class StyleTable {
       `${XML_DECLARATION}<styleSheet xmlns="${MAIN}">` +
       (formats.length > 0 ? `<numFmts count="${String(formats.length)}">${formats.join('')}</numFmts>` : '') +
       `<fonts count="${String(fonts.length)}">${fonts.join('')}</fonts>` +
-      '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+      `<fills count="${String(fills.length)}">${fills.join('')}</fills>` +
       `<borders count="${String(borders.length)}">${borders.join('')}</borders>` +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
       `<cellXfs count="${String(xfs.length)}">${xfs.join('')}</cellXfs>` +
@@ -350,6 +373,7 @@ function cellXml(
     borders,
     format: value.kind === 'number' ? value.format : null,
     wrap: text.includes('\n'),
+    fill: argbOf(cell.fill),
   });
   const styled = style === 0 ? '' : ` s="${String(style)}"`;
   if (value.kind === 'number') return `<c r="${reference}"${styled}><v>${String(value.value)}</v></c>`;
@@ -451,6 +475,8 @@ function textCellXml(reference: string, text: string, styles: StyleTable): strin
     borders: null,
     format: value.kind === 'number' ? value.format : null,
     wrap: text.includes('\n'),
+    // NO FILL: neither service reports a cell's background, and a scan's pixels are not read.
+    fill: null,
   });
   const styled = style === 0 ? '' : ` s="${String(style)}"`;
   if (value.kind === 'number') return `<c r="${reference}"${styled}><v>${String(value.value)}</v></c>`;

@@ -60,6 +60,7 @@ import {
   type HostPageImage,
   type HostFormFieldsReader,
   type HostLayersReader,
+  type HostPageFillsReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostTermination,
@@ -83,6 +84,7 @@ import {
   signpdfWriterWith,
   parsePageStructure,
   parsePageTables,
+  withCellFills,
   parsePageText,
   pdfiumChannels,
   type ComposeChannels,
@@ -104,6 +106,7 @@ import {
   remoteMupdfSignatures,
   type ReadSignature,
   remoteMupdfOcr,
+  remoteMupdfPageFills,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWriter,
@@ -844,11 +847,15 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return parsePageStructure(await engineHost.pageText(session, page, 'structure'));
     },
-    // THE TABLE READ, the same channel under its own name (ADR-0073).
+    // THE TABLE READ, the same channel under its own name (ADR-0073) — and each cell's
+    // BACKGROUND, joined here from the page's filled shapes, which the table read cannot see
+    // (`cellFills.ts`). Two host reads of one page, joined in main where both answers are data.
     pageTables: async (docId, sessions, page) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return parsePageTables(await engineHost.pageText(session, page, 'table'));
+      const read = parsePageTables(await engineHost.pageText(session, page, 'table'));
+      if (read.tables.length === 0) return read;
+      return { ...read, tables: withCellFills(read.tables, await engineHost.pageFills(session, page)) };
     },
     // THE OUTLINE, composed here for the reads above's reason and taking no
     // page, because an outline is a property of the document rather than of a
@@ -1398,6 +1405,8 @@ function engineSessionOpener(
   readonly pageText: HostPageTextReader;
   /** One page's links, from whichever host is live. */
   readonly pageLinks: HostPageLinksReader;
+  /** One page's filled shapes, from whichever host is live — a table cell's background. */
+  readonly pageFills: HostPageFillsReader;
   /** The document's outline, from whichever host is live. */
   readonly destinations: HostDestinationsReader;
   /** One page's recognised text, from whichever host is live. */
@@ -1626,6 +1635,20 @@ function engineSessionOpener(
       );
     }
     return pageLinks(session, page);
+  };
+
+  /** The fill read's half of the same registration. See {@link pageText}. */
+  let pageFills: HostPageFillsReader | null = null;
+
+  const readPageFillsThroughHost: HostPageFillsReader = (session, page) => {
+    if (pageFills === null) {
+      throw new Error(
+        'A fill read reached the engine with no host fill reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return pageFills(session, page);
   };
 
   /** The outline's half of the same registration. See {@link pageText}. */
@@ -1962,6 +1985,7 @@ function engineSessionOpener(
     geometry = remoteMupdfGeometry(client, remote);
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
+    pageFills = remoteMupdfPageFills(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     ocr = remoteMupdfOcr(client, remote);
     layers = remoteMupdfLayers(client, remote);
@@ -2237,6 +2261,7 @@ function engineSessionOpener(
     geometry: readGeometry,
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
+    pageFills: readPageFillsThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,
     layers: readLayersThroughHost,

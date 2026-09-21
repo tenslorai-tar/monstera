@@ -892,6 +892,37 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — Excel cell fills: a source the row said did not exist
+
+The Excel row carried fills as a stated limit — *no engine reports a cell's background* — and the
+owner's order was that it stays one unless a measurement finds a source. **The claim was true of
+the table read and false of the page.** A shaded cell in a born-digital PDF is a filled path drawn
+behind its text, and a tracing device over a generated 3×3 ruled table (grey header row, one
+yellow data cell) saw exactly those four fills at their exact colours, in the display space the
+structured text uses. MuPDF's table grid for that page also carries `xpos`/`ypos` — and came back
+**six** columns wide for three, splitting `Head 0` into `Head` and `0`; that is the engine's
+table read, recorded rather than chased here.
+
+**Built**: `engine/page-fills`, a twentieth MuPDF read, answers a page's filled shapes as boxes and
+RGB — Gray, RGB and CMYK converted, anything else skipped, alpha composited over white, the count
+bounded at the schema. `cellFills.ts` in main gives each cell the smallest fill that holds all its
+text (so a cell's own shading beats a panel behind the table), and treats white as paper. The
+workbook writes a solid fill per distinct colour after Excel's two reserved ones. The channel's
+bound lives in the channel file, because that file loads in main and the reader loads the engine.
+
+**One measurement corrected the reader before it shipped**: boxes came back half a point too
+large on every side, because a zero-width stroke state is bounded as a one-unit hairline. MuPDF's
+own `Path.getBounds` accepts `null` — its type declaration is narrower than its implementation —
+and a null stroke is its fill bound. `pageFills.test` asserts the exact display box.
+
+**Live**: the app exported the shaded table to Excel; Excel read it through COM with the header
+cells grey (217,217,217), `121` yellow (255,255,102) and every other text cell unfilled. The empty
+cell MuPDF split out beside `121` stays plain — a cell with no text has no box, the join's stated
+limit. **The engine surface moved** (31/10/132 → 32/11/135, `proof:enginesurface`) and CLAUDE.md
+and ARCHITECTURE §3 say so in this commit, as does the host's read list.
+
+---
+
 ## 2026-09-21 — The contained stall's second cause: a named pipe the container may not create
 
 The Office import row carried *a second, unnamed cause* after the install-folder listing was

@@ -175,6 +175,15 @@ export const ENGINE_PAGE_TEXT_MAX_BYTES = 8 * 1024 * 1024;
 export const ENGINE_PAGE_LINKS_MAX = 4096;
 
 /**
+ * How many filled shapes one page's `engine/page-fills` answer may carry. The host is hostile by
+ * invariant 25's premise, so a page claiming a million shapes is a peer spending our frame; the
+ * reader stops collecting here, so a real page past it answers its first shapes rather than being
+ * refused. Declared HERE, beside the schema, because this file loads in `main` and the reader loads
+ * the engine — the bound may not travel the other way.
+ */
+export const ENGINE_PAGE_FILLS_MAX = 4096;
+
+/**
  * How long a link's URI may be.
  *
  * The one string in this shape that a document controls, so it is the one that
@@ -536,6 +545,11 @@ const engineDestinationSchema = z
  * carries a URI, and a shape with both optional would let a hostile host send
  * the pair and leave every reader to decide which to believe (B5).
  */
+/** A fill's coordinate: finite by zod 4's own rule, and inside any page this build opens. */
+const fillCoordinate = z.number().min(-1e7).max(1e7);
+/** A colour channel, 0..1. */
+const fillChannel = z.number().min(0).max(1);
+
 const engineLinkSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -2164,6 +2178,39 @@ export const engineChannels = {
          * than this is a page no reader can use a panel for.
          */
         links: z.array(engineLinkSchema).max(ENGINE_PAGE_LINKS_MAX),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * One page's filled shapes and their colours — what a table cell's background is joined from
+   * (`cellFills.ts`). A shape, not MuPDF's own format, so the host builds it and the schema bounds
+   * it: the count, each coordinate, and each channel.
+   */
+  'engine/page-fills': channel(
+    'Reads one page’s filled shapes from a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        fills: z
+          .array(
+            z
+              .object({
+                box: z
+                  .object({ x0: fillCoordinate, y0: fillCoordinate, x1: fillCoordinate, y1: fillCoordinate })
+                  .strict(),
+                rgb: z.tuple([fillChannel, fillChannel, fillChannel]).readonly(),
+              })
+              .strict(),
+          )
+          .max(ENGINE_PAGE_FILLS_MAX),
       })
       .strict(),
     ['no-such-session'],
