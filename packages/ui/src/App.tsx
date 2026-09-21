@@ -82,6 +82,7 @@ import {
   rotatePageCommand,
   closeTabCommand,
   closeOthersCommand,
+  openSideBySideCommand,
   saveCommand,
   saveDocument,
   undoCommand,
@@ -1306,6 +1307,16 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     [open?.version, picked, toolId],
   );
   const readSelection = useCallback(() => selection, [selection]);
+  /**
+   * Which document is ON SHOW, for a command that also receives a different one.
+   *
+   * `readSelection`'s shape and its reason. Inside the tab menu a command's
+   * `context.docId` is the tab that was right-clicked, so *the document on show*
+   * is a second fact the context cannot carry — and a closure over `activeId`
+   * built inside the registry's `useMemo` would answer with whichever tab was
+   * focused when that memo last ran.
+   */
+  const readActiveId = useCallback(() => activeId, [activeId]);
 
   /**
    * What a new annotation is drawn in — the four editing settings, resolved.
@@ -1789,6 +1800,9 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         saveCommand({ client, ask }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
+        // THE SHELL'S OWN `activeId` AND `setCompareId`, which is what keeps this a second ROUTE
+        // to the compare pane rather than a second owner of it: the picker writes the same value.
+        openSideBySideCommand({ focused: readActiveId, compare: setCompareId, settings }),
         saveCopyCommand({ client, onApplied: applied, ask }),
         exportFormDataJsonCommand({ client, onApplied: applied, ask }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
@@ -1895,6 +1909,10 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       activate,
       applied,
       ask,
+      // THE DOCUMENT ON SHOW, which *open side by side* needs beside the one the
+      // tab menu hands it. Rebuilding the registry when the focused tab changes
+      // is the same cheap, deliberate cost the selection already pays.
+      readActiveId,
       // THE PREDICATE'S TWO INPUTS: `cloudReady` closes over this render's
       // pair, so without these the cloud tool would stay hidden however many
       // keys were entered. The second is main's answer to *is a key stored*,

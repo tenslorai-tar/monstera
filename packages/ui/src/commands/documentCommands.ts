@@ -148,6 +148,7 @@ import {
   EXPORT_WORD_COMMAND_TITLE,
   SAVE_TITLE,
   CLOSE_OTHERS_TITLE,
+  OPEN_SIDE_BY_SIDE_TITLE,
   CLOSE_TAB_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
@@ -157,6 +158,7 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
+import { SPLIT_VIEW_SETTING } from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { type ZoomMode, zoomInFrom, zoomOutFrom } from '../zoom.js';
 
@@ -1741,6 +1743,57 @@ export function closeTabCommand(deps: {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       await deps.close(context.docId);
+    },
+  };
+}
+
+/**
+ * Shows the right-clicked tab's document in the second pane — the owner's *open side by side*.
+ *
+ * ## It needed no new view, and the row that said otherwise was wrong
+ *
+ * §7's menu row recorded this as blocked on *a two-document view*. Side-by-side compare landed
+ * 2026-09-03 and has had one ever since; what it lacked was a second way to choose the document,
+ * beside the pane's own picker. So this command writes exactly the value that picker writes and
+ * owns nothing — a command that opened a pane of its own would be the second wiring place.
+ *
+ * ## The focused document is a DEP, not something read from the context
+ *
+ * Inside the tab menu `context.docId` is **the tab that was right-clicked**, which is the whole
+ * point of that menu — so nothing in the context names the document on show, and the two meanings
+ * would otherwise be told apart by `version === undefined`, which is true of a background tab only
+ * by how `App.tsx` happens to build the object. `SHOWN_PAGE`'s lesson is to name both rather than
+ * leave one derivable: `focused()` is the shell's `activeId`, passed in as `selection()` is.
+ *
+ * Hidden on the tab already on show, because comparing a document with itself is what split view
+ * is, and an item that quietly did nothing visible is the display-only defect.
+ *
+ * ## It OPENS the second pane as well, and that is not an extra
+ *
+ * `App.tsx` renders the compare pane only when split view is on, so a command that wrote
+ * `compareId` alone would be a menu item a reader clicks and watches do nothing — the wired-tools
+ * rule's own example. *Open side by side* means **beside**, so the pane is part of what was asked
+ * for. `selectionPropertiesCommand` takes the same shape for the same reason: it sets both panel
+ * values rather than toggling either, because half the time a toggle does the opposite of the
+ * request.
+ *
+ * Both values are SET, never flipped. A reader who already has split view open and picks a second
+ * document must not have the pane closed by the item that was supposed to fill it.
+ */
+export function openSideBySideCommand(deps: {
+  readonly focused: () => DocId | undefined;
+  readonly compare: (docId: DocId) => void;
+  readonly settings: SettingsStore;
+}): UiCommand {
+  return {
+    id: 'document.open-side-by-side',
+    title: OPEN_SIDE_BY_SIDE_TITLE,
+    placements: [{ surface: 'context-menu', context: 'tab', order: 30 }],
+    when: (context) => context.docId !== undefined && context.docId !== deps.focused(),
+    run: (context): void => {
+      if (context.docId === undefined || context.docId === deps.focused()) return;
+      deps.settings.set(SPLIT_VIEW_SETTING.id, true);
+      deps.compare(context.docId);
     },
   };
 }

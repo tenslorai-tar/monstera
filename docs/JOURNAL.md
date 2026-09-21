@@ -892,6 +892,63 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — *Open side by side* was blocked on a view that already existed
+
+§7's menu row recorded this item as owed because it *"needs a two-document view"*.
+**It does not, and it never did.** Side-by-side compare landed 2026-09-03 and is
+row 66 of the same document, two rows above. What the pane lacked was a second way
+to choose the document, beside its own picker — which is a command, not a view.
+
+The block dissolved on one grep, and that is the transferable part rather than the
+item: a row stating a dependency is stating a claim, and it ages like any other.
+Nothing falsified it — the dependency was *satisfied* by a commit eighteen days
+earlier, and no range ever touched both the sentence and the work that met it,
+which is NNN-4's hole pointing the other way. A blocked row is the one nobody
+re-reads, because its status cell explains why there is nothing to see.
+
+## What checking the render condition found
+
+The obvious command writes `compareId` and stops. `App.tsx` renders the compare
+pane **only under split view**, so that version is a menu item a reader clicks and
+watches do nothing — the wired-tools rule's own example, arrived at honestly. So
+the command sets both values, as `selectionPropertiesCommand` does, and **sets**
+rather than toggles: a reader who already has the pane open must not have it closed
+by the item meant to fill it.
+
+That second effect has no symptom in the obvious assertion. A case checking only
+*which document was compared* passes for the broken version, so the unit case
+asserts the settings write by its literal id — `viewing.split`, spelt out rather
+than read from `SPLIT_VIEW_SETTING`, because an assertion built from the constant
+the command uses agrees with it whichever setting that is.
+
+## Where the case had to live, and why it is not a live run
+
+A second document can be opened only through the native file dialog: the `+` in the
+tab strip IS *Open PDF*, there is no drop handler, and main takes no file path on
+the command line. No instrument here drives a native dialog, and the owner's desktop
+is not mine to take over. So the end-to-end case is a **rendered-screen** one —
+production build, real renderer, two seeded documents, a real right-click on the
+background tab — asserting the menu's three rows and then the compare picker's
+**value**, which is the state the command and the picker share.
+
+Mutation, rebuilt first: dropping the split-view write reddens it. Dropping the
+rebuild does not, and that nearly went unnoticed — `npm run build` exited **2** on
+two `TS7006` errors in a test file while `vitest` had passed it, so the first run of
+this case was against a stale bundle and failed for a reason that had nothing to do
+with the code. *Vitest does not typecheck; `npm run build` is what says so* — the
+same sentence this session already recorded, met again eight hours later.
+
+## And one defect found on the way, recorded rather than chased
+
+With a single tab open in an 800×600 window the tab strip's `+` is **87% clipped**:
+the strip spans x 42–217 with `scrollWidth` 188 against `clientWidth` 175, and the
+button spans x 215–230, so two of its fifteen pixels are inside and its centre lands
+on the title bar. It is reachable — `scrollLeft` can reach 13 — so this is not
+yesterday's unreachable-overflow defect; it is a control that is invisible at rest
+with nothing saying it is there. It belongs to the design pass, whose own brief is
+that the ribbon must fit at the minimum window width without scrolling, and it is
+written here so that item inherits a measurement rather than an impression.
+
 ## 2026-09-21 — A reply is PDF's own thread, and the wrong answer would have been the silent one
 
 §7's annotation menu owed *reply*, and the owner's block says the word and nothing

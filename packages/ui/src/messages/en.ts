@@ -1300,6 +1300,7 @@ export const TASK_PROGRESS = messageKey('status.task.progress');
 export const TASK_CANCEL = messageKey('status.task.cancel');
 export const CLOSE_TAB_TITLE = messageKey('command.close-tab.title');
 export const CLOSE_OTHERS_TITLE = messageKey('command.close-others.title');
+export const OPEN_SIDE_BY_SIDE_TITLE = messageKey('command.open-side-by-side.title');
 export const COPY_SELECTION_TITLE = messageKey('command.text-copy.title');
 export const HIGHLIGHT_SELECTION_TITLE = messageKey('command.text-highlight.title');
 export const UNDERLINE_SELECTION_TITLE = messageKey('command.text-underline.title');
@@ -2825,6 +2826,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_WORK_INTACT]: 'Your changes are still open and unsaved. Nothing has been lost.',
   [CLOSE_TAB_TITLE]: 'Close tab',
   [CLOSE_OTHERS_TITLE]: 'Close other tabs',
+  // WHAT IT DOES, not where it puts it. *Open side by side* is the owner's
+  // wording and it is also what a reader is asking for — the second pane is an
+  // implementation of the request, not the request.
+  [OPEN_SIDE_BY_SIDE_TITLE]: 'Open side by side',
   [COPY_SELECTION_TITLE]: 'Copy',
   [HIGHLIGHT_SELECTION_TITLE]: 'Highlight',
   [UNDERLINE_SELECTION_TITLE]: 'Underline',

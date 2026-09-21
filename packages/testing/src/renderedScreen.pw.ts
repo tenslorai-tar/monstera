@@ -618,6 +618,55 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
 });
 
+test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pane (§7)', async ({
+  page,
+}) => {
+  // The tab menu in the production build, with TWO documents open — which is what makes this case
+  // able to fail. The menu rewrites the context's `docId` to the tab that was right-clicked, so a
+  // command reading the focused document would compare the document already on show, and the
+  // picker below would answer with the wrong id rather than with nothing.
+  //
+  // It is here and not in a live run because a second document can only be opened through the
+  // native file dialog, which no instrument drives.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const first = asDocId('00000000-0000-4000-8000-0000000000e7');
+  const second = asDocId('00000000-0000-4000-8000-0000000000e8');
+  await bridge(page, {
+    opens: [
+      { kind: 'opened', docId: first, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'first.pdf' },
+      { kind: 'opened', docId: second, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'second.pdf' },
+    ],
+    documentBytes: new Map([
+      [first, bytes],
+      [second, bytes],
+    ]),
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  // THE SECOND OPEN IS FOCUSED, so `first.pdf` is the background tab and the one to right-click.
+  const background = page.locator('nav.m-tabs button', { hasText: 'first.pdf' }).first();
+  await expect(background).toBeVisible();
+  await background.click({ button: 'right' });
+
+  const items = page.getByRole('menuitem');
+  await expect(items.first()).toBeVisible();
+  // THE OWNER'S TAB ITEMS, exhaustive so a stray placement shows up as an extra row.
+  await expect(items).toHaveText(['Close tabCtrl+W', 'Close other tabs', 'Open side by side']);
+
+  await page.getByRole('menuitem', { name: 'Open side by side' }).click();
+
+  // THE PANE ITSELF, which only renders under split view — so this also says the command turned
+  // that on. A version that wrote the document alone would leave nothing here at all.
+  const picker = page.locator('[data-compare-pick="true"]');
+  await expect(picker).toBeVisible();
+  // AND THE PICKER'S VALUE IS THE ID, not merely that something is compared: the command writes
+  // the same state the picker owns, and a wrong id would still fill the pane.
+  await expect(picker).toHaveValue(first);
+});
+
 test('each TEXT-LAYER LINE’S GLYPHS SPAN ITS BOX, so a selection lands on the ink it covers', async ({ page }) => {
   // The shim boxes every line at 100 x 12 display units, and a 30-character line in the substitute
   // font runs well past that unfitted — so this fixture separates a fitted layer from an unfitted
