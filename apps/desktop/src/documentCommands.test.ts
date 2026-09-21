@@ -1420,6 +1420,121 @@ describe('search is E2s first consumer, through the composition point', () => {
     });
   }
 
+  describe('an assistant ask reads its window through the same text (ADR-0088)', () => {
+    /** A provider's answer with nothing in it — these cases read the REQUEST. */
+    const answered = (): Response =>
+      new Response(
+        new ReadableStream({
+          start: (controller) => {
+            controller.close();
+          },
+        }),
+        { status: 200 },
+      );
+
+    it('a document ask carries every page, marked as a person reads it, and says what went', async () => {
+      const window = await searchCommands().askWindow({ scope: 'document', docId: searchable });
+
+      expect(window.text).toContain('[Page 1]\nalpha on the first page');
+      expect(window.text).toContain('[Page 2]\ngamma on the second page');
+      expect(window.text).toContain('the needle sits here');
+      expect(window.sent).toStrictEqual({
+        firstPage: 0,
+        lastPage: 1,
+        pageCount: 2,
+        characters: window.text.length,
+        truncated: false,
+      });
+    });
+
+    it('a page ask carries that page and not its neighbour', async () => {
+      const window = await searchCommands().askWindow({ scope: 'page', docId: searchable, page: 1 });
+
+      expect(window.text).toContain('the needle sits here');
+      expect(window.text).not.toContain('alpha');
+      expect(window.sent).toMatchObject({ firstPage: 1, lastPage: 1, pageCount: 2 });
+    });
+
+    it('a page past the end reads nothing, rather than asking the engine for it', async () => {
+      const window = await searchCommands().askWindow({ scope: 'page', docId: searchable, page: 9 });
+      expect(window.sent).toStrictEqual({ firstPage: null, lastPage: null, pageCount: 2, characters: 0, truncated: false });
+    });
+
+    it('THROUGH THE HANDLER: the provider receives the window as its instruction, and the renderer is told what went', async () => {
+      // BOTH ENDS IN ONE CASE — the renderer's `about` and the provider's request body — so the
+      // wiring between them (handler, window read, assistant, adapter) is crossed rather than
+      // assumed. Only the network is replaced.
+      const bodies: string[] = [];
+      const fetchImpl = ((_url: string, init?: { body?: string }) => {
+        bodies.push(init?.body ?? '');
+        return Promise.resolve(answered());
+      }) as unknown as typeof fetch;
+      const handlers = createContractHandlers({
+        assistant: createAssistant({
+          secret: (id) => (id === 'ai.anthropic-key' ? 'a-key' : undefined),
+          setting: () => undefined,
+          send: () => undefined,
+          fetchImpl,
+        }),
+        appInfo: { version: '0.0.0', installChannel: 'development' },
+        capabilities: new CapabilityRegistry(),
+        commands: searchCommands(),
+        documents: searchService,
+        openedDocument: () => Promise.resolve(),
+        unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
+        pickDocument: () => Promise.resolve(null),
+        recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
+        settings: { read: () => ({}), write: () => undefined },
+        secrets: { available: () => false, read: () => ({}), write: () => undefined },
+        revealLog: () => Promise.resolve(false),
+        titleBarOverlay: () => false,
+        confirmClose: () => false,
+        copySelection: () => false,
+        closeListening: () => false,
+        readDictionary: () => Promise.resolve(null),
+        ocrLanguages: () => Promise.resolve([]),
+      });
+
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-1',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Where is the needle?' }],
+        about: { scope: 'page', docId: searchable, page: 1 },
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(answer.ok).toBe(true);
+      if (!answer.ok) return;
+      expect(answer.value.started).toBe(true);
+      expect(answer.value.sent).toMatchObject({ firstPage: 1, lastPage: 1, pageCount: 2, truncated: false });
+      expect(bodies).toHaveLength(1);
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: unknown[] };
+      expect(sent.system).toContain('[Page 2]\ngamma on the second page');
+      expect(sent.system).toContain('cite it as [p. 3]');
+      expect(sent.system).not.toContain('alpha');
+      expect(sent.messages).toStrictEqual([{ role: 'user', content: 'Where is the needle?' }]);
+    });
+
+    it('CONTROL: an ask about nothing reads no document and sends no instruction', async () => {
+      const bodies: string[] = [];
+      const fetchImpl = ((_url: string, init?: { body?: string }) => {
+        bodies.push(init?.body ?? '');
+        return Promise.resolve(answered());
+      }) as unknown as typeof fetch;
+      const assistant = createAssistant({
+        secret: () => 'a-key',
+        setting: () => undefined,
+        send: () => undefined,
+        fetchImpl,
+      });
+      assistant.ask({ subscription: 'ask-2', provider: 'anthropic', model: 'm', messages: [{ role: 'user', text: 'hi' }] });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(JSON.parse(bodies[0] ?? '{}')).not.toHaveProperty('system');
+    });
+  });
+
   it('finds text that is really in the document, on the page it is on', async () => {
     const found = await searchCommands().searchPage(searchable, 1, 'needle', 10);
 

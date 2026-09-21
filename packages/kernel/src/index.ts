@@ -229,6 +229,13 @@ export {
   streamChat,
 } from './aiChat.js';
 export {
+  type AskWindow,
+  type ReadPageText,
+  askInstruction,
+  readAskWindow,
+  selectionWindow,
+} from './askWindow.js';
+export {
   PROVIDERS_WITHOUT_A_LIST,
   type AiModelList,
   type AiModelRequest,

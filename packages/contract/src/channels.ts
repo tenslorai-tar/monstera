@@ -2,6 +2,7 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { AI_PROVIDER_IDS } from './aiProviders.js';
+import { askAboutSchema, askSentSchema } from './askAbout.js';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { subscriptionIdSchema } from './events.js';
 import {
@@ -4240,10 +4241,17 @@ export const channels = {
           )
           .min(1)
           .max(MAX_CHAT_TURNS),
+        /**
+         * What the ask is about (ADR-0088). Absent is a conversation with no document in it;
+         * present, `main` reads the scope's text into a bounded window for this ask alone.
+         */
+        about: askAboutSchema.optional(),
       })
       .strict(),
-    z.object({ started: z.boolean() }),
-    ['subscription-in-use'],
+    /** `sent` is what the window carried, and `null` for an ask about nothing. */
+    z.object({ started: z.boolean(), sent: askSentSchema.nullable() }),
+    // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first.
+    ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
   /**

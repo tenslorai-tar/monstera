@@ -16,6 +16,7 @@ import {
   MAX_STRUCTURE_NAME,
   MAX_STRUCTURE_NODES,
   MAX_SERVICE_DETAIL,
+  type AskAbout,
   MAX_TABLE_CELL_TEXT,
   MAX_TABLE_CELLS,
   type SERVICE_REFUSALS,
@@ -89,6 +90,9 @@ import {
   countPageWords,
   findInPages,
   plainTextOf,
+  type AskWindow,
+  readAskWindow,
+  selectionWindow,
   structureOutlineOf,
   textLayerOf,
   saveDocument,
@@ -2378,6 +2382,48 @@ export class DocumentCommands {
     });
 
     return { version, ...value };
+  }
+
+  /**
+   * The window of text an assistant ask carries about this document (ADR-0088).
+   *
+   * ## In the LANE, page by page, through the read search takes
+   *
+   * `#pageText` is the call `searchPage` and `pageTextLayer` make, so the words a person asks
+   * about are the words they can search and select. Each page's text is appended to a window of
+   * a constant size and dropped — ADR-0035's *"bounded window, not a resident document"* — and
+   * `readAskWindow` stops reading once the window is full, so a long document costs the pages
+   * that fit rather than all of them.
+   *
+   * A selection reads nothing: its text came from the text layer this class already answered,
+   * and the page count is the one fact it needs from the document.
+   *
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async askWindow(about: AskAbout): Promise<AskWindow> {
+    const { docId } = about;
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      if (about.scope === 'selection') return selectionWindow(about.page, about.text, pageCount);
+      // A PAGE PAST THE END READS NOTHING rather than asking the engine for a page it does not
+      // have: the document may have lost pages between the menu and the ask.
+      const pages =
+        about.scope === 'page'
+          ? about.page < pageCount
+            ? [about.page]
+            : []
+          : Array.from({ length: pageCount }, (_unused, page) => page);
+      return await readAskWindow(pages, pageCount, async (page) =>
+        plainTextOf(await this.#pageText(docId, sessions, page)),
+      );
+    });
+    return value;
   }
 
   /**

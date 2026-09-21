@@ -58,6 +58,11 @@ export interface ChatRequest {
   /** Azure OpenAI's own resource; ignored elsewhere. */
   readonly endpoint?: string;
   readonly messages: readonly ChatMessage[];
+  /**
+   * An instruction ahead of the conversation — the document window an ask carries (ADR-0088).
+   * Each shape has its own place for it; absent, the request carries none.
+   */
+  readonly system?: string;
   /** Called with each piece of text as it arrives. */
   readonly onDelta?: (text: string) => void;
   readonly signal?: AbortSignal;
@@ -90,9 +95,12 @@ interface Prepared {
 
 /** The request one provider takes, or `null` when there is nothing to send it to. */
 export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'fetchImpl'>): Prepared | null {
-  const { provider, model, key, endpoint = '', messages } = request;
+  const { provider, model, key, endpoint = '', messages, system } = request;
   if (key === '' || model === '' || messages.length === 0) return null;
   const shape = AI_PROVIDERS[provider].adapter;
+  // AN EMPTY INSTRUCTION IS NO INSTRUCTION: each shape refuses or ignores an empty one
+  // differently, so none is sent.
+  const instruction = system === undefined || system === '' ? null : system;
 
   if (shape === 'anthropic') {
     return {
@@ -102,6 +110,7 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
         model,
         max_tokens: MAX_OUTPUT_TOKENS,
         stream: true,
+        ...(instruction === null ? {} : { system: instruction }),
         messages: messages.map((message) => ({ role: message.role, content: message.text })),
       }),
     };
@@ -112,6 +121,7 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
       url: `${GEMINI_BASE}/${model.replace(/^models\//u, 'models/')}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        ...(instruction === null ? {} : { systemInstruction: { parts: [{ text: instruction }] } }),
         // GEMINI'S ROLES ARE `user` AND `model`, not `assistant`, and a request using the
         // other word is refused by the service rather than misread.
         contents: messages.map((message) => ({
@@ -126,7 +136,10 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
     model,
     stream: true,
     max_tokens: MAX_OUTPUT_TOKENS,
-    messages: messages.map((message) => ({ role: message.role, content: message.text })),
+    messages: [
+      ...(instruction === null ? [] : [{ role: 'system', content: instruction }]),
+      ...messages.map((message) => ({ role: message.role, content: message.text })),
+    ],
   });
   if (provider === 'azure-openai') {
     const base = endpoint.replace(/\/+$/u, '');

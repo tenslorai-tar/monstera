@@ -70,7 +70,8 @@ export interface TextSelection {
 const LAYERS = new WeakMap<Element, { readonly page: number; readonly toPdf: (x: number, y: number) => { x: number; y: number } }>();
 
 /**
- * The text a person has selected, if the browser's selection lies inside ONE page's text layer.
+ * The text a person has selected in ONE page's text layer — the range clipped to that layer where
+ * one end lies outside every layer, and `undefined` where the two ends are in two.
  *
  * The selection is the platform's (the component's header below): this reads it and converts, and
  * decides nothing about where a run starts or stops. The two ends are the first and last rectangle
@@ -89,14 +90,26 @@ export function readTextSelection(selection: Selection | null = globalThis.docum
   if (selection === null || selection.isCollapsed || selection.rangeCount === 0) return undefined;
   const layerOf = (node: Node | null): Element | null =>
     (node instanceof Element ? node : (node?.parentElement ?? null))?.closest('[data-text-layer]') ?? null;
-  const layer = layerOf(selection.anchorNode);
-  if (layer === null || layer !== layerOf(selection.focusNode)) return undefined;
+  const range = selection.getRangeAt(0);
+  const startLayer = layerOf(range.startContainer);
+  const endLayer = layerOf(range.endContainer);
+  // TWO LAYERS is two pages, and not one run.
+  if (startLayer !== null && endLayer !== null && startLayer !== endLayer) return undefined;
+  const layer = startLayer ?? endLayer;
+  if (layer === null) return undefined;
   const entry = LAYERS.get(layer);
   if (entry === undefined) return undefined;
-  const text = selection.toString().trim();
+  // ONE END OUTSIDE EVERY LAYER is clipped to the layer rather than refused. A triple-click on a
+  // page's last line ends the range at the start of the next block, which is the page slot —
+  // measured in the live app, 2026-09-21 — so the words are selected and neither end names a
+  // second page. Refusing it left the menu offering page items over visibly selected text.
+  const clipped = range.cloneRange();
+  if (startLayer === null) clipped.setStart(layer, 0);
+  if (endLayer === null) clipped.setEnd(layer, layer.childNodes.length);
+  const text = clipped.toString().trim();
   if (text === '') return undefined;
 
-  const rects = [...selection.getRangeAt(0).getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
+  const rects = [...clipped.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
   const first = rects[0];
   const last = rects.at(-1);
   if (first === undefined || last === undefined) return undefined;

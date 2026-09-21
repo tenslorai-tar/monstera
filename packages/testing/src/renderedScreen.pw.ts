@@ -602,6 +602,11 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
     'Add comment',
     'Mark for redaction',
     'Search for this',
+    // THE ASSISTANT'S FOUR (ADR-0088), after the menu's own seven.
+    'Ask AI',
+    'Explain',
+    'Summarise',
+    'Translate',
     'Rotate page',
     'Insert blank page',
     'Extract pages…',
@@ -616,6 +621,47 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
   await page.evaluate(() => navigator.clipboard.writeText('sentinel'));
   await page.getByRole('menuitem', { name: 'Copy' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
+});
+
+test('a triple-click on a page’s LAST LINE still opens the selected-text menu, on that line', async ({
+  page,
+}) => {
+  // Found in the live run of 2026-09-21, measured there rather than inferred: a triple-click selects
+  // the line and ends the selection at the start of the NEXT block, and after a page's last line
+  // that block is the page slot, outside the text layer. The reader required both ends inside one
+  // layer, so the right-click fell back to the page menu with the words visibly selected. The same
+  // triple-click on the first line kept both ends inside, which is why the case above — a drag
+  // within the first line — could not see it.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const bytes = await threePagePdf();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000e9');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    pageLines: [['Quarterly totals for the north', 'Nothing further is owed']],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  const line = page.locator('[data-text-layer="0"] [data-text-line="1"]');
+  await expect(line).toHaveCount(1);
+  const box = await line.boundingBox();
+  if (box === null) throw new Error('the last line has no box');
+  await line.click({ clickCount: 3, position: { x: box.width / 2, y: box.height / 2 } });
+  // THE PREMISE, asserted rather than assumed: the far end really is outside the layer, so a pass
+  // below is the clipping working and not a drag that happened to stop on a word.
+  expect(
+    await page.evaluate(() => {
+      const focus = document.getSelection()?.focusNode ?? null;
+      const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
+      return element?.closest('[data-text-layer]') === null;
+    }),
+  ).toBe(true);
+
+  await line.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await expect(page.getByRole('menuitem').first()).toBeVisible();
+  await expect(page.getByRole('menuitem').first()).toHaveText('CopyCtrl+C');
+  await expect(page.getByRole('menuitem', { name: 'Explain' })).toBeVisible();
 });
 
 test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pane (§7)', async ({

@@ -329,7 +329,7 @@ const handlers: ContractHandlers = {
   // and it is the reassuring shape for every question here. An id and never a
   // value, which is all this channel can carry since ADR-0056.
   'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
-  'ai.ask': () => Promise.resolve(ok({ started: false })),
+  'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
   'ai.stop': () => Promise.resolve(ok({ stopped: false })),
   'settings.loadSecrets': () =>
     Promise.resolve(ok({ stored: [AZURE_KEY_SETTING_ID], available: true })),

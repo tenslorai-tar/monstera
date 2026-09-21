@@ -1,3 +1,4 @@
+import type { AskSent } from '@monstera/contract';
 import {
   type DocId,
   type DocVersion,
@@ -6,7 +7,20 @@ import {
 } from '@monstera/shared';
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
+import type { ReplyTarget } from './assistantRequest.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
+
+/** One turn of a document's assistant conversation. */
+export interface ConversationTurn {
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+  /** What an asked turn carried about the document, as `main` answered it (ADR-0088). */
+  readonly sent?: AskSent | null;
+  /** The note the answer to this turn may be posted to — *Draft a reply* only. */
+  readonly replyTo?: ReplyTarget;
+  /** An answer already posted as a reply, so it is not offered twice. */
+  readonly posted?: boolean;
+}
 
 /**
  * One store per open document, created on open and dropped on close
@@ -121,6 +135,16 @@ export interface DocumentState {
    * bar reading "Page 1 of 10" over a document that has two.
    */
   readonly pageCount: number | undefined;
+  /**
+   * This document's assistant conversation
+   * ([ADR-0083](../../../docs/DECISIONS/0083-the-contextual-panel-holds-tabs-and-the-assistant-is-one.md)
+   * Decision 4: one conversation per document, dropped with it).
+   *
+   * Here for {@link history}'s reason: a conversation that outlived its document would answer
+   * questions about a file that is closed, and switching tabs would carry one document's
+   * answers into another's panel.
+   */
+  readonly conversation: readonly ConversationTurn[];
 }
 
 export interface DocumentActions {
@@ -204,6 +228,9 @@ export interface DocumentActions {
   /** Records the magnification the reader chose for THIS document. */
   readonly zoomed: (mode: ZoomMode) => void;
 
+  /** Replaces this document's conversation — the panel holds the turns it is assembling. */
+  readonly converse: (turns: readonly ConversationTurn[]) => void;
+
   /**
    * Records how many pages the parser found.
    *
@@ -252,6 +279,7 @@ export function createDocumentStore(
     // NOT ZERO. A document whose parser has not answered has an unknown page
     // count, and zero is a number the navigation commands would clamp against.
     pageCount: undefined,
+    conversation: [],
     observed: (next) => {
       if (next <= get().version) return false;
       set({ version: next });
@@ -319,6 +347,9 @@ export function createDocumentStore(
     },
     zoomed: (mode) => {
       set({ zoom: mode });
+    },
+    converse: (turns) => {
+      set({ conversation: turns });
     },
     counted: (pages) => {
       if (pages === get().pageCount) return;

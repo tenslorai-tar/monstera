@@ -1867,7 +1867,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // surface must already handle — it is the answer a real `main` gives when the
     // subscription is in use or the provider has no key.
     'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
-    'ai.ask': () => Promise.resolve(ok({ started: false })),
+    'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
     'settings.loadSecrets': () =>
       Promise.resolve(

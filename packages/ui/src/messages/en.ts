@@ -1,4 +1,4 @@
-import type { OcrLanguage } from '@monstera/contract';
+import type { AiProviderId, OcrLanguage } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { messageKey } from '@monstera/shared';
 
@@ -920,6 +920,57 @@ export const ASSISTANT_PROBLEM_REJECTED = messageKey('assistant.problem-rejected
 /** Anthropic's account out of credit — one sentence for the assistant and Claude recognition alike. */
 export const ANTHROPIC_OUT_OF_CREDIT = messageKey('service.anthropic-out-of-credit');
 export const ASSISTANT_PROBLEM_UNREADABLE = messageKey('assistant.problem-unreadable');
+export const AI_PROVIDER_ANTHROPIC = messageKey('assistant.provider-name.anthropic');
+export const AI_PROVIDER_OPENAI = messageKey('assistant.provider-name.openai');
+export const AI_PROVIDER_GEMINI = messageKey('assistant.provider-name.gemini');
+export const AI_PROVIDER_MISTRAL = messageKey('assistant.provider-name.mistral');
+export const AI_PROVIDER_XAI = messageKey('assistant.provider-name.xai');
+export const AI_PROVIDER_AZURE_OPENAI = messageKey('assistant.provider-name.azure-openai');
+export const AI_PROVIDER_OPENROUTER = messageKey('assistant.provider-name.openrouter');
+export const AI_PROVIDER_GROQ = messageKey('assistant.provider-name.groq');
+export const AI_PROVIDER_PERPLEXITY = messageKey('assistant.provider-name.perplexity');
+export const AI_PROVIDER_DEEPSEEK = messageKey('assistant.provider-name.deepseek');
+/**
+ * Each provider's name as a person knows it — never the registry's id (ADR-0081).
+ * `satisfies` makes an eleventh provider a compile error here rather than a blank option.
+ */
+export const AI_PROVIDER_NAMES = {
+  anthropic: AI_PROVIDER_ANTHROPIC,
+  openai: AI_PROVIDER_OPENAI,
+  gemini: AI_PROVIDER_GEMINI,
+  mistral: AI_PROVIDER_MISTRAL,
+  xai: AI_PROVIDER_XAI,
+  'azure-openai': AI_PROVIDER_AZURE_OPENAI,
+  openrouter: AI_PROVIDER_OPENROUTER,
+  groq: AI_PROVIDER_GROQ,
+  perplexity: AI_PROVIDER_PERPLEXITY,
+  deepseek: AI_PROVIDER_DEEPSEEK,
+} as const satisfies Record<AiProviderId, MessageKey>;
+export const ASSISTANT_ABOUT_LABEL = messageKey('assistant.about');
+export const ASSISTANT_ABOUT_PAGE = messageKey('assistant.about.page');
+export const ASSISTANT_ABOUT_DOCUMENT = messageKey('assistant.about.document');
+export const ASSISTANT_ABOUT_SELECTION = messageKey('assistant.about.selection');
+export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
+export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
+export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
+export const ASSISTANT_SENT_PAGES = messageKey('assistant.sent.pages');
+export const ASSISTANT_SENT_CUT = messageKey('assistant.sent.cut');
+export const ASSISTANT_SENT_NOTHING = messageKey('assistant.sent.nothing');
+export const ASSISTANT_CITATION = messageKey('assistant.citation');
+export const ASSISTANT_QUICK_LABEL = messageKey('assistant.quick');
+export const ASSISTANT_QUICK_SUMMARISE = messageKey('assistant.quick.summarise');
+export const ASSISTANT_QUICK_DATES = messageKey('assistant.quick.dates');
+export const ASSISTANT_QUICK_EXPLAIN_PAGE = messageKey('assistant.quick.explain-page');
+export const ASK_AI_SELECTION_TITLE = messageKey('command.ai.ask-selection');
+export const EXPLAIN_SELECTION_TITLE = messageKey('command.ai.explain-selection');
+export const SUMMARISE_SELECTION_TITLE = messageKey('command.ai.summarise-selection');
+export const TRANSLATE_SELECTION_TITLE = messageKey('command.ai.translate-selection');
+export const DRAFT_REPLY_TITLE = messageKey('command.ai.draft-reply');
+export const ASSISTANT_PROMPT_EXPLAIN = messageKey('assistant.prompt.explain');
+export const ASSISTANT_PROMPT_SUMMARISE = messageKey('assistant.prompt.summarise');
+export const ASSISTANT_PROMPT_TRANSLATE = messageKey('assistant.prompt.translate');
+export const ASSISTANT_PROMPT_DRAFT_REPLY = messageKey('assistant.prompt.draft-reply');
+export const ASSISTANT_POST_REPLY = messageKey('assistant.post-reply');
 export const CONTEXT_PANEL_TAB_TITLES = {
   properties: CONTEXT_PANEL_TAB_PROPERTIES,
   assistant: CONTEXT_PANEL_TAB_ASSISTANT,
@@ -2160,6 +2211,45 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // Claude recognition, and it names the one place that fixes it.
   [ANTHROPIC_OUT_OF_CREDIT]: 'Your Anthropic account is out of credit — add credit at console.anthropic.com',
   [ASSISTANT_PROBLEM_UNREADABLE]: 'The answer stopped part way. What is above is what arrived.',
+  [AI_PROVIDER_NAMES.anthropic]: 'Anthropic',
+  [AI_PROVIDER_NAMES.openai]: 'OpenAI',
+  [AI_PROVIDER_NAMES.gemini]: 'Google Gemini',
+  [AI_PROVIDER_NAMES.mistral]: 'Mistral',
+  [AI_PROVIDER_NAMES.xai]: 'xAI',
+  [AI_PROVIDER_NAMES['azure-openai']]: 'Azure OpenAI',
+  [AI_PROVIDER_NAMES.openrouter]: 'OpenRouter',
+  [AI_PROVIDER_NAMES.groq]: 'Groq',
+  [AI_PROVIDER_NAMES.perplexity]: 'Perplexity',
+  [AI_PROVIDER_NAMES.deepseek]: 'DeepSeek',
+  [ASSISTANT_ABOUT_LABEL]: 'Asking about',
+  [ASSISTANT_ABOUT_PAGE]: 'This page ({page})',
+  [ASSISTANT_ABOUT_DOCUMENT]: 'The whole document, up to {characters} characters',
+  [ASSISTANT_ABOUT_SELECTION]: 'The text you selected on page {page}',
+  [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
+  // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
+  // to a provider only on an explicit action, and the panel says which provider.
+  [ASSISTANT_ABOUT_SENDS]: 'Sent to {provider} only when you press Send.',
+  [ASSISTANT_SENT_PAGE]: 'Sent page {page} of {count}',
+  [ASSISTANT_SENT_PAGES]: 'Sent pages {first} to {last} of {count}',
+  [ASSISTANT_SENT_CUT]: '— cut short at {characters} characters',
+  [ASSISTANT_SENT_NOTHING]: 'No text was found to send',
+  [ASSISTANT_CITATION]: 'Go to page {page}',
+  [ASSISTANT_QUICK_LABEL]: 'Start with',
+  [ASSISTANT_QUICK_SUMMARISE]: 'Summarise this document',
+  [ASSISTANT_QUICK_DATES]: 'List the dates and deadlines in this document',
+  [ASSISTANT_QUICK_EXPLAIN_PAGE]: 'Explain this page',
+  [ASK_AI_SELECTION_TITLE]: 'Ask AI',
+  [EXPLAIN_SELECTION_TITLE]: 'Explain',
+  [SUMMARISE_SELECTION_TITLE]: 'Summarise',
+  [TRANSLATE_SELECTION_TITLE]: 'Translate',
+  [DRAFT_REPLY_TITLE]: 'Draft a reply with AI',
+  [ASSISTANT_PROMPT_EXPLAIN]: 'Explain the selected text in plain language.',
+  [ASSISTANT_PROMPT_SUMMARISE]: 'Summarise the selected text.',
+  // THE CATALOGUE'S OWN LANGUAGE: a French catalogue says French, so the translation lands in
+  // the language the person reads the application in.
+  [ASSISTANT_PROMPT_TRANSLATE]: 'Translate the selected text into English.',
+  [ASSISTANT_PROMPT_DRAFT_REPLY]: 'Draft a short, polite reply to this comment. Answer with the reply alone.',
+  [ASSISTANT_POST_REPLY]: 'Post as a reply',
   [CONTEXT_PANEL_RESIZE]: 'Resize the properties panel',
   [CONTEXT_PANEL_COLLAPSE]: 'Collapse the properties panel',
   [CONTEXT_PANEL_REOPEN]: 'Show the properties panel',

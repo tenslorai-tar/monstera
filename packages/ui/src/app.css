@@ -1561,6 +1561,43 @@ textarea {
   font-size: var(--font-chrome-11);
 }
 
+/* WHAT IS SENT, AND TO WHOM (ADR-0088): the choice and the consent sentence sit together, above
+   the conversation, so they are read before Send rather than discovered after. */
+.m-assistant__about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-assistant__consent,
+.m-assistant__sent {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__sent {
+  margin-block-start: var(--space-2);
+}
+
+.m-assistant__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* A CITATION IS A LINK IN THE TEXT, drawn in the text's own colour and underlined, so it holds
+   every theme's contrast floor without a colour of its own — high contrast included. */
+.m-assistant__citation {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .m-assistant__turns {
   flex: 1;
   min-block-size: 0;

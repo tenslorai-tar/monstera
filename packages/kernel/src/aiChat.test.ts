@@ -251,4 +251,33 @@ describe('prepareChat', () => {
     );
     expect(new Set(urls).size).toBe(urls.length);
   });
+
+  it('carries a document instruction in each shape’s own place (ADR-0088)', () => {
+    const system = '[Page 1]\nthe window';
+    const body = (provider: 'anthropic' | 'gemini' | 'openai') =>
+      JSON.parse(prepareChat({ provider, model: 'm', key: 'k', messages: ASK, system })?.body ?? '{}') as Record<
+        string,
+        unknown
+      >;
+
+    expect(body('anthropic')['system']).toBe(system);
+    expect(body('gemini')['systemInstruction']).toStrictEqual({ parts: [{ text: system }] });
+    const openAi = body('openai')['messages'] as { role: string; content: string }[];
+    expect(openAi[0]).toStrictEqual({ role: 'system', content: system });
+    // THE CONVERSATION FOLLOWS IT, unmoved: an instruction that replaced the first turn
+    // would pass every assertion above.
+    expect(openAi[1]).toStrictEqual({ role: 'user', content: 'What is on page 2?' });
+  });
+
+  it('CONTROL: with no instruction, or an empty one, no shape carries the field', () => {
+    for (const system of [undefined, ''] as const) {
+      for (const provider of ['anthropic', 'gemini', 'openai'] as const) {
+        const request = prepareChat({ provider, model: 'm', key: 'k', messages: ASK, ...(system === undefined ? {} : { system }) });
+        const body = JSON.parse(request?.body ?? '{}') as Record<string, unknown>;
+        expect(body['system'], provider).toBeUndefined();
+        expect(body['systemInstruction'], provider).toBeUndefined();
+        if (provider === 'openai') expect((body['messages'] as unknown[]).length).toBe(1);
+      }
+    }
+  });
 });

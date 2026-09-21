@@ -892,6 +892,74 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-21 — The assistant about a document, and four defects the live run found
+
+The owed half of the assistant row: an *Asking about* line, page references, *Ask AI · Explain ·
+Summarise · Translate* on selected text, reply-to-sticky-note and quick starts. ADR-0088 records
+the shape, in its own commit ahead of this one.
+
+**`main` may not hold a document's text** (ADR-0035), and the provider is reached from `main`. So
+the renderer names a scope — a selection, a page, the document — and `main` reads page by page
+through `#pageText` into a window of 100,000 characters, dropping each page. `ai.ask` answers which
+pages went, and the turn says so under the question. The window reaches the provider as each
+adapter's own system instruction, marked `[Page 3]` one-based, and `[p. 3]` citations in the answer
+become links. `askAbout.ts` in the contract states the marker and the citation reader once, and its
+case is a round trip taken off the first page.
+
+One conversation per document now lives in the document's store (ADR-0083 Decision 4), and an answer
+streaming across a tab switch writes into the conversation that asked.
+
+**Proven by**: `documentCommands.test.ts` crosses the handler, the window read, the assistant and
+the adapter in one case, with only the network replaced — the provider's request body carries page
+2's text and not page 1's. Removing the instruction from main's assistant reddens it. Removing the
+window's early stop reddens the kernel case that asserts the pages NOT read.
+
+**The live run, with the Anthropic key already stored in Settings › AI, on a three-page test
+document made for it**: *List the dates and deadlines* sent pages 1 to 3 and the answer cited
+`[p. 2]`, which went to page 2; *Explain* on a selected line sent page 2 of 3 and explained that
+line; *Draft a reply with AI* on a note, then *Post as a reply*, then save: a second reader
+(`scripts/research/annotationReply.mjs`) found the reply in the file with `/IRT` to the note and
+`/RT /R`, and it was there on reopen. That run is also the provider registry row's owed live run.
+
+It also found four defects, each now fixed with a case that failed first:
+
+1. **A request made while the panel was loading was dropped.** A right-click that reveals a closed
+   panel mounts it before the model list arrives; the request was marked handled and never asked.
+   Now handled only once the ask begins.
+2. **A remount replayed the last request.** The handled marker lived in the panel, which unmounts
+   with no document open; reopening the file re-sent the draft-reply question about the closed
+   document, and main refused it. The marker is `App`'s now, and a request naming another document
+   is never asked.
+3. **The reply could be posted twice.** The button stayed after pressing it.
+4. **A triple-click on a page's LAST line opened the page menu.** Measured in the live app: the
+   browser ends that selection at the start of the next block, the page slot, outside the text
+   layer, and `readTextSelection` required both ends inside one layer. This was in the selected-text
+   menu from the right-click section, not only in the new items. It now clips the range to the layer
+   when one end is outside every layer, and still refuses two layers. The rendered case asserts the
+   premise — the end really is outside — before the menu, and it failed before the fix. The existing
+   case dragged within the first line, which is the one shape that could not see it.
+
+**Observed and not chased, recorded so they are not lost:**
+
+- The window went blank when I rebuilt the renderer under the running app: its lazy import of the
+  comment dialog named a chunk the build had replaced. That cause was mine. What is the product's
+  is that **the error boundary did not show its fallback** — the root was empty. A packaged build
+  cannot lose a chunk this way, so it is not a user path today; it is the boundary's gap all the
+  same.
+- After a renderer reload, opening the same file again showed nothing, because `main` still held
+  it. Only reachable after a reload or a crash.
+- The page's vertical ruler draws over a dialog.
+- For a note, the instruction calls the note's text *"text the person selected"*, and the model
+  echoed it. Harmless; the words should say *comment* for that scope.
+- Answers arrive as Markdown and are shown as plain text — rendered Markdown is on the row as owed.
+
+**The full unit suite did not pass locally in this range, and the reason was measured.** Twenty-three
+tests hit vitest's 5-second timeout while the Claude desktop processes held 74–100% of four cores
+(`Get-Counter`, read at the time); every failing file passed alone, including `barcode.test.ts`,
+which this range does not touch. No timeout was raised. The board is where it is settled.
+
+---
+
 ## 2026-09-21 — Out of credit, in the owner's words, and a region tool that said "internal"
 
 The owner asked that an Anthropic account out of credit read *"Your Anthropic account is out of

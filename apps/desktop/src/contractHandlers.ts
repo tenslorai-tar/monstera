@@ -9,6 +9,8 @@ import {
   type SpellingLanguage,
 } from '@monstera/contract';
 import {
+  type AskWindow,
+  askInstruction,
   type CapabilityRegistry,
   DocumentBusyError,
   DocumentNotOpenError,
@@ -352,11 +354,31 @@ export function createContractHandlers(deps: {
         })),
       });
     },
-    'ai.ask': ({ subscription, provider, model, messages }) => {
-      const started = deps.assistant.ask({ subscription, provider, model, messages });
+    'ai.ask': async ({ subscription, provider, model, messages, about }) => {
+      // THE WINDOW IS READ HERE, INSIDE THE ASK THAT SENDS IT (ADR-0088 Decision 5): nothing
+      // about a document is read until a person asks, and what was read is answered so the
+      // turn can say which pages went.
+      let window: AskWindow | null = null;
+      if (about !== undefined) {
+        try {
+          window = await deps.commands.askWindow(about);
+        } catch (thrown) {
+          if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+          if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+          if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+          throw thrown;
+        }
+      }
+      const started = deps.assistant.ask({
+        subscription,
+        provider,
+        model,
+        messages,
+        ...(window === null || about === undefined ? {} : { system: askInstruction(window, about.scope) }),
+      });
       // A SUBSCRIPTION ALREADY STREAMING IS A DECLARED REFUSAL, not a quiet `false`: the
       // renderer must be able to say why nothing happened.
-      return Promise.resolve(started.started ? ok({ started: true }) : err({ code: 'subscription-in-use' }));
+      return started.started ? ok({ started: true, sent: window?.sent ?? null }) : err({ code: 'subscription-in-use' });
     },
     'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),
 

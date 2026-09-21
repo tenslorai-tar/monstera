@@ -103,7 +103,13 @@ import {
   togglePanelCommand,
   toggleQuickToolbarCommand,
 } from './commands/chromeCommands.js';
-import { LAYOUT_MODE_SETTING } from './settings/layout.js';
+import {
+  CONTEXT_PANEL_OPEN_SETTING,
+  CONTEXT_PANEL_TAB_SETTING,
+  LAYOUT_MODE_SETTING,
+} from './settings/layout.js';
+import type { AskAssistant, AssistantRequest } from './assistantRequest.js';
+import { assistantSelectionCommands, draftReplyCommand } from './commands/assistantCommands.js';
 import { CommandPalette } from './CommandPalette.js';
 import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
@@ -1186,6 +1192,30 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     [store],
   );
 
+  /**
+   * What a command last asked of the assistant (ADR-0088), and the one way to ask it.
+   *
+   * It opens the right panel on the Assistant tab through the same two settings the style
+   * command uses to reveal Properties, so a person who shut the panel sees the answer arrive.
+   */
+  const [assistantRequest, setAssistantRequest] = useState<AssistantRequest | undefined>(undefined);
+  // WHICH REQUEST WAS ACTED ON, here rather than in the panel: the panel unmounts with no document
+  // open, and a marker it held reset on remount and replayed the last request.
+  const [assistantHandled, setAssistantHandled] = useState<number | undefined>(undefined);
+  const askAssistant = useCallback<AskAssistant>(
+    (about, prompt, replyTo) => {
+      settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
+      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+      setAssistantRequest((last) => ({
+        serial: (last?.serial ?? 0) + 1,
+        about,
+        ...(prompt === undefined ? {} : { prompt }),
+        ...(replyTo === undefined ? {} : { replyTo }),
+      }));
+    },
+    [settings],
+  );
+
   // Stable, so the scroller's consume-the-request effect does not re-run on
   // every parent render and scroll again to a page it has already reached.
   const wentTo = useCallback(() => {
@@ -1864,6 +1894,9 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
             commentSelectionCommand({ ...textDeps, ask }),
             redactSelectionCommand(textDeps),
             searchSelectionCommand(textDeps),
+            // THE ASSISTANT'S FOUR (ADR-0088), after the menu's own seven: each names the words
+            // and a question, and `askAssistant` reveals the panel that asks it.
+            ...assistantSelectionCommands({ selection: () => textSelection, ask: askAssistant }),
           ];
         })(),
         zoomCommand('in', { onZoom: changeZoom }),
@@ -1894,6 +1927,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // joined it — the rule was never about there being one.
         editSelectionCommand({ ...selectionDeps, ask }),
         replySelectionCommand({ ...selectionDeps, ask }),
+        draftReplyCommand({ selection: readSelection, ask: askAssistant }),
         copyAnnotationsCommand({ ...selectionDeps, client, ask, onCopied: setCopiedCount }),
         selectionPropertiesCommand({ ...selectionDeps, settings }),
         ...nudgeSelectionCommands(selectionDeps),
@@ -1958,6 +1992,10 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       textSelection,
       dispatch,
       style,
+      // THE ASSISTANT'S ITEMS (ADR-0088): the one way to ask, and the annotation selection
+      // *Draft a reply* reads.
+      askAssistant,
+      readSelection,
     ]);
 
   /**
@@ -2195,7 +2233,25 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
                 // THE ASSISTANT TAB (ADR-0083). It takes the same stored-secret list the
                 // other key-gated surfaces take, so *which providers have a key* is
                 // answered in one place, and the event subscriber `App` was given.
-                <AssistantPanel client={client} storedSecrets={storedSecrets} subscribe={subscribe} />
+                //
+                // THE FOCUSED DOCUMENT AND ITS STORE (ADR-0088): the conversation lives in the
+                // store, and a citation goes to its page through the navigator every other
+                // jump takes, so Back returns from it.
+                <AssistantPanel
+                  client={client}
+                  focused={
+                    activeId === undefined || store === undefined
+                      ? undefined
+                      : { docId: activeId, store, page: currentPage }
+                  }
+                  onGoTo={navigator.jumpTo}
+                  onReply={dispatch}
+                  request={assistantRequest}
+                  handled={assistantHandled}
+                  onHandled={setAssistantHandled}
+                  storedSecrets={storedSecrets}
+                  subscribe={subscribe}
+                />
               }
               settings={settings}
             >

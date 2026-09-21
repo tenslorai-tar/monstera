@@ -91,6 +91,17 @@ export {
   subscriptionIdSchema,
 } from './events.js';
 export {
+  type AnswerPiece,
+  type AskAbout,
+  type AskSent,
+  MAX_ASK_CONTEXT,
+  MAX_ASK_SELECTION,
+  askAboutSchema,
+  askPageMarker,
+  askSentSchema,
+  citationsIn,
+} from './askAbout.js';
+export {
   ENGINE_HOST_FRAME_MAX_BYTES,
   ENGINE_HOST_MAX_IN_FLIGHT,
   HOST_CORRELATION_ID_MAX_CHARS,

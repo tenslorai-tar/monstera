@@ -52,6 +52,8 @@ export interface AskRequest {
   readonly provider: AiProviderId;
   readonly model: string;
   readonly messages: readonly ChatMessage[];
+  /** The document window's instruction, built by the handler that read it (ADR-0088). */
+  readonly system?: string;
 }
 
 export interface Assistant {
@@ -95,7 +97,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
       }),
 
-    ask: ({ subscription, provider, model, messages }) => {
+    ask: ({ subscription, provider, model, messages, system }) => {
       if (live.has(subscription)) return { started: false };
       const controller = new AbortController();
       live.set(subscription, controller);
@@ -108,6 +110,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         key: keyFor(provider),
         endpoint: endpointFor(provider),
         messages,
+        ...(system === undefined ? {} : { system }),
         signal: controller.signal,
         onDelta: (text) => {
           // A SUBSCRIPTION THAT WAS STOPPED GETS NOTHING MORE. The abort reaches the
