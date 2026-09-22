@@ -6,7 +6,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, OCR_HANDWRITING, OCR_START, OCR_UNAVAILABLE } from '../messages/en.js';
+import { EN, OCR_HANDWRITING, OCR_HANDWRITING_READY, OCR_START, OCR_UNAVAILABLE } from '../messages/en.js';
 import OcrBody from './OcrBody.js';
 
 /**
@@ -39,7 +39,7 @@ describe('the recognition dialog', () => {
   it('says where handwriting is read when models are installed', () => {
     render(
       <Wrapped>
-        <OcrBody page={0} languages={['eng']} resolve={() => undefined} />
+        <OcrBody page={0} languages={['eng']} servicesReady={false} resolve={() => undefined} />
       </Wrapped>,
     );
     // THE CONTROL that this is the installed branch: its start button is there.
@@ -52,12 +52,23 @@ describe('the recognition dialog', () => {
   it('and when none are, beside the sentence saying so', () => {
     render(
       <Wrapped>
-        <OcrBody page={0} languages={[]} resolve={() => undefined} />
+        <OcrBody page={0} languages={[]} servicesReady={false} resolve={() => undefined} />
       </Wrapped>,
     );
     expect(screen.getByText(english(OCR_UNAVAILABLE))).toBeDefined();
     expect(screen.queryByRole('button', { name: english(OCR_START) })).toBeNull();
     expect(screen.getByText(handwritingLine)).toBeDefined();
+  });
+
+  it('with a service’s key STORED it says where the tool is, and not "add a key" (§10.5)', () => {
+    render(
+      <Wrapped>
+        <OcrBody page={0} languages={['eng']} servicesReady resolve={() => undefined} />
+      </Wrapped>,
+    );
+    expect(screen.getByText(english(OCR_HANDWRITING_READY))).toBeDefined();
+    // THE CONTROL: the no-key sentence is exactly what a person with a key must not be told.
+    expect(screen.queryByText(handwritingLine)).toBeNull();
   });
 
   it('names both services and Settings, and no link', () => {

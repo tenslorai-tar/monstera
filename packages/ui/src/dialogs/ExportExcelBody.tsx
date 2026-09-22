@@ -9,6 +9,7 @@ import {
   EXPORT_EXCEL_CELL,
   EXPORT_EXCEL_CLIPPED,
   EXPORT_EXCEL_ENGINE,
+  EXPORT_EXCEL_SERVICES_NO_KEY,
   EXPORT_EXCEL_ENGINE_AUTOMATIC,
   EXPORT_EXCEL_ENGINE_AZURE,
   EXPORT_EXCEL_ENGINE_CLAUDE,
@@ -110,8 +111,14 @@ export default function ExportExcelBody({
     </fieldset>
   );
 
+  // §10.5's NO-KEY STATE: with no service's key stored there is no engine to choose, and a dialog
+  // that says nothing about it leaves a person with a scanned table no way to learn the other route.
   const engineChoice =
-    engines.length > 1 ? (
+    engines.length <= 1 ? (
+      <p className="m-export-excel__no-key" data-export-excel-no-key="">
+        {_(EXPORT_EXCEL_SERVICES_NO_KEY)}
+      </p>
+    ) : (
       <fieldset className="m-export-excel__layout">
         <legend>{_(EXPORT_EXCEL_ENGINE)}</legend>
         {engines.map((each) => (
@@ -128,7 +135,7 @@ export default function ExportExcelBody({
           </label>
         ))}
       </fieldset>
-    ) : null;
+    );
 
   if (engine !== 'automatic') {
     return (

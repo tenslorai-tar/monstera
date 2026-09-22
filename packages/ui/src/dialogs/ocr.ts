@@ -50,6 +50,12 @@ export const OCR_DIALOG = declareDialog({
        * the list is a subset of a closed enum.
        */
       languages: z.array(ocrLanguageSchema).max(OCR_LANGUAGES.length),
+      /**
+       * Whether a recognition service — Azure's endpoint and key, or an Anthropic key — is
+       * stored, so the handwriting sentence can say where to go rather than always saying *add a
+       * key* to a person who has one (§10.5's no-key state, told only when it is the state).
+       */
+      servicesReady: z.boolean(),
     })
     .strict(),
   result: OCR_RESULT,

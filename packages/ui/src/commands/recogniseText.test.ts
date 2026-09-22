@@ -156,6 +156,7 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(3));
 
     // EVERY PAGE IS READ and two are recognised: the read is how the command knows
@@ -180,6 +181,7 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(3, 1));
 
     // THE SCOPE THE DIALOG ANSWERED, not the page the context held: they agree
@@ -200,6 +202,7 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(1));
 
     // THE MUTATION-DIALOG GATE (ADR-0038): a dismissal produces no value, so
@@ -218,12 +221,13 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(1));
 
     // AN EMPTY LIST REACHES THE DIALOG, which is what makes the no-models state
     // the dialog's to design rather than this command's to hide. A command that
     // returned early would leave the control doing nothing at all.
-    expect(opened).toStrictEqual([{ id: OCR_DIALOG_ID, props: { page: 0, languages: [] } }]);
+    expect(opened).toStrictEqual([{ id: OCR_DIALOG_ID, props: { page: 0, languages: [], servicesReady: false } }]);
   });
 
   it('reports what it did, including when there was nothing to do', async () => {
@@ -235,6 +239,7 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(3));
 
     expect(dispatched).toStrictEqual([]);
@@ -252,7 +257,7 @@ describe('the recognise-text command', () => {
     const { ask } = recordingAsk({ pages: 'all', language: 'eng' });
     const { track, steps, totals, ended } = recordingTrack();
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, ask, track }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, ask, track, servicesReady: () => false }).run(
       contextWith(3),
     );
 
@@ -281,7 +286,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await recogniseTextCommand({ client, onApplied: () => undefined, ask, track }).run(
+    await recogniseTextCommand({ client, onApplied: () => undefined, ask, track, servicesReady: () => false }).run(
       contextWith(3),
     );
 
@@ -308,6 +313,7 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(3));
 
     // ONE DISPATCH AND ONE READ. The refusals this channel declares are about the
@@ -326,6 +332,7 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(3));
 
     // THE WHOLE DOCUMENT, whatever scope the dialog answered — an export is every
@@ -351,7 +358,7 @@ describe('the recognise-text command', () => {
       end: () => undefined,
     });
 
-    await exportSearchableCommand({ client, onApplied: () => undefined, ask, track }).run(
+    await exportSearchableCommand({ client, onApplied: () => undefined, ask, track, servicesReady: () => false }).run(
       contextWith(2),
     );
 
@@ -457,6 +464,7 @@ describe('the recognise-text command', () => {
       onApplied: () => undefined,
       ask,
       track: UNTRACKED,
+      servicesReady: () => false,
     }).run(contextWith(3));
 
     expect(read).toStrictEqual([0, 1]);

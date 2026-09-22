@@ -2,7 +2,7 @@
 import { type AskSent, type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -279,6 +279,19 @@ describe('the assistant tab', () => {
   it('says so when the chosen provider has no stored key', async () => {
     await drawn({ stored: [] });
     expect(screen.getByText(/no key stored/u)).toBeTruthy();
+  });
+
+  it('NO DEAD SEND (§10.5): with no key, or no model to ask, Send is disabled beside the line saying why', async () => {
+    await drawn({ stored: [] });
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    cleanup();
+    await drawn({ models: [] });
+    expect(screen.getByText(/No models are listed/u)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    cleanup();
+    // CONTROL: a key and a model — Send works.
+    await drawn();
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
   });
 
   it('says so when a provider lists no models, rather than showing an empty picker', async () => {

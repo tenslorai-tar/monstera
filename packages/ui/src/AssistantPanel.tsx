@@ -755,7 +755,14 @@ export function AssistantPanel({
           value={draft}
         />
         {streaming === null ? (
-          <Button disabled={waitingForSides || blindForPicture} label={ASSISTANT_SEND} onClick={send} variant="primary" />
+          // NOT A DEAD CONTROL (§10.5): with no key, or no model to ask, Send is disabled and the
+          // lines above say which — pressing it would otherwise do nothing and say nothing.
+          <Button
+            disabled={!hasKey || model === '' || waitingForSides || blindForPicture}
+            label={ASSISTANT_SEND}
+            onClick={send}
+            variant="primary"
+          />
         ) : (
           <Button label={ASSISTANT_STOP} onClick={stop} />
         )}

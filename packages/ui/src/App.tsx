@@ -1478,6 +1478,13 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const azureKeyStored = storedSecrets.includes(AZURE_KEY_SETTING_ID);
   const claudeKeyStored = storedSecrets.includes(ANTHROPIC_KEY_SETTING_ID);
   const docusignKeyStored = storedSecrets.includes(DOCUSIGN_INTEGRATION_KEY_SETTING_ID);
+  /**
+   * Azure Document Intelligence is usable only with its endpoint AND its key: an endpoint with no
+   * key reaches the service and comes back unauthorised, which a reader reads as a wrong key
+   * rather than a missing one. ONE NAME for the pair, which the region tool, the Excel engines and
+   * the OCR dialog's handwriting sentence all ask.
+   */
+  const azureReady = azureEndpoint !== '' && azureKeyStored;
 
   /**
    * Asks main which secrets are stored, and answers in a CALLBACK rather than by
@@ -1831,12 +1838,26 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // command to: recognition is 3.8–4.4 s per page and this one dispatches
         // once per page, so the status bar is where a reader watches it and where
         // the cancel lives.
-        recogniseTextCommand({ client, onApplied: applied, ask, track }),
+        // THE SAME TWO FACTS the region tools are offered on (`cloudReady`, `claudeReady`
+        // below), so the dialog's handwriting sentence names a tool that is there.
+        recogniseTextCommand({
+          client,
+          onApplied: applied,
+          ask,
+          track,
+          servicesReady: () => azureReady || claudeKeyStored,
+        }),
         // THE SAME WALK AND ONE MORE CHANNEL. D6 row 5 is *export searchable PDF*,
         // and once rows 2 and 3 landed there was nothing left but the sequence —
         // which is why it registers beside the command it shares a walk with
         // rather than growing a pipeline of its own.
-        exportSearchableCommand({ client, onApplied: applied, ask, track }),
+        exportSearchableCommand({
+          client,
+          onApplied: applied,
+          ask,
+          track,
+          servicesReady: () => azureReady || claudeKeyStored,
+        }),
         // D2's ENHANCE-SCANS ROW, whose trigger fires in this stage. It needs no
         // dialog — the levels come from each image's own histogram — and it reads the
         // page kinds for the same reason the OCR commands do: levelling is only
@@ -1893,7 +1914,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           // below): a service is offered where its key is stored, and nowhere else (ADR-0086).
           tableEngines: () => [
             'automatic',
-            ...(azureEndpoint !== '' && azureKeyStored ? (['azure'] as const) : []),
+            ...(azureReady ? (['azure'] as const) : []),
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
@@ -1976,10 +1997,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         ...shapeToolCommands({
           activeTool: readTool,
           onSelect: setToolId,
-          // THE PAIR, read here rather than as two predicates: an endpoint with
-          // no key reaches the service and comes back unauthorised, which a
-          // reader reads as a wrong key rather than as a missing one.
-          cloudReady: () => azureEndpoint !== '' && azureKeyStored,
+          // THE PAIR, `azureReady` above — one name for it, not a second spelling here.
+          cloudReady: () => azureReady,
           // ONE INPUT: the Anthropic API needs no endpoint setting (ADR-0057).
           claudeReady: () => claudeKeyStored,
         }),
@@ -2031,12 +2050,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       readActiveId,
       // WHETHER *PASTE ANNOTATIONS* EXISTS, which changes when a copy succeeds.
       readHasCopied,
-      // THE PREDICATE'S TWO INPUTS: `cloudReady` closes over this render's
-      // pair, so without these the cloud tool would stay hidden however many
-      // keys were entered. The second is main's answer to *is a key stored*,
-      // never the key.
-      azureEndpoint,
-      azureKeyStored,
+      // THE PREDICATES' INPUTS: `cloudReady` and the others close over this
+      // render's answers, so without these a service's tools would stay hidden
+      // however many keys were entered. Each is main's answer to *is a key
+      // stored*, never the key.
+      azureReady,
       claudeKeyStored,
       docusignKeyStored,
       changeZoom,

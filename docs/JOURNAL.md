@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Honest no-key states: an audit, and three surfaces that were not honest
+
+Every surface that needs a key, read against §10.5. Found:
+
+- **The assistant's Send was a dead control** for a provider with a key missing and no fallback
+  model list: `ask` returns `false` when `model === ''`, so pressing Send did nothing and said
+  nothing. It is now disabled whenever the lines above it say why (no key, no model).
+- **The OCR dialog told a person with a key to add one.** Its handwriting sentence was
+  unconditional. It now takes `servicesReady`, and says where the service's tool is when a key is
+  stored. Readiness is `azureReady` — Azure's endpoint AND key, the pair the region tool already
+  required — now one name in `App` that the region tool, the Excel engines and this dialog all
+  ask, where it had been spelt out three times.
+- **Excel export said nothing about the service engines with no key**: the engine choice simply
+  was not there. It now says how to get one.
+
+Checked and already honest: DocuSign (its own refusal sentence), the first-run setup, *Summarise
+comments* and vision (they open the assistant, whose line says it). Cloud storage is unbuilt and
+its row owes the same state.
+
+---
+
 ## 2026-09-22 — First-run AI setup: Skip is as big as the check, and a refused key is not kept
 
 BUILD-PROMPT E5's onboarding step, with the owner's ruling that `ai.models` is the key check.

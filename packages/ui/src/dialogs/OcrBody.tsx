@@ -6,6 +6,7 @@ import { useState } from 'react';
 import {
   OCR_ALL_PAGES,
   OCR_HANDWRITING,
+  OCR_HANDWRITING_READY,
   OCR_LANGUAGE,
   OCR_LANGUAGE_NAMES,
   OCR_START,
@@ -42,10 +43,12 @@ import type { OcrAnswer } from './ocrResult.js';
 export default function OcrBody({
   page,
   languages,
+  servicesReady,
   resolve,
 }: {
   readonly page: number;
   readonly languages: readonly OcrLanguage[];
+  readonly servicesReady: boolean;
 } & DialogAnswering<OcrAnswer>): ReactElement {
   const { _ } = useLingui();
   const [language, setLanguage] = useState<OcrLanguage | null>(languages[0] ?? null);
@@ -53,7 +56,11 @@ export default function OcrBody({
 
   // IN BOTH BRANCHES: the network engines need no installed model, so a machine
   // with none is exactly where a reader most needs to hear there is another way.
-  const handwriting = <p className="m-ocr__handwriting">{_(OCR_HANDWRITING)}</p>;
+  // AND TRUE OF THIS MACHINE: *add a key* only where none is stored, and where one is, the
+  // place the service's tool is.
+  const handwriting = (
+    <p className="m-ocr__handwriting">{_(servicesReady ? OCR_HANDWRITING_READY : OCR_HANDWRITING)}</p>
+  );
 
   if (language === null) {
     return (

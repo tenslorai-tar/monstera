@@ -81,6 +81,8 @@ export function recogniseTextCommand(
   deps: DocumentCommandDeps & {
     /** Reports progress and carries the cancel. `UNTRACKED` where nothing renders one. */
     readonly track: TrackTask;
+    /** Whether a recognition service's key is stored — the dialog's handwriting sentence. */
+    readonly servicesReady: () => boolean;
   },
 ): UiCommand {
   return {
@@ -105,6 +107,7 @@ export function recogniseTextCommand(
       const answered = await deps.ask(OCR_DIALOG_ID, {
         page,
         languages: models.value.languages,
+        servicesReady: deps.servicesReady(),
       });
       // A DISMISSAL ANSWERS NOTHING, which is the mutation-dialog gate (ADR-0038):
       // nothing was dispatched, so there is nothing to undo.
@@ -364,7 +367,7 @@ export async function recogniseScope(
  * has undo.
  */
 export function exportSearchableCommand(
-  deps: DocumentCommandDeps & { readonly track: TrackTask },
+  deps: DocumentCommandDeps & { readonly track: TrackTask; readonly servicesReady: () => boolean },
 ): UiCommand {
   return {
     id: 'document.export-searchable',
@@ -387,6 +390,7 @@ export function exportSearchableCommand(
       const answered = await deps.ask(OCR_DIALOG_ID, {
         page,
         languages: models.value.languages,
+        servicesReady: deps.servicesReady(),
       });
       const parsed = OCR_RESULT.safeParse(answered);
       if (!parsed.success) return;

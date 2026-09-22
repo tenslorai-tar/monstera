@@ -104,10 +104,16 @@ describe('ExportExcelBody', () => {
     });
   });
 
-  it('CONTROL: with one engine there is no engine choice at all', () => {
+  it('CONTROL: with one engine there is no engine choice at all — and it SAYS how to get one (§10.5)', () => {
     shown();
     expect(screen.queryByRole('radio', { name: 'Claude' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'Read the tables with' })).toBeNull();
+    expect(screen.getByText(/add a key in Settings/u)).toBeTruthy();
+  });
+
+  it('CONTROL: with a service offered, the no-key sentence is not shown', () => {
+    shown({ engines: ['automatic', 'claude'] });
+    expect(screen.queryByText(/add a key in Settings/u)).toBeNull();
   });
 
   it('choosing a SERVICE says what leaves the computer, hides the grid, and answers no edits', () => {
