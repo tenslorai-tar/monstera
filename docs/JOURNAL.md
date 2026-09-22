@@ -911,6 +911,13 @@ fault, and this range did not change the reveal.
 *recorded, not bumped*, which was right about the timeout and stopped short of asking what the
 case was waiting on.
 
+**And a second, in the push that carried the fix.** `445a50e` was pushed in the same batch of
+calls as `test:visual`, and the visual run had failed: the three Review ribbon baselines predate
+Review › AI › *Summarise comments* (`9bc7e2f`). The difference is that one new group and nothing
+else (the actual image read before regenerating), so the baselines are regenerated in the next
+commit, and only those three files moved. The mechanism is mine: a push issued before reading the
+result it depends on. Read each pre-push result before the push command is composed.
+
 ---
 
 ## 2026-09-22 — Summarise comments: a fifth ask scope, read from the Comments panel's list
