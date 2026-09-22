@@ -152,6 +152,23 @@ async function expectNoSeriousViolations(
 // may sit on, and §10.2 now asks 7:1 of the high-contrast theme — none of which the default-theme
 // run could ever have reported on (audit finding IIIIII-2).
 for (const look of LOOKS) {
+  // THE FIRST RUN (E5's onboarding): a fresh install with no AI key opens the setup over the start
+  // screen. Every other case seeds the answered state (`pageBridge.ts`); this one seeds the first.
+  test(`${look.name}: the FIRST-RUN AI SETUP opens by itself and has no serious a11y violations`, async ({
+    page,
+  }) => {
+    await bridgeUnder(page, look, { settings: { 'ai.setup-at-start': true } });
+
+    await expectNoSeriousViolations(page, look, 'Everything else in Monstera works without one');
+    const dialog = page.getByRole('dialog', { name: 'Set up the AI assistant' });
+    await expect(dialog.getByRole('button', { name: 'Skip' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Check and save' })).toBeDisabled();
+
+    // SKIP CLOSES IT AND IT STAYS CLOSED: the stored false is what a reload reads.
+    await dialog.getByRole('button', { name: 'Skip' }).click();
+    await expect(dialog).toBeHidden();
+  });
+
   test(`${look.name}: the start screen renders through the contract and has no serious a11y violations`, async ({
     page,
   }) => {

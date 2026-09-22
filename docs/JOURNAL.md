@@ -892,6 +892,21 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — The browser harness learns the first run
+
+Every Playwright case starts a fresh shim, which is a first run with no AI key, so after `4cc2fc5`
+the setup dialog opened over all of them — caught by the start-screen baselines before a push.
+`pageBridge.ts` now seeds `'ai.setup-at-start': false` (what a Skip stores) unless a case says
+otherwise, and `renderedScreen.pw.ts` gains the first run as its own case in all three looks: the
+dialog opens by itself, axe finds nothing serious, *Check and save* waits for a key, and Skip
+closes it (50 accessibility cases, from 47). The id is spelt in the testing package, which may not
+import `packages/ui`; a rename there drops the seed as unknown and opens the dialog over every
+case, which fails them all rather than passing quietly. The three Review ribbon baselines are
+regenerated for *Set up AI…*; two Home baselines that moved below the threshold on regeneration
+were restored, so only the screens that changed are in the commit.
+
+---
+
 ## 2026-09-22 — Honest no-key states: an audit, and three surfaces that were not honest
 
 Every surface that needs a key, read against §10.5. Found:
