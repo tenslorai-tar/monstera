@@ -29,7 +29,7 @@ describe('PlaceBarcodeBody', () => {
     const resolve = vi.fn();
     render(
       <Wrapped>
-        <PlaceBarcodeBody resolve={resolve} />
+        <PlaceBarcodeBody resolve={resolve} update={() => undefined} />
       </Wrapped>,
     );
     fireEvent.change(screen.getByLabelText('Text or link'), { target: { value: 'MONSTERA-0042' } });
@@ -42,7 +42,7 @@ describe('PlaceBarcodeBody', () => {
     const resolve = vi.fn();
     render(
       <Wrapped>
-        <PlaceBarcodeBody resolve={resolve} />
+        <PlaceBarcodeBody resolve={resolve} update={() => undefined} />
       </Wrapped>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Add to the page' }));
@@ -54,7 +54,7 @@ describe('PlaceBarcodeBody', () => {
     const resolve = vi.fn();
     render(
       <Wrapped>
-        <PlaceBarcodeBody refused={{ text: 'letters', format: 'EAN13' }} resolve={resolve} />
+        <PlaceBarcodeBody refused={{ text: 'letters', format: 'EAN13' }} resolve={resolve} update={() => undefined} />
       </Wrapped>,
     );
     expect(screen.getByRole('alert').textContent).toContain('cannot hold this text');

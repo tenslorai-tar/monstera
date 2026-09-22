@@ -2921,3 +2921,292 @@ textarea {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* ═══ SETTINGS, the owner's design of 2026-09-22 ════════════════════════════════════════════════
+ * A search field, the pages down the left, the chosen page on the right, and a footer saying where
+ * changes go. The dialog widens for this one body through `:has`, rather than the registry learning
+ * a width: what needs the room is the content, and the selector says exactly that.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+.m-dialog:has(.m-settings) {
+  inline-size: min(880px, calc(100vw - 2 * var(--space-32)));
+  block-size: min(560px, calc(100vh - 2 * var(--space-32)));
+}
+
+.m-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-block-size: 0;
+  block-size: 100%;
+}
+
+.m-settings__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  color: var(--muted);
+}
+
+.m-settings__search .m-input {
+  flex: 1;
+  border: 0;
+  background: none;
+}
+
+.m-settings__frame {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--space-24);
+  min-block-size: 0;
+  flex: 1;
+}
+
+.m-settings__pages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+}
+
+.m-settings__page-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: none;
+  color: var(--text);
+  font-size: var(--font-chrome-13);
+  text-align: start;
+  cursor: pointer;
+}
+
+.m-settings__page-choice:hover {
+  background: var(--surface2);
+}
+
+/* THE CHOSEN PAGE carries a fill AND a boundary: the fill alone is the only signal a person with a
+   contrast setting may not see, and this list is how they know where they are. */
+.m-settings__page-choice[aria-current='page'] {
+  border-color: var(--border-control);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.m-settings__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+.m-settings__page-title {
+  margin: 0;
+  font-size: var(--font-content-16);
+  font-weight: 600;
+}
+
+.m-settings__page-note {
+  margin: 0;
+  max-inline-size: 60ch;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+/* ONE ROW: the words on the left, the control on the right, a hairline between rows. */
+.m-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-24);
+  padding-block: var(--space-8);
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates rows; every control inside carries its own boundary */
+}
+
+.m-settings-row:last-child {
+  border-block-end: 0;
+}
+
+.m-settings-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.m-settings-row__label {
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+}
+
+.m-settings-row__note {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-settings-row__control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 0 0 auto;
+}
+
+.m-settings-row__colour,
+.m-settings-row__secret {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.m-settings-row__unset {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-input--number {
+  inline-size: 96px;
+}
+
+/* THE ACCENT SWATCHES: a colour each, named for a screen reader and on hover. The theme's own has no
+   colour of its own to show, so it is drawn as a word rather than a chip. */
+.m-accent-swatch {
+  inline-size: var(--control-panel-tab);
+  block-size: var(--control-panel-tab);
+  padding: 0;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-10);
+  background: var(--surface2);
+  cursor: pointer;
+}
+
+.m-accent-swatch--theme {
+  inline-size: auto;
+  padding-inline: var(--space-8);
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+}
+
+.m-accent-swatch[aria-pressed='true'] {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.m-accent-swatch:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* A CHIP'S NAME is for the accessibility tree, not the eye; the theme's own shows it. */
+.m-accent-swatch:not(.m-accent-swatch--theme) .m-accent-swatch__name {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A SWITCH, drawn from the checkbox it is: the track is the control's own box and the thumb its
+   ::after, so nothing here depends on an extra element the accessibility tree would also see. */
+.m-switch {
+  appearance: none;
+  inline-size: 36px;
+  block-size: 20px;
+  padding: 2px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-10);
+  background: var(--surface2);
+  cursor: pointer;
+}
+
+.m-switch::after {
+  content: '';
+  display: block;
+  inline-size: 14px;
+  block-size: 14px;
+  border-radius: var(--radius-10);
+  background: var(--border-control);
+  transition: transform var(--motion-fast, 150ms) ease-out;
+}
+
+.m-switch:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.m-switch:checked::after {
+  transform: translateX(16px);
+  /* THE CHROME'S OWN SURFACE, not `--page`: the page is the document's white, and a control that
+     borrowed it would follow the document's colour rather than the interface's. */
+  background: var(--surface);
+}
+
+.m-switch:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 2px;
+}
+
+/* A SEGMENTED CONTROL for a choice of three or fewer — Theme, in the design. */
+.m-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface2);
+}
+
+.m-segmented__choice {
+  padding: var(--space-4) var(--space-8);
+  border: 0;
+  border-radius: var(--radius-4);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--font-chrome-12);
+  cursor: pointer;
+}
+
+.m-segmented__choice[aria-checked='true'] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.m-segmented__choice:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: -2px;
+}
+
+.m-settings__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding-block-start: var(--space-8);
+  border-block-start: 1px solid var(--border); /* decorative: closes the frame above the footer's own controls */
+}
+
+.m-settings__footer-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-settings__footer-controls {
+  display: flex;
+  gap: var(--space-8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-switch::after {
+    transition: none;
+  }
+}

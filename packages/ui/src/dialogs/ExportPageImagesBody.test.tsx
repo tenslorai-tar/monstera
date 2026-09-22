@@ -27,7 +27,7 @@ function opened(): { readonly resolve: ReturnType<typeof vi.fn> } {
   const resolve = vi.fn();
   render(
     <Wrapped>
-      <ExportPageImagesBody pageCount={3} resolve={resolve} />
+      <ExportPageImagesBody pageCount={3} resolve={resolve} update={() => undefined} />
     </Wrapped>,
   );
   return { resolve };

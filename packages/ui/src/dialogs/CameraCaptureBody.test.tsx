@@ -55,7 +55,7 @@ function camera(answer: () => Promise<MediaStream>): void {
 function opened(): { readonly unmount: () => void } {
   const { unmount } = render(
     <Wrapped>
-      <CameraCaptureBody resolve={() => undefined} />
+      <CameraCaptureBody resolve={() => undefined} update={() => undefined} />
     </Wrapped>,
   );
   return { unmount };

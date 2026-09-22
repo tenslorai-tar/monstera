@@ -4485,6 +4485,25 @@ export const channels = {
    * plain file: writing an unencryptable key into `settings.json` is precisely
    * the outcome this pair of channels exists to make unrepresentable.
    */
+  /**
+   * Writes the settings to a JSON file a person picks — `BUILD-PROMPT.md`:630's *settings
+   * export/import (JSON, secrets excluded)*, the export half.
+   *
+   * **Secrets never travel**: `main` writes what the plain settings document holds, and a secret is
+   * not in it (ADR-0056) — so the exclusion is the storage's shape rather than a filter this channel
+   * has to remember. The renderer names no path and receives none; it asks, and main picks, writes
+   * and says what happened.
+   */
+  'settings.export': channel(
+    'Writes the settings, without secrets, to a JSON file the user picks.',
+    z.object({}).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('written'), settings: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+  ),
+
   'settings.saveSecret': channel(
     'Stores one secret setting through the OS credential store, or refuses.',
     z.object({

@@ -54,7 +54,7 @@ function shown(props: Partial<ExportExcelProps> = {}): ReturnType<typeof vi.fn> 
   const resolve = vi.fn();
   render(
     <Wrapped>
-      <ExportExcelBody {...PROPS} {...props} resolve={resolve} />
+      <ExportExcelBody {...PROPS} {...props} resolve={resolve} update={() => undefined} />
     </Wrapped>,
   );
   return resolve;

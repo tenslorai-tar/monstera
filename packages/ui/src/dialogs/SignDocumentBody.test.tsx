@@ -36,6 +36,7 @@ function opened(placed: boolean): { readonly answers: SignDocumentAnswer[] } {
         resolve={(answer) => {
           answers.push(answer);
         }}
+        update={() => undefined}
       />
     </Wrapped>,
   );

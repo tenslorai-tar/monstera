@@ -403,6 +403,11 @@ export interface ShellComposition {
   readonly pickFormData: FormDataSource['pick'];
   /** Where a text export goes. The same dialog narrowed to plain text. */
   readonly pickText: (sourceName: string) => Promise<string | null>;
+  /**
+   * Where the settings export goes. Absent — every unit test — the export is cancelled, which is the
+   * honest answer for a graph with no picker rather than a write to a path nobody chose.
+   */
+  readonly pickSettingsFile?: () => Promise<string | null>;
   /** Where an Office export goes. The same dialog narrowed to one Office format. */
   readonly pickOffice: PickOffice;
   /** Which data file fills the form. The open dialog, narrowed to the format. */
@@ -634,6 +639,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickSnapshot,
     pickFormData,
     pickText,
+    pickSettingsFile,
     pickOffice,
     openFormData,
     readFormData,
@@ -1362,6 +1368,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // same position rather than in a broken one. Resolved once, above.
       secrets: secretStore,
       chatHistory: chatHistory ?? noChatHistory(),
+      // NO PICKER IS A CANCELLED EXPORT, not a write to a guessed path.
+      pickSettingsFile: pickSettingsFile ?? (() => Promise.resolve(null)),
       // `false` WITHOUT A LOG, which is the channel's declared state for
       // *there is nothing to show* rather than a stub standing in for one. The
       // shipped app always has a log; a graph built without one — every unit

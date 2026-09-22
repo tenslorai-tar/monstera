@@ -7,7 +7,9 @@ import { z } from 'zod';
 
 import {
   DOCUSIGN_ENVIRONMENT_TITLES,
+  INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION,
   INTEGRATIONS_DOCUSIGN_ENVIRONMENT_TITLE,
+  INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION,
   INTEGRATIONS_DOCUSIGN_KEY_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
@@ -31,6 +33,7 @@ import type { SettingDefinition } from '../registries/settings.js';
 export const DOCUSIGN_INTEGRATION_KEY_SETTING: SettingDefinition<z.ZodString> = {
   id: DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   title: INTEGRATIONS_DOCUSIGN_KEY_TITLE,
+  description: INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION,
   schema: z.string(),
   fallback: '',
   category: 'integrations',
@@ -50,6 +53,7 @@ export const DOCUSIGN_ENVIRONMENT_SETTING: SettingDefinition<z.ZodEnum<{
 }>> = {
   id: DOCUSIGN_ENVIRONMENT_SETTING_ID,
   title: INTEGRATIONS_DOCUSIGN_ENVIRONMENT_TITLE,
+  description: INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION,
   schema: z.enum(DOCUSIGN_ENVIRONMENTS),
   fallback: 'production',
   category: 'integrations',

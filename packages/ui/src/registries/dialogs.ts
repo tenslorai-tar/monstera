@@ -89,7 +89,11 @@ export interface DialogEntry<
    * scope. The cast is therefore made once, against a value the compiler has
    * just checked, instead of once per mount against a value nobody has.
    */
-  readonly mount: (props: unknown, resolve: (result: unknown) => void) => ReactElement;
+  readonly mount: (
+    props: unknown,
+    resolve: (result: unknown) => void,
+    update: (result: unknown) => void,
+  ) => ReactElement;
 }
 
 /**
@@ -107,6 +111,16 @@ export interface DialogAnswering<Result> {
    * no argument to construct, so an informational body cannot answer at all.
    */
   readonly resolve: (result: Result) => void;
+  /**
+   * Hands the opener a result **without closing**
+   * ([ADR-0094](../../../../docs/DECISIONS/0094-a-dialog-may-report-before-it-answers.md)).
+   *
+   * For a surface that applies as it is changed — the owner's Settings, which has no *Save* — each
+   * change is reported here and the OPENER writes it, so the mutation stays where ADR-0038 put it.
+   * Validated by the same result schema as {@link resolve}, so reporting cannot carry what
+   * answering could not. A body that never calls it is exactly the dialog ADR-0038 describes.
+   */
+  readonly update: (result: Result) => void;
 }
 
 /**
@@ -126,7 +140,7 @@ export function declareDialog<
 >(entry: Omit<DialogEntry<Schema, Result>, 'mount'>): DialogEntry<Schema, Result> {
   return {
     ...entry,
-    mount: (props, resolve) => {
+    mount: (props, resolve, update) => {
       // TWO NARROW CASTS, AND WHAT MAKES THEM SAFE IS ABOVE THEM RATHER THAN
       // INSIDE THEM. `Schema` is inferred from `props`, and `component` is
       // declared as `FunctionComponent<z.infer<Schema>>` — so a component that does
@@ -151,7 +165,9 @@ export function declareDialog<
       // `(result: unknown) => void`, and a function accepting `unknown` is
       // assignable to one accepting this schema's output — contravariance
       // working in the safe direction, unlike the two casts above it.
-      return createElement(Body, { ...(props as z.infer<Schema>), resolve });
+      // `update` RIDES WITH `resolve`, for its reason and by its rule: the host supplies both, the
+      // schema sees neither, and the host validates what either one carries.
+      return createElement(Body, { ...(props as z.infer<Schema>), resolve, update });
     },
   };
 }

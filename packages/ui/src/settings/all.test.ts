@@ -44,9 +44,18 @@ describe('the registered settings', () => {
       .map((setting) => setting.id)
       .sort();
     // THE ANNOTATION COLOUR LEFT THIS LIST 2026-09-15 (ADR-0056's correction): it is
-    // a colour kind now. The accent stays, because it can be refused on apply.
+    // a colour kind now. The accent stays, because it can be refused on apply — and since
+    // 2026-09-22 the Settings dialog draws it with a control of its own, the design's swatches.
     expect(excluded).toStrictEqual(['appearance.accent', 'editing.personal-dictionary']);
-    // AND NOTHING ELSE IS LOST: every setting is either in the dialog or named above.
-    expect(DIALOG_SETTINGS.length + excluded.length).toBe(ALL_SETTINGS.length);
+
+    // REMEMBERED STATE IS ALSO NOT A ROW (the owner's design pass): a panel's width is stored and
+    // exported like any setting, and its control is the splitter rather than a number box here.
+    const remembered = ALL_SETTINGS.filter(
+      (setting) => setting.remembered === true && controlFor(setting) !== undefined,
+    ).map((setting) => setting.id);
+    expect(remembered.length).toBeGreaterThan(0);
+
+    // AND NOTHING ELSE IS LOST: every setting is in the dialog, named above, or remembered.
+    expect(DIALOG_SETTINGS.length + excluded.length + remembered.length).toBe(ALL_SETTINGS.length);
   });
 });

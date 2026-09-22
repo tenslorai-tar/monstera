@@ -32,7 +32,7 @@ describe('PrintBody', () => {
       const resolve = vi.fn();
       render(
         <Wrapped>
-          <PrintBody resolve={resolve} />
+          <PrintBody resolve={resolve} update={() => undefined} />
         </Wrapped>,
       );
       fireEvent.click(screen.getByRole('radio', { name: label }));
@@ -46,7 +46,7 @@ describe('PrintBody', () => {
     const resolve = vi.fn();
     render(
       <Wrapped>
-        <PrintBody resolve={resolve} />
+        <PrintBody resolve={resolve} update={() => undefined} />
       </Wrapped>,
     );
     fireEvent.click(screen.getByRole('button'));

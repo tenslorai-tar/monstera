@@ -982,20 +982,23 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
 test('a DIALOG taller than the window stays inside it, and its body scrolls to the last control', async ({ page }) => {
   // THE CLASS, found live on 2026-09-15: the camera dialog grew to its stream's native frame and put its buttons
   // outside the window, where a fixed, centred box cannot be scrolled to. The camera itself is not reachable in this
-  // harness, so the case uses the Settings dialog — a real dialog whose list is taller than a short window — against the
-  // same primitive. A 420 px window is shorter than that list on every theme.
+  // harness, so the case uses the KEYBOARD SHORTCUTS dialog — a real dialog whose table is taller than a short window
+  // on every theme. It used to use Settings, which since 2026-09-22 sizes itself and scrolls its own page instead, so
+  // the premise this case needs — a body taller than the window — lives in the shortcut map now.
   await page.setViewportSize({ width: 1280, height: 420 });
   await bridge(page, {});
   await page.goto('/');
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.keyboard.press('F1');
 
-  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(dialog).toBeVisible();
   // THE BODY ARRIVES WITH ITS CHUNK, after the title: `SETTINGS_DIALOG` is `lazy`, so measuring on the dialog's first
   // frame measures a header and an empty body — which fits any window and made the first version of this case fail
   // on the scroll assertion for the wrong reason. `toBeAttached`, not `toBeVisible`: the button may sit below the
   // body's scroll edge, which is the state under test.
-  const save = dialog.getByRole('button', { name: 'Save' });
+  // THE LAST ROW of the map, which sits below the body's scroll edge — the state under test.
+  // `toBeAttached`, not `toBeVisible`, for that reason.
+  const save = dialog.getByRole('row').last();
   await expect(save).toBeAttached();
   const box = await dialog.boundingBox();
   expect(box).not.toBeNull();
@@ -1009,7 +1012,7 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   await save.scrollIntoViewIfNeeded();
   const saveBox = await save.boundingBox();
   expect((saveBox?.y ?? -1) >= 0 && (saveBox?.y ?? 0) + (saveBox?.height ?? 0) <= 420).toBe(true);
-  await expect(dialog.getByRole('heading', { name: 'Settings' })).toBeInViewport();
+  await expect(dialog.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInViewport();
 });
 
 test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits under the modal layer', async ({ page }) => {
@@ -1071,6 +1074,9 @@ test('the SETTINGS dialog sets the default annotation colour with NO DOCUMENT op
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings' }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
+  // ON ITS PAGE (the owner's design, 2026-09-22): the dialog shows one page at a time, and the
+  // annotation defaults are *Editing defaults*.
+  await dialog.getByRole('button', { name: 'Editing defaults' }).click();
   const auto = dialog.getByRole('checkbox', { name: 'Each tool’s own' });
   const swatch = dialog.getByLabel('Annotation colour');
   await expect(auto).toBeChecked();
@@ -1081,12 +1087,14 @@ test('the SETTINGS dialog sets the default annotation colour with NO DOCUMENT op
   // THE SHAPES' RED, never black — what an empty colour input would answer.
   await expect(swatch).toHaveValue('#d92626');
   await swatch.fill('#0000ff');
-  await dialog.getByRole('button', { name: 'Save' }).click();
+  // NO SAVE: the change was applied as it was made (ADR-0094), and Done simply closes.
+  await dialog.getByRole('button', { name: 'Done' }).click();
   await expect(dialog).toBeHidden();
 
   // REOPENED, it reads the store the command wrote — not the dialog's own draft, which closed with it.
   await page.getByRole('button', { name: 'Settings' }).click();
   const again = page.getByRole('dialog', { name: 'Settings' });
+  await again.getByRole('button', { name: 'Editing defaults' }).click();
   await expect(again.getByRole('checkbox', { name: 'Each tool’s own' })).not.toBeChecked();
   await expect(again.getByLabel('Annotation colour')).toHaveValue('#0000ff');
 });

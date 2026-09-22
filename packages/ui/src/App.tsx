@@ -649,7 +649,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       ]),
     [],
   );
-  const { open: openDialog, ask, close, resolve: resolveDialog } = useDialogHost(dialogs);
+  const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
 
   // A FAILED WRITE NEEDS A DIALOG, so the subscription lives where `ask` does.
   //
@@ -2579,6 +2579,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         open={openDialog}
         onClose={close}
         onResolve={resolveDialog}
+        onUpdate={reportDialog}
       />
     </main>
     </ErrorBoundary>

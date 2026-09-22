@@ -106,6 +106,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // a case can only assert that if it can read both.
     secrets,
     chatHistory: NO_HISTORY,
+    pickSettingsFile: () => Promise.resolve(null),
     // COUNTED, so a case can assert the handler asked exactly once rather than
     // that it answered something.
     titleBarOverlay: () => false,
@@ -365,6 +366,7 @@ describe('document.open', () => {
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
           chatHistory: NO_HISTORY,
+          pickSettingsFile: () => Promise.resolve(null),
           revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -553,6 +555,7 @@ describe('the recent list', () => {
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
+      pickSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -608,6 +611,7 @@ describe('log.reveal', () => {
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
+      pickSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -656,6 +660,7 @@ describe('ai.checkKey', () => {
       settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
+      pickSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
@@ -719,6 +724,7 @@ describe('ai.history (ADR-0093)', () => {
       settings,
       secrets: createEphemeralSecrets(),
       chatHistory: history,
+      pickSettingsFile: () => Promise.resolve(null),
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,

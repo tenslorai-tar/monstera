@@ -171,6 +171,22 @@ export function createTextPicker(): (sourceName: string) => Promise<string | nul
 }
 
 /**
+ * Where the settings export goes (`BUILD-PROMPT.md`:630). Named for the application rather than for
+ * a document, because it belongs to no document — this is the one export with no source file.
+ */
+export function createSettingsPicker(): () => Promise<string | null> {
+  return async (): Promise<string | null> => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: 'monstera-settings.json',
+      properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePath.length === 0 ? null : result.filePath;
+  };
+}
+
+/**
  * Where an Office export goes: the save dialog narrowed to the one format asked
  * for, offered under the document's name with that format's extension.
  */

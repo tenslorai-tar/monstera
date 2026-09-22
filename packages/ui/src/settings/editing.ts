@@ -16,6 +16,9 @@ import {
   EDITING_IMAGE_PAGES_TITLE,
   EDITING_LINE_WIDTH_TITLE,
   EDITING_OPACITY_TITLE,
+  EDITING_AZURE_ENDPOINT_DESCRIPTION,
+  EDITING_AZURE_KEY_DESCRIPTION,
+  EDITING_OCR_LANGUAGE_DESCRIPTION,
   EDITING_OCR_LANGUAGE_TITLE,
   EDITING_AZURE_ENDPOINT_TITLE,
   EDITING_AZURE_KEY_TITLE,
@@ -277,7 +280,8 @@ export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguageSchema> =
   // is that the language reaching the engine comes from a closed set.
   schema: ocrLanguageSchema,
   fallback: 'eng',
-  category: 'editing',
+  category: 'ocr',
+  description: EDITING_OCR_LANGUAGE_DESCRIPTION,
   // THE OCR DIALOG'S OWN NAMES, not a second set: `OCR_LANGUAGE_NAMES` is keyed
   // on the contract's language list, so a fifteenth language is a compile error
   // there and a construction refusal here, never a blank option.
@@ -316,7 +320,10 @@ export const AZURE_DI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   // before anything is sent, with the call count as its own case.
   schema: z.string(),
   fallback: '',
-  category: 'editing',
+  // AZURE DOCUMENT INTELLIGENCE reads scans, so its address and key sit on the owner's OCR page
+  // beside the language, rather than under the editing defaults its id was declared with.
+  category: 'ocr',
+  description: EDITING_AZURE_ENDPOINT_DESCRIPTION,
 };
 
 /**
@@ -330,9 +337,11 @@ export const AZURE_DI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
 export const AZURE_DI_KEY_SETTING: SettingDefinition<z.ZodString> = {
   id: AZURE_KEY_SETTING_ID,
   title: EDITING_AZURE_KEY_TITLE,
+  description: EDITING_AZURE_KEY_DESCRIPTION,
   schema: z.string(),
   fallback: '',
-  category: 'editing',
+  // Beside its endpoint, on the OCR page: the two are one service.
+  category: 'ocr',
   secret: true,
 };
 

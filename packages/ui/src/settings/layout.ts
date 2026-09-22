@@ -13,6 +13,7 @@ import {
   QUICK_TOOLBAR_EDGE_TITLES,
   QUICK_TOOLBAR_OPEN_TITLE,
   LAYOUT_MODE_OPTION_TITLES,
+  LAYOUT_MODE_DESCRIPTION,
   LAYOUT_MODE_TITLE,
   RIBBON_SECTION_OPTION_TITLES,
   RIBBON_SECTION_TITLE,
@@ -49,6 +50,8 @@ export const DOCUMENT_PANEL_SETTING: SettingDefinition<
   schema: z.enum(['pages', 'bookmarks', 'comments', 'forms', 'layers', 'search']),
   fallback: 'pages',
   category: 'appearance',
+  // REMEMBERED, not asked: the control for which tab is open is the tab.
+  remembered: true,
   optionTitles: PANEL_TITLES,
 };
 
@@ -59,6 +62,7 @@ export const DOCUMENT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: true,
   category: 'appearance',
+  remembered: true,
 };
 
 /**
@@ -96,6 +100,8 @@ export const DOCUMENT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   schema: z.number().int().min(DOCUMENT_PANEL_MIN_WIDTH).max(DOCUMENT_PANEL_MAX_WIDTH),
   fallback: 224,
   category: 'appearance',
+  // REMEMBERED: the control for a panel's width is its splitter.
+  remembered: true,
 };
 
 /**
@@ -110,6 +116,7 @@ export const DOCUMENT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
 export const LAYOUT_MODE_SETTING: SettingDefinition<z.ZodEnum<{ ribbon: 'ribbon'; studio: 'studio'; focus: 'focus' }>> = {
   id: 'appearance.layout-mode',
   title: LAYOUT_MODE_TITLE,
+  description: LAYOUT_MODE_DESCRIPTION,
   schema: z.enum(['ribbon', 'studio', 'focus']),
   fallback: 'ribbon',
   category: 'appearance',
@@ -145,6 +152,7 @@ export const RIBBON_SECTION_SETTING: SettingDefinition<
   schema: z.enum(['home', 'comment', 'edit', 'organize', 'forms', 'review', 'protect', 'tools']),
   fallback: 'home',
   category: 'appearance',
+  remembered: true,
   optionTitles: RIBBON_SECTION_OPTION_TITLES,
 };
 
@@ -159,6 +167,7 @@ export const QUICK_TOOLBAR_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: true,
   category: 'appearance',
+  remembered: true,
 };
 
 /**
@@ -171,6 +180,7 @@ export const QUICK_TOOLBAR_EDGE_SETTING: SettingDefinition<z.ZodEnum<{ start: 's
   schema: z.enum(['start', 'end']),
   fallback: 'start',
   category: 'appearance',
+  remembered: true,
   optionTitles: QUICK_TOOLBAR_EDGE_TITLES,
 };
 
@@ -196,6 +206,7 @@ export const CONTEXT_PANEL_TAB_SETTING: SettingDefinition<
   schema: z.enum(['properties', 'assistant']),
   fallback: 'properties',
   category: 'appearance',
+  remembered: true,
   optionTitles: CONTEXT_PANEL_TAB_TITLES,
 };
 
@@ -205,6 +216,7 @@ export const CONTEXT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: true,
   category: 'appearance',
+  remembered: true,
 };
 
 /**
@@ -232,4 +244,5 @@ export const CONTEXT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   schema: z.number().int().min(CONTEXT_PANEL_MIN_WIDTH).max(CONTEXT_PANEL_MAX_WIDTH),
   fallback: 256,
   category: 'appearance',
+  remembered: true,
 };

@@ -571,6 +571,10 @@ export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
   'setting.editing.personal-dictionary.title',
 );
 export const EDITING_OCR_LANGUAGE_TITLE = messageKey('setting.editing.ocr-language.title');
+export const EDITING_OCR_LANGUAGE_DESCRIPTION = messageKey('setting.editing.ocr-language.description');
+export const EDITING_AZURE_ENDPOINT_DESCRIPTION = messageKey('setting.editing.azure-di-endpoint.description');
+export const EDITING_AZURE_KEY_DESCRIPTION = messageKey('setting.editing.azure-di-key.description');
+export const SECOND_RENDERER_DESCRIPTION = messageKey('setting.viewing.second-renderer.description');
 export const EDITING_AZURE_ENDPOINT_TITLE = messageKey('setting.editing.azure-di-endpoint.title');
 export const EDITING_AZURE_KEY_TITLE = messageKey('setting.editing.azure-di-key.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
@@ -1078,6 +1082,45 @@ export const SETTINGS_CATEGORY_VIEWING = messageKey('dialog.settings.category.vi
 export const SETTINGS_CATEGORY_EDITING = messageKey('dialog.settings.category.editing');
 export const SETTINGS_CATEGORY_PRIVACY = messageKey('dialog.settings.category.privacy');
 export const SETTINGS_CATEGORY_ADVANCED = messageKey('dialog.settings.category.advanced');
+export const SETTINGS_CATEGORY_RENDERING = messageKey('dialog.settings.category.rendering');
+export const SETTINGS_SEARCH = messageKey('dialog.settings.search');
+export const THEME_DESCRIPTION = messageKey('setting.appearance.theme.description');
+export const LAYOUT_MODE_DESCRIPTION = messageKey('setting.appearance.layout-mode.description');
+export const RULERS_DESCRIPTION = messageKey('setting.viewing.rulers.description');
+export const DARK_PAGE_DESCRIPTION = messageKey('setting.viewing.dark-page.description');
+export const LOUPE_DESCRIPTION = messageKey('setting.viewing.loupe.description');
+export const GRID_DESCRIPTION = messageKey('setting.viewing.grid.description');
+export const RULER_UNIT_DESCRIPTION = messageKey('setting.viewing.ruler-unit.description');
+export const AI_SETUP_AT_START_DESCRIPTION = messageKey('setting.ai.setup-at-start.description');
+export const AI_SAVE_HISTORY_DESCRIPTION = messageKey('setting.ai.save-history.description');
+export const AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION = messageKey('setting.ai.azure-openai-endpoint.description');
+export const INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION = messageKey('setting.integrations.docusign-key.description');
+export const INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION = messageKey('setting.integrations.docusign-environment.description');
+export const ACCENT_PRESET_THEME = messageKey('setting.accent.preset.theme');
+export const ACCENT_PRESET_GREEN = messageKey('setting.accent.preset.green');
+export const ACCENT_PRESET_BLUE = messageKey('setting.accent.preset.blue');
+export const ACCENT_PRESET_VIOLET = messageKey('setting.accent.preset.violet');
+export const ACCENT_PRESET_ORANGE = messageKey('setting.accent.preset.orange');
+export const ACCENT_REJECTED = messageKey('setting.accent.rejected');
+export const ACCENT_DESCRIPTION = messageKey('setting.accent.description');
+export const SETTINGS_PAGES_LABEL = messageKey('dialog.settings.pages-label');
+export const SETTINGS_NO_MATCH = messageKey('dialog.settings.no-match');
+export const SETTINGS_FOOTER_NOTE = messageKey('dialog.settings.footer-note');
+export const SETTINGS_EXPORT = messageKey('dialog.settings.export');
+export const SETTINGS_RESET = messageKey('dialog.settings.reset');
+export const SETTINGS_DONE = messageKey('dialog.settings.done');
+export const SETTINGS_AI_PROVIDER = messageKey('dialog.settings.ai-provider');
+export const SETTINGS_AI_PROVIDER_DESCRIPTION = messageKey('dialog.settings.ai-provider.description');
+export const SETTINGS_AI_PROVIDER_STORED = messageKey('dialog.settings.ai-provider.stored');
+export const SETTINGS_ACTION_CLEAR_HISTORY = messageKey('dialog.settings.clear-history');
+export const SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION = messageKey('dialog.settings.clear-history.description');
+export const SETTINGS_ACTION_CLEARED = messageKey('dialog.settings.clear-history.done');
+export const SETTINGS_KEYBOARD_NOTE = messageKey('dialog.settings.keyboard-note');
+export const SETTINGS_UPDATES_NOTE = messageKey('dialog.settings.updates-note');
+export const SETTINGS_CATEGORY_SAVING = messageKey('dialog.settings.category.saving');
+export const SETTINGS_CATEGORY_OCR = messageKey('dialog.settings.category.ocr');
+export const SETTINGS_CATEGORY_KEYBOARD = messageKey('dialog.settings.category.keyboard');
+export const SETTINGS_CATEGORY_UPDATES = messageKey('dialog.settings.category.updates');
 export const THEME_SYSTEM_TITLE = messageKey('setting.appearance-theme.system');
 export const THEME_LIGHT_TITLE = messageKey('setting.appearance-theme.light');
 export const THEME_DARK_TITLE = messageKey('setting.appearance-theme.dark');
@@ -1157,11 +1200,16 @@ export const SETTINGS_CATEGORY_TITLES = {
   general: SETTINGS_CATEGORY_GENERAL,
   appearance: SETTINGS_CATEGORY_APPEARANCE,
   viewing: SETTINGS_CATEGORY_VIEWING,
+  rendering: SETTINGS_CATEGORY_RENDERING,
   editing: SETTINGS_CATEGORY_EDITING,
-  privacy: SETTINGS_CATEGORY_PRIVACY,
-  advanced: SETTINGS_CATEGORY_ADVANCED,
+  saving: SETTINGS_CATEGORY_SAVING,
+  ocr: SETTINGS_CATEGORY_OCR,
   ai: SETTINGS_CATEGORY_AI,
   integrations: SETTINGS_CATEGORY_INTEGRATIONS,
+  keyboard: SETTINGS_CATEGORY_KEYBOARD,
+  privacy: SETTINGS_CATEGORY_PRIVACY,
+  updates: SETTINGS_CATEGORY_UPDATES,
+  advanced: SETTINGS_CATEGORY_ADVANCED,
 } as const;
 /** `appearance.theme`'s members, by the word a person reads (ADR-0056). */
 export const THEME_OPTION_TITLES = {
@@ -1814,6 +1862,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_LANGUAGE_NAMES.chi_sim]: 'Chinese (Simplified)',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition language',
+  [EDITING_OCR_LANGUAGE_DESCRIPTION]: 'Used when you recognise text, unless you choose another for that run.',
+  [EDITING_AZURE_ENDPOINT_DESCRIPTION]: 'Optional. Your own Azure resource address, for tables and difficult scans.',
+  [EDITING_AZURE_KEY_DESCRIPTION]: 'Stored in the Windows credential vault. Never exported or logged.',
+  [SECOND_RENDERER_DESCRIPTION]: 'Draws pages with PDFium instead of PDF.js. Slower; useful when a page looks wrong.',
   [EDITING_AZURE_ENDPOINT_TITLE]: 'Azure Document Intelligence endpoint',
   [EDITING_AZURE_KEY_TITLE]: 'Azure Document Intelligence key',
   [RULER_UNIT_TITLE]: 'Ruler unit',
@@ -2529,9 +2581,50 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_CATEGORY_TITLES.general]: 'General',
   [SETTINGS_CATEGORY_TITLES.appearance]: 'Appearance',
   [SETTINGS_CATEGORY_TITLES.viewing]: 'Viewing',
-  [SETTINGS_CATEGORY_TITLES.editing]: 'Editing',
+  [SETTINGS_CATEGORY_TITLES.editing]: 'Editing defaults',
   [SETTINGS_CATEGORY_TITLES.privacy]: 'Privacy',
   [SETTINGS_CATEGORY_TITLES.advanced]: 'Advanced',
+  [SETTINGS_CATEGORY_TITLES.rendering]: 'Rendering',
+  [SETTINGS_SEARCH]: 'Search settings',
+  [THEME_DESCRIPTION]: 'Light, dark, or whatever Windows is set to. High contrast follows Windows on its own.',
+  [LAYOUT_MODE_DESCRIPTION]: 'Ribbon shows every tool; Studio keeps a compact strip; Focus hides the chrome.',
+  [RULERS_DESCRIPTION]: 'Rulers along the top and left of the page.',
+  [DARK_PAGE_DESCRIPTION]: 'Draws the page itself dark. The document is not changed.',
+  [LOUPE_DESCRIPTION]: 'A magnifier that follows the pointer.',
+  [GRID_DESCRIPTION]: 'A grid over the page, for lining marks up.',
+  [RULER_UNIT_DESCRIPTION]: 'The unit the rulers and the measuring tools show.',
+  [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',
+  [AI_SAVE_HISTORY_DESCRIPTION]:
+    'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
+  [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',
+  [INTEGRATIONS_DOCUSIGN_KEY_DESCRIPTION]: 'Write-only. Stored in the Windows credential vault.',
+  [INTEGRATIONS_DOCUSIGN_ENVIRONMENT_DESCRIPTION]: 'Which DocuSign account the signing requests go to.',
+  [ACCENT_PRESET_THEME]: 'The theme’s own',
+  [ACCENT_PRESET_GREEN]: 'Green',
+  [ACCENT_PRESET_BLUE]: 'Blue',
+  [ACCENT_PRESET_VIOLET]: 'Violet',
+  [ACCENT_PRESET_ORANGE]: 'Orange',
+  [ACCENT_REJECTED]: '{colour} cannot carry readable text in this theme, so it is not offered.',
+  [ACCENT_DESCRIPTION]: 'Used for selection, active states and the primary button. Text on it is worked out to stay readable.',
+  [SETTINGS_PAGES_LABEL]: 'Settings pages',
+  [SETTINGS_NO_MATCH]: 'Nothing matches “{query}”.',
+  [SETTINGS_FOOTER_NOTE]: 'Changes save as you make them. Secrets are never exported.',
+  [SETTINGS_EXPORT]: 'Export settings…',
+  [SETTINGS_RESET]: 'Reset to defaults',
+  [SETTINGS_DONE]: 'Done',
+  [SETTINGS_AI_PROVIDER]: 'Provider',
+  [SETTINGS_AI_PROVIDER_DESCRIPTION]: 'Document content is sent only when you press Send.',
+  [SETTINGS_AI_PROVIDER_STORED]: '{provider} — key stored',
+  [SETTINGS_ACTION_CLEAR_HISTORY]: 'Clear chat history',
+  [SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION]: 'Removes every saved conversation from this computer.',
+  [SETTINGS_ACTION_CLEARED]: 'Saved conversations were cleared.',
+  [SETTINGS_KEYBOARD_NOTE]: 'Press F1 for the full list of shortcuts, or open the command palette with Ctrl+K.',
+  [SETTINGS_UPDATES_NOTE]:
+    'Monstera is installed from the Microsoft Store, and Windows updates it. Monstera never installs anything itself.',
+  [SETTINGS_CATEGORY_TITLES.saving]: 'Saving',
+  [SETTINGS_CATEGORY_TITLES.ocr]: 'OCR',
+  [SETTINGS_CATEGORY_TITLES.keyboard]: 'Keyboard',
+  [SETTINGS_CATEGORY_TITLES.updates]: 'Updates',
   [THEME_OPTION_TITLES.system]: 'Match the system',
   [THEME_OPTION_TITLES.light]: 'Light',
   [THEME_OPTION_TITLES.dark]: 'Dark',

@@ -275,6 +275,7 @@ describe('browser shim', () => {
       'spelling.dictionary',
       'window.close',
       'window.closeListening',
+      'settings.export',
       'window.copy',
       'window.copyText',
       'window.titleBarOverlay',

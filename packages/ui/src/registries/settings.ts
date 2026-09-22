@@ -68,10 +68,27 @@ export function colourKindOf(schema: z.ZodType): ColourKind | undefined {
   return COLOUR_KINDS.get(schema);
 }
 
-/** Which group of the Settings dialog a setting appears under. */
+/**
+ * Which page of the Settings dialog a setting appears under — the owner's design of 2026-09-22 names
+ * the pages and their order, and `SETTINGS_PAGES` in `settings/pages.ts` holds that order once.
+ *
+ * A page with no setting of its own is not necessarily empty: *Keyboard* is the shortcut map,
+ * *Updates* says where updates come from, and *Privacy* carries an action. A page with nothing at
+ * all is not drawn, because an empty page explaining that it is empty is the defect the owner named.
+ */
 export type SettingCategory =
   | 'general'
   | 'appearance'
+  /** How the page itself is drawn — the second renderer, image handling. */
+  | 'rendering'
+  /** What a save does, and what is kept beside the document. */
+  | 'saving'
+  /** Recognition: languages, and the services that read a scan. */
+  | 'ocr'
+  /** The shortcut map. No setting of its own yet; the page is the map. */
+  | 'keyboard'
+  /** Where updates come from. No setting of its own: Windows updates Store apps (ADR-0018). */
+  | 'updates'
   // What is drawn OVER the document, as against how the shell is painted:
   // rulers, grid, page layout, dark page mode. `BUILD-PROMPT.md:608-611` groups
   // them this way, and the distinction is one a reader makes — nobody looks for
@@ -115,6 +132,14 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
   readonly id: string;
   /** The setting's label, as a key. */
   readonly title: MessageKey;
+  /**
+   * One plain line under the label, saying what the setting does — the owner's design of
+   * 2026-09-22 gives every row a bold label and a description beneath it.
+   *
+   * Optional, and a row without one draws no second line: a description that restated its label
+   * would be noise in the place a reader looks for the thing the label could not say.
+   */
+  readonly description?: MessageKey;
   /** Validates a value from disk or from the dialog, and types it. */
   readonly schema: Schema;
   /** What an unset setting is. Must satisfy `schema` — checked at construction. */
@@ -123,6 +148,26 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
   readonly category: SettingCategory;
   /** Excluded from export when true. Defaults to false. */
   readonly secret?: boolean;
+  /**
+   * State the application remembers FOR a person rather than a choice they come here to make: how
+   * wide they dragged a panel, which tab was open, whether the rulers are showing.
+   *
+   * Stored and exported like any other setting; simply never a row in the Settings dialog. Before
+   * this flag every one of them was a row, so *Settings* offered a number box for the document
+   * panel's width beside the theme — the shape the owner's design pass called out. The control for
+   * these is the thing itself: the splitter, the tab, the ribbon button that toggles them.
+   */
+  readonly remembered?: boolean;
+  /**
+   * Whether this setting needs the OS credential store, without being a secret itself.
+   *
+   * *Save chat history* is the first: the conversations are encrypted with the keys' own cipher, so
+   * on a machine with no keyring `main` refuses every save. The renderer drops that refusal, which
+   * leaves a switch reading ON while nothing is saved — an honest-state gap found by the audit of
+   * `57de0e0..d2989fc`. Marked here, the dialog disables the control and says why, which is the same
+   * answer a key field already gives on such a machine.
+   */
+  readonly needsSecureStorage?: boolean;
   /**
    * A title for each member of an ENUMERATED setting, and absent for every other
    * kind ([ADR-0056](../../../../docs/DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)).

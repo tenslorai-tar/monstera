@@ -1,12 +1,18 @@
 import { z } from 'zod';
 
 import {
+  DARK_PAGE_DESCRIPTION,
   DARK_PAGE_TITLE,
+  GRID_DESCRIPTION,
   GRID_TITLE,
+  LOUPE_DESCRIPTION,
   LOUPE_TITLE,
   SPLIT_VIEW_TITLE,
+  RULERS_DESCRIPTION,
   RULERS_TITLE,
+  RULER_UNIT_DESCRIPTION,
   RULER_UNIT_TITLE,
+  SECOND_RENDERER_DESCRIPTION,
   SECOND_RENDERER_TITLE,
   UNIT_TITLES,
 } from '../messages/en.js';
@@ -36,6 +42,7 @@ import type { SettingDefinition } from '../registries/settings.js';
 export const RULERS_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.rulers',
   title: RULERS_TITLE,
+  description: RULERS_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
@@ -59,6 +66,7 @@ export const RULERS_SETTING: SettingDefinition<z.ZodBoolean> = {
 export const DARK_PAGE_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.dark-page',
   title: DARK_PAGE_TITLE,
+  description: DARK_PAGE_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
@@ -74,6 +82,7 @@ export const DARK_PAGE_SETTING: SettingDefinition<z.ZodBoolean> = {
 export const LOUPE_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.loupe',
   title: LOUPE_TITLE,
+  description: LOUPE_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
@@ -100,11 +109,14 @@ export const SPLIT_VIEW_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
+  // REMEMBERED: split view is a layout the ribbon and Ctrl+Shift+E turn on, not a preference.
+  remembered: true,
 };
 
 export const GRID_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.grid',
   title: GRID_TITLE,
+  description: GRID_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
@@ -161,6 +173,7 @@ export const RULER_UNIT_SETTING: SettingDefinition<
 > = {
   id: 'viewing.ruler-unit',
   title: RULER_UNIT_TITLE,
+  description: RULER_UNIT_DESCRIPTION,
   schema: z.enum(['in', 'cm', 'pt']),
   fallback: 'in',
   category: 'viewing',
@@ -200,7 +213,10 @@ export const RULER_UNIT_SETTING: SettingDefinition<
 export const SECOND_RENDERER_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.second-renderer',
   title: SECOND_RENDERER_TITLE,
+  description: SECOND_RENDERER_DESCRIPTION,
   schema: z.boolean(),
   fallback: false,
-  category: 'viewing',
+  // HOW A PAGE IS DRAWN is the owner's *Rendering* page; the id keeps its `viewing.` prefix, which
+  // names where the setting was declared and not which page shows it.
+  category: 'rendering',
 };

@@ -7,9 +7,13 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 
-// SCRATCH CAPTURE for the owner's redesign review (section 4, 2026-09-22): five screens in three
-// looks, rendered from the real renderer through the browser shim. Not a test and not committed to
-// main; OUT names the folder and LABEL the build (today / proposal).
+// THE CAPTURE HARNESS for design review: five screens in three looks, rendered from the real
+// renderer through the browser shim, written as files rather than asserted. Not a test — it fails
+// nothing — and it is run by hand, which is why it lives under `*.capture.ts` and is collected only
+// by `scripts/test/capture.config.mjs`. `CAPTURE_OUT` names the folder and `CAPTURE_LABEL` the run,
+// so the same command captures the build before and after a change and the two sit side by side.
+//
+// Stage 10 compares these against the owner's exports in `assets/Monstera PDF Editor UI Design`.
 const OUT = process.env['CAPTURE_OUT'] ?? 'capture';
 const LABEL = process.env['CAPTURE_LABEL'] ?? 'today';
 

@@ -34,7 +34,7 @@ describe('ExportWordBody', () => {
       const resolve = vi.fn();
       render(
         <Wrapped>
-          <ExportWordBody resolve={resolve} />
+          <ExportWordBody resolve={resolve} update={() => undefined} />
         </Wrapped>,
       );
       fireEvent.click(screen.getByRole('radio', { name: label }));
@@ -48,7 +48,7 @@ describe('ExportWordBody', () => {
     const resolve = vi.fn();
     render(
       <Wrapped>
-        <ExportWordBody resolve={resolve} />
+        <ExportWordBody resolve={resolve} update={() => undefined} />
       </Wrapped>,
     );
     fireEvent.click(screen.getByRole('button'));

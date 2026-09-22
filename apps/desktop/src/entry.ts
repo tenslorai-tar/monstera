@@ -17,6 +17,7 @@ import {
   createFormDataPicker,
   createOfficePicker,
   createSnapshotPicker,
+  createSettingsPicker,
   createTextPicker,
 } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
@@ -167,6 +168,7 @@ startShell(() => {
     pickFormData: createFormDataPicker(),
     // The fifth save dialog, beside its siblings for the reason above.
     pickText: createTextPicker(),
+    pickSettingsFile: createSettingsPicker(),
     // The Office exports' save dialog, narrowed per format (ADR-0072).
     pickOffice: createOfficePicker(),
     // The fifth, and the first OPEN dialog added since the image picker.

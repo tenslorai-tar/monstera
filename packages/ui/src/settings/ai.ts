@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import {
   AI_ANTHROPIC_KEY_TITLE,
+  AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION,
   AI_AZURE_OPENAI_ENDPOINT_TITLE,
   AI_AZURE_OPENAI_KEY_TITLE,
   AI_DEEPSEEK_KEY_TITLE,
@@ -20,7 +21,9 @@ import {
   AI_OPENAI_KEY_TITLE,
   AI_OPENROUTER_KEY_TITLE,
   AI_PERPLEXITY_KEY_TITLE,
+  AI_SAVE_HISTORY_DESCRIPTION,
   AI_SAVE_HISTORY_TITLE,
+  AI_SETUP_AT_START_DESCRIPTION,
   AI_SETUP_AT_START_TITLE,
   AI_XAI_KEY_TITLE,
 } from '../messages/en.js';
@@ -89,6 +92,7 @@ export const AI_PROVIDER_KEY_SETTINGS: readonly SettingDefinition<z.ZodString>[]
 export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   id: AZURE_OPENAI_ENDPOINT_SETTING_ID,
   title: AI_AZURE_OPENAI_ENDPOINT_TITLE,
+  description: AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION,
   schema: z.string(),
   fallback: '',
   category: 'ai',
@@ -106,6 +110,7 @@ export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
 export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'ai.setup-at-start',
   title: AI_SETUP_AT_START_TITLE,
+  description: AI_SETUP_AT_START_DESCRIPTION,
   schema: z.boolean(),
   fallback: true,
   category: 'ai',
@@ -120,6 +125,10 @@ export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
 export const CHAT_HISTORY_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: CHAT_HISTORY_SETTING_ID,
   title: AI_SAVE_HISTORY_TITLE,
+  description: AI_SAVE_HISTORY_DESCRIPTION,
+  // THE CONVERSATIONS ARE ENCRYPTED with the keys' cipher (ADR-0093), so a machine that cannot keep
+  // a key cannot keep a conversation either, and the switch says so rather than reading ON.
+  needsSecureStorage: true,
   schema: z.boolean(),
   fallback: false,
   category: 'ai',

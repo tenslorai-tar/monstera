@@ -29,7 +29,7 @@ function shown(props: OptimizeProps): ReturnType<typeof vi.fn> {
   const resolve = vi.fn();
   render(
     <Wrapped>
-      <OptimizeBody {...props} resolve={resolve} />
+      <OptimizeBody {...props} resolve={resolve} update={() => undefined} />
     </Wrapped>,
   );
   return resolve;

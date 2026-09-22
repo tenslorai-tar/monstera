@@ -38,9 +38,13 @@ export function controlFor(setting: SettingDefinition): SettingControl | undefin
   return undefined;
 }
 
-/** Every registered setting the dialog can render, in registration order. */
+/**
+ * Every registered setting the dialog SHOWS, in registration order: one this file can draw a control
+ * for, and not one the application merely remembers (`remembered`) — a panel's width is state, and
+ * the control for it is the splitter.
+ */
 export const DIALOG_SETTINGS: readonly SettingDefinition[] = ALL_SETTINGS.filter(
-  (setting) => controlFor(setting) !== undefined,
+  (setting) => controlFor(setting) !== undefined && setting.remembered !== true,
 );
 
 /**
@@ -56,6 +60,13 @@ export const SETTINGS_RESULT = z
   .object({
     values: z.record(z.string(), z.unknown()),
     secrets: z.partialRecord(z.enum(SECRET_SETTING_IDS), z.string()),
+    /**
+     * A button on a page, rather than a setting — reported to the command that opened the dialog
+     * (ADR-0094), because the body has no client and the command is the writer. `reset` is the
+     * footer's *Reset to defaults*; `export` writes the settings to a file a person picks; and
+     * `clear-chat-history` empties the saved conversations from the Privacy page.
+     */
+    action: z.enum(['reset', 'export', 'clear-chat-history']).optional(),
   })
   .strict();
 

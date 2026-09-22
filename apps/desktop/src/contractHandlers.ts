@@ -28,6 +28,8 @@ import {
   type WriteTargetVerdict,
   readDocumentRange,
 } from '@monstera/kernel';
+import { writeFile } from 'node:fs/promises';
+
 import { type DocId, err, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
@@ -201,6 +203,8 @@ export function createContractHandlers(deps: {
   readonly secrets: SecretStoreSurface;
   /** Saved assistant conversations (ADR-0093), encrypted with the secrets' cipher. */
   readonly chatHistory: ChatHistory;
+  /** Where a settings export goes, or `null` when the person cancelled the picker. */
+  readonly pickSettingsFile: () => Promise<string | null>;
   /**
    * Shows the diagnostics log.
    *
@@ -475,6 +479,19 @@ export function createContractHandlers(deps: {
           available: deps.secrets.available(),
         }),
       );
+    },
+    'settings.export': async () => {
+      const path = await deps.pickSettingsFile();
+      if (path === null) return ok({ kind: 'cancelled' } as const);
+      // WHAT THE PLAIN DOCUMENT HOLDS, which is every setting except a secret — those live in their
+      // own encrypted file (ADR-0056), so nothing here has to remember to leave them out.
+      const stored = deps.settings.read();
+      try {
+        await writeFile(path, `${JSON.stringify(stored, null, 2)}\n`, 'utf8');
+      } catch {
+        return ok({ kind: 'write-failed' } as const);
+      }
+      return ok({ kind: 'written', settings: Object.keys(stored).length } as const);
     },
     'settings.saveSecret': ({ id, value }) => {
       // ASKED BEFORE WRITING rather than caught after. The store throws for the

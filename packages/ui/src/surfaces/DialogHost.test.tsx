@@ -56,12 +56,31 @@ const pickEntry = declareDialog({
       default: ({
         limit,
         resolve,
+        update,
       }: {
         limit: number;
         resolve: (result: { chosen: number }) => void;
+        update: (result: { chosen: number }) => void;
       }) => (
         <>
           <p>{`picking under ${String(limit)}`}</p>
+          <button
+            type="button"
+            onClick={() => {
+              update({ chosen: 7 });
+            }}
+          >
+            Report
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // A REPORT the result schema refuses, for the same reason the bad answer below exists.
+              update({ chosen: -2 });
+            }}
+          >
+            Report badly
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -144,13 +163,16 @@ function Harness({
   id,
   props,
   onAnswer,
+  onUpdate,
 }: {
   id: string;
   props: unknown;
   /** What the dialog settled with, for the cases about the answer. */
   onAnswer?: (answer: unknown) => void;
+  /** What a body REPORTED without closing (ADR-0094), for the cases about updates. */
+  onUpdate?: (result: unknown) => void;
 }): ReactElement {
-  const { open, ask, close, resolve } = useDialogHost(registry);
+  const { open, ask, close, resolve, report } = useDialogHost(registry);
   const [error, setError] = useState<string | undefined>(undefined);
   return (
     <>
@@ -162,7 +184,7 @@ function Harness({
             // ADR-0038's dismissal path would hide: `ask` settles `undefined`
             // on close, and a harness that ignored it could not tell a dialog
             // that answered from one that never settled.
-            void ask(id, props).then(
+            void ask(id, props, onUpdate).then(
               (answer) => {
                 onAnswer?.(answer);
               },
@@ -184,6 +206,7 @@ function Harness({
         open={open}
         onClose={close}
         onResolve={resolve}
+        onUpdate={report}
       />
     </>
   );
@@ -368,6 +391,55 @@ describe('DialogHost', () => {
       });
 
       expect(answers).toStrictEqual([undefined]);
+    });
+  });
+
+  describe('a body that REPORTS before it answers (ADR-0094)', () => {
+    it('hands the opener each report, parsed, and LEAVES THE DIALOG OPEN', async () => {
+      const reports: unknown[] = [];
+      const answers: unknown[] = [];
+      render(
+        <Harness
+          id="dialog.pick"
+          props={{ limit: 9 }}
+          onAnswer={(answer) => answers.push(answer)}
+          onUpdate={(result) => reports.push(result)}
+        />,
+      );
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByRole('dialog');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Report' }).click();
+        await Promise.resolve();
+      });
+
+      expect(reports).toStrictEqual([{ chosen: 7 }]);
+      // THE TWO HALVES THAT SEPARATE A REPORT FROM AN ANSWER: still open, and nothing settled.
+      expect(screen.queryByRole('dialog')).not.toBeNull();
+      expect(answers).toStrictEqual([]);
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Choose' }).click();
+        await Promise.resolve();
+      });
+      expect(answers).toStrictEqual([{ chosen: 2 }]);
+    });
+
+    it('REFUSES a report the result schema rejects, exactly as it refuses such an answer', async () => {
+      const reports: unknown[] = [];
+      render(<Harness id="dialog.pick" props={{ limit: 9 }} onUpdate={(result) => reports.push(result)} />);
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByRole('dialog');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Report badly' }).click();
+        await Promise.resolve();
+      });
+
+      // NOTHING REACHED THE OPENER, and the refusal is reported where an answer's would be.
+      expect(reports).toStrictEqual([]);
+      expect(screen.getByText(/DialogResultRejected|refuses/u)).toBeDefined();
     });
   });
 });

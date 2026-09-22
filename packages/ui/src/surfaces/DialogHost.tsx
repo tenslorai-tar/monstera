@@ -71,6 +71,12 @@ interface OpenDialog {
    * prevent it.
    */
   readonly fail: (thrown: unknown) => void;
+  /**
+   * Where a body's `update` goes (ADR-0094): a result the opener applies without the dialog
+   * closing. Absent for a dialog opened with none, and then a report is dropped rather than
+   * queued — a surface that applies as it goes is opened by a command that said where to.
+   */
+  readonly report: ((result: unknown) => void) | undefined;
 }
 
 /**
@@ -95,16 +101,18 @@ export function useDialogHost(registry: DialogRegistry): {
    * beside it. Two ways to open a dialog is the second opinion B3a is about,
    * and the one somebody reaches for would be the one with no gate.
    */
-  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  readonly ask: (id: string, props: unknown, onUpdate?: (result: unknown) => void) => Promise<unknown>;
   /** Dismisses whatever is open, settling its promise `undefined`. */
   readonly close: () => void;
   /** Takes a body's answer, validates it, settles and closes. */
   readonly resolve: (result: unknown) => void;
+  /** Takes a body's report (ADR-0094), validates it, and hands it to the opener without closing. */
+  readonly report: (result: unknown) => void;
 } {
   const [open, setOpen] = useState<OpenDialog | undefined>(undefined);
 
   const ask = useCallback(
-    (id: string, props: unknown) => {
+    (id: string, props: unknown, onUpdate?: (result: unknown) => void) => {
       // Throws on an unregistered id or refused props, and the throw is the
       // point: it happens before any state changes, so a refused open leaves
       // whatever was showing exactly as it was rather than half-replacing it.
@@ -122,7 +130,7 @@ export function useDialogHost(registry: DialogRegistry): {
           // caller awaiting the one that went would now wait for ever, which is
           // a hang rather than a wrong answer.
           previous?.settle(undefined);
-          return { id, props: validated.props, settle, fail };
+          return { id, props: validated.props, settle, fail, report: onUpdate };
         });
       });
     },
@@ -162,7 +170,28 @@ export function useDialogHost(registry: DialogRegistry): {
     [open, registry],
   );
 
-  return { open, ask, close, resolve };
+  /**
+   * A body's `update` (ADR-0094): validated exactly as an answer is, handed to the opener, and the
+   * dialog left open. A report the schema refuses REJECTS the opener's promise and closes, for
+   * `resolve`'s reason — the value was on its way to becoming a command's argument either way.
+   */
+  const report = useCallback(
+    (result: unknown) => {
+      if (open === undefined) return;
+      let reported: unknown;
+      try {
+        reported = registry.answerOf(open.id, result);
+      } catch (thrown) {
+        open.fail(thrown);
+        setOpen(undefined);
+        return;
+      }
+      open.report?.(reported);
+    },
+    [open, registry],
+  );
+
+  return { open, ask, close, resolve, report };
 }
 
 /**
@@ -180,11 +209,14 @@ export function DialogHost({
   open,
   onClose,
   onResolve,
+  onUpdate,
 }: DialogHostProps & {
   readonly open: OpenDialog | undefined;
   readonly onClose: () => void;
   /** What a body's `resolve` reaches. See {@link useDialogHost}. */
   readonly onResolve: (result: unknown) => void;
+  /** What a body's `update` reaches (ADR-0094). */
+  readonly onUpdate: (result: unknown) => void;
 }): ReactElement | null {
   if (open === undefined) return null;
 
@@ -212,7 +244,7 @@ export function DialogHost({
           2026-09-21, a chunk the build had replaced. Keyed on the open dialog, so the
           next one starts clean. */}
       <ErrorBoundary key={open.id} fallback={() => <ViewProblem scope="dialog" />}>
-        <Suspense fallback={pending}>{entry.mount(open.props, onResolve)}</Suspense>
+        <Suspense fallback={pending}>{entry.mount(open.props, onResolve, onUpdate)}</Suspense>
       </ErrorBoundary>
     </Dialog>
   );

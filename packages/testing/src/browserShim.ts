@@ -1876,6 +1876,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
     // THE SHIM HAS NO CLIPBOARD, so nothing is claimed copied.
     'window.copyText': () => Promise.resolve(ok({ copied: false })),
+    // NO PICKER IN A BROWSER: the export is cancelled, which is what main answers with no path.
+    'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
     // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider

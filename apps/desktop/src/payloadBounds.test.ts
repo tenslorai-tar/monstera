@@ -151,6 +151,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
     chatHistory: noChatHistory(),
+    pickSettingsFile: () => Promise.resolve(null),
     revealLog: () => Promise.resolve(false),
     titleBarOverlay: () => false,
     confirmClose: () => false,

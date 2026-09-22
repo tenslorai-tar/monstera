@@ -334,6 +334,7 @@ const handlers: ContractHandlers = {
   'ai.history.save': () => Promise.resolve(ok({ saved: false })),
   'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
   'window.copyText': () => Promise.resolve(ok({ copied: false })),
+  'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
   'ai.stop': () => Promise.resolve(ok({ stopped: false })),
   'cloud.status': () => Promise.resolve(ok({ providers: [{ provider: 'onedrive' as const, state: 'signed-out' as const }] })),
