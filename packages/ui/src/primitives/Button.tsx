@@ -89,7 +89,11 @@ export function Button({
   // The default variant sits on `--surface`, a pair `tokens.css` declares and
   // `check:tokencontrast` already evaluates — solving it again here would be a
   // second opinion about a question that has an authority (B3a).
-  useOnColor(element, 'color', '--text', variant === 'primary' ? ['--accent'] : [], 'text');
+  //
+  // A DISABLED primary is not on the accent: the stylesheet draws it as `--faint` on `--surface`,
+  // a declared pair. Solving here anyway would write an inline colour, which beats the `:disabled`
+  // rule, and leave the control looking exactly as pressable as an enabled one.
+  useOnColor(element, 'color', '--text', variant === 'primary' && !disabled ? ['--accent'] : [], 'text');
 
   return (
     <BaseButton

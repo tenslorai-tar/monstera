@@ -70,6 +70,13 @@
   color: var(--faint);
 }
 
+/* Off the accent while disabled, so it cannot be read as the screen's action. `Button` stops solving
+   a foreground for the accent in the same state, which is what lets `--faint` above apply. */
+.m-button--primary:disabled {
+  border-color: var(--border-control);
+  background: var(--surface);
+}
+
 .m-button:focus-visible {
   outline: 2px solid var(--border-control);
   outline-offset: 2px;

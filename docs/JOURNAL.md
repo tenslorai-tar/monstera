@@ -892,6 +892,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — A disabled primary button looked exactly like an enabled one
+
+Found while capturing the redesign proposal, not by any test: the Assistant's **Send**, with no
+key stored, was disabled and drew as the screen's green action. The earlier no-key audit
+(entry below) checked that Send is *disabled*, which it was; nothing asked what a disabled
+primary looks like.
+
+**Mechanism.** `Button` solves the primary variant's text colour with `useOnColor` and writes it
+**inline**, and an inline colour beats every stylesheet rule, including `.m-button:disabled`'s
+`--faint`. The fill stayed `--accent`, because no rule changed it. So the disabled state had a
+rule and the rule could never apply to this variant. Every disabled primary in the application
+was affected, not only Send.
+
+**Fix, in the primitive.** `Button` passes no fill to `useOnColor` while disabled, which removes
+the inline property (the hook's own empty-set arm), and `primitives.css` draws a disabled primary
+as `--faint` on `--surface` inside `--border-control` — pairs `tokens.css` already declares and
+`check:tokencontrast` evaluates.
+
+**Proof, with its control.** `Button.test.tsx` renders an enabled primary, waits for the solved
+colour, re-renders it disabled and waits for the inline colour to go. Without the fix it failed
+at that wait (run before the fix, 1 of 14 red). The first wait is what makes the second mean
+something: an empty colour before any effect has run is also what a component that never
+cleared it would show.
+
+Ran: the primitives' tests (49), the assistant's and window-controls tests (47), typecheck,
+lint, build, `test:visual` (4) and `test:a11y` (50). No visual baseline draws a disabled
+primary, which is why none moved — and why this went unseen.
+
 ## 2026-09-22 — Cloud storage in main and on screen; and an instrument that could not see a refusal
 
 `cloudSession.ts` is `docusignSession.ts`' shape per provider: a sign-in kept under

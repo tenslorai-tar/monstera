@@ -134,6 +134,25 @@ describe('Button', () => {
       expect(contrast(started, accent)).toBeLessThan(4.5);
     });
 
+    it('solves NOTHING while disabled, so the stylesheet draws a disabled button', async () => {
+      // An inline colour beats every stylesheet rule, including `.m-button:disabled`, and the fill
+      // stayed the accent — so a disabled primary rendered exactly as an enabled one. The Assistant's
+      // Send with no key stored looked ready to press.
+      declareTokens();
+      const { rerender } = render(<Button label={SAVE} variant="primary" />);
+      const button = screen.getByRole('button', { name: 'Save' });
+      // Waiting for the solve first is what makes the next wait mean something: an empty colour
+      // before any effect has run is also what a component that never cleared it would show.
+      await vi.waitFor(() => {
+        expect(button.style.color).not.toBe('');
+      });
+
+      rerender(<Button disabled label={SAVE} variant="primary" />);
+      await vi.waitFor(() => {
+        expect(button.style.color).toBe('');
+      });
+    });
+
     it('re-solves when the theme changes', async () => {
       declareTokens();
       render(<Button label={SAVE} variant="primary" />);
