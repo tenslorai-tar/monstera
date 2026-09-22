@@ -892,6 +892,24 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — A key is checked before it is stored: `ai.checkKey`
+
+Found reading the first-run row while planning its live run. *Set up AI…* stored the typed key through
+`settings.saveSecret`, asked `ai.models` — which reads the STORED key — and wrote `''` when the provider
+refused. With a working key already stored, a typo therefore replaced it, failed, and was deleted:
+the person was left with no key at all. **Mechanism**: the check could only read a stored key, so the
+candidate had to be stored before it could be checked, and undoing the store could not restore what
+it replaced.
+
+`ai.checkKey` takes the candidate key (and Azure's address) and `main` asks the provider's model list
+with it, storing it only when the provider accepts. The renderer never stores a key in this flow, and
+Azure's address is kept only with a key it checked out with. The Settings rebuild (Stage 10) takes the
+same channel for *Replace*. **Proof**: `contractHandlers.test.ts` stores a working key, checks a typo
+against a provider answering 401, and asserts the stored key is still the working one and that the
+provider was asked with the typo; its control, a 200, replaces it. `aiSetup.test.ts` asserts one check
+call and no `settings.saveSecret` at all on a refusal — the old command's `''` write is what that
+assertion separates.
+
 ## 2026-09-22 — The command palette is a combobox: a name then Enter runs it
 
 Found in the live run above: typing *Summarise comments* in full and pressing Enter ran nothing, and

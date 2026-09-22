@@ -1868,6 +1868,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // surface must already handle — it is the answer a real `main` gives when the
     // subscription is in use or the provider has no key.
     'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
+    // REFUSED, because the shim has no provider to ask and a key it cannot check is not one it may keep.
+    'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unreachable' as const })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
     // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider

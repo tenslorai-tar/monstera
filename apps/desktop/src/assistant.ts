@@ -60,6 +60,8 @@ export interface AskRequest {
 
 export interface Assistant {
   readonly models: (provider: AiProviderId) => Promise<Awaited<ReturnType<typeof listModels>>>;
+  /** The model list asked with a CANDIDATE key and address, never the stored ones — `ai.checkKey`'s check. */
+  readonly check: (provider: AiProviderId, key: string, endpoint: string) => Promise<Awaited<ReturnType<typeof listModels>>>;
   /** `started: false` means the subscription is already streaming. */
   readonly ask: (request: AskRequest) => { readonly started: boolean };
   /** `stopped: false` means nothing was streaming to that subscription. */
@@ -96,6 +98,14 @@ export function createAssistant(parts: AssistantParts): Assistant {
         provider,
         key: keyFor(provider),
         endpoint: endpointFor(provider),
+        ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
+      }),
+
+    check: (provider, key, endpoint) =>
+      listModels({
+        provider,
+        key,
+        endpoint,
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
       }),
 

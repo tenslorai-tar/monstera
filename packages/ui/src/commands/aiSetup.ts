@@ -15,13 +15,14 @@ import type { SettingsStore } from '../settingsStore.js';
  * *Set up AI…* — BUILD-PROMPT E5's first-run step, and the same step on demand: choose a
  * provider, paste a key, have it checked, or Skip.
  *
- * ## The check is `ai.models`, with the key already stored (the owner's ruling, 2026-09-21)
+ * ## The check is the model list, asked with the TYPED key before it is stored (the owner's ruling, 2026-09-21)
  *
- * `ai.models` asks the provider for its model list with the stored key, so *the list came back*
- * is *the provider accepted this key*. The key goes through `settings.saveSecret` first — the one
- * channel that stores a secret (ADR-0056) — and a key the provider refuses is REMOVED again
- * (`''`, the channel's own meaning), so a failed check leaves nothing stored. The dialog then
- * opens again saying why, until the person's key checks out or they Skip.
+ * `ai.checkKey` asks the provider for its model list with the key the person typed, so *the list
+ * came back* is *the provider accepted this key*, and `main` stores it only then. It used to store
+ * first, ask with the stored key and remove it on a refusal — so with a working key already stored,
+ * a mistyped replacement overwrote it and was then deleted, leaving no key at all (found reading
+ * this row on 2026-09-22). A refused key now never reaches the store. The dialog opens again saying
+ * why, until the person's key checks out or they Skip.
  *
  * A provider with no model list (Perplexity, probed 2026-09-17) cannot be checked this way: its
  * key is kept, because the first question is then the check, and the assistant's own refusal
@@ -64,25 +65,22 @@ export function aiSetupCommand(deps: {
         }
 
         provider = answer.provider;
-        // THE CONTRACT'S LITERAL for this provider's key, found in the list `settings.saveSecret`
-        // accepts rather than cast from the table's wider template type.
-        const keySetting = AI_PROVIDER_KEY_SETTING_IDS.find((id) => id === AI_PROVIDERS[answer.provider].keySetting);
-        if (keySetting === undefined) throw new Error(`no key setting is declared for ${answer.provider}`);
-        if (answer.provider === 'azure-openai') deps.settings.set(AZURE_OPENAI_ENDPOINT_SETTING_ID, answer.endpoint);
-        const saved = await deps.client['settings.saveSecret']({ id: keySetting, value: answer.key });
-        if (!saved.ok) {
-          problem = 'not-stored';
+        const endpoint = answer.provider === 'azure-openai' ? answer.endpoint : undefined;
+        const checked = await deps.client['ai.checkKey']({
+          provider: answer.provider,
+          key: answer.key,
+          ...(endpoint === undefined ? {} : { endpoint }),
+        });
+        if (!checked.ok) {
+          problem = checked.error.code === 'secret-storage-unavailable' ? 'not-stored' : 'unreadable';
           continue;
         }
-
-        const listed = await deps.client['ai.models']({ provider: answer.provider });
-        const refused = !listed.ok ? 'unreadable' : listed.value.problem;
-        if (refused !== undefined) {
-          // A KEY THE PROVIDER DID NOT ACCEPT IS NOT KEPT: removed before the dialog says so.
-          await deps.client['settings.saveSecret']({ id: keySetting, value: '' });
-          problem = refused;
+        if (!checked.value.accepted) {
+          problem = checked.value.problem;
           continue;
         }
+        // THE ADDRESS IS KEPT WITH THE KEY IT WAS CHECKED WITH, and only then.
+        if (endpoint !== undefined) deps.settings.set(AZURE_OPENAI_ENDPOINT_SETTING_ID, endpoint);
 
         deps.settings.set(AI_SETUP_AT_START_SETTING.id, false);
         deps.onSecretsChanged();

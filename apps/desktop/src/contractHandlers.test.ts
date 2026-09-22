@@ -614,6 +614,64 @@ describe('log.reveal', () => {
   });
 });
 
+describe('ai.checkKey', () => {
+  /** Handlers whose assistant asks a provider that answers `status` to a model-list request. */
+  function checking(status: number) {
+    const secrets = createEphemeralSecrets();
+    secrets.write('ai.openai-key', 'the-working-key');
+    const asked: string[] = [];
+    const assistant = createAssistant({
+      secret: (id) => secrets.read()[id],
+      setting: () => undefined,
+      send: () => undefined,
+      fetchImpl: (_input, init) => {
+        asked.push(String(new Headers(init?.headers).get('authorization')));
+        return Promise.resolve(
+          new Response(status === 200 ? JSON.stringify({ data: [{ id: 'gpt-x' }] }) : '{}', { status }),
+        );
+      },
+    });
+    const handlers = createContractHandlers({
+      assistant,
+      appInfo,
+      capabilities: new CapabilityRegistry(),
+      commands: unusedCommands,
+      documents: {} as unknown as DocumentService,
+      openedDocument: () => Promise.resolve(),
+      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
+      pickDocument: () => Promise.resolve(null),
+      recent: createRecentFiles(createEphemeralSettings()),
+      settings: createEphemeralSettings(),
+      secrets,
+      revealLog: () => Promise.resolve(false),
+      titleBarOverlay: () => false,
+      confirmClose: () => false,
+      copySelection: () => false,
+      closeListening: () => false,
+      cloud: unconfiguredCloud(),
+      readDictionary: () => Promise.resolve(null),
+      ocrLanguages: () => Promise.resolve([]),
+    });
+    return { handlers, secrets, asked };
+  }
+
+  it('a REFUSED key never reaches the store: the key that was working is still the stored one', async () => {
+    const { handlers, secrets, asked } = checking(401);
+    const result = await handlers['ai.checkKey']({ provider: 'openai', key: 'a-typo' });
+    expect(result).toEqual({ ok: true, value: { accepted: false, problem: 'unauthorised' } });
+    expect(secrets.read()['ai.openai-key']).toBe('the-working-key');
+    // THE CANDIDATE was what the provider was asked with — not the stored key, which would accept.
+    expect(asked).toStrictEqual(['Bearer a-typo']);
+  });
+
+  it('CONTROL: an ACCEPTED key replaces the stored one', async () => {
+    const { handlers, secrets } = checking(200);
+    const result = await handlers['ai.checkKey']({ provider: 'openai', key: 'a-new-key' });
+    expect(result).toEqual({ ok: true, value: { accepted: true } });
+    expect(secrets.read()['ai.openai-key']).toBe('a-new-key');
+  });
+});
+
 /** The handle this registry would mint for a path, without minting a new one. */
 function asFileHandleFrom(registry: CapabilityRegistry, path: string): FileHandle {
   // `mint` is idempotent per path, so this is the handle the handler would have

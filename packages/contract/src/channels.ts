@@ -4306,6 +4306,36 @@ export const channels = {
   ),
 
   /**
+   * Checks a key a person typed against its provider, and stores it ONLY if the provider accepts it.
+   *
+   * The check is the model list (the owner's ruling, 2026-09-21), asked with the CANDIDATE key rather
+   * than the stored one. First-run setup used to store the key, ask, and remove it on a refusal —
+   * which, with a working key already stored, replaced it with a typo and then deleted both. Here a
+   * refused key never reaches the store, so the key a person had is the key they still have.
+   * `accepted: false` carries the provider's reason; a provider with no list (`no-list`) is accepted,
+   * because its first question is then the check.
+   */
+  'ai.checkKey': channel(
+    'Checks a typed key with the provider and stores it only when the provider accepts it.',
+    z
+      .object({
+        provider: z.enum(AI_PROVIDER_IDS),
+        key: z.string().min(1).max(MAX_SECRET_SETTING),
+        /** Azure OpenAI's resource address, checked with the key; empty for every other provider. */
+        endpoint: z.string().max(MAX_LINK_URI_LENGTH).optional(),
+      })
+      .strict(),
+    z.discriminatedUnion('accepted', [
+      z.object({ accepted: z.literal(true) }),
+      z.object({
+        accepted: z.literal(false),
+        problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']),
+      }),
+    ]),
+    ['secret-storage-unavailable'],
+  ),
+
+  /**
    * Asks the assistant, and streams the answer on `ai.delta` / `ai.done`
    * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
    *

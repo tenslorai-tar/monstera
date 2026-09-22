@@ -1,4 +1,5 @@
 import {
+  AI_PROVIDERS,
   type AskSent,
   CLOUD_PROVIDER_IDS,
   MAX_ASK_CONTEXT,
@@ -362,6 +363,16 @@ export function createContractHandlers(deps: {
           capabilities: model.capabilities,
         })),
       });
+    },
+    'ai.checkKey': async ({ provider, key, endpoint }) => {
+      // ASKED BEFORE THE CHECK, so a machine with no keyring is told so before a request is made
+      // with a key that could not have been kept anyway.
+      if (!deps.secrets.available()) return err({ code: 'secret-storage-unavailable' } as const);
+      const listed = await deps.assistant.check(provider, key, endpoint ?? '');
+      // A REFUSED KEY NEVER REACHES THE STORE: the key already stored, if any, is untouched.
+      if (listed.problem !== undefined) return ok({ accepted: false, problem: listed.problem } as const);
+      deps.secrets.write(AI_PROVIDERS[provider].keySetting, key);
+      return ok({ accepted: true } as const);
     },
     'ai.ask': async ({ subscription, provider, model, messages, about, alongside }) => {
       // THE WINDOW IS READ HERE, INSIDE THE ASK THAT SENDS IT (ADR-0088 Decision 5): nothing
