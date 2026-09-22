@@ -892,6 +892,166 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Stage audit of `57de0e0..d2989fc` — findings NNNNNN-1 to NNNNNN-4
+
+43 commits, 199 files, 14 proofs added and 41 modified, 26 source files added and 72 changed
+(`npm run audit:scope`). The range is Stage 9's assistant work, cloud storage, the Office deferral
+and the two B4 amendments that open Stage 10.
+
+**NNNNNN-1 — a proof that has crashed on every run since 49bcf71, and nothing ran it.**
+`scripts/proofs/secondWiringPlace.proof.mjs` calls `giveReeistry(root)` at line 160 — a name that
+does not exist, one letter from `giveRegistry`. `npm run proof:secondwiring` therefore dies with a
+`ReferenceError` before its first case. **Nothing caught it**: the script is registered in
+`package.json` and named in no workflow, so CI never runs it, and the full local sweep — which does —
+runs at a stage close or before a build-touching push. The typo was invisible to `tsc` too until this
+audit's run, because `tsc --build`'s incremental state had a green answer for a file nobody had
+touched since. Fixed here: the proof now runs and **16 cases pass**, which is the measure of what was
+dead. The class to carry: *a proof registered in the manifest and named in no workflow is a proof
+whose only reader is a sweep somebody has to remember to run.* `check:jobplacement` asks the
+converse question — a step that needs modules sitting in a job that installs them — and this is the
+gap beside it.
+
+**NNNNNN-2 — a switch that read ON while `main` refused every save.** *Save chat history*
+(ADR-0093) encrypts through the keys' own cipher, so on a machine with no credential store every
+save is refused — and the renderer drops that refusal, which is right for a background save and
+wrong for the control that promised it. `needsSecureStorage` now marks such a setting, and the
+dialog disables it with the same sentence a key field already gives. Found by reading the save path
+against the honest-states rule rather than by a failing case; the case came after.
+
+**NNNNNN-3 — ADR-0056 was falsified by an amendment inside its own range.** ADR-0094 (in this range)
+makes the Settings dialog report as it is changed, so Decision 4's *the dialog answers the command*
+was no longer the whole truth, and Decision 3's *the accent has no control* stopped being true the
+moment the design's swatches were drawn. Corrected in that ADR with an index row that says so. This
+is item 7's own shape — a document falsified by a commit that never opened it — and what surfaced it
+was sweeping the ADRs the range's amendments touch.
+
+**NNNNNN-4 — the figures CLAUDE.md carries about the engine surface are current, checked rather
+than assumed.** `npm run proof:enginesurface` on this range's tree: **32** kernel modules importing
+`mupdf`, **11** of them value imports, **135** distinct members. That is what the digest says, so the
+range's new kernel modules (`cloudStorage.ts`, `pageFills.ts`) changed nothing — but the check is the
+point, since five occurrences of that figure going stale are recorded above.
+
+### 1. Root cause or workaround?
+
+Every fix in the range is a root cause, each with a control that failed first: the disabled primary
+button (an inline colour from `useOnColor` beat the stylesheet's `:disabled`), the clipped hint
+(a full-height box with padding under content-box), the doubled no-key sentence (two overlapping
+conditions, collapsed into one value), the palette's dead Enter (the field had no key handling and
+did not own the results), Copy (the renderer may hold no clipboard permission, so `main` writes),
+the comments scope's coverage sentence (it borrowed the page scopes'), and `ai.checkKey`
+(store-then-check could delete a working key). No regenerating repair, no loosened check, no
+override standing in for coverage.
+
+### 2. Verified against the easy shape only?
+
+No. The hard shapes tested in the range: a comment list cut at its own bound; a saved conversation
+that no longer decrypts beside one that does; eviction order after a re-save; two spellings of one
+path resolving to one history key; a provider that lists no models; and a page with no fills. The
+shape NOT covered is the packaged build — every live run was the development build.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and it is a strengthening: the palette's dismissal case asserted Escape from a result row,
+and results are no longer focus stops. It now asserts the layered behaviour — the tooltip takes the
+first Escape and the dialog the second — with both layers named, where the old case saw one.
+
+### 3. Would CI have caught it?
+
+Answered from the runs, not the workflow file. The range's changed files reach 24 `proof:*` scripts
+plus the vitest and Playwright suites; those ran and were green. **The three UI defects were
+invisible to every one of them** until a case was added — no visual baseline draws a disabled primary
+button, and nothing measured the assistant panel's fit. The clipboard refusal is visible only in a
+live run, because the browser shim has no permission policy; that is a stated limit rather than a
+covered case. **And NNNNNN-1 is the gap in the other direction**: a proof CI does not run at all.
+
+### 4. Are the proofs non-vacuous?
+
+Each new case was run against the unfixed code first and reddened: the disabled-button case, the
+panel-fit case (8 px of overflow), the one-sentence case, the two palette keyboard cases, the three
+comments-window cases, and the key-check case. `proof:secondwiring`'s 16 cases were vacuous in the
+strongest sense — the file threw before the first one.
+
+### 4a. Has every instrument passed a resolution test?
+
+`accentUsable` did, in both directions, and its FIRST version failed it: holding a preset to *can
+text sit on this fill* could never refuse anything, because no colour fails against both white and
+black. The rule that separates is 1.4.11's 3:1 against the theme's surfaces, which refuses a blue in
+dark and accepts it in light — asserted both ways. `historyKeyOf` is separated from the spelling it
+was minted with by its control.
+
+### 4b. Is the instrument a search? Then it needs a positive control.
+
+One search-shaped instrument arrived: `pageFills`, which answers *none* for a page without fills. It
+carries that control and a fills-present case. No new grep, symbol scan or reachability walk.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+The settings dialog derives its pages from the registry, and the danger there runs the shrink way: a
+setting whose category has no page would be drawn nowhere. The case asserts the join in both
+directions — every derivable setting reachable on its page, every remembered or underivable one
+nowhere — so a page that stopped being listed would take its settings' reachability with it and be
+caught.
+
+### 5. Executed, or asserted?
+
+**Executed**: four live runs on Claude Haiku 4.5 (the two-document choice, summarise comments,
+vision, and the setup dialog short of typing a key), the chat extras and a history round trip across
+close and reopen, and `proof:enginesurface`. **Asserted only**: the cloud providers — sign-in needs
+the owner's browser — and the packaged build.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, every time: ADR-0089 (two-document ask), ADR-0090 (vision), ADR-0091 (cloud), ADR-0092
+(Office deferred), ADR-0093 (chat history) and ADR-0094 (a dialog may report) are each their own
+commit ahead of the work they admit.
+
+### 7. Do the documents still match the code?
+
+NNNNNN-3 is this item's own finding, and it is corrected. `docs/FEATURES.md` rows moved with the work
+(summarisation, vision, onboarding, the assistant, cloud, Office). CLAUDE.md's engine-surface figures
+were re-measured rather than assumed (NNNNNN-4). The cross-document sweep this range owed —
+ADR-0094 states a relationship between the dialog registry and the command that opens a dialog — was
+run against ADR-0038 and ADR-0056; ADR-0038's own text remains true, and ADR-0056 is corrected.
+
+## 2026-09-22 — Stage 10 opens: the Settings dialog is the owner's
+
+The owner opened the old Settings and found every provider's key field poured onto one page, and set
+a standing rule with it: a screen is not done until it would pass a senior designer's review. Stage
+10 builds their own mockups, which are in the working copy and now gitignored (about 10 MB of PNG,
+and B10 forbids committing binaries).
+
+**Sampled before building anything**: the exports use this build's CURRENT tokens almost exactly —
+light `#f4f5f7` / `#ececef` / `#e2e4e7` with `#16a34a`, dark `#191c1e` / `#141618` with `#2fb96a`,
+high contrast unchanged; 52 px ribbon buttons, a 64 px rail, a 260 px document panel, a 340 px
+contextual panel, a 41 px title bar and a 28 px status bar at 1920 × 1080. So Stage 10 is structure,
+type and components, not a new palette — worth knowing before a token was touched.
+
+**The dialog.** A search field, the twelve pages down the left with their glyphs, one page on the
+right, a footer saying where changes go. Every change applies at once, which ADR-0038's one-`resolve`
+shape could not express; ADR-0094 gives a body `update`, validated by the same result schema, and the
+command still writes. *Export settings…*, *Reset to defaults* and *Done* are reported the same way,
+as is *Clear chat history* — the last thing Stage 9's assistant row owed.
+
+**Three findings worth keeping.**
+
+1. **A panel's width was a Settings row.** Every renderable setting was, so *Settings* offered a
+   number box for the document panel's width beside the theme. `remembered: true` marks state the
+   application keeps FOR a person — widths, which tab was open, whether the rulers show — and the
+   dialog draws none of it. The control for those is the thing itself.
+2. **The accent had no control at all**, because ADR-0056 Decision 3 refuses a generic one for its
+   kind. The design draws swatches, so the dialog draws them.
+3. **The first rejection rule I wrote could never fire.** I held a preset to *can text sit on this
+   fill at 4.5:1* — and no colour fails against both white and black, so nothing could ever be
+   refused. The rule that bites is WCAG 1.4.11's 3:1 for the accent AS A FILL against the theme's own
+   surfaces, which refuses a strong blue in the dark theme and accepts it in the light one. The test
+   asserts both directions, from the themes' real values.
+
+**What the twelve pages hold today**: Appearance, Viewing, Rendering, Editing defaults, OCR, AI,
+Integrations, Keyboard, Privacy and Updates are built. *Saving* has no genuine setting yet and is
+therefore not listed — an empty page carrying an explanation of its emptiness is the thing the owner
+named — and *Reduce motion*, *Interface language* and *Thumbnail size* from the design are not built,
+so they are not drawn. Each returns when the behaviour behind it exists.
+
 ## 2026-09-22 — The assistant's chat extras, and chat history (ADR-0093)
 
 The owner's list: streaming with Stop, regenerate, edit and resend, copy, an answer as a sticky note

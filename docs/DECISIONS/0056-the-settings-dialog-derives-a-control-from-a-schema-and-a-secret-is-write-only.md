@@ -153,3 +153,28 @@ kind. `editing.personal-dictionary` stays excluded: it is an array.
 - **Bring the accent in with the same control.** The control would accept a
   colour that is then refused on apply, which is a control that fails on apply —
   Decision 2's own objection to an unbounded number input.
+
+## Correction, 2026-09-22 — WHEN the result travels, and the accent's own control
+
+Two of the decisions above now read as less than the whole truth, and both changed with the owner's
+design of 2026-09-22 rather than by preference.
+
+**Decision 4 said the dialog answers the command.** It still does, and the command is still the only
+writer — but the answer no longer waits for a button. There is no *Save*: each change is REPORTED as
+it is made through `update`, validated by this dialog's own result schema, and applied at once
+([ADR-0094](0094-a-dialog-may-report-before-it-answers.md)). *Done* closes, carrying nothing left to
+apply. Decision 4's shape — props in, `{ values, secrets }` out, the command writing both — is
+unchanged; how often that value crosses is what moved. The result gained one optional field,
+`action`, for the buttons that are not settings: *Reset to defaults*, *Export settings…* and
+*Clear chat history*.
+
+**Decision 3 excluded the accent, and it still has no GENERIC control** — a colour typed into a text
+box satisfies its schema and offers no colour, which is why the derivation refuses it. What the
+dialog draws now is a control of the accent's own: the design's swatches, each refused where it
+cannot reach WCAG 1.4.11's 3:1 against the theme's surfaces. That is the opposite of *a control that
+fails on apply*: the refusal happens in the offer. The pinned exclusion list is unchanged, because it
+is about what the SCHEMA derives.
+
+**And a third clause is now narrower than the dialog**: every renderable setting used to be a row.
+State the application remembers for a person — a panel's width, which tab was open — is marked
+`remembered` and is not drawn, because its control is the splitter or the tab.
