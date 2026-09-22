@@ -2026,6 +2026,17 @@ describe('annotations exported to a file and imported from it, through the lane 
     });
   }
 
+  // FIRST IN THIS BLOCK, because the cases below import comments into the blank document.
+  it('SUMMARISE COMMENTS reads the Comments panel’s own list: each note’s words under its page, and CONTROL: none from a blank page', async () => {
+    const commands = commandsWith(localAnnotationData);
+    const window = await commands.askWindow({ scope: 'comments', docId: annotatedDoc });
+    expect(window.text).toMatch(/^\[Page 1\]\n\(\w+\) Check this \(twice\)\n\n$/u);
+    expect(window.sent).toMatchObject({ firstPage: 0, lastPage: 0, pageCount: 1, truncated: false });
+
+    const none = await commands.askWindow({ scope: 'comments', docId: blankDoc });
+    expect(none.sent).toStrictEqual({ firstPage: null, lastPage: null, pageCount: 1, characters: 0, truncated: false });
+  });
+
   for (const format of ['xfdf', 'fdf', 'json'] as const) {
     it(`${format}: one document's comments land in a file, and the file adds them to another`, async () => {
       const file = join(directory, `comments.${format}`);

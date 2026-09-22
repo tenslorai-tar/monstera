@@ -57,6 +57,12 @@ export const askAboutSchema = z.discriminatedUnion('scope', [
   carried('comment'),
   z.object({ scope: z.literal('page'), docId: docIdSchema, page: z.number().int().nonnegative() }).strict(),
   z.object({ scope: z.literal('document'), docId: docIdSchema }).strict(),
+  /**
+   * The document's comments — every annotation's own words, under the page it is on — for
+   * *Summarise comments*. Bytes of intent like `document`: `main` reads the annotation list in
+   * the document's lane, where the Comments panel's list comes from.
+   */
+  z.object({ scope: z.literal('comments'), docId: docIdSchema }).strict(),
 ]);
 
 export type AskAbout = z.infer<typeof askAboutSchema>;
@@ -77,6 +83,9 @@ const PAIRS: Readonly<Record<AskAbout['scope'], boolean>> = {
   comment: false,
   page: true,
   document: true,
+  // NOT PAIRED YET: the owner's two-document design names pages and documents, and a summary of
+  // two documents' comments is a question nobody has asked for.
+  comments: false,
 };
 
 /**

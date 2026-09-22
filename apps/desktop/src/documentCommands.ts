@@ -94,6 +94,7 @@ import {
   plainTextOf,
   type AskWindow,
   carriedWindow,
+  commentsWindow,
   readAskWindow,
   structureOutlineOf,
   textLayerOf,
@@ -2414,6 +2415,22 @@ export class DocumentCommands {
       const { pageCount } = await this.#geometry(docId, sessions, []);
       if (about.scope === 'selection' || about.scope === 'comment') {
         return carriedWindow(about.page, about.text, pageCount);
+      }
+      // THE COMMENTS PANEL'S OWN LIST, read in the same lane: what the provider summarises is the
+      // list a person can see, bounded by the list's bound and then by the window's.
+      if (about.scope === 'comments') {
+        const { annotations, truncated } = await this.#annotations(docId, sessions);
+        return await commentsWindow(
+          annotations.map((entry) => ({
+            page: entry.page,
+            kind: entry.kind,
+            contents: entry.contents,
+            reply: entry.inReplyTo !== null,
+          })),
+          pageCount,
+          truncated,
+          pair?.bound ?? MAX_ASK_CONTEXT,
+        );
       }
       // A PAGE PAST THE END READS NOTHING rather than asking the engine for a page it does not
       // have: the document may have lost pages between the menu and the ask.

@@ -955,6 +955,10 @@ export const ASSISTANT_ABOUT_PAGE = messageKey('assistant.about.page');
 export const ASSISTANT_ABOUT_DOCUMENT = messageKey('assistant.about.document');
 export const ASSISTANT_ABOUT_SELECTION = messageKey('assistant.about.selection');
 export const ASSISTANT_ABOUT_COMMENT = messageKey('assistant.about.comment');
+export const ASSISTANT_ABOUT_COMMENTS = messageKey('assistant.about.comments');
+export const SUMMARISE_COMMENTS_TITLE = messageKey('command.ai.summarise-comments');
+export const ASSISTANT_PROMPT_SUMMARISE_COMMENTS = messageKey('assistant.prompt.summarise-comments');
+export const GROUP_AI = messageKey('surface.ribbon.group.ai');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
 export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
 export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
@@ -2247,6 +2251,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_ABOUT_DOCUMENT]: 'The whole document, up to {characters} characters',
   [ASSISTANT_ABOUT_SELECTION]: 'The text you selected on page {page}',
   [ASSISTANT_ABOUT_COMMENT]: 'The comment on page {page}',
+  [ASSISTANT_ABOUT_COMMENTS]: 'All the comments in this document',
+  [SUMMARISE_COMMENTS_TITLE]: 'Summarise comments',
+  [ASSISTANT_PROMPT_SUMMARISE_COMMENTS]:
+    'Summarise the comments on this document: what people ask for, what they point out, and what is still open. Cite the page of each point.',
+  [GROUP_AI]: 'AI',
   [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
   // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
   // to a provider only on an explicit action, and the panel says which provider.

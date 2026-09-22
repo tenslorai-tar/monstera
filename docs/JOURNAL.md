@@ -892,6 +892,24 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Summarise comments: a fifth ask scope, read from the Comments panel's list
+
+Review › AI › *Summarise comments* asks the assistant about every comment in the document. It is
+a scope, `comments`, rather than a prompt over *the whole document*, because the words a
+comments summary needs are not in the page text: they are each annotation's `/Contents`, which
+`main` already reads for the Comments panel. So the window is built from that list, in the same
+lane, one line per mark with words in it — `(note) Is this date right?`, `(reply, note) Yes,
+checked` — under each page's `[Page N]` marker, through `readAskWindow`, so the bound, the markers
+and the citations are the ones every scope has. A list the kernel cut at `MAX_ANNOTATIONS` marks
+the window cut, and the instruction then says the summary may miss comments.
+
+ADR-0088's last correction predicted that a fifth scope would be a compile error until it had
+words of its own. It was: `AssistantPanel`'s `Scope` and `askWindow.ts`' `WHAT` both reddened on
+the first typecheck. The D8 and D11 rows named the same feature twice; D11's carries it and D8's
+points there. Owes one live run.
+
+---
+
 ## 2026-09-22 — Left · Right · Both: the two-document ask
 
 The owner's design, on [ADR-0089](DECISIONS/0089-a-two-document-ask-carries-one-window-per-document-inside-one-bound.md).

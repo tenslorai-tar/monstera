@@ -109,7 +109,11 @@ import {
   LAYOUT_MODE_SETTING,
 } from './settings/layout.js';
 import type { AskAssistant, AssistantRequest } from './assistantRequest.js';
-import { assistantSelectionCommands, draftReplyCommand } from './commands/assistantCommands.js';
+import {
+  assistantSelectionCommands,
+  draftReplyCommand,
+  summariseCommentsCommand,
+} from './commands/assistantCommands.js';
 import { CommandPalette } from './CommandPalette.js';
 import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
@@ -1948,6 +1952,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         editSelectionCommand({ ...selectionDeps, ask }),
         replySelectionCommand({ ...selectionDeps, ask }),
         draftReplyCommand({ selection: readSelection, ask: askAssistant }),
+        summariseCommentsCommand({ ask: askAssistant }),
         copyAnnotationsCommand({ ...selectionDeps, client, ask, onCopied: setCopiedCount }),
         selectionPropertiesCommand({ ...selectionDeps, settings }),
         ...nudgeSelectionCommands(selectionDeps),

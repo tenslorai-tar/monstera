@@ -44,12 +44,13 @@ describe('what an ask may be about', () => {
     expect(askAboutSchema.safeParse({ scope: 'comment', docId: 'd', page: 0 }).success).toBe(false);
   });
 
-  it('CONTROL: accepts each of the four scopes it declares', () => {
+  it('CONTROL: accepts each of the five scopes it declares', () => {
     for (const about of [
       { scope: 'selection', docId: 'd', page: 2, text: 'words' },
       { scope: 'comment', docId: 'd', page: 2, text: 'a note' },
       { scope: 'page', docId: 'd', page: 2 },
       { scope: 'document', docId: 'd' },
+      { scope: 'comments', docId: 'd' },
     ]) {
       expect(askAboutSchema.safeParse(about).success, about.scope).toBe(true);
     }
@@ -98,6 +99,7 @@ describe('two documents side by side (ADR-0089)', () => {
       request({ scope: 'selection', docId: 'a', page: 0, text: 'x' }, { scope: 'selection', docId: 'b', page: 0, text: 'y' }),
     ).toBe(false);
     expect(request(undefined, { scope: 'document', docId: 'b' })).toBe(false);
+    expect(request({ scope: 'comments', docId: 'a' }, { scope: 'comments', docId: 'b' })).toBe(false);
   });
 
   it('CONTROL: an ask with no second document is unchanged', () => {

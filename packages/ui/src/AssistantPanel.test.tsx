@@ -9,7 +9,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { type AssistantDocument, AssistantPanel, type AssistantPanelProps } from './AssistantPanel.js';
 import type { AssistantRequest } from './assistantRequest.js';
 import { createDocumentStore } from './documentStores.js';
-import { ASSISTANT_PROMPT_DRAFT_REPLY, ASSISTANT_PROMPT_EXPLAIN } from './messages/en.js';
+import {
+  ASSISTANT_PROMPT_DRAFT_REPLY,
+  ASSISTANT_PROMPT_EXPLAIN,
+  ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+} from './messages/en.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 
@@ -596,6 +600,17 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
     expect(lastAbout(sent)).toStrictEqual({ scope: 'document', docId: DOC_A });
     expect(screen.queryByRole('button', { name: 'Summarise this document' })).toBeNull();
+  });
+
+  it('SUMMARISE COMMENTS: the command’s request asks at once about the comments, and the line names them', async () => {
+    const { sent } = await drawn({
+      focused: focusedOn(),
+      request: { serial: 1, about: { scope: 'comments', docId: DOC_A }, prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS },
+    });
+    expect(lastAbout(sent)).toStrictEqual({ scope: 'comments', docId: DOC_A });
+    const line = screen.getByLabelText('Asking about');
+    expect(line instanceof HTMLSelectElement && line.value).toBe('comments');
+    expect(screen.getByRole('option', { name: 'All the comments in this document' })).toBeTruthy();
   });
 
   describe('two documents side by side: Left · Right · Both (ADR-0089)', () => {

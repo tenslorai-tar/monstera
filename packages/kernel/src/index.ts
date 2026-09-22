@@ -235,6 +235,8 @@ export {
   askInstruction,
   askPairInstruction,
   carriedWindow,
+  type CommentLine,
+  commentsWindow,
   readAskWindow,
 } from './askWindow.js';
 export {

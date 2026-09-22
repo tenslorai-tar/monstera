@@ -8,11 +8,13 @@ import {
   ASSISTANT_PROMPT_DRAFT_REPLY,
   ASSISTANT_PROMPT_EXPLAIN,
   ASSISTANT_PROMPT_SUMMARISE,
+  ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
   ASSISTANT_PROMPT_TRANSLATE,
+  GROUP_AI,
 } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
-import { assistantSelectionCommands, draftReplyCommand } from './assistantCommands.js';
+import { assistantSelectionCommands, draftReplyCommand, summariseCommentsCommand } from './assistantCommands.js';
 
 /**
  * The right-click route to the assistant: the UI half — that each item hands the panel exactly
@@ -103,5 +105,25 @@ describe('Draft a reply with AI', () => {
     expect(draftReplyCommand({ selection: () => note('   '), ask }).when?.(CONTEXT)).toBe(false);
     expect(draftReplyCommand({ selection: () => note('two', 2), ask }).when?.(CONTEXT)).toBe(false);
     expect(draftReplyCommand({ selection: () => note('one'), ask }).when?.(CONTEXT)).toBe(true);
+  });
+});
+
+describe('Summarise comments (D8, Stage 9)', () => {
+  it('asks about THIS document’s comments with its own question, from Review › AI', async () => {
+    const { ask, asked } = recording();
+    const command = summariseCommentsCommand({ ask });
+    await command.run(CONTEXT);
+
+    expect(asked).toStrictEqual([[{ scope: 'comments', docId: DOC }, ASSISTANT_PROMPT_SUMMARISE_COMMENTS]]);
+    expect(command.placements).toStrictEqual([{ surface: 'ribbon', section: 'review', group: GROUP_AI, order: 10 }]);
+  });
+
+  it('CONTROL: with no document it is hidden and asks nothing', async () => {
+    const { ask, asked } = recording();
+    const command = summariseCommentsCommand({ ask });
+    const none = {} as CommandContext;
+    expect(command.when?.(none)).toBe(false);
+    await command.run(none);
+    expect(asked).toStrictEqual([]);
   });
 });

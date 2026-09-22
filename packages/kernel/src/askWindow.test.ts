@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { askInstruction, askPairInstruction, carriedWindow, readAskWindow } from './askWindow.js';
+import { askInstruction, askPairInstruction, carriedWindow, commentsWindow, readAskWindow } from './askWindow.js';
 
 /** A reader over fixed page texts that records every page it was asked for. */
 function pagesOf(texts: readonly string[]): { read: (page: number) => Promise<string>; asked: number[] } {
@@ -86,6 +86,33 @@ describe('the instruction a window travels in', () => {
     expect(askInstruction(window, 'comment')).toContain('a comment left on a PDF document');
     expect(askInstruction(window, 'comment')).not.toContain('selected');
     expect(askInstruction(window, 'selection')).toContain('the person selected');
+  });
+});
+
+describe('the comments window (Summarise comments)', () => {
+  it('lists each page’s comments under its marker, in page order, marking replies, and skips a mark with no words', async () => {
+    const window = await commentsWindow(
+      [
+        { page: 4, kind: 'note', contents: 'Fix the total', reply: false },
+        { page: 1, kind: 'highlight', contents: '  ', reply: false },
+        { page: 1, kind: 'note', contents: 'Is this date right?', reply: false },
+        { page: 1, kind: 'note', contents: 'Yes, checked', reply: true },
+      ],
+      6,
+      false,
+    );
+    expect(window.text).toBe(
+      '[Page 2]\n(note) Is this date right?\n(reply, note) Yes, checked\n\n[Page 5]\n(note) Fix the total\n\n',
+    );
+    expect(window.sent).toMatchObject({ firstPage: 1, lastPage: 4, pageCount: 6, truncated: false });
+    expect(askInstruction(window, 'comments')).toContain('comments left on a PDF document');
+  });
+
+  it('says it was CUT when the annotation list itself stopped at its bound, though the window had room', async () => {
+    const window = await commentsWindow([{ page: 0, kind: 'note', contents: 'a', reply: false }], 1, true);
+    expect(window.sent.truncated).toBe(true);
+    // CONTROL: the same list, whole.
+    expect((await commentsWindow([{ page: 0, kind: 'note', contents: 'a', reply: false }], 1, false)).sent.truncated).toBe(false);
   });
 });
 

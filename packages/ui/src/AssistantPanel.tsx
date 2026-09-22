@@ -34,6 +34,7 @@ import {
   AI_PROVIDER_NAMES,
   ANTHROPIC_OUT_OF_CREDIT,
   ASSISTANT_ABOUT_COMMENT,
+  ASSISTANT_ABOUT_COMMENTS,
   ASSISTANT_ABOUT_DOCUMENT,
   ASSISTANT_ABOUT_LABEL,
   ASSISTANT_ABOUT_NOTHING,
@@ -176,7 +177,7 @@ const PROBLEMS = {
  * What the *Asking about* choice can be. A selection or a comment exists only when a command
  * gave one, and is offered under its own name — the line and the instruction both say which.
  */
-type Scope = 'page' | 'document' | 'selection' | 'comment' | 'nothing';
+type Scope = 'page' | 'document' | 'comments' | 'selection' | 'comment' | 'nothing';
 
 const NO_SUBSCRIBE = (): (() => void) => () => undefined;
 const NO_TURNS: readonly ConversationTurn[] = [];
@@ -321,6 +322,8 @@ export function AssistantPanel({
     (chosen: Scope): AskRequest | null => {
       if (focused === undefined || chosen === 'nothing') return { about: undefined };
       if (chosen === 'selection' || chosen === 'comment') return { about: selection ?? undefined };
+      // THE DOCUMENT'S COMMENTS belong to the tab's document alone; they do not pair.
+      if (chosen === 'comments') return { about: { scope: 'comments', docId: focused.docId } };
       const on = (docId: DocId, page: number): AskAbout =>
         chosen === 'page' ? { scope: 'page', docId, page } : { scope: 'document', docId };
       const left = on(focused.docId, focused.page);
@@ -583,6 +586,7 @@ export function AssistantPanel({
                 })}
               </option>
               <option value="document">{i18n._(ASSISTANT_ABOUT_DOCUMENT, { characters: number.format(MAX_ASK_CONTEXT) })}</option>
+              <option value="comments">{i18n._(ASSISTANT_ABOUT_COMMENTS)}</option>
               <option value="nothing">{i18n._(ASSISTANT_ABOUT_NOTHING)}</option>
             </select>
           </label>

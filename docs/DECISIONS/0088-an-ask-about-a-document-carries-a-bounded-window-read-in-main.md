@@ -92,3 +92,13 @@ and the model said so back in its answer (seen in the live run). A fourth scope,
 the selection's shape — the page and the text, sent because the renderer already holds it — and
 its own sentence. The instruction's sentences are a `Record` over the contract's scopes in
 `askWindow.ts`, so a fifth scope is a compile error until it has words of its own.
+
+## Correction, 2026-09-22 — a fifth scope, `comments`, for *Summarise comments*
+
+The prediction above held: adding the scope reddened the panel's `Scope` and the instruction's
+`WHAT` until each had its own entry. `comments` is bytes of intent like `document` — a `docId`
+alone — and `main` reads the Comments panel's own annotation list in the document's lane, one
+line per mark with words in it (its kind, whether it is a reply, its contents), grouped under each
+page's marker and bounded by the same window. A list cut at its own bound marks the window
+`truncated`, so the instruction says the summary may miss comments. It does not pair with a
+second document ([ADR-0089](0089-a-two-document-ask-carries-one-window-per-document-inside-one-bound.md)).

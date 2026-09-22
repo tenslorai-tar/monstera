@@ -8,13 +8,17 @@ import {
   ASSISTANT_PROMPT_DRAFT_REPLY,
   ASSISTANT_PROMPT_EXPLAIN,
   ASSISTANT_PROMPT_SUMMARISE,
+  ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
   ASSISTANT_PROMPT_TRANSLATE,
   DRAFT_REPLY_TITLE,
   EXPLAIN_SELECTION_TITLE,
+  GROUP_AI,
+  SUMMARISE_COMMENTS_TITLE,
   SUMMARISE_SELECTION_TITLE,
   TRANSLATE_SELECTION_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
+import { hasDocument } from './documentCommands.js';
 import type { TextSelection } from '../TextLayer.js';
 
 /**
@@ -71,6 +75,30 @@ export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly
       );
     },
   }));
+}
+
+/**
+ * Review › AI › *Summarise comments* (D8's comment summarisation, Stage 9): the assistant is
+ * asked about every comment in the document, which `main` reads from the Comments panel's own
+ * list in the document's lane — so the summary is of the comments a person can see, and the
+ * *Asking about* line says so before anything is sent a second time.
+ *
+ * Shown for any open document. A document with no comments is asked anyway and the window says
+ * it carried nothing, which is a truthful answer; hiding the item would need a read on every
+ * render to decide.
+ */
+export function summariseCommentsCommand(deps: { readonly ask: AskAssistant }): UiCommand {
+  return {
+    id: 'ai.summarise-comments',
+    icon: 'MessageSquareQuote',
+    title: SUMMARISE_COMMENTS_TITLE,
+    placements: [{ surface: 'ribbon', section: 'review', group: GROUP_AI, order: 10 }],
+    when: hasDocument,
+    run: (context): void => {
+      if (context.docId === undefined) return;
+      deps.ask({ scope: 'comments', docId: context.docId }, ASSISTANT_PROMPT_SUMMARISE_COMMENTS);
+    },
+  };
 }
 
 /**

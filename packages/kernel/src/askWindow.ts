@@ -92,7 +92,46 @@ const WHAT: Readonly<Record<AskAbout['scope'], string>> = {
   comment: 'Below is the text of a comment left on a PDF document.',
   page: 'Below is text from a PDF document the person has open.',
   document: 'Below is text from a PDF document the person has open.',
+  comments:
+    'Below are the comments left on a PDF document the person has open, each under the page it is on; ' +
+    'a reply is marked as one, and each comment says what kind of mark carries it.',
 };
+
+/** One annotation's words, as the comments window lists them. */
+export interface CommentLine {
+  /** Zero-based. */
+  readonly page: number;
+  /** What kind of mark carries it, in the contract's closed union — `note`, `highlight`, `other`. */
+  readonly kind: string;
+  readonly contents: string;
+  readonly reply: boolean;
+}
+
+/**
+ * The comments window: each page's annotations with words in them, one per line, read through
+ * {@link readAskWindow} so the bound, the markers and the cut are the ones every other scope has.
+ * A mark with no words is left out — there is nothing in it to summarise.
+ *
+ * @param listCut whether the annotation list itself stopped at its bound, which the answer must
+ *   say as surely as a window that filled
+ */
+export async function commentsWindow(
+  lines: readonly CommentLine[],
+  pageCount: number,
+  listCut: boolean,
+  bound: number = MAX_ASK_CONTEXT,
+): Promise<AskWindow> {
+  const byPage = new Map<number, string[]>();
+  for (const line of lines) {
+    const words = line.contents.trim();
+    if (words === '') continue;
+    const text = `(${line.reply ? `reply, ${line.kind}` : line.kind}) ${words}`;
+    byPage.set(line.page, [...(byPage.get(line.page) ?? []), text]);
+  }
+  const pages = [...byPage.keys()].sort((a, b) => a - b);
+  const window = await readAskWindow(pages, pageCount, (page) => Promise.resolve((byPage.get(page) ?? []).join('\n')), bound);
+  return listCut ? { ...window, sent: { ...window.sent, truncated: true } } : window;
+}
 
 /**
  * The instruction a window travels in.
