@@ -892,6 +892,24 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Office import is deferred, and Stage 8 has no open row
+
+The owner chose to drop Office import for now. The cause stands as measured 2026-09-21: LibreOffice
+creates its single-instance pipe `\\.\pipe\OSL_PIPE_…` before converting, an AppContainer may create
+pipes only in its own `LOCAL\` namespace, and the name is fixed in LibreOffice's code. The B4
+amendment is ADR-0092, in its own commit ahead of this one; the row reads *deferred — owner,
+2026-09-22* with the cause and what would reopen it.
+
+**What ships for it, checked rather than assumed**: nothing. No command registers it — a search of
+`packages/` and `apps/` for LibreOffice, `soffice` and Office import finds only `containedProgram.ts`,
+its test and `win32HostSurface.ts`, which are the generalised contained factory Poppler also runs
+through. `NOTICE` carries no LibreOffice entry. No packaging configuration names it; the only route
+that fetches it is the development script `provision:libreoffice`, and `containerGrants.mjs` already
+treats its tree as optional. So the deferral removes no code.
+
+**Stage 8's closure**: its progress row counted Office import among two blocked rows; that clause
+now says deferred, and with Optimize done 2026-09-19 no Stage 8 row is open.
+
 ## 2026-09-22 — Correction: a paragraph was inserted into a committed entry
 
 `120646f` added a paragraph beginning *"And a second, in the push that carried the fix."* inside
