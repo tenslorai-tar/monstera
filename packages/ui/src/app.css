@@ -474,8 +474,10 @@ textarea {
   text-align: start;
 }
 
-.m-palette-item:hover,
-.m-palette-item:focus-visible {
+/* THE HIGHLIGHTED OPTION is the one Enter runs, and focus stays in the field, so this is the only
+   focus indication a keyboard user has: a fill AND a control-grade boundary, never the fill alone. */
+.m-palette-item[aria-selected='true'] {
+  border-color: var(--border-control);
   background: var(--surface2);
 }
 

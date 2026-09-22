@@ -159,7 +159,7 @@ describe('CommandPalette', () => {
     const registry = new CommandRegistry([command('a.one', SAVE_TITLE, { run })]);
     const { container, onClose } = open(registry);
 
-    const item = container.querySelector<HTMLButtonElement>('.m-palette-item');
+    const item = container.querySelector<HTMLElement>('.m-palette-item');
     if (item === null) throw new Error('the palette listed no command to click');
     item.click();
 
@@ -167,6 +167,39 @@ describe('CommandPalette', () => {
     // AND CLOSES, because a palette that stayed open over the thing it just
     // acted on hides the result of the action.
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ENTER runs the first match of what was typed — a name then Enter, with no arrow and no pointer', () => {
+    // Live, 2026-09-22: typing a command's whole name and pressing Enter ran nothing, because the
+    // field had no key handling and the results were buttons it did not own.
+    const save = vi.fn();
+    const find = vi.fn();
+    const registry = new CommandRegistry([command('a.one', SAVE_TITLE, { run: save }), command('a.two', FIND_TITLE, { run: find })]);
+    const { container, onClose } = open(registry);
+    const field = queryField(container);
+    fireEvent.change(field, { target: { value: 'find' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(find).toHaveBeenCalledWith(CONTEXT);
+    expect(save).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('the ARROWS move the highlight the field names, and Enter runs THAT one', () => {
+    const save = vi.fn();
+    const find = vi.fn();
+    const registry = new CommandRegistry([command('a.one', SAVE_TITLE, { run: save }), command('a.two', FIND_TITLE, { run: find })]);
+    const { container } = open(registry);
+    const field = queryField(container);
+    const selected = (): string | null | undefined => container.querySelector('[aria-selected="true"]')?.textContent;
+    const first = selected();
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    const second = selected();
+    expect(second).not.toBe(first);
+    expect(field.getAttribute('aria-activedescendant')).toBe(container.querySelector('[aria-selected="true"]')?.id);
+    fireEvent.keyDown(field, { key: 'Enter' });
+    // Whichever command the second row is, it is the one that ran, and only it.
+    expect(save.mock.calls.length + find.mock.calls.length).toBe(1);
+    expect((second === 'Save' ? save : find).mock.calls.length).toBe(1);
   });
 
   it('says so when nothing matches, rather than showing an empty box', () => {
@@ -207,18 +240,17 @@ describe('CommandPalette', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it('on Escape from a RESULT ROW, where Tab or a pointer leaves focus', async () => {
-      const registry = new CommandRegistry([command('a.one', SAVE_TITLE)]);
+    it('on Escape after the ARROWS moved the highlight — focus never leaves the field for a row', async () => {
+      const registry = new CommandRegistry([command('a.one', SAVE_TITLE), command('a.two', FIND_TITLE)]);
       const { container, onClose } = open(registry);
-      await landed();
-      const row = container.querySelector<HTMLButtonElement>('.m-palette-item');
-      if (row === null) throw new Error('the palette listed a row');
-      row.focus();
-      expect(document.activeElement).toBe(row);
+      const where = await landed();
+      // A result row is an option, not a tab stop: the field keeps focus and names the highlighted row.
+      expect(container.querySelector('.m-palette-item')?.hasAttribute('tabindex')).toBe(false);
 
-      press(row, 'ArrowDown');
+      press(where, 'ArrowDown');
+      expect(document.activeElement).toBe(queryField(container));
       expect(onClose).not.toHaveBeenCalled();
-      press(row, 'Escape');
+      press(where, 'Escape');
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 

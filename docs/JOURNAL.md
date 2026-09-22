@@ -892,6 +892,21 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — The command palette is a combobox: a name then Enter runs it
+
+Found in the live run above: typing *Summarise comments* in full and pressing Enter ran nothing, and
+the arrow keys did not move through the results. **Mechanism**: the field had no key handling at all,
+and the results were buttons the field did not own — reachable only by a pointer, or by tabbing out of
+the field. A palette is a keyboard surface first, so this was the whole feature missing for the
+people it is for.
+
+Now it is WAI-ARIA's combobox: focus stays in the field, the first match is highlighted from the
+start, the arrows (and Home and End) move the highlight, Enter runs it, and the field names the
+highlighted option through `aria-activedescendant`. Options are not tab stops. The highlighted row
+draws a control-grade boundary as well as a fill, because it is the only focus indication a keyboard
+user has. **Proof**: `CommandPalette.test.tsx` — Enter after a name runs that command and not the
+first registered one; ArrowDown then Enter runs the second. Both failed against the old palette.
+
 ## 2026-09-22 — Stage 9's live runs on Claude Haiku 4.5, and what they found
 
 **How, and on what.** The development build, started with `--remote-debugging-port`, driven from a
