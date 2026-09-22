@@ -1350,6 +1350,15 @@ dialog was opened with*, and a function never has to be described by a
 validator — which is the hole a callback-in-props would open in the one surface
 that has no other error path.
 
+**A dialog may REPORT before it answers**
+([ADR-0094](DECISIONS/0094-a-dialog-may-report-before-it-answers.md)). The body
+also receives `update`, which hands the opener a result **without closing**;
+`ask(id, props, onUpdate)` says where those go. Every update is validated by the
+same result schema as the answer, and the opener still writes — so a surface
+that applies as it is changed, which is what the owner's Settings design is,
+keeps the mutation in the command. A dialog that never calls `update` is
+unchanged.
+
 **Placements are part of the command, not of the surface.** A projection needs
 data to project from, so every command declares where it appears:
 
@@ -2582,6 +2591,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-22 | **A dialog may report before it answers** (§7's dialog clause). The owner's Settings design applies every change at once — *"Changes save as you make them"* — and ADR-0038's one-`resolve` shape cannot express it: props carry no function, this renderer has no context, and a body that wrote settings itself would be a second writer. The body now also gets `update`, validated by the same result schema and not closing; `ask` takes where those go, and the command still writes. Rejects a callback in the props schema, the body writing through its own store, a context carrying the store, and keeping *Save* | `BUILD-PROMPT.md`:608-611's settings groups say what Settings holds, not how it applies | [0094](DECISIONS/0094-a-dialog-may-report-before-it-answers.md) |
 | 2026-09-22 | **Chat history is off by default, encrypted in `main`, and keyed by the file** (§8). The owner's specification: saving is a setting, off by default, stored encrypted like keys, cleared from Settings › Privacy. The renderer holds no path and no cipher, so `main` owns a `chat-history.json` whose entries are `safeStorage` ciphertext keyed by a SHA-256 of the file's path; three channels by `DocId`; `main` checks the setting on every save. Rejects renderer storage, keying by `DocId`, the path in the clear, and one blob for all history | none in `BUILD-PROMPT.md`; the owner's AI design of 2026-09-15 (D11's assistant row) named no store, key or channel | [0093](DECISIONS/0093-chat-history-is-off-by-default-encrypted-in-main-and-keyed-by-the-file.md) |
 | 2026-09-22 | **Office import is deferred: LibreOffice's single-instance pipe cannot exist inside the container** (§3's *Office document → PDF* row). The owner's decision. Contained, LibreOffice creates `\\.\pipe\OSL_PIPE_…` before converting; the create is refused with error 5 because an AppContainer may create pipes only under its own `LOCAL\` namespace, the name is fixed in LibreOffice's code, and its start-up loop then retries for ever. Nothing ships for it; the converter seam, `containedProgram`, provisioning and the research stay for a reopening. Rejects weaker containment for this converter (threat model §2) and a custom LibreOffice build (too costly now) | `BUILD-PROMPT.md`:494, D9's *Office import (LibreOffice)*, and LibreOffice among :399's native binaries | [0092](DECISIONS/0092-office-import-is-deferred-because-libreoffices-pipe-cannot-be-contained.md) |
 | 2026-09-22 | **Cloud storage: a declared provider, a build-configured client, and a local working copy** (§8, network). Stage 9's cloud row, Microsoft and Google first, against the owner's registrations. A provider declares its sign-in, API and download hosts; client ids — and Google's Desktop secret, which Google declares non-confidential — are build configuration from the environment or a packaged `oauth-clients.json`, never in the repository; Microsoft's redirect string is `localhost` because Entra ignores the port only for that host, while the listener stays bound to `127.0.0.1`; tokens are secrets; a cloud file opens as a working copy and *Save back* uploads it, refusing when the file changed since it was opened. Rejects committed identifiers, a token-brokering back end, opening from memory, overwriting without a check, and a manifest-edited `127.0.0.1` registration | `BUILD-PROMPT.md`:365's *Cloud providers — id, auth, list, fetch*, which named no client, redirect or save route; ADR-0059 Decisions 1 and 2 for these two providers, corrected there | [0091](DECISIONS/0091-cloud-storage-a-declared-provider-a-build-configured-client-and-a-working-copy.md) |
