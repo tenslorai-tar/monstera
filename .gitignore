@@ -164,3 +164,12 @@ __import_probe__.js
 # quietly disarming the guards.
 .claude/settings.local.json
 
+# ─── The owner's UI design exports ───────────────────────────────────────────
+# `assets/Monstera PDF Editor UI Design/` is the owner's own mockups — about
+# 10 MB of PNG that Stage 10 builds against and reads constantly. B10 forbids
+# committing binaries, and these are neither source nor a generated artefact of
+# this build: `assets/brand` holds the artwork the application ships, and every
+# icon in it is generated from a master by `brand:generate`. Ignored so a
+# working copy may hold the design without it ever reaching a commit.
+assets/Monstera PDF Editor UI Design/
+
