@@ -144,3 +144,19 @@ The owner's decision. The first and third triggers above named *the owner's
 integration key*; both now fire when Stage 10 opens, beside the second, which was
 already Stage 10's. Nothing in this decision changes before that run, and D7's
 DocuSign row stays not done until it passes.
+
+## Correction, 2026-09-22 — two providers' registration rules, for Stage 9's cloud storage
+
+[ADR-0091](0091-cloud-storage-a-declared-provider-a-build-configured-client-and-a-working-copy.md)
+takes this route for OneDrive and Google Drive, and two facts about those providers correct two
+sentences here without changing the route.
+
+- **Decision 1's *"no client secret exists in this repository or the package"*.** Google issues its
+  Desktop clients a secret while documenting that *"installed apps … cannot keep secrets"*, and
+  lists it optional at the token endpoint. None exists in the repository; the package may carry
+  that one, as build configuration beside the client id, because its issuer declares it
+  non-confidential. Microsoft's public client carries none, as decided here.
+- **Decision 2's *"by IP literal, never `localhost`"*** is about where the listener binds, and that
+  stands. The redirect STRING differs for Microsoft: Entra ignores the port only for a `localhost`
+  redirect, and an `http` redirect on `127.0.0.1` cannot be registered in its portal. So
+  Microsoft's is `http://localhost:{port}/` while the listener is bound to `127.0.0.1` alone.
