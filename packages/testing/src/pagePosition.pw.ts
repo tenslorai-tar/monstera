@@ -53,8 +53,15 @@ test('a COMMAND leaves the reader on the page they were on', async ({ page }) =>
 
   // THE REOPENED VIEW HAS DRAWN, which is what the scroller's reveal waits for.
   await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
-  // AND THE READER IS WHERE THEY WERE — polled, because the reveal follows the first measurement.
+  // THE VIEW MOVED — POLLED, and polled on the SCROLL, because the reveal follows the first
+  // measurement. The status line cannot be the wait: the new scroller seeds its starting page and
+  // reports it at mount, so "Page 3 of 3" is on screen BEFORE the reveal as well as after it, and a
+  // single scroll read behind that poll raced the reveal — red on a loaded runner at 0040eb8 with
+  // the status right and `scrollTop` 0. Page 3 of three Letter pages is well below the top, and a
+  // build with no reveal stays at 0 until this times out.
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector('.m-page-list')?.scrollTop ?? 0), { timeout: 10_000 })
+    .toBeGreaterThan(1000);
+  // AND THE READER IS WHERE THEY WERE once it has, rather than on the page the observer saw first.
   await expect.poll(() => statusPage(page), { timeout: 10_000 }).toBe('Page 3 of 3');
-  // THE VIEW MOVED, not only the number: page 3 of three Letter pages is well below the top.
-  expect(await page.evaluate(() => document.querySelector('.m-page-list')?.scrollTop ?? 0)).toBeGreaterThan(1000);
 });

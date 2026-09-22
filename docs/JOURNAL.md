@@ -892,6 +892,27 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Red board at `0040eb8`: a test whose wait was satisfied before the thing it waited for
+
+CI's accessibility step failed on ubuntu in `pagePosition.pw.ts`: status *Page 3 of 3*, and the
+page list's `scrollTop` **0**. The same case is recorded above (2026-09-18) as passing alone and
+failing inside the full local run, and was left there.
+
+**The mechanism is in the test.** A remounted scroller seeds its starting page and reports it at
+mount, then its observer reports page 1, then the reveal scrolls and page 3 is reported again. So
+the status line reads *Page 3 of 3* before the reveal as well as after it, the poll on it can pass
+at the first instant, and the single `scrollTop` read behind it raced the reveal. The poll now
+waits on the scroll — the observable only the reveal produces — and checks the status after it.
+Control: with the reveal's `scrollIntoView` disabled and the renderer rebuilt, the case fails with
+`scrollTop` 0 (`Expected: > 1000, Received: 0`); restored, it passes. The product was not at
+fault, and this range did not change the reveal.
+
+**What went wrong on my side:** the note of 2026-09-18 recorded a case that fails under load as
+*recorded, not bumped*, which was right about the timeout and stopped short of asking what the
+case was waiting on.
+
+---
+
 ## 2026-09-22 — Summarise comments: a fifth ask scope, read from the Comments panel's list
 
 Review › AI › *Summarise comments* asks the assistant about every comment in the document. It is
