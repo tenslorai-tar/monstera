@@ -153,7 +153,10 @@ export async function commentsWindow(
   }
   const pages = [...byPage.keys()].sort((a, b) => a - b);
   const window = await readAskWindow(pages, pageCount, (page) => Promise.resolve((byPage.get(page) ?? []).join('\n')), bound);
-  return listCut ? { ...window, sent: { ...window.sent, truncated: true } } : window;
+  // A comment counts as sent when its whole line is in the window; one the cut went through is not.
+  const lineStarts = window.text.split('\n');
+  const comments = [...byPage.values()].flat().filter((line) => lineStarts.includes(line)).length;
+  return { text: window.text, sent: { ...window.sent, truncated: window.sent.truncated || listCut, comments } };
 }
 
 /**
@@ -165,8 +168,9 @@ export async function commentsWindow(
  * forty as though they were all of it.
  */
 export function askInstruction(window: AskWindow, scope: AskAbout['scope']): string {
+  const reach = scope === 'comments' ? commentsCoverage(window.sent) : coverage(window.sent, 'It');
   return (
-    `${WHAT[scope]} ${coverage(window.sent, 'It')} Each page begins with a marker such as ${askPageMarker(2)}. ` +
+    `${WHAT[scope]} ${reach} Each page begins with a marker such as ${askPageMarker(2)}. ` +
     `When you rely on a page, cite it as ${askCitation(2)}. ${NOT_IN_TEXT}` +
     `\n\n${window.text}`
   );
@@ -193,6 +197,21 @@ const PAIR_WHAT: Readonly<Record<'page' | 'document', string>> = {
 };
 
 const NOT_IN_TEXT = 'If the answer is not in the text, say so rather than guessing.';
+
+/**
+ * The comments window's reach. Its pages are the pages that CARRY a comment, so the page sentence
+ * every other scope uses — *it is from page 1 of 3* — told the model it had seen one page of three,
+ * and a live run's answer asked for pages 2 and 3 when there was nothing on them to send.
+ */
+function commentsCoverage(sent: AskSent): string {
+  const pages = `The document has ${String(sent.pageCount)} ${sent.pageCount === 1 ? 'page' : 'pages'}`;
+  const all =
+    `${pages}, and these are all ${String(sent.comments ?? 0)} of its comments with words in them; ` +
+    'a page with no comments is not listed, so do not ask for other pages.';
+  return sent.truncated
+    ? `${pages}. These are the first ${String(sent.comments ?? 0)} of its comments; the list stops before the end, so say that the summary may be incomplete.`
+    : all;
+}
 
 /** One window's reach as a sentence, and whether it stopped early. */
 function coverage(sent: AskSent, subject: string): string {

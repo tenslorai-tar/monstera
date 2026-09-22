@@ -892,6 +892,41 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Stage 9's live runs on Claude Haiku 4.5, and what they found
+
+**How, and on what.** The development build, started with `--remote-debugging-port`, driven from a
+gitignored script over the DevTools protocol; the Windows Open dialog was the one step taken through
+desktop control. Three test documents made for the run in `.cache/live` by a pdf-lib script — two
+short projects' plans and a ruled table — never the corpus and never the owner's file. The key is
+the one the owner stored in Settings › AI; nothing read or printed it. **The model is the cheapest**
+(the owner's order): `claude-haiku-4-5-20251001`, picked from the list the app fetched from
+Anthropic's models endpoint, and every script refuses to press Send unless the picker says Haiku.
+
+1. **Left · Right · Both.** Two documents side by side: the panel said to choose and Send was
+   disabled until *Both* was chosen; the ask sent pages 1–3 of the left and 1–2 of the right, and the
+   answer gave each project's review date cited `[Left p. 1]` and `[Right p. 1]`, both links.
+2. **Summarise comments**, from the palette: both notes summarised with `[p. 1]`. **Defect found**:
+   the answer said it could only see page 1 and asked for pages 2 and 3. The comments window's pages
+   are the pages carrying a comment, and the instruction reused the page scopes' sentence, *it is from
+   page 1 of 3*. Fixed in the commit after this entry's first.
+3. **Vision**: *a picture of this page* on the table; the answer was the table, every value right,
+   rendered as a table.
+4. **First-run setup**, the part that needs no key typed: *Set up AI…* opened with one drop-down of the
+   ten providers, one key field, Skip and *Check and save*; Skip closed it and the stored key still
+   answered. **Typing a key is the owner's**, and a deliberately wrong key was not tried, because —
+   **defect found reading the row** — the check stored the typed key first and removed it on a
+   refusal, so a wrong key would have deleted the owner's working one. Fixed by `ai.checkKey`, two
+   commits on.
+
+**Two more defects the runs showed**, both on the command palette: typing a command's whole name and
+pressing Enter ran nothing, and the arrows did not move through the results (fixed in the next commit
+but one). The palette's search field is drawn exactly like a result row, which read as a duplicate
+entry until measured — one entry, and the field; that is Stage 10's redesign to fix.
+
+**Seen at 800 × 600 and left for Stage 10's design**, which replaces these surfaces: the ribbon and
+the tab strip scroll sideways, and the Comments panel's rows overlap their own text. Document tabs are
+buttons, not tabs, to assistive technology.
+
 ## 2026-09-22 — The assistant's two queued defects: a clipped hint and a sentence said twice
 
 Both were seen in the redesign captures and queued in the report; both are on main today.

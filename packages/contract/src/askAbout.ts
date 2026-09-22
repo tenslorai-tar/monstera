@@ -120,6 +120,13 @@ export const askSentSchema = z
     truncated: z.boolean(),
     /** Present and true when what went was a picture of the page rather than its text (ADR-0090). */
     picture: z.literal(true).optional(),
+    /**
+     * Present when what went was the document's COMMENTS: how many. Their pages are only the pages
+     * that carry one, so a page range alone would read as *page 1 of 3 was sent* when every comment
+     * in the document was. Each comment sent is at least one character, so the window's own bound
+     * bounds the count.
+     */
+    comments: z.number().int().nonnegative().max(MAX_ASK_CONTEXT).optional(),
   })
   .strict();
 

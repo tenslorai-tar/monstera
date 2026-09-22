@@ -72,6 +72,8 @@ import {
   ASSISTANT_SENT_PAGE,
   ASSISTANT_SENT_PAGES,
   ASSISTANT_SENT_PICTURE,
+  ASSISTANT_SENT_COMMENTS,
+  ASSISTANT_SENT_COMMENTS_CUT,
   ASSISTANT_SENT_RIGHT,
   ASSISTANT_SIDE_BOTH,
   ASSISTANT_SIDE_LEFT,
@@ -486,6 +488,11 @@ export function AssistantPanel({
       return i18n._(ASSISTANT_SENT_PICTURE, { page: pdfjsPageOf(sent.firstPage), count: sent.pageCount });
     }
     if (sent.firstPage === null || sent.lastPage === null || sent.characters === 0) return i18n._(ASSISTANT_SENT_NOTHING);
+    // COMMENTS are counted, not paged: their pages are only the ones carrying a comment, so *page 1
+    // of 3* would read as two pages left out when every comment went.
+    if (sent.comments !== undefined) {
+      return i18n._(sent.truncated ? ASSISTANT_SENT_COMMENTS_CUT : ASSISTANT_SENT_COMMENTS, { comments: sent.comments });
+    }
     const pages =
       sent.firstPage === sent.lastPage
         ? i18n._(ASSISTANT_SENT_PAGE, { page: pdfjsPageOf(sent.firstPage), count: sent.pageCount })

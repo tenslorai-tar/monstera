@@ -281,6 +281,20 @@ describe('the assistant tab', () => {
     expect(screen.getByText(/no key stored/u)).toBeTruthy();
   });
 
+  it('COUNTS comments under the question rather than naming their pages', async () => {
+    const window = { firstPage: 0, lastPage: 0, pageCount: 3, characters: 40, truncated: false, comments: 2 };
+    const docId = asDocId('00000000-0000-4000-8000-000000000001');
+    await drawn({ window, focused: { docId, store: createDocumentStore(docId, asDocVersion(1)), page: 0 } });
+    type('Summarise');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Sent all 2 comments in this document')).toBeTruthy();
+    // CONTROL: the page line that read as *two pages left out* is not drawn.
+    expect(screen.queryByText('Sent page 1 of 3')).toBeNull();
+  });
+
   it('says ONE sentence when no key is stored at all, not the chosen provider’s as well', async () => {
     // Both *this provider has no key* and *no provider has a key* are true here, and the panel said
     // both. The count is the assertion: a panel showing only the second would pass a text query too.

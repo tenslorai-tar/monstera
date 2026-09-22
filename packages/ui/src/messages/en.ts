@@ -960,6 +960,8 @@ export const ASSISTANT_ABOUT_COMMENT = messageKey('assistant.about.comment');
 export const ASSISTANT_ABOUT_COMMENTS = messageKey('assistant.about.comments');
 export const ASSISTANT_ABOUT_PICTURE = messageKey('assistant.about.picture');
 export const ASSISTANT_SENT_PICTURE = messageKey('assistant.sent.picture');
+export const ASSISTANT_SENT_COMMENTS = messageKey('assistant.sent.comments');
+export const ASSISTANT_SENT_COMMENTS_CUT = messageKey('assistant.sent.comments-cut');
 export const ASSISTANT_NO_VISION = messageKey('assistant.no-vision');
 export const ASSISTANT_PROBLEM_PAGE_TOO_LARGE = messageKey('assistant.problem.page-too-large');
 export const ASSISTANT_QUICK_READ_TABLE = messageKey('assistant.quick.read-table');
@@ -2344,6 +2346,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // VISION ANALYSIS (ADR-0090): what goes is a picture, and the line says so before Send.
   [ASSISTANT_ABOUT_PICTURE]: 'A picture of this page ({page})',
   [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
+  [ASSISTANT_SENT_COMMENTS]: '{comments, plural, one {Sent the one comment in this document} other {Sent all # comments in this document}}',
+  [ASSISTANT_SENT_COMMENTS_CUT]: '{comments, plural, one {Sent the first comment — the list was too long to send whole} other {Sent the first # comments — the list was too long to send whole}}',
   [ASSISTANT_NO_VISION]: 'This model cannot read pictures. Choose a model that can, or ask about the page’s text.',
   [ASSISTANT_PROBLEM_PAGE_TOO_LARGE]: 'This page is too large to send as a picture. Ask about its text instead.',
   [ASSISTANT_QUICK_READ_TABLE]: 'Read the table on this page',

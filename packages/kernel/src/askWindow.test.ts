@@ -112,8 +112,35 @@ describe('the comments window (Summarise comments)', () => {
     expect(window.text).toBe(
       '[Page 2]\n(note) Is this date right?\n(reply, note) Yes, checked\n\n[Page 5]\n(note) Fix the total\n\n',
     );
-    expect(window.sent).toMatchObject({ firstPage: 1, lastPage: 4, pageCount: 6, truncated: false });
+    expect(window.sent).toMatchObject({ firstPage: 1, lastPage: 4, pageCount: 6, truncated: false, comments: 3 });
     expect(askInstruction(window, 'comments')).toContain('comments left on a PDF document');
+  });
+
+  it('tells the model these are ALL the comments, not two pages of six', async () => {
+    // A live run's answer asked for pages 2 and 3 of a three-page document whose only comments were
+    // on page 1, because the instruction said *it is from page 1 of 3*.
+    const window = await commentsWindow([{ page: 0, kind: 'note', contents: 'Move the review', reply: false }], 3, false);
+    const instruction = askInstruction(window, 'comments');
+    expect(instruction).toContain('these are all 1 of its comments');
+    expect(instruction).toContain('a page with no comments is not listed');
+    // CONTROL: the page sentence the other scopes use is not what the comments scope says.
+    expect(instruction).not.toContain('is from page 1 of 3');
+    expect(askInstruction(window, 'document')).toContain('is from page 1 of 3');
+  });
+
+  it('counts only the comments whose line reached the window, and says a cut list may be incomplete', async () => {
+    const long = 'x'.repeat(40);
+    const window = await commentsWindow(
+      [
+        { page: 0, kind: 'note', contents: 'short', reply: false },
+        { page: 1, kind: 'note', contents: long, reply: false },
+      ],
+      2,
+      false,
+      30,
+    );
+    expect(window.sent).toMatchObject({ truncated: true, comments: 1 });
+    expect(askInstruction(window, 'comments')).toContain('the summary may be incomplete');
   });
 
   it('says it was CUT when the annotation list itself stopped at its bound, though the window had room', async () => {
