@@ -93,6 +93,7 @@ const AMPLE_CEILING = 64 * 1024 * 1024;
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { createAssistant } from './assistant.js';
+import { unconfiguredCloud } from './cloudSession.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import {
@@ -1114,6 +1115,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           confirmClose: () => false,
           copySelection: () => false,
           closeListening: () => false,
+        cloud: unconfiguredCloud(),
           readDictionary: () => Promise.resolve(null),
           ocrLanguages: () => Promise.resolve([]),
         })['document.viewModel'],
@@ -1649,6 +1651,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         confirmClose: () => false,
         copySelection: () => false,
         closeListening: () => false,
+        cloud: unconfiguredCloud(),
         readDictionary: () => Promise.resolve(null),
         ocrLanguages: () => Promise.resolve([]),
       });

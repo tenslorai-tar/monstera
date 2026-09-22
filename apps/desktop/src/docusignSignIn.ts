@@ -94,7 +94,18 @@ export async function signInThroughLoopback(options: {
   readonly openInBrowser: OpenInBrowser;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  /**
+   * The one path the redirect may arrive on; DocuSign's when absent. A provider whose
+   * registration names no path — Microsoft's `http://localhost` — answers on `/`.
+   */
+  readonly path?: string;
+  /**
+   * How the redirect STRING names this machine (ADR-0091 Decision 4). The listener is bound to
+   * `127.0.0.1` whatever this says; `localhost` is for a provider that matches only that name.
+   */
+  readonly redirectHost?: 'localhost' | '127.0.0.1';
 }): Promise<SignInCode> {
+  const path = options.path ?? SIGN_IN_PATH;
   let settle: { resolve: (code: string) => void; reject: (error: SignInRefused) => void } | null =
     null;
   const outcome = new Promise<string>((resolve, reject) => {
@@ -112,7 +123,7 @@ export async function signInThroughLoopback(options: {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
     // ONE PATH. Anything else is refused and changes nothing, so a stray request
     // — a browser asking for a favicon — cannot end or corrupt the sign-in.
-    if (request.method !== 'GET' || url.pathname !== SIGN_IN_PATH || expectedState === null) {
+    if (request.method !== 'GET' || url.pathname !== path || expectedState === null) {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
       response.end();
       return;
@@ -161,7 +172,7 @@ export async function signInThroughLoopback(options: {
       throw new SignInRefused('listener-failed', 'the sign-in listener could not be opened', { cause });
     });
 
-    const redirectUri = `http://127.0.0.1:${String(port)}${SIGN_IN_PATH}`;
+    const redirectUri = `http://${options.redirectHost ?? '127.0.0.1'}:${String(port)}${path}`;
     const { url, state } = options.authorize(redirectUri);
     expectedState = state;
     try {

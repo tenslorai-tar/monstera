@@ -1,4 +1,4 @@
-import type { AiProviderId, OcrLanguage } from '@monstera/contract';
+import type { AiProviderId, CloudProviderId, CloudRefusal, CloudState, OcrLanguage } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { messageKey } from '@monstera/shared';
 
@@ -1525,6 +1525,69 @@ export const COPY_ANNOTATIONS_TITLE = messageKey('command.annotate.copy-selectio
 export const PASTE_ANNOTATIONS_TITLE = messageKey('command.annotate.paste');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
 export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
+// CLOUD STORAGE (ADR-0091).
+export const CLOUD_TITLE = messageKey('dialog.cloud.title');
+export const CLOUD_COMMAND_TITLE = messageKey('command.cloud.storage');
+export const SAVE_BACK_TITLE = messageKey('command.cloud.save-back');
+export const CLOUD_OUTCOME_TITLE = messageKey('dialog.cloud-outcome.title');
+export const CLOUD_SIGN_IN = messageKey('dialog.cloud.sign-in');
+export const CLOUD_SIGN_OUT = messageKey('dialog.cloud.sign-out');
+export const CLOUD_LIST = messageKey('dialog.cloud.list');
+export const CLOUD_UPLOAD = messageKey('dialog.cloud.upload');
+export const CLOUD_OPEN = messageKey('dialog.cloud.open');
+export const CLOUD_FILES_LABEL = messageKey('dialog.cloud.files');
+export const CLOUD_FILES_EMPTY = messageKey('dialog.cloud.files-empty');
+export const CLOUD_GOOGLE_NOTE = messageKey('dialog.cloud.google-note');
+export const CLOUD_NOTE_SIGNED_IN = messageKey('dialog.cloud.note.signed-in');
+export const CLOUD_NOTE_SIGNED_OUT = messageKey('dialog.cloud.note.signed-out');
+export const CLOUD_NOTE_UPLOADED = messageKey('dialog.cloud.note.uploaded');
+export const SAVE_BACK_DONE = messageKey('dialog.cloud-outcome.saved-back');
+export const SAVE_BACK_NOT_FROM_CLOUD = messageKey('dialog.cloud-outcome.not-from-cloud');
+export const SAVE_BACK_SAVE_FAILED = messageKey('dialog.cloud-outcome.save-failed');
+export const CLOUD_PROVIDER_ONEDRIVE = messageKey('cloud.provider.onedrive');
+export const CLOUD_PROVIDER_GOOGLE_DRIVE = messageKey('cloud.provider.google-drive');
+export const CLOUD_STATE_NOT_CONFIGURED = messageKey('cloud.state.not-configured');
+export const CLOUD_STATE_SIGNED_OUT = messageKey('cloud.state.signed-out');
+export const CLOUD_STATE_SIGNED_IN = messageKey('cloud.state.signed-in');
+export const CLOUD_PROBLEM_NOT_CONFIGURED = messageKey('cloud.problem.not-configured');
+export const CLOUD_PROBLEM_SECRETS_UNAVAILABLE = messageKey('cloud.problem.secrets-unavailable');
+export const CLOUD_PROBLEM_SIGN_IN_CANCELLED = messageKey('cloud.problem.sign-in-cancelled');
+export const CLOUD_PROBLEM_SIGN_IN_TIMED_OUT = messageKey('cloud.problem.sign-in-timed-out');
+export const CLOUD_PROBLEM_SIGN_IN_DENIED = messageKey('cloud.problem.sign-in-denied');
+export const CLOUD_PROBLEM_SIGN_IN_UNAVAILABLE = messageKey('cloud.problem.sign-in-unavailable');
+export const CLOUD_PROBLEM_UNAUTHORISED = messageKey('cloud.problem.unauthorised');
+export const CLOUD_PROBLEM_UNREACHABLE = messageKey('cloud.problem.unreachable');
+export const CLOUD_PROBLEM_REJECTED = messageKey('cloud.problem.rejected');
+export const CLOUD_PROBLEM_UNEXPECTED_ANSWER = messageKey('cloud.problem.unexpected-answer');
+export const CLOUD_PROBLEM_CHANGED_ELSEWHERE = messageKey('cloud.problem.changed-elsewhere');
+export const CLOUD_PROBLEM_TOO_LARGE = messageKey('cloud.problem.too-large');
+export const CLOUD_PROBLEM_NOT_A_PDF = messageKey('cloud.problem.not-a-pdf');
+/** Each provider's name. `satisfies` makes a third provider a compile error until it has one. */
+export const CLOUD_PROVIDER_NAMES = {
+  onedrive: CLOUD_PROVIDER_ONEDRIVE,
+  'google-drive': CLOUD_PROVIDER_GOOGLE_DRIVE,
+} as const satisfies Record<CloudProviderId, MessageKey>;
+export const CLOUD_STATE_NAMES = {
+  'not-configured': CLOUD_STATE_NOT_CONFIGURED,
+  'signed-out': CLOUD_STATE_SIGNED_OUT,
+  'signed-in': CLOUD_STATE_SIGNED_IN,
+} as const satisfies Record<CloudState, MessageKey>;
+/** Each refusal in a person's words — exhaustive over the contract's list. */
+export const CLOUD_PROBLEMS = {
+  'not-configured': CLOUD_PROBLEM_NOT_CONFIGURED,
+  'secrets-unavailable': CLOUD_PROBLEM_SECRETS_UNAVAILABLE,
+  'sign-in-cancelled': CLOUD_PROBLEM_SIGN_IN_CANCELLED,
+  'sign-in-timed-out': CLOUD_PROBLEM_SIGN_IN_TIMED_OUT,
+  'sign-in-denied': CLOUD_PROBLEM_SIGN_IN_DENIED,
+  'sign-in-unavailable': CLOUD_PROBLEM_SIGN_IN_UNAVAILABLE,
+  unauthorised: CLOUD_PROBLEM_UNAUTHORISED,
+  unreachable: CLOUD_PROBLEM_UNREACHABLE,
+  rejected: CLOUD_PROBLEM_REJECTED,
+  'unexpected-answer': CLOUD_PROBLEM_UNEXPECTED_ANSWER,
+  'changed-elsewhere': CLOUD_PROBLEM_CHANGED_ELSEWHERE,
+  'too-large': CLOUD_PROBLEM_TOO_LARGE,
+  'not-a-pdf': CLOUD_PROBLEM_NOT_A_PDF,
+} as const satisfies Record<CloudRefusal, MessageKey>;
 
 /**
  * The catalogue itself.
@@ -2288,6 +2351,47 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_PROMPT_SUMMARISE_COMMENTS]:
     'Summarise the comments on this document: what people ask for, what they point out, and what is still open. Cite the page of each point.',
   [GROUP_AI]: 'AI',
+  // CLOUD STORAGE (ADR-0091). Plain words for where a provider stands and what failed.
+  [CLOUD_TITLE]: 'Cloud storage',
+  [CLOUD_COMMAND_TITLE]: 'Cloud storage…',
+  [SAVE_BACK_TITLE]: 'Save back to cloud',
+  [CLOUD_OUTCOME_TITLE]: 'Save back to cloud',
+  [CLOUD_SIGN_IN]: 'Sign in',
+  [CLOUD_SIGN_OUT]: 'Sign out',
+  [CLOUD_LIST]: 'Show my PDFs',
+  [CLOUD_UPLOAD]: 'Upload this document',
+  [CLOUD_OPEN]: 'Open {name}',
+  [CLOUD_FILES_LABEL]: 'PDFs in cloud storage',
+  [CLOUD_FILES_EMPTY]: 'No PDFs were found here.',
+  [CLOUD_GOOGLE_NOTE]:
+    'Monstera can see only the Google Drive files it put there. To open one of your other PDFs from Monstera, upload it with Upload this document first.',
+  [CLOUD_NOTE_SIGNED_IN]: 'Signed in.',
+  [CLOUD_NOTE_SIGNED_OUT]: 'Signed out on this computer. Nothing in your cloud storage changed.',
+  [CLOUD_NOTE_UPLOADED]: 'Uploaded. Save back to cloud now sends this document to that copy.',
+  [SAVE_BACK_DONE]: 'Saved, and sent back to cloud storage.',
+  [SAVE_BACK_NOT_FROM_CLOUD]:
+    'This document was not opened from cloud storage. To put it there, use Cloud storage… and Upload this document.',
+  [SAVE_BACK_SAVE_FAILED]: 'The document could not be saved on this computer, so nothing was sent.',
+  [CLOUD_PROVIDER_NAMES.onedrive]: 'OneDrive',
+  [CLOUD_PROVIDER_NAMES['google-drive']]: 'Google Drive',
+  [CLOUD_STATE_NAMES['not-configured']]: 'Not available in this build',
+  [CLOUD_STATE_NAMES['signed-out']]: 'Not signed in',
+  [CLOUD_STATE_NAMES['signed-in']]: 'Signed in',
+  [CLOUD_PROBLEMS['not-configured']]: 'This build of Monstera is not set up to reach this provider.',
+  [CLOUD_PROBLEMS['secrets-unavailable']]:
+    'This computer cannot store a sign-in securely right now, so none can be kept.',
+  [CLOUD_PROBLEMS['sign-in-cancelled']]: 'The sign-in was cancelled.',
+  [CLOUD_PROBLEMS['sign-in-timed-out']]: 'The sign-in took too long and was stopped. Try again.',
+  [CLOUD_PROBLEMS['sign-in-denied']]: 'The sign-in was declined, so nothing was connected.',
+  [CLOUD_PROBLEMS['sign-in-unavailable']]: 'Monstera could not start the sign-in in your browser.',
+  [CLOUD_PROBLEMS.unauthorised]: 'The provider no longer accepts this sign-in. Sign in again.',
+  [CLOUD_PROBLEMS.unreachable]: 'The provider could not be reached. Check your connection.',
+  [CLOUD_PROBLEMS.rejected]: 'The provider refused the request.',
+  [CLOUD_PROBLEMS['unexpected-answer']]: 'The provider’s answer could not be read.',
+  [CLOUD_PROBLEMS['changed-elsewhere']]:
+    'The file changed in cloud storage since you opened it, so it was not overwritten. Your changes are saved on this computer.',
+  [CLOUD_PROBLEMS['too-large']]: 'The document is too large to send in one piece.',
+  [CLOUD_PROBLEMS['not-a-pdf']]: 'That file is not a PDF Monstera can open.',
   // BUILD-PROMPT E5's FIRST-RUN STEP. Skip is said to be fine, because it is: nothing but the
   // assistant needs a key.
   [AI_SETUP_TITLE]: 'Set up the AI assistant',

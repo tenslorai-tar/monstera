@@ -2323,6 +2323,55 @@ textarea {
   margin: 0;
 }
 
+/* CLOUD STORAGE (ADR-0091): a provider per row with where it stands, its actions beneath, and its
+   PDFs listed under it when asked for. */
+.m-cloud {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-cloud__providers,
+.m-cloud__files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-cloud__heading,
+.m-cloud__file,
+.m-cloud__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.m-cloud__heading {
+  justify-content: space-between;
+}
+
+.m-cloud__state,
+.m-cloud__hint {
+  margin: 0;
+  color: var(--muted);
+}
+
+.m-cloud__problem,
+.m-cloud__note,
+.m-cloud__outcome {
+  margin: 0;
+  color: var(--text);
+}
+
+.m-cloud__file-name {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
 /* THE FIRST-RUN AI SETUP (E5): the sentence, the two fields, and Skip beside the check, the same
    size — "prominent, no dark patterns" is a layout rule as much as a wording one. */
 .m-ai-setup {

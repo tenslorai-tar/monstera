@@ -151,6 +151,9 @@ import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
+import { CLOUD_DIALOG } from './dialogs/cloudStorage.js';
+import { CLOUD_OUTCOME_DIALOG } from './dialogs/cloudOutcome.js';
+import { cloudStorageCommand, saveBackCommand } from './commands/cloudStorage.js';
 import { aiSetupCommand } from './commands/aiSetup.js';
 import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
 import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
@@ -539,6 +542,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       new DialogRegistry([
         ABOUT_DIALOG,
         AI_SETUP_DIALOG,
+        CLOUD_DIALOG,
+        CLOUD_OUTCOME_DIALOG,
         KEYBOARD_SHORTCUTS_DIALOG,
         WORD_COUNT_DIALOG,
         PAGE_STRUCTURE_DIALOG,
@@ -1877,6 +1882,9 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         newFromImagesCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // D9's OPEN FROM URL, the same callbacks: a fetched document arrives as a tab.
         openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
+        cloudStorageCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        saveBackCommand({ client, ask }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
         newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({

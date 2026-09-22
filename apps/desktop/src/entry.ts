@@ -38,6 +38,7 @@ import {
   createPdfiumHostPlatform,
 } from './engineHostPlatform.js';
 import { removeRetiredCaches } from './retiredCaches.js';
+import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -311,6 +312,15 @@ startShell(() => {
       encrypt: (value) => safeStorage.encryptString(value),
       decrypt: (cipher) => safeStorage.decryptString(cipher),
     }),
+    // CLOUD STORAGE (ADR-0091): client values from the environment. THE PACKAGED FILE IS NOT READ
+    // YET, and that is Stage 10's: it lives in the package's resources, and `no-install-root-writes`
+    // refuses `process.resourcesPath` because a rule cannot tell that read from a write — the
+    // packaging row owes both the file and how it is reached. Working copies under `userData`. No
+    // value is logged here or anywhere: `readCloudClients` answers values or `null`, and says nothing.
+    cloud: {
+      clients: readCloudClients(process.env, null),
+      workingDirectory: join(app.getPath('userData'), 'cloud'),
+    },
     // The recent list, beside the settings and in its own document. Not IN the
     // settings file, and that is invariant L2 rather than tidiness:
     // `settings.load` hands the renderer everything that file holds, so a path

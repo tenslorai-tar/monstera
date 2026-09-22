@@ -1,5 +1,6 @@
 import {
   type AskSent,
+  CLOUD_PROVIDER_IDS,
   MAX_ASK_CONTEXT,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
@@ -39,6 +40,7 @@ import {
   PageTooLargeToPicture,
 } from './documentCommands.js';
 import type { Assistant } from './assistant.js';
+import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
@@ -242,6 +244,8 @@ export function createContractHandlers(deps: {
    * where no window is attached, as its neighbours do.
    */
   readonly closeListening: () => boolean;
+  /** Cloud storage (ADR-0091): sign-ins, listings, working copies and their links. REQUIRED, for `titleBarOverlay`'s reason. */
+  readonly cloud: CloudStorage;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
@@ -425,6 +429,7 @@ export function createContractHandlers(deps: {
         : err({ code: 'subscription-in-use' });
     },
     'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),
+    ...cloudHandlers(deps),
 
     'settings.loadSecrets': () => {
       // WHICH ARE STORED, AND NO VALUE (ADR-0056). The store decrypts to answer
@@ -2425,5 +2430,102 @@ function openRecentHandler(deps: OpenPathParts): ContractHandlers['document.open
     if (outcome.kind === 'absent') deps.recent.forget(path);
 
     return ok(outcome);
+  };
+}
+
+/** A refusal the cloud session named, as the channel carries it; anything else is a defect. */
+function cloudRefusal(thrown: unknown): { readonly kind: 'refused'; readonly reason: CloudOutcomeRefused['reason'] } {
+  if (thrown instanceof CloudOutcomeRefused) return { kind: 'refused', reason: thrown.reason };
+  throw thrown;
+}
+
+/**
+ * Cloud storage's seven channels (ADR-0091).
+ *
+ * ## Opening goes through `openPath`, the one way a document opens
+ *
+ * The session downloads the working copy and answers its path; this opens that path exactly as a
+ * picked file is opened — identity, dedup, the ceiling, the sessions, the recent list — and only
+ * then links the document to its cloud file, so a link exists only for a document that opened.
+ *
+ * ## Save back saves FIRST
+ *
+ * The working copy is saved through the ordinary save, then the same flushed image is sent. A save
+ * that failed sends nothing, so the cloud never holds what the person's own disk does not.
+ */
+function cloudHandlers(
+  deps: OpenPathParts & { readonly cloud: CloudStorage; readonly commands: DocumentCommands },
+): Pick<
+  ContractHandlers,
+  'cloud.status' | 'cloud.signIn' | 'cloud.signOut' | 'cloud.list' | 'cloud.open' | 'cloud.saveBack' | 'cloud.uploadCopy'
+> {
+  /** The document refusals every per-document cloud channel declares, by class. */
+  const documentRefusal = (thrown: unknown) => {
+    if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' as const });
+    if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' as const });
+    if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' as const });
+    return null;
+  };
+
+  return {
+    'cloud.status': () =>
+      Promise.resolve(
+        ok({ providers: CLOUD_PROVIDER_IDS.map((provider) => ({ provider, state: deps.cloud.state(provider) })) }),
+      ),
+    'cloud.signIn': async ({ provider }) => {
+      try {
+        await deps.cloud.signIn(provider);
+        return ok({ kind: 'done' as const });
+      } catch (thrown) {
+        return ok(cloudRefusal(thrown));
+      }
+    },
+    'cloud.signOut': ({ provider }) => {
+      deps.cloud.signOut(provider);
+      return Promise.resolve(ok({ state: deps.cloud.state(provider) }));
+    },
+    'cloud.list': async ({ provider }) => {
+      try {
+        return ok({ kind: 'listed' as const, files: [...(await deps.cloud.list(provider))] });
+      } catch (thrown) {
+        return ok(cloudRefusal(thrown));
+      }
+    },
+    'cloud.open': async ({ provider, fileId }) => {
+      let path: string;
+      try {
+        path = await deps.cloud.download(provider, fileId);
+      } catch (thrown) {
+        return ok(cloudRefusal(thrown));
+      }
+      const { outcome } = await openPath(deps, path);
+      if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
+      return ok(outcome);
+    },
+    'cloud.saveBack': async ({ docId }) => {
+      if (deps.cloud.originOf(docId) === null) return ok({ kind: 'not-from-cloud' as const });
+      try {
+        const saved = await deps.commands.save(docId);
+        if (saved.kind !== 'saved') return ok({ kind: 'save-failed' as const });
+        await deps.cloud.saveBack(docId, await deps.commands.currentImage(docId));
+        return ok({ kind: 'saved-back' as const });
+      } catch (thrown) {
+        const refused = documentRefusal(thrown);
+        if (refused !== null) return refused;
+        return ok(cloudRefusal(thrown));
+      }
+    },
+    'cloud.uploadCopy': async ({ docId, provider }) => {
+      const name = deps.commands.nameOf(docId);
+      if (name === undefined) return err({ code: 'document-not-open' as const });
+      try {
+        await deps.cloud.uploadCopy(docId, provider, name, await deps.commands.currentImage(docId));
+        return ok({ kind: 'done' as const });
+      } catch (thrown) {
+        const refused = documentRefusal(thrown);
+        if (refused !== null) return refused;
+        return ok(cloudRefusal(thrown));
+      }
+    },
   };
 }

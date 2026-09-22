@@ -1,5 +1,6 @@
 import {
   type AnnotationKindName,
+  CLOUD_PROVIDER_IDS,
   type ChannelResult,
   type ContractClient,
   type ContractHandlers,
@@ -1869,6 +1870,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
+    // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider
+    // is what a build without its values is — not configured (ADR-0091 Decision 2).
+    'cloud.status': () =>
+      Promise.resolve(
+        ok({ providers: CLOUD_PROVIDER_IDS.map((provider) => ({ provider, state: 'not-configured' as const })) }),
+      ),
+    'cloud.signIn': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
+    'cloud.signOut': () => Promise.resolve(ok({ state: 'not-configured' as const })),
+    'cloud.list': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
+    'cloud.open': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
+    'cloud.saveBack': () => Promise.resolve(ok({ kind: 'not-from-cloud' as const })),
+    'cloud.uploadCopy': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
     'settings.loadSecrets': () =>
       Promise.resolve(
         ok({

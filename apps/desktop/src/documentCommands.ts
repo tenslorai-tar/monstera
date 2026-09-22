@@ -3283,6 +3283,29 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link
    *   DocumentPoisonedError}, {@link MissingSessionError}.
    */
+  /**
+   * The document as it is now, through the flush a save uses — what *Save back* and *Upload a
+   * copy* send to a cloud provider (ADR-0091). In the lane, for `saveCopy`'s reason below, and it
+   * stamps nothing: sending a copy somewhere does not make this document clean.
+   */
+  async currentImage(docId: DocId): Promise<Uint8Array> {
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await this.#save.flush(docId, sessions);
+    });
+    return value;
+  }
+
+  /** The document's name, as the service records it — the name a copy is uploaded under. */
+  nameOf(docId: DocId): string | undefined {
+    return this.#documents.nameOf(docId);
+  }
+
   async saveCopy(docId: DocId): Promise<CopyOutcome | undefined> {
     // THE NAME IS READ BEFORE THE LANE and the document may close while the
     // dialog is up — which is fine, because a filename is all that was taken

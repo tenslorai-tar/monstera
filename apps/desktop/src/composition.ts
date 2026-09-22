@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
+  type CloudProviderId,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_ENDPOINT_SETTING_ID,
   AZURE_KEY_SETTING_ID,
@@ -111,6 +112,8 @@ import {
   remoteMupdfPageText,
   remoteMupdfWriter,
   siblingNames,
+  type CloudClient,
+  writeStreamedDocument,
   fetchGuardedPdf,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
@@ -182,6 +185,7 @@ import {
 } from './sessionDirectories.js';
 import type { RecentFiles } from './recentFiles.js';
 import { createDocusignSession } from './docusignSession.js';
+import { createCloudStorage, unconfiguredCloud } from './cloudSession.js';
 import type { OpenInBrowser } from './docusignSignIn.js';
 import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
@@ -510,6 +514,16 @@ export interface ShellComposition {
    */
   readonly secrets?: SecretStoreSurface;
   /**
+   * Cloud storage's client values and where its working copies go (ADR-0091), both resolved in
+   * `entry.ts`: the values from the environment or the packaged `oauth-clients.json`, the directory
+   * under `userData`, because only that file may ask Electron where the user's data lives. Absent,
+   * every provider is *not configured in this build* — every unit test's position, and a real one.
+   */
+  readonly cloud?: {
+    readonly clients: Readonly<Record<CloudProviderId, CloudClient | null>>;
+    readonly workingDirectory: string;
+  };
+  /**
    * Pushes one declared event to the renderer
    * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
    *
@@ -630,6 +644,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     editWatch,
     settings,
     secrets,
+    cloud: cloudComposition,
     sendEvent,
     recent,
     enginePlatform = null,
@@ -1298,6 +1313,35 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       unlockDocument,
       pickDocument,
       recent,
+      // CLOUD STORAGE (ADR-0091), over the same secret store and the same browser opener as
+      // DocuSign's sign-in. A working copy is written by the save pipeline's streamed write, checked
+      // against open documents like any copy, into a folder made for it.
+      cloud:
+        cloudComposition === undefined
+          ? unconfiguredCloud()
+          : createCloudStorage({
+              secrets: secretStore,
+              clients: cloudComposition.clients,
+              openInBrowser,
+              workingDirectory: cloudComposition.workingDirectory,
+              maxBytes: MAIN_DOCUMENT_BYTES_CEILING,
+              writeWorkingCopy: async (path, open) => {
+                await mkdir(dirname(path), { recursive: true });
+                const written = await writeStreamedDocument(
+                  {
+                    surface: nodeFileSurface,
+                    names: siblingNames,
+                    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+                  },
+                  (destination) => documents.checkCopyTarget(destination),
+                  open,
+                  path,
+                );
+                if (written.kind === 'refused') return 'contested';
+                if (written.kind === 'write-failed') return 'write-failed';
+                return 'written';
+              },
+            }),
       settings,
       // NO STORE IS A STATE, not a stub: `available: false` is what a machine
       // with no OS keyring answers, and a graph built without one is in the

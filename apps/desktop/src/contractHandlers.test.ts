@@ -17,6 +17,7 @@ import {
 } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
+import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
@@ -106,6 +107,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     confirmClose: () => false,
     copySelection: () => false,
     closeListening: () => false,
+    cloud: unconfiguredCloud(),
     revealLog: () => {
       revealed.push(true);
       return Promise.resolve(true);
@@ -361,6 +363,7 @@ describe('document.open', () => {
       confirmClose: () => false,
       copySelection: () => false,
       closeListening: () => false,
+    cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
         }),
@@ -546,6 +549,7 @@ describe('the recent list', () => {
       confirmClose: () => false,
       copySelection: () => false,
       closeListening: () => false,
+    cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
     });
@@ -598,6 +602,7 @@ describe('log.reveal', () => {
       confirmClose: () => false,
       copySelection: () => false,
       closeListening: () => false,
+    cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
       ocrLanguages: () => Promise.resolve([]),
     });

@@ -3,6 +3,15 @@ import { z } from 'zod';
 
 import { AI_PROVIDER_IDS } from './aiProviders.js';
 import { askAboutSchema, askSentSchema, pairsWith } from './askAbout.js';
+import {
+  CLOUD_PROVIDER_IDS,
+  CLOUD_REFUSALS,
+  MAX_CLOUD_FILE_ID,
+  MAX_CLOUD_FILES,
+  cloudFileSchema,
+  cloudProviderSchema,
+  cloudStateSchema,
+} from './cloudProviders.js';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { subscriptionIdSchema } from './events.js';
 import {
@@ -796,6 +805,12 @@ export const MAX_SIGNATURES = 256;
  * See `document.open` for what each variant means and why `cancelled` is an
  * outcome rather than a failure.
  */
+/** A cloud request that only succeeds or is refused by name (ADR-0091). */
+const cloudDoneSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('done') }),
+  z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),
+]);
+
 const openOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('opened'),
@@ -1148,6 +1163,83 @@ export const channels = {
       /** The filesystem refused. Nothing at the destination was replaced. */
       z.object({ kind: z.literal('write-failed') }),
     ]),
+  ),
+
+  /**
+   * Where each cloud provider stands on this machine (ADR-0091): not configured in this build,
+   * signed out, or signed in. Never a token, an account or a client value.
+   */
+  'cloud.status': channel(
+    'Which cloud providers this build carries, and which are signed in.',
+    z.object({}).strict(),
+    z.object({
+      providers: z
+        .array(z.object({ provider: cloudProviderSchema, state: cloudStateSchema }).strict())
+        .max(CLOUD_PROVIDER_IDS.length),
+    }),
+  ),
+
+  /** Signs in to a provider in the person's own browser (ADR-0059's loopback route). */
+  'cloud.signIn': channel(
+    'Signs in to a cloud provider through the person’s browser.',
+    z.object({ provider: cloudProviderSchema }).strict(),
+    cloudDoneSchema,
+  ),
+
+  /** Forgets a provider's sign-in on this machine. Nothing in the cloud changes. */
+  'cloud.signOut': channel(
+    'Forgets a cloud provider’s sign-in on this machine.',
+    z.object({ provider: cloudProviderSchema }).strict(),
+    z.object({ state: cloudStateSchema }),
+  ),
+
+  /** A page of the person's PDFs in one provider, newest first. */
+  'cloud.list': channel(
+    'Lists the PDFs a cloud provider holds for the signed-in person.',
+    z.object({ provider: cloudProviderSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('listed'), files: z.array(cloudFileSchema).max(MAX_CLOUD_FILES) }),
+      z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),
+    ]),
+  ),
+
+  /**
+   * Opens a cloud file: downloads it into a working copy in this application's own data directory
+   * and opens that through the one way a document opens (ADR-0091 Decision 6).
+   */
+  'cloud.open': channel(
+    'Downloads a cloud PDF into a working copy and opens it.',
+    z.object({ provider: cloudProviderSchema, fileId: z.string().min(1).max(MAX_CLOUD_FILE_ID) }).strict(),
+    z.discriminatedUnion('kind', [
+      ...openOutcomeSchema.options,
+      z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),
+    ]),
+  ),
+
+  /**
+   * Saves a document opened from the cloud and uploads it back to its file — refused by name when
+   * the cloud file changed since it was opened, rather than overwriting it.
+   */
+  'cloud.saveBack': channel(
+    'Saves a document and uploads it back to the cloud file it was opened from.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('saved-back') }),
+      /** The document did not come from the cloud, and was not put there this session. */
+      z.object({ kind: z.literal('not-from-cloud') }),
+      /** Saving to the working copy failed, so nothing was sent. */
+      z.object({ kind: z.literal('save-failed') }),
+      z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /** Puts a copy of a document in a provider's storage, and links the document to it. */
+  'cloud.uploadCopy': channel(
+    'Uploads a copy of a document to a cloud provider.',
+    z.object({ docId: docIdSchema, provider: cloudProviderSchema }).strict(),
+    cloudDoneSchema,
+    ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
   /**

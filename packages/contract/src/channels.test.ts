@@ -331,6 +331,13 @@ const handlers: ContractHandlers = {
   'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
   'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
   'ai.stop': () => Promise.resolve(ok({ stopped: false })),
+  'cloud.status': () => Promise.resolve(ok({ providers: [{ provider: 'onedrive' as const, state: 'signed-out' as const }] })),
+  'cloud.signIn': () => Promise.resolve(ok({ kind: 'done' as const })),
+  'cloud.signOut': () => Promise.resolve(ok({ state: 'signed-out' as const })),
+  'cloud.list': () => Promise.resolve(ok({ kind: 'listed' as const, files: [] })),
+  'cloud.open': () => Promise.resolve(ok({ kind: 'refused' as const, reason: 'not-configured' as const })),
+  'cloud.saveBack': () => Promise.resolve(ok({ kind: 'not-from-cloud' as const })),
+  'cloud.uploadCopy': () => Promise.resolve(ok({ kind: 'done' as const })),
   'settings.loadSecrets': () =>
     Promise.resolve(ok({ stored: [AZURE_KEY_SETTING_ID], available: true })),
   'settings.saveSecret': () => Promise.resolve(ok({ stored: true as const })),

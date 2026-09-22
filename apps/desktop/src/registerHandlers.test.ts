@@ -3,6 +3,7 @@ import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { createAssistant } from './assistant.js';
+import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import {
@@ -142,6 +143,7 @@ function handlers() {
     closeListening: () => {
       throw new Error('registration cases must not reach the window');
     },
+    cloud: unconfiguredCloud(),
     revealLog: () => {
       throw new Error('registration cases must not reach the log');
     },

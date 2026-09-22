@@ -892,6 +892,35 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Cloud storage in main and on screen; and an instrument that could not see a refusal
+
+`cloudSession.ts` is `docusignSession.ts`' shape per provider: a sign-in kept under
+`cloud.<provider>-session`, outside `SECRET_SETTING_IDS`; a refresh; a refused refresh removed and
+signed in again. The loopback sign-in now takes its redirect host and path — Microsoft's
+`localhost` on `/`, Google's `127.0.0.1` on `/google` — and a case drives Microsoft's shape through
+a real listener, with DocuSign's path answered 404. A cloud file downloads through the save
+pipeline's streamed write (the working copy is contested like any copy if it is already open) and
+opens through `openPath`; only a document that opened is linked. *Save back* saves first and sends
+the flushed image, so the cloud never holds what the local disk does not. Seven channels, the
+browser shim's honest *not configured*, one dialog driven by the command's loop, and *Save back*
+saying every outcome, success included.
+
+Four registries noticed the new surface before any review could: the handler map's compile error
+at every assembly (now given `unconfiguredCloud()`, which is a build without values rather than a
+stand-in), the shim's pinned channel list, `payloadBounds`' measured-or-excused rule, and the
+catalogue's reachability check, which finds keys only through exported names. The install-root
+rule refused `process.resourcesPath` for the packaged `oauth-clients.json`; it cannot tell a read
+from a write, so the packaged read is Stage 10's rather than a disable.
+
+**A preflight that proved nothing, discarded.** Before asking the owner to sign in I requested each
+authorization URL without a browser and looked for the providers' error codes. The real requests
+came back clean — and so did the controls: a made-up client id and an unregistered redirect also
+showed no error, because both providers render refusals in the browser's script. The instrument
+could not see what it was looking for, so the clean answer is not evidence and is not reported as
+any. The owner's sign-in is the check. No client value was printed at any step.
+
+---
+
 ## 2026-09-22 — Cloud storage, the protocol half: OneDrive and Google Drive in the kernel
 
 `cloudStorage.ts` is `docusign.ts`' shape on ADR-0091: the authorization URL, the code exchange,

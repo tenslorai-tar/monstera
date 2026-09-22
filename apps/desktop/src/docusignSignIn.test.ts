@@ -63,6 +63,31 @@ describe('signInThroughLoopback', () => {
     await expect(fetch(`${redirect}?code=late&state=the-state`)).rejects.toThrow();
   });
 
+  it('MICROSOFT’S SHAPE (ADR-0091): the redirect string says localhost on the root path, and the listener is still 127.0.0.1', async () => {
+    let redirect = '';
+    let strayStatus = 0;
+    const signedIn = await signInThroughLoopback({
+      authorize,
+      redirectHost: 'localhost',
+      path: '/',
+      openInBrowser: async (url) => {
+        redirect = redirectOf(url);
+        const port = new URL(redirect).port;
+        // DOCUSIGN'S PATH IS NOT THIS SIGN-IN'S: refused, and the sign-in goes on.
+        strayStatus = (await fetch(`http://127.0.0.1:${port}${SIGN_IN_PATH}?code=x&state=the-state`)).status;
+        // THE BROWSER resolves `localhost` to the loopback interface the listener is bound to.
+        const page = await fetch(`http://127.0.0.1:${port}/?code=the-code&state=the-state`);
+        expect(page.status).toBe(200);
+      },
+    });
+
+    expect(new URL(redirect).hostname).toBe('localhost');
+    expect(new URL(redirect).pathname).toBe('/');
+    expect(strayStatus).toBe(404);
+    expect(signedIn.code).toBe('the-code');
+    expect(signedIn.redirectUri).toBe(redirect);
+  });
+
   it('refuses a redirect whose state is not this sign-in’s', async () => {
     const refused = await refusalOf(
       signInThroughLoopback({
