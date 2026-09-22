@@ -1,4 +1,11 @@
-import { type AskAbout, type AskSent, MAX_ASK_CONTEXT, askPageMarker } from '@monstera/contract';
+import {
+  type AskAbout,
+  type AskSent,
+  type AskSide,
+  MAX_ASK_CONTEXT,
+  askCitation,
+  askPageMarker,
+} from '@monstera/contract';
 
 /**
  * The text an assistant ask carries about a document, and the instruction it travels in
@@ -39,6 +46,7 @@ export async function readAskWindow(
   pageCount: number,
   read: ReadPageText,
   bound: number = MAX_ASK_CONTEXT,
+  side?: AskSide,
 ): Promise<AskWindow> {
   let text = '';
   let firstPage: number | null = null;
@@ -46,7 +54,7 @@ export async function readAskWindow(
   let truncated = false;
 
   for (const page of pages) {
-    const piece = `${askPageMarker(page)}\n${(await read(page)).trim()}\n\n`;
+    const piece = `${askPageMarker(page, side)}\n${(await read(page)).trim()}\n\n`;
     if (text.length + piece.length <= bound) {
       text += piece;
       firstPage ??= page;
@@ -95,20 +103,45 @@ const WHAT: Readonly<Record<AskAbout['scope'], string>> = {
  * forty as though they were all of it.
  */
 export function askInstruction(window: AskWindow, scope: AskAbout['scope']): string {
-  const { firstPage, lastPage, pageCount, truncated } = window.sent;
-  const covered =
-    firstPage === null || lastPage === null
-      ? 'The document has no text to show.'
-      : firstPage === lastPage
-        ? `It is from page ${String(firstPage + 1)} of ${String(pageCount)}.`
-        : `It covers pages ${String(firstPage + 1)} to ${String(lastPage + 1)} of ${String(pageCount)}.`;
-  const what = WHAT[scope];
-  const stopped = truncated
-    ? ' The text stops before the end of what was asked about; say so if the answer may lie beyond it.'
-    : '';
   return (
-    `${what} ${covered}${stopped} Each page begins with a marker such as [Page 3]. ` +
-    'When you rely on a page, cite it as [p. 3]. If the answer is not in the text, say so rather than guessing.' +
+    `${WHAT[scope]} ${coverage(window.sent, 'It')} Each page begins with a marker such as ${askPageMarker(2)}. ` +
+    `When you rely on a page, cite it as ${askCitation(2)}. ${NOT_IN_TEXT}` +
     `\n\n${window.text}`
   );
+}
+
+/**
+ * The instruction for two documents side by side (ADR-0089): each window under its side's name,
+ * with markers and citations that say which document a page is in — `[p. 3]` from a paired answer
+ * would name two pages.
+ */
+export function askPairInstruction(left: AskWindow, right: AskWindow, scope: 'page' | 'document'): string {
+  return (
+    `${PAIR_WHAT[scope]} The Left document is the one on the left of the screen and the Right document the one ` +
+    `on the right. ${coverage(left.sent, 'The Left text')} ${coverage(right.sent, 'The Right text')} ` +
+    `Each page begins with a marker naming its side, such as ${askPageMarker(2, 'left')} or ${askPageMarker(2, 'right')}. ` +
+    `When you rely on a page, cite it with its side, as ${askCitation(2, 'left')} or ${askCitation(2, 'right')}. ${NOT_IN_TEXT}` +
+    `\n\n${left.text}\n${right.text}`
+  );
+}
+
+const PAIR_WHAT: Readonly<Record<'page' | 'document', string>> = {
+  page: 'Below is text from the page on screen in each of two PDF documents the person has open side by side.',
+  document: 'Below is text from each of two PDF documents the person has open side by side.',
+};
+
+const NOT_IN_TEXT = 'If the answer is not in the text, say so rather than guessing.';
+
+/** One window's reach as a sentence, and whether it stopped early. */
+function coverage(sent: AskSent, subject: string): string {
+  const { firstPage, lastPage, pageCount, truncated } = sent;
+  const covered =
+    firstPage === null || lastPage === null
+      ? `${subject} has no text to show.`
+      : firstPage === lastPage
+        ? `${subject} is from page ${String(firstPage + 1)} of ${String(pageCount)}.`
+        : `${subject} covers pages ${String(firstPage + 1)} to ${String(lastPage + 1)} of ${String(pageCount)}.`;
+  return truncated
+    ? `${covered} It stops before the end of what was asked about; say so if the answer may lie beyond it.`
+    : covered;
 }

@@ -2,7 +2,7 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { AI_PROVIDER_IDS } from './aiProviders.js';
-import { askAboutSchema, askSentSchema } from './askAbout.js';
+import { askAboutSchema, askSentSchema, pairsWith } from './askAbout.js';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { subscriptionIdSchema } from './events.js';
 import {
@@ -4246,10 +4246,21 @@ export const channels = {
          * present, `main` reads the scope's text into a bounded window for this ask alone.
          */
         about: askAboutSchema.optional(),
+        /**
+         * The second document of a two-document ask (ADR-0089): the one on the right, in the
+         * same scope as `about`. Each window reads half of the bound.
+         */
+        alongside: askAboutSchema.optional(),
       })
-      .strict(),
-    /** `sent` is what the window carried, and `null` for an ask about nothing. */
-    z.object({ started: z.boolean(), sent: askSentSchema.nullable() }),
+      .strict()
+      .refine((request) => request.alongside === undefined || pairsWith(request.about, request.alongside), {
+        message: 'a second document pairs only with a different one, in the same page or document scope',
+      }),
+    /**
+     * `sent` is what the window carried, and `null` for an ask about nothing; `alongside` is the
+     * second window's, present exactly when the ask had one.
+     */
+    z.object({ started: z.boolean(), sent: askSentSchema.nullable(), alongside: askSentSchema.optional() }),
     // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first.
     ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned'],
   ),

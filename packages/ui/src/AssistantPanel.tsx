@@ -4,13 +4,15 @@ import {
   type AiProviderId,
   type AskAbout,
   type AskSent,
+  type AskSide,
+  type AskSides,
   type ContractClient,
   MAX_ANNOTATION_TEXT,
   MAX_ASK_CONTEXT,
   type RenderableCommand,
   citationsIn,
 } from '@monstera/contract';
-import type { DocId } from '@monstera/shared';
+import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
 import {
   Fragment,
@@ -41,6 +43,7 @@ import {
   ASSISTANT_ASK,
   ASSISTANT_ASSISTANT,
   ASSISTANT_CITATION,
+  ASSISTANT_CITATION_RIGHT,
   ASSISTANT_COMPOSER_LABEL,
   ASSISTANT_CONVERSATION_LABEL,
   ASSISTANT_EMPTY,
@@ -59,9 +62,16 @@ import {
   ASSISTANT_QUICK_SUMMARISE,
   ASSISTANT_SEND,
   ASSISTANT_SENT_CUT,
+  ASSISTANT_SENT_LEFT,
   ASSISTANT_SENT_NOTHING,
   ASSISTANT_SENT_PAGE,
   ASSISTANT_SENT_PAGES,
+  ASSISTANT_SENT_RIGHT,
+  ASSISTANT_SIDE_BOTH,
+  ASSISTANT_SIDE_LEFT,
+  ASSISTANT_SIDE_RIGHT,
+  ASSISTANT_SIDES_LABEL,
+  ASSISTANT_SIDES_NEEDED,
   ASSISTANT_STOP,
   ASSISTANT_YOU,
 } from './messages/en.js';
@@ -108,6 +118,12 @@ export interface AssistantDocument {
   readonly page: number;
 }
 
+/** The document compared on the right, and the page its pane is on (zero-based). */
+export interface BesideDocument {
+  readonly docId: DocId;
+  readonly page: number;
+}
+
 export interface AssistantPanelProps {
   readonly client: ContractClient;
   readonly subscribe: EventSubscriber;
@@ -126,6 +142,20 @@ export interface AssistantPanelProps {
   readonly onHandled: (serial: number) => void;
   /** Posts a drafted reply to its note, through `App`'s one dispatcher. */
   readonly onReply?: ((command: Extract<RenderableCommand, { kind: 'replyToAnnotation' }>) => void) | undefined;
+  /**
+   * The document on the right when two are side by side, or `undefined` with one — which is
+   * what decides whether *Left · Right · Both* is offered at all (ADR-0089).
+   */
+  readonly beside?: BesideDocument | undefined;
+  /** Goes to a page of the document on the right, zero-based. */
+  readonly onGoToBeside?: ((page: number) => void) | undefined;
+}
+
+/** What one ask sends: its document or documents, and the side it went to with two. */
+interface AskRequest {
+  readonly about: AskAbout | undefined;
+  readonly alongside?: AskAbout;
+  readonly sides?: NonNullable<ConversationTurn['sides']>;
 }
 
 /** A subscription id: short, unique per ask, and inside the event schema's alphabet. */
@@ -156,6 +186,17 @@ function useConversation(store: DocumentStore | undefined): readonly Conversatio
   return useSyncExternalStore(store?.subscribe ?? NO_SUBSCRIBE, () => store?.getState().conversation ?? NO_TURNS);
 }
 
+/** The conversation's Left · Right · Both choice, or `undefined` until one is made. */
+function useSides(store: DocumentStore | undefined): AskSides | undefined {
+  return useSyncExternalStore(store?.subscribe ?? NO_SUBSCRIBE, () => store?.getState().sides);
+}
+
+const SIDE_CHOICES = [
+  { sides: 'left', label: ASSISTANT_SIDE_LEFT },
+  { sides: 'right', label: ASSISTANT_SIDE_RIGHT },
+  { sides: 'both', label: ASSISTANT_SIDE_BOTH },
+] as const satisfies readonly { sides: AskSides; label: MessageKey }[];
+
 export function AssistantPanel({
   client,
   subscribe,
@@ -166,11 +207,14 @@ export function AssistantPanel({
   handled,
   onHandled,
   onReply,
+  beside,
+  onGoToBeside,
 }: AssistantPanelProps): ReactElement {
   const { i18n } = useLingui();
   const providerId = useId();
   const modelId = useId();
   const aboutId = useId();
+  const sidesName = useId();
   const [provider, setProvider] = useState<AiProviderId>('anthropic');
   const [models, setModels] = useState<readonly { id: string; label: string }[]>([]);
   const [model, setModel] = useState('');
@@ -231,6 +275,15 @@ export function AssistantPanel({
     setChosen({ scope: next, after: request?.serial ?? 0 });
   };
 
+  // LEFT · RIGHT · BOTH, offered only when it can mean something (ADR-0089): a second document
+  // on the right, and a scope that names a page or the document. A selection or a comment belongs
+  // to the document it was made in, and one document shown has nothing to choose between.
+  const sides = useSides(focused?.store);
+  const pairable = beside !== undefined && beside.docId !== focused?.docId && (scope === 'page' || scope === 'document');
+  // NO DEFAULT: with two documents and no choice, an ask waits rather than sending a document
+  // nobody picked.
+  const waitingForSides = pairable && sides === undefined;
+
   useEffect(() => {
     const stopDelta = subscribe('ai.delta', (payload) => {
       const asking = live.current;
@@ -259,20 +312,32 @@ export function AssistantPanel({
     };
   }, [subscribe]);
 
-  /** What the chosen scope names, or `undefined` for an ask about nothing. */
-  const aboutFor = useCallback(
-    (chosen: Scope): AskAbout | undefined => {
-      if (focused === undefined || chosen === 'nothing') return undefined;
-      if (chosen === 'selection' || chosen === 'comment') return selection ?? undefined;
-      if (chosen === 'page') return { scope: 'page', docId: focused.docId, page: focused.page };
-      return { scope: 'document', docId: focused.docId };
+  /**
+   * What the chosen scope sends, or `null` while two documents are side by side and nobody has
+   * said which (ADR-0089 Decision 5). *Left* is the tab's own document and *Right* the compared
+   * one, each at the page its own pane is on.
+   */
+  const requestFor = useCallback(
+    (chosen: Scope): AskRequest | null => {
+      if (focused === undefined || chosen === 'nothing') return { about: undefined };
+      if (chosen === 'selection' || chosen === 'comment') return { about: selection ?? undefined };
+      const on = (docId: DocId, page: number): AskAbout =>
+        chosen === 'page' ? { scope: 'page', docId, page } : { scope: 'document', docId };
+      const left = on(focused.docId, focused.page);
+      if (beside === undefined || beside.docId === focused.docId) return { about: left };
+      if (sides === undefined) return null;
+      const right = on(beside.docId, beside.page);
+      const record = { asked: sides, right: beside.docId };
+      if (sides === 'left') return { about: left, sides: record };
+      if (sides === 'right') return { about: right, sides: record };
+      return { about: left, alongside: right, sides: record };
     },
-    [focused, selection],
+    [beside, focused, selection, sides],
   );
 
   const ask = useCallback(
     /** @returns whether the ask began; a request not begun is kept for when it can be. */
-    (text: string, about: AskAbout | undefined, replyTo?: ReplyTarget): boolean => {
+    (text: string, { about, alongside, sides: asked }: AskRequest, replyTo?: ReplyTarget): boolean => {
       if (text === '' || model === '' || live.current !== null) return false;
       const store = focused?.store;
       const read = (): readonly ConversationTurn[] => (store === undefined ? looseRef.current : store.getState().conversation);
@@ -284,8 +349,13 @@ export function AssistantPanel({
       };
       const subscription = newSubscription();
       const before = read();
-      const asked: ConversationTurn = { role: 'user', text, ...(replyTo === undefined ? {} : { replyTo }) };
-      write([...before, asked]);
+      const turn: ConversationTurn = {
+        role: 'user',
+        text,
+        ...(replyTo === undefined ? {} : { replyTo }),
+        ...(asked === undefined ? {} : { sides: asked }),
+      };
+      write([...before, turn]);
       setProblem(null);
       answer.current = '';
       live.current = { subscription, write, read };
@@ -294,8 +364,9 @@ export function AssistantPanel({
         subscription,
         provider,
         model,
-        messages: [...before, asked].map((turn) => ({ role: turn.role, text: turn.text })),
+        messages: [...before, turn].map((each) => ({ role: each.role, text: each.text })),
         ...(about === undefined ? {} : { about }),
+        ...(alongside === undefined ? {} : { alongside }),
       }).then((result) => {
         if (result.ok && result.value.started) {
           // THE DRAFT IS CLEARED ONLY ONCE THE ASK STARTED. A request that never began must
@@ -304,8 +375,15 @@ export function AssistantPanel({
           // WHAT WENT is recorded on the turn that asked, so the line under it is main's answer
           // rather than the scope the panel meant.
           const now = read();
-          const at = now.lastIndexOf(asked);
-          if (at !== -1) write(now.map((turn, index) => (index === at ? { ...turn, sent: result.value.sent } : turn)));
+          const at = now.lastIndexOf(turn);
+          const { sent, alongside: second } = result.value;
+          if (at !== -1) {
+            write(
+              now.map((each, index) =>
+                index === at ? { ...each, sent, ...(second === undefined ? {} : { alongside: second }) } : each,
+              ),
+            );
+          }
           return;
         }
         live.current = null;
@@ -318,8 +396,9 @@ export function AssistantPanel({
   );
 
   const send = useCallback(() => {
-    ask(draft.trim(), aboutFor(scope));
-  }, [aboutFor, ask, draft, scope]);
+    const wanted = requestFor(scope);
+    if (wanted !== null) ask(draft.trim(), wanted);
+  }, [ask, draft, requestFor, scope]);
 
   // A COMMAND'S REQUEST points the panel and may ask at once. Keyed by `serial`, so the same
   // words asked twice are two asks.
@@ -336,7 +415,7 @@ export function AssistantPanel({
   useEffect(() => {
     if (request === undefined || request.serial === handled) return;
     if (request.about.docId !== focused?.docId) return;
-    if (request.prompt === undefined || ask(i18n._(request.prompt), request.about, request.replyTo)) {
+    if (request.prompt === undefined || ask(i18n._(request.prompt), { about: request.about }, request.replyTo)) {
       onHandled(request.serial);
     }
   }, [ask, focused?.docId, handled, i18n, onHandled, request, streaming]);
@@ -369,32 +448,64 @@ export function AssistantPanel({
       : pages;
   };
 
+  /** The lines under an asked turn: one, or one per side for a turn asked of both. */
+  const sentLines = (turn: ConversationTurn): readonly string[] => {
+    if (turn.sent === undefined || turn.sent === null) return [];
+    if (turn.alongside === undefined) return [sentLine(turn.sent)];
+    return [
+      i18n._(ASSISTANT_SENT_LEFT, { sent: sentLine(turn.sent) }),
+      i18n._(ASSISTANT_SENT_RIGHT, { sent: sentLine(turn.alongside) }),
+    ];
+  };
+
+  /**
+   * Where a citation goes, given the turn that asked (ADR-0089): a side it names, or the side the
+   * turn went to. A page on the RIGHT is a link only while the document it was asked of is still
+   * the one on the right; a side-less citation from an ask of both names no document, so it is
+   * text.
+   */
+  const citationTarget = (
+    side: AskSide | undefined,
+    asked: ConversationTurn['sides'],
+  ): { readonly go: (page: number) => void; readonly label: MessageKey } | undefined => {
+    const toSide = side ?? (asked === undefined || asked.asked === 'left' ? 'left' : asked.asked === 'right' ? 'right' : undefined);
+    if (toSide === 'left') return onGoTo === undefined ? undefined : { go: onGoTo, label: ASSISTANT_CITATION };
+    if (toSide === 'right' && asked !== undefined && beside?.docId === asked.right && onGoToBeside !== undefined) {
+      return { go: onGoToBeside, label: ASSISTANT_CITATION_RIGHT };
+    }
+    return undefined;
+  };
+
   /**
    * A run of an answer's plain text, with each `[p. N]` citation a link to that page. The
    * Markdown around it is {@link answerElements}'; this is only ever handed text, never code.
    */
-  const answerText = (text: string, key: string): ReactElement => (
-    <Fragment key={key}>
-      {citationsIn(text).map((piece, at) =>
-        'cited' in piece && onGoTo !== undefined ? (
-          <button
-            aria-label={i18n._(ASSISTANT_CITATION, { page: pdfjsPageOf(piece.cited) })}
-            className="m-assistant__citation"
-            data-assistant-citation={piece.cited}
-            key={at}
-            onClick={() => {
-              onGoTo(piece.cited);
-            }}
-            type="button"
-          >
-            {piece.label}
-          </button>
-        ) : (
-          <span key={at}>{'cited' in piece ? piece.label : piece.text}</span>
-        ),
-      )}
-    </Fragment>
-  );
+  const answerTextFor =
+    (asked: ConversationTurn['sides']) =>
+    (text: string, key: string): ReactElement => (
+      <Fragment key={key}>
+        {citationsIn(text).map((piece, at) => {
+          if (!('cited' in piece)) return <span key={at}>{piece.text}</span>;
+          const target = citationTarget(piece.side, asked);
+          if (target === undefined) return <span key={at}>{piece.label}</span>;
+          return (
+            <button
+              aria-label={i18n._(target.label, { page: pdfjsPageOf(piece.cited) })}
+              className="m-assistant__citation"
+              data-assistant-citation={piece.cited}
+              data-assistant-citation-side={piece.side ?? asked?.asked ?? 'left'}
+              key={at}
+              onClick={() => {
+                target.go(piece.cited);
+              }}
+              type="button"
+            >
+              {piece.label}
+            </button>
+          );
+        })}
+      </Fragment>
+    );
 
   const quickStarts = [
     { key: ASSISTANT_QUICK_SUMMARISE, scope: 'document' },
@@ -465,11 +576,42 @@ export function AssistantPanel({
                   })}
                 </option>
               )}
-              <option value="page">{i18n._(ASSISTANT_ABOUT_PAGE, { page: pdfjsPageOf(focused.page) })}</option>
+              <option value="page">
+                {i18n._(ASSISTANT_ABOUT_PAGE, {
+                  // THE PAGE THAT WILL GO: the right pane's when the conversation asks the right.
+                  page: pdfjsPageOf(beside !== undefined && sides === 'right' ? beside.page : focused.page),
+                })}
+              </option>
               <option value="document">{i18n._(ASSISTANT_ABOUT_DOCUMENT, { characters: number.format(MAX_ASK_CONTEXT) })}</option>
               <option value="nothing">{i18n._(ASSISTANT_ABOUT_NOTHING)}</option>
             </select>
           </label>
+          {pairable && (
+            // NATIVE RADIOS with nothing checked until a person chooses — a segmented control
+            // always holds one, and holding one here would be the default ADR-0089 refuses.
+            <fieldset className="m-assistant__sides" data-assistant-sides="">
+              <legend>{i18n._(ASSISTANT_SIDES_LABEL)}</legend>
+              {SIDE_CHOICES.map((choice) => (
+                <label className="m-assistant__side" key={choice.sides}>
+                  <input
+                    checked={sides === choice.sides}
+                    name={sidesName}
+                    onChange={() => {
+                      focused.store.getState().choseSides(choice.sides);
+                    }}
+                    type="radio"
+                    value={choice.sides}
+                  />
+                  {i18n._(choice.label)}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {waitingForSides && (
+            <p className="m-assistant__state" data-assistant-sides-needed="">
+              {i18n._(ASSISTANT_SIDES_NEEDED)}
+            </p>
+          )}
           {scope !== 'nothing' && (
             <p className="m-assistant__consent" data-assistant-consent="">
               {i18n._(ASSISTANT_ABOUT_SENDS, { provider: i18n._(AI_PROVIDER_NAMES[provider]) })}
@@ -485,16 +627,20 @@ export function AssistantPanel({
 
       {focused !== undefined && hasKey && turns.length === 0 && (
         <div aria-label={i18n._(ASSISTANT_QUICK_LABEL)} className="m-assistant__quick" role="group">
-          {quickStarts.map((quick) => (
-            <Button
-              key={quick.key}
-              label={quick.key}
-              onClick={() => {
-                choose(quick.scope);
-                ask(i18n._(quick.key), aboutFor(quick.scope));
-              }}
-            />
-          ))}
+          {quickStarts.map((quick) => {
+            const wanted = requestFor(quick.scope);
+            return (
+              <Button
+                disabled={wanted === null}
+                key={quick.key}
+                label={quick.key}
+                onClick={() => {
+                  choose(quick.scope);
+                  if (wanted !== null) ask(i18n._(quick.key), wanted);
+                }}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -507,15 +653,17 @@ export function AssistantPanel({
             {turn.role === 'assistant' ? (
               // RENDERED MARKDOWN, the owner's specification: headings, lists, tables, code —
               // built as elements from the tokens, so no HTML from the answer reaches the page.
-              <div className="m-assistant__text m-assistant__answer">{answerElements(turn.text, answerText)}</div>
+              <div className="m-assistant__text m-assistant__answer">
+                {answerElements(turn.text, answerTextFor(turns[at - 1]?.sides))}
+              </div>
             ) : (
               <p className="m-assistant__text">{turn.text}</p>
             )}
-            {turn.sent !== undefined && turn.sent !== null && (
-              <p className="m-assistant__sent" data-assistant-sent="">
-                {sentLine(turn.sent)}
+            {sentLines(turn).map((line) => (
+              <p className="m-assistant__sent" data-assistant-sent="" key={line}>
+                {line}
               </p>
-            )}
+            ))}
             {(() => {
               // A DRAFTED REPLY IS POSTED BY A PERSON, once the answer is whole: the assistant
               // never writes into the document by itself, and a half-streamed draft is not one.
@@ -569,7 +717,7 @@ export function AssistantPanel({
           value={draft}
         />
         {streaming === null ? (
-          <Button label={ASSISTANT_SEND} onClick={send} variant="primary" />
+          <Button disabled={waitingForSides} label={ASSISTANT_SEND} onClick={send} variant="primary" />
         ) : (
           <Button label={ASSISTANT_STOP} onClick={stop} />
         )}

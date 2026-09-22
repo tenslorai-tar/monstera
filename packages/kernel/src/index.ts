@@ -233,6 +233,7 @@ export {
   type AskWindow,
   type ReadPageText,
   askInstruction,
+  askPairInstruction,
   carriedWindow,
   readAskWindow,
 } from './askWindow.js';

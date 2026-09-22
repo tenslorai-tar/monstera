@@ -1946,9 +1946,10 @@ describe('App', () => {
         });
         const panes = [...document.querySelectorAll('.m-page-list')];
         expect(panes).toHaveLength(2);
-        if (press !== null) {
+        const pressed = press === null ? undefined : panes[press];
+        if (pressed !== undefined) {
           await act(async () => {
-            fireEvent.pointerDown(panes[press] as Element);
+            fireEvent.pointerDown(pressed);
             await Promise.resolve();
           });
         }

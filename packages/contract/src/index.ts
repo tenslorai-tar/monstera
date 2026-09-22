@@ -94,12 +94,16 @@ export {
   type AnswerPiece,
   type AskAbout,
   type AskSent,
+  type AskSide,
+  type AskSides,
   MAX_ASK_CONTEXT,
   MAX_ASK_SELECTION,
   askAboutSchema,
+  askCitation,
   askPageMarker,
   askSentSchema,
   citationsIn,
+  pairsWith,
 } from './askAbout.js';
 export {
   ENGINE_HOST_FRAME_MAX_BYTES,

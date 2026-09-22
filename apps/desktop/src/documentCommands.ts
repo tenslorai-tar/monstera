@@ -17,6 +17,8 @@ import {
   MAX_STRUCTURE_NODES,
   MAX_SERVICE_DETAIL,
   type AskAbout,
+  type AskSide,
+  MAX_ASK_CONTEXT,
   MAX_TABLE_CELL_TEXT,
   MAX_TABLE_CELLS,
   type SERVICE_REFUSALS,
@@ -2400,7 +2402,7 @@ export class DocumentCommands {
    *
    * @throws the same set `viewModel` throws, for the same reasons.
    */
-  async askWindow(about: AskAbout): Promise<AskWindow> {
+  async askWindow(about: AskAbout, pair?: { readonly side: AskSide; readonly bound: number }): Promise<AskWindow> {
     const { docId } = about;
     const { value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
@@ -2421,8 +2423,14 @@ export class DocumentCommands {
             ? [about.page]
             : []
           : Array.from({ length: pageCount }, (_unused, page) => page);
-      return await readAskWindow(pages, pageCount, async (page) =>
-        plainTextOf(await this.#pageText(docId, sessions, page)),
+      return await readAskWindow(
+        pages,
+        pageCount,
+        async (page) => plainTextOf(await this.#pageText(docId, sessions, page)),
+        // ONE SIDE OF TWO reads its share of the bound and names its side in every marker
+        // (ADR-0089); alone, the whole bound and the plain marker.
+        pair?.bound ?? MAX_ASK_CONTEXT,
+        pair?.side,
       );
     });
     return value;

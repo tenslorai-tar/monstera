@@ -23,6 +23,7 @@ import {
   type Incident,
   wrapHandler,
   IncidentLog,
+  MAX_ASK_CONTEXT,
   MAX_MARKDOWN_BYTES,
   MAX_CSV_BYTES,
   MAX_IMAGE_BYTES,
@@ -1384,34 +1385,49 @@ describe('search is E2s first consumer, through the composition point', () => {
     ['gamma on the second page', 'the needle sits here', 'delta on the second page'],
   ];
 
+  /** A second document, for the two-document ask: one page, words the first never has. */
+  const OTHER_LINES = [['omega on the other file']];
+
   let searchable: DocId;
   let searchSession: MupdfSession;
+  let other: DocId;
+  let otherSession: MupdfSession;
   let searchService: DocumentService;
 
   beforeAll(async () => {
-    const document = await PDFDocument.create();
-    const font = await document.embedFont(StandardFonts.Helvetica);
-    for (const lines of PAGE_LINES) {
-      const sheet = document.addPage([612, 792]);
-      for (const [index, text] of lines.entries()) {
-        sheet.drawText(text, { x: 72, y: 700 - index * 24, size: 12, font });
+    const pdf = async (pages: readonly (readonly string[])[]): Promise<Uint8Array> => {
+      const document = await PDFDocument.create();
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      for (const lines of pages) {
+        const sheet = document.addPage([612, 792]);
+        for (const [index, text] of lines.entries()) {
+          sheet.drawText(text, { x: 72, y: 700 - index * 24, size: 12, font });
+        }
       }
-    }
-    const bytes = await document.save({ useObjectStreams: false });
-
-    const path = join(directory, 'searchable.pdf');
-    writeFileSync(path, bytes);
+      return await document.save({ useObjectStreams: false });
+    };
     const registry = new CapabilityRegistry();
     searchService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
-    const outcome = await searchService.open(registry.mint(path));
-    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
-    searchable = outcome.docId;
+    const opened = async (name: string, bytes: Uint8Array): Promise<DocId> => {
+      const path = join(directory, name);
+      writeFileSync(path, bytes);
+      const outcome = await searchService.open(registry.mint(path));
+      if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+      return outcome.docId;
+    };
+
+    const bytes = await pdf(PAGE_LINES);
+    searchable = await opened('searchable.pdf', bytes);
     searchSession = await mupdfWriter.open(bytes);
+    const otherBytes = await pdf(OTHER_LINES);
+    other = await opened('other.pdf', otherBytes);
+    otherSession = await mupdfWriter.open(otherBytes);
   });
 
   function searchCommands(): DocumentCommands {
     const held = new EngineSessions();
     held.hold(searchable, { mupdf: searchSession });
+    held.hold(other, { mupdf: otherSession });
     return new DocumentCommands({
       ...LOCAL_READS,
       documents: searchService,
@@ -1464,6 +1480,68 @@ describe('search is E2s first consumer, through the composition point', () => {
       // BOTH ENDS IN ONE CASE — the renderer's `about` and the provider's request body — so the
       // wiring between them (handler, window read, assistant, adapter) is crossed rather than
       // assumed. Only the network is replaced.
+      const { bodies, handlers } = askHandlers();
+
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-1',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Where is the needle?' }],
+        about: { scope: 'page', docId: searchable, page: 1 },
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(answer.ok).toBe(true);
+      if (!answer.ok) return;
+      expect(answer.value.started).toBe(true);
+      expect(answer.value.sent).toMatchObject({ firstPage: 1, lastPage: 1, pageCount: 2, truncated: false });
+      expect(answer.value).not.toHaveProperty('alongside');
+      expect(bodies).toHaveLength(1);
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: unknown[] };
+      expect(sent.system).toContain('[Page 2]\ngamma on the second page');
+      expect(sent.system).toContain('cite it as [p. 3]');
+      expect(sent.system).not.toContain('alpha');
+      expect(sent.messages).toStrictEqual([{ role: 'user', content: 'Where is the needle?' }]);
+    });
+
+    it('TWO DOCUMENTS through the handler: both windows reach the provider, each under its side, and both are reported (ADR-0089)', async () => {
+      const { bodies, handlers } = askHandlers();
+
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-3',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What does each say?' }],
+        about: { scope: 'document', docId: searchable },
+        alongside: { scope: 'document', docId: other },
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(answer.ok).toBe(true);
+      if (!answer.ok) return;
+      expect(answer.value.sent).toMatchObject({ firstPage: 0, lastPage: 1, pageCount: 2 });
+      expect(answer.value.alongside).toMatchObject({ firstPage: 0, lastPage: 0, pageCount: 1 });
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string };
+      expect(sent.system).toContain('[Left page 2]\ngamma on the second page');
+      expect(sent.system).toContain('[Right page 1]\nomega on the other file');
+      expect(sent.system).toContain('[Right p. 3]');
+      // THE SHARED BOUND: neither side may be read with the whole of it.
+      expect(answer.value.sent?.characters ?? 0).toBeLessThanOrEqual(MAX_ASK_CONTEXT / 2);
+    });
+
+    it('THE HALF BOUND, read where it is applied: a side stops at half the window a lone ask would fill', async () => {
+      const bound = 40;
+      const alone = await searchCommands().askWindow({ scope: 'document', docId: searchable });
+      const half = await searchCommands().askWindow({ scope: 'document', docId: searchable }, { side: 'left', bound });
+
+      expect(alone.sent.truncated).toBe(false);
+      expect(half.sent.truncated).toBe(true);
+      expect(half.text.length).toBeLessThanOrEqual(bound);
+      expect(half.text.startsWith('[Left page 1]')).toBe(true);
+    });
+
+    /** The handlers over this file's documents, with the provider's request bodies recorded. */
+    function askHandlers(): { bodies: string[]; handlers: ReturnType<typeof createContractHandlers> } {
       const bodies: string[] = [];
       const fetchImpl = ((_url: string, init?: { body?: string }) => {
         bodies.push(init?.body ?? '');
@@ -1494,27 +1572,8 @@ describe('search is E2s first consumer, through the composition point', () => {
         readDictionary: () => Promise.resolve(null),
         ocrLanguages: () => Promise.resolve([]),
       });
-
-      const answer = await handlers['ai.ask']({
-        subscription: 'ask-1',
-        provider: 'anthropic',
-        model: 'claude-opus-5',
-        messages: [{ role: 'user', text: 'Where is the needle?' }],
-        about: { scope: 'page', docId: searchable, page: 1 },
-      });
-      await new Promise((settle) => setTimeout(settle, 0));
-
-      expect(answer.ok).toBe(true);
-      if (!answer.ok) return;
-      expect(answer.value.started).toBe(true);
-      expect(answer.value.sent).toMatchObject({ firstPage: 1, lastPage: 1, pageCount: 2, truncated: false });
-      expect(bodies).toHaveLength(1);
-      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: unknown[] };
-      expect(sent.system).toContain('[Page 2]\ngamma on the second page');
-      expect(sent.system).toContain('cite it as [p. 3]');
-      expect(sent.system).not.toContain('alpha');
-      expect(sent.messages).toStrictEqual([{ role: 'user', content: 'Where is the needle?' }]);
-    });
+      return { bodies, handlers };
+    }
 
     it('CONTROL: an ask about nothing reads no document and sends no instruction', async () => {
       const bodies: string[] = [];

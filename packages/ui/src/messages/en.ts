@@ -962,6 +962,14 @@ export const ASSISTANT_SENT_PAGES = messageKey('assistant.sent.pages');
 export const ASSISTANT_SENT_CUT = messageKey('assistant.sent.cut');
 export const ASSISTANT_SENT_NOTHING = messageKey('assistant.sent.nothing');
 export const ASSISTANT_CITATION = messageKey('assistant.citation');
+export const ASSISTANT_SIDES_LABEL = messageKey('assistant.sides');
+export const ASSISTANT_SIDE_LEFT = messageKey('assistant.sides.left');
+export const ASSISTANT_SIDE_RIGHT = messageKey('assistant.sides.right');
+export const ASSISTANT_SIDE_BOTH = messageKey('assistant.sides.both');
+export const ASSISTANT_SIDES_NEEDED = messageKey('assistant.sides.needed');
+export const ASSISTANT_SENT_LEFT = messageKey('assistant.sent.left');
+export const ASSISTANT_SENT_RIGHT = messageKey('assistant.sent.right');
+export const ASSISTANT_CITATION_RIGHT = messageKey('assistant.citation.right');
 export const ASSISTANT_QUICK_LABEL = messageKey('assistant.quick');
 export const ASSISTANT_QUICK_SUMMARISE = messageKey('assistant.quick.summarise');
 export const ASSISTANT_QUICK_DATES = messageKey('assistant.quick.dates');
@@ -2248,6 +2256,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SENT_CUT]: '— cut short at {characters} characters',
   [ASSISTANT_SENT_NOTHING]: 'No text was found to send',
   [ASSISTANT_CITATION]: 'Go to page {page}',
+  [ASSISTANT_CITATION_RIGHT]: 'Go to page {page} of the document on the right',
+  // THE OWNER'S THREE WORDS, for two documents side by side (ADR-0089).
+  [ASSISTANT_SIDES_LABEL]: 'Which document',
+  [ASSISTANT_SIDE_LEFT]: 'Left',
+  [ASSISTANT_SIDE_RIGHT]: 'Right',
+  [ASSISTANT_SIDE_BOTH]: 'Both',
+  [ASSISTANT_SIDES_NEEDED]: 'Two documents are side by side. Choose Left, Right or Both, then send.',
+  [ASSISTANT_SENT_LEFT]: 'Left: {sent}',
+  [ASSISTANT_SENT_RIGHT]: 'Right: {sent}',
   [ASSISTANT_QUICK_LABEL]: 'Start with',
   [ASSISTANT_QUICK_SUMMARISE]: 'Summarise this document',
   [ASSISTANT_QUICK_DATES]: 'List the dates and deadlines in this document',

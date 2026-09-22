@@ -98,12 +98,15 @@ beforeEach(() => {
   } as unknown as typeof IntersectionObserver;
 });
 
-function pane(against: DocId | undefined, onPick = vi.fn()): ReturnType<typeof render> {
+function pane(against: DocId | undefined, onPick = vi.fn(), onCurrentPage = vi.fn()): ReturnType<typeof render> {
   return render(
     <Wrapped>
       <ComparePane
         client={client()}
         against={DOCUMENTS.find((document) => document.docId === against)}
+        onCurrentPage={onCurrentPage}
+        goTo={undefined}
+        onWentTo={vi.fn()}
         others={DOCUMENTS}
         onPick={onPick}
         mode={{ kind: 'scale', scale: 1 }}
@@ -188,5 +191,20 @@ describe('ComparePane', () => {
 
     fireEvent.change(select, { target: { value: '' } });
     expect(picked).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it('REPORTS ITS PAGE WITH ITS DOCUMENT, for the assistant’s Right (ADR-0089)', async () => {
+    // The document's id travels with the page, so the owner cannot read one document's page as
+    // another's after a different pick. CONTROL: a pane showing this document again reports
+    // nothing, because it is not a compared document.
+    const reported = vi.fn();
+    pane(SECOND, vi.fn(), reported);
+    await settle();
+    expect(reported).toHaveBeenLastCalledWith(SECOND, 0);
+
+    const none = vi.fn();
+    pane(undefined, vi.fn(), none);
+    await settle();
+    expect(none).not.toHaveBeenCalled();
   });
 });

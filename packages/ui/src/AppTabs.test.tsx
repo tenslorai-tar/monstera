@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
-import { act, render as renderBare, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
@@ -13,6 +13,8 @@ import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
+import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from './settings/layout.js';
+import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
 
 /**
  * Multi-document tabs, driven through `App`.
@@ -105,6 +107,13 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
         ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' as const }),
       );
     }
+    if (id === 'ai.models') {
+      return Promise.resolve(
+        ok({ source: 'fetched' as const, models: [{ id: 'm-1', label: 'Model one', capabilities: { vision: null, streaming: null } }] }),
+      );
+    }
+    if (id === 'ai.ask') return Promise.resolve(ok({ started: true, sent: null }));
+    if (id === 'settings.save') return Promise.resolve(ok({ stored: true as const }));
     if (id === 'log.reveal') return Promise.resolve(ok({ revealed: false }));
     // The shell announces its close subscription on every mount (`windowClose.ts`).
     if (id === 'window.closeListening') return Promise.resolve(ok({ acknowledged: true }));
@@ -341,5 +350,82 @@ describe('multi-document tabs', () => {
 
     expect(container.querySelectorAll('.m-tab')).toHaveLength(2);
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
+  });
+});
+
+describe('the assistant with two documents side by side (ADR-0089)', () => {
+  it('AT THE COMPOSITION ROOT: Both asks about the tab’s document with the compared one alongside, at its pane’s page', async () => {
+    // The panel's cases inject `beside`; this is the one that crosses what `App` builds it from —
+    // the split setting, the picked document and the compare pane's own report.
+    const { client: built, sent } = client();
+    const settings = freshSettings();
+    const { container } = render(<App client={built} settings={settings} />);
+    await openOne();
+    await act(async () => {
+      screen.getByRole('button', { name: 'Open another document' }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      settings.set(SPLIT_VIEW_SETTING.id, true);
+      settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
+      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+      await Promise.resolve();
+    });
+    const picker = container.querySelector('[data-compare-pick]');
+    if (!(picker instanceof HTMLSelectElement)) throw new Error('the split view renders a picker');
+    await act(async () => {
+      fireEvent.change(picker, { target: { value: FIRST } });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // THE COMPARE PANE MOVES TO ITS SECOND PAGE, so the right-hand page is one only its own report
+    // can supply: the tab's document is still on page 0, and a root that took the status bar's
+    // page for the right would send 0.
+    act(() => {
+      const pane = observers.find((observer) =>
+        observer.observed.some((element) => element.closest('.m-second-pane') !== null),
+      );
+      if (pane === undefined) throw new Error('the compare pane observes its slots');
+      pane.callback(
+        pane.observed
+          .filter((element) => element instanceof HTMLElement && element.classList.contains('m-page-slot'))
+          .map(
+            (slot) =>
+              ({ target: slot, isIntersecting: (slot as HTMLElement).dataset['page'] === '1' }) as unknown as IntersectionObserverEntry,
+          ),
+        {} as unknown as IntersectionObserver,
+      );
+    });
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Both' }));
+    fireEvent.change(screen.getByLabelText('Ask about this document'), { target: { value: 'Which is longer?' } });
+    await act(async () => {
+      screen.getByRole('button', { name: 'Send' }).click();
+      await Promise.resolve();
+    });
+
+    const ask = sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params as
+      | { about?: unknown; alongside?: unknown }
+      | undefined;
+    expect(ask?.about).toStrictEqual({ scope: 'page', docId: SECOND, page: 0 });
+    expect(ask?.alongside).toStrictEqual({ scope: 'page', docId: FIRST, page: 1 });
+  });
+
+  it('CONTROL: split view of ONE document offers no choice — the second pane is the same document', async () => {
+    const { client: built } = client();
+    const settings = freshSettings();
+    render(<App client={built} settings={settings} />);
+    await openOne();
+    await act(async () => {
+      settings.set(SPLIT_VIEW_SETTING.id, true);
+      settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
+      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText('Ask about this document')).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'Both' })).toBeNull();
   });
 });

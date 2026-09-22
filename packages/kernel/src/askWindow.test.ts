@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { askInstruction, carriedWindow, readAskWindow } from './askWindow.js';
+import { askInstruction, askPairInstruction, carriedWindow, readAskWindow } from './askWindow.js';
 
 /** A reader over fixed page texts that records every page it was asked for. */
 function pagesOf(texts: readonly string[]): { read: (page: number) => Promise<string>; asked: number[] } {
@@ -86,5 +86,31 @@ describe('the instruction a window travels in', () => {
     expect(askInstruction(window, 'comment')).toContain('a comment left on a PDF document');
     expect(askInstruction(window, 'comment')).not.toContain('selected');
     expect(askInstruction(window, 'selection')).toContain('the person selected');
+  });
+});
+
+describe('two documents side by side (ADR-0089)', () => {
+  it('marks each page with its SIDE, and CONTROL: one document keeps the plain marker', async () => {
+    const left = await readAskWindow([0], 1, pagesOf(['alpha']).read, 100, 'left');
+    const right = await readAskWindow([1], 2, pagesOf(['', 'beta']).read, 100, 'right');
+    const alone = await readAskWindow([0], 1, pagesOf(['alpha']).read, 100);
+
+    expect(left.text).toBe('[Left page 1]\nalpha\n\n');
+    expect(right.text).toBe('[Right page 2]\nbeta\n\n');
+    expect(alone.text).toBe('[Page 1]\nalpha\n\n');
+  });
+
+  it('asks for side-named citations, says what each side covered, and carries both texts in order', async () => {
+    const left = await readAskWindow([2], 5, pagesOf(['', '', 'left words']).read, 100, 'left');
+    const right = await readAskWindow([0, 1], 2, pagesOf(['r1', 'r2']).read, 100, 'right');
+    const instruction = askPairInstruction(left, right, 'page');
+
+    expect(instruction).toContain('[Left p. 3]');
+    expect(instruction).toContain('[Right p. 3]');
+    expect(instruction).toContain('The Left text is from page 3 of 5.');
+    expect(instruction).toContain('The Right text covers pages 1 to 2 of 2.');
+    expect(instruction.endsWith(`${left.text}\n${right.text}`)).toBe(true);
+    // One document's form must not appear, or a citation could name a page in either.
+    expect(instruction).not.toContain('cite it as [p. 3]');
   });
 });

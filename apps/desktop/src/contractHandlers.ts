@@ -1,4 +1,5 @@
 import {
+  MAX_ASK_CONTEXT,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
   SECRET_SETTING_IDS,
@@ -11,6 +12,7 @@ import {
 import {
   type AskWindow,
   askInstruction,
+  askPairInstruction,
   type CapabilityRegistry,
   DocumentBusyError,
   DocumentNotOpenError,
@@ -354,31 +356,53 @@ export function createContractHandlers(deps: {
         })),
       });
     },
-    'ai.ask': async ({ subscription, provider, model, messages, about }) => {
+    'ai.ask': async ({ subscription, provider, model, messages, about, alongside }) => {
       // THE WINDOW IS READ HERE, INSIDE THE ASK THAT SENDS IT (ADR-0088 Decision 5): nothing
       // about a document is read until a person asks, and what was read is answered so the
       // turn can say which pages went.
+      //
+      // TWO DOCUMENTS READ HALF THE BOUND EACH, one lane after the other (ADR-0089), so what is
+      // resident is still one window's worth. The schema has already refused every pairing but
+      // a second document in the same page or document scope; the scope test below only
+      // narrows the type.
+      const paired =
+        alongside !== undefined && about !== undefined && (about.scope === 'page' || about.scope === 'document')
+          ? { scope: about.scope, left: about, right: alongside }
+          : null;
       let window: AskWindow | null = null;
-      if (about !== undefined) {
-        try {
+      let second: AskWindow | null = null;
+      try {
+        if (paired !== null) {
+          const bound = Math.floor(MAX_ASK_CONTEXT / 2);
+          window = await deps.commands.askWindow(paired.left, { side: 'left', bound });
+          second = await deps.commands.askWindow(paired.right, { side: 'right', bound });
+        } else if (about !== undefined) {
           window = await deps.commands.askWindow(about);
-        } catch (thrown) {
-          if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
-          if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
-          if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
-          throw thrown;
         }
+      } catch (thrown) {
+        if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+        if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+        if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+        throw thrown;
       }
+      const system =
+        paired !== null && window !== null && second !== null
+          ? askPairInstruction(window, second, paired.scope)
+          : window !== null && about !== undefined
+            ? askInstruction(window, about.scope)
+            : undefined;
       const started = deps.assistant.ask({
         subscription,
         provider,
         model,
         messages,
-        ...(window === null || about === undefined ? {} : { system: askInstruction(window, about.scope) }),
+        ...(system === undefined ? {} : { system }),
       });
       // A SUBSCRIPTION ALREADY STREAMING IS A DECLARED REFUSAL, not a quiet `false`: the
       // renderer must be able to say why nothing happened.
-      return started.started ? ok({ started: true, sent: window?.sent ?? null }) : err({ code: 'subscription-in-use' });
+      return started.started
+        ? ok({ started: true, sent: window?.sent ?? null, ...(second === null ? {} : { alongside: second.sent }) })
+        : err({ code: 'subscription-in-use' });
     },
     'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),
 

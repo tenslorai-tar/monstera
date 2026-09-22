@@ -34,6 +34,7 @@ function recording(
   models: readonly { id: string; label: string }[],
   started = true,
   window: AskSent | null = null,
+  alongside?: AskSent,
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -53,7 +54,14 @@ function recording(
         },
       });
     }
-    if (id === 'ai.ask') return Promise.resolve({ ok: true, value: { started, sent: window } });
+    if (id === 'ai.ask') {
+      // THE SECOND WINDOW ONLY WHEN THE ASK HAD A SECOND DOCUMENT, as `main` answers it.
+      const paired = (params as { alongside?: unknown }).alongside !== undefined;
+      return Promise.resolve({
+        ok: true,
+        value: { started, sent: window, ...(paired && alongside !== undefined ? { alongside } : {}) },
+      });
+    }
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
     throw new Error(`this case does not answer ${id}`);
   });
@@ -100,22 +108,28 @@ async function drawn(options: {
   readonly stored?: readonly string[];
   readonly started?: boolean;
   readonly window?: AskSent | null;
+  readonly alongside?: AskSent;
   readonly focused?: AssistantDocument;
   readonly request?: AssistantRequest;
   readonly onGoTo?: (page: number) => void;
   readonly onReply?: AssistantPanelProps['onReply'];
+  readonly beside?: AssistantPanelProps['beside'];
+  readonly onGoToBeside?: (page: number) => void;
 } = {}) {
   const wire = events();
   const { client, sent } = recording(
     options.models ?? [{ id: 'm-1', label: 'Model one' }],
     options.started ?? true,
     options.window ?? null,
+    options.alongside,
   );
   const panel = (props: Partial<AssistantPanelProps> & { readonly mount?: number }): ReactElement => (
     <Wrapped>
       <Host
         client={client}
         focused={options.focused}
+        beside={options.beside}
+        onGoToBeside={options.onGoToBeside}
         onGoTo={options.onGoTo}
         onReply={options.onReply}
         request={options.request}
@@ -582,5 +596,132 @@ describe('the assistant about a document (ADR-0088)', () => {
     });
     expect(lastAbout(sent)).toStrictEqual({ scope: 'document', docId: DOC_A });
     expect(screen.queryByRole('button', { name: 'Summarise this document' })).toBeNull();
+  });
+
+  describe('two documents side by side: Left · Right · Both (ADR-0089)', () => {
+    /** The compared document, on kernel page 2 — a different page from the left's 6. */
+    const BESIDE = { docId: DOC_B, page: 2 };
+
+    /** The last ask's params, whole. */
+    function lastAsk(sent: readonly { id: string; params: unknown }[]): { about?: unknown; alongside?: unknown } {
+      return sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params ?? {};
+    }
+
+    function pick(name: 'Left' | 'Right' | 'Both'): void {
+      fireEvent.click(screen.getByRole('radio', { name }));
+    }
+
+    it('asks BEFORE sending: nothing chosen, Send and the quick starts wait, and pressing Send sends nothing', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
+
+      const radios = screen.getAllByRole('radio');
+      expect(radios.map((radio) => (radio as HTMLInputElement).checked)).toStrictEqual([false, false, false]);
+      expect(screen.getByText('Two documents are side by side. Choose Left, Right or Both, then send.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Summarise this document' }).hasAttribute('disabled')).toBe(true);
+
+      type('Which is later?');
+      fireEvent.keyDown(screen.getByLabelText('Ask about this document'), { key: 'Enter' });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
+    });
+
+    it('BOTH sends the left page with the right pane’s page alongside; RIGHT sends the right alone', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
+
+      pick('Both');
+      type('Compare the two pages');
+      await send();
+      expect(lastAsk(sent).about).toStrictEqual({ scope: 'page', docId: DOC_A, page: 6 });
+      expect(lastAsk(sent).alongside).toStrictEqual({ scope: 'page', docId: DOC_B, page: 2 });
+    });
+
+    it('RIGHT sends the right document alone, and the page line names the right pane’s page', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
+
+      pick('Right');
+      expect(screen.getByRole('option', { name: 'This page (3)' })).toBeTruthy();
+      type('What is on the right page?');
+      await send();
+      expect(lastAsk(sent).about).toStrictEqual({ scope: 'page', docId: DOC_B, page: 2 });
+      expect(lastAsk(sent)).not.toHaveProperty('alongside');
+    });
+
+    it('REMEMBERS the choice for the conversation: a remount of the panel still holds it', async () => {
+      const focused = focusedOn();
+      const { redraw } = await drawn({ focused, beside: BESIDE });
+      pick('Right');
+      await redraw({ mount: 1 });
+      const right = screen.getByRole('radio', { name: 'Right' });
+      expect(right instanceof HTMLInputElement && right.checked).toBe(true);
+      expect(focused.store.getState().sides).toBe('right');
+    });
+
+    it('CONTROL: with ONE document shown there is no choice, and an ask carries no second document', async () => {
+      const { sent } = await drawn({ focused: focusedOn() });
+      expect(screen.queryByRole('radio')).toBeNull();
+      type('One document');
+      await send();
+      expect(lastAsk(sent).about).toStrictEqual({ scope: 'page', docId: DOC_A, page: 6 });
+      expect(lastAsk(sent)).not.toHaveProperty('alongside');
+    });
+
+    it('CONTROL: a selection belongs to its own document, so no choice is offered for it', async () => {
+      await drawn({
+        focused: focusedOn(),
+        beside: BESIDE,
+        request: { serial: 1, about: { scope: 'selection', docId: DOC_A, page: 6, text: 'the clause' } },
+      });
+      expect(screen.queryByRole('radio')).toBeNull();
+    });
+
+    it('says what went from EACH side, and links a side’s citation to that side’s pane', async () => {
+      const left: number[] = [];
+      const right: number[] = [];
+      const { sent, push } = await drawn({
+        focused: focusedOn(),
+        beside: BESIDE,
+        onGoTo: (page) => left.push(page),
+        onGoToBeside: (page) => right.push(page),
+        window: { firstPage: 6, lastPage: 6, pageCount: 9, characters: 40, truncated: false },
+        alongside: { firstPage: 2, lastPage: 2, pageCount: 4, characters: 30, truncated: false },
+      });
+      pick('Both');
+      type('Compare');
+      await send();
+      expect(screen.getByText('Left: Sent page 7 of 9')).toBeTruthy();
+      expect(screen.getByText('Right: Sent page 3 of 4')).toBeTruthy();
+
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.delta', { subscription, text: 'See [Left p. 7] and [Right p. 3]; also [p. 2].' });
+      push('ai.done', { subscription, stopped: false });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Go to page 7' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Go to page 3 of the document on the right' }));
+      expect(left).toStrictEqual([6]);
+      expect(right).toStrictEqual([2]);
+      // A SIDE-LESS CITATION FROM A PAIRED ANSWER names no document, so it is not a link.
+      expect(screen.queryByRole('button', { name: 'Go to page 2' })).toBeNull();
+    });
+
+    it('CONTROL: a right-hand citation is text once ANOTHER document is on the right', async () => {
+      const { sent, push, redraw } = await drawn({
+        focused: focusedOn(),
+        beside: BESIDE,
+        onGoToBeside: () => undefined,
+      });
+      pick('Right');
+      type('Where?');
+      await send();
+      const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;
+      push('ai.delta', { subscription, text: 'On [p. 3].' });
+      push('ai.done', { subscription, stopped: false });
+      expect(screen.getByRole('button', { name: 'Go to page 3 of the document on the right' })).toBeTruthy();
+
+      await redraw({ beside: { docId: asDocId('00000000-0000-4000-8000-00000000000c'), page: 0 } });
+      expect(screen.queryByRole('button', { name: /Go to page 3/u })).toBeNull();
+    });
   });
 });

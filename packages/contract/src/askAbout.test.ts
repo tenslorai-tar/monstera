@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { askAboutSchema, askPageMarker, citationsIn } from './askAbout.js';
+import { askAboutSchema, askCitation, askPageMarker, citationsIn } from './askAbout.js';
+import { channels } from './channels.js';
 
 describe('the page frame an ask and its answer share', () => {
   it('ROUND TRIP, off the first page: the page a marker names is the page its citation links to', () => {
@@ -56,5 +57,50 @@ describe('what an ask may be about', () => {
 
   it('refuses a page field on a document ask, so the renderer cannot believe it narrowed one', () => {
     expect(askAboutSchema.safeParse({ scope: 'document', docId: 'd', page: 3 }).success).toBe(false);
+  });
+});
+
+describe('two documents side by side (ADR-0089)', () => {
+  it('ROUND TRIP per side: a side-named marker and its citation name the same page on the same side', () => {
+    expect(askPageMarker(4, 'right')).toBe('[Right page 5]');
+    expect(askCitation(4, 'right')).toBe('[Right p. 5]');
+    expect(citationsIn(`compare ${askCitation(4, 'left')} with ${askCitation(1, 'right')}`)).toStrictEqual([
+      { text: 'compare ' },
+      { cited: 4, label: '[Left p. 5]', side: 'left' },
+      { text: ' with ' },
+      { cited: 1, label: '[Right p. 2]', side: 'right' },
+    ]);
+  });
+
+  it('CONTROL: a one-document citation carries NO side, so it links in the document it was asked of', () => {
+    expect(citationsIn('[p. 3]')).toStrictEqual([{ cited: 2, label: '[p. 3]' }]);
+  });
+
+  const request = (about: unknown, alongside: unknown): boolean =>
+    channels['ai.ask'].params.safeParse({
+      subscription: 's1-abc',
+      provider: 'anthropic',
+      model: 'm',
+      messages: [{ role: 'user', text: 'which is later?' }],
+      about,
+      alongside,
+    }).success;
+
+  it('pairs a different document in the same page or document scope', () => {
+    expect(request({ scope: 'page', docId: 'a', page: 1 }, { scope: 'page', docId: 'b', page: 4 })).toBe(true);
+    expect(request({ scope: 'document', docId: 'a' }, { scope: 'document', docId: 'b' })).toBe(true);
+  });
+
+  it('REFUSES the same document twice, mixed scopes, a carried scope, and a second with no first', () => {
+    expect(request({ scope: 'document', docId: 'a' }, { scope: 'document', docId: 'a' })).toBe(false);
+    expect(request({ scope: 'page', docId: 'a', page: 1 }, { scope: 'document', docId: 'b' })).toBe(false);
+    expect(
+      request({ scope: 'selection', docId: 'a', page: 0, text: 'x' }, { scope: 'selection', docId: 'b', page: 0, text: 'y' }),
+    ).toBe(false);
+    expect(request(undefined, { scope: 'document', docId: 'b' })).toBe(false);
+  });
+
+  it('CONTROL: an ask with no second document is unchanged', () => {
+    expect(request({ scope: 'selection', docId: 'a', page: 0, text: 'x' }, undefined)).toBe(true);
   });
 });

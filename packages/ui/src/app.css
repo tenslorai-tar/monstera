@@ -1584,6 +1584,32 @@ textarea {
   gap: var(--space-2);
 }
 
+/* LEFT · RIGHT · BOTH (ADR-0089): a row of native radios under a small legend. A fieldset keeps
+   its native group semantics; its default border and inset are what is taken away. */
+.m-assistant__sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: baseline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__sides > legend {
+  float: inline-start;
+  padding: 0;
+  color: var(--muted);
+}
+
+.m-assistant__side {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
 .m-assistant__consent,
 .m-assistant__sent {
   margin: 0;

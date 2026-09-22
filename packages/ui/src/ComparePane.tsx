@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { type ReactElement, useId } from 'react';
+import { type ReactElement, useCallback, useId } from 'react';
 
 import { PageList } from './PageList.js';
 import { COMPARE_PICK, COMPARE_SAME, COMPARE_SECOND_LABEL } from './messages/en.js';
@@ -56,6 +56,9 @@ export interface ComparableDocument {
 export function ComparePane({
   client,
   against,
+  onCurrentPage,
+  goTo,
+  onWentTo,
   others,
   onPick,
   mode,
@@ -68,6 +71,14 @@ export function ComparePane({
   readonly client: ContractClient;
   /** The document to show here, or `undefined` for a second view of the first. */
   readonly against: ComparableDocument | undefined;
+  /**
+   * Told the page this pane is on, with the document it is a page of — the assistant's *Right*
+   * (ADR-0089). Its own owner, never the status bar's; see *What it does NOT do*.
+   */
+  readonly onCurrentPage: (docId: DocId, page: number) => void;
+  /** A page of this pane's document to reveal, from an answer's right-hand citation. */
+  readonly goTo: number | undefined;
+  readonly onWentTo: () => void;
   /** Every open document, as choices. Includes the one the first pane shows. */
   readonly others: readonly ComparableDocument[];
   readonly onPick: (docId: DocId | undefined) => void;
@@ -108,6 +119,9 @@ export function ComparePane({
         <CompareView
           client={client}
           against={against}
+          onCurrentPage={onCurrentPage}
+          goTo={goTo}
+          onWentTo={onWentTo}
           mode={mode}
           onZoom={onZoom}
           loupe={loupe}
@@ -122,9 +136,7 @@ export function ComparePane({
 
 /** Nothing. A compared document's version moving is the FIRST pane's business. */
 const ignoreVersion = (): void => undefined;
-const ignorePage = (_page: number): void => undefined;
 const ignoreZoom = (_shown: number): void => undefined;
-const ignoreWentTo = (): void => undefined;
 /** A module constant so its identity is stable — see {@link ignoreVersion}. */
 const declinePassword = (): Promise<string | undefined> => Promise.resolve(undefined);
 
@@ -138,6 +150,9 @@ const declinePassword = (): Promise<string | undefined> => Promise.resolve(undef
 function CompareView({
   client,
   against,
+  onCurrentPage,
+  goTo,
+  onWentTo,
   mode,
   onZoom,
   loupe,
@@ -147,6 +162,9 @@ function CompareView({
 }: {
   readonly client: ContractClient;
   readonly against: ComparableDocument;
+  readonly onCurrentPage: (docId: DocId, page: number) => void;
+  readonly goTo: number | undefined;
+  readonly onWentTo: () => void;
   readonly mode: ZoomMode;
   readonly onZoom: (next: (shown: number) => ZoomMode) => void;
   readonly loupe: boolean;
@@ -166,6 +184,14 @@ function CompareView({
   // document — and refusing quietly instead of asking is the honest answer for
   // a pane that cannot be the first to meet a locked file.
   const { ready, failed } = useDocumentView(client, against, ignoreVersion, declinePassword);
+  // THE PAGE WITH ITS DOCUMENT, so the owner can never hold one document's page as another's.
+  const docId = against.docId;
+  const reportPage = useCallback(
+    (page: number) => {
+      onCurrentPage(docId, page);
+    },
+    [docId, onCurrentPage],
+  );
 
   if (failed) return <canvas className="m-page" data-failed="true" />;
   if (ready === undefined) return <div className="m-page-list" />;
@@ -177,13 +203,13 @@ function CompareView({
       pageCount={ready.document.numPages}
       docId={against.docId}
       version={against.version}
-      onCurrentPage={ignorePage}
+      onCurrentPage={reportPage}
       mode={mode}
       onZoom={onZoom}
       onShownZoom={ignoreZoom}
-      goTo={undefined}
+      goTo={goTo}
       startAt={FIRST_PAGE.kernel}
-      onWentTo={ignoreWentTo}
+      onWentTo={onWentTo}
       loupe={loupe}
       rulers={rulers}
       showGrid={showGrid}

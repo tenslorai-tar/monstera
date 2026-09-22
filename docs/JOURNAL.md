@@ -892,6 +892,38 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Left · Right · Both: the two-document ask
+
+The owner's design, on [ADR-0089](DECISIONS/0089-a-two-document-ask-carries-one-window-per-document-inside-one-bound.md).
+With a compared document on the right and a page or document scope, the *Asking about* line offers
+three native radios with **nothing checked**; Send, Enter and the quick starts wait until a person
+picks, and the pick is stored in the document's store beside the turns. *Right* sends the compared
+document alone at its pane's page; *Both* sends `about` plus `alongside`, which the schema accepts
+only for a different document in the same pairing scope. `main` reads each at half the bound in
+its own lane, marks pages `[Left page 3]` / `[Right page 3]`, and answers both windows; the turn
+shows a line per side.
+
+Citations name their side, and a turn records the side it went to and the right document's id,
+so `[Right p. 3]` — or a plain `[p. 3]` from a *Right* ask — links to the compare pane only while
+that document is still the one there. A side-less citation from a *Both* answer names no document
+and stays text. The compare pane now reports its page with its document's id to its own owner in
+`App`, never to the status bar.
+
+Proven at four levels: the contract (the side frame round-trips; the pairing refusals — same
+document, mixed scopes, a carried scope, a second with no first — beside the unchanged one-document
+control), the kernel instruction, the handler with two real MuPDF documents (both texts reach the
+provider's request body under their sides, each window within half the bound), and the panel and
+the composition root (`AppTabs.test`: the compare pane scrolled to its page 2 while the tab's
+document stays on page 1, so only the pane's own report can supply the right-hand page). Mutated:
+defaulting a missing choice to *Left* reddens the *asks before sending* case; dropping the
+right-document check reddens the moved-document control; forcing the root's right-hand page to 0
+reddens the composition case.
+
+**Not yet run live in the packaged app** — that run is batched with the next assistant rows', and
+this entry is where it will be recorded.
+
+---
+
 ## 2026-09-22 — Focus follows the pane, and why the compare pane stays out of it
 
 Split view's second pane reported nothing, so the status bar and the navigation commands always

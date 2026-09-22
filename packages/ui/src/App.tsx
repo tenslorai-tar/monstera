@@ -423,6 +423,24 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    */
   const [compareId, setCompareId] = useState<DocId | undefined>(undefined);
   /**
+   * The page the compare pane is on, and a page the assistant asked it to go to — the RIGHT
+   * document's own position, for the assistant's *Right* and *Both* (ADR-0089). Never the status
+   * bar's: its commands act on the tab's document, and this is a page of another one. Held with
+   * the document it is a page of, so a pick of a different document reads as page 1 until its
+   * pane reports, rather than as the last document's page.
+   */
+  const [comparePage, setComparePage] = useState<{ readonly docId: DocId; readonly page: number } | undefined>(undefined);
+  const [compareGoTo, setCompareGoTo] = useState<number | undefined>(undefined);
+  const comparedAt = useCallback(
+    (docId: DocId, page: number) => {
+      setComparePage((current) => (current?.docId === docId && current.page === page ? current : { docId, page }));
+    },
+    [],
+  );
+  const compareWentTo = useCallback(() => {
+    setCompareGoTo(undefined);
+  }, []);
+  /**
    * What the find bar last answered, for the text layers to paint.
    *
    * **Here rather than inside `FindBar`**, because the two components that need
@@ -1650,6 +1668,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const unit = useSetting(settings, RULER_UNIT_SETTING);
   const loupe = useSetting(settings, LOUPE_SETTING);
   const split = useSetting(settings, SPLIT_VIEW_SETTING);
+  /** The document the second pane compares against, while it is still open. */
+  const compared = tabs.find((tab) => tab.docId === compareId);
   const secondRenderer = useSetting(settings, SECOND_RENDERER_SETTING);
 
   /**
@@ -2215,7 +2235,10 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           // view's pane showing a different document rather than a third
           // surface. `others` is every open document, including this one —
           // *this document* is a choice a reader returns to, not an absence.
-          compare={tabs.find((tab) => tab.docId === compareId)}
+          compare={compared}
+          onComparePage={comparedAt}
+          compareGoTo={compareGoTo}
+          onCompareWentTo={compareWentTo}
           drawing={drawing}
           others={tabs}
           onCompare={setCompareId}
@@ -2261,6 +2284,18 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
                       : { docId: activeId, store, page: currentPage }
                   }
                   onGoTo={navigator.jumpTo}
+                  // THE DOCUMENT ON THE RIGHT, only while split view is showing a compared one:
+                  // that is when two documents are side by side and the owner's *Left · Right ·
+                  // Both* has something to choose between (ADR-0089).
+                  beside={
+                    split && compared !== undefined
+                      ? {
+                          docId: compared.docId,
+                          page: comparePage?.docId === compared.docId ? comparePage.page : FIRST_PAGE.kernel,
+                        }
+                      : undefined
+                  }
+                  onGoToBeside={setCompareGoTo}
                   onReply={dispatch}
                   request={assistantRequest}
                   handled={assistantHandled}
@@ -2531,6 +2566,9 @@ function PageCanvas({
   unit,
   split,
   compare,
+  onComparePage,
+  compareGoTo,
+  onCompareWentTo,
   others,
   onCompare,
   drawing,
@@ -2577,6 +2615,11 @@ function PageCanvas({
    * view of this one.
    */
   readonly compare: OpenDocument | undefined;
+  /** Told the page the compare pane is on — for the assistant's *Right*, never the status bar. */
+  readonly onComparePage: (docId: DocId, page: number) => void;
+  /** A page of the compared document to go to, from an answer's right-hand citation. */
+  readonly compareGoTo: number | undefined;
+  readonly onCompareWentTo: () => void;
   /** Every open document, as the compare picker's choices. */
   readonly others: readonly OpenDocument[];
   readonly onCompare: (docId: DocId | undefined) => void;
@@ -2870,6 +2913,9 @@ function PageCanvas({
           <ComparePane
             client={client}
             against={compare}
+            onCurrentPage={onComparePage}
+            goTo={compareGoTo}
+            onWentTo={onCompareWentTo}
             others={others}
             onPick={onCompare}
             mode={mode}

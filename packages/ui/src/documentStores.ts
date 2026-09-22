@@ -1,4 +1,4 @@
-import type { AskSent } from '@monstera/contract';
+import type { AskSent, AskSides } from '@monstera/contract';
 import {
   type DocId,
   type DocVersion,
@@ -20,6 +20,14 @@ export interface ConversationTurn {
   readonly replyTo?: ReplyTarget;
   /** An answer already posted as a reply, so it is not offered twice. */
   readonly posted?: boolean;
+  /** The second document's window, for a turn asked of both (ADR-0089). */
+  readonly alongside?: AskSent;
+  /**
+   * Which side an asked turn went to, with two documents side by side, and the right-hand
+   * document's id — so a citation in its answer links only while that document is still the
+   * one on the right. Absent for a turn asked with one document.
+   */
+  readonly sides?: { readonly asked: AskSides; readonly right: DocId };
 }
 
 /**
@@ -145,6 +153,12 @@ export interface DocumentState {
    * answers into another's panel.
    */
   readonly conversation: readonly ConversationTurn[];
+  /**
+   * Which documents this conversation asks about when two are side by side — *Left · Right ·
+   * Both* (ADR-0089 Decision 5). The conversation's, so it lives and dies with the turns;
+   * `undefined` until a person chooses, because no default is honest.
+   */
+  readonly sides: AskSides | undefined;
 }
 
 export interface DocumentActions {
@@ -231,6 +245,9 @@ export interface DocumentActions {
   /** Replaces this document's conversation — the panel holds the turns it is assembling. */
   readonly converse: (turns: readonly ConversationTurn[]) => void;
 
+  /** Records the Left · Right · Both choice for this conversation. */
+  readonly choseSides: (sides: AskSides) => void;
+
   /**
    * Records how many pages the parser found.
    *
@@ -280,6 +297,7 @@ export function createDocumentStore(
     // count, and zero is a number the navigation commands would clamp against.
     pageCount: undefined,
     conversation: [],
+    sides: undefined,
     observed: (next) => {
       if (next <= get().version) return false;
       set({ version: next });
@@ -350,6 +368,9 @@ export function createDocumentStore(
     },
     converse: (turns) => {
       set({ conversation: turns });
+    },
+    choseSides: (sides) => {
+      set({ sides });
     },
     counted: (pages) => {
       if (pages === get().pageCount) return;
