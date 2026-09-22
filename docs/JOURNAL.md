@@ -892,6 +892,18 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Red board at `8cc6da7`: a fixture with no key, after Send learned to need one
+
+CI's unit tests failed on both platforms and the Node-floor job in `AppTabs.test.tsx`'s
+composition case: no `ai.ask` was sent. `0db1b68` disabled Send whenever no key is stored — the
+no-key audit's fix for a dead control — and that fixture answered `settings.loadSecrets` with
+nothing, so the case's Send was correctly disabled. The fixture now stores an Anthropic key, as
+any person asking the assistant has. **My miss:** after the audit I ran the panel's own tests and
+the files I had edited, not every file that renders `App`; the whole UI package (123 files, 1,282
+cases) now passes, and that is the set an `App`-level change is run against.
+
+---
+
 ## 2026-09-22 — The browser harness learns the first run
 
 Every Playwright case starts a fresh shim, which is a first run with no AI key, so after `4cc2fc5`

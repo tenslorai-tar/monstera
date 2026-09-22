@@ -114,6 +114,11 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     }
     if (id === 'ai.ask') return Promise.resolve(ok({ started: true, sent: null }));
     if (id === 'settings.save') return Promise.resolve(ok({ stored: true as const }));
+    // AN ANTHROPIC KEY IS STORED, because Send is disabled without one (the no-key audit) — the
+    // assistant's cases here are about what an ask carries, which only a person with a key sends.
+    if (id === 'settings.loadSecrets') {
+      return Promise.resolve(ok({ stored: ['ai.anthropic-key' as const], available: true }));
+    }
     if (id === 'log.reveal') return Promise.resolve(ok({ revealed: false }));
     // The shell announces its close subscription on every mount (`windowClose.ts`).
     if (id === 'window.closeListening') return Promise.resolve(ok({ acknowledged: true }));
