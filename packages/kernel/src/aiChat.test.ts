@@ -280,4 +280,47 @@ describe('prepareChat', () => {
       }
     }
   });
+
+  describe('a picture of a page (ADR-0090)', () => {
+    /** Two turns before the one asking, so "the last user turn" is not also the first. */
+    const TALK = [
+      { role: 'user', text: 'Hello' },
+      { role: 'assistant', text: 'Hi' },
+      { role: 'user', text: 'Read the table' },
+    ] as const;
+    const image = { mediaType: 'image/png', base64: 'iVBORw0KGgo=' } as const;
+    const body = (provider: 'anthropic' | 'gemini' | 'openai', withImage: boolean) =>
+      JSON.parse(
+        prepareChat({ provider, model: 'm', key: 'k', messages: TALK, ...(withImage ? { image } : {}) })?.body ?? '{}',
+      ) as Record<string, unknown>;
+
+    it('rides on the LAST user turn in each shape’s own form, and earlier turns stay text', () => {
+      const anthropic = body('anthropic', true)['messages'] as { content: unknown }[];
+      expect(anthropic[0]?.content).toBe('Hello');
+      expect(anthropic[2]?.content).toStrictEqual([
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
+        { type: 'text', text: 'Read the table' },
+      ]);
+
+      const gemini = body('gemini', true)['contents'] as { parts: unknown }[];
+      expect(gemini[0]?.parts).toStrictEqual([{ text: 'Hello' }]);
+      expect(gemini[2]?.parts).toStrictEqual([
+        { inline_data: { mime_type: 'image/png', data: 'iVBORw0KGgo=' } },
+        { text: 'Read the table' },
+      ]);
+
+      const openAi = body('openai', true)['messages'] as { content: unknown }[];
+      expect(openAi[0]?.content).toBe('Hello');
+      expect(openAi[2]?.content).toStrictEqual([
+        { type: 'text', text: 'Read the table' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
+      ]);
+    });
+
+    it('CONTROL: with no picture every turn is plain text in every shape', () => {
+      expect((body('anthropic', false)['messages'] as { content: unknown }[])[2]?.content).toBe('Read the table');
+      expect((body('gemini', false)['contents'] as { parts: unknown }[])[2]?.parts).toStrictEqual([{ text: 'Read the table' }]);
+      expect((body('openai', false)['messages'] as { content: unknown }[])[2]?.content).toBe('Read the table');
+    });
+  });
 });

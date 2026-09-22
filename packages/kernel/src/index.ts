@@ -224,6 +224,7 @@ export {
 export { type RecognisedTable, RecognisedTableRefused } from './recognisedTables.js';
 export {
   type ChatAnswer,
+  type ChatImage,
   type ChatMessage,
   type ChatRefusal,
   type ChatRequest,
@@ -234,7 +235,9 @@ export {
   type ReadPageText,
   askInstruction,
   askPairInstruction,
+  askPictureInstruction,
   carriedWindow,
+  pictureSent,
   type CommentLine,
   commentsWindow,
   readAskWindow,

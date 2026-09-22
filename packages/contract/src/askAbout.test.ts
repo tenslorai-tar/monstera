@@ -44,6 +44,12 @@ describe('what an ask may be about', () => {
     expect(askAboutSchema.safeParse({ scope: 'comment', docId: 'd', page: 0 }).success).toBe(false);
   });
 
+  it('a picture names a page and carries nothing else — no bytes cross from the renderer (ADR-0090)', () => {
+    expect(askAboutSchema.safeParse({ scope: 'page-image', docId: 'd', page: 1 }).success).toBe(true);
+    expect(askAboutSchema.safeParse({ scope: 'page-image', docId: 'd', page: 1, png: 'x' }).success).toBe(false);
+    expect(askAboutSchema.safeParse({ scope: 'page-image', docId: 'd' }).success).toBe(false);
+  });
+
   it('CONTROL: accepts each of the five scopes it declares', () => {
     for (const about of [
       { scope: 'selection', docId: 'd', page: 2, text: 'words' },

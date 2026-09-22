@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { askInstruction, askPairInstruction, carriedWindow, commentsWindow, readAskWindow } from './askWindow.js';
+import {
+  askInstruction,
+  askPairInstruction,
+  askPictureInstruction,
+  carriedWindow,
+  commentsWindow,
+  pictureSent,
+  readAskWindow,
+} from './askWindow.js';
 
 /** A reader over fixed page texts that records every page it was asked for. */
 function pagesOf(texts: readonly string[]): { read: (page: number) => Promise<string>; asked: number[] } {
@@ -113,6 +121,19 @@ describe('the comments window (Summarise comments)', () => {
     expect(window.sent.truncated).toBe(true);
     // CONTROL: the same list, whole.
     expect((await commentsWindow([{ page: 0, kind: 'note', contents: 'a', reply: false }], 1, false)).sent.truncated).toBe(false);
+  });
+});
+
+describe('a picture of a page (ADR-0090)', () => {
+  it('says which page the picture is, asks for its citation, and carries no window text', () => {
+    const sent = pictureSent(3, 10);
+    expect(sent).toStrictEqual({ firstPage: 3, lastPage: 3, pageCount: 10, characters: 0, truncated: false, picture: true });
+    const instruction = askPictureInstruction(sent);
+    expect(instruction).toContain('It is page 4 of 10.');
+    expect(instruction).toContain('cite it as [p. 4]');
+    expect(instruction).toContain('Markdown table');
+    // NO PAGE MARKER: nothing but the picture carries the page's content.
+    expect(instruction).not.toContain('[Page');
   });
 });
 

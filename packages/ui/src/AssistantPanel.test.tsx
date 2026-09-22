@@ -35,7 +35,7 @@ function Wrapped({ children }: { readonly children: ReactNode }): ReactElement {
 
 /** A client that records what it was asked and answers what the case says. */
 function recording(
-  models: readonly { id: string; label: string }[],
+  models: readonly { id: string; label: string; vision?: boolean | null }[],
   started = true,
   window: AskSent | null = null,
   alongside?: AskSent,
@@ -51,9 +51,10 @@ function recording(
         ok: true,
         value: {
           source: 'fetched',
-          models: models.map((model) => ({
-            ...model,
-            capabilities: { vision: null, streaming: null },
+          models: models.map(({ id, label, vision }) => ({
+            id,
+            label,
+            capabilities: { vision: vision ?? null, streaming: null },
           })),
         },
       });
@@ -108,7 +109,7 @@ function Host({
 }
 
 async function drawn(options: {
-  readonly models?: readonly { id: string; label: string }[];
+  readonly models?: readonly { id: string; label: string; vision?: boolean | null }[];
   readonly stored?: readonly string[];
   readonly started?: boolean;
   readonly window?: AskSent | null;
@@ -611,6 +612,45 @@ describe('the assistant about a document (ADR-0088)', () => {
     const line = screen.getByLabelText('Asking about');
     expect(line instanceof HTMLSelectElement && line.value).toBe('comments');
     expect(screen.getByRole('option', { name: 'All the comments in this document' })).toBeTruthy();
+  });
+
+  describe('a picture of the page — vision analysis (ADR-0090)', () => {
+    it('the quick start asks about a PICTURE of the page on screen, and the turn says a picture went', async () => {
+      const { sent } = await drawn({
+        focused: focusedOn(),
+        window: { firstPage: 6, lastPage: 6, pageCount: 9, characters: 0, truncated: false, picture: true },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Read the table on this page' }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(lastAbout(sent)).toStrictEqual({ scope: 'page-image', docId: DOC_A, page: 6 });
+      // NOT "No text was found to send", which is what a picture's zero characters would say.
+      expect(screen.getByText('Sent a picture of page 7 of 9')).toBeTruthy();
+    });
+
+    it('a model that SAYS it cannot see is not offered the picture, and Send waits with a sentence saying why', async () => {
+      const { sent } = await drawn({ focused: focusedOn(), models: [{ id: 'm-1', label: 'Model one', vision: false }] });
+      const picture = screen.getByRole('option', { name: 'A picture of this page (7)' });
+      expect(picture instanceof HTMLOptionElement && picture.disabled).toBe(true);
+      expect(screen.getByRole('button', { name: 'Read the table on this page' }).hasAttribute('disabled')).toBe(true);
+
+      // CHOSEN ANYWAY — a stale choice from a model that could see — it still sends nothing.
+      fireEvent.change(screen.getByLabelText('Asking about'), { target: { value: 'page-image' } });
+      expect(screen.getByText(/This model cannot read pictures/u)).toBeTruthy();
+      type('Read it');
+      fireEvent.keyDown(screen.getByLabelText('Ask about this document'), { key: 'Enter' });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
+    });
+
+    it('CONTROL: a model whose provider does not say is offered it — unknown is not "cannot"', async () => {
+      await drawn({ focused: focusedOn(), models: [{ id: 'm-1', label: 'Model one', vision: null }] });
+      const picture = screen.getByRole('option', { name: 'A picture of this page (7)' });
+      expect(picture instanceof HTMLOptionElement && picture.disabled).toBe(false);
+    });
   });
 
   describe('two documents side by side: Left · Right · Both (ADR-0089)', () => {

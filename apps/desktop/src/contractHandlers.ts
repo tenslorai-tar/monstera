@@ -1,4 +1,5 @@
 import {
+  type AskSent,
   MAX_ASK_CONTEXT,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
@@ -13,6 +14,7 @@ import {
   type AskWindow,
   askInstruction,
   askPairInstruction,
+  askPictureInstruction,
   type CapabilityRegistry,
   DocumentBusyError,
   DocumentNotOpenError,
@@ -34,6 +36,7 @@ import {
   type ImportFormat,
   InvalidSearchPatternError,
   MissingSessionError,
+  PageTooLargeToPicture,
 } from './documentCommands.js';
 import type { Assistant } from './assistant.js';
 import type { RecentFiles } from './recentFiles.js';
@@ -366,16 +369,23 @@ export function createContractHandlers(deps: {
       // a second document in the same page or document scope; the scope test below only
       // narrows the type.
       const paired =
-        alongside !== undefined && about !== undefined && (about.scope === 'page' || about.scope === 'document')
+        alongside !== undefined &&
+        about !== undefined &&
+        (about.scope === 'page' || about.scope === 'document') &&
+        (alongside.scope === 'page' || alongside.scope === 'document')
           ? { scope: about.scope, left: about, right: alongside }
           : null;
       let window: AskWindow | null = null;
       let second: AskWindow | null = null;
+      // A PICTURE ASK (ADR-0090): the page drawn in the host, sent with the last turn.
+      let picture: { readonly png: Uint8Array | null; readonly sent: AskSent } | null = null;
       try {
         if (paired !== null) {
           const bound = Math.floor(MAX_ASK_CONTEXT / 2);
           window = await deps.commands.askWindow(paired.left, { side: 'left', bound });
           second = await deps.commands.askWindow(paired.right, { side: 'right', bound });
+        } else if (about?.scope === 'page-image') {
+          picture = await deps.commands.askPicture(about);
         } else if (about !== undefined) {
           window = await deps.commands.askWindow(about);
         }
@@ -383,25 +393,35 @@ export function createContractHandlers(deps: {
         if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
         if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
         if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+        if (thrown instanceof PageTooLargeToPicture) return err({ code: 'page-too-large' });
         throw thrown;
       }
       const system =
         paired !== null && window !== null && second !== null
           ? askPairInstruction(window, second, paired.scope)
-          : window !== null && about !== undefined
-            ? askInstruction(window, about.scope)
-            : undefined;
+          : picture?.png != null
+            ? askPictureInstruction(picture.sent)
+            : window !== null && about !== undefined && about.scope !== 'page-image'
+              ? askInstruction(window, about.scope)
+              : undefined;
       const started = deps.assistant.ask({
         subscription,
         provider,
         model,
         messages,
         ...(system === undefined ? {} : { system }),
+        ...(picture?.png == null
+          ? {}
+          : { image: { mediaType: 'image/png' as const, base64: Buffer.from(picture.png).toString('base64') } }),
       });
       // A SUBSCRIPTION ALREADY STREAMING IS A DECLARED REFUSAL, not a quiet `false`: the
       // renderer must be able to say why nothing happened.
       return started.started
-        ? ok({ started: true, sent: window?.sent ?? null, ...(second === null ? {} : { alongside: second.sent }) })
+        ? ok({
+            started: true,
+            sent: picture?.sent ?? window?.sent ?? null,
+            ...(second === null ? {} : { alongside: second.sent }),
+          })
         : err({ code: 'subscription-in-use' });
     },
     'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),

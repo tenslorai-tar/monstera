@@ -956,6 +956,11 @@ export const ASSISTANT_ABOUT_DOCUMENT = messageKey('assistant.about.document');
 export const ASSISTANT_ABOUT_SELECTION = messageKey('assistant.about.selection');
 export const ASSISTANT_ABOUT_COMMENT = messageKey('assistant.about.comment');
 export const ASSISTANT_ABOUT_COMMENTS = messageKey('assistant.about.comments');
+export const ASSISTANT_ABOUT_PICTURE = messageKey('assistant.about.picture');
+export const ASSISTANT_SENT_PICTURE = messageKey('assistant.sent.picture');
+export const ASSISTANT_NO_VISION = messageKey('assistant.no-vision');
+export const ASSISTANT_PROBLEM_PAGE_TOO_LARGE = messageKey('assistant.problem.page-too-large');
+export const ASSISTANT_QUICK_READ_TABLE = messageKey('assistant.quick.read-table');
 export const SUMMARISE_COMMENTS_TITLE = messageKey('command.ai.summarise-comments');
 export const ASSISTANT_PROMPT_SUMMARISE_COMMENTS = messageKey('assistant.prompt.summarise-comments');
 export const GROUP_AI = messageKey('surface.ribbon.group.ai');
@@ -2252,6 +2257,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_ABOUT_SELECTION]: 'The text you selected on page {page}',
   [ASSISTANT_ABOUT_COMMENT]: 'The comment on page {page}',
   [ASSISTANT_ABOUT_COMMENTS]: 'All the comments in this document',
+  // VISION ANALYSIS (ADR-0090): what goes is a picture, and the line says so before Send.
+  [ASSISTANT_ABOUT_PICTURE]: 'A picture of this page ({page})',
+  [ASSISTANT_SENT_PICTURE]: 'Sent a picture of page {page} of {count}',
+  [ASSISTANT_NO_VISION]: 'This model cannot read pictures. Choose a model that can, or ask about the page’s text.',
+  [ASSISTANT_PROBLEM_PAGE_TOO_LARGE]: 'This page is too large to send as a picture. Ask about its text instead.',
+  [ASSISTANT_QUICK_READ_TABLE]: 'Read the table on this page',
   [SUMMARISE_COMMENTS_TITLE]: 'Summarise comments',
   [ASSISTANT_PROMPT_SUMMARISE_COMMENTS]:
     'Summarise the comments on this document: what people ask for, what they point out, and what is still open. Cite the page of each point.',

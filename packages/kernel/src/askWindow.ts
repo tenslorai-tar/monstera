@@ -95,7 +95,30 @@ const WHAT: Readonly<Record<AskAbout['scope'], string>> = {
   comments:
     'Below are the comments left on a PDF document the person has open, each under the page it is on; ' +
     'a reply is marked as one, and each comment says what kind of mark carries it.',
+  'page-image': 'Attached is a picture of one page of a PDF document the person has open.',
 };
+
+/**
+ * What a picture ask covers (ADR-0090): one page, no text, and the `picture` flag the turn's line
+ * reads, so it says *a picture of page N* rather than a count of characters.
+ */
+export function pictureSent(page: number, pageCount: number): AskSent {
+  return { firstPage: page, lastPage: page, pageCount, characters: 0, truncated: false, picture: true };
+}
+
+/**
+ * The instruction a picture travels with: which page it is, and the same citation form every
+ * other ask asks for, so a link in the answer goes to the page that was pictured.
+ */
+export function askPictureInstruction(sent: AskSent): string {
+  const page = sent.firstPage ?? 0;
+  return (
+    `${WHAT['page-image']} It is page ${String(page + 1)} of ${String(sent.pageCount)}. ` +
+    `Read it as it appears, including any table, handwriting or figure; when you give a table, give it as a ` +
+    `Markdown table. When you rely on the page, cite it as ${askCitation(page)}. ` +
+    'If the answer is not on the page, say so rather than guessing.'
+  );
+}
 
 /** One annotation's words, as the comments window lists them. */
 export interface CommentLine {

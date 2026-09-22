@@ -134,6 +134,8 @@ import {
   type DocumentPageTables,
   type ExcelReview,
   type NetworkTableReader,
+  type AskPictureReader,
+  PageTooLargeToPicture,
   type OptimizeSource,
   DocumentPoisonedError,
   type DocumentRestore,
@@ -707,6 +709,9 @@ const INERT = {
   fetchUrl: () => Promise.reject(new Error('INERT: this case does not fetch a URL')),
   // REFUSES BY NAME for the same reason: a table export through a service supplies its own.
   networkTables: () => Promise.reject(new Error('INERT: this case sends no page to a service')),
+  // REFUSES BY NAME too: a picture for a vision ask is the table route's, and a case that asks
+  // for one supplies it.
+  askPicture: () => Promise.reject(new Error('INERT: this case pictures no page')),
   certificate: noCertificates,
   extract: localExtract,
   snapshot: localSnapshot,
@@ -1424,12 +1429,13 @@ describe('search is E2s first consumer, through the composition point', () => {
     otherSession = await mupdfWriter.open(otherBytes);
   });
 
-  function searchCommands(): DocumentCommands {
+  function searchCommands(askPicture: AskPictureReader = LOCAL_READS.askPicture): DocumentCommands {
     const held = new EngineSessions();
     held.hold(searchable, { mupdf: searchSession });
     held.hold(other, { mupdf: otherSession });
     return new DocumentCommands({
       ...LOCAL_READS,
+      askPicture,
       documents: searchService,
       bus: bus(),
       engine: held,
@@ -1529,6 +1535,78 @@ describe('search is E2s first consumer, through the composition point', () => {
       expect(answer.value.sent?.characters ?? 0).toBeLessThanOrEqual(MAX_ASK_CONTEXT / 2);
     });
 
+    it('A PICTURE ASK through the handler: the drawn page reaches the provider with the last turn, and a picture is what went (ADR-0090)', async () => {
+      // BYTES THE CASE CHOSE, so the provider's body can be checked for exactly them: the host's
+      // drawing is the composition's, and what this crosses is handler → part → assistant → adapter.
+      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 7, 7, 7]);
+      const asked: [DocId, number][] = [];
+      const { bodies, handlers } = askHandlers((docId, _sessions, page) => {
+        asked.push([docId, page]);
+        return Promise.resolve(png);
+      });
+
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-4',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Read the table' }],
+        about: { scope: 'page-image', docId: searchable, page: 1 },
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+
+      expect(asked).toStrictEqual([[searchable, 1]]);
+      expect(answer.ok && answer.value.sent).toStrictEqual({
+        firstPage: 1,
+        lastPage: 1,
+        pageCount: 2,
+        characters: 0,
+        truncated: false,
+        picture: true,
+      });
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: { content: unknown }[] };
+      expect(sent.system).toContain('It is page 2 of 2.');
+      expect(sent.system).toContain('[p. 2]');
+      // THE PAGE'S TEXT IS NOT SENT with a picture: the window is not read at all.
+      expect(sent.system).not.toContain('gamma');
+      expect(sent.messages?.[0]?.content).toStrictEqual([
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: Buffer.from(png).toString('base64') } },
+        { type: 'text', text: 'Read the table' },
+      ]);
+    });
+
+    it('a page too large to picture is refused BY NAME, and nothing reaches the provider', async () => {
+      const { bodies, handlers } = askHandlers((_docId, _sessions, page) => Promise.reject(new PageTooLargeToPicture(page)));
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-5',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Read it' }],
+        about: { scope: 'page-image', docId: searchable, page: 0 },
+      });
+      expect(answer.ok ? null : answer.error.code).toBe('page-too-large');
+      expect(bodies).toStrictEqual([]);
+    });
+
+    it('CONTROL: a page past the end is drawn by nobody and sends no picture', async () => {
+      const asked: number[] = [];
+      const { bodies, handlers } = askHandlers((_docId, _sessions, page) => {
+        asked.push(page);
+        return Promise.resolve(new Uint8Array([1]));
+      });
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-6',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Read it' }],
+        about: { scope: 'page-image', docId: searchable, page: 9 },
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+      expect(asked).toStrictEqual([]);
+      expect(answer.ok && answer.value.sent).toMatchObject({ firstPage: null, characters: 0 });
+      const sent = JSON.parse(bodies[0] ?? '{}') as { system?: string; messages?: { content: unknown }[] };
+      expect(sent.messages?.[0]?.content).toBe('Read it');
+    });
+
     it('THE HALF BOUND, read where it is applied: a side stops at half the window a lone ask would fill', async () => {
       const bound = 40;
       const alone = await searchCommands().askWindow({ scope: 'document', docId: searchable });
@@ -1541,7 +1619,9 @@ describe('search is E2s first consumer, through the composition point', () => {
     });
 
     /** The handlers over this file's documents, with the provider's request bodies recorded. */
-    function askHandlers(): { bodies: string[]; handlers: ReturnType<typeof createContractHandlers> } {
+    function askHandlers(
+      askPicture?: AskPictureReader,
+    ): { bodies: string[]; handlers: ReturnType<typeof createContractHandlers> } {
       const bodies: string[] = [];
       const fetchImpl = ((_url: string, init?: { body?: string }) => {
         bodies.push(init?.body ?? '');
@@ -1556,7 +1636,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         }),
         appInfo: { version: '0.0.0', installChannel: 'development' },
         capabilities: new CapabilityRegistry(),
-        commands: searchCommands(),
+        commands: searchCommands(askPicture),
         documents: searchService,
         openedDocument: () => Promise.resolve(),
         unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),

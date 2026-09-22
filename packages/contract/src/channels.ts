@@ -4261,8 +4261,9 @@ export const channels = {
      * second window's, present exactly when the ask had one.
      */
     z.object({ started: z.boolean(), sent: askSentSchema.nullable(), alongside: askSentSchema.optional() }),
-    // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first.
-    ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned'],
+    // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first — and a page
+    // too large to draw within the image limits, which a picture ask refuses by name (ADR-0090).
+    ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large'],
   ),
 
   /**

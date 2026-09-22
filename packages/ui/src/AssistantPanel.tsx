@@ -39,6 +39,7 @@ import {
   ASSISTANT_ABOUT_LABEL,
   ASSISTANT_ABOUT_NOTHING,
   ASSISTANT_ABOUT_PAGE,
+  ASSISTANT_ABOUT_PICTURE,
   ASSISTANT_ABOUT_SELECTION,
   ASSISTANT_ABOUT_SENDS,
   ASSISTANT_ASK,
@@ -51,6 +52,8 @@ import {
   ASSISTANT_MODEL_LABEL,
   ASSISTANT_NO_KEY,
   ASSISTANT_NO_MODELS,
+  ASSISTANT_NO_VISION,
+  ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
   ASSISTANT_POST_REPLY,
   ASSISTANT_PROBLEM_REJECTED,
   ASSISTANT_PROBLEM_UNAUTHORISED,
@@ -60,6 +63,7 @@ import {
   ASSISTANT_QUICK_DATES,
   ASSISTANT_QUICK_EXPLAIN_PAGE,
   ASSISTANT_QUICK_LABEL,
+  ASSISTANT_QUICK_READ_TABLE,
   ASSISTANT_QUICK_SUMMARISE,
   ASSISTANT_SEND,
   ASSISTANT_SENT_CUT,
@@ -67,6 +71,7 @@ import {
   ASSISTANT_SENT_NOTHING,
   ASSISTANT_SENT_PAGE,
   ASSISTANT_SENT_PAGES,
+  ASSISTANT_SENT_PICTURE,
   ASSISTANT_SENT_RIGHT,
   ASSISTANT_SIDE_BOTH,
   ASSISTANT_SIDE_LEFT,
@@ -171,13 +176,14 @@ const PROBLEMS = {
   'out-of-credit': ANTHROPIC_OUT_OF_CREDIT,
   unreadable: ASSISTANT_PROBLEM_UNREADABLE,
   'no-key': ASSISTANT_NO_KEY,
+  'page-too-large': ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
 } as const;
 
 /**
  * What the *Asking about* choice can be. A selection or a comment exists only when a command
  * gave one, and is offered under its own name — the line and the instruction both say which.
  */
-type Scope = 'page' | 'document' | 'comments' | 'selection' | 'comment' | 'nothing';
+type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'nothing';
 
 const NO_SUBSCRIBE = (): (() => void) => () => undefined;
 const NO_TURNS: readonly ConversationTurn[] = [];
@@ -217,7 +223,9 @@ export function AssistantPanel({
   const aboutId = useId();
   const sidesName = useId();
   const [provider, setProvider] = useState<AiProviderId>('anthropic');
-  const [models, setModels] = useState<readonly { id: string; label: string }[]>([]);
+  // WITH THE VISION FLAG, because a model that cannot see is not offered a picture (ADR-0090):
+  // `false` where the provider says so, `null` where it does not say.
+  const [models, setModels] = useState<readonly { id: string; label: string; vision: boolean | null }[]>([]);
   const [model, setModel] = useState('');
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState<string | null>(null);
@@ -248,7 +256,9 @@ export function AssistantPanel({
     let cancelled = false;
     void client['ai.models']({ provider }).then((result) => {
       if (cancelled || !result.ok) return;
-      setModels(result.value.models.map((entry) => ({ id: entry.id, label: entry.label })));
+      setModels(
+        result.value.models.map((entry) => ({ id: entry.id, label: entry.label, vision: entry.capabilities.vision })),
+      );
       setModel(result.value.models[0]?.id ?? '');
     });
     return () => {
@@ -284,6 +294,10 @@ export function AssistantPanel({
   // NO DEFAULT: with two documents and no choice, an ask waits rather than sending a document
   // nobody picked.
   const waitingForSides = pairable && sides === undefined;
+  // A MODEL THAT SAYS IT CANNOT SEE is not offered a picture; one that does not say is, and a
+  // provider's refusal is then worded like any other (ADR-0090 Decision 5).
+  const canSee = models.find((entry) => entry.id === model)?.vision !== false;
+  const blindForPicture = scope === 'page-image' && !canSee;
 
   useEffect(() => {
     const stopDelta = subscribe('ai.delta', (payload) => {
@@ -324,6 +338,10 @@ export function AssistantPanel({
       if (chosen === 'selection' || chosen === 'comment') return { about: selection ?? undefined };
       // THE DOCUMENT'S COMMENTS belong to the tab's document alone; they do not pair.
       if (chosen === 'comments') return { about: { scope: 'comments', docId: focused.docId } };
+      // A PICTURE OF THE PAGE ON SCREEN, for a model that can see; one that says it cannot waits.
+      if (chosen === 'page-image') {
+        return canSee ? { about: { scope: 'page-image', docId: focused.docId, page: focused.page } } : null;
+      }
       const on = (docId: DocId, page: number): AskAbout =>
         chosen === 'page' ? { scope: 'page', docId, page } : { scope: 'document', docId };
       const left = on(focused.docId, focused.page);
@@ -335,7 +353,7 @@ export function AssistantPanel({
       if (sides === 'right') return { about: right, sides: record };
       return { about: left, alongside: right, sides: record };
     },
-    [beside, focused, selection, sides],
+    [beside, canSee, focused, selection, sides],
   );
 
   const ask = useCallback(
@@ -391,7 +409,8 @@ export function AssistantPanel({
         }
         live.current = null;
         setStreaming(null);
-        setProblem('rejected');
+        // A PAGE TOO LARGE TO PICTURE is its own sentence: the person can ask about its text.
+        setProblem(!result.ok && result.error.code === 'page-too-large' ? 'page-too-large' : 'rejected');
       });
       return true;
     },
@@ -437,6 +456,10 @@ export function AssistantPanel({
 
   /** The line under an asked turn: which pages went, as `main` answered. */
   const sentLine = (sent: AskSent): string => {
+    // A PICTURE carries no characters, and saying *no text was found* of one would be false.
+    if (sent.picture === true && sent.firstPage !== null) {
+      return i18n._(ASSISTANT_SENT_PICTURE, { page: pdfjsPageOf(sent.firstPage), count: sent.pageCount });
+    }
     if (sent.firstPage === null || sent.lastPage === null || sent.characters === 0) return i18n._(ASSISTANT_SENT_NOTHING);
     const pages =
       sent.firstPage === sent.lastPage
@@ -514,6 +537,8 @@ export function AssistantPanel({
     { key: ASSISTANT_QUICK_SUMMARISE, scope: 'document' },
     { key: ASSISTANT_QUICK_DATES, scope: 'document' },
     { key: ASSISTANT_QUICK_EXPLAIN_PAGE, scope: 'page' },
+    // VISION ANALYSIS' OWN START (D11's *table reading assist*): a picture of the page on screen.
+    { key: ASSISTANT_QUICK_READ_TABLE, scope: 'page-image' },
   ] as const;
 
   return (
@@ -587,6 +612,10 @@ export function AssistantPanel({
               </option>
               <option value="document">{i18n._(ASSISTANT_ABOUT_DOCUMENT, { characters: number.format(MAX_ASK_CONTEXT) })}</option>
               <option value="comments">{i18n._(ASSISTANT_ABOUT_COMMENTS)}</option>
+              {/* DISABLED, NOT DROPPED, for a model that says it cannot see (ADR-0081's rule). */}
+              <option disabled={!canSee} value="page-image">
+                {i18n._(ASSISTANT_ABOUT_PICTURE, { page: pdfjsPageOf(focused.page) })}
+              </option>
               <option value="nothing">{i18n._(ASSISTANT_ABOUT_NOTHING)}</option>
             </select>
           </label>
@@ -610,6 +639,11 @@ export function AssistantPanel({
                 </label>
               ))}
             </fieldset>
+          )}
+          {blindForPicture && (
+            <p className="m-assistant__state" data-assistant-no-vision="">
+              {i18n._(ASSISTANT_NO_VISION)}
+            </p>
           )}
           {waitingForSides && (
             <p className="m-assistant__state" data-assistant-sides-needed="">
@@ -721,7 +755,7 @@ export function AssistantPanel({
           value={draft}
         />
         {streaming === null ? (
-          <Button disabled={waitingForSides} label={ASSISTANT_SEND} onClick={send} variant="primary" />
+          <Button disabled={waitingForSides || blindForPicture} label={ASSISTANT_SEND} onClick={send} variant="primary" />
         ) : (
           <Button label={ASSISTANT_STOP} onClick={stop} />
         )}

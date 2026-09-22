@@ -63,6 +63,13 @@ export const askAboutSchema = z.discriminatedUnion('scope', [
    * the document's lane, where the Comments panel's list comes from.
    */
   z.object({ scope: z.literal('comments'), docId: docIdSchema }).strict(),
+  /**
+   * A PICTURE of one page, for a model that can see it — vision analysis
+   * ([ADR-0090](../../../docs/DECISIONS/0090-a-vision-ask-sends-one-page-picture-drawn-in-the-engine-host.md)).
+   * Bytes of intent: the engine host draws the page and `main` sends it; the renderer never
+   * holds the picture.
+   */
+  z.object({ scope: z.literal('page-image'), docId: docIdSchema, page: z.number().int().nonnegative() }).strict(),
 ]);
 
 export type AskAbout = z.infer<typeof askAboutSchema>;
@@ -86,6 +93,9 @@ const PAIRS: Readonly<Record<AskAbout['scope'], boolean>> = {
   // NOT PAIRED YET: the owner's two-document design names pages and documents, and a summary of
   // two documents' comments is a question nobody has asked for.
   comments: false,
+  // ONE PICTURE PER ASK (ADR-0090): a second document's picture is a second image nobody's
+  // design asks for.
+  'page-image': false,
 };
 
 /**
@@ -108,6 +118,8 @@ export const askSentSchema = z
     pageCount: z.number().int().nonnegative(),
     characters: z.number().int().nonnegative().max(MAX_ASK_CONTEXT),
     truncated: z.boolean(),
+    /** Present and true when what went was a picture of the page rather than its text (ADR-0090). */
+    picture: z.literal(true).optional(),
   })
   .strict();
 

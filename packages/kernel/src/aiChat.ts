@@ -40,6 +40,12 @@ export interface ChatMessage {
   readonly text: string;
 }
 
+/** A picture, base64-encoded, as all three shapes take one. PNG is what the host draws. */
+export interface ChatImage {
+  readonly mediaType: 'image/png';
+  readonly base64: string;
+}
+
 /** Why an answer did not happen, or did not finish. */
 export type ChatRefusal = 'no-key' | 'unauthorised' | 'out-of-credit' | 'rejected' | 'unreachable' | 'unreadable';
 
@@ -63,6 +69,11 @@ export interface ChatRequest {
    * Each shape has its own place for it; absent, the request carries none.
    */
   readonly system?: string;
+  /**
+   * A picture sent with the LAST user turn, in each shape's own form (ADR-0090). Earlier turns
+   * carry text only, so a conversation does not re-send a picture per question.
+   */
+  readonly image?: ChatImage;
   /** Called with each piece of text as it arrives. */
   readonly onDelta?: (text: string) => void;
   readonly signal?: AbortSignal;
@@ -95,12 +106,14 @@ interface Prepared {
 
 /** The request one provider takes, or `null` when there is nothing to send it to. */
 export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'fetchImpl'>): Prepared | null {
-  const { provider, model, key, endpoint = '', messages, system } = request;
+  const { provider, model, key, endpoint = '', messages, system, image } = request;
   if (key === '' || model === '' || messages.length === 0) return null;
   const shape = AI_PROVIDERS[provider].adapter;
   // AN EMPTY INSTRUCTION IS NO INSTRUCTION: each shape refuses or ignores an empty one
   // differently, so none is sent.
   const instruction = system === undefined || system === '' ? null : system;
+  // THE TURN THE PICTURE RIDES ON: the last one the person wrote, which is the one asking.
+  const pictured = image === undefined ? -1 : messages.map((message) => message.role).lastIndexOf('user');
 
   if (shape === 'anthropic') {
     return {
@@ -111,7 +124,18 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
         max_tokens: MAX_OUTPUT_TOKENS,
         stream: true,
         ...(instruction === null ? {} : { system: instruction }),
-        messages: messages.map((message) => ({ role: message.role, content: message.text })),
+        // ANTHROPIC'S IMAGE BLOCK, before the text as its vision guide places it.
+        messages: messages.map((message, at) =>
+          at === pictured && image !== undefined
+            ? {
+                role: message.role,
+                content: [
+                  { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } },
+                  { type: 'text', text: message.text },
+                ],
+              }
+            : { role: message.role, content: message.text },
+        ),
       }),
     };
   }
@@ -124,9 +148,13 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
         ...(instruction === null ? {} : { systemInstruction: { parts: [{ text: instruction }] } }),
         // GEMINI'S ROLES ARE `user` AND `model`, not `assistant`, and a request using the
         // other word is refused by the service rather than misread.
-        contents: messages.map((message) => ({
+        contents: messages.map((message, at) => ({
           role: message.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: message.text }],
+          // GEMINI'S INLINE DATA PART, beside the text part of the same turn.
+          parts:
+            at === pictured && image !== undefined
+              ? [{ inline_data: { mime_type: image.mediaType, data: image.base64 } }, { text: message.text }]
+              : [{ text: message.text }],
         })),
       }),
     };
@@ -138,7 +166,18 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
     max_tokens: MAX_OUTPUT_TOKENS,
     messages: [
       ...(instruction === null ? [] : [{ role: 'system', content: instruction }]),
-      ...messages.map((message) => ({ role: message.role, content: message.text })),
+      // THE OPENAI FORMAT'S `image_url` PART, carrying the picture as a data URL.
+      ...messages.map((message, at) =>
+        at === pictured && image !== undefined
+          ? {
+              role: message.role,
+              content: [
+                { type: 'text', text: message.text },
+                { type: 'image_url', image_url: { url: `data:${image.mediaType};base64,${image.base64}` } },
+              ],
+            }
+          : { role: message.role, content: message.text },
+      ),
     ],
   });
   if (provider === 'azure-openai') {

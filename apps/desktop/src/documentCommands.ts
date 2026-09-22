@@ -17,6 +17,7 @@ import {
   MAX_STRUCTURE_NODES,
   MAX_SERVICE_DETAIL,
   type AskAbout,
+  type AskSent,
   type AskSide,
   MAX_ASK_CONTEXT,
   MAX_TABLE_CELL_TEXT,
@@ -95,6 +96,7 @@ import {
   type AskWindow,
   carriedWindow,
   commentsWindow,
+  pictureSent,
   readAskWindow,
   structureOutlineOf,
   textLayerOf,
@@ -1148,6 +1150,23 @@ export type NetworkTableReader = (
   engine: NetworkTableEngine,
 ) => Promise<readonly RecognisedTable[]>;
 
+/**
+ * A picture of one page for a vision ask (ADR-0090): drawn in the engine host within the image
+ * limits every provider shape accepts, weighed in `main` and retaken smaller while it is over.
+ * Composed beside {@link NetworkTableReader}, whose route it is.
+ *
+ * @throws {@link PageTooLargeToPicture} when even the smallest snapshot scale is over the limits
+ */
+export type AskPictureReader = (docId: DocId, sessions: DocumentSessions, page: number) => Promise<Uint8Array>;
+
+/** A page too large to picture within the image limits even at the snapshot floor. */
+export class PageTooLargeToPicture extends Error {
+  constructor(readonly page: number) {
+    super(`page ${String(page + 1)} is too large to picture within the image limits`);
+    this.name = 'PageTooLargeToPicture';
+  }
+}
+
 /** No key is stored for the engine the export was asked to use. */
 export class NetworkKeyMissing extends Error {
   constructor(readonly engine: NetworkTableEngine) {
@@ -1880,6 +1899,8 @@ export interface DocumentCommandsParts {
   readonly pageTables: DocumentPageTables;
   /** One page's tables read by a service — `exportExcel`'s network engines (ADR-0086). */
   readonly networkTables: NetworkTableReader;
+  /** One page as a picture for a vision ask (ADR-0090). */
+  readonly askPicture: AskPictureReader;
   readonly pageLinks: DocumentPageLinksReader;
   readonly destinations: DocumentDestinationsReader;
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
@@ -2068,6 +2089,7 @@ export class DocumentCommands {
   readonly #pageStructure: DocumentPageStructure;
   readonly #pageTables: DocumentPageTables;
   readonly #networkTables: NetworkTableReader;
+  readonly #askPicture: AskPictureReader;
   readonly #pageLinks: DocumentPageLinksReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
@@ -2146,6 +2168,7 @@ export class DocumentCommands {
     this.#pageStructure = parts.pageStructure;
     this.#pageTables = parts.pageTables;
     this.#networkTables = parts.networkTables;
+    this.#askPicture = parts.askPicture;
     this.#pageLinks = parts.pageLinks;
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
@@ -2403,7 +2426,11 @@ export class DocumentCommands {
    *
    * @throws the same set `viewModel` throws, for the same reasons.
    */
-  async askWindow(about: AskAbout, pair?: { readonly side: AskSide; readonly bound: number }): Promise<AskWindow> {
+  async askWindow(
+    // A PICTURE IS NOT A WINDOW: `askPicture` answers that scope, so this one cannot be handed it.
+    about: Exclude<AskAbout, { readonly scope: 'page-image' }>,
+    pair?: { readonly side: AskSide; readonly bound: number },
+  ): Promise<AskWindow> {
     const { docId } = about;
     const { value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
@@ -2449,6 +2476,40 @@ export class DocumentCommands {
         pair?.bound ?? MAX_ASK_CONTEXT,
         pair?.side,
       );
+    });
+    return value;
+  }
+
+  /**
+   * A picture of one page for a vision ask, and what it covers (ADR-0090).
+   *
+   * In the LANE, for `renderPage`'s reason: a picture drawn while an `apply` runs would show a
+   * page that is neither the one before the command nor the one after it. A page past the end
+   * draws NOTHING and answers `png: null` with nothing sent, as `askWindow` reads nothing for one —
+   * the document may have lost pages between the menu and the ask.
+   *
+   * @throws the set `askWindow` throws, and {@link PageTooLargeToPicture}
+   */
+  async askPicture(about: { readonly docId: DocId; readonly page: number }): Promise<{
+    readonly png: Uint8Array | null;
+    readonly sent: AskSent;
+  }> {
+    const { docId, page } = about;
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      if (page >= pageCount) {
+        return {
+          png: null,
+          sent: { firstPage: null, lastPage: null, pageCount, characters: 0, truncated: false },
+        };
+      }
+      return { png: await this.#askPicture(docId, sessions, page), sent: pictureSent(page, pageCount) };
     });
     return value;
   }

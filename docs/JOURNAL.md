@@ -892,6 +892,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Vision analysis: a picture of the page, drawn where every other page picture is
+
+D11's *vision analysis (table reading assist)* on [ADR-0090](DECISIONS/0090-a-vision-ask-sends-one-page-picture-drawn-in-the-engine-host.md).
+A sixth ask scope, `page-image`, names a page; `main` has the engine host draw it through the
+same `engine/pageImage` read and `rasterWithinLimit` retake the Excel table route uses, sized by
+Claude's documented limits for every provider. The chat request gains an optional `image`, which
+each adapter attaches to the **last user turn** only — tested with two turns before it, so *last*
+is not also *first*. `askWindow` now takes every scope but `page-image`, so handing it a picture
+ask is a compile error rather than a whole-document read.
+
+Two things the first draft got wrong and the type checker found: the pairing guard narrowed the
+left scope and not the right one, and a past-the-end page was about to be refused with the
+*too large* error, which would have been a label the event did not earn — it now draws nothing
+and sends nothing, as `askWindow` reads nothing for one.
+
+**Handwriting is still on Opus 5** (owner's item, checked 2026-09-22): `CLAUDE_OCR_MODEL` is
+`'claude-opus-5'` at `packages/kernel/src/ocrClaude.ts:49`, and the Messages request at `:462`
+names that constant and no other model — handwriting OCR and the Claude table read share it.
+
+**My error, recorded here because it is the owner's rule:** the board read for `120646f` was taken
+at 06:50:06, nineteen and a half minutes after the 06:30:40 push, with the clock check in the same
+command as the read, so the check could not gate it. It read GREEN, and the runs were complete —
+which is the outcome, not a defence.
+
+---
+
 ## 2026-09-22 — Red board at `0040eb8`: a test whose wait was satisfied before the thing it waited for
 
 CI's accessibility step failed on ubuntu in `pagePosition.pw.ts`: status *Page 3 of 3*, and the

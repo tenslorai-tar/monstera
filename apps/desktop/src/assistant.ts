@@ -7,7 +7,7 @@ import {
   MAX_EVENT_TEXT,
   checkEvent,
 } from '@monstera/contract';
-import { type ChatMessage, type ChatRefusal, listModels, streamChat } from '@monstera/kernel';
+import { type ChatImage, type ChatMessage, type ChatRefusal, listModels, streamChat } from '@monstera/kernel';
 
 /**
  * The assistant, in `main`
@@ -54,6 +54,8 @@ export interface AskRequest {
   readonly messages: readonly ChatMessage[];
   /** The document window's instruction, built by the handler that read it (ADR-0088). */
   readonly system?: string;
+  /** A picture of a page, sent with the last turn (ADR-0090). */
+  readonly image?: ChatImage;
 }
 
 export interface Assistant {
@@ -97,7 +99,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
       }),
 
-    ask: ({ subscription, provider, model, messages, system }) => {
+    ask: ({ subscription, provider, model, messages, system, image }) => {
       if (live.has(subscription)) return { started: false };
       const controller = new AbortController();
       live.set(subscription, controller);
@@ -111,6 +113,7 @@ export function createAssistant(parts: AssistantParts): Assistant {
         endpoint: endpointFor(provider),
         messages,
         ...(system === undefined ? {} : { system }),
+        ...(image === undefined ? {} : { image }),
         signal: controller.signal,
         onDelta: (text) => {
           // A SUBSCRIPTION THAT WAS STOPPED GETS NOTHING MORE. The abort reaches the
