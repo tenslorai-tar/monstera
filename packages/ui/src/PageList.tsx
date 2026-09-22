@@ -233,6 +233,13 @@ export interface PageListProps {
    * and `| undefined` for `secondRasteriser`'s reason.
    */
   readonly pageMenu: ((page: number, slot: ReactElement) => ReactNode) | undefined;
+  /**
+   * Called when the reader presses in this pane or moves focus into it — *focus follows the
+   * pane*. With two panes the owner routes the reports above to the one last used, so the status
+   * bar and the navigation commands follow the pane the reader is working in. Absent for a pane
+   * that can never be the one reporting.
+   */
+  readonly onActivate?: (() => void) | undefined;
 }
 
 /**
@@ -311,6 +318,7 @@ export function PageList({
   search,
   secondRasteriser,
   pageMenu,
+  onActivate,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
@@ -687,6 +695,10 @@ export function PageList({
       onScroll={onScroll}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
+      // CAPTURE, so a press on a page's own controls — an annotation, the text layer — still
+      // makes this the pane the reader is in; a bubbling handler would miss any that stop it.
+      onPointerDownCapture={onActivate}
+      onFocusCapture={onActivate}
     >
       {loupe && lens !== undefined ? (
         <div

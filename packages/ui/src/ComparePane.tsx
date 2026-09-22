@@ -46,11 +46,12 @@ export interface ComparableDocument {
  *
  * ## What it does NOT do
  *
- * It reports nothing back — no current page, no zoom, no page count — for the
- * split row's reason: those have one owner in `App`, and a second reporter
- * would make the status bar follow whichever pane moved last. Navigation and
- * zoom act on the first pane. This is the same limitation split view already
- * carries and the same clause closes both: *focus follows the pane*.
+ * It reports nothing to the status bar — no current page, no zoom, no page
+ * count. Split view routes those to the pane last used (*focus follows the
+ * pane*), and this pane is deliberately outside that: its pages belong to
+ * ANOTHER document, while the bar's page field and the page commands act on
+ * the first pane's. Routing its number there would rotate this document's page
+ * by the other's index.
  */
 export function ComparePane({
   client,

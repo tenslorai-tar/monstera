@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Focus follows the pane, and why the compare pane stays out of it
+
+Split view's second pane reported nothing, so the status bar and the navigation commands always
+followed the first — a reader working in the right pane pressed *Next page* and watched the left
+one move. The page, the shown zoom and the go-to request have one owner in `App`, and the fix
+keeps that: the owner's callbacks are **routed** to the pane last pressed or focused, and the
+other gets the ignoring ones. `PageList` takes `onActivate` on its scroller, in the capture phase
+so a press on an annotation or the text layer still counts. Swapping a callback re-runs
+`PageList`'s reporting effects, so the chosen pane reports its page the moment it is chosen.
+
+The case sends *Next page* and records which pane each scroll-into-view landed in — the scroll is
+the observable because happy-dom runs no intersection observer, so the status readout never
+moves. A press in the second pane lands `[1]`; the control, no press and a press in the first,
+lands `[0]`. Mutated: forcing the first pane as reporter reddens the first case.
+
+**The compare pane is deliberately not routed.** Its pages are another document's, and the page
+field and the page commands act on this one; its number in the owner would rotate this document's
+page by the other's index — `SHOWN_PAGE`'s defect across documents rather than across frames. The
+compare row's status now says the pane keeps its own position, rather than owing this clause.
+
+---
+
 ## 2026-09-21 — Excel cell fills: a source the row said did not exist
 
 The Excel row carried fills as a stated limit — *no engine reports a cell's background* — and the

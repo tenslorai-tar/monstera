@@ -2634,6 +2634,37 @@ function PageCanvas({
   const { ready, failed } = useDocumentView(client, open, moved, askPassword);
 
   /**
+   * Whether the second pane of a split is the one the reader is working in — *focus follows the
+   * pane*.
+   *
+   * ## ONE REPORTER AT A TIME, and the reader decides which
+   *
+   * The page, the shown zoom and the go-to request have one owner in `App`, and two panes
+   * reporting into it would make the status bar follow whichever scrolled last. So the reports
+   * are ROUTED: the pane last pressed or focused gets the owner's callbacks and the other gets
+   * none. Swapping a callback re-runs the reporting effects in `PageList`, so the newly active
+   * pane reports its own page and zoom the moment it is chosen.
+   *
+   * ## Split view only, never compare
+   *
+   * A compared document's page is a page of ANOTHER document, and the commands the status bar
+   * and the page field drive act on this one — rotate the current page would rotate this
+   * document's page by the other's number. So the compare pane keeps its own position and the
+   * first pane stays the reporter.
+   *
+   * Leaving the split hands the reports back to the first pane at once: the value is kept, and
+   * read through `split` below, so there is no moment with no reporter.
+   */
+  const [secondActive, setSecondActive] = useState(false);
+  const reporting: 'first' | 'second' = split && compare === undefined && secondActive ? 'second' : 'first';
+  const activateFirst = useCallback(() => {
+    setSecondActive(false);
+  }, []);
+  const activateSecond = useCallback(() => {
+    setSecondActive(true);
+  }, []);
+
+  /**
    * §6.1's second engine, or `undefined` where the setting is off.
    *
    * ## EVERY refusal answers `null`, which is what keeps a page drawn
@@ -2778,11 +2809,12 @@ function PageCanvas({
         pageCount={ready.document.numPages}
         docId={open.docId}
         version={open.version}
-        onCurrentPage={onCurrentPage}
+        onCurrentPage={reporting === 'first' ? onCurrentPage : ignorePage}
         mode={mode}
         onZoom={onZoom}
-        onShownZoom={onShownZoom}
-        goTo={goTo}
+        onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
+        goTo={reporting === 'first' ? goTo : undefined}
+        onActivate={split && compare === undefined ? activateFirst : undefined}
         // WHERE THIS SCROLLER IS MOUNTING, which with tabs is wherever the
         // reader left this document. Seeding page 1 here reported them back to
         // the top of a document they were forty pages into.
@@ -2816,13 +2848,12 @@ function PageCanvas({
           concurrent rasterisations, and this is the first caller that asks for
           them.
 
-          It reports NOTHING back. `onCurrentPage`, `onShownZoom` and
-          `onPageCount` all have one owner in `App`, and a second reporter would
-          make the status bar and the navigation commands follow whichever pane
-          scrolled last — a reader in the left pane pressing PageDown and
-          watching the right one move. What that costs is stated on the row:
-          the commands act on the first pane, and *focus follows the pane* is
-          owed rather than done. */}
+          ONE PANE REPORTS AT A TIME. `onCurrentPage`, `onShownZoom` and the
+          go-to request have one owner in `App`, and two reporters would make
+          the status bar follow whichever pane scrolled last — a reader in the
+          left pane pressing PageDown and watching the right one move. So they
+          go to the pane the reader last pressed or focused (`reporting`,
+          above): *focus follows the pane*. */}
       {split ? (
         // THE PANE IS THE SAME SEAM AND THE PARSER IS THE DIFFERENCE. With
         // nothing chosen this is split view — the second viewport over `ready`,
@@ -2855,15 +2886,16 @@ function PageCanvas({
               pageCount={ready.document.numPages}
               docId={open.docId}
               version={open.version}
-              onCurrentPage={ignorePage}
+              onCurrentPage={reporting === 'second' ? onCurrentPage : ignorePage}
               mode={mode}
               onZoom={onZoom}
-              onShownZoom={ignoreZoom}
-              goTo={undefined}
+              onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}
+              goTo={reporting === 'second' ? goTo : undefined}
               // The same page the first pane starts at, so a split opens on
               // what the reader is looking at rather than at the top.
               startAt={current}
-              onWentTo={ignoreWentTo}
+              onWentTo={reporting === 'second' ? onWentTo : ignoreWentTo}
+              onActivate={activateSecond}
               loupe={loupe}
               rulers={rulers}
               showGrid={showGrid}

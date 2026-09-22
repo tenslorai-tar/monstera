@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
-import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -1930,6 +1930,51 @@ describe('App', () => {
       // AND THE SECOND PANE IS REALLY THERE, so the case is not passing because
       // nothing was added at all.
       expect(document.querySelectorAll('.m-page-list')).toHaveLength(2);
+    });
+
+    describe('FOCUS FOLLOWS THE PANE — navigation goes to the pane the reader pressed in', () => {
+      /**
+       * Which pane each scroll-into-view landed in, by the pane's index. The observable is the
+       * SCROLL, not the status readout: the readout follows the page an intersection observer
+       * reports, which happy-dom never runs, while a go-to request is a scroll this can see.
+       */
+      async function nextPageLandsIn(press: 0 | 1 | null): Promise<readonly number[]> {
+        const { settings } = await withDocument();
+        await act(async () => {
+          settings.set(SPLIT_VIEW_SETTING.id, true);
+          await Promise.resolve();
+        });
+        const panes = [...document.querySelectorAll('.m-page-list')];
+        expect(panes).toHaveLength(2);
+        if (press !== null) {
+          await act(async () => {
+            fireEvent.pointerDown(panes[press] as Element);
+            await Promise.resolve();
+          });
+        }
+        const landed: number[] = [];
+        const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
+          landed.push(panes.findIndex((pane) => pane.contains(this)));
+        });
+        try {
+          await pressCommand('Next page');
+        } finally {
+          spy.mockRestore();
+        }
+        return landed;
+      }
+
+      it('a press in the SECOND pane sends the next page there, and only there', async () => {
+        expect(await nextPageLandsIn(1)).toStrictEqual([1]);
+      });
+
+      it('CONTROL: with no press, and after a press in the first, it goes to the first pane', async () => {
+        // The first pane is the reporter until the reader chooses otherwise — the state a split
+        // opens in. Without this pair, a build that always routed to the second pane would pass.
+        expect(await nextPageLandsIn(null)).toStrictEqual([0]);
+        cleanup();
+        expect(await nextPageLandsIn(0)).toStrictEqual([0]);
+      });
     });
   });
 
