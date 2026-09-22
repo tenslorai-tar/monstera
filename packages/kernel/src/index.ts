@@ -583,7 +583,27 @@ export {
   checkedUrl,
   fetchGuardedPdf,
   guardedLookup,
+  pdfBody,
 } from './guardedFetch.js';
+export {
+  CLOUD_PROVIDERS,
+  type CloudClient,
+  type CloudFileVersion,
+  type CloudProviderSpec,
+  CloudStorageRefused,
+  type CloudStorageRefusalReason,
+  type CloudTokens,
+  MAX_SIMPLE_UPLOAD_BYTES,
+  cloudAuthorizationUrl,
+  createCloudPdf,
+  describeCloudFile,
+  downloadHostDeclared,
+  exchangeCloudCode,
+  fetchCloudPdf,
+  listCloudPdfs,
+  refreshCloudTokens,
+  replaceCloudPdf,
+} from './cloudStorage.js';
 // ON THE MAIN BARREL: `node:crypto`, the contract's types and `readWithin` are all
 // it reaches, so nothing native enters the graph of the composition root that
 // imports this (ADR-0059).

@@ -892,6 +892,26 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Cloud storage, the protocol half: OneDrive and Google Drive in the kernel
+
+`cloudStorage.ts` is `docusign.ts`' shape on ADR-0091: the authorization URL, the code exchange,
+a refresh, and five file calls — list, describe, fetch, replace, create — with every endpoint
+from the providers' own pages of 2026-09-22 and `fetchImpl` injected, so the fourteen cases read
+the request a provider would receive. Two things moved rather than being written twice: the PKCE
+pair and the `state` now live in `oauth.ts`, which DocuSign re-exports; and the `%PDF-` prefix and
+received-byte ceiling became `pdfBody`, which *Open from URL* and a cloud download both call.
+
+What the cases pin: a client secret goes only where the build carries one (Google's) and never
+for Microsoft; a refresh that omits the refresh token keeps the old one (Google's answer);
+OneDrive's content redirect is followed only to a declared host and without the bearer token —
+the control, a redirect to an undeclared host, reddens when the host check is forced true; a body
+that is not a PDF is refused while it streams; Save back sends Graph `If-Match` and reads a 412 as
+*changed elsewhere*, and for Drive, which has no conditional upload, reads the version first and
+sends nothing when it moved — the window between that read and the upload is stated in the code,
+not closed. The download host suffixes for Graph are not measured; the live run records the host.
+
+---
+
 ## 2026-09-22 — Red board at `8cc6da7`: a fixture with no key, after Send learned to need one
 
 CI's unit tests failed on both platforms and the Node-floor job in `AppTabs.test.tsx`'s

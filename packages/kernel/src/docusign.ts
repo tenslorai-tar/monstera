@@ -1,5 +1,3 @@
-import { createHash, randomBytes } from 'node:crypto';
-
 import type { DocusignEnvironment } from '@monstera/contract';
 
 import { readWithin } from './verifiedDownload.js';
@@ -112,29 +110,9 @@ export class DocusignRefused extends Error {
   }
 }
 
-/** A PKCE pair (RFC 7636). */
-export interface PkcePair {
-  /** 32 random bytes, base64url — 43 characters, inside §4.1's 43 to 128. */
-  readonly verifier: string;
-  /** base64url(SHA-256(verifier)), the `S256` method (§4.2). */
-  readonly challenge: string;
-}
-
-/**
- * A fresh PKCE pair.
- *
- * @param random injected so a case can fix it; the application passes nothing.
- */
-export function pkcePair(random: (count: number) => Buffer = randomBytes): PkcePair {
-  const verifier = random(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-  return { verifier, challenge };
-}
-
-/** A fresh `state`, compared on the redirect (RFC 6749 §10.12). */
-export function oauthState(random: (count: number) => Buffer = randomBytes): string {
-  return random(24).toString('base64url');
-}
+// THE PKCE PAIR AND THE STATE MOVED TO `oauth.ts` when the cloud providers became their second
+// caller (ADR-0091), and are re-exported here so DocuSign's callers are unchanged.
+export { type PkcePair, oauthState, pkcePair } from './oauth.js';
 
 /** What an authorization request names. */
 export interface AuthorizationRequest {

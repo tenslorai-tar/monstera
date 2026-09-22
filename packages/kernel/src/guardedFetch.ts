@@ -266,11 +266,11 @@ export interface GuardedFetchParts {
  * A signature check on a prefix, not a parse. An HTML error page answered with `200`
  * would otherwise be written where the person chose and then poison on open.
  */
-function pdfPrefix(): Transform {
+function pdfPrefix(refuse: PdfBodyRefusal): Transform {
   let seen = Buffer.alloc(0);
   let found = false;
   const refusal = () =>
-    new UrlFetchRefused('not-a-pdf', `the response does not begin with %PDF- within ${String(PDF_PREFIX_BYTES)} bytes`);
+    refuse('not-a-pdf', `the response does not begin with %PDF- within ${String(PDF_PREFIX_BYTES)} bytes`);
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       if (!found) {
@@ -330,15 +330,28 @@ export async function fetchGuardedPdf(
       throw new UrlFetchRefused('http-error', `${url.host} answered HTTP ${String(status)}`);
     }
 
-    const meter = receivedByteMeter(
-      maxBytes,
-      (received) =>
-        new UrlFetchRefused('too-large', `the document passed ${String(maxBytes)} bytes at ${String(received)}`),
-    );
-    // THE LAST STREAM CARRIES EVERY FAILURE: `pipeline` destroys the chain on an error
-    // in any stage, and a reader of the returned stream sees it as that error.
-    return pipeline(response.body, meter, pdfPrefix(), () => undefined);
+    return pdfBody(response.body, maxBytes, (kind, message) => new UrlFetchRefused(kind, message));
   }
 
   throw new UrlFetchRefused('too-many-redirects', `more than ${String(MAX_URL_REDIRECTS)} redirects`);
+}
+
+/** How a caller names a body's refusal in its own error type. */
+export type PdfBodyRefusal = (kind: 'too-large' | 'not-a-pdf', message: string) => Error;
+
+/**
+ * A body that is a document: bounded by `receivedByteMeter` — the application's one
+ * received-byte rule — and refused unless `%PDF-` begins within {@link PDF_PREFIX_BYTES}.
+ *
+ * ONE CHECK FOR EVERY ROUTE a PDF arrives on over the network: a URL a person gave, and a
+ * cloud file (ADR-0091). Each names the refusal in its own error type, which is the only
+ * thing that differs.
+ */
+export function pdfBody(body: Readable, maxBytes: number, refuse: PdfBodyRefusal): Readable {
+  const meter = receivedByteMeter(maxBytes, (received) =>
+    refuse('too-large', `the document passed ${String(maxBytes)} bytes at ${String(received)}`),
+  );
+  // THE LAST STREAM CARRIES EVERY FAILURE: `pipeline` destroys the chain on an error
+  // in any stage, and a reader of the returned stream sees it as that error.
+  return pipeline(body, meter, pdfPrefix(refuse), () => undefined);
 }

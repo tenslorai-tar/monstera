@@ -338,3 +338,17 @@ export {
   type AiProvider,
   type AiProviderId,
 } from './aiProviders.js';
+export {
+  CLOUD_PROVIDER_IDS,
+  CLOUD_REFUSALS,
+  type CloudFile,
+  type CloudProviderId,
+  type CloudRefusal,
+  type CloudState,
+  MAX_CLOUD_FILES,
+  MAX_CLOUD_FILE_ID,
+  MAX_CLOUD_FILE_NAME,
+  cloudFileSchema,
+  cloudProviderSchema,
+  cloudStateSchema,
+} from './cloudProviders.js';
