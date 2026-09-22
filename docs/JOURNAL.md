@@ -892,6 +892,26 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — The assistant's two queued defects: a clipped hint and a sentence said twice
+
+Both were seen in the redesign captures and queued in the report; both are on main today.
+
+**The hint under Send was cut off at 900 px.** Measured in the running shim: the panel body is 732 px
+and `overflow: auto`; `.m-assistant` inside it is `block-size: 100%` with 4 px of padding under
+content-box sizing, so it was 740 px — the body scrolled by 8 px and the hint's bottom sat 4 px past
+the body's edge. **Mechanism**: a full-height box with padding under content-box is taller than its
+parent by the padding. `box-sizing: border-box` on the panel. The only other rule in `app.css` with
+both a full height and padding, `.m-page-list`, already carried border-box. **Proof**:
+`renderedScreen.pw.ts` asserts the body does not scroll and the hint ends inside it; with the line
+removed it read an overflow of **8**.
+
+**The no-key message appeared twice.** Three conditions rendered three sentences, and two of them —
+*this provider has no key* and *no provider has a key* — are both true when nothing is stored.
+**Mechanism**: overlapping booleans rendered independently. Now `assistantReadiness` returns one of
+`no-keys`, `no-key`, `no-models`, `ready`, and the panel renders one sentence from it, so two cannot
+be drawn. **Proof**: `AssistantPanel.test.tsx` asserts the exact list of state lines with nothing
+stored; against the old panel it failed with both.
+
 ## 2026-09-22 — Office import is deferred, and Stage 8 has no open row
 
 The owner chose to drop Office import for now. The cause stands as measured 2026-09-21: LibreOffice

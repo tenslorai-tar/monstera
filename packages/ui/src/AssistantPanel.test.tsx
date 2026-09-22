@@ -276,9 +276,19 @@ describe('the assistant tab', () => {
     expect(screen.queryByText(/refused the request/u)).toBeNull();
   });
 
-  it('says so when the chosen provider has no stored key', async () => {
-    await drawn({ stored: [] });
+  it('says so when the chosen provider has no stored key, and another provider has one', async () => {
+    await drawn({ stored: ['ai.openai-key'] });
     expect(screen.getByText(/no key stored/u)).toBeTruthy();
+  });
+
+  it('says ONE sentence when no key is stored at all, not the chosen provider’s as well', async () => {
+    // Both *this provider has no key* and *no provider has a key* are true here, and the panel said
+    // both. The count is the assertion: a panel showing only the second would pass a text query too.
+    await drawn({ stored: [] });
+    const lines = [...document.querySelectorAll('.m-assistant__state')].map((line) => line.textContent);
+    expect(lines).toStrictEqual([
+      'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+    ]);
   });
 
   it('NO DEAD SEND (§10.5): with no key, or no model to ask, Send is disabled beside the line saying why', async () => {

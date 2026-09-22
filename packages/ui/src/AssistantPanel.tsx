@@ -180,6 +180,29 @@ const PROBLEMS = {
 } as const;
 
 /**
+ * Whether the assistant can answer, as ONE value, so the panel says one sentence about it.
+ *
+ * Three booleans rendered as three conditions said two sentences when nothing was stored at all —
+ * *this provider has no key* and *no provider has a key* are both true then — and a reader was told
+ * the same thing twice. The states are ordered: no key anywhere explains itself before the chosen
+ * provider does, and a missing model list only matters once there is a key to fetch it with.
+ */
+export type AssistantReadiness = 'no-keys' | 'no-key' | 'no-models' | 'ready';
+
+export function assistantReadiness(anyKey: boolean, chosenHasKey: boolean, modelCount: number): AssistantReadiness {
+  if (!anyKey) return 'no-keys';
+  if (!chosenHasKey) return 'no-key';
+  if (modelCount === 0) return 'no-models';
+  return 'ready';
+}
+
+const READINESS = {
+  'no-keys': ASSISTANT_EMPTY,
+  'no-key': ASSISTANT_NO_KEY,
+  'no-models': ASSISTANT_NO_MODELS,
+} as const;
+
+/**
  * What the *Asking about* choice can be. A selection or a comment exists only when a command
  * gave one, and is offered under its own name — the line and the instruction both say which.
  */
@@ -452,6 +475,8 @@ export function AssistantPanel({
     [storedSecrets],
   );
 
+  const readiness = assistantReadiness(providers.length > 0, hasKey, models.length);
+
   const number = new Intl.NumberFormat(i18n.locale);
 
   /** The line under an asked turn: which pages went, as `main` answered. */
@@ -658,9 +683,11 @@ export function AssistantPanel({
         </div>
       )}
 
-      {!hasKey && <p className="m-assistant__state">{i18n._(ASSISTANT_NO_KEY)}</p>}
-      {hasKey && models.length === 0 && <p className="m-assistant__state">{i18n._(ASSISTANT_NO_MODELS)}</p>}
-      {providers.length === 0 && turns.length === 0 && <p className="m-assistant__state">{i18n._(ASSISTANT_EMPTY)}</p>}
+      {readiness !== 'ready' && (
+        <p className="m-assistant__state" data-assistant-readiness={readiness}>
+          {i18n._(READINESS[readiness])}
+        </p>
+      )}
       {problem !== null && <p className="m-assistant__problem">{i18n._(PROBLEMS[problem])}</p>}
 
       {focused !== undefined && hasKey && turns.length === 0 && (

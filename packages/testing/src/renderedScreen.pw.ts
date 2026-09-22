@@ -498,6 +498,29 @@ test('at its MINIMUM width the right contextual panel still holds the widest sty
   for (const past of overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
 });
 
+test('the ASSISTANT fits its panel: the hint under Send is inside it and nothing scrolls', async ({ page }) => {
+  // The panel was the body's full height PLUS its padding, so at 900 px the body scrolled by the
+  // padding and the hint's last line sat past its bottom edge — cut off, with a scroll bar for 8 px.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await bridgeWithDocument(page, { 'appearance.context-panel-open': true, 'appearance.context-panel-tab': 'assistant' }, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-assistant__hint')).toBeVisible();
+
+  const fit = await page.evaluate(() => {
+    const body = document.querySelector('.m-assistant')?.parentElement;
+    const hint = document.querySelector('.m-assistant__hint');
+    if (body === null || body === undefined || hint === null) return null;
+    return {
+      overflow: body.scrollHeight - body.clientHeight,
+      past: hint.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom,
+    };
+  });
+  expect(fit).not.toBeNull();
+  expect(fit?.overflow).toBeLessThanOrEqual(0);
+  expect(fit?.past).toBeLessThanOrEqual(0);
+});
+
 test('the page list FITS its pane: nothing of it sits above the pane or under the status bar', async ({
   page,
 }) => {
