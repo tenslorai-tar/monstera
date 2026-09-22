@@ -892,6 +892,17 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — Correction: a paragraph was inserted into a committed entry
+
+`120646f` added a paragraph beginning *"And a second, in the push that carried the fix."* inside
+the entry **"Red board at `0040eb8`: a test whose wait was satisfied before the thing it waited
+for"**, after that entry's last paragraph and before its closing rule — an entry committed in
+`445a50e`. Journal entries are append-only, so that paragraph should have been an entry of its
+own. Its content is accurate and it stays where it is: moving it now would be a second edit to
+the same committed entry. What it records — `445a50e` pushed before the visual run it depended
+on had been read, and the three Review baselines regenerated in `120646f` — belongs to
+2026-09-22 and to `120646f`, not to the `0040eb8` red it sits under.
+
 ## 2026-09-22 — A disabled primary button looked exactly like an enabled one
 
 Found while capturing the redesign proposal, not by any test: the Assistant's **Send**, with no
