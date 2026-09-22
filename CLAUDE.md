@@ -562,11 +562,15 @@ Registries: commands (with `placements[]`), dialogs, settings, annotation types,
 tools, AI providers, update providers, import/export formats, cloud providers.
 
 The ribbon, floating toolbar, context menus, command palette, shortcut map,
-start-screen shortcuts and the status bar's buttons are all **projections** of
-the command registry. **There is no second place where a feature is wired.** (The
-status bar joined the list 2026-09-14,
+start-screen shortcuts, the status bar's buttons and the title bar's are all
+**projections** of the command registry. **There is no second place where a
+feature is wired.** (The status bar joined the list 2026-09-14,
 [ADR-0067](docs/DECISIONS/0067-the-status-bar-is-a-projection-around-two-value-controls.md):
-its page field and zoom slider take values and stay the bar's own controls.) A hand-maintained layout file for
+its page field and zoom slider take values and stay the bar's own controls. The
+title bar joined it 2026-09-23,
+[ADR-0095](docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md),
+for Donate and Rate Us; its tabs, search and layout switcher each hold a value
+and stay the bar's own the same way.) A hand-maintained layout file for
 any surface is exactly the second wiring place the registry exists to forbid.
 
 If a feature cannot be registered into an existing seam → **B4**. Stop and amend

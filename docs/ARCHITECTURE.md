@@ -1327,7 +1327,7 @@ A feature is finished when it is **registered**, not when it is wired.
 
 | Registry | Entry | Derives |
 |---|---|---|
-| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons |
+| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, title-bar buttons |
 | **Dialogs** | id, lazy component, props schema, **result schema** | one mount point, one focus trap, one Escape/backdrop handler, and the promise an opener awaits |
 | **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, **an unset title for a colour setting**, `secret?`, migration | the entire Settings dialog — **one control per schema kind, a colour as a no-choice checkbox beside a colour input, a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)) — persistence, export (secrets excluded) |
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
@@ -1371,15 +1371,29 @@ type Placement =
   | { surface: 'status-bar';    cluster: 'navigation'; side: 'before' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'chrome'; order: number }
+  | { surface: 'title-bar';     emphasis: 'primary' | 'normal'; order: number }
 ```
 
 A command may carry several placements — Highlight legitimately lives in
 Home › Quick tools, Comment › Markup, and the annotation context menu.
 
 `SectionId` is exactly the eight sections of §10.3. The ribbon, floating
-toolbar, context menus, start-screen shortcuts and the status bar's command
-buttons are all **derived** from placements. **A hand-maintained layout file for
-any of them is the second wiring place this registry exists to forbid.**
+toolbar, context menus, start-screen shortcuts, the status bar's command buttons
+and the title bar's are all **derived** from placements. **A hand-maintained
+layout file for any of them is the second wiring place this registry exists to
+forbid.**
+
+**The title bar projects the application's own commands** (amended 2026-09-23,
+[ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
+The owner's design puts Donate and Rate Us in that row, and each is an ordinary
+command opening a dialog. A placement names its `emphasis` — `primary` for the
+filled accent treatment, `normal` for the outline — because a bar deciding that
+from a command's id is the layout table above, one field narrower. **The
+document tabs, the command search and the layout switcher are not commands**,
+for the status bar's reason unchanged: each holds a value — the open set and the
+active tab, the query, the current mode — and a command's `run` takes none. The
+search is a field-shaped opener for `view.command-palette`, which is a second
+surface for it and not a second writer.
 
 **The status bar projects commands into three clusters, and each cluster's
 positions are exactly the gaps between the bar's own controls** (amended
@@ -2441,8 +2455,12 @@ them.
 
 ### 10.3 Layout anatomy
 
-- **Title bar:** integrated document tabs (Window Controls Overlay), the Ctrl+K
-  command search, and the layout switcher.
+- **Title bar:** integrated document tabs (Window Controls Overlay), the
+  application's own commands as labelled buttons (amended 2026-09-23,
+  [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)
+  — the owner's design places Donate and Rate Us there, projected from the
+  registry between the tabs and the search), the Ctrl+K command search, and the
+  layout switcher.
 - **Left section rail:** the eight feature sections — Home, Comment, Edit,
   Organize, Forms, Review, Protect, Tools — as labeled icons. Selecting a
   section populates the top tool ribbon. Beside it, one document panel at a
@@ -2591,6 +2609,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-23 | **The title bar projects the application's own commands** (§7's `Placement`, §10.3's title-bar clause). The owner's design (2026-09-22) puts **Donate** and **Rate Us** in the row between the document tabs and the command search, and each is an ordinary command opening a dialog; §7 had five surfaces and none of them was that row, so the only way to draw them was a hand-written list inside `TitleBar.tsx` — the second wiring place §7 forbids and `check:secondwiring` scans that directory for. `title-bar` joins the union carrying `emphasis: 'primary' \| 'normal'` and an `order`. **The `emphasis` is on the placement and not on the command**: the design gives Donate the filled accent and Rate Us the outline, and a surface reading a command's id to decide that is the same layout table one field narrower — the argument the 2026-09-08 row makes for a ribbon group being a `MessageKey`. **The tabs, the search and the switcher stay the bar's own controls**, ADR-0067's rule taken rather than restated: each holds a value and a command's `run` takes none. §10.3 is amended in the same commit, because a surface added to §7 while §10.3 still described a three-part bar is the law contradicting itself in the shape audit item 7 exists to catch. **Rejected:** writing the two buttons in by hand (cheapest, and most harmless-looking at two commands); placing them on the ribbon, whose sections are about what you do to a document, where the two controls that are about the application would land beside About; reusing `start-screen`'s `slot`, which names a place on a screen not drawn while a document is open; `order: 1` meaning primary, a convention in a number no type states; and a variant on the command, which Highlight's three surfaces already contradict. | §7's `Placement`, five surfaces; and §10.3's title-bar clause, which named three things | [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md) |
 | 2026-09-22 | **A dialog may report before it answers** (§7's dialog clause). The owner's Settings design applies every change at once — *"Changes save as you make them"* — and ADR-0038's one-`resolve` shape cannot express it: props carry no function, this renderer has no context, and a body that wrote settings itself would be a second writer. The body now also gets `update`, validated by the same result schema and not closing; `ask` takes where those go, and the command still writes. Rejects a callback in the props schema, the body writing through its own store, a context carrying the store, and keeping *Save* | `BUILD-PROMPT.md`:608-611's settings groups say what Settings holds, not how it applies | [0094](DECISIONS/0094-a-dialog-may-report-before-it-answers.md) |
 | 2026-09-22 | **Chat history is off by default, encrypted in `main`, and keyed by the file** (§8). The owner's specification: saving is a setting, off by default, stored encrypted like keys, cleared from Settings › Privacy. The renderer holds no path and no cipher, so `main` owns a `chat-history.json` whose entries are `safeStorage` ciphertext keyed by a SHA-256 of the file's path; three channels by `DocId`; `main` checks the setting on every save. Rejects renderer storage, keying by `DocId`, the path in the clear, and one blob for all history | none in `BUILD-PROMPT.md`; the owner's AI design of 2026-09-15 (D11's assistant row) named no store, key or channel | [0093](DECISIONS/0093-chat-history-is-off-by-default-encrypted-in-main-and-keyed-by-the-file.md) |
 | 2026-09-22 | **Office import is deferred: LibreOffice's single-instance pipe cannot exist inside the container** (§3's *Office document → PDF* row). The owner's decision. Contained, LibreOffice creates `\\.\pipe\OSL_PIPE_…` before converting; the create is refused with error 5 because an AppContainer may create pipes only under its own `LOCAL\` namespace, the name is fixed in LibreOffice's code, and its start-up loop then retries for ever. Nothing ships for it; the converter seam, `containedProgram`, provisioning and the research stay for a reopening. Rejects weaker containment for this converter (threat model §2) and a custom LibreOffice build (too costly now) | `BUILD-PROMPT.md`:494, D9's *Office import (LibreOffice)*, and LibreOffice among :399's native binaries | [0092](DECISIONS/0092-office-import-is-deferred-because-libreoffices-pipe-cannot-be-contained.md) |
