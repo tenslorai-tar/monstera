@@ -9,11 +9,13 @@ import {
   type ContractClient,
   MAX_ANNOTATION_TEXT,
   MAX_ASK_CONTEXT,
+  MAX_CHAT_TEXT,
   type RenderableCommand,
   citationsIn,
 } from '@monstera/contract';
 import type { DocId, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
+import { Copy, Pencil, RefreshCw, StickyNote } from 'lucide-react';
 import {
   Fragment,
   type ReactElement,
@@ -82,9 +84,30 @@ import {
   ASSISTANT_SIDES_NEEDED,
   ASSISTANT_STOP,
   ASSISTANT_YOU,
+  ASSISTANT_ADD_NOTE,
+  ASSISTANT_CAPTION,
+  ASSISTANT_COPIED,
+  ASSISTANT_COPY,
+  ASSISTANT_EDIT,
+  ASSISTANT_EDIT_CANCEL,
+  ASSISTANT_EDITING,
+  ASSISTANT_NEW_CHAT,
+  ASSISTANT_NOTED,
+  ASSISTANT_REGENERATE,
+  ASSISTANT_SCOPE_BOTH,
+  ASSISTANT_SCOPE_COMMENT,
+  ASSISTANT_SCOPE_COMMENTS,
+  ASSISTANT_SCOPE_DOCUMENT,
+  ASSISTANT_SCOPE_LEFT,
+  ASSISTANT_SCOPE_NOTHING,
+  ASSISTANT_SCOPE_PAGE,
+  ASSISTANT_SCOPE_PICTURE,
+  ASSISTANT_SCOPE_RIGHT,
+  ASSISTANT_SCOPE_SELECTION,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
+import { IconButton } from './primitives/IconButton.js';
 
 /**
  * The assistant, as a tab of the right contextual panel
@@ -151,6 +174,11 @@ export interface AssistantPanelProps {
   /** Posts a drafted reply to its note, through `App`'s one dispatcher. */
   readonly onReply?: ((command: Extract<RenderableCommand, { kind: 'replyToAnnotation' }>) => void) | undefined;
   /**
+   * Places an answer on the page the reader is on as a sticky note, and says whether it could — the
+   * page's box is known only once it has been drawn. Absent, *Add as note* is not offered.
+   */
+  readonly onNote?: ((text: string) => boolean) | undefined;
+  /**
    * The document on the right when two are side by side, or `undefined` with one — which is
    * what decides whether *Left · Right · Both* is offered at all (ADR-0089).
    */
@@ -160,11 +188,18 @@ export interface AssistantPanelProps {
 }
 
 /** What one ask sends: its document or documents, and the side it went to with two. */
-interface AskRequest {
-  readonly about: AskAbout | undefined;
-  readonly alongside?: AskAbout;
-  readonly sides?: NonNullable<ConversationTurn['sides']>;
-}
+/** How long *Copied* shows beside an answer, in milliseconds — long enough to read, then gone. */
+const COPIED_MS = 2000;
+
+/** Which document a two-document answer was about, for its caption. */
+const SIDE_WORDS = {
+  left: ASSISTANT_SCOPE_LEFT,
+  right: ASSISTANT_SCOPE_RIGHT,
+  both: ASSISTANT_SCOPE_BOTH,
+} as const;
+
+/** What one ask is about — the same shape a turn records, so Regenerate can ask it again. */
+type AskRequest = NonNullable<ConversationTurn['request']>;
 
 /** A subscription id: short, unique per ask, and inside the event schema's alphabet. */
 function newSubscription(): string {
@@ -239,6 +274,7 @@ export function AssistantPanel({
   handled,
   onHandled,
   onReply,
+  onNote,
   beside,
   onGoToBeside,
 }: AssistantPanelProps): ReactElement {
@@ -400,6 +436,12 @@ export function AssistantPanel({
         text,
         ...(replyTo === undefined ? {} : { replyTo }),
         ...(asked === undefined ? {} : { sides: asked }),
+        request: {
+          about,
+          ...(alongside === undefined ? {} : { alongside }),
+          ...(asked === undefined ? {} : { sides: asked }),
+        },
+        model: models.find((entry) => entry.id === model)?.label ?? model,
       };
       write([...before, turn]);
       setProblem(null);
@@ -439,13 +481,67 @@ export function AssistantPanel({
       });
       return true;
     },
-    [client, focused, model, provider],
+    [client, focused, model, models, provider],
+  );
+
+  /** The conversation the panel shows, and a way to replace it — the document's, or the loose one. */
+  const writeTurns = useCallback(
+    (next: readonly ConversationTurn[]): void => {
+      if (focused === undefined) {
+        looseRef.current = next;
+        setLooseTurns(next);
+      } else focused.store.getState().converse(next);
+    },
+    [focused],
+  );
+
+  /**
+   * *Edit* on the last question: its words go back into the composer, and the next Send replaces
+   * that question and its answer rather than adding a turn after them. `null` when not editing.
+   */
+  // AN EDIT BELONGS TO ONE DOCUMENT'S CONVERSATION: held with that document's id, and read as no
+  // edit anywhere else — so a tab switch cannot point its index into another document's turns.
+  const [editingIn, setEditingIn] = useState<{ readonly docId: DocId | undefined; readonly at: number } | null>(null);
+  const editing = editingIn !== null && editingIn.docId === focused?.docId ? editingIn.at : null;
+  const setEditing = useCallback(
+    (at: number | null): void => {
+      setEditingIn(at === null ? null : { docId: focused?.docId, at });
+    },
+    [focused?.docId],
   );
 
   const send = useCallback(() => {
     const wanted = requestFor(scope);
-    if (wanted !== null) ask(draft.trim(), wanted);
-  }, [ask, draft, requestFor, scope]);
+    if (wanted === null) return;
+    // EDIT AND RESEND: the edited question and everything after it go before the new one is asked.
+    // Only when the ask can begin, so a Send that cannot start leaves the conversation as it was.
+    if (editing !== null && live.current === null && model !== '' && draft.trim() !== '') {
+      writeTurns(turns.slice(0, editing));
+      setEditing(null);
+    }
+    ask(draft.trim(), wanted);
+  }, [ask, draft, editing, model, requestFor, scope, setEditing, turns, writeTurns]);
+
+  /** *Regenerate* the last answer: the same question, about the same thing, asked again. */
+  const regenerate = useCallback(() => {
+    const at = turns.findLastIndex((turn) => turn.role === 'user');
+    const question = turns[at];
+    if (question === undefined || live.current !== null || model === '') return;
+    writeTurns(turns.slice(0, at));
+    if (!ask(question.text, question.request ?? { about: undefined }, question.replyTo)) writeTurns(turns);
+  }, [ask, model, turns, writeTurns]);
+
+  /** A short-lived *Copied* beside the answer that was copied, by its index. */
+  const [copied, setCopied] = useState<number | null>(null);
+  useEffect(() => {
+    if (copied === null) return;
+    const timer = setTimeout(() => {
+      setCopied(null);
+    }, COPIED_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [copied]);
 
   // A COMMAND'S REQUEST points the panel and may ask at once. Keyed by `serial`, so the same
   // words asked twice are two asks.
@@ -504,6 +600,29 @@ export function AssistantPanel({
     return sent.truncated
       ? `${pages} ${i18n._(ASSISTANT_SENT_CUT, { characters: number.format(sent.characters) })}`
       : pages;
+  };
+
+  /**
+   * The caption under an answer, *Claude Haiku 4.5 · whole document*: which model answered and what
+   * it was asked about, from the question's own record rather than from what the panel shows now.
+   */
+  const captionFor = (question: ConversationTurn | undefined): string => {
+    const about = question?.request?.about;
+    const page = about !== undefined && 'page' in about ? pdfjsPageOf(about.page) : 0;
+    const scope =
+      about === undefined
+        ? i18n._(ASSISTANT_SCOPE_NOTHING)
+        : {
+            page: () => i18n._(ASSISTANT_SCOPE_PAGE, { page }),
+            document: () => i18n._(ASSISTANT_SCOPE_DOCUMENT),
+            comments: () => i18n._(ASSISTANT_SCOPE_COMMENTS),
+            'page-image': () => i18n._(ASSISTANT_SCOPE_PICTURE, { page }),
+            selection: () => i18n._(ASSISTANT_SCOPE_SELECTION),
+            comment: () => i18n._(ASSISTANT_SCOPE_COMMENT),
+          }[about.scope]();
+    const side = question?.request?.sides?.asked;
+    const which = side === undefined ? '' : ` · ${i18n._(SIDE_WORDS[side])}`;
+    return i18n._(ASSISTANT_CAPTION, { model: question?.model ?? '', scope: `${scope}${which}` });
   };
 
   /** The lines under an asked turn: one, or one per side for a turn asked of both. */
@@ -716,6 +835,22 @@ export function AssistantPanel({
         </div>
       )}
 
+      {turns.length > 0 && (
+        <div className="m-assistant__conversation-bar">
+          {/* NEW CHAT empties this document's conversation — and, with history on, its saved copy
+              the next time it settles. Not while an answer is arriving: that answer has nowhere to go. */}
+          <Button
+            disabled={streaming !== null}
+            label={ASSISTANT_NEW_CHAT}
+            onClick={() => {
+              writeTurns([]);
+              setEditing(null);
+              setProblem(null);
+            }}
+          />
+        </div>
+      )}
+
       <ol aria-label={i18n._(ASSISTANT_CONVERSATION_LABEL)} className="m-assistant__turns">
         {turns.map((turn, at) => (
           <li className="m-assistant__turn" data-assistant-role={turn.role} key={`${String(at)}-${turn.role}`}>
@@ -736,6 +871,62 @@ export function AssistantPanel({
                 {line}
               </p>
             ))}
+            {turn.role === 'assistant' && (streaming === null || at !== turns.length - 1) && turn.text.trim() !== '' && (
+              // THE ANSWER'S OWN ACTIONS, the owner's design: under a whole answer, never a streaming
+              // one. Regenerate and Edit belong to the LAST exchange, because a conversation replays
+              // from the question they change; Copy and Add as note are for any answer.
+              <div className="m-assistant__actions" data-assistant-actions="">
+                {at === turns.length - 1 && (
+                  <>
+                    <IconButton icon={RefreshCw} label={ASSISTANT_REGENERATE} onClick={regenerate} size="dense" />
+                    <IconButton
+                      icon={Pencil}
+                      label={ASSISTANT_EDIT}
+                      onClick={() => {
+                        const question = turns.findLastIndex((each) => each.role === 'user');
+                        const asked = turns[question];
+                        if (asked === undefined) return;
+                        setDraft(asked.text);
+                        setEditing(question);
+                      }}
+                      size="dense"
+                    />
+                  </>
+                )}
+                <IconButton
+                  icon={Copy}
+                  label={ASSISTANT_COPY}
+                  onClick={() => {
+                    // THROUGH MAIN: the renderer holds no clipboard permission (§2). *Copied* shows only
+                    // when main says the text went, never as a hope.
+                    void client['window.copyText']({ text: turn.text.slice(0, MAX_CHAT_TEXT) }).then((answer) => {
+                      if (answer.ok && answer.value.copied) setCopied(at);
+                    });
+                  }}
+                  size="dense"
+                />
+                {onNote !== undefined && focused !== undefined && (
+                  <IconButton
+                    disabled={turn.noted === true}
+                    icon={StickyNote}
+                    label={turn.noted === true ? ASSISTANT_NOTED : ASSISTANT_ADD_NOTE}
+                    onClick={() => {
+                      if (!onNote(turn.text.trim().slice(0, MAX_ANNOTATION_TEXT))) return;
+                      focused.store
+                        .getState()
+                        .converse(turns.map((each, index) => (index === at ? { ...each, noted: true } : each)));
+                    }}
+                    size="dense"
+                  />
+                )}
+                <span aria-live="polite" className="m-assistant__done">
+                  {copied === at ? i18n._(ASSISTANT_COPIED) : ''}
+                </span>
+                {turns[at - 1]?.model !== undefined && (
+                  <span className="m-assistant__caption">{captionFor(turns[at - 1])}</span>
+                )}
+              </div>
+            )}
             {(() => {
               // A DRAFTED REPLY IS POSTED BY A PERSON, once the answer is whole: the assistant
               // never writes into the document by itself, and a half-streamed draft is not one.
@@ -770,6 +961,18 @@ export function AssistantPanel({
         ))}
       </ol>
 
+      {editing !== null && (
+        <div className="m-assistant__editing" data-assistant-editing="">
+          <span>{i18n._(ASSISTANT_EDITING)}</span>
+          <Button
+            label={ASSISTANT_EDIT_CANCEL}
+            onClick={() => {
+              setEditing(null);
+              setDraft('');
+            }}
+          />
+        </div>
+      )}
       <div className="m-assistant__composer">
         <textarea
           aria-label={i18n._(ASSISTANT_COMPOSER_LABEL)}

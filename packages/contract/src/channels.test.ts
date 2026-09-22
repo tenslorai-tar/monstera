@@ -330,6 +330,10 @@ const handlers: ContractHandlers = {
   // value, which is all this channel can carry since ADR-0056.
   'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
   'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unauthorised' as const })),
+  'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
+  'ai.history.save': () => Promise.resolve(ok({ saved: false })),
+  'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
+  'window.copyText': () => Promise.resolve(ok({ copied: false })),
   'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
   'ai.stop': () => Promise.resolve(ok({ stopped: false })),
   'cloud.status': () => Promise.resolve(ok({ providers: [{ provider: 'onedrive' as const, state: 'signed-out' as const }] })),

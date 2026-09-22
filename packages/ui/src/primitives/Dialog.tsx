@@ -122,10 +122,13 @@ export function Dialog({
             <BaseDialog.Title className="m-dialog__title">{_(title)}</BaseDialog.Title>
             {/* Inside the popup, per Base UI's own requirement for a modal
                 dialog: a touch screen reader has no other way out. */}
-            <BaseDialog.Close
-              nativeButton={false}
-              render={<IconButton icon={X} label={closeLabel} size="control" />}
-            />
+            {/* `nativeButton`, because `IconButton` RENDERS ONE. Declared `false` here until
+                2026-09-22, and the mismatch was not cosmetic: told the element is not a button, Base
+                UI attaches its own keyboard emulation, and that swallowed Escape — so a dialog whose
+                focus was on this control could not be dismissed by the key every other place in it
+                answers. Measured on the shortcuts dialog: Escape from the field closed it, Escape
+                from this button did not. */}
+            <BaseDialog.Close nativeButton render={<IconButton icon={X} label={closeLabel} size="control" />} />
           </div>
           <div className="m-dialog__body">{children}</div>
         </BaseDialog.Popup>

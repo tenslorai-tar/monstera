@@ -1,5 +1,6 @@
 import {
   AI_PROVIDERS,
+  CHAT_HISTORY_SETTING_ID,
   type AskSent,
   CLOUD_PROVIDER_IDS,
   MAX_ASK_CONTEXT,
@@ -41,6 +42,7 @@ import {
   PageTooLargeToPicture,
 } from './documentCommands.js';
 import type { Assistant } from './assistant.js';
+import type { ChatHistory } from './chatHistory.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
@@ -197,6 +199,8 @@ export function createContractHandlers(deps: {
    * and one refuses to be written at all where the machine cannot encrypt.
    */
   readonly secrets: SecretStoreSurface;
+  /** Saved assistant conversations (ADR-0093), encrypted with the secrets' cipher. */
+  readonly chatHistory: ChatHistory;
   /**
    * Shows the diagnostics log.
    *
@@ -240,6 +244,8 @@ export function createContractHandlers(deps: {
    * whether a window took it. Injected and required for {@link titleBarOverlay}'s reason.
    */
   readonly copySelection: () => boolean;
+  /** Writes text to the system clipboard; `false` where this graph has none to write to. */
+  readonly copyText: (text: string) => boolean;
   /**
    * The renderer has subscribed to close requests. Answers whether the gate took it — `false`
    * where no window is attached, as its neighbours do.
@@ -374,6 +380,23 @@ export function createContractHandlers(deps: {
       deps.secrets.write(AI_PROVIDERS[provider].keySetting, key);
       return ok({ accepted: true } as const);
     },
+    // CHAT HISTORY (ADR-0093). `main` reads the setting ITSELF on every load and save: a renderer that
+    // asked with the setting off gets nothing and stores nothing, whatever it believed.
+    'ai.history.load': ({ docId }) => {
+      const key = deps.documents.historyKeyOf(docId);
+      if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
+      const on = deps.settings.read()[CHAT_HISTORY_SETTING_ID] === true;
+      return Promise.resolve(ok({ turns: on ? [...deps.chatHistory.load(key)] : [] }));
+    },
+    'ai.history.save': ({ docId, turns }) => {
+      const key = deps.documents.historyKeyOf(docId);
+      if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
+      if (deps.settings.read()[CHAT_HISTORY_SETTING_ID] !== true) return Promise.resolve(ok({ saved: false }));
+      if (!deps.chatHistory.available()) return Promise.resolve(err({ code: 'secret-storage-unavailable' } as const));
+      deps.chatHistory.save(key, turns);
+      return Promise.resolve(ok({ saved: true }));
+    },
+    'ai.history.clear': () => Promise.resolve(ok({ cleared: deps.chatHistory.clear() })),
     'ai.ask': async ({ subscription, provider, model, messages, about, alongside }) => {
       // THE WINDOW IS READ HERE, INSIDE THE ASK THAT SENDS IT (ADR-0088 Decision 5): nothing
       // about a document is read until a person asks, and what was read is answered so the
@@ -482,6 +505,7 @@ export function createContractHandlers(deps: {
     'window.titleBarOverlay': (overlay) => Promise.resolve(ok({ applied: deps.titleBarOverlay(overlay) })),
     'window.close': () => Promise.resolve(ok({ closing: deps.confirmClose() })),
     'window.copy': () => Promise.resolve(ok({ copied: deps.copySelection() })),
+    'window.copyText': ({ text }) => Promise.resolve(ok({ copied: deps.copyText(text) })),
     'window.closeListening': () => Promise.resolve(ok({ acknowledged: deps.closeListening() })),
   };
 }

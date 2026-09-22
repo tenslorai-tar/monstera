@@ -47,7 +47,9 @@ test('Escape after a click on the palette’s HEADER', async ({ page }) => {
   await expect(page.locator(PALETTE)).toHaveCount(0);
 });
 
-test('Escape from a RESULT ROW reached with the arrow-free route a person has: Tab', async ({ page }) => {
+test('Escape from wherever TAB takes focus inside it — a control whose tooltip opens takes one first', async ({
+  page,
+}) => {
   await openPalette(page);
   await page.keyboard.press('Tab');
   // WHEREVER Tab took it, it is inside the palette — the trap's promise — and not the field any more.
@@ -57,6 +59,16 @@ test('Escape from a RESULT ROW reached with the arrow-free route a person has: T
   );
   expect(inside).toBe(true);
   await expect(page.locator('.m-palette-query')).not.toBeFocused();
+
+  // TAB REACHES THE CLOSE CONTROL since the results became options rather than tab stops, and
+  // focusing it opens its tooltip. Escape then dismisses the TOPMOST layer — the tooltip — and the
+  // next one the palette, which is what a layered surface does everywhere. Asserted rather than
+  // hidden behind one key press, so a change in either layer is visible here.
+  const tooltip = page.locator('.m-tooltip');
+  await expect(tooltip).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(tooltip).toHaveCount(0);
+  await expect(page.locator(PALETTE)).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(page.locator(PALETTE)).toHaveCount(0);
 });

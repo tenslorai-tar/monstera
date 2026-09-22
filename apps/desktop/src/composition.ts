@@ -190,6 +190,7 @@ import type { OpenInBrowser } from './docusignSignIn.js';
 import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
+import { type ChatHistory, noChatHistory } from './chatHistory.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
@@ -514,6 +515,17 @@ export interface ShellComposition {
    */
   readonly secrets?: SecretStoreSurface;
   /**
+   * Saved assistant conversations (ADR-0093), encrypted with the same cipher as `secrets`. Absent is
+   * a machine that can keep none — the position every unit test is in, and the answer
+   * `ai.history.save` then gives while the setting is on.
+   */
+  readonly chatHistory?: ChatHistory;
+  /**
+   * The system clipboard's text writer — Electron's, passed in from `entry.ts` because this module
+   * imports no Electron. Absent, `window.copyText` answers `copied: false`.
+   */
+  readonly writeClipboardText?: (text: string) => void;
+  /**
    * Cloud storage's client values and where its working copies go (ADR-0091), both resolved in
    * `entry.ts`: the values from the environment or the packaged `oauth-clients.json`, the directory
    * under `userData`, because only that file may ask Electron where the user's data lives. Absent,
@@ -644,6 +656,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     editWatch,
     settings,
     secrets,
+    chatHistory,
+    writeClipboardText,
     cloud: cloudComposition,
     sendEvent,
     recent,
@@ -1347,6 +1361,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // with no OS keyring answers, and a graph built without one is in the
       // same position rather than in a broken one. Resolved once, above.
       secrets: secretStore,
+      chatHistory: chatHistory ?? noChatHistory(),
       // `false` WITHOUT A LOG, which is the channel's declared state for
       // *there is nothing to show* rather than a stub standing in for one. The
       // shipped app always has a log; a graph built without one — every unit
@@ -1372,6 +1387,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       copySelection: () => {
         if (shellWindow === null) return false;
         shellWindow.copy();
+        return true;
+      },
+      copyText: (text) => {
+        if (writeClipboardText === undefined) return false;
+        writeClipboardText(text);
         return true;
       },
       closeListening: () => {

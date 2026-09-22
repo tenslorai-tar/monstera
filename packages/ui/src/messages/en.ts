@@ -914,6 +914,27 @@ export const ASSISTANT_COMPOSER_LABEL = messageKey('assistant.composer');
 export const ASSISTANT_CONVERSATION_LABEL = messageKey('assistant.conversation');
 export const ASSISTANT_SEND = messageKey('assistant.send');
 export const ASSISTANT_STOP = messageKey('assistant.stop');
+export const ASSISTANT_REGENERATE = messageKey('assistant.regenerate');
+export const OPEN_ASSISTANT_TITLE = messageKey('command.ai.open-assistant.title');
+export const ASSISTANT_EDIT = messageKey('assistant.edit');
+export const ASSISTANT_EDITING = messageKey('assistant.editing');
+export const ASSISTANT_EDIT_CANCEL = messageKey('assistant.edit-cancel');
+export const ASSISTANT_COPY = messageKey('assistant.copy');
+export const ASSISTANT_COPIED = messageKey('assistant.copied');
+export const ASSISTANT_ADD_NOTE = messageKey('assistant.add-note');
+export const ASSISTANT_NOTED = messageKey('assistant.noted');
+export const ASSISTANT_NEW_CHAT = messageKey('assistant.new-chat');
+export const ASSISTANT_CAPTION = messageKey('assistant.caption');
+export const ASSISTANT_SCOPE_PAGE = messageKey('assistant.scope.page');
+export const ASSISTANT_SCOPE_DOCUMENT = messageKey('assistant.scope.document');
+export const ASSISTANT_SCOPE_COMMENTS = messageKey('assistant.scope.comments');
+export const ASSISTANT_SCOPE_PICTURE = messageKey('assistant.scope.picture');
+export const ASSISTANT_SCOPE_SELECTION = messageKey('assistant.scope.selection');
+export const ASSISTANT_SCOPE_COMMENT = messageKey('assistant.scope.comment');
+export const ASSISTANT_SCOPE_NOTHING = messageKey('assistant.scope.nothing');
+export const ASSISTANT_SCOPE_LEFT = messageKey('assistant.scope.left');
+export const ASSISTANT_SCOPE_RIGHT = messageKey('assistant.scope.right');
+export const ASSISTANT_SCOPE_BOTH = messageKey('assistant.scope.both');
 export const ASSISTANT_YOU = messageKey('assistant.you');
 export const ASSISTANT_ASSISTANT = messageKey('assistant.assistant');
 export const ASSISTANT_EMPTY = messageKey('assistant.empty');
@@ -983,6 +1004,7 @@ export const AI_SETUP_REJECTED = messageKey('dialog.ai-setup.rejected');
 export const AI_SETUP_UNREADABLE = messageKey('dialog.ai-setup.unreadable');
 export const AI_SETUP_NOT_STORED = messageKey('dialog.ai-setup.not-stored');
 export const AI_SETUP_AT_START_TITLE = messageKey('setting.ai.setup-at-start.title');
+export const AI_SAVE_HISTORY_TITLE = messageKey('setting.ai.save-history.title');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
 export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
 export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
@@ -2314,6 +2336,27 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_CONVERSATION_LABEL]: 'Conversation',
   [ASSISTANT_SEND]: 'Send',
   [ASSISTANT_STOP]: 'Stop',
+  [ASSISTANT_REGENERATE]: 'Regenerate this answer',
+  [OPEN_ASSISTANT_TITLE]: 'Open the assistant',
+  [ASSISTANT_EDIT]: 'Edit your question and ask again',
+  [ASSISTANT_EDITING]: 'Editing your last question. Send replaces it and its answer.',
+  [ASSISTANT_EDIT_CANCEL]: 'Cancel',
+  [ASSISTANT_COPY]: 'Copy this answer',
+  [ASSISTANT_COPIED]: 'Copied',
+  [ASSISTANT_ADD_NOTE]: 'Add this answer to the page as a note',
+  [ASSISTANT_NOTED]: 'Added to the page as a note',
+  [ASSISTANT_NEW_CHAT]: 'New chat',
+  [ASSISTANT_CAPTION]: '{model} · {scope}',
+  [ASSISTANT_SCOPE_PAGE]: 'page {page}',
+  [ASSISTANT_SCOPE_DOCUMENT]: 'whole document',
+  [ASSISTANT_SCOPE_COMMENTS]: 'all comments',
+  [ASSISTANT_SCOPE_PICTURE]: 'picture of page {page}',
+  [ASSISTANT_SCOPE_SELECTION]: 'selected text',
+  [ASSISTANT_SCOPE_COMMENT]: 'one comment',
+  [ASSISTANT_SCOPE_NOTHING]: 'no document',
+  [ASSISTANT_SCOPE_LEFT]: 'left document',
+  [ASSISTANT_SCOPE_RIGHT]: 'right document',
+  [ASSISTANT_SCOPE_BOTH]: 'both documents',
   [ASSISTANT_YOU]: 'You',
   [ASSISTANT_ASSISTANT]: 'Assistant',
   [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
@@ -2415,6 +2458,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [AI_SETUP_UNREADABLE]: 'The provider’s answer could not be read, so the key was not saved.',
   [AI_SETUP_NOT_STORED]: 'The key could not be stored securely on this computer, so it was not saved.',
   [AI_SETUP_AT_START_TITLE]: 'Offer AI setup when Monstera starts',
+  [AI_SAVE_HISTORY_TITLE]: 'Save chat history',
   [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
   // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
   // to a provider only on an explicit action, and the panel says which provider.

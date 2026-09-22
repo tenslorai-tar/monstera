@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   mkdirSync,
   mkdtempSync,
@@ -219,6 +220,27 @@ describe('DocumentService — minting a DocId', () => {
     // message naming it lands on a different document. That is invariant L10's
     // failure mode; a minted token makes it a lookup miss.
     expect(second).not.toBe(first);
+  });
+});
+
+describe('DocumentService — the chat-history key (ADR-0093)', () => {
+  it('is the digest of the CANONICAL path, so two spellings of one file find one conversation', async () => {
+    const registry = new CapabilityRegistry();
+    // THE OS'S ANSWER is the same file for both spellings; the key must follow it, not the spelling.
+    const service = newService(registry, { readIdentity: () => Promise.resolve(identity()) });
+    const docId = mustOpen(await service.open(registry.mint('c:\\DOCS\\A.PDF')));
+    const canonical = createHash('sha256').update('C:\\docs\\a.pdf', 'utf8').digest('hex');
+    expect(service.historyKeyOf(docId)).toBe(canonical);
+    // CONTROL: the digest of the spelling the handle was minted from is a different key.
+    expect(service.historyKeyOf(docId)).not.toBe(createHash('sha256').update('c:\\DOCS\\A.PDF', 'utf8').digest('hex'));
+  });
+
+  it('is undefined for a document that is not open', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry, { readIdentity: () => Promise.resolve(identity()) });
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    await service.close(docId);
+    expect(service.historyKeyOf(docId)).toBeUndefined();
   });
 });
 

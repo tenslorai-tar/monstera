@@ -75,6 +75,14 @@ export {
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_BARCODE_TEXT,
   MAX_PAGE_BARCODES,
+  // A saved conversation's bounds and shape (ADR-0093): the renderer trims to them before a save,
+  // and `main` validates a decrypted conversation against the same schema.
+  MAX_CHAT_TEXT,
+  MAX_CHAT_TURNS,
+  MAX_MODEL_ID,
+  type SavedTurn,
+  savedTurnSchema,
+  savedTurnsSchema,
 } from './channels.js';
 export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
@@ -333,6 +341,7 @@ export {
   AI_PROVIDER_IDS,
   AI_PROVIDER_KEY_SETTING_IDS,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
+  CHAT_HISTORY_SETTING_ID,
   type AiModel,
   type AiModelCapabilities,
   type AiProvider,

@@ -8,7 +8,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_MARKDOWN_BYTES,
 } from '@monstera/contract';
-import { BrowserWindow, app, nativeImage, safeStorage, shell } from 'electron';
+import { BrowserWindow, app, clipboard, nativeImage, safeStorage, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import {
@@ -40,7 +40,8 @@ import {
 import { removeRetiredCaches } from './retiredCaches.js';
 import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
-import { createSecretStore } from './secretStore.js';
+import { createChatHistory } from './chatHistory.js';
+import { type SecretCipher, createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
 import { createWin32PrintSurface } from './win32PrintSurface.js';
@@ -48,6 +49,18 @@ import { createWin32ShareSurface } from './win32ShareSurface.js';
 import { startShell } from './main.js';
 import { nodeEditWatchSurface } from './nodeEditWatch.js';
 import { isPdfPath } from './openExternalEditor.js';
+
+/**
+ * The OS credential store, as the secrets and the saved conversations both take it. `safeStorage`
+ * is Electron's and this is the only file that may ask it. `isEncryptionAvailable` is asked per call
+ * rather than captured, because on Linux it becomes true once the keyring is ready and a value read
+ * at startup would be a permanent *no* on a machine that can.
+ */
+const OS_CIPHER: SecretCipher = {
+  available: () => safeStorage.isEncryptionAvailable(),
+  encrypt: (value) => safeStorage.encryptString(value),
+  decrypt: (cipher) => safeStorage.decryptString(cipher),
+};
 
 /**
  * The Electron entry point, and the only file that both builds the graph and
@@ -302,16 +315,15 @@ startShell(() => {
     // because only this file may ask Electron where the user's data lives.
     settings: createSettingsFile(app.getPath('userData')),
     // THE SECRETS, in their own document beside the settings and encrypted by
-    // the OS. `safeStorage` is Electron's and this is the only file that may
-    // ask it — the same trade `nativeImage` makes below. `isEncryptionAvailable`
-    // is asked per call rather than captured, because on Linux it becomes true
-    // once the keyring is ready and a value read at startup would be a
-    // permanent *no* on a machine that can.
-    secrets: createSecretStore(app.getPath('userData'), {
-      available: () => safeStorage.isEncryptionAvailable(),
-      encrypt: (value) => safeStorage.encryptString(value),
-      decrypt: (cipher) => safeStorage.decryptString(cipher),
-    }),
+    // the OS through `OS_CIPHER` — the same trade `nativeImage` makes below.
+    secrets: createSecretStore(app.getPath('userData'), OS_CIPHER),
+    // SAVED CONVERSATIONS (ADR-0093), under the same cipher as the keys — beside them and never in them.
+    chatHistory: createChatHistory(app.getPath('userData'), OS_CIPHER),
+    // THE CLIPBOARD'S WRITER, Electron's, for `window.copyText`: the renderer holds no clipboard
+    // permission (§2), so the assistant's Copy is written here.
+    writeClipboardText: (text) => {
+      clipboard.writeText(text);
+    },
     // CLOUD STORAGE (ADR-0091): client values from the environment. THE PACKAGED FILE IS NOT READ
     // YET, and that is Stage 10's: it lives in the package's resources, and `no-install-root-writes`
     // refuses `process.resourcesPath` because a rule cannot tell that read from a write — the

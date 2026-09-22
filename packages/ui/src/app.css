@@ -1721,6 +1721,41 @@ textarea {
   text-align: start;
 }
 
+/* AN ANSWER'S ACTIONS: icon buttons in a row, what just happened beside them, and the caption
+   (*model · scope*) pushed to the far end — the owner's design. */
+.m-assistant__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-block-start: var(--space-4);
+}
+
+.m-assistant__done {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__caption {
+  margin-inline-start: auto;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-assistant__conversation-bar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.m-assistant__editing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
 .m-assistant__composer {
   display: flex;
   flex-direction: column;

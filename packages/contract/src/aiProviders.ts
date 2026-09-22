@@ -58,6 +58,12 @@ export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
 export const AZURE_OPENAI_ENDPOINT_SETTING_ID = 'ai.azure-openai-endpoint';
 
 /**
+ * Whether assistant conversations are saved (ADR-0093) — off unless a person turns it on. Named here
+ * because `main` reads it on every save and the renderer declares its control: one id, two readers.
+ */
+export const CHAT_HISTORY_SETTING_ID = 'ai.save-history';
+
+/**
  * The Anthropic API key — the PROVIDER's key, not a recogniser's
  * ([ADR-0057](../../../docs/DECISIONS/0057-a-network-recogniser-is-keyed-by-engine-and-a-providers-key-is-the-providers.md)
  * Decision 5). D6's Claude recogniser placed it on 2026-09-13 and reads it by name;

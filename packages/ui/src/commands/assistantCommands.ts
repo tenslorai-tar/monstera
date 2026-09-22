@@ -13,6 +13,7 @@ import {
   DRAFT_REPLY_TITLE,
   EXPLAIN_SELECTION_TITLE,
   GROUP_AI,
+  OPEN_ASSISTANT_TITLE,
   SUMMARISE_COMMENTS_TITLE,
   SUMMARISE_SELECTION_TITLE,
   TRANSLATE_SELECTION_TITLE,
@@ -20,6 +21,25 @@ import {
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 import type { TextSelection } from '../TextLayer.js';
+
+/**
+ * *Open the assistant* — the owner's *a shortcut and a palette command*: reveals the right panel on
+ * the Assistant tab and puts the cursor in the composer, so the chord is followed by typing. No
+ * document is needed; the assistant answers without one. Palette-only, with its chord: the ribbon
+ * already reaches the panel through its own controls.
+ */
+export function openAssistantCommand(deps: { readonly open: () => void }): UiCommand {
+  return {
+    id: 'ai.open-assistant',
+    icon: 'Sparkles',
+    title: OPEN_ASSISTANT_TITLE,
+    shortcut: 'Ctrl+Shift+A',
+    placements: [],
+    run: (): void => {
+      deps.open();
+    },
+  };
+}
 
 /**
  * The assistant, reached from a right-click

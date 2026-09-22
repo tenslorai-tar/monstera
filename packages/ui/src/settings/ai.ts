@@ -4,6 +4,7 @@ import {
   type AiProviderId,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_OPENAI_ENDPOINT_SETTING_ID,
+  CHAT_HISTORY_SETTING_ID,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { z } from 'zod';
@@ -19,6 +20,7 @@ import {
   AI_OPENAI_KEY_TITLE,
   AI_OPENROUTER_KEY_TITLE,
   AI_PERPLEXITY_KEY_TITLE,
+  AI_SAVE_HISTORY_TITLE,
   AI_SETUP_AT_START_TITLE,
   AI_XAI_KEY_TITLE,
 } from '../messages/en.js';
@@ -106,6 +108,20 @@ export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
   title: AI_SETUP_AT_START_TITLE,
   schema: z.boolean(),
   fallback: true,
+  category: 'ai',
+};
+
+/**
+ * Whether assistant conversations are saved between sessions
+ * ([ADR-0093](../../../../docs/DECISIONS/0093-chat-history-is-off-by-default-encrypted-in-main-and-keyed-by-the-file.md)).
+ * **Off by default**, the owner's specification; `main` reads the same id on every save and refuses
+ * while it is off, so this control is the choice and not the enforcement.
+ */
+export const CHAT_HISTORY_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: CHAT_HISTORY_SETTING_ID,
+  title: AI_SAVE_HISTORY_TITLE,
+  schema: z.boolean(),
+  fallback: false,
   category: 'ai',
 };
 

@@ -892,6 +892,52 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — The assistant's chat extras, and chat history (ADR-0093)
+
+The owner's list: streaming with Stop, regenerate, edit and resend, copy, an answer as a sticky note
+in one click, quick starts, plain-language errors, an open-chat shortcut and palette command, and
+chat history off by default. **Already there before this range**: streaming with Stop, quick starts
+on an empty conversation, and the errors in words with a next step (`PROBLEMS`) — each read in the
+panel rather than assumed.
+
+**Built.** Under a whole answer, the design's row of icon buttons — *Regenerate* and *Edit* on the
+last exchange, *Copy* and *Add as note* on any — and the caption *model · scope* taken from the
+question's own record. A turn now records what it was asked about and with which model, so
+*Regenerate* asks the same scope again rather than whatever the *Asking about* line says now; *Edit*
+puts the question back in the composer and Send replaces that question and its answer. *New chat*
+empties the document's conversation. *Open the assistant* (Ctrl+Shift+A, and the palette) reveals the
+panel and puts the cursor in the composer. *Add as note* places the answer as a sticky note half an
+inch in from the top-right corner of the page on screen, inside the box the page list drew — a new
+`onPageBox` report, because the renderer placing something on a page it did not draw needs that
+page's box, and the list already had it.
+
+**Chat history** (ADR-0093 and its correction): `main`'s `chat-history.json`, one `safeStorage`
+ciphertext per file, keyed by the kernel's `historyKeyOf` — a SHA-256 of the canonical path, with no
+case fold. `ai.history.load`, `save` and `clear`; `main` reads the setting on every save. The renderer
+loads into an empty conversation only, saves once a conversation has been still for 800 ms, and drops
+session-only fields. *Clear chat history* is Settings › Privacy's, and lands with the Settings rebuild.
+
+**A defect the live run found: Copy did nothing.** `navigator.clipboard.writeText` was refused —
+`NotAllowedError: Write permission denied`, the window focused. **Mechanism**: the window's session
+denies every permission but `media` (§2, `PERMITTED_PERMISSIONS`), so the renderer's clipboard API
+cannot work here, by design. Widening the policy would be an amendment for a convenience; `main` has
+Electron's clipboard, so `window.copyText` writes the text there, beside `window.copy`, and *Copied*
+shows only when `main` says it went.
+
+**Live, on Claude Haiku 4.5**, on the test document: the shortcut focused the composer; an answer
+carried *Claude Haiku 4.5 · page 1*; Regenerate re-asked page 1 and replaced the answer; Copy said
+*Copied*; Add as note took the Comments list from 2 notes to 3; Edit put the question back and the
+edited question replaced the exchange; New chat emptied it. **History**: with *Save chat history*
+turned on and saved in Settings, an answer, the tab closed and the file reopened — the conversation
+came back, and `chat-history.json` contains neither the question's words, the answer's, the file's
+name nor a path. A first attempt showed nothing restored because the run closed Settings with Escape,
+which today's dialog treats as cancel; the redesigned Settings saves as a change is made.
+
+**Also corrected here**: two fixtures that `baa0564` and `f34af09` left stale — the comments window's
+expected `sent` gained its count, and `payloadBounds.test.ts` named no reason for `ai.checkKey`. Both
+commits were local and unpushed, and each would have been red on its own; they are corrected in this
+commit rather than rewritten.
+
 ## 2026-09-22 — A key is checked before it is stored: `ai.checkKey`
 
 Found reading the first-run row while planning its live run. *Set up AI…* stored the typed key through

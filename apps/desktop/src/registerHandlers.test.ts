@@ -3,6 +3,7 @@ import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { createAssistant } from './assistant.js';
+import { noChatHistory } from './chatHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
@@ -131,6 +132,19 @@ function handlers() {
         throw new Error('registration cases must not reach the secret store');
       },
     },
+    // EVERY OPERATION THROWS, this fixture's rule; `noChatHistory()` would answer a load quietly.
+    chatHistory: {
+      ...noChatHistory(),
+      available: () => {
+        throw new Error('registration cases must not reach the chat history');
+      },
+      load: () => {
+        throw new Error('registration cases must not reach the chat history');
+      },
+      clear: () => {
+        throw new Error('registration cases must not reach the chat history');
+      },
+    },
     titleBarOverlay: () => {
       throw new Error('registration cases must not reach the window');
     },
@@ -139,6 +153,9 @@ function handlers() {
     },
     copySelection: () => {
       throw new Error('registration cases must not reach the window');
+    },
+    copyText: () => {
+      throw new Error('registration cases must not reach the clipboard');
     },
     closeListening: () => {
       throw new Error('registration cases must not reach the window');

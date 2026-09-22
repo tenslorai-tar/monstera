@@ -3,6 +3,7 @@ import {
   type AnnotationRect,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_KEY_SETTING_ID,
+  CHAT_HISTORY_SETTING_ID,
   type ContractClient,
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type SecretSettingId,
@@ -115,10 +116,12 @@ import {
   assistantSelectionCommands,
   draftReplyCommand,
   summariseCommentsCommand,
+  openAssistantCommand,
 } from './commands/assistantCommands.js';
 import { CommandPalette } from './CommandPalette.js';
 import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
+import { syncConversation } from './chatHistorySync.js';
 import { DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './surfaces/StatusBar.js';
@@ -258,6 +261,7 @@ import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
+import { stickyNoteCommand } from './annotations/pointTools.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID } from './annotations/selectTool.js';
 import {
@@ -405,6 +409,12 @@ const NO_EVENTS: EventSubscriber = () => () => undefined;
  */
 const NO_DOCUMENT_SUBSCRIBE = (): (() => void) => (): void => undefined;
 
+/**
+ * How far in from the page's top-right corner an answer's note is placed, in PDF points: half an
+ * inch, which clears a note icon of either anchoring — its corner or its centre — inside the page.
+ */
+const NOTE_MARGIN = 36;
+
 export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): ReactElement {
   /**
    * Every open document, in the order they were opened.
@@ -525,6 +535,25 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * that the order has to say so.
    */
   const [stores] = useState(() => new DocumentStores());
+  // SAVED CONVERSATIONS (ADR-0093) start with a document's store and stop with it — before the close
+  // reaches `main`, so a save still settling is finished while the document is open there. The
+  // setting is read at each save, so turning it off stops the next one with nothing restarted.
+  useEffect(() => {
+    const syncs = new Map<DocId, () => void>();
+    const stop = stores.watch({
+      opened: (docId, store) => {
+        syncs.set(docId, syncConversation(client, docId, store, () => settings.get(CHAT_HISTORY_SETTING_ID) === true));
+      },
+      closed: (docId) => {
+        syncs.get(docId)?.();
+        syncs.delete(docId);
+      },
+    });
+    return () => {
+      stop();
+      for (const end of syncs.values()) end();
+    };
+  }, [client, settings, stores]);
   /**
    * The last open that produced no document and something to say.
    *
@@ -1249,6 +1278,18 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     [settings],
   );
 
+  /**
+   * Reveals the assistant and puts the cursor in its composer. The composer mounts with the panel,
+   * so focus is taken on the next frame rather than now.
+   */
+  const openAssistant = useCallback(() => {
+    settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
+    settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('[data-assistant-draft]')?.focus();
+    });
+  }, [settings]);
+
   // Stable, so the scroller's consume-the-request effect does not re-run on
   // every parent render and scroll again to a page it has already reached.
   const wentTo = useCallback(() => {
@@ -1445,6 +1486,40 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         fontSize: styleFontSize,
       }),
     [styleColour, styleFontSize, styleLineWidth, styleOpacity],
+  );
+
+  /**
+   * Each drawn page's visible box in PDF user space, for the document on screen — what the page
+   * list reported. Replaced per document, because a box belongs to one document's page.
+   */
+  const pageBoxes = useRef<{ docId: DocId | undefined; boxes: Map<number, readonly [number, number, number, number]> }>({
+    docId: undefined,
+    boxes: new Map(),
+  });
+  const pageBoxed = useCallback(
+    (page: number, crop: readonly [number, number, number, number]): void => {
+      if (pageBoxes.current.docId !== activeId) pageBoxes.current = { docId: activeId, boxes: new Map() };
+      pageBoxes.current.boxes.set(page, crop);
+    },
+    [activeId],
+  );
+
+  /**
+   * The assistant's *Add as note*: the answer as a sticky note on the page the reader is on, in the
+   * page's top-right corner — the margin a note icon is looked for in, and inside the visible box
+   * the page list drew, so it is never off the page. The note is an ordinary command: undoable, and
+   * saved with the document.
+   */
+  const noteFromAnswer = useCallback(
+    (text: string): boolean => {
+      if (activeId === undefined || pageBoxes.current.docId !== activeId) return false;
+      const crop = pageBoxes.current.boxes.get(currentPage);
+      if (crop === undefined) return false;
+      const [, , x1, y1] = crop;
+      dispatch(stickyNoteCommand(currentPage, { x: x1 - NOTE_MARGIN, y: y1 - NOTE_MARGIN }, text, style));
+      return true;
+    },
+    [activeId, currentPage, dispatch, style],
   );
 
   /**
@@ -2021,6 +2096,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         replySelectionCommand({ ...selectionDeps, ask }),
         draftReplyCommand({ selection: readSelection, ask: askAssistant }),
         summariseCommentsCommand({ ask: askAssistant }),
+        openAssistantCommand({ open: openAssistant }),
         copyAnnotationsCommand({ ...selectionDeps, client, ask, onCopied: setCopiedCount }),
         selectionPropertiesCommand({ ...selectionDeps, settings }),
         ...nudgeSelectionCommands(selectionDeps),
@@ -2089,6 +2165,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       // *Draft a reply* reads.
       askAssistant,
       readSelection,
+      openAssistant,
     ]);
 
   /**
@@ -2299,6 +2376,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           document={open}
           onVersionMoved={opened}
           onCurrentPage={viewed}
+          onPageBox={pageBoxed}
           mode={zoomMode}
           onZoom={changeZoom}
           onShownZoom={setShownZoom}
@@ -2380,6 +2458,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
                   }
                   onGoToBeside={setCompareGoTo}
                   onReply={dispatch}
+                  onNote={noteFromAnswer}
                   request={assistantRequest}
                   handled={assistantHandled}
                   onHandled={setAssistantHandled}
@@ -2633,6 +2712,7 @@ function PageCanvas({
   requestPassword,
   onVersionMoved,
   onCurrentPage,
+  onPageBox,
   mode,
   onZoom,
   onShownZoom,
@@ -2665,6 +2745,8 @@ function PageCanvas({
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
+  /** Each drawn page's visible box, for the assistant's *Add as note* — `PageList.onPageBox`. */
+  readonly onPageBox: (page: number, crop: readonly [number, number, number, number]) => void;
   readonly onVersionMoved: (next: OpenDocument) => void;
   /**
    * Wraps a thumbnail or a page slot in the page context menu for that page (§7), built by `App`
@@ -2936,6 +3018,7 @@ function PageCanvas({
         docId={open.docId}
         version={open.version}
         onCurrentPage={reporting === 'first' ? onCurrentPage : ignorePage}
+        onPageBox={onPageBox}
         mode={mode}
         onZoom={onZoom}
         onShownZoom={reporting === 'first' ? onShownZoom : ignoreZoom}
@@ -3016,6 +3099,7 @@ function PageCanvas({
               docId={open.docId}
               version={open.version}
               onCurrentPage={reporting === 'second' ? onCurrentPage : ignorePage}
+              onPageBox={onPageBox}
               mode={mode}
               onZoom={onZoom}
               onShownZoom={reporting === 'second' ? onShownZoom : ignoreZoom}

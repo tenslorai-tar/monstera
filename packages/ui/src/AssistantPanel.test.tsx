@@ -68,6 +68,7 @@ function recording(
       });
     }
     if (id === 'ai.stop') return Promise.resolve({ ok: true, value: { stopped: true } });
+    if (id === 'window.copyText') return Promise.resolve({ ok: true, value: { copied: true } });
     throw new Error(`this case does not answer ${id}`);
   });
   return { client, sent };
@@ -119,6 +120,7 @@ async function drawn(options: {
   readonly onGoTo?: (page: number) => void;
   readonly onReply?: AssistantPanelProps['onReply'];
   readonly beside?: AssistantPanelProps['beside'];
+  readonly onNote?: AssistantPanelProps['onNote'];
   readonly onGoToBeside?: (page: number) => void;
 } = {}) {
   const wire = events();
@@ -137,6 +139,7 @@ async function drawn(options: {
         onGoToBeside={options.onGoToBeside}
         onGoTo={options.onGoTo}
         onReply={options.onReply}
+        onNote={options.onNote}
         request={options.request}
         storedSecrets={options.stored ?? [ANTHROPIC_KEY]}
         subscribe={wire.subscribe}
@@ -815,5 +818,102 @@ describe('the assistant about a document (ADR-0088)', () => {
       await redraw({ beside: { docId: asDocId('00000000-0000-4000-8000-00000000000c'), page: 0 } });
       expect(screen.queryByRole('button', { name: /Go to page 3/u })).toBeNull();
     });
+  });
+});
+
+describe('the chat extras (the owner’s design, 2026-09-15)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000e5');
+
+  /** A document conversation with one whole exchange in it, asked about the page. */
+  async function answered(extra: Partial<Parameters<typeof drawn>[0]> = {}) {
+    const store = createDocumentStore(DOC, asDocVersion(1));
+    const harness = await drawn({ focused: { docId: DOC, store, page: 2 }, ...extra });
+    type('When is the review?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const subscription = (harness.sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string })
+      .subscription;
+    harness.push('ai.delta', { subscription, text: 'On 17 March.' });
+    harness.push('ai.done', { subscription, stopped: false });
+    return { ...harness, store };
+  }
+
+  const asks = (sent: readonly { id: string; params: unknown }[]) =>
+    sent.filter((entry) => entry.id === 'ai.ask').map((entry) => entry.params as { messages: { text: string }[]; about?: unknown });
+
+  it('REGENERATE asks the same question about the SAME scope again, and replaces the answer', async () => {
+    const { sent, store } = await answered();
+    // CONTROL of the premise: move the *Asking about* line away, so re-asking "what the line says
+    // now" would send the whole document instead of page 3.
+    fireEvent.change(screen.getByLabelText('Asking about'), { target: { value: 'document' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate this answer' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const [first, second] = asks(sent);
+    expect(second?.messages).toStrictEqual([{ role: 'user', text: 'When is the review?' }]);
+    expect(second?.about).toStrictEqual(first?.about);
+    expect(store.getState().conversation.map((turn) => turn.role)).toStrictEqual(['user']);
+  });
+
+  it('EDIT puts the question back in the composer, and Send replaces it and its answer', async () => {
+    const { sent, store } = await answered();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit your question and ask again' }));
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Ask about this document').value).toBe('When is the review?');
+    type('When is the final report due?');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asks(sent).at(-1)?.messages).toStrictEqual([{ role: 'user', text: 'When is the final report due?' }]);
+    expect(store.getState().conversation.map((turn) => turn.text)).toStrictEqual(['When is the final report due?']);
+  });
+
+  it('COPY sends the answer to main’s clipboard and says Copied only when main says it went', async () => {
+    // Through `window.copyText`, because the renderer holds no clipboard permission (§2): live, the
+    // browser's own clipboard write was refused with the window focused.
+    const { sent } = await answered();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy this answer' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(sent.filter((entry) => entry.id === 'window.copyText').map((entry) => entry.params)).toStrictEqual([
+      { text: 'On 17 March.' },
+    ]);
+    expect(screen.getByText('Copied')).toBeTruthy();
+  });
+
+  it('ADD AS NOTE hands the answer to the page, once, and then says it was added', async () => {
+    const notes: string[] = [];
+    await answered({
+      onNote: (text) => {
+        notes.push(text);
+        return true;
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this answer to the page as a note' }));
+    expect(notes).toStrictEqual(['On 17 March.']);
+    const done = screen.getByRole('button', { name: 'Added to the page as a note' });
+    expect(done.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('CONTROL: a note the page could not take is not marked as added', async () => {
+    await answered({ onNote: () => false });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this answer to the page as a note' }));
+    expect(screen.queryByRole('button', { name: 'Added to the page as a note' })).toBeNull();
+  });
+
+  it('the caption names the model and what was asked about, from the question', async () => {
+    await answered();
+    expect(screen.getByText('Model one · page 3')).toBeTruthy();
+  });
+
+  it('NEW CHAT empties this document’s conversation', async () => {
+    const { store } = await answered();
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    expect(store.getState().conversation).toStrictEqual([]);
   });
 });

@@ -46,3 +46,12 @@ no filesystem, holds no path (L2), and cannot reach the OS credential store.
   point is privacy.
 - **One encrypted blob for all history**: every save would rewrite every conversation, and a
   corrupted file would lose all of them at once.
+
+## Correction, 2026-09-22 — the key is the kernel's canonical path, with no case fold
+
+Decision 3 said the key is a digest of the path *lower-cased on Windows*. That was a second opinion
+about a question the kernel already answers: `documentIdentity.ts` decides which string is this file
+— `realpath.native`'s canonical path — and records why **every** case fold is wrong for some class of
+characters. The key is `DocumentService.historyKeyOf`: a SHA-256 of the record's
+`openedIdentity.canonicalPath`, exactly as that module produces it. Found while building, before any
+conversation was saved under the other rule.

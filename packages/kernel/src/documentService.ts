@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 
@@ -1836,6 +1837,21 @@ export class DocumentService {
   nameOf(docId: DocId): string | undefined {
     const record = this.#records.get(docId);
     return record === undefined ? undefined : basename(record.path);
+  }
+
+  /**
+   * A key that finds this FILE's saved assistant conversation again next session, or `undefined`
+   * when it is not open (ADR-0093).
+   *
+   * A SHA-256 of the canonical path this service already computes for identity, so the store names
+   * no path and the rule for *which string is this file* stays {@link readFileIdentity}'s — no case
+   * fold, for the reasons `CanonicalPath` records. Off the lane, for {@link nameOf}'s reason.
+   */
+  historyKeyOf(docId: DocId): string | undefined {
+    const record = this.#records.get(docId);
+    return record === undefined
+      ? undefined
+      : createHash('sha256').update(record.openedIdentity.canonicalPath, 'utf8').digest('hex');
   }
 
   /** Whether this service currently holds the document. */

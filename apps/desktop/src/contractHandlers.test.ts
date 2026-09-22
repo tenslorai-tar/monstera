@@ -23,11 +23,15 @@ import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createAssistant } from './assistant.js';
+import { type ChatHistory, noChatHistory } from './chatHistory.js';
 
 /**
  * An assistant with no key and nowhere to push: these cases are about the other channels,
  * and `ai.ask` on it answers the refusal a machine with no provider key gives (ADR-0081).
  */
+/** A machine that keeps no conversations — every case here that is not about history. */
+const NO_HISTORY = noChatHistory();
+
 const INERT_ASSISTANT = createAssistant({
   secret: () => undefined,
   setting: () => undefined,
@@ -101,11 +105,13 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // these channels exist for is that a secret is in the OTHER document, and
     // a case can only assert that if it can read both.
     secrets,
+    chatHistory: NO_HISTORY,
     // COUNTED, so a case can assert the handler asked exactly once rather than
     // that it answered something.
     titleBarOverlay: () => false,
     confirmClose: () => false,
     copySelection: () => false,
+    copyText: () => false,
     closeListening: () => false,
     cloud: unconfiguredCloud(),
     revealLog: () => {
@@ -358,10 +364,12 @@ describe('document.open', () => {
           recent: createRecentFiles(createEphemeralSettings()),
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
+          chatHistory: NO_HISTORY,
           revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       copySelection: () => false,
+      copyText: () => false,
       closeListening: () => false,
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -544,10 +552,12 @@ describe('the recent list', () => {
       recent,
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
+      chatHistory: NO_HISTORY,
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       copySelection: () => false,
+      copyText: () => false,
       closeListening: () => false,
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -597,10 +607,12 @@ describe('log.reveal', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
+      chatHistory: NO_HISTORY,
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       copySelection: () => false,
+      copyText: () => false,
       closeListening: () => false,
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -643,10 +655,12 @@ describe('ai.checkKey', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       settings: createEphemeralSettings(),
       secrets,
+      chatHistory: NO_HISTORY,
       revealLog: () => Promise.resolve(false),
       titleBarOverlay: () => false,
       confirmClose: () => false,
       copySelection: () => false,
+      copyText: () => false,
       closeListening: () => false,
       cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -669,6 +683,77 @@ describe('ai.checkKey', () => {
     const result = await handlers['ai.checkKey']({ provider: 'openai', key: 'a-new-key' });
     expect(result).toEqual({ ok: true, value: { accepted: true } });
     expect(secrets.read()['ai.openai-key']).toBe('a-new-key');
+  });
+});
+
+describe('ai.history (ADR-0093)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000a9');
+
+  function withHistory(on: boolean) {
+    const saved = new Map<string, readonly { role: 'user' | 'assistant'; text: string }[]>();
+    const history: ChatHistory = {
+      available: () => true,
+      load: (key) => saved.get(key) ?? [],
+      save: (key, turns) => {
+        saved.set(key, turns);
+      },
+      clear: () => {
+        const count = saved.size;
+        saved.clear();
+        return count;
+      },
+    };
+    const settings = createEphemeralSettings();
+    settings.write({ 'ai.save-history': on });
+    const handlers = createContractHandlers({
+      assistant: INERT_ASSISTANT,
+      appInfo,
+      capabilities: new CapabilityRegistry(),
+      commands: unusedCommands,
+      // THE KERNEL'S DIGEST, faked: one open document whose file key is `file-key`.
+      documents: { historyKeyOf: (docId: DocId) => (docId === DOC ? 'file-key' : undefined) } as unknown as DocumentService,
+      openedDocument: () => Promise.resolve(),
+      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
+      pickDocument: () => Promise.resolve(null),
+      recent: createRecentFiles(createEphemeralSettings()),
+      settings,
+      secrets: createEphemeralSecrets(),
+      chatHistory: history,
+      revealLog: () => Promise.resolve(false),
+      titleBarOverlay: () => false,
+      confirmClose: () => false,
+      copySelection: () => false,
+      copyText: () => false,
+      closeListening: () => false,
+      cloud: unconfiguredCloud(),
+      readDictionary: () => Promise.resolve(null),
+      ocrLanguages: () => Promise.resolve([]),
+    });
+    return { handlers, saved };
+  }
+
+  const TURNS = [{ role: 'user' as const, text: 'Q' }];
+
+  it('with the setting OFF, a save stores NOTHING, whatever the renderer asked', async () => {
+    const { handlers, saved } = withHistory(false);
+    await expect(handlers['ai.history.save']({ docId: DOC, turns: TURNS })).resolves.toEqual({ ok: true, value: { saved: false } });
+    expect(saved.size).toBe(0);
+  });
+
+  it('CONTROL: with it ON, the same save is stored under the FILE key and loads back', async () => {
+    const { handlers, saved } = withHistory(true);
+    await expect(handlers['ai.history.save']({ docId: DOC, turns: TURNS })).resolves.toEqual({ ok: true, value: { saved: true } });
+    expect([...saved.keys()]).toStrictEqual(['file-key']);
+    await expect(handlers['ai.history.load']({ docId: DOC })).resolves.toEqual({ ok: true, value: { turns: TURNS } });
+  });
+
+  it('a document that is not open is refused by name, and clear says how many went', async () => {
+    const { handlers } = withHistory(true);
+    await handlers['ai.history.save']({ docId: DOC, turns: TURNS });
+    const other = asDocId('00000000-0000-4000-8000-0000000000aa');
+    const refused = await handlers['ai.history.load']({ docId: other });
+    expect(refused.ok).toBe(false);
+    await expect(handlers['ai.history.clear']({})).resolves.toEqual({ ok: true, value: { cleared: 1 } });
   });
 });
 

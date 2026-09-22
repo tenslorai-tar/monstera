@@ -189,6 +189,9 @@ describe('browser shim', () => {
     expect(Object.keys(shim.client).sort()).toEqual([
       'ai.ask',
       'ai.checkKey',
+      'ai.history.clear',
+      'ai.history.load',
+      'ai.history.save',
       'ai.models',
       'ai.stop',
       'app.info',
@@ -273,6 +276,7 @@ describe('browser shim', () => {
       'window.close',
       'window.closeListening',
       'window.copy',
+      'window.copyText',
       'window.titleBarOverlay',
     ]);
   });

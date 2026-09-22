@@ -12,6 +12,7 @@ import { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { type DocId, asDocVersion } from '@monstera/shared';
 
 import { createAssistant } from './assistant.js';
+import { noChatHistory } from './chatHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
@@ -149,10 +150,12 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     recent: createRecentFiles(createEphemeralSettings()),
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
+    chatHistory: noChatHistory(),
     revealLog: () => Promise.resolve(false),
     titleBarOverlay: () => false,
     confirmClose: () => false,
     copySelection: () => false,
+    copyText: () => false,
     closeListening: () => false,
     cloud: unconfiguredCloud(),
     readDictionary: () => Promise.resolve(null),
@@ -195,6 +198,11 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.models': 'names a provider from the registry and answers a bounded list of bounded model ids',
   'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns',
   'ai.stop': 'one bounded subscription id',
+  'ai.checkKey': 'a provider and a key bounded by MAX_SECRET_SETTING in; accepted or one declared problem out',
+  // CHAT HISTORY (ADR-0093): a conversation, never a document — MAX_CHAT_TURNS of MAX_CHAT_TEXT each.
+  'ai.history.load': 'one DocId in; at most MAX_CHAT_TURNS bounded turns out, whatever the document’s size',
+  'ai.history.save': 'one DocId and at most MAX_CHAT_TURNS bounded turns in; a boolean out',
+  'ai.history.clear': 'carries nothing and answers a count',
   // CLOUD STORAGE (ADR-0091): no document's bytes cross in either direction — a working copy is
   // written by main and opened by path, and Save back reads the document in main.
   'cloud.status': 'answers one state per declared provider',
@@ -210,6 +218,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'window.titleBarOverlay': 'answers a boolean; two colours and a height go in, and no document contributes',
   'window.close': 'carries nothing and answers a boolean',
   'window.copy': 'carries nothing and answers a boolean',
+  'window.copyText': 'text bounded by MAX_CHAT_TEXT in, a boolean out',
   'window.closeListening': 'carries nothing and answers a boolean',
   'document.unsaved': 'one DocId in, one boolean out',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its

@@ -90,6 +90,12 @@ export interface PageListProps {
   /** Told which page the user is looking at, zero-based. */
   readonly onCurrentPage: (page: number) => void;
   /**
+   * Told each drawn page's visible box in PDF user space, `[x0, y0, x1, y1]` — PDF.js' own `page.view`
+   * (see `RasterisedPage.crop`). For a caller placing something on a page it did not draw, such as the
+   * assistant's *Add as note*, so the box is the one answer this list already has and not a second read.
+   */
+  readonly onPageBox?: ((page: number, crop: readonly [number, number, number, number]) => void) | undefined;
+  /**
    * What the reader asked for — a scale, or a fit.
    *
    * A MODE rather than a number, because a fit has no number until this
@@ -302,6 +308,7 @@ export function PageList({
   docId,
   version,
   onCurrentPage,
+  onPageBox,
   mode,
   onZoom,
   onShownZoom,
@@ -362,6 +369,12 @@ export function PageList({
   }, []);
 
   const [sizes, setSizes] = useState<ReadonlyMap<number, Measured>>(new Map());
+  // A REF, so `measured` stays stable — see its note — while the parent passes a new callback.
+  // Updated after render, never during it.
+  const onPageBoxRef = useRef(onPageBox);
+  useEffect(() => {
+    onPageBoxRef.current = onPageBox;
+  }, [onPageBox]);
 
   /**
    * The page's box at scale 1, which is the other half of a fit.
@@ -647,6 +660,7 @@ export function PageList({
       if (known?.width === size.width && known.height === size.height) return current;
       return new Map(current).set(page, size);
     });
+    onPageBoxRef.current?.(page, size.crop);
   }, []);
 
   /** The page occupying the most of the viewport, as the current one. */

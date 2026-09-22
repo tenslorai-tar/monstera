@@ -1870,6 +1870,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
     // REFUSED, because the shim has no provider to ask and a key it cannot check is not one it may keep.
     'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unreachable' as const })),
+    // NOTHING SAVED, the setting's default: the shim keeps no conversation between pages.
+    'ai.history.load': () => Promise.resolve(ok({ turns: [] })),
+    'ai.history.save': () => Promise.resolve(ok({ saved: false })),
+    'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
+    // THE SHIM HAS NO CLIPBOARD, so nothing is claimed copied.
+    'window.copyText': () => Promise.resolve(ok({ copied: false })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
     // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider

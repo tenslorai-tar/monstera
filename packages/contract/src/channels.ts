@@ -403,6 +403,26 @@ export const MAX_MODELS = 512;
 export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
 
+/**
+ * One turn of a SAVED conversation (ADR-0093): who said it, what, and what an asked turn sent —
+ * never a reply target or a *posted* mark, which belong to one session's document version. Also
+ * what `main` validates a decrypted conversation against, so one schema says what a saved turn is.
+ * Text may be empty only for an answer that was stopped before its first word.
+ */
+export const savedTurnSchema = z
+  .object({
+    role: z.enum(['user', 'assistant']),
+    text: z.string().max(MAX_CHAT_TEXT),
+    sent: askSentSchema.optional(),
+    /** The model an asked turn went to, as its picker named it — so a restored answer keeps its caption. */
+    model: z.string().max(MAX_MODEL_ID).optional(),
+  })
+  .strict();
+
+export const savedTurnsSchema = z.array(savedTurnSchema).max(MAX_CHAT_TURNS);
+
+export type SavedTurn = z.infer<typeof savedTurnSchema>;
+
 /** {@link SPELLING_LANGUAGES} as a schema, derived rather than respelt. */
 export const spellingLanguageSchema = z.enum(SPELLING_LANGUAGES);
 
@@ -4336,6 +4356,37 @@ export const channels = {
   ),
 
   /**
+   * A document's saved conversation (ADR-0093), by `DocId`: `main` finds the file's entry by a digest
+   * of its path, which never crosses. Empty when nothing is saved, when saving is off, or when this
+   * machine cannot decrypt what was.
+   */
+  'ai.history.load': channel(
+    'The saved assistant conversation for an open document, if chat history is on.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ turns: savedTurnsSchema }),
+    ['document-not-open'],
+  ),
+
+  /**
+   * Replaces a document's saved conversation; an empty list removes it (ADR-0093). `saved: false`
+   * when chat history is off — `main` reads the setting itself, so a renderer that asked anyway
+   * stores nothing.
+   */
+  'ai.history.save': channel(
+    'Saves an open document’s assistant conversation, when chat history is on.',
+    z.object({ docId: docIdSchema, turns: savedTurnsSchema }).strict(),
+    z.object({ saved: z.boolean() }),
+    ['document-not-open', 'secret-storage-unavailable'],
+  ),
+
+  /** Removes every saved conversation — Settings › Privacy's *Clear chat history* (ADR-0093). */
+  'ai.history.clear': channel(
+    'Removes every saved assistant conversation.',
+    z.object({}).strict(),
+    z.object({ cleared: z.number().int().nonnegative() }),
+  ),
+
+  /**
    * Asks the assistant, and streams the answer on `ai.delta` / `ai.done`
    * ([ADR-0082](../../../docs/DECISIONS/0082-main-may-push-on-declared-event-channels.md)).
    *
@@ -4630,6 +4681,21 @@ export const channels = {
   'window.copy': channel(
     'Copies the current selection in the window, as the copy chord does.',
     z.object({}),
+    z.object({ copied: z.boolean() }),
+  ),
+
+  /**
+   * Puts a piece of text the renderer names on the clipboard — the assistant's *Copy*.
+   *
+   * THROUGH `main`, because the renderer may hold no permission but `media` (ARCHITECTURE §2), so its
+   * own `navigator.clipboard.writeText` is refused by the window's deny-all policy — measured live,
+   * `NotAllowedError: Write permission denied`, with the window focused. Writing only: the renderer
+   * cannot READ the clipboard through this or any channel. Bounded by the assistant's own turn bound,
+   * the longest text anything copies this way.
+   */
+  'window.copyText': channel(
+    'Puts the given text on the clipboard.',
+    z.object({ text: z.string().min(1).max(MAX_CHAT_TEXT) }).strict(),
     z.object({ copied: z.boolean() }),
   ),
 } as const;

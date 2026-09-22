@@ -93,6 +93,7 @@ const AMPLE_CEILING = 64 * 1024 * 1024;
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { createAssistant } from './assistant.js';
+import { noChatHistory } from './chatHistory.js';
 import { unconfiguredCloud } from './cloudSession.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
@@ -1110,10 +1111,12 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
           settings: { read: () => ({}), write: () => undefined },
           secrets: { available: () => false, read: () => ({}), write: () => undefined },
+          chatHistory: noChatHistory(),
           revealLog: () => Promise.resolve(false),
           titleBarOverlay: () => false,
           confirmClose: () => false,
           copySelection: () => false,
+        copyText: () => false,
           closeListening: () => false,
         cloud: unconfiguredCloud(),
           readDictionary: () => Promise.resolve(null),
@@ -1646,10 +1649,12 @@ describe('search is E2s first consumer, through the composition point', () => {
         recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
         settings: { read: () => ({}), write: () => undefined },
         secrets: { available: () => false, read: () => ({}), write: () => undefined },
+        chatHistory: noChatHistory(),
         revealLog: () => Promise.resolve(false),
         titleBarOverlay: () => false,
         confirmClose: () => false,
         copySelection: () => false,
+        copyText: () => false,
         closeListening: () => false,
         cloud: unconfiguredCloud(),
         readDictionary: () => Promise.resolve(null),
@@ -2114,10 +2119,11 @@ describe('annotations exported to a file and imported from it, through the lane 
     const commands = commandsWith(localAnnotationData);
     const window = await commands.askWindow({ scope: 'comments', docId: annotatedDoc });
     expect(window.text).toMatch(/^\[Page 1\]\n\(\w+\) Check this \(twice\)\n\n$/u);
-    expect(window.sent).toMatchObject({ firstPage: 0, lastPage: 0, pageCount: 1, truncated: false });
+    // COUNTED: the one note on a real annotated document, which is what the line under the question says.
+    expect(window.sent).toMatchObject({ firstPage: 0, lastPage: 0, pageCount: 1, truncated: false, comments: 1 });
 
     const none = await commands.askWindow({ scope: 'comments', docId: blankDoc });
-    expect(none.sent).toStrictEqual({ firstPage: null, lastPage: null, pageCount: 1, characters: 0, truncated: false });
+    expect(none.sent).toStrictEqual({ firstPage: null, lastPage: null, pageCount: 1, characters: 0, truncated: false, comments: 0 });
   });
 
   for (const format of ['xfdf', 'fdf', 'json'] as const) {

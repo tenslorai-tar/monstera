@@ -1,4 +1,4 @@
-import type { AskSent, AskSides } from '@monstera/contract';
+import type { AskAbout, AskSent, AskSides } from '@monstera/contract';
 import {
   type DocId,
   type DocVersion,
@@ -20,6 +20,8 @@ export interface ConversationTurn {
   readonly replyTo?: ReplyTarget;
   /** An answer already posted as a reply, so it is not offered twice. */
   readonly posted?: boolean;
+  /** An answer already placed on the page as a sticky note — the button then says so. */
+  readonly noted?: boolean;
   /** The second document's window, for a turn asked of both (ADR-0089). */
   readonly alongside?: AskSent;
   /**
@@ -28,6 +30,17 @@ export interface ConversationTurn {
    * one on the right. Absent for a turn asked with one document.
    */
   readonly sides?: { readonly asked: AskSides; readonly right: DocId };
+  /**
+   * What an asked turn was about, as it was sent — so *Regenerate* asks the same thing again rather
+   * than whatever the *Asking about* line says now.
+   */
+  readonly request?: {
+    readonly about: AskAbout | undefined;
+    readonly alongside?: AskAbout;
+    readonly sides?: { readonly asked: AskSides; readonly right: DocId };
+  };
+  /** The model an asked turn went to, as the picker named it — the caption under its answer. */
+  readonly model?: string;
 }
 
 /**
@@ -391,8 +404,32 @@ export function createDocumentStore(
  * and it is the same rule `engineSessions.ts` states on the other side of the
  * process boundary: *get-or-miss, never get-or-create*.
  */
+/** Told when a document's store is opened and when it is closed — {@link DocumentStores.watch}. */
+export interface StoreWatcher {
+  readonly opened: (docId: DocId, store: DocumentStore) => void;
+  /** Called while the store is still held, before it is dropped. */
+  readonly closed: (docId: DocId) => void;
+}
+
 export class DocumentStores {
   readonly #stores = new Map<DocId, DocumentStore>();
+  readonly #watchers = new Set<StoreWatcher>();
+
+  /**
+   * Tells `watcher` of every store opened and closed from now on, and of those already open.
+   *
+   * SYNCHRONOUS on purpose: a close is announced inside {@link close}, before the caller's next
+   * line — which, for a tab closing, is the request that closes the document in `main`. A watcher
+   * that has to finish something against the document (chat history's last save, ADR-0093) does it
+   * while the document is still open there.
+   */
+  watch(watcher: StoreWatcher): () => void {
+    this.#watchers.add(watcher);
+    for (const [docId, store] of this.#stores) watcher.opened(docId, store);
+    return () => {
+      this.#watchers.delete(watcher);
+    };
+  }
 
   /**
    * Mints the store for a newly opened document.
@@ -411,6 +448,7 @@ export class DocumentStores {
     }
     const store = createDocumentStore(docId, version);
     this.#stores.set(docId, store);
+    for (const watcher of this.#watchers) watcher.opened(docId, store);
     return store;
   }
 
@@ -426,6 +464,8 @@ export class DocumentStores {
    * closing something that was never open.
    */
   close(docId: DocId): boolean {
+    if (!this.#stores.has(docId)) return false;
+    for (const watcher of this.#watchers) watcher.closed(docId);
     return this.#stores.delete(docId);
   }
 
