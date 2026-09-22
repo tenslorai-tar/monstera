@@ -1,6 +1,6 @@
 import type { SettingDefinition } from '../registries/settings.js';
 import { ACCENT_SETTING } from './accent.js';
-import { AI_PROVIDER_KEY_SETTINGS, AZURE_OPENAI_ENDPOINT_SETTING } from './ai.js';
+import { AI_PROVIDER_KEY_SETTINGS, AI_SETUP_AT_START_SETTING, AZURE_OPENAI_ENDPOINT_SETTING } from './ai.js';
 import { DOCUSIGN_ENVIRONMENT_SETTING, DOCUSIGN_INTEGRATION_KEY_SETTING } from './integrations.js';
 import { THEME_SETTING } from './appearance.js';
 import {
@@ -102,6 +102,7 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   // registry with no field here would be one whose key nobody can enter.
   ...AI_PROVIDER_KEY_SETTINGS,
   AZURE_OPENAI_ENDPOINT_SETTING,
+  AI_SETUP_AT_START_SETTING,
   DOCUSIGN_INTEGRATION_KEY_SETTING,
   DOCUSIGN_ENVIRONMENT_SETTING,
 ];

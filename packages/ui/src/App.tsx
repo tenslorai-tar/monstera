@@ -1,4 +1,5 @@
 import {
+  AI_PROVIDER_KEY_SETTING_IDS,
   type AnnotationRect,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_KEY_SETTING_ID,
@@ -15,6 +16,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactElement,
@@ -148,6 +150,9 @@ import { accessibilityCheckCommand } from './commands/accessibilityCheck.js';
 import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
+import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
+import { aiSetupCommand } from './commands/aiSetup.js';
+import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
 import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
 import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
 import { PAGE_STRUCTURE_DIALOG } from './dialogs/pageStructure.js';
@@ -533,6 +538,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     () =>
       new DialogRegistry([
         ABOUT_DIALOG,
+        AI_SETUP_DIALOG,
         KEYBOARD_SHORTCUTS_DIALOG,
         WORD_COUNT_DIALOG,
         PAGE_STRUCTURE_DIALOG,
@@ -1468,6 +1474,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   // derived — never a key (ADR-0056). One state rather than a boolean per engine,
   // so a second provider's key is a derived line rather than a second setter.
   const [storedSecrets, setStoredSecrets] = useState<readonly SecretSettingId[]>([]);
+  const [secretsKnown, setSecretsKnown] = useState(false);
   const azureKeyStored = storedSecrets.includes(AZURE_KEY_SETTING_ID);
   const claudeKeyStored = storedSecrets.includes(ANTHROPIC_KEY_SETTING_ID);
   const docusignKeyStored = storedSecrets.includes(DOCUSIGN_INTEGRATION_KEY_SETTING_ID);
@@ -1487,7 +1494,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     let live = true;
     void client['settings.loadSecrets']({}).then(
       (answer) => {
-        if (live) setStoredSecrets(answer.ok ? answer.value.stored : []);
+        if (!live) return;
+        setStoredSecrets(answer.ok ? answer.value.stored : []);
+        // KNOWN only from an answer: a refusal is not *no key stored*, and the first-run setup
+        // must not be offered to a person whose keys main simply could not list.
+        setSecretsKnown(answer.ok);
       },
       () => {
         if (live) setStoredSecrets([]);
@@ -1707,6 +1718,35 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   );
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
 
+  /**
+   * *Set up AI…*, held here as well as registered, because the first run starts it by itself —
+   * `openCommand`'s shape: the registered command's own `run`, never a second route to the dialog.
+   */
+  const aiSetup = useMemo(
+    () =>
+      aiSetupCommand({
+        client,
+        settings,
+        ask,
+        onSecretsChanged: () => {
+          refreshSecrets();
+        },
+      }),
+    [ask, client, refreshSecrets, settings],
+  );
+
+  /**
+   * THE FIRST RUN offers the AI setup once — BUILD-PROMPT E5's onboarding step — and only when all
+   * three are known: the stored settings have loaded (a Skip is a stored `false`, and the fallback
+   * before the load is `true`), main has answered which keys are stored, and none of the ten
+   * providers has one. Once per launch, by a ref, so a key removed later in this session does not
+   * reopen it.
+   */
+  const settingsLoaded = useSyncExternalStore(
+    (listener) => settings.subscribe(listener),
+    () => settings.hydrated,
+  );
+
   const registry = useMemo(() => {
     // THE SHORTCUTS COMMAND LISTS THE REGISTRY THAT CONTAINS IT. The holder is LOCAL to this memo, filled before the
     // memo returns, and read only when the command runs — never during render (the refs rule that refused G1's first
@@ -1731,6 +1771,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
             refreshSecrets();
           },
         }),
+        aiSetup,
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ client, ask, track }),
         inspectPageStructureCommand({ client, ask }),
@@ -1981,6 +2022,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     return built;
   }, [
       activate,
+      aiSetup,
       applied,
       ask,
       // THE DOCUMENT ON SHOW, which *open side by side* needs beside the one the
@@ -2083,6 +2125,16 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
 
   useShortcuts(registry, context);
   useTheme(settings);
+
+  // THE FIRST-RUN AI SETUP (see `settingsLoaded` above), offered once per launch.
+  const offeredSetup = useRef(false);
+  useEffect(() => {
+    if (offeredSetup.current || !settingsLoaded || !secretsKnown) return;
+    offeredSetup.current = true;
+    if (settings.get(AI_SETUP_AT_START_SETTING.id) !== true) return;
+    if (AI_PROVIDER_KEY_SETTING_IDS.some((id) => storedSecrets.includes(id))) return;
+    void aiSetup.run(context);
+  }, [aiSetup, context, secretsKnown, settings, settingsLoaded, storedSecrets]);
   // THE WINDOW'S OWN CONTROLS, painted like the title bar they sit over, from what the bar computed.
   useWindowControlsOverlay(client);
 

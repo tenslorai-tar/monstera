@@ -2206,3 +2206,56 @@ describe('App', () => {
     expect(calls).not.toContain('document.open');
   });
 });
+
+describe('the first-run AI setup (E5 onboarding)', () => {
+  /**
+   * Mounts the shell with main answering which keys are stored, and with the stored settings
+   * either loaded (`hydrate`) or not yet — the two facts the offer waits for.
+   */
+  async function started(stored: readonly string[], hydrate: Readonly<Record<string, unknown>> | null): Promise<void> {
+    const client = createClient(channels, (id) => {
+      if (id === 'settings.loadSecrets') return Promise.resolve(ok({ stored, available: true }));
+      if (id === 'app.info') return Promise.resolve(ok({ version: '0.0.0', installChannel: 'development' }));
+      const answer = OTHER_ANSWERS[id];
+      if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+      return Promise.resolve(ok(answer));
+    });
+    const settings = freshSettings();
+    if (hydrate !== null) settings.hydrate(hydrate);
+    render(<App client={client} settings={settings} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it('OFFERS the setup once the settings have loaded and no provider has a key', async () => {
+    await started([], {});
+    // GET, not find: the same settle the controls below read absence after, so their absence
+    // cannot be a dialog that simply had not opened yet.
+    expect(screen.getByRole('dialog', { name: 'Set up the AI assistant' })).toBeTruthy();
+    // THE BODY IS LAZY (ADR-0029 Decision 7), so its Skip arrives a moment after the frame.
+    expect(await screen.findByRole('button', { name: 'Skip' })).toBeTruthy();
+  });
+
+  it('CONTROL: a provider key already stored means no offer', async () => {
+    await started(['ai.gemini-key'], {});
+    expect(screen.queryByRole('dialog', { name: 'Set up the AI assistant' })).toBeNull();
+  });
+
+  it('CONTROL: a person who SKIPPED — the stored false — is not asked again', async () => {
+    await started([], { 'ai.setup-at-start': false });
+    expect(screen.queryByRole('dialog', { name: 'Set up the AI assistant' })).toBeNull();
+  });
+
+  it('CONTROL: before the stored settings load, nothing is offered — the fallback is not a person’s answer', async () => {
+    await started([], null);
+    expect(screen.queryByRole('dialog', { name: 'Set up the AI assistant' })).toBeNull();
+  });
+
+  it('CONTROL: a key that is not an AI provider’s — Azure Document Intelligence — does not count as set up', async () => {
+    await started(['editing.azure-di-key'], {});
+    expect(await screen.findByRole('dialog', { name: 'Set up the AI assistant' })).toBeTruthy();
+  });
+});

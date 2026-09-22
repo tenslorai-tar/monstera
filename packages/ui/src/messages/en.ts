@@ -964,6 +964,21 @@ export const ASSISTANT_QUICK_READ_TABLE = messageKey('assistant.quick.read-table
 export const SUMMARISE_COMMENTS_TITLE = messageKey('command.ai.summarise-comments');
 export const ASSISTANT_PROMPT_SUMMARISE_COMMENTS = messageKey('assistant.prompt.summarise-comments');
 export const GROUP_AI = messageKey('surface.ribbon.group.ai');
+export const AI_SETUP_TITLE = messageKey('dialog.ai-setup.title');
+export const AI_SETUP_COMMAND_TITLE = messageKey('command.ai.setup');
+export const AI_SETUP_INTRO = messageKey('dialog.ai-setup.intro');
+export const AI_SETUP_PROVIDER = messageKey('dialog.ai-setup.provider');
+export const AI_SETUP_KEY = messageKey('dialog.ai-setup.key');
+export const AI_SETUP_ENDPOINT = messageKey('dialog.ai-setup.endpoint');
+export const AI_SETUP_CHECK = messageKey('dialog.ai-setup.check');
+export const AI_SETUP_SKIP = messageKey('dialog.ai-setup.skip');
+export const AI_SETUP_STORAGE_UNAVAILABLE = messageKey('dialog.ai-setup.storage-unavailable');
+export const AI_SETUP_UNAUTHORISED = messageKey('dialog.ai-setup.unauthorised');
+export const AI_SETUP_UNREACHABLE = messageKey('dialog.ai-setup.unreachable');
+export const AI_SETUP_REJECTED = messageKey('dialog.ai-setup.rejected');
+export const AI_SETUP_UNREADABLE = messageKey('dialog.ai-setup.unreadable');
+export const AI_SETUP_NOT_STORED = messageKey('dialog.ai-setup.not-stored');
+export const AI_SETUP_AT_START_TITLE = messageKey('setting.ai.setup-at-start.title');
 export const ASSISTANT_ABOUT_NOTHING = messageKey('assistant.about.nothing');
 export const ASSISTANT_ABOUT_SENDS = messageKey('assistant.about.sends');
 export const ASSISTANT_SENT_PAGE = messageKey('assistant.sent.page');
@@ -2267,6 +2282,25 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_PROMPT_SUMMARISE_COMMENTS]:
     'Summarise the comments on this document: what people ask for, what they point out, and what is still open. Cite the page of each point.',
   [GROUP_AI]: 'AI',
+  // BUILD-PROMPT E5's FIRST-RUN STEP. Skip is said to be fine, because it is: nothing but the
+  // assistant needs a key.
+  [AI_SETUP_TITLE]: 'Set up the AI assistant',
+  [AI_SETUP_COMMAND_TITLE]: 'Set up AI…',
+  [AI_SETUP_INTRO]:
+    'The assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
+  [AI_SETUP_PROVIDER]: 'Provider',
+  [AI_SETUP_KEY]: 'API key',
+  [AI_SETUP_ENDPOINT]: 'Azure OpenAI endpoint',
+  [AI_SETUP_CHECK]: 'Check and save',
+  [AI_SETUP_SKIP]: 'Skip',
+  [AI_SETUP_STORAGE_UNAVAILABLE]:
+    'This computer cannot store a key securely right now, so none can be saved. You can skip this and try again later.',
+  [AI_SETUP_UNAUTHORISED]: 'The provider did not accept that key, so it was not saved. Check it and try again.',
+  [AI_SETUP_UNREACHABLE]: 'The provider could not be reached, so the key was not saved. Check your connection and try again.',
+  [AI_SETUP_REJECTED]: 'The provider refused the check, so the key was not saved.',
+  [AI_SETUP_UNREADABLE]: 'The provider’s answer could not be read, so the key was not saved.',
+  [AI_SETUP_NOT_STORED]: 'The key could not be stored securely on this computer, so it was not saved.',
+  [AI_SETUP_AT_START_TITLE]: 'Offer AI setup when Monstera starts',
   [ASSISTANT_ABOUT_NOTHING]: 'Nothing from the document',
   // WHO RECEIVES IT AND WHEN, which is BUILD-PROMPT's consent sentence: document content goes
   // to a provider only on an explicit action, and the panel says which provider.

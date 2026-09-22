@@ -892,6 +892,31 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-22 — First-run AI setup: Skip is as big as the check, and a refused key is not kept
+
+BUILD-PROMPT E5's onboarding step, with the owner's ruling that `ai.models` is the key check.
+`ai.models` reads the STORED key, so the order is save → list → remove on refusal: a key the
+provider refuses never stays stored, and the dialog reopens with the provider's own reason and the
+provider still chosen. The command's cases assert that order as the sequence of channel calls,
+and the removal as a second `saveSecret` with `''`, the channel's own meaning.
+
+**The first-run offer waits on three facts, and one of them did not exist.** It needs the stored
+settings loaded — a Skip is a stored `false`, and before the load the fallback reads `true` — and
+`SettingsStore` had no way to say it had loaded: a hydrate notifies `'*'`, and a reader mounting
+after that notification cannot tell. The store now keeps `hydrated`, read through
+`useSyncExternalStore` so the answer cannot be missed between a render and a subscription. It also
+needs main's answer about stored keys, where a refusal is *not known* rather than *none stored*.
+The control *before the stored settings load, nothing is offered* reddens with the load guard
+removed; the positive case reads the dialog with `getByRole` after the same settle the absence
+controls use, so their absence is not a dialog that had not opened yet.
+
+Placed on Review › AI and the palette, not the start screen's footer: that footer is pinned at
+About, the log and Settings, the start screen is the owner's next redesign, and Settings is where
+a key goes anyway. Owes one live run — and that run cannot enter a key for the owner, so it is
+theirs to do or to watch.
+
+---
+
 ## 2026-09-22 — Vision analysis: a picture of the page, drawn where every other page picture is
 
 D11's *vision analysis (table reading assist)* on [ADR-0090](DECISIONS/0090-a-vision-ask-sends-one-page-picture-drawn-in-the-engine-host.md).

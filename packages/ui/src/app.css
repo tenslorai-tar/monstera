@@ -2323,6 +2323,26 @@ textarea {
   margin: 0;
 }
 
+/* THE FIRST-RUN AI SETUP (E5): the sentence, the two fields, and Skip beside the check, the same
+   size — "prominent, no dark patterns" is a layout rule as much as a wording one. */
+.m-ai-setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-ai-setup__intro,
+.m-ai-setup__problem {
+  margin: 0;
+  color: var(--text);
+}
+
+.m-ai-setup__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
 /*
  * The save-problem dialog's body: two paragraphs, and the first one is the
  * message. Invariant 18's obligation is that the user learns their work

@@ -19,6 +19,7 @@ import {
   AI_OPENAI_KEY_TITLE,
   AI_OPENROUTER_KEY_TITLE,
   AI_PERPLEXITY_KEY_TITLE,
+  AI_SETUP_AT_START_TITLE,
   AI_XAI_KEY_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
@@ -88,6 +89,23 @@ export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   title: AI_AZURE_OPENAI_ENDPOINT_TITLE,
   schema: z.string(),
   fallback: '',
+  category: 'ai',
+};
+
+/**
+ * Whether the first-run AI setup is offered when the application starts (BUILD-PROMPT E5's
+ * onboarding step).
+ *
+ * **A person's setting rather than a hidden flag**: *Skip* and a key that checks out both turn it
+ * off, and a person who skipped can turn it back on here, or run *Set up AI…* at any time. The
+ * setup is offered only while no provider's key is stored, so a person who added one in Settings
+ * is not asked again.
+ */
+export const AI_SETUP_AT_START_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'ai.setup-at-start',
+  title: AI_SETUP_AT_START_TITLE,
+  schema: z.boolean(),
+  fallback: true,
   category: 'ai',
 };
 

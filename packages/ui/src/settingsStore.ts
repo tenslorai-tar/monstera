@@ -28,9 +28,19 @@ export class SettingsStore {
   readonly #registry: SettingsRegistry;
   readonly #values = new Map<string, unknown>();
   readonly #listeners = new Set<(id: string) => void>();
+  #hydrated = false;
 
   constructor(registry: SettingsRegistry) {
     this.#registry = registry;
+  }
+
+  /**
+   * Whether what main stored has been loaded. A reader that must tell *the person chose this*
+   * from *nothing has loaded yet* — the first-run AI setup, which a Skip turns off — waits for
+   * it; every other reader takes the fallback until then, which is the hydrate's design.
+   */
+  get hydrated(): boolean {
+    return this.#hydrated;
   }
 
   /**
@@ -50,6 +60,7 @@ export class SettingsStore {
       if (this.#registry.get(id) === undefined) continue;
       this.#values.set(id, this.#registry.read(id, value));
     }
+    this.#hydrated = true;
     for (const listener of this.#listeners) listener('*');
   }
 
