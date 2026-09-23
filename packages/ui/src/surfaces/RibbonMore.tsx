@@ -40,8 +40,13 @@ export function RibbonMore({
     <Menu.Root>
       <Menu.Trigger className="m-tool-button m-ribbon__more" nativeButton>
         <Icon name="Ellipsis" size="ribbon" />
-        <span className="m-tool-button__label">{i18n._(RIBBON_MORE)}</span>
-        <Icon name="ChevronDown" size="dense" />
+        {/* THE LABEL AND ITS CHEVRON ON ONE LINE, which is how the design draws it. A tool button is
+            a column — glyph over caption — so a third child would be a third row, and the chevron
+            would sit under the word instead of beside it. */}
+        <span className="m-tool-button__label m-ribbon__more-label">
+          {i18n._(RIBBON_MORE)}
+          <Icon name="ChevronDown" size="chrome" />
+        </span>
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner align="start" side="bottom">

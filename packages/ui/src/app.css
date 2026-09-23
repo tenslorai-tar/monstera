@@ -2284,6 +2284,12 @@ textarea {
   flex: none;
 }
 
+.m-ribbon__more-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .m-ribbon__caption {
   color: var(--muted);
   font-size: var(--font-chrome-10);
