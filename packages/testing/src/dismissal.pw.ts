@@ -56,23 +56,37 @@ test('Escape from wherever TAB takes focus inside it — a control whose tooltip
   // Tab and then asks where it went. Without the line below it is measuring the landing AND the
   // trap at once, and a failure cannot say which.
   //
-  // It failed on CI on 2026-09-23 and passed here on the same commit, twice. Measured here three
-  // times, focus was already on the query field when the palette became visible — so the race does
-  // NOT reproduce on this machine and the CI cause is NOT established from this seat; the job's log
-  // needs owner authentication and the annotation carries the assertion, not the DOM. What is known
-  // is that `inside` was false there, which means focus was not in the palette when Tab was pressed.
+  // It failed on CI twice, on 2026-09-23, and passes here every time. Measured here, focus was
+  // already on the query field when the palette became visible, and after the Tab it was on the
+  // Close control at `.m-icon-button`, inside the palette, with the tooltip open — so neither the
+  // landing nor the trap reproduces as a failure on this machine.
   //
-  // The landing place is the first case's claim. This one is about the trap, whose subject is focus
-  // that is already inside, so waiting for it narrows this case to its own property rather than
-  // papering over a failure.
+  // The landing place is the first case's claim; this one is about the trap.
   await expect(page.locator('.m-palette-query')).toBeFocused();
   await page.keyboard.press('Tab');
-  // WHEREVER Tab took it, it is inside the palette — the trap's promise — and not the field any more.
-  const inside = await page.evaluate(
-    (selector) => document.querySelector(selector)?.contains(document.activeElement) === true,
+  // WHEREVER Tab took it, it is inside the palette OR inside the layer the palette's own focused
+  // control opened — which is the promise a LAYERED trap makes, and the narrower `contains(.m-palette)`
+  // was a statement about DOM position rather than about focus escaping. A tooltip is portaled out
+  // of the dialog's subtree, so the narrow test calls a correctly trapped focus an escape the moment
+  // the popup rather than its trigger holds it.
+  //
+  // AND THE FAILURE NAMES WHAT IT FOUND. The CI logs need owner authentication, so a bare `false`
+  // there is unreadable from this seat — this carries the tag, the class and both containments into
+  // the annotation, which is public.
+  const where = await page.evaluate(
+    (selector) => {
+      const active = document.activeElement;
+      return {
+        tag: active?.tagName ?? 'none',
+        className: active instanceof HTMLElement ? active.className : '',
+        inPalette: document.querySelector(selector)?.contains(active) === true,
+        inTooltip: [...document.querySelectorAll('.m-tooltip')].some((layer) => layer.contains(active)),
+      };
+    },
     PALETTE,
   );
-  expect(inside).toBe(true);
+  const inside = where.inPalette || where.inTooltip;
+  expect(inside, `focus after Tab: ${JSON.stringify(where)}`).toBe(true);
   await expect(page.locator('.m-palette-query')).not.toBeFocused();
 
   // TAB REACHES THE CLOSE CONTROL since the results became options rather than tab stops, and

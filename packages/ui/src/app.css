@@ -1636,14 +1636,14 @@ textarea {
 }
 
 .m-assistant__consent,
+/* WHAT WAS SENT, under the question. One rule: this was two blocks with the same selector, the
+   second setting only a top margin, so the first's `margin: 0` was overridden by its own twin.
+   It WRAPS and is never truncated — the owner's enhancement (2026-09-22): a summary that ends in an
+   ellipsis tells a person less than the sentence it replaced, and this one names pages and counts. */
 .m-assistant__sent {
-  margin: 0;
+  margin: var(--space-2) 0 0;
   color: var(--muted);
   font-size: var(--font-chrome-11);
-}
-
-.m-assistant__sent {
-  margin-block-start: var(--space-2);
 }
 
 .m-assistant__quick {
