@@ -56,11 +56,6 @@ test('Escape from wherever TAB takes focus inside it — a control whose tooltip
   // Tab and then asks where it went. Without the line below it is measuring the landing AND the
   // trap at once, and a failure cannot say which.
   //
-  // It failed on CI twice, on 2026-09-23, and passes here every time. Measured here, focus was
-  // already on the query field when the palette became visible, and after the Tab it was on the
-  // Close control at `.m-icon-button`, inside the palette, with the tooltip open — so neither the
-  // landing nor the trap reproduces as a failure on this machine.
-  //
   // The landing place is the first case's claim; this one is about the trap.
   await expect(page.locator('.m-palette-query')).toBeFocused();
   await page.keyboard.press('Tab');
@@ -73,20 +68,56 @@ test('Escape from wherever TAB takes focus inside it — a control whose tooltip
   // AND THE FAILURE NAMES WHAT IT FOUND. The CI logs need owner authentication, so a bare `false`
   // there is unreadable from this seat — this carries the tag, the class and both containments into
   // the annotation, which is public.
-  const where = await page.evaluate(
-    (selector) => {
+  //
+  // IT WAITS FOR FOCUS TO SETTLE, because focus is legitimately IN TRANSIT for one frame, and that
+  // is what failed on CI three times. The annotation of 2026-09-23 named the element: a `SPAN` with
+  // no class, in neither the palette nor a tooltip. It is the trap's own after-guard. The query is
+  // the palette's LAST tabbable (the results are options, not tab stops), so Tab lands on Base UI's
+  // `FocusGuard`, whose `onFocus` moves focus to the first tabbable through `enqueueFocus` — on the
+  // next ANIMATION FRAME (`@base-ui/react` 1.7.0, `floating-ui-react/utils/enqueueFocus.mjs`). A
+  // read taken before that frame sees the guard; a loaded CI runner takes it before, this machine
+  // after, which is why it passed here every time. REPRODUCED here on 2026-09-23 by delaying
+  // `requestAnimationFrame` 400 ms in the page: the previous version of this case failed 3 of 3
+  // with CI's exact annotation, and this one passed 3 of 3. A 20x CPU throttle did NOT reproduce
+  // it — it slows the script and not the gap between the key and the frame.
+  //
+  // The guard is the only thing allowed to hold focus mid-flight, and it is asserted to be one — a
+  // span marked `data-base-ui-focus-guard` beside the palette, under its parent — so a real escape
+  // to the page below still fails, on the first read as well as the last.
+  const where = (): Promise<{
+    tag: string;
+    className: string;
+    inPalette: boolean;
+    inTooltip: boolean;
+    guard: boolean;
+  }> =>
+    page.evaluate((selector) => {
       const active = document.activeElement;
+      const palette = document.querySelector(selector);
       return {
         tag: active?.tagName ?? 'none',
         className: active instanceof HTMLElement ? active.className : '',
-        inPalette: document.querySelector(selector)?.contains(active) === true,
+        inPalette: palette?.contains(active) === true,
         inTooltip: [...document.querySelectorAll('.m-tooltip')].some((layer) => layer.contains(active)),
+        // THE TRAP'S OWN GUARD: a focusable span Base UI renders beside the popup, under the same
+        // parent, marked by `utils/FocusGuard.mjs`.
+        guard:
+          active instanceof HTMLSpanElement &&
+          active.hasAttribute('data-base-ui-focus-guard') &&
+          palette?.parentElement?.contains(active) === true,
       };
-    },
-    PALETTE,
-  );
-  const inside = where.inPalette || where.inTooltip;
-  expect(inside, `focus after Tab: ${JSON.stringify(where)}`).toBe(true);
+    }, PALETTE);
+  const first = await where();
+  expect(
+    first.inPalette || first.inTooltip || first.guard,
+    `focus after Tab left the palette's trap: ${JSON.stringify(first)}`,
+  ).toBe(true);
+  await expect
+    .poll(async () => {
+      const settled = await where();
+      return settled.inPalette || settled.inTooltip;
+    }, { message: `focus after Tab never settled inside the palette: ${JSON.stringify(await where())}` })
+    .toBe(true);
   await expect(page.locator('.m-palette-query')).not.toBeFocused();
 
   // TAB REACHES THE CLOSE CONTROL since the results became options rather than tab stops, and
