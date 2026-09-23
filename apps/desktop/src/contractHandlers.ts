@@ -2567,12 +2567,18 @@ function cloudHandlers(
       try {
         const saved = await deps.commands.save(docId);
         if (saved.kind !== 'saved') return ok({ kind: 'save-failed' as const });
-        await deps.cloud.saveBack(docId, await deps.commands.currentImage(docId));
-        return ok({ kind: 'saved-back' as const });
+        // THE UPLOAD'S REFUSAL IS CAUGHT HERE, where the saved version is in scope, so a refusal
+        // after the working copy was written still says which version it holds.
+        try {
+          await deps.cloud.saveBack(docId, await deps.commands.currentImage(docId));
+        } catch (thrown) {
+          return ok({ ...cloudRefusal(thrown), version: saved.version });
+        }
+        return ok({ kind: 'saved-back' as const, version: saved.version });
       } catch (thrown) {
         const refused = documentRefusal(thrown);
         if (refused !== null) return refused;
-        return ok(cloudRefusal(thrown));
+        throw thrown;
       }
     },
     'cloud.uploadCopy': async ({ docId, provider }) => {

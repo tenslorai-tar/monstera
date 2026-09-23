@@ -17,7 +17,7 @@ import {
 } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
-import { unconfiguredCloud } from './cloudSession.js';
+import { CloudOutcomeRefused, unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
@@ -788,6 +788,82 @@ describe('ai.history (ADR-0093)', () => {
     const refused = await handlers['ai.history.load']({ docId: other });
     expect(refused.ok).toBe(false);
     await expect(handlers['ai.history.clear']({})).resolves.toEqual({ ok: true, value: { cleared: 1 } });
+  });
+});
+
+/**
+ * `cloud.saveBack`'s half of the save-back pair: main answers the version it saved, whenever it
+ * saved. The renderer's half — that the version clears the tab's dot — is `cloudStorage.test.ts`'.
+ */
+describe('cloud.saveBack', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000b1');
+
+  function withCloud(upload: () => Promise<void>, saved: 'saved' | 'write-failed') {
+    const uploaded: Uint8Array[] = [];
+    // A DOCUMENT WITH A CLOUD ORIGIN, faked at the surface: which provider it came from and what
+    // happens to the upload are the only two things this handler asks of it.
+    const cloud = {
+      ...unconfiguredCloud(),
+      originOf: (docId: DocId) => (docId === DOC ? ('onedrive' as const) : null),
+      saveBack: (_docId: DocId, pdf: Uint8Array) => {
+        uploaded.push(pdf);
+        return upload();
+      },
+    };
+    const commands = {
+      save: () =>
+        Promise.resolve(saved === 'saved' ? { kind: 'saved' as const, version: asDocVersion(9) } : { kind: 'write-failed' as const }),
+      currentImage: () => Promise.resolve(new Uint8Array([1, 2, 3])),
+    } as unknown as DocumentCommands;
+    const handlers = createContractHandlers({
+      assistant: INERT_ASSISTANT,
+      appInfo,
+      capabilities: new CapabilityRegistry(),
+      commands,
+      documents: {} as unknown as DocumentService,
+      openedDocument: () => Promise.resolve(),
+      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
+      pickDocument: () => Promise.resolve(null),
+      recent: createRecentFiles(createEphemeralSettings()),
+      settings: createEphemeralSettings(),
+      secrets: createEphemeralSecrets(),
+      chatHistory: NO_HISTORY,
+      pickSettingsFile: () => Promise.resolve(null),
+      revealLog: () => Promise.resolve(false),
+      titleBarOverlay: () => false,
+      confirmClose: () => false,
+      copySelection: () => false,
+      copyText: () => false,
+      openWebPage: () => Promise.resolve(false),
+      closeListening: () => false,
+      cloud,
+      readDictionary: () => Promise.resolve(null),
+      ocrLanguages: () => Promise.resolve([]),
+    });
+    return { handlers, uploaded };
+  }
+
+  it('a save-back that landed answers THE VERSION IT SAVED, as `document.save` does', async () => {
+    const { handlers, uploaded } = withCloud(() => Promise.resolve(), 'saved');
+    await expect(handlers['cloud.saveBack']({ docId: DOC })).resolves.toEqual({
+      ok: true,
+      value: { kind: 'saved-back', version: asDocVersion(9) },
+    });
+    expect(uploaded).toHaveLength(1);
+  });
+
+  it('a refusal AFTER the working copy was saved still names the version, and the refusal', async () => {
+    const { handlers } = withCloud(() => Promise.reject(new CloudOutcomeRefused('changed-elsewhere')), 'saved');
+    await expect(handlers['cloud.saveBack']({ docId: DOC })).resolves.toEqual({
+      ok: true,
+      value: { kind: 'refused', reason: 'changed-elsewhere', version: asDocVersion(9) },
+    });
+  });
+
+  it('CONTROL: a save that did not land names no version and SENDS NOTHING', async () => {
+    const { handlers, uploaded } = withCloud(() => Promise.resolve(), 'write-failed');
+    await expect(handlers['cloud.saveBack']({ docId: DOC })).resolves.toEqual({ ok: true, value: { kind: 'save-failed' } });
+    expect(uploaded).toHaveLength(0);
   });
 });
 

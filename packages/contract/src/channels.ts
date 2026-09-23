@@ -1239,17 +1239,26 @@ export const channels = {
   /**
    * Saves a document opened from the cloud and uploads it back to its file — refused by name when
    * the cloud file changed since it was opened, rather than overwriting it.
+   *
+   * ## Every answer that saved names the version it saved, as `document.save`'s does
+   *
+   * The working copy is saved FIRST, so two answers leave it saved: sent, and refused on the way
+   * out. Both carry the version written, because that is what the renderer compares its own
+   * version against to say whether the document has unsaved changes — an answer that saved and
+   * named no version left the tab reading dirty while `document.unsaved` read clean. The two that
+   * saved nothing carry none, so a renderer cannot mark those saved by construction.
    */
   'cloud.saveBack': channel(
     'Saves a document and uploads it back to the cloud file it was opened from.',
     z.object({ docId: docIdSchema }).strict(),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('saved-back') }),
+      z.object({ kind: z.literal('saved-back'), version: docVersionSchema }),
       /** The document did not come from the cloud, and was not put there this session. */
       z.object({ kind: z.literal('not-from-cloud') }),
       /** Saving to the working copy failed, so nothing was sent. */
       z.object({ kind: z.literal('save-failed') }),
-      z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS) }),
+      /** Saved to the working copy at `version`; sending it to the cloud was refused. */
+      z.object({ kind: z.literal('refused'), reason: z.enum(CLOUD_REFUSALS), version: docVersionSchema }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

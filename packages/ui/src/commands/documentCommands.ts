@@ -308,6 +308,30 @@ export interface WritesAFile {
 }
 
 /**
+ * What a command that writes THE DOCUMENT'S OWN FILE needs: a confirmation, and the record that
+ * the version main answered now reaches the file.
+ *
+ * ## A named type, because the obligation is the class's and not one command's
+ *
+ * Two commands write the file a document came from — Save, and Save back to cloud — and the
+ * second was written without `onSaved`: its answer named no version, so after a save-back that
+ * main recorded as clean the tab's dot stayed and the bar kept saying *Unsaved changes*. A copy,
+ * an extract or a smaller copy writes ANOTHER file and leaves the document as unsaved as it was,
+ * which is why those take {@link WritesAFile} and not this. The next writer of the document's own
+ * file — autosave — takes this type and cannot be assembled without the callback.
+ */
+export interface WritesItsOwnFile extends WritesAFile {
+  /**
+   * Records that this version now reaches the file.
+   *
+   * The version comes back from main and the clock is read in the window, so what the status bar
+   * and the tab's dot read is two numbers main minted and one moment this window observed — never
+   * a guess about either.
+   */
+  readonly onSaved: (docId: DocId, version: DocVersion) => void;
+}
+
+/**
  * Tells the user a command was refused, and hands the code to the one place
  * that knows what it means.
  *
@@ -1788,9 +1812,7 @@ export function saveCommand(deps: {
    * it knows the id — which is the same place `openWith` validates the props.
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
-  readonly toast: ShowToast;
-  readonly onSaved: (docId: DocId, version: DocVersion) => void;
-}): UiCommand {
+} & WritesItsOwnFile): UiCommand {
   return {
     id: 'document.save',
     icon: 'Save',
@@ -1930,16 +1952,7 @@ export async function saveDocument(
   deps: {
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
-    readonly toast: ShowToast;
-    /**
-     * Records that this version now reaches the file.
-     *
-     * The version comes back from `document.save` and the clock is read here, so what the
-     * status bar and the tab's dot read is two numbers main minted and one moment this window
-     * observed — never a guess about either.
-     */
-    readonly onSaved: (docId: DocId, version: DocVersion) => void;
-  },
+  } & WritesItsOwnFile,
   docId: DocId,
 ): Promise<boolean> {
   const answer = await deps.client['document.save']({ docId });

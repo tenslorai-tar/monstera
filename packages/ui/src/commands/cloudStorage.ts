@@ -3,9 +3,9 @@ import type { DocId } from '@monstera/shared';
 
 import { CLOUD_OUTCOME_DIALOG_ID } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG_ID, CLOUD_RESULT } from '../dialogs/cloudStorage.js';
-import { CLOUD_COMMAND_TITLE, GROUP_FILE, SAVE_BACK_TITLE } from '../messages/en.js';
+import { CLOUD_COMMAND_TITLE, GROUP_FILE, SAVE_BACK_TITLE, TOAST_SAVED_BACK } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
-import { hasDocument, reportProblem } from './documentCommands.js';
+import { type WritesItsOwnFile, hasDocument, reportProblem } from './documentCommands.js';
 import type { OpenedDocument } from './importMarkdown.js';
 
 /**
@@ -116,11 +116,19 @@ export function cloudStorageCommand(deps: {
  * came from. Offered for every open document and SAYS so for one that did not come from the cloud:
  * the renderer does not know a document's origin, and a hidden command would leave a person with a
  * cloud document no way to learn why nothing is offered.
+ *
+ * ## It writes the document's own file, so it records the save as Save does
+ *
+ * {@link WritesItsOwnFile}: main saves the working copy FIRST, so a refusal on the way out still
+ * leaves the document saved at the version it names, and the tab must agree with
+ * `document.unsaved` in both cases. Only the two answers that saved nothing leave it dirty.
  */
-export function saveBackCommand(deps: {
-  readonly client: ContractClient;
-  readonly ask: (id: string, props: unknown) => Promise<unknown>;
-}): UiCommand {
+export function saveBackCommand(
+  deps: {
+    readonly client: ContractClient;
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  } & WritesItsOwnFile,
+): UiCommand {
   return {
     id: 'cloud.save-back',
     icon: 'CloudUpload',
@@ -128,13 +136,20 @@ export function saveBackCommand(deps: {
     placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 36 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
-      if (context.docId === undefined) return;
-      const answer = await deps.client['cloud.saveBack']({ docId: context.docId });
+      const { docId } = context;
+      if (docId === undefined) return;
+      const answer = await deps.client['cloud.saveBack']({ docId });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
       }
       const result = answer.value;
+      // THE STATE FIRST, THEN THE ANNOUNCEMENT, as `saveDocument` orders them.
+      if (result.kind === 'saved-back' || result.kind === 'refused') deps.onSaved(docId, result.version);
+      if (result.kind === 'saved-back') {
+        deps.toast('done', TOAST_SAVED_BACK);
+        return;
+      }
       void deps.ask(CLOUD_OUTCOME_DIALOG_ID, { outcome: result.kind === 'refused' ? result.reason : result.kind });
     },
   };

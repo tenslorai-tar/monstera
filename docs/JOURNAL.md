@@ -892,6 +892,42 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-23 — Save back to cloud left the document reading dirty
+
+**The entry below is wrong in one sentence and this corrects it.** It says *"Save back to cloud
+does confirm, so the plain save was the gap."* It confirmed with a DIALOG and never recorded the
+save: `cloud.saveBack` answered `{ kind: 'saved-back' }` with no version, and `saveBackCommand`
+took only `client` and `ask`. The owner tested exactly that path — after a successful save-back
+`document.unsaved` read clean while the tab kept its dot and the bar said *Unsaved changes*, which
+is the disagreement `savedState` was built to make unrepresentable. The claim came from the work
+order and I built on it without opening the command; one grep for `saved-back` would have shown it.
+
+**The fix is the class, not the command.** `WritesItsOwnFile` is now a named type — a
+confirmation plus `onSaved` — and Save, the close path's save and Save back take it. A copy, an
+extract and a smaller copy write ANOTHER file and keep `WritesAFile`, because the document is
+exactly as unsaved afterwards. Autosave is the next writer of the document's own file and cannot be
+assembled without the callback.
+
+**Main answers the version whenever it saved.** Save back saves the working copy FIRST, so a
+refusal on the way out — changed elsewhere, unreachable — still leaves the document saved. Both
+`saved-back` and `refused` now carry the version; `save-failed` and `not-from-cloud` carry none, so
+a renderer cannot mark those saved by construction. The handler catches the upload's refusal where
+the saved version is in scope rather than in the outer `catch`, where it is not.
+
+**Success is a toast; the refusals stay in the dialog**, by the reasoning the entry below already
+recorded — a dialog on the successful path has to be dismissed for news that needs no answer. The
+refusal sentences are shared with the Cloud storage dialog, where most are about signing in and
+nothing was saved; after a save-back the work WAS saved, so the outcome dialog adds *Your changes
+are saved on this computer* except where the refusal's own sentence already says it.
+
+**The pair:** `contractHandlers.test.ts` asserts main answers version 9 on `saved-back` and on a
+refusal after the save, with a control where the save did not land that names no version and sends
+nothing. `cloudStorage.test.ts` asserts the command marks the version saved and toasts, with a
+control that `save-failed` and `not-from-cloud` mark nothing. Mutated: marking only `saved-back`
+reddened the refusal case alone.
+
+---
+
 ## 2026-09-23 — A save that says so: the toast primitive, the tab's dot and the status bar's saved state
 
 The owner's report: *Ctrl+S or Save saves, and nothing on screen changes; I could not tell whether

@@ -2478,8 +2478,14 @@ textarea {
 .m-cloud__problem,
 .m-cloud__note,
 .m-cloud__outcome {
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
   color: var(--text);
+}
+
+.m-cloud__outcome > p {
+  margin: 0;
 }
 
 .m-cloud__file-name {

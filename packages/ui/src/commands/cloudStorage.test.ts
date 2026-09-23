@@ -1,10 +1,12 @@
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { CLOUD_OUTCOME_DIALOG_ID } from '../dialogs/cloudOutcome.js';
 import { CLOUD_DIALOG_ID, type CloudAnswer } from '../dialogs/cloudStorage.js';
+import { TOAST_SAVED_BACK } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
+import type { ShowToast } from '../toasts.js';
 import { cloudStorageCommand, saveBackCommand } from './cloudStorage.js';
 
 /**
@@ -93,24 +95,66 @@ describe('Cloud storage…', () => {
   });
 });
 
+/**
+ * What a save-back RECORDED: the confirmations it gave and the versions it marked saved. The
+ * versions are what `App.tsx`' `onSaved` turns into the tab's dot and the bar's words, through the
+ * same callback Save uses — so a version recorded here is the dot clearing, and none is it staying.
+ */
+function saving(): {
+  toast: ShowToast;
+  onSaved: (docId: DocId, version: DocVersion) => void;
+  said: { kind: string; message: string }[];
+  wrote: { docId: DocId; version: DocVersion }[];
+} {
+  const said: { kind: string; message: string }[] = [];
+  const wrote: { docId: DocId; version: DocVersion }[] = [];
+  return {
+    toast: (kind, message) => {
+      said.push({ kind, message });
+    },
+    onSaved: (docId, version) => {
+      wrote.push({ docId, version });
+    },
+    said,
+    wrote,
+  };
+}
+
 describe('Save back to cloud', () => {
-  it('sends the document and SAYS what happened — success included', async () => {
-    const { client: built, sent } = client({ 'cloud.saveBack': { kind: 'saved-back' } });
+  it('sends the document, MARKS IT SAVED at the version main wrote, and confirms without a dialog', async () => {
+    const { client: built, sent } = client({ 'cloud.saveBack': { kind: 'saved-back', version: asDocVersion(7) } });
     const { ask, shown } = dialogs([]);
-    await saveBackCommand({ client: built, ask }).run(WITH_DOCUMENT);
+    const { toast, onSaved, said, wrote } = saving();
+    await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
     expect(sent).toStrictEqual([{ id: 'cloud.saveBack', params: { docId: DOC } }]);
-    expect(shown).toStrictEqual([{ id: CLOUD_OUTCOME_DIALOG_ID, props: { outcome: 'saved-back' } }]);
+    expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(7) }]);
+    expect(said).toStrictEqual([{ kind: 'done', message: TOAST_SAVED_BACK }]);
+    expect(shown).toStrictEqual([]);
   });
 
-  it('a file CHANGED ELSEWHERE is said as that, and a local document is told how to get there', async () => {
-    const changed = client({ 'cloud.saveBack': { kind: 'refused', reason: 'changed-elsewhere' } });
-    const first = dialogs([]);
-    await saveBackCommand({ client: changed.client, ask: first.ask }).run(WITH_DOCUMENT);
-    expect(first.shown[0]?.props).toStrictEqual({ outcome: 'changed-elsewhere' });
+  it('CONTROL: a save-back that SAVED NOTHING leaves the document unsaved, and says why', async () => {
+    for (const kind of ['save-failed', 'not-from-cloud'] as const) {
+      const { client: built } = client({ 'cloud.saveBack': { kind } });
+      const { ask, shown } = dialogs([]);
+      const { toast, onSaved, said, wrote } = saving();
+      await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+      expect(wrote, kind).toStrictEqual([]);
+      expect(said, kind).toStrictEqual([]);
+      expect(shown, kind).toStrictEqual([{ id: CLOUD_OUTCOME_DIALOG_ID, props: { outcome: kind } }]);
+    }
+  });
 
-    const local = client({ 'cloud.saveBack': { kind: 'not-from-cloud' } });
-    const second = dialogs([]);
-    await saveBackCommand({ client: local.client, ask: second.ask }).run(WITH_DOCUMENT);
-    expect(second.shown[0]?.props).toStrictEqual({ outcome: 'not-from-cloud' });
+  it('a refusal ON THE WAY OUT still marks the saved working copy, and says the refusal by name', async () => {
+    const { client: built } = client({
+      'cloud.saveBack': { kind: 'refused', reason: 'changed-elsewhere', version: asDocVersion(4) },
+    });
+    const { ask, shown } = dialogs([]);
+    const { toast, onSaved, said, wrote } = saving();
+    await saveBackCommand({ client: built, ask, toast, onSaved }).run(WITH_DOCUMENT);
+    // `document.unsaved` reads clean here — main wrote the working copy before sending — so a tab
+    // left dirty would be the disagreement this command exists not to make.
+    expect(wrote).toStrictEqual([{ docId: DOC, version: asDocVersion(4) }]);
+    expect(said).toStrictEqual([]);
+    expect(shown).toStrictEqual([{ id: CLOUD_OUTCOME_DIALOG_ID, props: { outcome: 'changed-elsewhere' } }]);
   });
 });

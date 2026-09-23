@@ -7,14 +7,20 @@ import { declareDialog } from '../registries/dialogs.js';
 
 export const CLOUD_OUTCOME_DIALOG_ID = 'dialog.cloud-outcome';
 
-/** What *Save back to cloud* ended in: sent, not a cloud document, not saved here, or refused by name. */
-export const CLOUD_OUTCOMES = ['saved-back', 'not-from-cloud', 'save-failed', ...CLOUD_REFUSALS] as const;
+/** What *Save back to cloud* ended in when it did not send: not a cloud document, not saved here, or refused by name. */
+export const CLOUD_OUTCOMES = ['not-from-cloud', 'save-failed', ...CLOUD_REFUSALS] as const;
 
 export type CloudOutcome = (typeof CLOUD_OUTCOMES)[number];
 
 /**
- * One sentence saying what *Save back* did. Every outcome is said, success included: a save that
- * silently went to the cloud and one that silently did not would look the same.
+ * Says why *Save back* did not send. Every outcome is said: a save that silently went to the cloud
+ * and one that silently did not would look the same.
+ *
+ * ## Success is not an outcome here
+ *
+ * A save-back that landed is confirmed by a toast, as every save is: a dialog on the successful
+ * path has to be dismissed before the person can carry on, for news that needs no answer. What
+ * stays here is what the person may have to act on.
  */
 export const CLOUD_OUTCOME_DIALOG = declareDialog({
   id: CLOUD_OUTCOME_DIALOG_ID,

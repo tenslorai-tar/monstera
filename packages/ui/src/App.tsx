@@ -2097,7 +2097,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         openFromUrlCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         // CLOUD STORAGE (ADR-0091): the same two callbacks, so a cloud file arrives as a tab.
         cloudStorageCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
-        saveBackCommand({ client, ask }),
+        saveBackCommand({ client, ask, toast, onSaved }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
         newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
         appendMarkdownCommand({

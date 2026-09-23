@@ -904,6 +904,7 @@ export const TOAST_SAVED = messageKey('toast.saved');
 export const TOAST_COPY_SAVED = messageKey('toast.copy-saved');
 export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
 export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
+export const TOAST_SAVED_BACK = messageKey('toast.saved-back');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
  * §10.3's document panel: six tabs, each named by its accessible name and tooltip,
@@ -1650,9 +1651,9 @@ export const CLOUD_GOOGLE_NOTE = messageKey('dialog.cloud.google-note');
 export const CLOUD_NOTE_SIGNED_IN = messageKey('dialog.cloud.note.signed-in');
 export const CLOUD_NOTE_SIGNED_OUT = messageKey('dialog.cloud.note.signed-out');
 export const CLOUD_NOTE_UPLOADED = messageKey('dialog.cloud.note.uploaded');
-export const SAVE_BACK_DONE = messageKey('dialog.cloud-outcome.saved-back');
 export const SAVE_BACK_NOT_FROM_CLOUD = messageKey('dialog.cloud-outcome.not-from-cloud');
 export const SAVE_BACK_SAVE_FAILED = messageKey('dialog.cloud-outcome.save-failed');
+export const SAVE_BACK_KEPT_HERE = messageKey('dialog.cloud-outcome.kept-here');
 export const CLOUD_PROVIDER_ONEDRIVE = messageKey('cloud.provider.onedrive');
 export const CLOUD_PROVIDER_GOOGLE_DRIVE = messageKey('cloud.provider.google-drive');
 export const CLOUD_STATE_NOT_CONFIGURED = messageKey('cloud.state.not-configured');
@@ -2422,6 +2423,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_COPY_SAVED]: 'Copy saved',
   [TOAST_SMALLER_COPY_SAVED]: 'Smaller copy saved',
   [TOAST_PAGES_SAVED]: 'Pages saved',
+  [TOAST_SAVED_BACK]: 'Saved to cloud storage',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
   [PANEL_PAGES]: 'Pages',
@@ -2527,10 +2529,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOUD_NOTE_SIGNED_IN]: 'Signed in.',
   [CLOUD_NOTE_SIGNED_OUT]: 'Signed out on this computer. Nothing in your cloud storage changed.',
   [CLOUD_NOTE_UPLOADED]: 'Uploaded. Save back to cloud now sends this document to that copy.',
-  [SAVE_BACK_DONE]: 'Saved, and sent back to cloud storage.',
   [SAVE_BACK_NOT_FROM_CLOUD]:
     'This document was not opened from cloud storage. To put it there, use Cloud storage… and Upload this document.',
   [SAVE_BACK_SAVE_FAILED]: 'The document could not be saved on this computer, so nothing was sent.',
+  [SAVE_BACK_KEPT_HERE]: 'Your changes are saved on this computer. Try Save back to cloud again when the problem is fixed.',
   [CLOUD_PROVIDER_NAMES.onedrive]: 'OneDrive',
   [CLOUD_PROVIDER_NAMES['google-drive']]: 'Google Drive',
   [CLOUD_STATE_NAMES['not-configured']]: 'Not available in this build',
