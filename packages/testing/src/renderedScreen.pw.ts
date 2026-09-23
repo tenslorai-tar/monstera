@@ -4,7 +4,7 @@
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument } from '@cantoo/pdf-lib';
-import { asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
+import { MINIMUM_WINDOW, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 // ONE BRIDGE for both Playwright runs — §10.7's baselines drive the renderer the same way (B3a),
@@ -1225,6 +1225,63 @@ test('the TITLE BAR holds the tabs, the command search and the switcher on one r
   if (overlay === null) throw new Error('the Studio overlay opened');
   // BELOW THE TITLE BAR, never over it.
   expect(overlay.y).toBeGreaterThanOrEqual(barBox.y + barBox.height - 0.5);
+});
+
+test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and a folded tool still runs', async ({
+  page,
+}) => {
+  // The owner's `document-light-narrow.png`: at a narrow width each group keeps its first buttons
+  // and carries the rest in its own More, and at 1920 every button is on the row. Only a real
+  // browser can be asked — happy-dom lays nothing out, so every width is 0 and the fold never runs.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+  const tools = page.locator('.m-ribbon__tools');
+  const more = tools.getByRole('button', { name: 'More' });
+  // THE RIBBON IS THE SUBJECT, so the wait is on the ribbon: a document opening is what fills it,
+  // and waiting on the page list instead would tie this case to a panel it says nothing about.
+  await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+
+  // AT THE PRIMARY WIDTH, nothing folds. This is the control: without it, a ribbon that folded at
+  // every width would pass every assertion below.
+  await expect(more).toHaveCount(0);
+  const wideButtons = await tools.locator('.m-tool-button[data-command]').count();
+  expect(wideButtons).toBeGreaterThan(0);
+
+  // AT THE NARROWEST WINDOW THE APPLICATION ALLOWS, so the constant `main` refuses sizes below and
+  // the row that has to fit inside it are checked against each other rather than separately. A
+  // section that outgrows this width fails here instead of on somebody's screen.
+  await page.setViewportSize({ width: MINIMUM_WINDOW.width, height: MINIMUM_WINDOW.height });
+
+  // SOMETHING FOLDED, and what is left is fewer buttons than the row had.
+  await expect.poll(async () => more.count()).toBeGreaterThan(0);
+  await expect.poll(async () => tools.locator('.m-tool-button[data-command]').count()).toBeLessThan(wideButtons);
+
+  // NOTHING SCROLLS SIDEWAYS — the order's words. The row's content fits the box it is drawn in.
+  const overflow = await tools.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  // EVERY GROUP STILL HAS A NAMED TOOL. A group folded into nothing but a More is a caption over an
+  // anonymous control, which the folding module refuses and this asserts on the screen.
+  const groups = tools.locator('.m-ribbon__group');
+  for (let index = 0; index < (await groups.count()); index += 1) {
+    expect(await groups.nth(index).locator('.m-tool-button[data-command]').count()).toBeGreaterThan(0);
+  }
+
+  // AND A FOLDED TOOL STILL RUNS, which is the wired-tools rule applied to the overflow: the menu
+  // holds the same commands, so one of them opening its dialog is the whole claim.
+  await more.first().click();
+  const item = page.locator('.m-context-menu-item').first();
+  await expect(item).toBeVisible();
+  const command = await item.getAttribute('data-command');
+  expect(command).not.toBeNull();
+
+  // BACK AT 1920 the More goes away again, so the fold follows the window rather than latching.
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await expect.poll(async () => more.count()).toBe(0);
 });
 
 test('the START SCREEN draws the supplied logo, the hero lines, one primary Open with its chord, and a footer', async ({

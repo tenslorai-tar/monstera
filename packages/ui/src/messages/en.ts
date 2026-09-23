@@ -1277,6 +1277,7 @@ export const DOCUMENT_TOOLS_LABEL = messageKey('surface.quick-toolbar.label');
  */
 export const RIBBON_RAIL_LABEL = messageKey('surface.ribbon.rail');
 export const RIBBON_TOOLS_LABEL = messageKey('surface.ribbon.tools');
+export const RIBBON_MORE = messageKey('surface.ribbon.more');
 export const SECTION_HOME = messageKey('surface.ribbon.section.home');
 export const SECTION_COMMENT = messageKey('surface.ribbon.section.comment');
 export const SECTION_EDIT = messageKey('surface.ribbon.section.edit');
@@ -3203,6 +3204,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
   [RIBBON_RAIL_LABEL]: 'Sections',
   [RIBBON_TOOLS_LABEL]: 'Tools',
+  // A WORD, not a bare ellipsis glyph: the button that holds the tools which did not fit is a named
+  // control, and `⋯` alone would be an icon-only one needing a tooltip to say the same thing.
+  [RIBBON_MORE]: 'More',
   [SECTION_HOME]: 'Home',
   [SECTION_COMMENT]: 'Comment',
   [SECTION_EDIT]: 'Edit',

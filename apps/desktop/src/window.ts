@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { MINIMUM_WINDOW } from '@monstera/shared';
 import { BrowserWindow, type Session, type WebContents, app } from 'electron';
 
 import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js';
@@ -134,6 +135,12 @@ export function createMainWindow(target: Session, failures: ShellFailureSink): B
   const window = new BrowserWindow({
     show: false,
     backgroundColor: WINDOW_BACKGROUND,
+    // THE FLOOR THE CHROME FITS IN (`MINIMUM_WINDOW`, measured 2026-09-23). The ribbon folds each
+    // group down to one button and a More and can go no further, so below this width the row would
+    // scroll sideways — which the design forbids. Refusing the size is the honest answer; the
+    // constant carries the measurement and the margin.
+    minWidth: MINIMUM_WINDOW.width,
+    minHeight: MINIMUM_WINDOW.height,
     // §10.3's title bar is the application's own row, so the native caption goes and Windows keeps only its
     // controls, painted over the row's end (Window Controls Overlay). `true` gives the system's colours until the
     // renderer reports the bar's computed ones through `window.titleBarOverlay` — the frames before that report

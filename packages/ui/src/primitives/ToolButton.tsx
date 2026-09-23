@@ -48,15 +48,26 @@ export interface ToolButtonProps {
   readonly description?: MessageKey | undefined;
   readonly icon: IconName;
   readonly onClick: () => void;
+  /**
+   * The command this button runs, written to `data-command`.
+   *
+   * **For finding one button among many from outside React**, which is what the ribbon's fold does:
+   * it measures each button's natural width and keeps it by command id, so a button folded out of
+   * the row still has a width. An index would do until a fold made the rendered order a prefix of
+   * the declared one, and then it would silently measure the wrong button. `ContextMenu` already
+   * marks its items this way.
+   */
+  readonly command?: string | undefined;
 }
 
-export function ToolButton({ label, description, icon, onClick }: ToolButtonProps): ReactElement {
+export function ToolButton({ label, description, icon, onClick, command }: ToolButtonProps): ReactElement {
   const { _ } = useLingui();
   const describedBy = useId();
   const button = (
     <BaseButton
       aria-describedby={description === undefined ? undefined : describedBy}
       className="m-tool-button"
+      data-command={command}
       nativeButton
       onClick={onClick}
       type="button"

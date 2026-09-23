@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   RIBBON_RAIL_LABEL,
@@ -22,7 +22,10 @@ import { SECTION_IDS, type SectionId } from '../registries/placement.js';
 import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
-import { type RibbonSection, ribbonModel } from './projections.js';
+import { type OrderedEntry, type RibbonSection, ribbonModel } from './projections.js';
+import { RibbonMore } from './RibbonMore.js';
+import type { GroupFold } from './ribbonFolding.js';
+import { useRibbonFold } from './useRibbonFold.js';
 
 /**
  * §10.3's left section rail and top tool ribbon, as one **projection**.
@@ -154,8 +157,22 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
       document.removeEventListener('keydown', escape);
     };
   }, [mode, overlay]);
-  const sections = ribbonModel(registry, context);
+  // MEMOISED, and the fold is why. `ribbonModel` builds a fresh object graph on every render, and an
+  // effect keyed on that identity re-runs for ever — it measures, sets state, the render makes
+  // another graph, it runs again. That put the ribbon behind the error boundary the first time the
+  // fold was wired. `registry` and `context` are both memoised by `App`, so this changes when the
+  // commands do and not when anything else re-renders.
+  const sections = useMemo(() => ribbonModel(registry, context), [registry, context]);
   const filled = sections.filter((section) => section.groups.length > 0);
+
+  // THE CHOSEN SECTION ONLY IF IT STILL HOLDS SOMETHING. A section can empty out under the reader —
+  // every command in it declares `when`, and closing a document takes them all — and a ribbon that
+  // then showed nothing beside a rail with a selected entry would read as broken rather than empty.
+  //
+  // COMPUTED HERE, ABOVE THE EARLY RETURNS, because the fold is a hook and hooks cannot sit below
+  // one. It is also the honest order: which section is drawn is what decides what gets measured.
+  const activeSection = filled.find((section) => section.section === chosen) ?? filled[0];
+  const fold = useRibbonFold(activeSection);
 
   // NOTHING AT ALL when no section holds anything, which is `QuickToolbar`'s
   // rule: an eight-entry rail of disabled buttons over a start screen is a
@@ -166,12 +183,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
   // FOCUS draws neither rail nor strip (§10.3); the commands stay registered, reachable from the palette and chords.
   if (mode === 'focus') return null;
 
-  // THE CHOSEN SECTION ONLY IF IT STILL HOLDS SOMETHING. A section can empty
-  // out under the reader — every command in it declares `when`, and closing a
-  // document takes them all — and a ribbon that then showed nothing beside a
-  // rail with a selected entry would read as broken rather than as empty.
-  const active =
-    filled.find((section) => section.section === chosen)?.section ?? filled[0]?.section;
+  const active = activeSection?.section;
 
   return (
     // `display: contents` on this root, in `app.css`. The rail and the tool strip
@@ -208,15 +220,19 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
         aria-label={i18n._(RIBBON_TOOLS_LABEL)}
         className={mode === 'studio' ? 'm-ribbon__tools m-ribbon__tools--overlay' : 'm-ribbon__tools'}
         data-ribbon-active={active}
-        ref={overlayRef}
+        ref={(element) => {
+          overlayRef.current = element;
+          fold.rowRef(element);
+        }}
         role="toolbar"
       >
-        {groupsOf(sections, active).map((group) => (
-          <div className="m-ribbon__group" key={group.group}>
+        {groupsOf(sections, active).map((group, index) => (
+          <div className="m-ribbon__group" key={group.group} ref={fold.groupRef(index)}>
             <div className="m-ribbon__buttons">
-              {group.entries.map((entry) => (
+              {shownOf(group.entries, fold.folds?.[index]).map((entry) => (
                 <ToolButton
                   key={entry.command.id}
+                  command={entry.command.id}
                   // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no
                   // icon is refused at construction, so `File` is never drawn for a
                   // command in the shipped graph.
@@ -240,6 +256,18 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
                   }}
                 />
               ))}
+              {/* WHAT DID NOT FIT, in this group's own More. A fold is a presentation of the
+                  projection above and never a second list: these entries are the tail of the same
+                  array the buttons came from. */}
+              {foldedAway(group.entries, fold.folds?.[index]).length === 0 ? null : (
+                <RibbonMore
+                  context={context}
+                  entries={foldedAway(group.entries, fold.folds?.[index])}
+                  onChosen={() => {
+                    if (mode === 'studio') setOverlay(false);
+                  }}
+                />
+              )}
             </div>
             {/* THE CAPTION UNDER THE BUTTONS, which is where §10.3 puts it —
                 "captioned groups". It is not a heading: the group name labels a
@@ -256,6 +284,28 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
       ) : null}
     </div>
   );
+}
+
+/**
+ * The entries a group draws in place — all of them until the row has been measured.
+ *
+ * `undefined` is *not measured yet* and is deliberately not the same as a fold showing everything:
+ * before the first measurement there is nothing to fold from, and treating the two alike would draw
+ * a folded ribbon for one frame on a window wide enough for the whole of it.
+ */
+function shownOf(entries: readonly OrderedEntry[], fold: GroupFold | undefined): readonly OrderedEntry[] {
+  return fold === undefined ? entries : entries.slice(0, fold.shown);
+}
+
+/**
+ * The entries this group's *More* holds — empty before the row is measured, and empty when nothing
+ * folded.
+ *
+ * Derived from the same array rather than from `fold.more`, so the button and its contents cannot
+ * disagree: a *More* is drawn exactly when there is something in it.
+ */
+function foldedAway(entries: readonly OrderedEntry[], fold: GroupFold | undefined): readonly OrderedEntry[] {
+  return fold === undefined ? [] : entries.slice(fold.shown);
 }
 
 /** One section's groups, or none when it is not in the model. */

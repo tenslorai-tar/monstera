@@ -2276,6 +2276,14 @@ textarea {
   gap: var(--space-2);
 }
 
+/* A GROUP'S OVERFLOW (the owner's `document-light-narrow.png`): the tools that did not fit, in the
+   group they belong to. It draws as a tool button so a folded group reads as a group — the chevron
+   is what says it opens rather than runs. `flex: none`, because the fold's arithmetic is done in
+   natural widths and a More that shrank would make the row it was measured for wrong. */
+.m-ribbon__more {
+  flex: none;
+}
+
 .m-ribbon__caption {
   color: var(--muted);
   font-size: var(--font-chrome-10);
