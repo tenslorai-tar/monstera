@@ -1285,13 +1285,19 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and a fol
     expect(await groups.nth(index).locator('.m-tool-button[data-command]').count()).toBeGreaterThan(0);
   }
 
-  // AND A FOLDED TOOL STILL RUNS, which is the wired-tools rule applied to the overflow: the menu
-  // holds the same commands, so one of them opening its dialog is the whole claim.
-  await more.first().click();
-  const item = page.locator('.m-context-menu-item').first();
+  // AND THE FOLDED TOOLS ARE REACHABLE, which is the wired-tools rule applied to the overflow: the
+  // menu holds the same commands, so it opening with a command in it is the whole claim.
+  //
+  // OPENED FROM THE KEYBOARD, and that is not a convenience. A synthetic click on the trigger left
+  // the popup unopened on CI's Linux runner while opening it here every time (2026-09-23), so the
+  // case was measuring the pointer path through a third-party menu rather than the overflow. A menu
+  // must open from the keyboard anyway, and Enter on a focused trigger has no timing to lose.
+  await more.first().focus();
+  await page.keyboard.press('Enter');
+  const item = page.getByRole('menuitem').first();
   await expect(item).toBeVisible();
-  const command = await item.getAttribute('data-command');
-  expect(command).not.toBeNull();
+  // NAMED, so an empty menu cannot pass: the items carry the command they run.
+  expect(await item.getAttribute('data-command')).not.toBeNull();
 
   // BACK AT 1920 the More goes away again, so the fold follows the window rather than latching.
   await page.keyboard.press('Escape');
