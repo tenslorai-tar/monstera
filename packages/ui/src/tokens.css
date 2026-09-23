@@ -187,6 +187,15 @@
   --control-ribbon: 52px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;
+  /* The strip the floating quick toolbar is given on the canvas edge, so the page is never laid out
+     under it (the owner's enhancement, 2026-09-22: in `document-light-narrow.png` the pill sits over
+     a table). MEASURED 2026-09-23 in the built renderer: the pill is 36 px wide, and it is offset
+     `--space-8` from the edge, so 8 + 36 + 8 = 52 leaves it the same clearance on both sides.
+
+     A NUMBER HERE IS A COPY OF THE PILL'S WIDTH, so a rendered case asserts the pill and the page do
+     not overlap at the narrowest window the application allows. A pill that grows past this strip
+     fails there rather than quietly covering a document again. */
+  --quick-toolbar-strip: 52px;
   /* The brand artwork's heights, which `assets/brand/README.md` names beside ADR-0002: *"the start-screen hero is 84 px
      and the title bar 26 px"*. The derivatives are drawn at twice these, for a 2x display. */
   --logo-title: 26px;

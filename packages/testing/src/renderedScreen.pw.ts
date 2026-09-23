@@ -971,6 +971,21 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
   // the 149.64 px of text buttons with room either side.
   expect(box?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(64);
 
+  // AND IT COVERS NO PAGE, at the narrowest window the application allows — the owner's enhancement
+  // (2026-09-22), from `document-light-narrow.png` where the pill sits over a table. A pill that
+  // floats over the canvas is fine; one that floats over the document is not, and the canvas is at
+  // its narrowest exactly where the page is widest relative to it.
+  await page.setViewportSize({ width: MINIMUM_WINDOW.width, height: MINIMUM_WINDOW.height });
+  const narrowPill = await toolbar.boundingBox();
+  const sheet = await page.locator('.m-page').first().boundingBox();
+  expect(narrowPill).not.toBeNull();
+  expect(sheet).not.toBeNull();
+  // NO HORIZONTAL OVERLAP: the pill ends before the page starts, or starts after it ends. Vertical
+  // is not asked, because the pill is centred and the page is taller than the window at every zoom.
+  const clear = right(narrowPill) <= (sheet?.x ?? 0) + 0.5 || (narrowPill?.x ?? 0) >= right(sheet) - 0.5;
+  expect(clear, `pill ${JSON.stringify(narrowPill)} against page ${JSON.stringify(sheet)}`).toBe(true);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
   // HIDDEN from the status bar's toggle, and RESTORED by the chord — the pill's own controls are gone by then.
   const bar = page.getByRole('status', { name: 'Document status' });
   await bar.getByRole('button', { name: 'Show or hide the floating toolbar' }).click();

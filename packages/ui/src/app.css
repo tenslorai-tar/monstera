@@ -2339,6 +2339,24 @@ textarea {
 }
 
 /*
+ * THE PILL GETS A STRIP OF ITS OWN, so a page is never laid out under it (the owner's enhancement,
+ * 2026-09-22). An absolutely positioned child is placed against its container's PADDING box, so
+ * padding here reserves the strip the pill sits in and moves the page clear of it in one rule —
+ * the pill's own `left`/`right` offset is unchanged and still measured from the same edge.
+ *
+ * `:has()`, so the edge follows the pill rather than being plumbed through two components as a prop
+ * nothing else would read. With the pill hidden neither rule matches and the page takes the whole
+ * area back, which is what hiding it is for.
+ */
+.m-canvas-area:has(.m-quick-toolbar--start) {
+  padding-inline-start: var(--quick-toolbar-strip);
+}
+
+.m-canvas-area:has(.m-quick-toolbar--end) {
+  padding-inline-end: var(--quick-toolbar-strip);
+}
+
+/*
  * §10.3's floating quick toolbar: a vertical pill on the canvas edge. ABSOLUTE against
  * `.m-canvas-area`, never fixed: fixed placed it against the window, 16 px from its left edge, which
  * is where the section rail and the document panel are (measured 2026-09-15). The edge is
