@@ -133,3 +133,16 @@ edited, and a person cannot edit what they cannot see.
 - `docs/ARCHITECTURE.md` §3's engine matrix gains the gap this ADR records:
   PDFium groups characters into per-run rects and offers no line, and the
   character-to-object mapping it does offer is what the editor is built on.
+
+## Amended 2026-09-23 by ADR-0096 — the consumer is the in-place editor
+
+[ADR-0096](0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md).
+The owner rejected the dialog this ADR names as the grouping's one consumer, and
+text is now edited where it is on the page. **Decision 3's rule keeps its shape
+and changes its consumer**: *does this grouping's output reach any consumer other
+than the in-place editor a person answers?* The condition that made the dialog
+legal — a person sees what the grouping formed, around the words it would
+replace, before anything is written — holds on the page and more directly. The
+consequence *"the extent does not leave"* is withdrawn for placing that editor
+only. Decisions 1, 2 and 4 stand unchanged, and the lines this ADR groups are now
+joined into blocks by ADR-0096 Decision 4.
