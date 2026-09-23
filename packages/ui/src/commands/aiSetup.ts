@@ -1,9 +1,4 @@
-import {
-  AI_PROVIDER_KEY_SETTING_IDS,
-  AI_PROVIDERS,
-  AZURE_OPENAI_ENDPOINT_SETTING_ID,
-  type ContractClient,
-} from '@monstera/contract';
+import { AZURE_OPENAI_ENDPOINT_SETTING_ID, type ContractClient } from '@monstera/contract';
 
 import { AI_SETUP_DIALOG_ID, type AiSetupAnswer, type AiSetupProblem } from '../dialogs/aiSetup.js';
 import { AI_SETUP_COMMAND_TITLE, GROUP_AI } from '../messages/en.js';

@@ -96,7 +96,29 @@ export type Placement =
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }
   | { readonly surface: 'start-screen'; readonly slot: StartScreenSlot; readonly order: number }
-  | StatusBarPlacement;
+  | StatusBarPlacement
+  | TitleBarPlacement;
+
+/**
+ * A labelled button in the title bar (ARCHITECTURE §7 and §10.3,
+ * [ADR-0095](../../../../docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
+ *
+ * The owner's design puts Donate and Rate Us in the row between the document tabs and the command
+ * search, and each is an ordinary command that opens a dialog.
+ *
+ * **`emphasis` is here rather than on the command** because the design gives one the filled accent
+ * treatment and the other the outline, and a bar that decided that by reading a command's id would be
+ * the hand-maintained layout table this union exists to forbid, one field narrower. It is also not a
+ * property of the command: Highlight sits in three surfaces at once and looks different in each.
+ *
+ * The bar's other controls — the tabs, the search, the layout switcher — each hold a value, so none of
+ * them can be a command (`run` takes no argument). That is ADR-0067's rule, unchanged.
+ */
+export interface TitleBarPlacement {
+  readonly surface: 'title-bar';
+  readonly emphasis: 'primary' | 'normal';
+  readonly order: number;
+}
 
 /**
  * A status-bar button, DISCRIMINATED BY CLUSTER (ARCHITECTURE §7, ADR-0067 and its 2026-09-15

@@ -121,6 +121,25 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
+/* THE APPLICATION'S OWN COMMANDS — Donate and Rate Us in the owner's design (ADR-0095).
+   `margin-inline-start: auto` here AND on the command search is what places them: two auto margins
+   divide the free space between them, so this group sits near the middle of the row and the search
+   at its end, which is where the exports draw them. A spacer element would do the same thing and be
+   a thing in the accessibility tree that is not a control. */
+.m-title-bar__commands {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+  margin-inline-start: auto;
+}
+
+/* The bar is one row of chrome, so its buttons are denser than a dialog's — the vertical padding
+   only; the glyph, the label and every colour are the primitive's. */
+.m-title-bar__commands .m-button {
+  padding-block: var(--space-2);
+}
+
 /* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. */
 .m-title-bar__logo {
   flex: none;
@@ -2470,6 +2489,22 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
+}
+
+/* *Support Monstera*: two short paragraphs and two answers. The measure is held because the text is
+   prose and a dialog as wide as the window is a dialog nobody reads to the end of. */
+.m-donate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-inline-size: 34rem;
+}
+
+.m-donate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-block-start: var(--space-8);
 }
 
 /* §7's context menus: the dialog surface's roles at a menu's density, and the palette's row. Portaled to the end of

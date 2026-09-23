@@ -204,6 +204,7 @@ import { provisionedModelDirectory, provisionedOcrLanguages } from './ocrModels.
 import { type ByteVerdict, rasterWithinLimit } from './rasterWithinLimit.js';
 import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
+import { openWebPage } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
 
 /**
@@ -1402,6 +1403,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         writeClipboardText(text);
         return true;
       },
+      // THE ADDRESS IS RESOLVED HERE, from the place the renderer named (ADR-0095), and handed to
+      // the one route by which this application opens a URL outside itself.
+      openWebPage: (page) => openWebPage(page, openInBrowser),
       closeListening: () => {
         if (shellWindow === null) return false;
         closeGate.listening();

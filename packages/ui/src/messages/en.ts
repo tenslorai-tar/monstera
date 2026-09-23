@@ -34,6 +34,12 @@ export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
+export const DONATE_TITLE = messageKey('dialog.donate.title');
+export const DONATE_COMMAND_TITLE = messageKey('command.donate.title');
+export const DONATE_LICENCE = messageKey('dialog.donate.licence');
+export const DONATE_WHERE = messageKey('dialog.donate.where');
+export const DONATE_OPEN = messageKey('dialog.donate.open');
+export const DONATE_LATER = messageKey('dialog.donate.later');
 export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
 export const HISTORY_TRIMMED_TITLE = messageKey('dialog.history-trimmed.title');
 export const HISTORY_TRIMMED_APPLIED = messageKey('dialog.history-trimmed.applied');
@@ -1685,6 +1691,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LEAVE_FOCUS_COMMAND_TITLE]: 'Leave Focus',
   [ABOUT_TITLE]: 'About Monstera',
   [ABOUT_COMMAND_TITLE]: 'About',
+  [DONATE_TITLE]: 'Support Monstera',
+  [DONATE_COMMAND_TITLE]: 'Donate',
+  // BOTH SENTENCES ARE CHECKABLE, which is why they are these two and not a plea.
+  // The licence is ADR-0001's; the second is a fact about the code — the button
+  // hands one address to the browser and nothing else leaves.
+  [DONATE_LICENCE]: 'Monstera is free software under the AGPL-3.0 licence, made by a small team.',
+  [DONATE_WHERE]:
+    'A donation pays for the time that goes into it. The page opens in your browser — Monstera never sees your payment details.',
+  [DONATE_OPEN]: 'Open the donation page',
+  [DONATE_LATER]: 'Not now',
   // "Reveal" and not "Open": the command shows the folder in the file manager,
   // and a name promising to open a log would be a name that fails the moment
   // there are five rotated files and no one of them is *the* log.
@@ -2604,8 +2620,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ACCENT_PRESET_BLUE]: 'Blue',
   [ACCENT_PRESET_VIOLET]: 'Violet',
   [ACCENT_PRESET_ORANGE]: 'Orange',
-  [ACCENT_REJECTED]: '{colour} cannot carry readable text in this theme, so it is not offered.',
-  [ACCENT_DESCRIPTION]: 'Used for selection, active states and the primary button. Text on it is worked out to stay readable.',
+  // WHAT THE CODE ACTUALLY CHECKS (`accentUsable`): the accent as a FILL against this theme's
+  // surfaces. It used to say *cannot carry readable text*, which described the rule the measurement
+  // withdrew — text on the accent is solved per theme and never fails.
+  [ACCENT_REJECTED]: '{colour} is too close to this theme’s background to stand out, so it is not offered.',
+  [ACCENT_DESCRIPTION]:
+    'Used for selection, active states and the primary button. A colour that would not stand out against this theme is not offered; text on it is worked out to stay readable.',
   [SETTINGS_PAGES_LABEL]: 'Settings pages',
   [SETTINGS_NO_MATCH]: 'Nothing matches “{query}”.',
   [SETTINGS_FOOTER_NOTE]: 'Changes save as you make them. Secrets are never exported.',

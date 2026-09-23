@@ -4717,6 +4717,33 @@ export const channels = {
     z.object({ text: z.string().min(1).max(MAX_CHAT_TEXT) }).strict(),
     z.object({ copied: z.boolean() }),
   ),
+
+  /**
+   * Opens one of this project's own pages in the person's browser — the title bar's *Donate*.
+   *
+   * ## The renderer names a PLACE, never an address
+   *
+   * Invariant 2's shape, applied to a URL: the renderer holds an opaque `DocId` rather than a path
+   * *because* a string it can compose is a string it can be made to compose. A parameter of
+   * `z.url()` here would hand `shell.openExternal` a destination the page chose, and the guard
+   * against that would be an allowlist in `main` that every future caller must remember to consult —
+   * the runtime check invariant 2 rejected in favour of a type. So the parameter is a closed union of
+   * places, and the addresses live in `main`, where the renderer cannot reach them (B5).
+   *
+   * `main` still refuses anything but HTTPS at the one route, so the two guards are independent.
+   *
+   * ## `opened: false` is a state, not a failure
+   *
+   * `log.reveal`'s shape: a destination this build has no address for — the Store listing before the
+   * application is in the Store — answers that nothing was opened. A `when` predicate keeps such a
+   * command off the screen in the first place; this is the second half of that, for a build where the
+   * two disagree.
+   */
+  'app.openWebPage': channel(
+    'Opens one of this project’s own pages in the person’s browser.',
+    z.object({ page: z.enum(['donate', 'store-listing']) }).strict(),
+    z.object({ opened: z.boolean() }),
+  ),
 } as const;
 
 export type Channels = typeof channels;

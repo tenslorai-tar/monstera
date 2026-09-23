@@ -76,6 +76,9 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   // produce exactly the same handler result as the one it must.
   const sessioned: DocId[] = [];
   const revealed: boolean[] = [];
+  // RECORDED for `sessioned`'s reason: the handler forwards one argument, and a handler that dropped
+  // it would answer exactly what a correct one answers.
+  const webPages: string[] = [];
   const settings = createEphemeralSettings();
   const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
@@ -113,6 +116,10 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     confirmClose: () => false,
     copySelection: () => false,
     copyText: () => false,
+    openWebPage: (page) => {
+      webPages.push(page);
+      return Promise.resolve(true);
+    },
     closeListening: () => false,
     cloud: unconfiguredCloud(),
     revealLog: () => {
@@ -133,7 +140,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // every case here exercise that one.
     ocrLanguages: () => Promise.resolve(['eng' as const]),
   });
-  return { capabilities, handlers, opened, recent, revealed, secrets, sessioned, settings };
+  return { capabilities, handlers, opened, recent, revealed, secrets, sessioned, settings, webPages };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -170,6 +177,22 @@ describe('the barcode channels’ copies of the kernel’s set and bounds', () =
       count: ENGINE_BARCODES_MAX,
       text: ENGINE_BARCODE_TEXT_MAX,
     });
+  });
+});
+
+describe('app.openWebPage', () => {
+  it('passes the PLACE through and answers what the resolver said (ADR-0095)', async () => {
+    // NO DOCUMENT ANYWHERE IN THIS CASE: the channel is about the application, not a file, so the
+    // harness is given the outcome that opens nothing.
+    const { handlers, webPages } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+
+    const answer = await handlers['app.openWebPage']({ page: 'donate' });
+
+    // BOTH HALVES, and the first is the one that matters: this handler forwards a single argument,
+    // and one that dropped it — opening whatever the resolver defaults to — would answer `opened:
+    // true` exactly like a correct one. Only the recorded call separates them.
+    expect(webPages).toStrictEqual(['donate']);
+    expect(answer).toStrictEqual({ ok: true, value: { opened: true } });
   });
 });
 
@@ -372,6 +395,7 @@ describe('document.open', () => {
       confirmClose: () => false,
       copySelection: () => false,
       copyText: () => false,
+      openWebPage: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -561,6 +585,7 @@ describe('the recent list', () => {
       confirmClose: () => false,
       copySelection: () => false,
       copyText: () => false,
+      openWebPage: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -617,6 +642,7 @@ describe('log.reveal', () => {
       confirmClose: () => false,
       copySelection: () => false,
       copyText: () => false,
+      openWebPage: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -666,6 +692,7 @@ describe('ai.checkKey', () => {
       confirmClose: () => false,
       copySelection: () => false,
       copyText: () => false,
+      openWebPage: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),
@@ -730,6 +757,7 @@ describe('ai.history (ADR-0093)', () => {
       confirmClose: () => false,
       copySelection: () => false,
       copyText: () => false,
+      openWebPage: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
       readDictionary: () => Promise.resolve(null),

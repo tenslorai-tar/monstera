@@ -160,6 +160,9 @@ function handlers() {
     copyText: () => {
       throw new Error('registration cases must not reach the clipboard');
     },
+    openWebPage: () => {
+      throw new Error('registration cases must not reach the browser');
+    },
     closeListening: () => {
       throw new Error('registration cases must not reach the window');
     },

@@ -144,6 +144,7 @@ import {
 import { featureShortcutCommands } from './commands/featureShortcuts.js';
 import { type OpenProblem, openDocument, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
+import { donateCommand } from './commands/donate.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { showSettingsCommand } from './commands/showSettings.js';
 import { SETTINGS_DIALOG } from './dialogs/settings.js';
@@ -153,6 +154,7 @@ import { accessibilityCheckCommand } from './commands/accessibilityCheck.js';
 import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
+import { DONATE_DIALOG } from './dialogs/donate.js';
 import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
 import { CLOUD_DIALOG } from './dialogs/cloudStorage.js';
 import { CLOUD_OUTCOME_DIALOG } from './dialogs/cloudOutcome.js';
@@ -571,6 +573,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       new DialogRegistry([
         ABOUT_DIALOG,
         AI_SETUP_DIALOG,
+        DONATE_DIALOG,
         CLOUD_DIALOG,
         CLOUD_OUTCOME_DIALOG,
         KEYBOARD_SHORTCUTS_DIALOG,
@@ -1848,6 +1851,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // §10.3's six start-screen shortcuts: the same open, then the feature's section.
         ...featureShortcutCommands({ open: () => openDocument(openDeps), settings }),
         showAboutCommand({ client, ask }),
+        donateCommand({ client, ask }),
         // RE-ASKS MAIN WHICH SECRETS ARE STORED when a key moved, so the cloud
         // tool appears the moment its key lands rather than on the next launch.
         showSettingsCommand({

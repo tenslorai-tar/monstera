@@ -3,6 +3,8 @@ import { Button as BaseButton } from '@base-ui/react/button';
 import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useRef } from 'react';
 
+import { Icon } from './Icon.js';
+import type { IconName } from './icons.js';
 import { useOnColor } from './useOnColor.js';
 
 /**
@@ -56,6 +58,14 @@ export interface ButtonProps {
   values?: Readonly<Record<string, string | number>> | undefined;
   /** Filled with `--accent` (`primary`) or bounded by `--border-control`. */
   variant?: 'primary' | 'default';
+  /**
+   * A glyph before the label, as the owner's design draws Donate and Rate Us (2026-09-22).
+   *
+   * **Decorative, and hidden from the accessibility tree**: the label beside it is the control's
+   * name, so a named glyph here would give the button two. That is `Icon`'s own rule, and the reason
+   * this is a name rather than a node — a `ReactNode` slot is where an unlabelled image arrives.
+   */
+  icon?: IconName | undefined;
   disabled?: boolean;
   onClick?: (() => void) | undefined;
   /** Defaults to `button`, never to a form's implicit `submit`. */
@@ -77,6 +87,7 @@ export function Button({
   onClick,
   type = 'button',
   chord,
+  icon,
 }: ButtonProps): ReactElement {
   const element = useRef<HTMLElement>(null);
   // `useLingui` rather than the module-level `resolve`, so a locale change
@@ -104,6 +115,7 @@ export function Button({
       ref={element}
       type={type}
     >
+      {icon === undefined ? null : <Icon name={icon} size="dense" />}
       {values === undefined ? _(label) : _(label, values)}
       {chord === undefined ? null : (
         <kbd aria-hidden className="m-button__chord">

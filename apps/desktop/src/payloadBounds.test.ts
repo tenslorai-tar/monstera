@@ -157,6 +157,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     confirmClose: () => false,
     copySelection: () => false,
     copyText: () => false,
+    openWebPage: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: unconfiguredCloud(),
     readDictionary: () => Promise.resolve(null),
@@ -220,6 +221,14 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'window.close': 'carries nothing and answers a boolean',
   'window.copy': 'carries nothing and answers a boolean',
   'window.copyText': 'text bounded by MAX_CHAT_TEXT in, a boolean out',
+  // ONE OF TWO DECLARED PLACES IN, A BOOLEAN OUT (ADR-0095). The parameter is a closed enum, so
+  // neither side can carry anything a document contributes to — which is also why the renderer
+  // cannot name an address.
+  'app.openWebPage': 'names one of two declared pages and answers a boolean',
+  // A PICKER AND A WRITE, whose answer says which of three things happened. The settings document
+  // it writes is this build's own registered set and holds no secret and nothing a document
+  // contributes to, which is `settings.load`'s answer above.
+  'settings.export': 'drives a picker and answers an outcome; the settings it writes hold nothing a document contributes to',
   'window.closeListening': 'carries nothing and answers a boolean',
   'document.unsaved': 'one DocId in, one boolean out',
   // A DICTIONARY IS LARGE ON PURPOSE and no document contributes to it. Its

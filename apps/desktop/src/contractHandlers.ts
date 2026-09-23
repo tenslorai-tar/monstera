@@ -50,6 +50,7 @@ import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { DictionaryBytes } from './spellingDictionaries.js';
+import type { WebPage } from './webPages.js';
 
 /**
  * Where a document comes from, as a value this module can be handed.
@@ -250,6 +251,12 @@ export function createContractHandlers(deps: {
   readonly copySelection: () => boolean;
   /** Writes text to the system clipboard; `false` where this graph has none to write to. */
   readonly copyText: (text: string) => boolean;
+  /**
+   * Opens one of this project's own pages in the person's browser, answering whether this build has
+   * an address for it (ADR-0095). The **place** crosses the boundary and the address does not: this
+   * function resolves the second from the first, in `main`, so no page can name a destination.
+   */
+  readonly openWebPage: (page: WebPage) => Promise<boolean>;
   /**
    * The renderer has subscribed to close requests. Answers whether the gate took it — `false`
    * where no window is attached, as its neighbours do.
@@ -523,6 +530,7 @@ export function createContractHandlers(deps: {
     'window.close': () => Promise.resolve(ok({ closing: deps.confirmClose() })),
     'window.copy': () => Promise.resolve(ok({ copied: deps.copySelection() })),
     'window.copyText': ({ text }) => Promise.resolve(ok({ copied: deps.copyText(text) })),
+    'app.openWebPage': async ({ page }) => ok({ opened: await deps.openWebPage(page) }),
     'window.closeListening': () => Promise.resolve(ok({ acknowledged: deps.closeListening() })),
   };
 }

@@ -21,8 +21,14 @@ import {
  * ## Offered, and then CHECKED
  *
  * A preset is a wish, not a promise: the dialog solves each one against the surfaces it would sit on
- * and refuses a swatch that cannot carry readable text, which is the design's own note — *rejected
- * if it can't reach 4.5:1*. So this list may safely hold a colour some theme cannot take.
+ * and refuses a swatch that cannot be told apart from them. So this list may safely hold a colour
+ * some theme cannot take.
+ *
+ * **The design's note reads *rejected if it can't reach 4.5:1* and this refuses at 3:1 instead**, for
+ * the reason {@link accentUsable} states: 4.5:1 is a text ratio, the text on an accent is solved per
+ * theme, and no colour fails against both white and black — so the design's rule could never refuse
+ * a swatch. The visible sentence in the dialog was corrected with it (2026-09-23): a row that
+ * explains the withdrawn rule while the code applies another is the half-true sentence nobody checks.
  */
 export interface AccentPreset {
   /** The stored value: `theme` is the theme's own accent, anything else a colour. */

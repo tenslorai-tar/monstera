@@ -8,6 +8,7 @@ import {
   type SectionId,
   type StartScreenSlot,
   type StatusBarPlacement,
+  type TitleBarPlacement,
 } from '../registries/placement.js';
 
 /**
@@ -133,6 +134,7 @@ function ribbonSlot(
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
+    case 'title-bar':
       return undefined;
     default: {
       // Decision 4. A new `Placement` variant lands here as a compile error, in
@@ -180,6 +182,7 @@ function quickToolbarOrder(placement: Placement): number | undefined {
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
+    case 'title-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -220,6 +223,7 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
     case 'quick-toolbar':
     case 'start-screen':
     case 'status-bar':
+    case 'title-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -263,6 +267,7 @@ function startScreenSlot(
     case 'quick-toolbar':
     case 'context-menu':
     case 'status-bar':
+    case 'title-bar':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -327,6 +332,53 @@ function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; read
     case 'quick-toolbar':
     case 'context-menu':
     case 'start-screen':
+    case 'title-bar':
+      return undefined;
+    default: {
+      const unhandled: never = placement;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * One title-bar button: the command, where it sits, and how the design draws it.
+ *
+ * `emphasis` is carried through from the placement rather than resolved here, because the bar renders
+ * it and the projection's job is to say what is there — the same split every other model keeps.
+ */
+export interface TitleBarEntry extends OrderedEntry {
+  readonly emphasis: TitleBarPlacement['emphasis'];
+}
+
+/**
+ * The title bar's projected buttons — the owner's Donate and Rate Us (§10.3, ARCHITECTURE §7,
+ * [ADR-0095](../../../../docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
+ *
+ * **Only the buttons.** The document tabs, the command search and the layout switcher each hold a
+ * value — the open set and the active tab, the query, the current mode — so none of them is a command
+ * and none is here. That is the status bar's rule above, unchanged.
+ */
+export function titleBarModel(registry: CommandRegistry, context: CommandContext): readonly TitleBarEntry[] {
+  const entries: TitleBarEntry[] = [];
+  for (const command of registry.available(context)) {
+    for (const placement of command.placements) {
+      const slot = titleBarSlot(placement);
+      if (slot !== undefined) entries.push({ command, order: slot.order, emphasis: slot.emphasis });
+    }
+  }
+  return ordered(entries);
+}
+
+function titleBarSlot(placement: Placement): TitleBarPlacement | undefined {
+  switch (placement.surface) {
+    case 'title-bar':
+      return placement;
+    case 'ribbon':
+    case 'quick-toolbar':
+    case 'context-menu':
+    case 'start-screen':
+    case 'status-bar':
       return undefined;
     default: {
       const unhandled: never = placement;

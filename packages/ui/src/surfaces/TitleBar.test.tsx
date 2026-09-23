@@ -6,7 +6,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, type Mock, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, LAYOUT_FOCUS_COMMAND_TITLE, PALETTE_TITLE } from '../messages/en.js';
+import { ABOUT_COMMAND_TITLE, DONATE_COMMAND_TITLE, EN, LAYOUT_FOCUS_COMMAND_TITLE, PALETTE_TITLE } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -120,5 +120,54 @@ describe('TitleBar', () => {
     drawn([palette, ribbon, studio]);
     expect(screen.getByRole('button', { name: /Search commands/u })).toBeDefined();
     expect(screen.queryByRole('group', { name: 'Layout' })).toBeNull();
+  });
+
+  describe('the application’s own commands are PROJECTED (ADR-0095)', () => {
+    /** A command placed in the bar, named so a case can find it by the words a person reads. */
+    const placed = (id: string, emphasis: 'primary' | 'normal', order: number): Spy => ({
+      id,
+      title: emphasis === 'primary' ? DONATE_COMMAND_TITLE : ABOUT_COMMAND_TITLE,
+      icon: 'Heart',
+      placements: [{ surface: 'title-bar', emphasis, order }],
+      run: vi.fn<(context: CommandContext) => void>(),
+    });
+
+    it('draws each placed command, in ORDER, and clicking one runs that command alone', () => {
+      const all = spies();
+      const donate = placed('app.donate', 'primary', 1);
+      const other = placed('app.about', 'normal', 2);
+      drawn([...Object.values(all), other, donate]);
+
+      const group = document.querySelector('.m-title-bar__commands');
+      // DECLARED ORDER AND NOT REGISTRATION ORDER: the two are registered the other way round, so a
+      // projection that returned its input unsorted would read `About, Donate` here.
+      expect([...(group?.querySelectorAll('button') ?? [])].map((button) => button.textContent)).toStrictEqual([
+        'Donate',
+        'About',
+      ]);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Donate' }));
+      expect(donate.run).toHaveBeenCalledTimes(1);
+      expect(donate.run).toHaveBeenCalledWith(context);
+      expect(other.run).not.toHaveBeenCalled();
+    });
+
+    it('the EMPHASIS comes from the placement, so the bar never reads a command’s id', () => {
+      const donate = placed('app.donate', 'primary', 1);
+      const other = placed('app.about', 'normal', 2);
+      drawn([...Object.values(spies()), donate, other]);
+
+      expect(screen.getByRole('button', { name: 'Donate' }).className).toContain('m-button--primary');
+      // THE CONTROL, and it is what separates *the placement decides* from *the first one is filled*:
+      // the same component, same surface, one field different.
+      expect(screen.getByRole('button', { name: 'About' }).className).toContain('m-button--default');
+    });
+
+    it('draws NO group at all over a registry with no title-bar placement', () => {
+      // An empty flex row is invisible and still a box in the layout; the case that would pass either
+      // way is the one asserting the buttons are absent, so this asserts the container is too.
+      drawn(Object.values(spies()));
+      expect(document.querySelector('.m-title-bar__commands')).toBeNull();
+    });
   });
 });
