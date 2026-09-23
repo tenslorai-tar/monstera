@@ -51,6 +51,21 @@ test('Escape from wherever TAB takes focus inside it — a control whose tooltip
   page,
 }) => {
   await openPalette(page);
+  // THE PRECONDITION IS ASSERTED, because it was only assumed. `openPalette` waits for the palette
+  // to be VISIBLE; where focus is at that moment is a separate fact, and this case moves focus with
+  // Tab and then asks where it went. Without the line below it is measuring the landing AND the
+  // trap at once, and a failure cannot say which.
+  //
+  // It failed on CI on 2026-09-23 and passed here on the same commit, twice. Measured here three
+  // times, focus was already on the query field when the palette became visible — so the race does
+  // NOT reproduce on this machine and the CI cause is NOT established from this seat; the job's log
+  // needs owner authentication and the annotation carries the assertion, not the DOM. What is known
+  // is that `inside` was false there, which means focus was not in the palette when Tab was pressed.
+  //
+  // The landing place is the first case's claim. This one is about the trap, whose subject is focus
+  // that is already inside, so waiting for it narrows this case to its own property rather than
+  // papering over a failure.
+  await expect(page.locator('.m-palette-query')).toBeFocused();
   await page.keyboard.press('Tab');
   // WHEREVER Tab took it, it is inside the palette — the trap's promise — and not the field any more.
   const inside = await page.evaluate(
