@@ -23,7 +23,9 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const BRAND = join(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), 'assets', 'brand');
-const MASTERS = ['monstera_new_logo.png', 'monstera_logo_no_text.png', 'monstera_logo_square.png'];
+// TWO SINCE 2026-09-23: `monstera_logo_square.png` was retired by the owner's order, and the mark
+// alone is now the application icon as well as the small sizes.
+const MASTERS = ['monstera_new_logo.png', 'monstera_logo_no_text.png'];
 
 /** @type {string[]} */
 const failures = [];

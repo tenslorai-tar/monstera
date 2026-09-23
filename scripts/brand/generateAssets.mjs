@@ -8,8 +8,13 @@
  * resizes and converts them and never alters a mark.
  *
  * - `monstera_new_logo.png` — the mark with its wordmark, for where the name is legible;
- * - `monstera_logo_no_text.png` — the mark alone, for sizes where a word cannot be read;
- * - `monstera_logo_square.png` — the full-bleed tile, for the application icon.
+ * - `monstera_logo_no_text.png` — the mark alone, for sizes where a word cannot be read, and for
+ *   the application icon.
+ *
+ * **There were three, and `monstera_logo_square.png` was retired on 2026-09-23** by the owner's
+ * order: the mark alone is the icon, the taskbar button, the title bar, the Store tiles and the PDF
+ * file-type icon. It fed nothing but `logo.ico`, so retiring it is one role and one master fewer
+ * rather than a size to re-point.
  *
  * Which master feeds which output is this build's reading of those names, recorded in ADR-0002's
  * note so the owner can move a line rather than rediscover the choice.
@@ -42,7 +47,6 @@ const BRAND = join(REPO_ROOT, 'assets', 'brand');
 const MASTERS = {
   wordmark: 'monstera_new_logo.png',
   mark: 'monstera_logo_no_text.png',
-  tile: 'monstera_logo_square.png',
 };
 
 /**
@@ -63,7 +67,7 @@ const OUTPUTS = [
   { file: 'logo-title.png', master: 'mark', size: 52 },
 ];
 
-/** Square sizes packed into the Windows `.ico` the packaged application carries, from the tile. */
+/** Square sizes packed into the Windows `.ico` the packaged application carries, from the mark. */
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
 /**
@@ -98,7 +102,6 @@ async function main() {
   const masters = {
     wordmark: await readFile(join(BRAND, MASTERS.wordmark)),
     mark: await readFile(join(BRAND, MASTERS.mark)),
-    tile: await readFile(join(BRAND, MASTERS.tile)),
   };
   for (const [role, bytes] of Object.entries(masters)) {
     const problem = await shapeProblem(bytes);
@@ -118,13 +121,13 @@ async function main() {
   }
 
   const icoPath = join(BRAND, 'logo.ico');
-  const ico = await pngToIco(await Promise.all(ICO_SIZES.map((size) => square(masters.tile, size))));
+  const ico = await pngToIco(await Promise.all(ICO_SIZES.map((size) => square(masters.mark, size))));
   if (check) {
     const existing = await readFile(icoPath).catch(() => null);
     if (existing === null || digest(existing) !== digest(ico)) stale.push('logo.ico');
   } else {
     await writeFile(icoPath, ico);
-    process.stderr.write(`  wrote logo.ico (${ICO_SIZES.join(', ')} px from ${MASTERS.tile}, ${String(ico.length)} bytes)\n`);
+    process.stderr.write(`  wrote logo.ico (${ICO_SIZES.join(', ')} px from ${MASTERS.mark}, ${String(ico.length)} bytes)\n`);
   }
 
   if (stale.length > 0) {

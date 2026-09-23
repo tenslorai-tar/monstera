@@ -59,7 +59,7 @@ Each contains:
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-agpl-on-the-microsoft-store.md) | AGPL-3.0 on the Microsoft Store | Accepted; mechanism corrected 2026-08-17 |
-| [0002](0002-brand-mark-treatment.md) | Brand mark treatment — composite logo used as supplied | Accepted |
+| [0002](0002-brand-mark-treatment.md) | Brand mark treatment — composite logo used as supplied | Accepted; noted 2026-09-19 (three owner-supplied masters replace `logo.png`) and 2026-09-23 (**two masters**: `monstera_logo_square.png` retired by the owner, and the mark alone is the application icon, the taskbar button, the title bar, the Store tiles and the file-type icon) |
 | [0003](0003-token-role-typing-and-declared-pairings.md) | Token role typing: five categories and declared pairings | Accepted; corrected 2026-09-15 — **a sixth category, `graphic`**: a stored chrome graphic drawn over the document, 3:1 against its declared surfaces, `@on page` first, for the solid redaction preview; `boundary-control` was rejected because it means a control's edge; corrected 2026-09-16 — **text owes 7:1 in the high-contrast theme**, the derived labels included, light and dark unchanged at 4.5:1 |
 | [0004](0004-toolchain-versions.md) | Toolchain versions, and two deliberate steps back from "latest" | Accepted; `lucide-react`'s licence corrected 2026-08-28, and the component-test vehicle added the same day |
 | [0005](0005-ui-foundation-libraries.md) | UI foundation: Base UI, Zag machines, Lingui, zustand | Accepted |

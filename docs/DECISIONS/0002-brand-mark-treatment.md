@@ -106,3 +106,30 @@ packaging declares a file association, because nothing would consume it.
 
 `logo.png` is retired from the tree and kept by the history. `brand:check` now also refuses a
 master with no alpha channel or an opaque corner (`brandShape.mjs`, `proof:brandshape`).
+
+## Note, 2026-09-23 — two masters, and the mark alone is the application icon
+
+The owner's Stage 10 order retires `monstera_logo_square.png` and names the two that remain:
+`monstera_logo_no_text.png` for the application icon, the taskbar button, the title bar, the Store
+tiles and the PDF file-type icon, and `monstera_new_logo.png` for the start screen, About, the
+README and the website.
+
+**This settles a reading rather than reversing a decision.** The note above says which master feeds
+which output *is this build's reading of the file names, not an instruction* — so the tile going to
+`logo.ico` was exactly the kind of line that note invited the owner to move, and they have. The
+decision's own rule is untouched: every mark is the owner's, and this build resizes and converts.
+
+What changed in the tree: one role fewer in `MASTERS`, `ICO_SIZES` fed from `mark`, the retired file
+gone from `brandShape.proof.mjs`' list and from `assets/brand/README.md`'s table, and `logo.ico`
+regenerated — the only committed derivative that moved, because the other three already came from
+the two surviving masters. `logo.png`'s retirement is the precedent for how it leaves: out of the
+tree, kept by the history.
+
+**The *portrait box* consequence stays retired and the square one stays true**: both survivors are
+the 2048 × 2048 RGBA artworks measured on 2026-09-19, and `brand:check` still refuses a master with
+no alpha channel or an opaque corner — now over two files rather than three.
+
+**Not yet verified on an installed build.** The order asks for that, and an installer is not built
+here without being asked for one; the icon a packaged application actually shows is `logo.ico` as
+the packager embeds it, which no check in this repository observes. That verification travels with
+the packaging row rather than with this note.

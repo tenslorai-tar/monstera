@@ -13,8 +13,7 @@ protects users rather than the project.
 | File | Size | Origin | Used by |
 |---|---|---|---|
 | `monstera_new_logo.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark with its wordmark | `logo-256.png`, `logo-hero.png` |
-| `monstera_logo_no_text.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark alone | `logo-title.png`; the file-type icon when packaging lands |
-| `monstera_logo_square.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the full-bleed tile | `logo.ico` |
+| `monstera_logo_no_text.png` | 2048 × 2048, RGBA | **master — supplied by the owner**: the mark alone | `logo-title.png`, `logo.ico`; the file-type icon and the Store tiles when packaging lands |
 | `logo-256.png` | 256 × 256 | generated | `README.md` and docs |
 | `logo-title.png` | 52 × 52 | generated | the title bar, drawn at 26 px |
 | `logo-hero.png` | 168 × 168 | generated | the start screen's hero, drawn at 84 px |
@@ -24,6 +23,12 @@ Which master feeds which output is this build's reading of the owner's file name
 [ADR-0002](../../docs/DECISIONS/0002-brand-mark-treatment.md)'s note of 2026-09-19 — moving one
 is a line in `OUTPUTS`. The previous master, `logo.png` (1652 × 2050), was retired that day and
 lives in the history.
+
+**`monstera_logo_square.png` was retired on 2026-09-23**, by the owner's order that the mark alone
+carries the application icon, the taskbar button, the title bar, the Store tiles and the PDF
+file-type icon. It fed `logo.ico` and nothing else, so what changed is one master fewer and one
+line in the generator; `logo.ico` was regenerated from the mark in the same commit. It lives in the
+history like its predecessor.
 
 ## Rules
 
