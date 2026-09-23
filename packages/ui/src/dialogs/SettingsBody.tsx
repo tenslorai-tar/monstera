@@ -13,16 +13,23 @@ import {
   SETTINGS_ACTION_CLEAR_HISTORY,
   SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION,
   SETTINGS_ACTION_CLEARED,
+  SETTINGS_AI_NOTE,
   SETTINGS_AI_PROVIDER,
   SETTINGS_AI_PROVIDER_DESCRIPTION,
   SETTINGS_AI_PROVIDER_STORED,
+  SETTINGS_APPEARANCE_NOTE,
   SETTINGS_DONE,
+  SETTINGS_EDITING_NOTE,
   SETTINGS_EXPORT,
   SETTINGS_FOOTER_NOTE,
+  SETTINGS_INTEGRATIONS_NOTE,
   SETTINGS_INVALID,
   SETTINGS_KEYBOARD_NOTE,
   SETTINGS_NO_MATCH,
+  SETTINGS_OCR_NOTE,
   SETTINGS_PAGES_LABEL,
+  SETTINGS_PRIVACY_NOTE,
+  SETTINGS_RENDERING_NOTE,
   SETTINGS_RESET,
   SETTINGS_SEARCH,
   SETTINGS_SECRET_PLACEHOLDER,
@@ -30,6 +37,7 @@ import {
   SETTINGS_SECRET_STORED,
   SETTINGS_SECRET_UNAVAILABLE,
   SETTINGS_UPDATES_NOTE,
+  SETTINGS_VIEWING_NOTE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { Icon } from '../primitives/Icon.js';
@@ -80,11 +88,38 @@ interface SecretDraft {
 
 const UNTOUCHED: SecretDraft = { replace: '', remove: false };
 
-/** Pages that carry words of their own, so they are listed even with no setting on them. */
+/**
+ * What each page says under its title — the owner's design gives every page one line.
+ *
+ * A note says what the page is ABOUT, in a person's words. `settings2.png` shows the sentence that
+ * must never ship — *"every setting is declared once in the registry; this page is derived from
+ * it"* — which is the application explaining its own construction to somebody who wanted to change
+ * how pages look.
+ */
 const PAGE_NOTES: Partial<Record<SettingCategory, MessageKey>> = {
+  appearance: SETTINGS_APPEARANCE_NOTE,
+  viewing: SETTINGS_VIEWING_NOTE,
+  rendering: SETTINGS_RENDERING_NOTE,
+  editing: SETTINGS_EDITING_NOTE,
+  ocr: SETTINGS_OCR_NOTE,
+  ai: SETTINGS_AI_NOTE,
+  integrations: SETTINGS_INTEGRATIONS_NOTE,
   keyboard: SETTINGS_KEYBOARD_NOTE,
+  privacy: SETTINGS_PRIVACY_NOTE,
   updates: SETTINGS_UPDATES_NOTE,
 };
+
+/**
+ * Pages listed although no setting sits on them, because what they hold is words or an action.
+ *
+ * **Named, rather than derived from {@link PAGE_NOTES}**, and that stopped being the same thing the
+ * moment every page got a note: listing a page *because it has a note* would have put an empty
+ * Viewing page back the instant one was written for it, which is exactly the screen the owner's
+ * design calls out. A page earns its place by holding something to read or press, and these three
+ * are the ones that do — Keyboard points at F1, Updates says who updates this build, Privacy
+ * carries *Clear chat history*.
+ */
+const PAGES_WITHOUT_SETTINGS: readonly SettingCategory[] = ['keyboard', 'updates', 'privacy'];
 
 /**
  * The value a number field holds while it is being typed, parsed for its schema.
@@ -465,8 +500,7 @@ export default function SettingsBody({
       SETTINGS_PAGES.filter(
         (page) =>
           DIALOG_SETTINGS.some((setting) => setting.category === page.id) ||
-          PAGE_NOTES[page.id] !== undefined ||
-          page.id === 'privacy',
+          PAGES_WITHOUT_SETTINGS.includes(page.id),
       ),
     [],
   );

@@ -1123,6 +1123,14 @@ export const SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION = messageKey('dialog.sett
 export const SETTINGS_ACTION_CLEARED = messageKey('dialog.settings.clear-history.done');
 export const SETTINGS_KEYBOARD_NOTE = messageKey('dialog.settings.keyboard-note');
 export const SETTINGS_UPDATES_NOTE = messageKey('dialog.settings.updates-note');
+export const SETTINGS_APPEARANCE_NOTE = messageKey('dialog.settings.appearance-note');
+export const SETTINGS_VIEWING_NOTE = messageKey('dialog.settings.viewing-note');
+export const SETTINGS_RENDERING_NOTE = messageKey('dialog.settings.rendering-note');
+export const SETTINGS_EDITING_NOTE = messageKey('dialog.settings.editing-note');
+export const SETTINGS_OCR_NOTE = messageKey('dialog.settings.ocr-note');
+export const SETTINGS_AI_NOTE = messageKey('dialog.settings.ai-note');
+export const SETTINGS_INTEGRATIONS_NOTE = messageKey('dialog.settings.integrations-note');
+export const SETTINGS_PRIVACY_NOTE = messageKey('dialog.settings.privacy-note');
 export const SETTINGS_CATEGORY_SAVING = messageKey('dialog.settings.category.saving');
 export const SETTINGS_CATEGORY_OCR = messageKey('dialog.settings.category.ocr');
 export const SETTINGS_CATEGORY_KEYBOARD = messageKey('dialog.settings.category.keyboard');
@@ -2641,6 +2649,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_KEYBOARD_NOTE]: 'Press F1 for the full list of shortcuts, or open the command palette with Ctrl+K.',
   [SETTINGS_UPDATES_NOTE]:
     'Monstera is installed from the Microsoft Store, and Windows updates it. Monstera never installs anything itself.',
+  // EVERY PAGE INTRODUCES ITSELF, as the owner's settings.png does. Each says what the page is
+  // about in a person's words — never how it is built, which is the sentence settings2.png shows
+  // as the thing that must not ship.
+  [SETTINGS_APPEARANCE_NOTE]: 'Theme, accent colour and how much the window shows at once.',
+  [SETTINGS_VIEWING_NOTE]: 'How pages are laid out and what you see as you move through a document.',
+  [SETTINGS_RENDERING_NOTE]: 'How pages are drawn. Change these only if something looks wrong.',
+  [SETTINGS_EDITING_NOTE]: 'What a new comment, highlight or shape looks like before you change it.',
+  [SETTINGS_OCR_NOTE]: 'Reading text in scanned pages. Recognition runs on this computer.',
+  [SETTINGS_AI_NOTE]:
+    'Providers and keys. A key is kept in the Windows credential vault, and is never exported or written to the log.',
+  [SETTINGS_INTEGRATIONS_NOTE]: 'Other services Monstera can send a document to, and the keys they need.',
+  [SETTINGS_PRIVACY_NOTE]: 'What Monstera keeps on this computer, and how to clear it.',
   [SETTINGS_CATEGORY_TITLES.saving]: 'Saving',
   [SETTINGS_CATEGORY_TITLES.ocr]: 'OCR',
   [SETTINGS_CATEGORY_TITLES.keyboard]: 'Keyboard',

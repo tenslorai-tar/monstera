@@ -242,6 +242,38 @@ describe('SettingsBody', () => {
     expect(answers).toStrictEqual([{ values: {}, secrets: {} }]);
   });
 
+  it('every listed page INTRODUCES ITSELF with a line under its title (the owner’s design)', () => {
+    opened({});
+    for (const page of SETTINGS_PAGES) {
+      const listed = screen.queryByRole('button', { name: english(page.title) });
+      if (listed === null) continue;
+      fireEvent.click(listed);
+      const note = document.querySelector('.m-settings__page-note');
+      expect(note?.textContent ?? '', page.id).not.toBe('');
+    }
+  });
+
+  it('a page is listed for its ROWS or its words, never for having a note', () => {
+    // THE SET, from both sides. Iterating the rendered list alone would make it the universe and
+    // could not see a page that should be there and is not. The defect this separates: while the
+    // listing keyed on *has a note*, writing a note for Viewing-with-no-settings would have put the
+    // empty page from `settings2.png` straight back, and every page has a note now.
+    opened({});
+    const withRows = new Set(ALL_SETTINGS.filter((s) => controlFor(s) !== undefined && s.remembered !== true).map((s) => s.category));
+    const expected = SETTINGS_PAGES.filter(
+      (page) => withRows.has(page.id) || (['keyboard', 'updates', 'privacy'] as string[]).includes(page.id),
+    ).map((page) => page.id);
+    const listed = SETTINGS_PAGES.filter(
+      (page) => screen.queryByRole('button', { name: english(page.title) }) !== null,
+    ).map((page) => page.id);
+
+    expect(listed).toStrictEqual(expected);
+    // AND THE CONTROL that makes the line above mean something: a page with neither rows nor words
+    // exists in the declared order and is absent from the list.
+    expect(expected).not.toContain('saving');
+    expect(listed).not.toContain('saving');
+  });
+
   it('a page with no setting of its own still says something — never an empty page', () => {
     opened({});
     for (const page of SETTINGS_PAGES) {
