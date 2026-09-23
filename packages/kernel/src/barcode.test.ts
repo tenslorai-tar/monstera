@@ -43,22 +43,33 @@ async function placedAndRead(format: BarcodeWriteFormat, text: string, bytes?: U
   }
 }
 
+/**
+ * One text per symbology the writer offers.
+ *
+ * ONE CASE PER FORMAT, since 2026-09-23. The six round trips — write, place, rasterise, read —
+ * ran inside one case under the default five-second budget, and on this machine that case took
+ * 5,055 ms in the full suite and 5,193 ms alone, the same day it had passed: six independent
+ * measurements summed against one limit, so the budget measured their total rather than any of
+ * them. Split, each case is one round trip and a failure names its format.
+ */
+const WRITTEN: readonly (readonly [BarcodeWriteFormat, string])[] = [
+  ['QRCode', 'https://example.org/monstera?id=42'],
+  ['DataMatrix', 'Invoice 2026-09-17 / 1,234.50 EUR'],
+  ['Aztec', 'MONSTERA AZTEC 0042'],
+  ['PDF417', 'Shipment 42 of 7,000'],
+  ['Code128', 'MONSTERA-0042'],
+  ['EAN13', '4006381333931'],
+];
+
 describe('barcodes — written, placed by the place-image command, and read back from the page', () => {
-  it('reads each symbology it can write, with exactly the text that was written', async () => {
-    const written: [BarcodeWriteFormat, string][] = [
-      ['QRCode', 'https://example.org/monstera?id=42'],
-      ['DataMatrix', 'Invoice 2026-09-17 / 1,234.50 EUR'],
-      ['Aztec', 'MONSTERA AZTEC 0042'],
-      ['PDF417', 'Shipment 42 of 7,000'],
-      ['Code128', 'MONSTERA-0042'],
-      ['EAN13', '4006381333931'],
-    ];
-    // EVERY OFFERED FORMAT, joined against the list rather than restating it, so a format added to
-    // the offer arrives owing a round trip.
-    expect(written.map(([format]) => format)).toStrictEqual([...BARCODE_WRITE_FORMATS]);
-    for (const [format, text] of written) {
-      expect(await placedAndRead(format, text)).toStrictEqual([{ format, text }]);
-    }
+  it('owes a round trip for EVERY symbology the writer offers', () => {
+    // Joined against the list rather than restating it, so a format added to the offer arrives
+    // owing a case below.
+    expect(WRITTEN.map(([format]) => format)).toStrictEqual([...BARCODE_WRITE_FORMATS]);
+  });
+
+  it.each(WRITTEN)('reads %s back with exactly the text that was written', async (format, text) => {
+    expect(await placedAndRead(format, text)).toStrictEqual([{ format, text }]);
   });
 
   it('reads a poster-sized page by fitting the raster under the read’s pixel budget, where 200 dpi would be refused', async () => {
