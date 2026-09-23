@@ -882,6 +882,28 @@ export const STATUS_NAVIGATION = messageKey('surface.status.navigation');
 export const STATUS_ZOOM_GROUP = messageKey('surface.status.zoom-group');
 export const STATUS_ZOOM_SLIDER = messageKey('surface.status.zoom-slider');
 export const STATUS_CHROME_GROUP = messageKey('surface.status.chrome-group');
+/**
+ * Where this document stands against its file — the owner's document export draws
+ * *"Saved 2 min ago"* in the status bar, and this is the set that sentence needs.
+ *
+ * **Every one of them is about THIS WINDOW watching a save**, never about the file's own age,
+ * which a renderer holding no path could not read (invariant 2).
+ */
+export const STATUS_SAVED_STATE = messageKey('surface.status.saved-state');
+export const STATUS_UNSAVED = messageKey('surface.status.unsaved');
+export const STATUS_SAVED = messageKey('surface.status.saved');
+export const STATUS_SAVED_JUST_NOW = messageKey('surface.status.saved-just-now');
+export const STATUS_SAVED_MINUTES = messageKey('surface.status.saved-minutes');
+export const STATUS_SAVED_HOURS = messageKey('surface.status.saved-hours');
+export const STATUS_SAVED_DAYS = messageKey('surface.status.saved-days');
+/** The tab's dot: what a screen reader hears where a sighted reader sees it. */
+export const TAB_UNSAVED = messageKey('surface.tabs.unsaved');
+/** The toast strip's × and the confirmations the save commands raise. */
+export const TOAST_DISMISS = messageKey('action.toast-dismiss.label');
+export const TOAST_SAVED = messageKey('toast.saved');
+export const TOAST_COPY_SAVED = messageKey('toast.copy-saved');
+export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
+export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 /**
  * §10.3's document panel: six tabs, each named by its accessible name and tooltip,
@@ -2387,6 +2409,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STATUS_NAVIGATION]: 'Page navigation',
   [STATUS_ZOOM_GROUP]: 'Zoom',
   [STATUS_CHROME_GROUP]: 'Panels and toolbars',
+  [STATUS_SAVED_STATE]: 'Saved state',
+  [STATUS_UNSAVED]: 'Unsaved changes',
+  [STATUS_SAVED]: 'Saved',
+  [STATUS_SAVED_JUST_NOW]: 'Saved just now',
+  [STATUS_SAVED_MINUTES]: '{count, plural, one {Saved 1 min ago} other {Saved # min ago}}',
+  [STATUS_SAVED_HOURS]: '{count, plural, one {Saved 1 hr ago} other {Saved # hr ago}}',
+  [STATUS_SAVED_DAYS]: '{count, plural, one {Saved 1 day ago} other {Saved # days ago}}',
+  [TAB_UNSAVED]: 'Unsaved changes',
+  [TOAST_DISMISS]: 'Dismiss',
+  [TOAST_SAVED]: 'Saved',
+  [TOAST_COPY_SAVED]: 'Copy saved',
+  [TOAST_SMALLER_COPY_SAVED]: 'Smaller copy saved',
+  [TOAST_PAGES_SAVED]: 'Pages saved',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
   [PANEL_PAGES]: 'Pages',

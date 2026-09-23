@@ -181,6 +181,10 @@ import {
   CLOSE_OTHERS_TITLE,
   OPEN_SIDE_BY_SIDE_TITLE,
   CLOSE_TAB_TITLE,
+  TOAST_COPY_SAVED,
+  TOAST_PAGES_SAVED,
+  TOAST_SAVED,
+  TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
   ZOOM_IN_TITLE,
@@ -191,6 +195,7 @@ import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import { SPLIT_VIEW_SETTING } from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
+import type { ShowToast } from '../toasts.js';
 import { type ZoomMode, zoomInFrom, zoomOutFrom } from '../zoom.js';
 
 /**
@@ -279,6 +284,27 @@ export interface DocumentCommandDeps {
    * it knows the id — which is the same place `openWith` validates the props.
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
+}
+
+/**
+ * What a command that WRITES A FILE needs on top of the bag, and only those commands.
+ *
+ * ## Why a confirmation is a dependency and not a return value
+ *
+ * The owner's report was that Ctrl+S changes nothing on screen. A `run` answers `void` by
+ * design — the registry's shape — so a command with something to *say* about an outcome
+ * nobody asked about has nowhere to put it unless the saying is a dependency. Only `show`
+ * crosses, never the queue, so one command cannot take another's toast off ({@link ShowToast}).
+ *
+ * ## Why it is an intersection rather than a field on {@link DocumentCommandDeps}
+ *
+ * Four commands in this file write a file. Forty do not, and putting `toast` on the bag would
+ * hand all forty a capability the feature set has no use for, which is the same argument
+ * `track` and `servicesReady` are already intersections for. It also keeps the type honest
+ * about who reports: a reader of `rotatePageCommand` can see it cannot toast.
+ */
+export interface WritesAFile {
+  readonly toast: ShowToast;
 }
 
 /**
@@ -1762,6 +1788,8 @@ export function saveCommand(deps: {
    * it knows the id — which is the same place `openWith` validates the props.
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  readonly toast: ShowToast;
+  readonly onSaved: (docId: DocId, version: DocVersion) => void;
 }): UiCommand {
   return {
     id: 'document.save',
@@ -1902,6 +1930,15 @@ export async function saveDocument(
   deps: {
     readonly client: ContractClient;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
+    readonly toast: ShowToast;
+    /**
+     * Records that this version now reaches the file.
+     *
+     * The version comes back from `document.save` and the clock is read here, so what the
+     * status bar and the tab's dot read is two numbers main minted and one moment this window
+     * observed — never a guess about either.
+     */
+    readonly onSaved: (docId: DocId, version: DocVersion) => void;
   },
   docId: DocId,
 ): Promise<boolean> {
@@ -1910,7 +1947,14 @@ export async function saveDocument(
     reportProblem(deps, answer.error);
     return false;
   }
-  if (answer.value.kind === 'saved') return true;
+  if (answer.value.kind === 'saved') {
+    // THE STATE FIRST, THEN THE ANNOUNCEMENT. The dot clearing and the bar's words are the
+    // durable report; the toast is the one that leaves. If only one of them could land, the
+    // person must be left with the one still on screen a minute later.
+    deps.onSaved(docId, answer.value.version);
+    deps.toast('done', TOAST_SAVED);
+    return true;
+  }
   // FLATTENED HERE, where both fields exist, rather than in the dialog. The
   // channel answers two shapes describing one thing; the dialog's schema
   // takes one enum, so its body switches once and a sixth outcome is a
@@ -1966,7 +2010,7 @@ export async function saveDocument(
  * yet, and asking for the file first would mean a dismissal of the second
  * dialog discarded a choice the user had already made.
  */
-export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
+export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.extract-pages',
     icon: 'FileOutput',
@@ -1992,7 +2036,11 @@ export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
         reportProblem(deps, answer.error);
         return;
       }
-      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'copied') {
+        deps.toast('done', TOAST_PAGES_SAVED);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });
@@ -2325,7 +2373,8 @@ export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
  * A dismissed dialog dispatches nothing more; a dismissed save dialog is main's `cancelled`.
  */
 export function optimizeCommand(
-  deps: DocumentCommandDeps & {
+  deps: DocumentCommandDeps &
+    WritesAFile & {
     /**
      * The status bar's running task, while a size is checked. MEASURED 2026-09-19 in the running
      * application: the first check starts the compose host and took over six seconds, during
@@ -2387,6 +2436,8 @@ export function optimizeCommand(
         const outcome = saved.value;
         switch (outcome.kind) {
           case 'copied':
+            deps.toast('done', TOAST_SMALLER_COPY_SAVED);
+            return;
           case 'cancelled':
             return;
           case 'not-smaller':
@@ -2812,7 +2863,7 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   };
 }
 
-export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
+export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.save-copy',
     icon: 'SaveAll',
@@ -2829,10 +2880,16 @@ export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
         reportProblem(deps, answer.error);
         return;
       }
-      // TWO SILENT OUTCOMES AND TWO SPOKEN ONES. `copied` needs nothing said
-      // because the file is where the user put it, and `cancelled` needs
-      // nothing said because they are the one who cancelled.
-      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      // CANCELLED STAYS SILENT — the person is the one who cancelled, and telling them so is
+      // feedback for an action nobody took. `copied` no longer is: this paragraph used to say
+      // the file being where the user put it was enough, and the owner's report that a save
+      // changing nothing on screen reads as a save that did not happen retires that reasoning
+      // for the whole class. The destination dialog closing is the platform's, not ours.
+      if (answer.value.kind === 'copied') {
+        deps.toast('done', TOAST_COPY_SAVED);
+        return;
+      }
+      if (answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });

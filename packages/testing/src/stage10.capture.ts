@@ -76,6 +76,22 @@ for (const look of LOOKS) {
     await shot(page, look, 'settings');
     await page.getByRole('button', { name: 'Done' }).click();
 
+    // THE SAVE FEEDBACK, which is three things at once and has to be looked at as one frame:
+    // the tab's dot while there are changes, the same dot gone and the status bar counting from
+    // the save, and the toast that confirms it. Driven through the real command — a rotate to
+    // dirty the document, then Ctrl+S — so what is captured is what a person gets.
+    // THROUGH THE PALETTE, as Settings above is: the rotate button's name depends on which
+    // ribbon section is showing and on whether its group has folded, and neither is what this
+    // capture is about. The palette reaches the registered command whatever the ribbon is doing.
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Rotate page');
+    await page.getByRole('option', { name: /^Rotate page/u }).first().click();
+    await page.waitForTimeout(600);
+    await shot(page, look, 'save-dirty');
+    await page.keyboard.press('Control+s');
+    await page.waitForTimeout(300);
+    await shot(page, look, 'save-done');
+
     const narrow = await context.newPage();
     await openApp(narrow, look, 1280, 800);
     await openDocument(narrow);

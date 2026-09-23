@@ -1,9 +1,11 @@
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { TOAST_COPY_SAVED, TOAST_PAGES_SAVED, TOAST_SAVED } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { SettingsStore } from '../settingsStore.js';
+import type { ShowToast } from '../toasts.js';
 import {
   type Applied,
   cropPagesCommand,
@@ -178,6 +180,34 @@ function askRecording(
   };
 }
 
+/**
+ * Records what a file-writing command SAID and what it wrote down.
+ *
+ * Both lists start empty and stay empty on every path that wrote nothing, which is what makes
+ * `toStrictEqual([])` an assertion rather than a shape check: a command that confirmed a save
+ * it did not make fails the refusal cases, and one that confirmed nothing fails the success
+ * case. Neither is separable from the other's absence by looking at the document.
+ */
+function saving(): {
+  toast: ShowToast;
+  onSaved: (docId: DocId, version: DocVersion) => void;
+  said: { kind: string; message: string }[];
+  wrote: { docId: DocId; version: DocVersion }[];
+} {
+  const said: { kind: string; message: string }[] = [];
+  const wrote: { docId: DocId; version: DocVersion }[] = [];
+  return {
+    toast: (kind, message) => {
+      said.push({ kind, message });
+    },
+    onSaved: (docId, version) => {
+      wrote.push({ docId, version });
+    },
+    said,
+    wrote,
+  };
+}
+
 describe('rotate page', () => {
   it('hands back BOTH scalars, exactly as the channel answered them', async () => {
     const { applied, onApplied, ask } = recorder();
@@ -339,13 +369,41 @@ describe('save', () => {
     });
 
     const shown: { id: string; props: unknown }[] = [];
-    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
+    const { toast, onSaved, said, wrote } = saving();
+    await saveCommand({ client, ask: askRecording(shown), toast, onSaved }).run(CONTEXT);
 
     expect(asked).toBe('document.save');
     // ASSERT THE CALL THAT WAS NOT MADE. A dialog on the successful path is one
     // that appears every time the user presses Ctrl+S, and the tidy end state —
     // a saved document — is identical either way.
     expect(shown).toStrictEqual([]);
+    // AND THE TWO CALLS THAT WERE. Until 2026-09-23 this case ended above, and the command
+    // was correct by it while a person pressing Ctrl+S saw nothing change — the owner's
+    // report. Nothing observable about the document separates a save that confirmed itself
+    // from one that did not, so the confirmation has to be asserted as a call.
+    expect(said).toStrictEqual([{ kind: 'done', message: TOAST_SAVED }]);
+    // THE VERSION MAIN ANSWERED, not one derived here: `savedVersion` is compared against
+    // `version` to draw the dot, so a recorder handed the wrong number leaves a saved
+    // document showing as dirty for ever.
+    expect(wrote).toStrictEqual([{ docId: CONTEXT.docId, version: asDocVersion(2) }]);
+  });
+
+  it('a refused save CONFIRMS NOTHING and records no saved version', async () => {
+    // THE CONTROL for the case above, and it is the load-bearing half. A `saveDocument` that
+    // raised its toast before reading `kind` passes every assertion up there — the toast is
+    // present, the version is recorded — and tells a person their work is on disk when the
+    // file was never written. Only a refusal separates the two, and only by what was NOT
+    // called: the document is unsaved either way, the dialog opens either way.
+    const client = clientAnswering('document.save', { kind: 'refused', reason: 'contested' });
+    const shown: { id: string; props: unknown }[] = [];
+    const { toast, onSaved, said, wrote } = saving();
+
+    await saveCommand({ client, ask: askRecording(shown), toast, onSaved }).run(CONTEXT);
+
+    expect(said).toStrictEqual([]);
+    expect(wrote).toStrictEqual([]);
+    // The dialog still opens, so this case cannot pass by the command doing nothing at all.
+    expect(shown).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]);
   });
 
   it('a refused save TELLS the user, and says which refusal it was', async () => {
@@ -366,7 +424,7 @@ describe('save', () => {
     const shown: { id: string; props: unknown }[] = [];
 
     await expect(
-      saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT),
+      saveCommand({ client, ask: askRecording(shown), ...saving() }).run(CONTEXT),
     ).resolves.toBeUndefined();
 
     expect(shown).toStrictEqual([
@@ -383,7 +441,7 @@ describe('save', () => {
     const client = clientAnswering('document.save', { kind: 'write-failed' });
     const shown: { id: string; props: unknown }[] = [];
 
-    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown), ...saving() }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.save-problem', props: { outcome: 'write-failed' } },
@@ -404,7 +462,7 @@ describe('save', () => {
     );
     const shown: { id: string; props: unknown }[] = [];
 
-    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown), ...saving() }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.command-problem', props: { code: 'document-busy' } },
@@ -421,7 +479,7 @@ describe('save', () => {
     );
     const shown: { id: string; props: unknown }[] = [];
 
-    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown), ...saving() }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.command-problem', props: { code: 'internal', incident: 'inc-42' } },
@@ -628,21 +686,31 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('SAVE A COPY dispatches with a DocId and nothing else, and says nothing when it worked', async () => {
+  it('SAVE A COPY dispatches with a DocId and nothing else, and CONFIRMS when it worked', async () => {
     // THE UI HALF. There is no dialog to gate here — the destination comes from
     // the platform's own save dialog, which main runs — so what this asserts is
     // the two things the renderer decides: that it sends a `DocId` alone, and
-    // that a successful copy opens nothing.
+    // what it says about the outcome.
+    //
+    // **This case said `opened` was empty AND that a confirmation would be noise, until
+    // 2026-09-23.** The reasoning was that the file landed where the user put it, so the
+    // platform's own dialog closing was the feedback. The owner's report about Ctrl+S
+    // retired that for the whole class: a write that changes nothing on screen reads as a
+    // write that did not happen. What survives is the distinction the case was really
+    // making — a DIALOG on the successful path is still wrong, because a dialog has to be
+    // dismissed. A toast is not a dialog, and `opened` is still asserted empty below.
     const sent: { id: string; params: unknown }[] = [];
     const opened: { id: string; props: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       return Promise.resolve(ok({ kind: 'copied', bytes: 2048 }));
     });
+    const { toast, said } = saving();
 
     await saveCopyCommand({
       client,
       onApplied: () => undefined,
+      toast,
       ask: (id, props) => {
         opened.push({ id, props });
         return Promise.resolve(undefined);
@@ -650,10 +718,8 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([{ id: 'document.saveCopy', params: { docId: DOC } }]);
-    // NOTHING OPENED. A toast for a file that landed where the user put it is
-    // noise, and this is the assertion that a later "helpful" dialog would have
-    // to change deliberately.
     expect(opened).toStrictEqual([]);
+    expect(said).toStrictEqual([{ kind: 'done', message: TOAST_COPY_SAVED }]);
   });
 
   it('CONTROL: a CANCELLED copy is silent, and a REFUSED one is not', async () => {
@@ -664,6 +730,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // treating "nothing was written" as one state.
     const answers = ['cancelled', 'refused'] as const;
     const openedFor: Record<string, number> = {};
+    const saidFor: Record<string, number> = {};
 
     for (const kind of answers) {
       const opened: unknown[] = [];
@@ -672,18 +739,25 @@ describe('delete pages — the mutation-dialog gate', () => {
           ok(kind === 'cancelled' ? { kind } : { kind, openElsewhere: 1 }),
         ),
       );
+      const { toast, said } = saving();
       await saveCopyCommand({
         client,
         onApplied: () => undefined,
+        toast,
         ask: (id, props) => {
           opened.push({ id, props });
           return Promise.resolve(undefined);
         },
       }).run(CONTEXT);
       openedFor[kind] = opened.length;
+      saidFor[kind] = said.length;
     }
 
     expect(openedFor).toStrictEqual({ cancelled: 0, refused: 1 });
+    // AND NEITHER IS CONFIRMED. The case above is the only path that may say *Copy saved*,
+    // so a command raising the toast before it read `kind` — the cheapest wrong edit, and
+    // one the success case cannot see — is caught here and only here.
+    expect(saidFor).toStrictEqual({ cancelled: 0, refused: 0 });
   });
 
   it('EACH EXPORT DISPATCHES ITS OWN FORMAT, which is the only thing separating them', async () => {
@@ -2012,6 +2086,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await extractPagesCommand({
       client,
       onApplied: () => undefined,
+      toast: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
         return Promise.resolve({ pages: [0, 4, 5] });
@@ -2027,15 +2102,20 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('extract reports a contested destination, and says nothing when it worked', async () => {
+  it('extract reports a contested destination, and CONFIRMS when it worked', async () => {
     // TWO CASES IN ONE, because the pair is the point: a `copied` that opened a
     // dialog would be a success reported as a problem, and a `refused` that
     // opened none would be the display-only failure.
+    //
+    // The success half also asserts the toast, and the refusal half asserts its absence —
+    // `saveCopyCommand`'s pair above, for the same write and the same reason.
     const quiet = recording({ 'document.extract': { kind: 'copied', bytes: 1 } });
     const quietDialogs: unknown[] = [];
+    const worked = saving();
     await extractPagesCommand({
       client: quiet.client,
       onApplied: () => undefined,
+      toast: worked.toast,
       ask: (id, props) => {
         quietDialogs.push({ id, props });
         return Promise.resolve({ pages: [0] });
@@ -2044,14 +2124,17 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(quietDialogs.map((entry) => (entry as { id: string }).id)).toStrictEqual([
       'dialog.extract-pages',
     ]);
+    expect(worked.said).toStrictEqual([{ kind: 'done', message: TOAST_PAGES_SAVED }]);
 
     const refused = recording({
       'document.extract': { kind: 'refused', openElsewhere: 2 },
     });
     const spoken: unknown[] = [];
+    const failed = saving();
     await extractPagesCommand({
       client: refused.client,
       onApplied: () => undefined,
+      toast: failed.toast,
       ask: (id, props) => {
         spoken.push({ id, props });
         return Promise.resolve({ pages: [0] });
@@ -2061,6 +2144,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       { id: 'dialog.extract-pages', props: { pageCount: 10 } },
       { id: 'dialog.save-problem', props: { outcome: 'contested' } },
     ]);
+    expect(failed.said).toStrictEqual([]);
   });
 
   it('split sends the GROUPS the dialog built, not a mode', async () => {
@@ -2347,6 +2431,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       await optimizeCommand({
         client,
         onApplied: () => undefined,
+        toast: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
           return Promise.resolve(id === 'dialog.optimize' ? answers.shift() : undefined);
@@ -2816,6 +2901,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await extractPagesCommand({
       client,
       onApplied: () => undefined,
+      toast: () => undefined,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 

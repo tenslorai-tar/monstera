@@ -6,10 +6,11 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, WORD_COUNT_PROGRESS } from '../messages/en.js';
+import { EN, STATUS_UNSAVED, WORD_COUNT_PROGRESS } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
 import type { RunningTask } from '../runningTask.js';
+import { savedState, type SavedState } from '../savedState.js';
 import type { ZoomMode } from '../zoom.js';
 import { StatusBar } from './StatusBar.js';
 
@@ -60,6 +61,7 @@ function drawn(
     readonly name?: string;
     readonly task?: RunningTask | undefined;
     readonly commands?: readonly UiCommand[];
+    readonly saved?: SavedState;
   } = {},
 ): Drawn {
   const went = vi.fn();
@@ -76,6 +78,10 @@ function drawn(
         registry={new CommandRegistry(over.commands ?? [])}
         context={context}
         task={over.task}
+        // THE DEFAULT IS THE DIRTY ONE, deliberately: every case that does not care renders a
+        // document with unsaved changes, so a bar that dropped the cell shows it in none of
+        // them. A clean default would make the absent cell and the empty string look alike.
+        saved={over.saved ?? { message: STATUS_UNSAVED, values: {}, dirty: true }}
       />
     </Wrapped>,
   );
@@ -96,6 +102,32 @@ describe('StatusBar', () => {
     expect(shown?.textContent).toBe('annual report.pdf');
     // The whole name is on the element too, because the visible one is ellipsed when narrow.
     expect(shown?.getAttribute('title')).toBe('annual report.pdf');
+  });
+
+  it('says WHERE THE DOCUMENT STANDS against its file, in the words for that age', () => {
+    // The owner's report: Ctrl+S saved and nothing on screen changed. This is the cell that
+    // is still there a minute later, and the owner's document export draws it as
+    // "Saved 2 min ago" — so the case asserts the SENTENCE and not just that a cell exists.
+    //
+    // Three states, driven through the real `savedState` rather than hand-built props: a
+    // fixture that spelt the message key itself would pass against a bar wired to a different
+    // one, which is the assertion reading its own input back (`saved` is the component's prop,
+    // and the interesting question is which sentence the RULE produces).
+    const at = 1_700_000_000_000;
+    const dirty = drawn({ saved: savedState(4, 3, at, at) });
+    expect(dirty.container.querySelector('.m-status-saved')?.textContent).toBe('Unsaved changes');
+    // AND THE STATE IS ON THE ELEMENT, not only in the words: the stylesheet colours the cell
+    // from it, and a reader who cannot see the colour still has the sentence.
+    expect(dirty.container.querySelector('.m-status-saved')?.getAttribute('data-dirty')).toBe('true');
+
+    const justSaved = drawn({ saved: savedState(4, 4, at, at + 1_000) });
+    expect(justSaved.container.querySelector('.m-status-saved')?.textContent).toBe('Saved just now');
+
+    // TWO MINUTES, the export's own figure. A bar that interpolated nothing renders the
+    // placeholder, and one that passed the wrong argument renders "Saved NaN min ago" — both
+    // of which the plain "is the cell there" assertion above would pass.
+    const older = drawn({ saved: savedState(4, 4, at, at + 125_000) });
+    expect(older.container.querySelector('.m-status-saved')?.textContent).toBe('Saved 2 min ago');
   });
 
   it('shows the zoom as a percentage, rounded for display', () => {

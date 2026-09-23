@@ -20,6 +20,7 @@ import { ICONS } from '../primitives/icons.js';
 import { IconButton } from '../primitives/IconButton.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import type { RunningTask } from '../runningTask.js';
+import type { SavedState } from '../savedState.js';
 import { ZOOM_STEPS, type ZoomMode } from '../zoom.js';
 import { statusBarModel, type OrderedEntry } from './projections.js';
 
@@ -85,6 +86,7 @@ export function StatusBar({
   registry,
   context,
   task,
+  saved,
 }: {
   /** The document's name, as main stated it on `document.open`. */
   readonly name: string;
@@ -102,6 +104,14 @@ export function StatusBar({
   readonly context: CommandContext;
   /** A long command reporting how far it has got, or nothing running. */
   readonly task: RunningTask | undefined;
+  /**
+   * Where this document stands against its file, already resolved.
+   *
+   * Computed by the caller rather than here, because `savedState` needs a clock and this
+   * component must stay a function of its props — and because the tab's dot reads the same
+   * answer, which is one comparison and not two (B3a).
+   */
+  readonly saved: SavedState;
 }): ReactElement {
   const { i18n } = useLingui();
   // `null` until a person types: the field then shows what they typed, and otherwise the page.
@@ -135,6 +145,12 @@ export function StatusBar({
       {/* FIRST, at the far end from the numbers: which document this is. */}
       <span className="m-status-name" title={name}>
         {name}
+      </span>
+      {/* AND WHETHER IT IS ON DISK, beside the name, as the owner's document export draws it.
+          Here rather than in the navigation cluster because it is about the file, not the view —
+          and next to the name because those are the two facts about the document itself. */}
+      <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
+        {i18n._(saved.message, saved.values)}
       </span>
       {/* THE ANNOUNCEMENT, as text in the status region, visually hidden. */}
       <span className="m-status-page m-visually-hidden">

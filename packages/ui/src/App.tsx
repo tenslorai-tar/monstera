@@ -201,6 +201,7 @@ import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
 import { openFromUrlCommand } from './commands/openFromUrl.js';
 import { editPageExternallyCommand } from './commands/editPageExternally.js';
 import {
+  type OpenedDocument,
   appendMarkdownCommand,
   newFromCaptureCommand,
   newFromCsvCommand,
@@ -259,7 +260,7 @@ import {
   CLOSE_UNSAVED_RESULT,
 } from './dialogs/closeUnsaved.js';
 import { useDocumentView } from './useDocumentView.js';
-import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
+import { CLOSE_LABEL, SPLIT_SECOND_LABEL, TOAST_DISMISS } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
@@ -315,6 +316,9 @@ import { StylePanel } from './StylePanel.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
+import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
+import { ToastStrip } from './primitives/Toast.js';
+import { isDirty, savedState, savedTick } from './savedState.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -367,6 +371,41 @@ import { ViewProblem } from './surfaces/ViewProblem.js';
 interface OpenDocument {
   readonly docId: DocId;
   readonly version: DocVersion;
+  /**
+   * The newest version watched to reach the FILE, and when.
+   *
+   * ## Beside `version` and NOT in the document store, which was the first attempt
+   *
+   * `documentStores.ts` also holds a `version`, and it looked like the place for this. It is
+   * not: `observed` has no production caller, so that number never leaves the version the
+   * document opened at. A `savedVersion` compared against it would read CLEAN for ever — the
+   * dot would vanish on the first save and never come back, which is the display-only sin in
+   * the direction that costs a person work. The number that actually moves is this one, which
+   * `applied` advances on every command, so both halves of the comparison live here.
+   *
+   * ## Two numbers MAIN minted, compared here — not a second opinion about dirtiness
+   *
+   * `document.unsaved` is main's own answer and stays the authority `requestClose` asks (B3a).
+   * This is the pair the coordinate-systems remedy asks for: `document.open` states the version
+   * the file holds, `document.save` states the version it wrote, both from main, and the
+   * renderer compares them and invents neither.
+   *
+   * It agrees with `isDirty`'s conservatism for free: an undo mints a NEW version, so undoing
+   * back to the saved content still reads dirty — the same trade `document.unsaved` records. It
+   * fails towards a dot nobody needed, never towards a silent loss.
+   *
+   * Seeded with the opening version, because a document arrives from a file and so opens clean.
+   */
+  readonly savedVersion: DocVersion;
+  /**
+   * When a save last landed IN THIS WINDOW, or `undefined` before the first.
+   *
+   * **A renderer fact, not a document one.** It is not *when the file was written* — the file
+   * may be far older than this window — it is when this person watched their save complete,
+   * which is the only thing "Saved 2 min ago" can honestly mean here. A modification time read
+   * off the filesystem would be a different claim wearing the same words, and would need a path.
+   */
+  readonly savedAt: number | undefined;
   readonly byteLength: number;
   /**
    * What to call it on screen — the file's name, stated by main.
@@ -528,6 +567,45 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    */
   const track = useMemo(() => trackerOver(setTask), []);
   const open = tabs.find((tab) => tab.docId === activeId);
+  /**
+   * The clock the saved-state text is read against, and the timer that moves it.
+   *
+   * ## A TICK, because "2 min ago" goes stale on its own
+   *
+   * Every other value on screen changes when something happens. This one changes when nothing
+   * happens, so the only thing that can move it is a timer — and a status bar that said *Saved
+   * just now* for twenty minutes would be the same defect this whole change is about, one step
+   * further along.
+   *
+   * **The interval is derived from the age** (`savedTick`): a half-minute while the words are
+   * counting minutes, a half-hour once they are counting hours, and no timer at all before the
+   * first save, when the text cannot change by itself. A fixed interval has to be the fastest
+   * the worst case needs and then pays it for ever.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  const savedAt = open?.savedAt;
+  // THE BAND, not the clock, is what the effect depends on. `savedTick` answers the same number
+  // for every moment inside a band, so this changes only when the text starts counting a coarser
+  // unit — which is exactly when the timer should be rebuilt, and never on a tick. Depending on
+  // `now` instead would tear the timer down and start it again every time it fired, and a timer
+  // that restarts its own countdown never fires at the interval it claims.
+  const every = savedTick(savedAt, now);
+  useEffect(() => {
+    if (every === undefined) return undefined;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, every);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [every]);
+  const saved = savedState(open?.version ?? 0, open?.savedVersion ?? 0, savedAt, now);
+  // THE DOT PER TAB, from the same rule the bar's words come from. It takes no clock — a dot is
+  // not a duration — so this is rebuilt when a version moves and never on the tick above.
+  const tabStrip = useMemo(
+    () => tabs.map((tab) => ({ ...tab, dirty: isDirty(tab.version, tab.savedVersion) })),
+    [tabs],
+  );
 
   /**
    * One store per open document, minted with its tab and dropped with it.
@@ -537,6 +615,46 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * that the order has to say so.
    */
   const [stores] = useState(() => new DocumentStores());
+  /**
+   * The window's toast queue, and the two callbacks a file-writing command takes.
+   *
+   * **`toast` is stable and `onSaved` is stable**, which is why both are `useCallback` over the
+   * store rather than values read during render: the command registry is rebuilt when its
+   * dependencies change, and a callback minted fresh each render would rebuild every command on
+   * every keystroke — the shape that put the ribbon behind the error boundary on 2026-09-23.
+   */
+  const [toastStore] = useState(() => createToastStore());
+  const toasts = useSyncExternalStore(toastStore.subscribe, () => toastStore.getState().toasts);
+  const toast = useCallback<ShowToast>(
+    (kind, message) => {
+      toastStore.getState().show(kind, message);
+    },
+    [toastStore],
+  );
+  const dismissToast = useCallback(
+    (id: number) => {
+      toastStore.getState().dismiss(id);
+    },
+    [toastStore],
+  );
+  // THE CLOCK IS READ HERE, at the moment the save landed, and nowhere downstream: `savedState`
+  // is a function of its arguments so that its boundaries are testable (59 seconds against 60).
+  //
+  // NAMED, not the focused tab: the close path saves each document in turn and activates it to
+  // ask, so "the active one" would be right by accident there and wrong the moment it is not.
+  const onSaved = useCallback((docId: DocId, version: DocVersion) => {
+    const at = Date.now();
+    setTabs((current) =>
+      current.map((tab) =>
+        // MONOTONIC, for `observed`'s reason: two saves can be in flight — the Save command and
+        // the close path's — and replies are not ordered. An older one landing late would mark
+        // a document dirty again over content that is on disk.
+        tab.docId === docId && version >= tab.savedVersion
+          ? { ...tab, savedVersion: version, savedAt: at }
+          : tab,
+      ),
+    );
+  }, []);
   // SAVED CONVERSATIONS (ADR-0093) start with a document's store and stop with it — before the close
   // reaches `main`, so a save still settling is finished while the document is open there. The
   // setting is read at each save, so turning it off stops the next one with nothing restarted.
@@ -970,7 +1088,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
    * have* mean *show it to me*.
    */
   const opened = useCallback(
-    (document: OpenDocument): void => {
+    // TAKES WHAT A COMMAND CAN REPORT — `OpenedDocument`, which is `main`'s answer — and seeds
+    // the saved state here. A command has nothing to say about it: opening a document is the one
+    // moment its content and its file are the same by construction, so the seed is a fact about
+    // the event and not a field anyone could get wrong at a call site.
+    (document: OpenedDocument): void => {
       // THE STORE IS MINTED HERE, beside the tab, because the two have the same
       // lifetime and `stores.open` refuses a second one for a document that
       // already has it. Guarded by the same `get`-misses read the render uses,
@@ -979,7 +1101,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         stores.open(document.docId, document.version);
       }
       setTabs((current) =>
-        current.some((tab) => tab.docId === document.docId) ? current : [...current, document],
+        current.some((tab) => tab.docId === document.docId)
+          ? current
+          : // THE FILE HOLDS THIS VERSION, and `savedAt` stays undefined: this window has not
+            // watched a save, so the bar reads "Saved" with no time rather than claiming one.
+            [...current, { ...document, savedVersion: document.version, savedAt: undefined }],
       );
       activate(document.docId);
     },
@@ -1173,7 +1299,15 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           );
           // DISMISSED IS CANCEL: the platform's × or Escape must never be the destructive answer.
           if (!choice.success || choice.data === 'cancel') return false;
-          if (choice.data === 'save' && !(await saveDocument({ client, ask }, docId))) return false;
+          // THE SAME TWO CALLBACKS the Save command passes, because this is the same save
+          // (B3a): the document is about to close, so the dot and the bar go with it, but a
+          // save that landed is still worth confirming — and the toast outlives the tab.
+          if (
+            choice.data === 'save' &&
+            !(await saveDocument({ client, ask, toast, onSaved }, docId))
+          ) {
+            return false;
+          }
         }
         await releaseTabs(docIds);
         return true;
@@ -1181,7 +1315,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         setClosing(false);
       }
     },
-    [activate, ask, client, closing, releaseTabs, tabs],
+    [activate, ask, client, closing, onSaved, releaseTabs, tabs, toast],
   );
 
   // THE WINDOW'S CLOSE, held by main until this answers (`windowClose.ts`): every open
@@ -1986,7 +2120,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           onOpened: opened,
           onActivate: activate,
         }),
-        extractPagesCommand({ client, onApplied: applied, ask }),
+        extractPagesCommand({ client, onApplied: applied, ask, toast }),
         splitDocumentCommand({ client, onApplied: applied, ask }),
         exportPageImagesCommand({ client, onApplied: applied, ask }),
         exportTextCommand({ client, onApplied: applied, ask }),
@@ -2008,17 +2142,17 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         printCommand({ client, onApplied: applied, ask }),
         emailCommand({ client, onApplied: applied, ask }),
         exportPdfaCommand({ client, onApplied: applied, ask }),
-        optimizeCommand({ client, onApplied: applied, ask, track }),
+        optimizeCommand({ client, onApplied: applied, ask, track, toast }),
         generateTocCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
-        saveCommand({ client, ask }),
+        saveCommand({ client, ask, toast, onSaved }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `setCompareId`, which is what keeps this a second ROUTE
         // to the compare pane rather than a second owner of it: the picker writes the same value.
         openSideBySideCommand({ focused: readActiveId, compare: setCompareId, settings }),
-        saveCopyCommand({ client, onApplied: applied, ask }),
+        saveCopyCommand({ client, onApplied: applied, ask, toast }),
         exportFormDataJsonCommand({ client, onApplied: applied, ask }),
         exportFormDataXfdfCommand({ client, onApplied: applied, ask }),
         exportFormDataFdfCommand({ client, onApplied: applied, ask }),
@@ -2160,6 +2294,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       selectionDeps,
       settings,
       track,
+      // THE FILE-WRITING COMMANDS' TWO CALLBACKS. Both are stable — `useCallback` over a store
+      // and over `setTabs` — so listing them rebuilds the registry never rather than on every
+      // render, which is the property that matters here and not their presence in the list.
+      toast,
+      onSaved,
       // THE SELECTED-TEXT MENU reads these three: the selection its `when` asks about, the one
       // dispatcher, and the style a markup is drawn in.
       textSelection,
@@ -2296,7 +2435,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
               {contents}
             </ContextMenuArea>
           )}
-          tabs={tabs}
+          tabs={tabStrip}
           activeId={activeId}
           onSelect={activate}
           onClose={(docId) => {
@@ -2572,8 +2711,20 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           registry={registry}
           context={context}
           task={task}
+          saved={saved}
         />
       )}
+      {/* ALWAYS MOUNTED, unlike the status bar above and deliberately so: a live region
+          announces what changes inside it, so a strip that arrived with its first message
+          would be the change itself and a screen reader would hear nothing. It is also
+          outside the `open === undefined` guard because a toast outlives the document that
+          raised it — the close path's *Save* confirms a save whose tab is already gone. */}
+      <ToastStrip
+        toasts={toasts}
+        dismissLabel={TOAST_DISMISS}
+        onDismiss={dismissToast}
+        lifetime={TOAST_LIFETIME}
+      />
       {/* The ONE mount point. `DialogHost` renders nothing when none is open —
           not a hidden dialog — so this is not a control that renders and does
           nothing; it is the seam every dialog arrives through. */}
@@ -2752,7 +2903,7 @@ function PageCanvas({
   readonly document: OpenDocument;
   /** Each drawn page's visible box, for the assistant's *Add as note* — `PageList.onPageBox`. */
   readonly onPageBox: (page: number, crop: readonly [number, number, number, number]) => void;
-  readonly onVersionMoved: (next: OpenDocument) => void;
+  readonly onVersionMoved: (next: OpenedDocument) => void;
   /**
    * Wraps a thumbnail or a page slot in the page context menu for that page (§7), built by `App`
    * where the registry is. Handed to this document's thumbnails and both of its panes; never to the

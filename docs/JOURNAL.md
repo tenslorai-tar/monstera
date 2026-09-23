@@ -892,6 +892,83 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-23 — A save that says so: the toast primitive, the tab's dot and the status bar's saved state
+
+The owner's report: *Ctrl+S or Save saves, and nothing on screen changes; I could not tell whether
+it had worked.* Save back to cloud does confirm, so the plain save was the gap. Three things landed
+together, because one of them alone would have been the same defect in a smaller place.
+
+**`Toast` landed as a primitive, which is what the law already said would happen.** The
+`docs/FEATURES.md` row had been triaged to *first use* on the strength of §10's own sentence —
+`Toast` is among the primitives *"added the first time a feature needs them, in the package, never
+ad hoc in the feature."* So this needed no stage and no judgement: `primitives/Toast.tsx` draws one,
+`toasts.ts` is the window's queue, and a command's dependency bag takes `ShowToast` — only `show` —
+so no command can take another's message off screen.
+
+Two decisions in it are worth the ink. The strip is **always mounted**, because a live region
+announces what changes *inside* it: a region that arrives together with its first message is itself
+the change, and a screen reader hears nothing. And it carries `pointer-events: none` with `auto` on
+each toast, because an always-mounted empty box over the corner of the document would otherwise
+swallow clicks on the page beneath it for the whole session — the cost of the first decision, paid
+in the same rule.
+
+**The dirty dot's first design was wrong, and the way it was wrong is the transferable part.**
+Dirtiness is *the version the renderer holds against the version the file holds*, and both numbers
+are minted by main — `document.open` states one, `document.save` states the other — so comparing
+them is not a second opinion about what main holds (B3a); `document.unsaved` stays the authority the
+close path asks. The mistake was **where** the comparison lived. `documentStores.ts` holds a
+`version` and looked like the obvious home, so `savedVersion` went in beside it. It has no
+production caller for `observed`: that number never leaves the version the document opened at. A
+`savedVersion` compared against it would have read **clean for ever** — the dot vanishing on the
+first save and never coming back.
+
+Nothing about the code said so. The store's field is called `version`, its neighbour in `App.tsx`
+is called `version`, and only `applied` advances one of them. It was caught by asking which of the
+two `setTabs` actually writes, before wiring the surface — not by a test, because every test would
+have passed: a fixture that saves once and asserts the dot is gone is exactly the fixture the broken
+version handles correctly. **Ask which writer moves a number before comparing against it**, and
+treat two fields with the same name in two modules as the question rather than the answer.
+
+`savedState` is the one rule with three callers — the bar's words, the tab's dot through `isDirty`,
+and nothing else — so a dot beside a bar that disagrees with it is unrepresentable rather than
+merely unlikely.
+
+**The clock is passed in, and the tick is derived from the age.** "Saved 2 min ago" is the one thing
+on screen that goes stale when *nothing happens*, so it needs a timer — and a status bar still
+reading *Saved just now* twenty minutes later would be this same defect one step along. `savedTick`
+answers a half-minute while the words count minutes and a half-hour once they count hours, and
+`undefined` before any save, when the text cannot change by itself and a timer would re-render the
+bar twice a minute for ever. It is safe as an effect dependency **because it answers the same number
+everywhere inside a band**; a function returning the time to the next boundary would satisfy every
+equality a careless case asserts and rebuild the timer on every tick. Its own case asserts the
+equality between two moments in one band, which is the property the caller actually depends on.
+
+**One claim in this range was retired rather than worked around.** `saveCopyCommand`'s test read
+*"says nothing when it worked"*, and its comment argued a confirmation would be noise because the
+file landed where the user put it. The owner's report retires that reasoning for the whole class: a
+write that changes nothing on screen reads as a write that did not happen. What survives is the
+distinction the case was really drawing — a **dialog** on the successful path is still wrong,
+because a dialog has to be dismissed — so the case still asserts no dialog opened and now asserts
+the toast. Three commands moved with it: Save a copy, Extract pages and the smaller copy Optimize
+writes. Cancelled stays silent everywhere, because the person is the one who cancelled.
+
+**And one obligation came due that is deliberately NOT discharged here.**
+`dialog.history-trimmed`'s header reads *"A toast is the better carrier and does not exist… Between
+a modal and nothing, invariant 18 chooses the modal."* That stated reason expired the moment this
+landed, and the FEATURES row had named the obligation in advance — *whichever commit adds `Toast`
+owes that dialog a second look*. The look was taken and the conversion was not, because the choice
+is real rather than bookkeeping: a toast leaves after four seconds and **can be missed**, and what
+that dialog reports is undo steps that are gone for good. The row now says so in those words. A
+premise expiring is not the same as the conclusion flipping, and writing *the toast exists now* into
+the row as if it settled the question is exactly how the next reader inherits a decision nobody took.
+
+Measured after: unit suite 3768 passed, `test:a11y` 52 passed, `test:visual` 4 passed with the
+control planting its 319 pixels. The visual baselines did **not** move, and that is a fact about
+their coverage rather than about this change — they photograph the start screen, one dialog, each
+ribbon section and one panel, and none of those shows a status bar with a document open.
+
+---
+
 ## 2026-09-23 — Stage 10: the title bar projects, the ribbon folds, and CI answered three questions this machine could not
 
 The owner's design drove five pieces of work, and the interesting record is not what was built but

@@ -12,9 +12,13 @@ import { EN } from '../messages/en.js';
 const FIRST = asDocId('00000000-0000-4000-8000-00000000000a');
 const SECOND = asDocId('00000000-0000-4000-8000-00000000000b');
 
+// ONE OF EACH, and that is the fixture doing work: two clean tabs cannot tell a strip that
+// draws a dot per dirty document from one that draws none, and two dirty ones cannot tell it
+// from one that dots every tab. The dirty one is also NOT the showing one, so a strip that
+// keyed the dot on `activeId` is red as well.
 const TABS = [
-  { docId: FIRST, name: 'annual.pdf' },
-  { docId: SECOND, name: 'notes.pdf' },
+  { docId: FIRST, name: 'annual.pdf', dirty: true },
+  { docId: SECOND, name: 'notes.pdf', dirty: false },
 ];
 
 const NOTHING = {
@@ -57,6 +61,25 @@ describe('DocumentTabs', () => {
     const current = container.querySelectorAll('[aria-current="true"]');
     expect(current).toHaveLength(1);
     expect(current[0]?.getAttribute('data-tab-select')).toBe(SECOND);
+  });
+
+  it('DOTS the document with unsaved changes, and only that one', () => {
+    // The owner could not tell whether Ctrl+S had worked, and this is the half of the answer
+    // that is still on screen a minute later. `TABS` is one dirty and one clean, so this
+    // separates a per-document dot from one drawn on every tab or on the active one.
+    const { container } = render(
+      <Wrapped>
+        <DocumentTabs {...NOTHING} tabs={TABS} activeId={SECOND} />
+      </Wrapped>,
+    );
+
+    const dots = container.querySelectorAll('.m-tab-dot');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]?.closest('.m-tab')?.getAttribute('data-tab')).toBe(FIRST);
+    // AND IT IS NOT CARRIED BY THE SHAPE ALONE. The dot is `aria-hidden`, so without the
+    // worded companion a screen reader hears nothing at all — which is the same defect as
+    // the silent save, one population along (§10.6).
+    expect(container.textContent).toContain('Unsaved changes');
   });
 
   it('SELECTS BY DOCUMENT ID, not by position', () => {

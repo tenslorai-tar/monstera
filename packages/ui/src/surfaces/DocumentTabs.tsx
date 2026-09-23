@@ -2,12 +2,20 @@ import { useLingui } from '@lingui/react';
 import type { DocId } from '@monstera/shared';
 import type { ReactElement, ReactNode } from 'react';
 
-import { TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL } from '../messages/en.js';
+import { TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL, TAB_UNSAVED } from '../messages/en.js';
 
 /** One open document, as the strip needs to draw it. */
 export interface DocumentTab {
   readonly docId: DocId;
   readonly name: string;
+  /**
+   * Whether this document holds changes its file does not.
+   *
+   * Resolved by the caller from `savedState`, which the status bar also reads — one comparison
+   * of main's two version numbers, not one per surface, so a tab can never show a dot beside a
+   * bar saying *Saved* (B3a).
+   */
+  readonly dirty: boolean;
 }
 
 /**
@@ -124,6 +132,17 @@ export function DocumentTabs({
                   onSelect(tab.docId);
                 }}
               >
+                {/* THE DOT, INSIDE the name button and before the name, so it moves with the
+                    text rather than sitting in a column that is empty on every clean tab. It
+                    is `aria-hidden` with a worded companion beside it: a screen reader hears
+                    "Unsaved changes" and never a bullet character, and the pair is what stops
+                    the state being carried by colour and shape alone (§10.6). */}
+                {tab.dirty ? (
+                  <>
+                    <span aria-hidden className="m-tab-dot" />
+                    <span className="m-visually-hidden">{_(TAB_UNSAVED)}</span>
+                  </>
+                ) : null}
                 {tab.name}
               </button>
               <button

@@ -1365,10 +1365,33 @@ textarea {
  * often than by its end.
  */
 .m-status-name {
-  margin-inline-end: auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text);
+}
+
+/*
+ * Where the document stands against its file, beside its name.
+ *
+ * It carries the `auto` margin that used to sit on `.m-status-name`, so the pair stays together
+ * at the start of the bar and everything else is still pushed to the end. Putting the margin on
+ * the name would have left this cell floating in the middle of the strip.
+ *
+ * `flex-shrink: 0` because the NAME is the thing that may be ellipsed when the window is narrow.
+ * "Saved 12 min ago" truncated to "Saved 12 m…" is a worse sentence than a shortened file name,
+ * and the name has a `title` carrying the whole of it while this has nothing to fall back on.
+ */
+.m-status-saved {
+  margin-inline-end: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Unsaved is the state worth noticing, so it takes the bar's foreground rather than its muted
+   default. NOT the accent: the accent means "the thing you are about to do", and a document
+   with unsaved changes is a fact rather than an invitation. */
+.m-status-saved[data-dirty='true'] {
   color: var(--text);
 }
 
@@ -2724,6 +2747,28 @@ textarea {
   white-space: nowrap;
 }
 
+/*
+ * The unsaved dot, inside the name button and before the name.
+ *
+ * `inline-block` with a right margin rather than a flex gap, because the button is the
+ * ellipsing box: making it a flex container would stop `text-overflow` applying to the name,
+ * and a tab would grow instead of shortening.
+ *
+ * `currentColor` and NOT the accent. The accent is reserved for what a person is about to do,
+ * and this reports a state. It also means the dot is visible in `forced-colors`, where a
+ * background from a custom property is discarded but the text colour is the system's own —
+ * which matters because this is the mark that says work is not on disk yet.
+ */
+.m-tab-dot {
+  display: inline-block;
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+  margin-inline-end: var(--space-4);
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+}
+
 .m-tab-name:hover,
 .m-tab-name:focus-visible,
 .m-tab-close:hover,
@@ -3272,8 +3317,88 @@ textarea {
   gap: var(--space-8);
 }
 
+/*
+ * THE TOASTS (§10.4's `Toast`, landing with its first caller — the save confirmations).
+ *
+ * Fixed and anchored to the block-end corner, clear of the status bar's own height, so it sits
+ * over the document rather than inside the grid: a strip that took a grid row would move the
+ * whole page down each time a message arrived, which is a worse interruption than the message.
+ *
+ * `pointer-events: none` on the strip and `auto` on each toast, because the strip is ALWAYS
+ * mounted — an empty live region is what makes a screen reader announce the first message —
+ * and an invisible empty box over the corner of the document would swallow clicks on the page
+ * beneath it for the whole session.
+ */
+.m-toasts {
+  position: fixed;
+  inset-block-end: calc(var(--space-24) + var(--space-16));
+  inset-inline-end: var(--space-16);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  pointer-events: none;
+}
+
+.m-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  pointer-events: auto;
+  max-inline-size: 22rem;
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-16);
+  /* `--border-control` and NOT the decorative token, though a toast is not a control. In the
+     light theme `--surface` and `--page` are both #ffffff, so a toast floating over a page has
+     this outline and nothing else telling it from the paper underneath — the shadow is the
+     first thing a flat or forced-colors rendering drops. That makes the edge load-bearing for
+     legibility, which is the question ADR-0003's 3:1 grade actually asks, rather than whether
+     the thing it bounds can be clicked. */
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: var(--font-chrome-12);
+  animation: m-toast-in 160ms ease-out;
+}
+
+/* The outcome is carried by the ICON first — `CircleCheck` against `CircleAlert` — so the two
+   kinds are separable with no colour at all. The edge repeats it for a glance.
+
+   `--text` for a problem, not a red of its own: this token set declares no error role, and a
+   raw hex in a component is a lint error. That is `.m-status-problem`'s recorded decision and
+   this follows it rather than opening a second opinion about what an error looks like; adding
+   an error role is a change to all three themes and belongs with the rest of the token work. */
+.m-toast--done {
+  border-inline-start: 3px solid var(--accent);
+}
+
+.m-toast--problem {
+  border-inline-start: 3px solid var(--text);
+}
+
+.m-toast__message {
+  margin: 0;
+  /* WRAPS rather than ellipsing. A toast leaves after a few seconds, so a message cut short is
+     one nobody gets a second look at — the height is what gives here, not the words. */
+  overflow-wrap: anywhere;
+}
+
+@keyframes m-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-8));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-switch::after {
     transition: none;
+  }
+
+  /* The message still arrives and still leaves on its timer; only the movement goes. A toast
+     that stayed under reduced motion would be a different feature, and one that accumulates. */
+  .m-toast {
+    animation: none;
   }
 }
