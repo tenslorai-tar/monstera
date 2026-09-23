@@ -2,7 +2,7 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
-import { pdfiumWriter, replaceTextObjects, textObjectText } from './pdfiumFfi.js';
+import { editTextBlock, pdfiumWriter, replaceTextObjects, textObjectText } from './pdfiumFfi.js';
 
 /**
  * In-place text editing, as the bus calls it: **region replacement**.
@@ -174,4 +174,53 @@ export async function invertReplaceTextObject(
     await replaceTextObjects(session, inverse.page, inverse.objects);
     return pdfiumWriter.serialise(session);
   });
+}
+
+/**
+ * Edits one block of text in place and answers the document's new bytes
+ * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
+ *
+ * Everything the edit decides — which runs change, where a line breaks, where
+ * the new lines go — is `editTextBlock`'s in the adapter, on one loaded page:
+ * the diff must read the runs at the moment it writes them, and a read taken in
+ * a separate open would be a second reading of the page to diff against.
+ *
+ * A font that cannot carry what was typed throws `TextNotWritableError` before
+ * the page is generated, and this answers no bytes — so the document is exactly
+ * what it was.
+ */
+export async function applyEditTextBlock(
+  image: ByteImage,
+  command: CommandOfKind<'editTextBlock'>,
+): Promise<ByteImage> {
+  return onImage(image, async (session) => {
+    await editTextBlock(session, command.page, { lines: command.lines, text: command.text });
+    return pdfiumWriter.serialise(session);
+  });
+}
+
+/**
+ * Says why a block edit has no prior, so the bus takes a checkpoint.
+ *
+ * `captureDeletePageObjects`' reason: the edit can make and remove objects, and
+ * PDFium can describe an object and cannot rebuild one. A prior of the old
+ * strings would restore the text and keep the lines it made.
+ */
+export function captureEditTextBlock(): Promise<CaptureResult<never>> {
+  return Promise.resolve({
+    captured: false,
+    reason:
+      'a block edit can make and remove text objects, and PDFium cannot rebuild a removed one, ' +
+      'so the strings it changed are not enough to put the block back',
+  });
+}
+
+/**
+ * Unreachable, and required by `CommandSpec`'s shape: `CommandPrior.editTextBlock`
+ * is `never`, so nothing can construct an argument for it.
+ */
+export function invertEditTextBlock(): Promise<ByteImage> {
+  return Promise.reject(
+    new Error('editTextBlock has no inverse: its undo is a checkpoint, and no prior can be built for it.'),
+  );
 }

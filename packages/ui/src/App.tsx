@@ -54,7 +54,11 @@ import {
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
   detectFlatFieldsCommand,
-  replaceTextObjectCommand,
+  EDIT_TEXT_TOOL_ID,
+  commitTextBlock,
+  editTextCommand,
+  promoteTextOnPage,
+  reportProblem,
   editPageObjectCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
@@ -180,7 +184,6 @@ import { PAGE_TRANSITION_DIALOG } from './dialogs/pageTransition.js';
 import { RESIZE_PAGES_DIALOG } from './dialogs/resizePages.js';
 import { GENERATE_TOC_PROBLEM_DIALOG } from './dialogs/generateTocProblem.js';
 import { FLAT_FIELDS_DIALOG } from './dialogs/flatFields.js';
-import { REPLACE_TEXT_OBJECT_DIALOG } from './dialogs/replaceTextObject.js';
 import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG } from './dialogs/importAnnotationsProblem.js';
@@ -336,7 +339,7 @@ import { Ribbon } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
-import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
+import { dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
@@ -732,7 +735,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         PAGE_TRANSITION_DIALOG,
         RESIZE_PAGES_DIALOG,
         FLAT_FIELDS_DIALOG,
-        REPLACE_TEXT_OBJECT_DIALOG,
         EDIT_PAGE_OBJECT_DIALOG,
         IMPORT_FORM_DATA_PROBLEM_DIALOG,
         IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
@@ -2169,7 +2171,9 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         exportAnnotationsFdfCommand({ client, onApplied: applied, ask }),
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask }),
-        replaceTextObjectCommand({ client, onApplied: applied, ask }),
+        // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
+        // tool's command does, and `editing` below is what the mode draws.
+        editTextCommand({ activeTool: readTool, onSelect: setToolId }),
         editPageObjectCommand({ client, onApplied: applied, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
@@ -2340,6 +2344,51 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       selection,
     };
   }, [applied, ask, client, open, selection, toolId, tools]);
+
+  /**
+   * Edit text's mode on the document on show, or `undefined` when it is off
+   * (ADR-0096).
+   *
+   * ## The tool slot, not a slot of its own
+   *
+   * `EDIT_TEXT_TOOL_ID` lives in `toolId`, so choosing a drawing tool leaves
+   * the mode and choosing Edit text leaves the drawing tool — one question,
+   * *what does a press on the page do*, with one answer.
+   *
+   * ## A refused read says so ONCE, and leaves the mode
+   *
+   * Every visible page asks for its blocks, so a machine without the editing
+   * engine would otherwise raise the same sentence once per page. The first
+   * refusal is reported and the mode is left; the others see the mode gone.
+   */
+  const editing = useMemo<PageListProps['editing']>(() => {
+    if (toolId !== EDIT_TEXT_TOOL_ID || open === undefined) return undefined;
+    const { docId } = open;
+    /** Whether this mode has reported a refused read already — once per entry into it. */
+    const refusal = { reported: false };
+    const deps = { client, onApplied: applied, ask };
+    return {
+      version: open.version,
+      read: async (page) => {
+        const answer = await client['document.textBlocks']({ docId, page });
+        if (answer.ok) return answer.value;
+        if (!refusal.reported) {
+          refusal.reported = true;
+          reportProblem(deps, answer.error);
+          setToolId(undefined);
+        }
+        return undefined;
+      },
+      onCommit: (page, block, text, version) =>
+        commitTextBlock(deps, docId, page, block, text, version),
+      onPromote: (page) => {
+        void promoteTextOnPage(deps, docId, page);
+      },
+      onLeave: () => {
+        setToolId(undefined);
+      },
+    };
+  }, [applied, ask, client, open, toolId]);
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -2544,6 +2593,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           compareGoTo={compareGoTo}
           onCompareWentTo={compareWentTo}
           drawing={drawing}
+          editing={editing}
           others={tabs}
           onCompare={setCompareId}
           search={search ?? undefined}
@@ -2769,6 +2819,9 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext): void 
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      // A KEY THE FOCUSED FIELD ANSWERS ITSELF is left to it — `fieldOwnsChord`
+      // says which, once.
+      if (fieldOwnsChord(event.target, event)) return;
       if (dispatchChord(registry, map, event, context).kind === 'ran') {
         event.preventDefault();
       }
@@ -2891,6 +2944,7 @@ function PageCanvas({
   others,
   onCompare,
   drawing,
+  editing,
   search,
   secondRenderer,
   settings,
@@ -2946,6 +3000,8 @@ function PageCanvas({
   readonly onCompare: (docId: DocId | undefined) => void;
   /** The active tool and where its commands go. Both panes take it. */
   readonly drawing: PageListProps['drawing'];
+  /** Edit text's mode, or `undefined` when it is off. Both panes take it. */
+  readonly editing: PageListProps['editing'];
   /** What the find bar last answered, painted over both panes' text layers. */
   readonly search: SearchHighlight | undefined;
   /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
@@ -3190,6 +3246,7 @@ function PageCanvas({
         showGrid={showGrid}
         unit={unit}
         drawing={drawing}
+        editing={editing}
         search={search}
         // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
         // the only thing that decides. `PageList` falls back to PDF.js for an
@@ -3276,6 +3333,7 @@ function PageCanvas({
               // could not draw would be a surface where a selected tool
               // silently does nothing.
               drawing={drawing}
+              editing={editing}
               // BOTH PANES PAINT the same matches, for the same reason: it is
               // one document, and a split where the search highlighted one half
               // would read as the second pane showing a different document.

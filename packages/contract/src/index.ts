@@ -83,6 +83,10 @@ export {
   type SavedTurn,
   savedTurnSchema,
   savedTurnsSchema,
+  // WHAT AN EDITOR OVER A BLOCK IS SET IN (ADR-0096): the renderer reads it, and
+  // main's composition answers it, from one schema.
+  type TextBlockStyle,
+  textBlockStyleSchema,
 } from './channels.js';
 export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
@@ -199,6 +203,8 @@ export {
   type NamesASecondDocument,
   MAX_REPLACED_TEXT,
   MAX_TEXT_REPLACEMENTS,
+  MAX_BLOCK_LINES,
+  editTextBlockSchema,
   MAX_EDITED_OBJECTS,
   MAX_FIND_TEXT,
   MAX_OBJECT_SCALE,

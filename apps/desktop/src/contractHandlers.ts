@@ -342,7 +342,7 @@ export function createContractHandlers(deps: {
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
-    'document.textLines': textLinesHandler(deps.commands),
+    'document.textBlocks': textBlocksHandler(deps.commands),
     'document.pageObjects': pageObjectsHandler(deps.commands),
     'document.renderPage': renderPageHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
@@ -2105,14 +2105,14 @@ function flatFieldCandidatesHandler(
  * it matters MORE here — a surface asks this first, so it is where a person
  * finds out before being offered anything.
  */
-function textLinesHandler(commands: DocumentCommands): ContractHandlers['document.textLines'] {
+function textBlocksHandler(commands: DocumentCommands): ContractHandlers['document.textBlocks'] {
   return async ({
     docId,
     page,
-  }): Promise<Awaited<ReturnType<ContractHandlers['document.textLines']>>> => {
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.textBlocks']>>> => {
     try {
-      const { version, lines, truncated, unaddressable } = await commands.textLines(docId, page);
-      return ok({ version, lines, truncated, unaddressable });
+      const { version, blocks, truncated, rotated, unaddressable } = await commands.textBlocks(docId, page);
+      return ok({ version, blocks, truncated, rotated, unaddressable });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
@@ -2122,7 +2122,7 @@ function textLinesHandler(commands: DocumentCommands): ContractHandlers['documen
   };
 }
 
-/** {@link textLinesHandler}'s three refusals on the other PDFium read. */
+/** {@link textBlocksHandler}'s three refusals on the other PDFium read. */
 function pageObjectsHandler(commands: DocumentCommands): ContractHandlers['document.pageObjects'] {
   return async ({
     docId,

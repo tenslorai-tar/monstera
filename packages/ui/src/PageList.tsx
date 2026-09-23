@@ -8,6 +8,7 @@ import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
+import { type TextEditing, TextEditPage } from './TextEditLayer.js';
 import { TextLayer, type TextLayerLine } from './TextLayer.js';
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
@@ -187,6 +188,14 @@ export interface PageListProps {
    * `AnnotationOverlay`'s note says why a transparent element over every page
    * is worse than none.
    */
+  /**
+   * Edit text's mode, or `undefined` when it is off (ADR-0096).
+   *
+   * A sibling of {@link drawing} rather than a member of it, because the two
+   * never hold at once — they share one slot in the application, the tool id —
+   * and a surface that is not a gesture has nothing to put in `tool`.
+   */
+  readonly editing?: TextEditing | undefined;
   readonly drawing?:
     | {
         readonly tool: UiTool;
@@ -322,6 +331,7 @@ export function PageList({
   labelValues,
   startAt,
   drawing,
+  editing,
   search,
   secondRasteriser,
   pageMenu,
@@ -746,6 +756,9 @@ export function PageList({
           // estimate for layout, which is a different tolerance from a
           // coordinate system.
           drawing={sizes.has(page) ? drawing : undefined}
+          // GATED ON THE SLOT'S OWN MEASUREMENT for `drawing`'s reason: an outline
+          // placed with a neighbour's box would sit over the wrong words.
+          editing={sizes.has(page) ? editing : undefined}
           // THE SLOT'S OWN MEASUREMENT GATES THIS TOO, and for `drawing`'s
           // reason: a text layer placed with a neighbour's box would put every
           // line in the wrong frame, which reads as a selection that drifts
@@ -818,6 +831,7 @@ function PageSlot({
   renderZoom,
   onMeasured,
   drawing,
+  editing,
   text,
   kind,
   annotations,
@@ -834,6 +848,7 @@ function PageSlot({
   readonly renderZoom: number;
   readonly onMeasured: (page: number, measured: Measured) => void;
   readonly drawing: PageListProps['drawing'];
+  readonly editing: TextEditing | undefined;
   readonly text: readonly TextLayerLine[] | undefined;
   /** What the page is made of, or `undefined` before its text has arrived. */
   readonly kind: PageTextAnswer['kind'] | undefined;
@@ -978,6 +993,17 @@ function PageSlot({
       {annotations === undefined || size === undefined ? null : (
         <AnnotationLayer
           annotations={annotations}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
+        />
+      )}
+      {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text is
+          on, a press on an outlined block is the mode's, and nothing else holds
+          the pointer — the two modes share one slot and never mount together. */}
+      {editing === undefined || size === undefined ? null : (
+        <TextEditPage
+          canvas={canvas}
+          editing={editing}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           page={page}
         />

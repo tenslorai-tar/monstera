@@ -1,13 +1,13 @@
 /**
- * Turning one edited visual line back into the replacements a command carries.
+ * Turning one edited visual line back into the runs it rewrites.
  *
  * ## Why a diff exists at all, rather than "put the new text in the line"
  *
  * A visual line is several **text objects** — PDFium answers one rect per run,
  * measured, which is why the editor groups them at all
  * ([ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md))
- * — and each object carries its own font, size and colour. `replaceTextObject`
- * names objects, so an edit has to say *which* object now says what.
+ * — and each object carries its own font, size and colour. An edit writes
+ * objects, so it has to say *which* object now says what.
  *
  * The naive answer is to put the whole new string in the first object and empty
  * the rest. It is one line of code and it silently discards the formatting of
@@ -39,21 +39,28 @@
  * ## This is not a second extraction path
  *
  * ADR-0034's test is *does it read a coordinate to decide grouping?* Nothing
- * here reads a coordinate at all: the input is the runs a channel answered and
- * a string a person typed, and the output is that command's payload. The
- * grouping happened in main and its output reaches this dialog and nothing
- * else, which is the rule ADR-0049 makes checkable.
+ * here reads a coordinate at all: the input is a line's runs and a string a
+ * person typed, and the output is which runs now say what. The grouping happens
+ * in main and its output reaches the in-place editor and nothing else, which is
+ * the rule ADR-0049 makes checkable and ADR-0096 moved onto the page.
+ *
+ * ## Why it lives in `shared`
+ *
+ * The write is the kernel's — `editTextBlock` diffs each line against what the
+ * page says at the moment it applies — and the words a person is shown are the
+ * renderer's. Both need {@link lineText}, and a line's text joined two ways is
+ * two opinions about which character belongs to which object.
  */
 
-/** One run of a line, as `document.textLines` answers it. */
+/** One run of a line: an object, and what it says. */
 export interface LineRun {
   /** The object's index in the editing engine's own page-object order. */
   readonly index: number;
-  /** What it currently says. */
+  /** What it currently says, with the spaces PDFium infers between its words. */
   readonly text: string;
 }
 
-/** One entry of `replaceTextObject`'s payload. */
+/** One run's new text. */
 export interface RunReplacement {
   readonly index: number;
   readonly text: string;
@@ -105,12 +112,10 @@ function spans(runs: readonly LineRun[]): { start: number; end: number }[] {
 /**
  * The replacements that turn this line's runs into `next`.
  *
- * Answers an **empty list** when nothing changed, and the caller must not send
- * a command for one: `replaceTextObjectSchema` refuses an empty `replacements`,
- * because regenerating a page's content stream for no change is the whole cost
- * of an edit paid for nothing. An empty answer here is *there is nothing to
- * do*, which is a different thing from a refusal and is reported as a disabled
- * button rather than as an error.
+ * Answers an **empty list** when nothing changed, and the line is then not
+ * touched at all: regenerating a page's content stream for no change is the
+ * whole cost of an edit paid for nothing. An empty answer here is *there is
+ * nothing to do*, which is a different thing from a refusal.
  *
  * @param runs the line's runs, in reading order, as the read answered them
  * @param next what the person wants the line to say

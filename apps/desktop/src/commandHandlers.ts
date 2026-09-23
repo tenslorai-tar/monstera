@@ -3,6 +3,7 @@ import {
   DocumentBusyError,
   DocumentNotOpenError,
   StaleTargetError,
+  TextNotWritableError,
   UnregisteredWriterError,
 } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
@@ -93,6 +94,11 @@ export function executeCommandHandler(
       // renderer needs is that this installation cannot do it and the document
       // is untouched; which engine is missing is ours.
       if (thrown instanceof UnregisteredWriterError) return err({ code: 'engine-unavailable' });
+      // WHAT WAS TYPED, which the page's font cannot carry (ADR-0096). The edit
+      // was refused before the page was generated, so the document is exactly
+      // what it was; the person can type something else, and `internal` would
+      // send them to an incident log for a document working as made.
+      if (thrown instanceof TextNotWritableError) return err({ code: 'text-not-writable' });
       // A SERVICE'S ANSWER, from a region recognition's pre-read — an Anthropic account out of
       // credit, a key the service refused, a service that is down. Each is the reader's to act
       // on, and `internal` would send them to an incident log for an application working as

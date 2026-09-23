@@ -296,8 +296,24 @@ describe('main’s PDFium writer', () => {
   it('reads a page’s text runs through the same input write', async () => {
     const transfer = stubTransfer();
     const runs = [
-      { index: 1, text: 'ONE', bottom: 229.9, top: 238.0 },
-      { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
+      {
+        index: 1,
+        text: 'ONE',
+        bottom: 229.9,
+        top: 238.0,
+        left: 72.5,
+        right: 110.25,
+        style: { size: 11, colour: { r: 12, g: 34, b: 56 }, serif: true, mono: false, italic: true, bold: false, upright: true },
+      },
+      {
+        index: 3,
+        text: 'TWO',
+        bottom: 189.9,
+        top: 198.0,
+        left: 72.5,
+        right: 104.75,
+        style: { size: 9.5, colour: { r: 200, g: 0, b: 7 }, serif: false, mono: true, italic: false, bold: true, upright: false },
+      },
     ];
     const peer: Peer = {
       asked: [],

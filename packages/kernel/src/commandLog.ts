@@ -698,6 +698,12 @@ export interface CommandPrior {
    * what cannot be put back.
    */
   readonly promoteFormObjects: never;
+  /**
+   * `never`, `deletePageObjects`' reason: a block edit makes and removes
+   * objects, and PDFium cannot rebuild a removed one. The old strings alone
+   * would undo the text and keep the lines (ADR-0096 Decision 6).
+   */
+  readonly editTextBlock: never;
 }
 
 /**

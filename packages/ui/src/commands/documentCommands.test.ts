@@ -16,7 +16,11 @@ import {
   exportFormDataJsonCommand,
   exportFormDataXfdfCommand,
   detectFlatFieldsCommand,
-  replaceTextObjectCommand,
+  EDIT_TEXT_TOOL_ID,
+  type TextBlock,
+  commitTextBlock,
+  editTextCommand,
+  promoteTextOnPage,
   editPageObjectCommand,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
@@ -969,212 +973,166 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('REPLACE TEXT SENDS THE ENGINE’S OWN INDICES, and the version the LINES were read at', async () => {
-    // THE UI HALF OF THE WIRED PAIR for `replaceTextObject`. Its kernel half is
-    // `proof:pdfiumcommand`, which drives the real library and cannot see which
-    // numbers a control sends; this sees the numbers and cannot see a document.
-    //
-    // THREE of them are the point:
-    //
-    // - the INDICES are the ones `document.textLines` answered, unchanged. They
-    //   are PDFium's numbering of the page's objects, and the page's structured
-    //   text numbers runs differently — so a command that sent a POSITION (0 for
-    //   the first run of the first line) would agree with a page whose objects
-    //   happen to start at zero and be contiguous, and replace the wrong run on
-    //   every other page. The fixture's are `[4, 9]` and `[2]` for that reason.
-    // - the SECOND line is the one edited, and only the run its edit touched is
-    //   named. A command that sent every run of the chosen line, or every run on
-    //   the page, would pass an assertion about the text alone.
-    // - the VERSION is the read's, not the context's. They differ here (7
-    //   against the context's 1) because `#refuseIfStale` asks *is this the
-    //   document the list described*, and a command carrying the shell's current
-    //   version would answer that question with itself.
+  it('EDIT TEXT TURNS THE MODE ON, and off again — it opens no dialog and sends nothing', () => {
+    // A MODE IN THE TOOL SLOT (ADR-0096). The owner rejected the dialog this
+    // replaced; a command that still asked one, or read the page itself, would
+    // be the old workflow wearing the new name.
+    let active: string | undefined;
+    const command = editTextCommand({
+      activeTool: () => active,
+      onSelect: (id) => {
+        active = id;
+      },
+    });
+    void command.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_TOOL_ID);
+    void command.run(CONTEXT);
+    expect(active).toBeUndefined();
+    // CONTROL: from another tool it switches to Edit text rather than off.
+    active = 'annotate.rectangle';
+    void command.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_TOOL_ID);
+  });
+
+  /**
+   * A block as `document.textBlocks` answers one. The indices are non-contiguous
+   * and not from zero, so a write that sent a POSITION rather than the engine's
+   * own number would edit whatever the page's first objects happen to be.
+   */
+  const BLOCK: TextBlock = {
+    box: { x0: 72, y0: 660, x1: 300, y1: 711 },
+    lines: [
+      {
+        runs: [
+          { index: 4, text: 'The quick ' },
+          { index: 9, text: 'brown fox' },
+        ],
+        box: { x0: 72, y0: 700, x1: 300, y1: 711 },
+      },
+      { runs: [{ index: 2, text: 'jumps over' }], box: { x0: 72, y0: 686, x1: 190, y1: 697 } },
+    ],
+    style: { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false },
+  };
+
+  it('A BLOCK EDIT SENDS the block’s own indices, the words typed, and the version the BLOCKS were read at', async () => {
+    // THE UI HALF OF THE WIRED PAIR for `editTextBlock`. Its kernel half is
+    // `proof:pdfiumcommand`'s block cases, against the real library; this sees
+    // the numbers a surface sends and cannot see a document. The version is the
+    // read's (7) and not the tab's, because `#refuseIfStale` asks whether the
+    // page is the one the outlines described.
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      if (id === 'document.textLines') {
-        return Promise.resolve(
-          ok({
-            version: asDocVersion(7),
-            lines: [
-              {
-                runs: [
-                  { index: 4, text: 'The quick ' },
-                  { index: 9, text: 'brown fox' },
-                ],
-              },
-              { runs: [{ index: 2, text: 'jumps over' }] },
-            ],
-            truncated: false,
-            unaddressable: 0,
-          }),
-        );
-      }
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
     });
-
-    await replaceTextObjectCommand({
-      client,
-      onApplied: () => undefined,
-      // THE DIALOG'S OWN ANSWER, forwarded. The dialog is what holds the line's
-      // runs and the person's text, so the payload is built there; this asserts
-      // the command COPIES it, which a command that rebuilt the list from the
-      // read would not.
-      ask: () =>
-        Promise.resolve({ action: 'replace', replacements: [{ index: 9, text: 'brown dog' }] }),
-    }).run(CONTEXT);
-
+    const applied: Applied[] = [];
+    const outcome = await commitTextBlock(
+      { client, onApplied: (next) => applied.push(next), ask: () => Promise.resolve(undefined) },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown dog\njumps over',
+      asDocVersion(7),
+    );
+    expect(outcome).toBe('written');
     expect(sent).toStrictEqual([
-      { id: 'document.textLines', params: { docId: DOC, page: 3 } },
       {
         id: 'document.execute',
         params: {
           docId: DOC,
           command: {
-            kind: 'replaceTextObject',
-            // ZERO-BASED AND UNCONVERTED. `pageNumbering.ts` is the only place
-            // that turns a PDF.js page into a kernel one, and `context.page` is
-            // already the kernel's — a command applying `kernelPageOf` here
-            // would send 2 and edit the page above the one on screen.
+            kind: 'editTextBlock',
             page: 3,
-            replacements: [{ index: 9, text: 'brown dog' }],
+            lines: [[4, 9], [2]],
+            text: 'The quick brown dog\njumps over',
             version: 7,
           },
         },
       },
     ]);
+    expect(applied).toHaveLength(1);
   });
 
-  it('REPLACE TEXT OFFERS THE LINES IT WAS ANSWERED, runs and all', async () => {
-    // WHAT THE DIALOG IS HANDED, which the case above cannot see: it asserts the
-    // dispatch and would pass on a command that offered the chooser an empty
-    // list, since the answer is stubbed either way. A person choosing from
-    // nothing is the display-only defect one step in from the button.
-    //
-    // The runs travel because the command names OBJECTS: a dialog handed only
-    // the joined words could show them and could not say which object an edit
-    // touched.
-    let offered: unknown = null;
+  it('CONTROL: a block whose words did not change SENDS NOTHING', async () => {
+    // The words are compared by `lineText`, the rule the kernel diffs with. A
+    // commit that sent anyway would regenerate the page for no change — which
+    // the kernel refuses, so the person would meet a problem for clicking away.
+    const sent: string[] = [];
     const client = createClient(channels, (id) => {
-      if (id === 'document.textLines') {
-        return Promise.resolve(
-          ok({
-            version: asDocVersion(7),
-            lines: [{ runs: [{ index: 4, text: 'ONE ' }, { index: 9, text: 'TWO' }] }],
-            truncated: true,
-            // NON-ZERO, so the boolean the dialog is offered is `true` here and
-            // a command that hard-coded `false` fails. A zero would let the two
-            // be told apart by nothing.
-            unaddressable: 12,
-          }),
-        );
-      }
+      sent.push(id);
       return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
     });
-
-    await replaceTextObjectCommand({
-      client,
-      onApplied: () => undefined,
-      ask: (id, props) => {
-        expect(id).toBe('dialog.replace-text-object');
-        offered = props;
-        return Promise.resolve(undefined);
-      },
-    }).run(CONTEXT);
-
-    expect(offered).toStrictEqual({
-      lines: [{ runs: [{ index: 4, text: 'ONE ' }, { index: 9, text: 'TWO' }] }],
-      // THE CHARACTER COUNT BECAME A BOOLEAN, which is the conversion this
-      // command owns: a person needs *some of what you can see is not here*,
-      // and twelve characters answers a question nobody asked.
-      unaddressable: true,
-      // FORWARDED, not dropped. A reader choosing from a clipped list would pick
-      // from part of the page believing they had seen it.
-      truncated: true,
-    });
+    const outcome = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined) },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown fox\njumps over',
+      asDocVersion(7),
+    );
+    expect(outcome).toBe('unchanged');
+    expect(sent).toStrictEqual([]);
   });
 
-  it('PROMOTE dispatches the promotion and READS THE PAGE AGAIN, so the edit can follow', async () => {
-    // THE UI HALF OF NORMALIZE-THEN-EDIT's pair. Its kernel half is
-    // `proof:pdfiumcommand`'s six promotion cases, which drive the real library
-    // and cannot see which command a control sends.
-    //
-    // The loop is the property under test, not the dispatch: a person presses
-    // *unpack* in order to edit the text that appears, and a `run` that
-    // promoted and returned would leave them to open the dialog again. So the
-    // second read is asserted, and the second dialog is answered with a
-    // replacement whose object index only EXISTS after the promotion.
-    let asked = 0;
-    /** @type {unknown[]} */
+  it('A FONT THAT CANNOT CARRY THE WORDS is the editor’s to say — no dialog opens for it', async () => {
+    const asked: string[] = [];
+    const client = createClient(channels, () => Promise.resolve(err({ code: 'text-not-writable' as const })));
+    const outcome = await commitTextBlock(
+      {
+        client,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(undefined);
+        },
+      },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown 中',
+      asDocVersion(7),
+    );
+    expect(outcome).toBe('not-writable');
+    expect(asked).toStrictEqual([]);
+  });
+
+  it('UNPACK sends the promotion for the PAGE the note is on, with no version', async () => {
+    // THE UI HALF OF NORMALIZE-THEN-EDIT's pair, on the page now rather than in a
+    // dialog. Its kernel half is `proof:pdfiumcommand`'s promotion cases. The page
+    // is 3 and zero-based, and no conversion happens here.
     const sent: unknown[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      if (id === 'document.textLines') {
-        // THE PAGE CHANGES BETWEEN THE READS, which is what a promotion does.
-        // Before it, one line and text nothing can name; after it, two lines
-        // and nothing unaddressable.
-        return Promise.resolve(
-          asked++ === 0
-            ? ok({
-                version: asDocVersion(7),
-                lines: [{ runs: [{ index: 0, text: 'ON THE PAGE' }] }],
-                truncated: false,
-                unaddressable: 36,
-              })
-            : ok({
-                version: asDocVersion(8),
-                lines: [
-                  { runs: [{ index: 0, text: 'ON THE PAGE' }] },
-                  { runs: [{ index: 1, text: 'WAS IN A BLOCK' }] },
-                ],
-                truncated: false,
-                unaddressable: 0,
-              }),
-        );
-      }
-      return Promise.resolve(ok({ version: asDocVersion(9), byteLength: 10, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
     });
-
-    let answered = 0;
-    await replaceTextObjectCommand({
-      client,
-      onApplied: () => undefined,
-      ask: () =>
-        Promise.resolve(
-          answered++ === 0
-            ? { action: 'promote' }
-            : { action: 'replace', replacements: [{ index: 1, text: 'NOW EDITABLE' }] },
-        ),
-    }).run(CONTEXT);
-
+    await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined) }, DOC, 3);
     expect(sent).toStrictEqual([
-      { id: 'document.textLines', params: { docId: DOC, page: 3 } },
+      { id: 'document.execute', params: { docId: DOC, command: { kind: 'promoteFormObjects', page: 3 } } },
+    ]);
+  });
+
+  it('CONTROL: any OTHER refusal goes where every refusal goes', async () => {
+    // Without this the case above passes on a commit that swallowed every
+    // refusal — which is the silent control this project calls a defect.
+    const asked: string[] = [];
+    const client = createClient(channels, () => Promise.resolve(err({ code: 'stale-target' as const })));
+    const outcome = await commitTextBlock(
       {
-        id: 'document.execute',
-        // NO VERSION ON THE PROMOTION, which is the command's declaration and
-        // not an omission: it names a page and every form on it, so there is no
-        // index a stale version could point at. A payload carrying one would be
-        // refused by the schema.
-        params: { docId: DOC, command: { kind: 'promoteFormObjects', page: 3 } },
-      },
-      { id: 'document.textLines', params: { docId: DOC, page: 3 } },
-      {
-        id: 'document.execute',
-        params: {
-          docId: DOC,
-          command: {
-            kind: 'replaceTextObject',
-            page: 3,
-            replacements: [{ index: 1, text: 'NOW EDITABLE' }],
-            // THE SECOND READ'S VERSION. A command carrying 7 here would name
-            // objects from the list the promotion has already moved past —
-            // which is exactly why the promotion is its own command rather than
-            // a step inside this one.
-            version: 8,
-          },
+        client,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(undefined);
         },
       },
-    ]);
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown dog',
+      asDocVersion(7),
+    );
+    expect(outcome).toBe('refused');
+    expect(asked).toStrictEqual(['dialog.command-problem']);
   });
 
   it('EDIT OBJECT DISPATCHES ONE OF THREE COMMANDS, by what the dialog answered', async () => {
@@ -1318,62 +1276,6 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
     expect(absent).toStrictEqual(['document.pageObjects']);
-    expect(asked).toBe(1);
-  });
-
-  it('REPLACE TEXT SENDS NOTHING when the chooser is dismissed', async () => {
-    // The mutation-dialog gate on a DESTRUCTIVE command, which is where it
-    // matters most: this one overwrites text rather than adding something the
-    // reader can see and remove.
-    const sent: string[] = [];
-    const client = createClient(channels, (id) => {
-      sent.push(id);
-      return Promise.resolve(
-        ok({
-          version: asDocVersion(1),
-          lines: [{ runs: [{ index: 2, text: 'SOMETHING' }] }],
-          truncated: false,
-          unaddressable: 0,
-        }),
-      );
-    });
-
-    await replaceTextObjectCommand({
-      client,
-      onApplied: () => undefined,
-      ask: () => Promise.resolve(undefined),
-    }).run(CONTEXT);
-
-    expect(sent).toStrictEqual(['document.textLines']);
-  });
-
-  it('REPLACE TEXT SENDS NOTHING when the machine has no editing engine', async () => {
-    // THE STATE MOST MACHINES ARE IN, and the one that separates *reported* from
-    // *silent*: `document.textLines` answers `engine-unavailable` where PDFium
-    // was never provisioned, and the command must stop there — asking the dialog
-    // for a choice among no lines, or dispatching anyway, are both worse than
-    // the sentence.
-    let asked = 0;
-    const sent: string[] = [];
-    const client = createClient(channels, (id) => {
-      sent.push(id);
-      return Promise.resolve(err({ code: 'engine-unavailable' as const }));
-    });
-
-    await replaceTextObjectCommand({
-      client,
-      onApplied: () => undefined,
-      ask: (id) => {
-        asked += 1;
-        // THE PROBLEM DIALOG AND NOT THE CHOOSER, asserted by id rather than by
-        // a count alone: `reportProblem` opening is the difference between a
-        // refusal a person meets and a control that did nothing.
-        expect(id).toBe('dialog.command-problem');
-        return Promise.resolve(undefined);
-      },
-    }).run(CONTEXT);
-
-    expect(sent).toStrictEqual(['document.textLines']);
     expect(asked).toBe(1);
   });
 

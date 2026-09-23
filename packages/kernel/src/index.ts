@@ -280,11 +280,23 @@ export {
   remotePdfiumWriter,
 } from './host/remotePdfium.js';
 // THE GROUPING, and it is on the BARREL rather than behind `pdfium.ts` because
-// it binds no engine: it takes runs and answers lines, and `proof:kernelload`'s
+// it binds no engine: it takes runs and answers blocks, and `proof:kernelload`'s
 // rule is about what a specifier LOADS. Main is its one caller — the
-// composition point that feeds `document.textLines` — which is what ADR-0049's
-// *does its output reach any consumer other than a dialog?* is asked of.
-export { type EditableLine, type GroupableRun, groupIntoLines } from './textLines.js';
+// composition point that feeds `document.textBlocks` — which is what ADR-0049's
+// *does its output reach any consumer other than the in-place editor?* is asked
+// of (ADR-0096).
+export {
+  type BlockBox,
+  type BlockableRun,
+  type EditableBlock,
+  type EditableLine,
+  type GroupableRun,
+  groupIntoBlocks,
+  groupIntoLines,
+} from './textLines.js';
+// THE REFUSAL, from a module that imports nothing, so main can name it without
+// loading the engine that throws it (`signingRefusals.ts`' shape).
+export { TextNotWritableError } from './textEditRefusals.js';
 export type { RegionRequest } from './pageSnapshot.js';
 export {
   EngineCallFailed,

@@ -118,8 +118,8 @@ function numberFrom(text: string): number | null {
  *
  * ## NOTHING IS PRESELECTED
  *
- * `ReplaceTextObjectBody`'s rule and its reason: every option is equally likely
- * and two of the three actions are destructive, so an apply that landed on
+ * Every option is equally likely and two of the three actions are destructive,
+ * so an apply that landed on
  * whichever object happened to be first would be one keystroke from changing
  * something the reader never looked at.
  *

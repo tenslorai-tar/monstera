@@ -2,6 +2,8 @@ import type { Handlers } from '@monstera/contract';
 
 import type { CommandExecution } from '../commandRouting.js';
 import type { ByteImage } from '../engineSeam.js';
+import type { TextRun } from '../pdfiumFfi.js';
+import { TextNotWritableError } from '../textEditRefusals.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
 import {
@@ -72,12 +74,8 @@ export type HostTextRunsReader = (
   image: ByteImage,
   page: number,
 ) => Promise<{
-  readonly runs: readonly {
-    readonly index: number;
-    readonly text: string;
-    readonly bottom: number;
-    readonly top: number;
-  }[];
+  /** `pdfiumFfi.ts`' own type, named by an erased import so no binding loads here. */
+  readonly runs: readonly TextRun[];
   readonly truncated: boolean;
   /** Characters whose object the page's walk does not contain. `PageText`. */
   readonly unaddressable: number;
@@ -292,6 +290,9 @@ export function createPdfiumHandlers({
         // of one.
         applied = await execution.apply({ session: image, command, source: undefined, reads: undefined });
       } catch (error) {
+        // THE PERSON'S TO ACT ON, so its own code: main says it in a sentence,
+        // where `engine-refused` is a document this engine could not work with.
+        if (error instanceof TextNotWritableError) return failed('text-not-writable', error);
         return failed('engine-refused', error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, applied);

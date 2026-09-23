@@ -1944,6 +1944,35 @@ const declarations = {
     // equivalent. Declaring it would name a mechanism that cannot run.
     purpose: 'ordinary',
   },
+  editTextBlock: {
+    kind: 'editTextBlock',
+    display: 'image',
+    writer: 'pdfium',
+    // NOT INVERTIBLE, `deletePageObjects`' reason and the fifth command to take
+    // it ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)
+    // Decision 6). A block edit can make lines the page did not have and remove
+    // lines a person deleted, and PDFium can describe an object and cannot
+    // rebuild one. A prior of the old strings would restore the set text and
+    // leave the made lines and the removed ones — an undo that restores half an
+    // edit. Undo takes a checkpoint.
+    invertible: false,
+    undo: 'checkpoint',
+    // THE SAME TEXT AGAINST THE SAME BYTES LAYS OUT THE SAME WAY: the widths
+    // come from PDFium's layout of the objects written, and nothing mints an
+    // identifier or reads the clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // IT NAMES OBJECTS BY PDFIUM'S INDEX, which is the walk `replaceTextObject`
+    // names — so its version is checked against the read that produced them.
+    targets: 'text-object',
+    reads: 'none',
+    asset: 'none',
+    // IT REMOVES the lines a person deleted, and `'removal'` is still wrong for
+    // `deletePageObjects`' reason: that axis selects MuPDF's collecting save,
+    // and `FPDF_SaveAsCopy` has none.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

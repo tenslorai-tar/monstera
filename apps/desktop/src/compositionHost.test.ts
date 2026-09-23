@@ -996,6 +996,52 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(1);
   });
 
+  it('routes editTextBlock to the PDFium host, and its "font cannot carry it" refusal reaches the renderer BY NAME', async () => {
+    // THE STRETCH NEITHER HALF OF THE PAIR CROSSES (ADR-0096): the kernel proof
+    // throws `TextNotWritableError` in-process, and the UI case stubs the whole
+    // kernel. Between them sit the host's code, main's `answered`, and the
+    // execute handler's mapping — and a break anywhere there turns a sentence a
+    // person can act on into `internal` with an incident id.
+    const run = async (applyAnswer: 'bytes' | 'text-not-writable') => {
+      const mupdf = platformAnswering(serialisingEngine());
+      const base = pdfiumPeer();
+      const pdfium: FakePeer = (channel, params) => {
+        if (channel === 'engine/capture') {
+          // TERMINAL, as the declaration says, so the bus checkpoints and applies.
+          return { ok: true, value: { captured: false, reason: 'a block edit has no prior' } };
+        }
+        if (channel === 'engine/apply' && applyAnswer === 'text-not-writable') {
+          return { ok: false, error: { code: 'text-not-writable' } };
+        }
+        return base.peer(channel, params);
+      };
+      const second = platformAnswering(pdfium);
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument('edited.pdf')),
+        enginePlatform: mupdf.platform,
+        pdfiumPlatform: second.platform,
+      });
+      const opened = await handlers['document.open']({});
+      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+      const executed = await handlers['document.execute']({
+        docId: opened.value.docId,
+        command: { kind: 'editTextBlock', page: 0, lines: [[2, 4], [7]], text: 'new words', version: opened.value.version },
+      });
+      return { executed, second, mupdf, version: opened.value.version };
+    };
+
+    const written = await run('bytes');
+    expect(written.executed.ok, JSON.stringify(written.executed)).toBe(true);
+    expect(written.second.harness.calls).toContain('peer.request:engine/apply');
+    expect(written.mupdf.harness.calls).not.toContain('peer.request:engine/apply');
+
+    const refused = await run('text-not-writable');
+    // BY NAME: not `internal`, which is what an unmapped engine refusal becomes.
+    expect(refused.executed).toStrictEqual({ ok: false, error: { code: 'text-not-writable' } });
+  });
+
   it('answers engine-unavailable when there is no PDFium platform', async () => {
     // THE CONTROL, and it is the state most machines are in: no `pdfium.dll`,
     // so no host, so no registration. The refusal must come from the ROUTE —

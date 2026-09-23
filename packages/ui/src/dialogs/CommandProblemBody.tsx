@@ -18,6 +18,7 @@ import {
   PROBLEM_POISONED,
   PROBLEM_REFERENCE_LABEL,
   PROBLEM_STALE_TARGET,
+  TEXT_EDIT_NOT_WRITABLE,
 } from '../messages/en.js';
 
 /** Every failure code a document command can hand a renderer. */
@@ -29,6 +30,7 @@ export type CommandProblem =
   | { readonly code: 'engine-unavailable' }
   | { readonly code: 'raster-too-large' }
   | { readonly code: 'not-copyable' }
+  | { readonly code: 'text-not-writable' }
   | { readonly code: (typeof SERVICE_PROBLEMS)[number] }
   | { readonly code: 'internal'; readonly incident: string };
 
@@ -48,6 +50,7 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'engine-unavailable': PROBLEM_ENGINE_UNAVAILABLE,
   'raster-too-large': PROBLEM_RASTER_TOO_LARGE,
   'not-copyable': PROBLEM_NOT_COPYABLE,
+  'text-not-writable': TEXT_EDIT_NOT_WRITABLE,
   'service-no-key': PROBLEM_SERVICE_NO_KEY,
   'service-unauthorised': PROBLEM_SERVICE_UNAUTHORISED,
   'service-out-of-credit': ANTHROPIC_OUT_OF_CREDIT,

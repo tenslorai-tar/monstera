@@ -130,13 +130,13 @@ function importAnnotationsCommand(
  * is a control that does nothing — and it is `hasCopied` that is asked, not main, since the
  * renderer is told the count by every copy it made.
  *
- * ## NO Ctrl+V, deliberately
+ * ## NO Ctrl+V yet, and the reason it gave has been answered
  *
- * `useShortcuts` listens on the document and has no rule for a focused text field, so a claimed
- * Ctrl+V would take the key from every input in the application — the find bar, a dialog's field,
- * the assistant's composer — from the moment a person had copied a mark. Paste stays on the page
- * menu and the palette until the dispatcher learns to leave editable targets alone, which is its
- * own change with its own cases.
+ * `useShortcuts` listens on the document, and a claimed Ctrl+V used to take the key from every
+ * input in the application. Since 2026-09-23 the dispatcher leaves a text field the keys it answers
+ * itself (`fieldOwnsChord`, Ctrl+V among them), so that objection no longer holds. What remains is
+ * a choice nobody has made: Ctrl+V on the page meaning *paste the marks I copied* rather than
+ * nothing. It stays on the page menu and the palette until that is decided.
  */
 export function pasteAnnotationsCommand(
   deps: DocumentCommandDeps & { readonly hasCopied: () => boolean },

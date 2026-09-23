@@ -1,13 +1,16 @@
 import type {
   AnnotationRect,
+  ChannelResult,
+  Channels,
   ContractClient,
+  FailureOf,
   FormDataFormat,
   FormDataImportFormat,
   OptimizeSetting,
   RenderableCommand,
   SignaturePlacement,
 } from '@monstera/contract';
-import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
+import { type DocId, type DocVersion, type Failure, type MessageKey, lineText } from '@monstera/shared';
 
 import type { z } from 'zod';
 
@@ -40,8 +43,6 @@ import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
-import { REPLACE_TEXT_OBJECT_DIALOG_ID } from '../dialogs/replaceTextObject.js';
-import type { ReplaceTextObjectAnswer } from '../dialogs/replaceTextObjectResult.js';
 import { EDIT_PAGE_OBJECT_DIALOG_ID } from '../dialogs/editPageObject.js';
 import type { EditPageObjectAnswer } from '../dialogs/editPageObjectResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
@@ -94,7 +95,7 @@ import {
   GROUP_MARKS,
   GROUP_PAGES,
   GROUP_TEXT,
-  REPLACE_TEXT_OBJECT_COMMAND_TITLE,
+  EDIT_TEXT_COMMAND_TITLE,
   EDIT_PAGE_OBJECT_COMMAND_TITLE,
   PROTECT_DOCUMENT_COMMAND_TITLE,
   APPLY_REDACTIONS_COMMAND_TITLE,
@@ -415,6 +416,16 @@ export async function applyDocumentCommand(
   // be written that sends one. The type is the mechanism — no runtime check
   // here refuses it, because none can be reached.
   command: RenderableCommand,
+  options: {
+    /**
+     * A refusal the CALLER says in its own place, answering `true` for the ones
+     * it keeps. The in-place editor keeps `text-not-writable`, which it says
+     * beside the words that caused it; every other refusal is reported here as
+     * always. A hook rather than a second dispatcher, so the other three things
+     * this function does stay done once.
+     */
+    readonly keep?: (error: Failure<FailureOf<Channels, 'document.execute'>>) => boolean;
+  } = {},
 ): Promise<boolean> {
   const answer = await deps.client['document.execute']({ docId, command });
 
@@ -422,7 +433,7 @@ export async function applyDocumentCommand(
   // `rotatePageCommand`, whose comment this behaviour was extracted from. It is
   // still REPORTED: a refusal nobody renders is a control that did nothing.
   if (!answer.ok) {
-    reportProblem(deps, answer.error);
+    if (options.keep?.(answer.error) !== true) reportProblem(deps, answer.error);
     return false;
   }
   deps.onApplied(answer.value);
@@ -2911,118 +2922,129 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
 }
 
 /**
- * Edits a line of text on the page in view, in place.
+ * The mode id Edit text sets, in the one slot a document has for "what the
+ * pointer does on the page" — the drawing tools' slot.
  *
- * ## `detectFlatFieldsCommand`'s order — ask, review, then ONE command
+ * **The same slot, deliberately.** Editing text in place and drawing a
+ * rectangle both decide what a press on the page means, and two slots would let
+ * both be on at once, with a press going to whichever surface happened to be
+ * on top. One slot makes *choosing one leaves the other* structural.
+ */
+export const EDIT_TEXT_TOOL_ID = 'text.edit';
+
+/**
+ * Edit text: every editable block on the page outlined in place, and edited
+ * where it is ([ADR-0096](../../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
  *
- * The read is `document.textLines`, the review is the dialog, and the apply is
- * a single `replaceTextObject` — one command however many objects the line
- * turned out to be, because a content stream is regenerated once per command
- * and a person who edited one line expects one undo. What is different from
- * every other command in this file is which engine answers: this is the only UI
- * command whose read and whose write both go to PDFium, and the indices it
- * carries are that engine's own numbering of the page's objects.
+ * ## A MODE, not a dialog
  *
- * ## THE INDEX IS NEVER DERIVED HERE, and that is the whole of the frames rule
- *
- * `pageNumbering.ts` exists because a rotate reached the engine for page 2 while
- * the renderer displayed page 1, and both halves of the pair were green in their
- * own frame. The same trap is one step worse for an object index, because there
- * is no *shown* value to disagree with: the page's structured text
- * (`document.pageTextLayer`, MuPDF's) numbers runs differently from the page's
- * object list (PDFium's), and a number taken from the first and sent as the
- * second replaces text nobody chose — silently, with an undo that restores what
- * the user did not mean to change.
- *
- * So the index makes a round trip and no arithmetic: the channel answers it
- * inside a line, the dialog offers the line's words, and the answer carries the
- * same indices back. `lineEdit.ts` decides *which of them* an edit touched and
- * copies them; it computes no index and reads no coordinate. **The page,
- * meanwhile, is `context.page` and is already zero-based** — `pageNumbering.ts`
- * is the only place that converts, and there is nothing to convert here.
- *
- * ## The VERSION rides on the payload because this command TARGETS
- *
- * `commandDeclarations.ts` gives `replaceTextObject` `targets: 'text-object'`,
- * so `CommandBus.#refuseIfStale` requires a version and calls a targeting
- * command without one a registration defect rather than a race.
+ * The owner rejected the line-picking dialog this replaced — *"what if the page
+ * is full of text, how do you rightly list that on a dialog box?"* — and the
+ * standard is a person clicking the words they are looking at. So this command
+ * does what a drawing tool's command does: it turns a mode on, or off again.
+ * `TextEditLayer` is what the mode draws on each page, and {@link commitTextBlock}
+ * is the one way an edit leaves it.
  *
  * ## A machine with no editing engine meets a SENTENCE
  *
- * Both the read and the write answer `engine-unavailable` where PDFium was never
- * provisioned, and `reportProblem` renders it. The command is still REGISTERED
- * there, deliberately: `when` hides what does not exist *yet*, and this exists —
- * what is absent is an engine on this installation, which is the same state a
- * document with no host is in for every other command in this file.
+ * The blocks read answers `engine-unavailable` where PDFium was never
+ * provisioned, and the layer reports it through `reportProblem` once, then
+ * leaves the mode. The command is still registered there, deliberately: `when`
+ * hides what does not exist *yet*, and this exists — what is absent is an
+ * engine on this installation.
  */
-export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
+export function editTextCommand(deps: {
+  readonly activeTool: () => string | undefined;
+  readonly onSelect: (id: string | undefined) => void;
+}): UiCommand {
   return {
-    id: 'document.replace-text-object',
+    id: EDIT_TEXT_TOOL_ID,
     icon: 'Type',
-    title: REPLACE_TEXT_OBJECT_COMMAND_TITLE,
+    title: EDIT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_TEXT,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
     when: hasDocument,
-    run: async (context): Promise<void> => {
-      const { docId, page } = context;
-      if (docId === undefined || page === undefined) return;
-
-      // A LOOP, because ONE of the two answers changes what the next read says.
-      //
-      // Promoting a page makes its blocked-in text addressable, and the person
-      // asked for it in order to edit that text — so closing the dialog and
-      // making them press Edit again would be the application knowing what they
-      // wanted and not doing it. The loop is bounded by the read rather than by
-      // a counter: after a promotion the page carries no form, `unaddressable`
-      // is zero, and the dialog no longer offers the button that gets here.
-      for (;;) {
-        const found = await deps.client['document.textLines']({ docId, page });
-        if (!found.ok) {
-          reportProblem(deps, found.error);
-          return;
-        }
-
-        const chosen = (await deps.ask(REPLACE_TEXT_OBJECT_DIALOG_ID, {
-          lines: found.value.lines.map((line) => ({ runs: [...line.runs] })),
-          truncated: found.value.truncated,
-          // WHETHER, NOT HOW MANY. The channel answers a character count because
-          // that is what it can honestly measure; a person needs to know that
-          // some of what they can see is not on the list, and a number of
-          // CHARACTERS answers a question nobody asked.
-          unaddressable: found.value.unaddressable > 0,
-        })) as ReplaceTextObjectAnswer | undefined;
-        // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
-        // absence of a value is the guard rather than a flag beside it.
-        if (chosen === undefined) return;
-
-        if (chosen.action === 'promote') {
-          // NO VERSION, and that is the command's own declaration rather than an
-          // omission here: a promotion names a page and every form on it, so
-          // there is no index for a stale version to point at.
-          await applyDocumentCommand(deps, docId, { kind: 'promoteFormObjects', page });
-          continue;
-        }
-
-        await applyDocumentCommand(deps, docId, {
-          kind: 'replaceTextObject',
-          page,
-          // COPIED FROM THE DIALOG'S ANSWER, unchanged. The dialog holds both
-          // the line's runs and what the person typed, so it is the only place
-          // that can say which objects an edit touched; `lineEdit.ts` is the
-          // whole of what sits between the read and this payload, and it reads
-          // no coordinate and computes no index.
-          replacements: chosen.replacements,
-          // THE READ'S VERSION, not the shell's, and the difference is the whole
-          // point of the check. `context.version` is what the tab holds now;
-          // this is the document the INDICES describe. A command carrying the
-          // newer of the two would name an object from a list the document has
-          // already moved past, and nothing would refuse it.
-          version: found.value.version,
-        });
-        return;
-      }
+    run: (): void => {
+      // READ THROUGH THE FUNCTION, `toolCommand`'s rule: the command is built
+      // once, and a captured id would toggle against whatever was active then.
+      deps.onSelect(deps.activeTool() === EDIT_TEXT_TOOL_ID ? undefined : EDIT_TEXT_TOOL_ID);
     },
   };
+}
+
+/**
+ * Unpacks a page's blocked-in text so it can be edited — normalize-then-edit,
+ * offered by the page's note in Edit text's mode.
+ *
+ * NO VERSION: a promotion names a page and every form on it, so there is no
+ * index for a stale version to point at. The page is read again by itself — the
+ * version moves, and the mode reads a moved page's blocks afresh — so the text
+ * that was packed is outlined next without a second press.
+ */
+export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId, page: number): Promise<boolean> {
+  return applyDocumentCommand(deps, docId, { kind: 'promoteFormObjects', page });
+}
+
+/** One block as `document.textBlocks` answers it. */
+export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
+
+/** How writing one block ended, as far as the editor over it has to act. */
+export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'refused';
+
+/**
+ * Writes one block's new words: `editTextBlock`, through the one dispatcher.
+ *
+ * ## The block AS READ, and the version it was read at
+ *
+ * The lines are the indices `document.textBlocks` answered, unchanged — PDFium's
+ * own numbering, which the page's structured text does not share, so an index
+ * derived here would edit text nobody chose. The version is the read's, so
+ * `#refuseIfStale` asks *is this the page the outline described*.
+ *
+ * ## An edit that changed nothing sends nothing
+ *
+ * Regenerating a page's content stream for no change is the whole cost of an
+ * edit paid for nothing, and the kernel refuses it. The words are compared with
+ * `lineText` — the rule the kernel diffs with — so *unchanged* here and there
+ * are one opinion.
+ *
+ * ## `text-not-writable` is the EDITOR's to say
+ *
+ * The page's font cannot carry what was typed; the editor stays open with the
+ * words and says so beside them, where the person can change them. Every other
+ * refusal goes where every refusal goes.
+ */
+export async function commitTextBlock(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  block: TextBlock,
+  text: string,
+  version: DocVersion,
+): Promise<BlockCommit> {
+  const before = block.lines.map((line) => lineText(line.runs)).join('\n');
+  if (text === before) return 'unchanged';
+  /** Set by the hook below when the refusal kept was the font's. */
+  const kept: { unwritable: boolean } = { unwritable: false };
+  const applied = await applyDocumentCommand(
+    deps,
+    docId,
+    {
+      kind: 'editTextBlock',
+      page,
+      lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+      text,
+      version,
+    },
+    {
+      keep: (error) => {
+        kept.unwritable = error.code === 'text-not-writable';
+        return kept.unwritable;
+      },
+    },
+  );
+  if (applied) return 'written';
+  return kept.unwritable ? 'not-writable' : 'refused';
 }
 
 /**
@@ -3045,9 +3067,8 @@ export function replaceTextObjectCommand(deps: DocumentCommandDeps): UiCommand {
  *
  * ## THE INDEX IS NEVER DERIVED HERE
  *
- * `replaceTextObjectCommand`'s rule and its reason unchanged: the channel
- * answers the index, the dialog offers it, the dialog returns it, and it is
- * sent. `document.pageObjects` is one of the only two sources of a PDFium index
+ * `commitTextBlock`'s rule and its reason unchanged: the channel answers the
+ * index, the dialog offers it, the dialog returns it, and it is sent. `document.pageObjects` is one of the only two sources of a PDFium index
  * a renderer may use, and the page's structured text is not one of them.
  *
  * ## The VERSION is the READ's

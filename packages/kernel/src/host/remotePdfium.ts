@@ -8,6 +8,8 @@ import type {
 } from '../commandRouting.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
+import type { TextRun } from '../pdfiumFfi.js';
+import { TextNotWritableError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
 import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
@@ -104,6 +106,9 @@ function answered<T>(
 ): T {
   if (result.ok) return result.value;
   if (result.error.code === 'no-such-session') throw new EngineSessionGone(channel);
+  // THE SAME CLASS THE LOCAL WRITER THROWS, so main's answer to a font that
+  // cannot carry the typed text does not depend on which process applied it.
+  if (result.error.code === 'text-not-writable') throw new TextNotWritableError();
   throw new EngineCallFailed(channel, result.error.code);
 }
 
@@ -294,21 +299,16 @@ export function remotePdfiumWriter(
  * asked things about, and it pays the same input write every call here does.
  *
  * **It does not group them.** What comes back is the engine's own reading, run
- * by run; turning that into visual lines is `textLines.ts`' job in main, which
- * is where ADR-0049's rule about where a grouping's output may go can be read
- * off one module.
+ * by run; turning that into blocks is `textLines.ts`' job in main, which is
+ * where ADR-0049's rule about where a grouping's output may go — the in-place
+ * editor and nothing else, since ADR-0096 — can be read off one module.
  */
 export function remotePdfiumTextRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
 ): (image: ByteImage, page: number) => Promise<{
-  readonly runs: readonly {
-    readonly index: number;
-    readonly text: string;
-    readonly bottom: number;
-    readonly top: number;
-  }[];
+  readonly runs: readonly TextRun[];
   readonly truncated: boolean;
   readonly unaddressable: number;
 }> {

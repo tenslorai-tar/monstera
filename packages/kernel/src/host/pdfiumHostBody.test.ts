@@ -104,6 +104,31 @@ const AREA = { snapshotDirectory: 'C:\\snap', outputDirectory: 'C:\\out' };
  * its diagnostic by design, so a case reading only the wire cannot tell a
  * handler that threw from a message that never reached one.
  */
+/**
+ * Two runs as the reader answers them. Every field is away from its type's zero — the style's
+ * colour and flags included — so a handler that dropped one would not pass by accident.
+ */
+const RUNS = [
+  {
+    index: 1,
+    text: 'ONE',
+    bottom: 229.9,
+    top: 238.0,
+    left: 72.5,
+    right: 110.25,
+    style: { size: 11, colour: { r: 12, g: 34, b: 56 }, serif: true, mono: false, italic: true, bold: false, upright: true },
+  },
+  {
+    index: 3,
+    text: 'TWO',
+    bottom: 189.9,
+    top: 198.0,
+    left: 72.5,
+    right: 104.75,
+    style: { size: 9.5, colour: { r: 200, g: 0, b: 7 }, serif: false, mono: true, italic: false, bold: true, upright: false },
+  },
+];
+
 const IN = 'deadbeef';
 const OUT = 'cafe-01';
 
@@ -162,10 +187,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
     textRuns: (image, page) => {
       calls.push(`text-runs:${String(page)}:${[...image].join(',')}`);
       return Promise.resolve({
-        runs: [
-          { index: 1, text: 'ONE', bottom: 229.9, top: 238.0 },
-          { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
-        ],
+        runs: RUNS,
         truncated: false,
         // NON-ZERO IN THE FIXTURE, deliberately: the handler forwards this and a
         // stub answering 0 would let a handler that dropped the field pass, 0
@@ -449,10 +471,7 @@ describe('the PDFium host body', () => {
         // index would pass against a host that had dropped both — which is
         // exactly the answer the line grouping and the chooser need.
         value: {
-          runs: [
-            { index: 1, text: 'ONE', bottom: 229.9, top: 238.0 },
-            { index: 3, text: 'TWO', bottom: 189.9, top: 198.0 },
-          ],
+          runs: RUNS,
           truncated: false,
           // THE COUNT CROSSES, and it is what tells a surface there is text on
           // this page no command can name — text inside a Form XObject, which

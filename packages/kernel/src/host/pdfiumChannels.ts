@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   channel,
   deletePageObjectsSchema,
+  editTextBlockSchema,
   placePageObjectSchema,
   promoteFormObjectsSchema,
   recolorPageObjectsSchema,
@@ -80,6 +81,7 @@ const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
+  editTextBlockSchema,
 ]);
 
 /** What travels as a command to this host. */
@@ -249,7 +251,9 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
   // AND NO `promoteFormObjects` MEMBER, for the same mechanism and the mirror
   // reason: PDFium can take a Form XObject apart and cannot build one, so its
   // prior is unrepresentable from the container's side rather than the object's.
-  // `replaceAllText` is absent too, its prior being document-scaled.
+  // `replaceAllText` is absent too, its prior being document-scaled, and
+  // `editTextBlock` for `deletePageObjects`' own reason: it makes and removes
+  // objects PDFium cannot rebuild.
 ]);
 
 /** What a capture answers, in `captureResultSchema`'s shape. */
@@ -331,7 +335,11 @@ export const pdfiumChannels = {
     // the answer, and `unreadable-image` where a document this engine cannot
     // read is refused — at the call that wanted the engine rather than at the
     // open (ADR-0048's withdrawn Decision 3).
-    wire: byteImageWire,
+    //
+    // PLUS ONE APPLY REFUSAL OF ITS OWN: an in-place edit whose typed text the
+    // page's font cannot carry (ADR-0096). On the apply only — capture and invert
+    // cannot produce it — and on this engine only.
+    wire: { ...byteImageWire, applyFailures: ['text-not-writable'] as const },
   }),
 
   /**
@@ -363,19 +371,21 @@ export const pdfiumChannels = {
    * OBJECT each run is, and the text rides along because the object index alone
    * cannot be shown to anybody.
    *
-   * ## The extent, and only the vertical one
+   * ## The whole box, and how the run is set
    *
-   * [ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)
-   * groups runs into visual lines by vertical **overlap**, so `bottom` and
-   * `top` are what a grouping needs and a horizontal position decides nothing.
-   * A fuller rectangle would be geometry travelling further than the question
-   * it answers, and the next reader would take it as available for a second.
+   * This carried the vertical extent alone while
+   * [ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)'s
+   * overlap was the only grouping and a dialog its consumer. Text is now edited
+   * in place ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)):
+   * a block splits a line at gaps wider than the line is tall, which needs the
+   * horizontal extent, and the editor drawn over it is set in the run's size,
+   * colour and kind of face, which needs the style.
    *
    * **The grouping is not done here.** The host answers the engine's facts; the
    * editor's own opinion about what a line is belongs to `textLines.ts` in
    * main, where ADR-0049's checkable rule — *does this grouping's output reach
-   * any consumer other than a dialog a person answers?* — can be applied to one
-   * module rather than to a wire.
+   * any consumer other than the in-place editor a person answers?* — can be
+   * applied to one module rather than to a wire.
    *
    * ## Handles do not cross
    *
@@ -389,7 +399,7 @@ export const pdfiumChannels = {
    * ADR-0047 priced at 0.1–3.5 ms per `FPDF_LoadMemDocument` and accepted.
    */
   'engine/text-runs': channel(
-    'Answers a page’s text runs: which object each is, what it says, and its vertical extent.',
+    'Answers a page’s text runs: which object each is, what it says, where it is and how it is set.',
     z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
     z
       .object({
@@ -414,6 +424,26 @@ export const pdfiumChannels = {
                  */
                 bottom: z.number(),
                 top: z.number(),
+                left: z.number(),
+                right: z.number(),
+                /** How the run is set: `pdfiumFfi.ts`' `RunStyle`. */
+                style: z
+                  .object({
+                    size: z.number().nonnegative(),
+                    colour: z
+                      .object({
+                        r: z.number().int().min(0).max(255),
+                        g: z.number().int().min(0).max(255),
+                        b: z.number().int().min(0).max(255),
+                      })
+                      .strict(),
+                    serif: z.boolean(),
+                    mono: z.boolean(),
+                    italic: z.boolean(),
+                    bold: z.boolean(),
+                    upright: z.boolean(),
+                  })
+                  .strict(),
               })
               .strict(),
           )

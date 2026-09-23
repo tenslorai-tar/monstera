@@ -79,7 +79,7 @@ import {
   classifyContainment,
   createRemoteSessions,
   engineChannels,
-  groupIntoLines,
+  groupIntoBlocks,
   localPdfLibWriter,
   nodeFileSurface,
   signpdfWriterWith,
@@ -1053,28 +1053,50 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // records it as the open question of whether an open can be shared; nothing
     // here answers it, and a chooser that refreshed on every keystroke would be
     // the first thing to make it matter.
-    textLines: async (docId, sessions, page) => {
+    textBlocks: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
       const found = await pdfiumHost.textRuns(await currentBytes(docId, sessions), page);
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
       // ADR-0049 permits a grouping of ours where no engine answers, and its
       // rule is checkable rather than a judgement: *does this grouping's output
-      // reach any consumer other than a dialog a person answers?* Keeping the
-      // call here — one composition point, one caller, feeding one channel —
-      // is what makes that answerable by reading rather than by tracing.
+      // reach any consumer other than the in-place editor a person answers?*
+      // (ADR-0096). Keeping the call here — one composition point, one caller,
+      // feeding one channel — is what makes that answerable by reading rather
+      // than by tracing.
       //
       // In the host it would have been a wire's shape, and a second surface
       // wanting runs would have had to un-group them; below `textLines.ts` it
       // would have been the engine's opinion about lines, which PDFium
       // measurably does not have.
+      //
+      // TEXT SET AT AN ANGLE IS COUNTED AND LEFT OUT before grouping: an editor
+      // cannot be placed along an axis the page is not set on, and a block
+      // mixing upright and rotated runs would be outlined as a box around
+      // neither.
+      const upright = found.runs.filter((run) => run.style.upright);
+      const rotated = found.runs
+        .filter((run) => !run.style.upright)
+        .reduce((total, run) => total + run.text.length, 0);
       return {
-        lines: groupIntoLines(found.runs),
+        blocks: groupIntoBlocks(
+          upright.map((run) => ({
+            ...run,
+            style: {
+              size: run.style.size,
+              colour: run.style.colour,
+              serif: run.style.serif,
+              mono: run.style.mono,
+              italic: run.style.italic,
+              bold: run.style.bold,
+            },
+          })),
+        ),
         truncated: found.truncated,
-        // FORWARDED, NOT GROUPED. `groupIntoLines` answers lines made of runs,
-        // and these characters formed no run at all — they are what the engine
-        // could not place, so there is nothing here to group and the count
-        // crosses as the count it is.
+        rotated,
+        // FORWARDED, NOT GROUPED. These characters formed no run at all — they
+        // are what the engine could not place, so there is nothing here to
+        // group and the count crosses as the count it is.
         unaddressable: found.unaddressable,
       };
     },

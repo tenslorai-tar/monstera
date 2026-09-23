@@ -4,6 +4,7 @@ export {
   pdfiumWriter,
   pageCount,
   countObjects,
+  editTextBlock,
   pageText,
   pageObjects,
   placeObject,
@@ -22,12 +23,17 @@ export {
   type PageBitmap,
   type PageObject,
   type PageObjectKind,
+  type BlockEdit,
+  type RunStyle,
   type TextReplacement,
   type TextRun,
 } from './pdfiumFfi.js';
 export {
+  applyEditTextBlock,
   applyReplaceTextObject,
+  captureEditTextBlock,
   captureReplaceTextObject,
+  invertEditTextBlock,
   invertReplaceTextObject,
   type PriorTextObjects,
 } from './pdfiumTextEdit.js';

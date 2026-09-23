@@ -26,8 +26,11 @@ import {
   invertReplaceAllText,
 } from './pdfiumReplaceAll.js';
 import {
+  applyEditTextBlock,
   applyReplaceTextObject,
+  captureEditTextBlock,
   captureReplaceTextObject,
+  invertEditTextBlock,
   invertReplaceTextObject,
 } from './pdfiumTextEdit.js';
 
@@ -129,6 +132,15 @@ export const pdfiumSpecs = {
     // are all still on the page; the container is what has no constructor.
     capture: capturePromoteFormObjects,
     invert: invertPromoteFormObjects,
+  },
+  editTextBlock: {
+    ...declaredCommands.editTextBlock,
+    apply: applyEditTextBlock,
+    // TERMINAL, `deletePageObjects`' reason (ADR-0096 Decision 6): the capture
+    // says why in a sentence the bus turns into a checkpoint, and the invert
+    // cannot be handed an argument.
+    capture: captureEditTextBlock,
+    invert: invertEditTextBlock,
   },
 };
 

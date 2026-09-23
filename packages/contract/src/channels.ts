@@ -23,6 +23,7 @@ import {
   MAX_IMPORT_IMAGE_BYTES,
   MAX_LINK_URI,
   MAX_LAYER_NAME_LENGTH,
+  MAX_BLOCK_LINES,
   MAX_REPLACED_TEXT,
   annotationKindNameSchema,
   annotationRectSchema,
@@ -699,6 +700,43 @@ export const ACCESSIBILITY_HUMAN_CHECKS = [
  * beside `MAX_CREATED_FIELDS`, which is the precedent this file already had.
  */
 export const MAX_TEXT_OBJECTS = 512;
+
+/**
+ * A box in PDF user space — left, bottom, right, top — as `document.textBlocks`
+ * answers one. `z.number()` is finite in zod 4, so a `NaN` from an engine is a
+ * refusal at the boundary rather than an outline drawn nowhere.
+ */
+export const pdfBoxSchema = z
+  .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+  .strict()
+  .refine((box) => box.x1 >= box.x0 && box.y1 >= box.y0, { message: 'a box is not inside out' });
+
+/**
+ * How a block's text is set, as far as an editor drawn over it can use.
+ *
+ * The page's own font cannot travel — a renderer that loaded it would be a
+ * second parser of the document's bytes — so what crosses is its KIND and the
+ * size it is drawn at. `colour` is the fill its glyphs are painted in.
+ */
+export const textBlockStyleSchema = z
+  .object({
+    /** The size the text is drawn at, in points. */
+    size: z.number().nonnegative(),
+    colour: z
+      .object({
+        r: z.number().int().min(0).max(255),
+        g: z.number().int().min(0).max(255),
+        b: z.number().int().min(0).max(255),
+      })
+      .strict(),
+    serif: z.boolean(),
+    mono: z.boolean(),
+    italic: z.boolean(),
+    bold: z.boolean(),
+  })
+  .strict();
+
+export type TextBlockStyle = z.infer<typeof textBlockStyleSchema>;
 
 /**
  * How many pixels one `document.renderPage` may be asked for.
@@ -1545,12 +1583,16 @@ export const channels = {
     // channels existed that day.
     // THE SERVICE CODES are a region recognition's, the one command whose pre-read crosses the
     // internet; `SERVICE_PROBLEMS` says why they are codes rather than a sentence.
+    // `text-not-writable` IS AN IN-PLACE EDIT'S (ADR-0096): the page's font cannot carry what
+    // was typed. It is the PERSON's to act on — type something else, or edit another way — so
+    // it is a sentence and never `internal` with an incident id for a document working as made.
     [
       'document-not-open',
       'document-busy',
       'document-poisoned',
       'stale-target',
       'engine-unavailable',
+      'text-not-writable',
       ...SERVICE_PROBLEMS,
     ],
   ),
@@ -3819,44 +3861,48 @@ export const channels = {
   ),
 
   /**
-   * A page's editable text, as **visual lines** carrying the editing engine's
-   * own object numbering.
+   * A page's editable text, as the **blocks** a person edits in place, carrying
+   * the editing engine's own object numbering.
    *
    * ## The index is PDFium's and is never joined to anything
    *
-   * `replaceTextObject` names an object by its index in the page's object list,
-   * and that list is the engine's own. This channel is the ONLY source of such
-   * an index a renderer may use: a number derived from `document.pageTextLayer`
-   * — MuPDF's structured text — would be two engines' numbering of one page
-   * silently swapped, which is `pageNumbering.ts`' lesson one frame worse. The
-   * two indices are not convertible and nothing here converts them.
+   * `editTextBlock` names objects by their index in the page's object list, and
+   * that list is the engine's own. This channel is the ONLY source of such an
+   * index for text a renderer may use: a number derived from
+   * `document.pageTextLayer` — MuPDF's structured text — would be two engines'
+   * numbering of one page silently swapped, which is `pageNumbering.ts`' lesson
+   * one frame worse. The two indices are not convertible and nothing here
+   * converts them.
    *
-   * ## LINES, because a run is not what a person recognises
+   * ## BLOCKS, because that is what a person edits
    *
-   * This channel answered `indices` alone until 2026-09-09, and the row that
-   * shipped on it offered a chooser of numbers — which the row's own note said
-   * was what line-level editing would close. It is closed here rather than
-   * beside it, because two Edit-section controls where one obsoletes the other
-   * is the second wiring place the registry exists to forbid.
+   * This answered visual lines for a dialog a person picked one from until
+   * 2026-09-23, when the owner rejected the dialog: text is edited where it is
+   * on the page ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
+   * Converted rather than joined by a sibling — its only consumer was that
+   * dialog, and two channels answering a page's editable text in two shapes
+   * would be two opinions about it.
    *
-   * A line is several runs, measured: PDFium answers one rect per run whether
-   * two runs on a baseline sit 170pt apart or 3pt apart, so no engine here has
-   * an opinion about lines and the editor forms its own by vertical overlap
-   * ([ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)).
-   * That ADR permits the grouping **only while its output reaches a dialog a
-   * person answers**, and this channel is that path: a second consumer is the
-   * moment the grouping has become the second extraction path Part E2 bans.
+   * The grouping is the editor's own, measured into being: PDFium answers one
+   * rect per run, so no engine here has an opinion about lines
+   * ([ADR-0049](../../../docs/DECISIONS/0049-the-editor-groups-its-own-engines-runs-and-a-person-confirms-the-grouping.md)),
+   * and it is permitted **only while its output reaches the in-place editor a
+   * person answers**. This channel is that path: a second consumer is the moment
+   * the grouping has become the second extraction path Part E2 bans.
+   *
+   * ## Boxes, to PLACE the editor and for nothing else
+   *
+   * A block's box and each line's box cross in PDF user space and the renderer
+   * converts them through `PageTransform`, as every overlay does. The style is
+   * what the editor is set in: the page's font cannot be loaded by a renderer,
+   * so a family of the same kind at the size the page draws at.
    *
    * ## Each line carries its RUNS, not one string
    *
-   * A run is a text object with its own font, and `replaceTextObject` names
-   * objects. A line that arrived as one string would have to be diffed back
-   * onto runs by something holding no run boundaries — so the boundaries
-   * travel, and the surface concatenates for display.
-   *
-   * A handle never crosses: a `FPDF_PAGEOBJECT` is owned by the page it came
-   * from. The index is what survives, and the text is the page's own words
-   * bounded per run and per page.
+   * A run is a text object with its own font, and an edit names objects. The
+   * runs travel and the surface joins them with `lineText` for display — the
+   * same function the kernel diffs with, so the words shown and the words
+   * diffed are one opinion.
    *
    * ## `engine-unavailable` is declared here for `document.execute`'s reason
    *
@@ -3864,39 +3910,58 @@ export const channels = {
    * installation without it cannot answer either — and the read is where a
    * surface finds out first, before offering anything.
    */
-  'document.textLines': channel(
-    'A page’s editable text as visual lines, in the editing engine’s own object numbering.',
+  'document.textBlocks': channel(
+    'A page’s editable text as blocks, in the editing engine’s own object numbering.',
     z.object({ docId: docIdSchema, page: z.number().int().nonnegative() }),
     z.object({
       version: docVersionSchema,
-      lines: z
+      blocks: z
         .array(
-          z.object({
-            /**
-             * The runs this line is made of, in reading order.
-             *
-             * At least one: a line with no runs is not a line, and an empty
-             * entry would be a row a chooser could offer and nothing could
-             * edit.
-             */
-            runs: z
-              .array(
-                z.object({
-                  /** The object's index in the engine's own page-object order. */
-                  index: z.number().int().nonnegative(),
-                  /** What that run says. */
-                  text: z.string().max(MAX_REPLACED_TEXT),
-                }),
-              )
-              .min(1)
-              .max(MAX_TEXT_OBJECTS)
-              .readonly(),
-          }),
+          z
+            .object({
+              box: pdfBoxSchema,
+              lines: z
+                .array(
+                  z
+                    .object({
+                      /**
+                       * The runs this line is made of, in reading order. At least one:
+                       * a line with no runs is not a line.
+                       */
+                      runs: z
+                        .array(
+                          z
+                            .object({
+                              /** The object's index in the engine's own page-object order. */
+                              index: z.number().int().nonnegative(),
+                              /** What that run says, with the spaces PDFium infers between words. */
+                              text: z.string().max(MAX_REPLACED_TEXT),
+                            })
+                            .strict(),
+                        )
+                        .min(1)
+                        .max(MAX_TEXT_OBJECTS)
+                        .readonly(),
+                      box: pdfBoxSchema,
+                    })
+                    .strict(),
+                )
+                .min(1)
+                .max(MAX_BLOCK_LINES)
+                .readonly(),
+              style: textBlockStyleSchema,
+            })
+            .strict(),
         )
         .max(MAX_TEXT_OBJECTS)
         .readonly(),
       /** Whether the bound stopped the list. `document.flatFieldCandidates`' flag. */
       truncated: z.boolean(),
+      /**
+       * Characters on this page set at an angle, which are not offered for editing
+       * in place — an editor cannot be placed along an axis the page is not set on.
+       */
+      rotated: z.number().int().nonnegative(),
       /**
        * Characters on this page that no editing command can name.
        *

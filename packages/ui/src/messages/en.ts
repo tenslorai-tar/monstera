@@ -677,19 +677,16 @@ export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
 export const FLAT_FIELDS_ALL_TEXT = messageKey('dialog.flat-fields.all-text');
 export const FLAT_FIELDS_ACCEPT = messageKey('dialog.flat-fields.accept');
-export const REPLACE_TEXT_OBJECT_TITLE = messageKey('dialog.replace-text-object.title');
-export const REPLACE_TEXT_OBJECT_EXPLAINS = messageKey('dialog.replace-text-object.explains');
-export const REPLACE_TEXT_OBJECT_CHOOSE = messageKey('dialog.replace-text-object.choose');
-export const REPLACE_TEXT_OBJECT_NEW_TEXT = messageKey('dialog.replace-text-object.new-text');
-export const REPLACE_TEXT_OBJECT_NONE = messageKey('dialog.replace-text-object.none');
-export const REPLACE_TEXT_OBJECT_TRUNCATED = messageKey('dialog.replace-text-object.truncated');
-export const REPLACE_TEXT_OBJECT_UNADDRESSABLE = messageKey(
-  'dialog.replace-text-object.unaddressable',
-);
-export const REPLACE_TEXT_OBJECT_PROMOTE = messageKey('dialog.replace-text-object.promote');
-export const REPLACE_TEXT_OBJECT_TOO_LONG = messageKey('dialog.replace-text-object.too-long');
-export const REPLACE_TEXT_OBJECT_APPLY = messageKey('dialog.replace-text-object.apply');
-export const REPLACE_TEXT_OBJECT_COMMAND_TITLE = messageKey('command.document.replace-text-object');
+export const EDIT_TEXT_COMMAND_TITLE = messageKey('command.text.edit');
+export const TEXT_EDIT_LAYER_LABEL = messageKey('surface.text-edit.layer');
+export const TEXT_EDIT_BLOCK_LABEL = messageKey('surface.text-edit.block');
+export const TEXT_EDIT_EDITOR_LABEL = messageKey('surface.text-edit.editor');
+export const TEXT_EDIT_NONE = messageKey('surface.text-edit.none');
+export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
+export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressable');
+export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
+export const TEXT_EDIT_ROTATED = messageKey('surface.text-edit.rotated');
+export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 export const FIND_REPLACE_WITH = messageKey('surface.find.replace-with');
 export const FIND_REPLACE_ALL = messageKey('surface.find.replace-all');
@@ -1823,7 +1820,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // NAMES THE PAGE, because the command acts on the one in front of the reader
   // and the ribbon has no other way to say so. "Replace text" alone reads as
   // find-and-replace, which is a different row and a different scope.
-  [REPLACE_TEXT_OBJECT_COMMAND_TITLE]: 'Edit text on page',
   [EDIT_PAGE_OBJECT_COMMAND_TITLE]: 'Edit an object on page',
   [SPELL_CHECK_TITLE]: 'Spell check',
   [SPELL_CHECK_LANGUAGE]: 'Checked against {language}',
@@ -2085,42 +2081,32 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_ALL_TEXT]:
     'These are all created as text fields. Use the Forms tools to draw a tick box, a dropdown or a list.',
   [FLAT_FIELDS_ACCEPT]: 'Create {count} field(s)',
-  [REPLACE_TEXT_OBJECT_TITLE]: 'Edit text on this page',
-  // SAYS THE LINES ARE MONSTERA'S GUESS, before offering any. A PDF stores
-  // pieces of text and not lines, so what the list shows is this application's
-  // reading of which pieces sit together — and the person choosing a row is
-  // confirming that reading, which is the whole reason the grouping is allowed
-  // to exist (ADR-0049). Saying so is what makes an odd-looking row read as a
-  // guess to reject rather than as a bug.
-  [REPLACE_TEXT_OBJECT_EXPLAINS]:
-    'A PDF stores pieces of text rather than lines, so Monstera works out which pieces sit on the same line. Pick a line, edit what it says, and check the page afterwards — you can undo it.',
-  [REPLACE_TEXT_OBJECT_CHOOSE]: 'Which line',
-  [REPLACE_TEXT_OBJECT_NEW_TEXT]: 'What it should say',
-  [REPLACE_TEXT_OBJECT_NONE]: 'This page has no text that can be edited.',
-  [REPLACE_TEXT_OBJECT_TRUNCATED]:
-    'There was more text than Monstera lists here, so this page may have other lines.',
-  // NAMES THE CAUSE IN A READER'S WORDS, and does not apologise. *A group* is
-  // what a Form XObject is to somebody who did not make the PDF, and *pasted in
-  // as a block* is how it got there — a person who recognises the document as
-  // one they made in Word or InDesign then knows which text this is about. It
-  // says NOT YET rather than *cannot*, because normalize-then-edit is the row
-  // that closes it and a permanent-sounding refusal would be a claim about the
-  // product rather than about this build.
-  [REPLACE_TEXT_OBJECT_UNADDRESSABLE]:
-    'Some text on this page was pasted in as a block, and Monstera cannot edit inside one yet. It is not listed here.',
+  [EDIT_TEXT_COMMAND_TITLE]: 'Edit text on the page',
+  [TEXT_EDIT_LAYER_LABEL]: 'Editable text on page {page}',
+  // THE BLOCK'S OWN FIRST WORDS name it, so a person moving through the page
+  // with Tab or a screen reader hears which text each outline holds.
+  [TEXT_EDIT_BLOCK_LABEL]: 'Edit “{words}”',
+  [TEXT_EDIT_EDITOR_LABEL]: 'Text being edited. Press Esc when you are done.',
+  [TEXT_EDIT_NONE]: 'This page has no text that can be edited.',
+  [TEXT_EDIT_TRUNCATED]: 'This page has more text than can be outlined at once; some of it is not outlined.',
+  // NAMES THE CAUSE IN A READER'S WORDS, and does not apologise. *Pasted in as
+  // a block* is how a Form XObject got there to somebody who did not make the
+  // PDF, and the button beside it is what makes the text editable.
+  [TEXT_EDIT_UNADDRESSABLE]: 'Some text on this page was pasted in as a block and is not outlined.',
+  // SAYS WHAT IT DOES TO THE PAGE: the block becomes ordinary page content,
+  // which is a change to the document a person is agreeing to.
+  [TEXT_EDIT_PROMOTE]: 'Unpack it so it can be edited',
+  [TEXT_EDIT_ROTATED]: 'Text set at an angle on this page can’t be edited in place.',
+  // SAYS NOTHING CHANGED FIRST, then what to do: the editor stays open with the
+  // words, so the person can change the ones the font cannot show.
+  [TEXT_EDIT_NOT_WRITABLE]:
+    'Nothing was changed: the font on this page can’t show some of the characters you typed. Change them, or press Esc to put the text back.',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
   // at words they cannot select has one question — why — and *this page is a
   // picture* answers it. It deliberately does not say *scanned*: the kernel
   // reports a raster and no text, which is also what a full-page diagram is,
   // and a message may not claim more than the reading behind it.
   [PAGE_IMAGE_ONLY]: 'This page is a picture, so there is no text to select or search.',
-  // SAYS WHAT IT DOES TO THE PAGE, not what it does to the list. "Unpack" is
-  // the honest verb: the block becomes ordinary page content, and that is a
-  // change to the document a person is agreeing to rather than a way of showing
-  // more rows.
-  [REPLACE_TEXT_OBJECT_PROMOTE]: 'Unpack the blocks on this page so their text can be edited',
-  [REPLACE_TEXT_OBJECT_TOO_LONG]: 'That is longer than one piece of text can hold.',
-  [REPLACE_TEXT_OBJECT_APPLY]: 'Replace',
   [EDIT_PAGE_OBJECT_TITLE]: 'Edit an object on this page',
   // SAYS WHAT A ROW IS BEFORE OFFERING ANY, `FlatFieldsBody`'s rule. Each row
   // is a thing drawn on the page and the numbers are where it sits, measured

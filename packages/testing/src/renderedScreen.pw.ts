@@ -1459,3 +1459,62 @@ test('an existing REDACT mark is drawn as a SOLID preview over the region it cov
     ).toBeLessThan(2);
   }
 });
+
+// EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
+// page, the editor opens over a block, and nothing on that screen fails the gate.
+for (const look of LOOKS) {
+  test(`${look.name}: EDIT TEXT outlines each block ON the page, opens an editor over one, and passes axe`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e1');
+    // PDF USER SPACE, off-centre, so an outline drawn unscaled or with y the wrong way up lands
+    // somewhere the position assertion names.
+    const box = { x0: 100, y0: 600, x1: 400, y1: 700 };
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'edit.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      textBlocks: [
+        {
+          box,
+          lines: [
+            { runs: [{ index: 3, text: 'A paragraph of words ' }, { index: 5, text: 'set on the page' }], box: { x0: 100, y0: 686, x1: 400, y1: 700 } },
+            { runs: [{ index: 8, text: 'and a second line.' }], box: { x0: 100, y0: 600, x1: 260, y1: 614 } },
+          ],
+          style: { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false },
+        },
+      ],
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    const canvas = page.locator('canvas[data-page-canvas="0"]');
+    await expect(canvas).toBeVisible();
+
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Edit text on the page');
+    await page.keyboard.press('Enter');
+    const outline = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+    await expect(outline).toHaveCount(1);
+
+    const pageBox = await canvas.boundingBox();
+    const drawn = await outline.boundingBox();
+    expect(pageBox).not.toBeNull();
+    expect(drawn).not.toBeNull();
+    const scale = (pageBox?.width ?? 0) / 612;
+    expect(Math.abs((drawn?.x ?? Number.NaN) - ((pageBox?.x ?? 0) + box.x0 * scale))).toBeLessThan(2);
+    expect(Math.abs((drawn?.y ?? Number.NaN) - ((pageBox?.y ?? 0) + (792 - box.y1) * scale))).toBeLessThan(2);
+
+    await outline.click();
+    const editor = page.locator('[data-text-editor]');
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveValue('A paragraph of words set on the page\nand a second line.');
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}

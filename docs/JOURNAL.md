@@ -892,6 +892,58 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-23 — Text is edited where it is: the dialog is gone
+
+The owner rejected Edit text's line-picking dialog and supplied a recording of the standard
+(ADR-0096, whose B4 amendment landed first, `de2e94e`). Edit text is now a mode in the tool slot:
+every editable block is outlined on the page, a click opens an editor over the block in its size,
+colour and kind of face on the page's own paper with selection handles, and Escape or a click away
+writes. `document.textLines` became `document.textBlocks`; the dialog, its result schema and its
+messages are deleted.
+
+**The write is the kernel's, one command per block.** `editTextBlock` diffs each line by
+`lineEdit`'s rule (moved to `@monstera/shared`), pushes later runs along a line that grew, wraps a
+line past the block into new objects in its last run's font — measured by PDFium laying out the
+object it will write — moves the lines below, removes deleted ones, and reads every write back from
+the live text page, refusing with `text-not-writable` before generation when a font cannot carry
+what was typed. That refusal is its own code on the host wire and on `document.execute`, because it
+is the person's to act on; `compositionHost.test.ts` crosses the host for it, and removing main's
+mapping reddens that case.
+
+**Three defects were found by running it, not by a test**, and each is the transferable part:
+
+- **A native crash, `0xC0000409`, from a use after free.** Removing a deleted line destroyed its
+  objects, and a few lines later the code read the matrix of that line's first object to find where
+  typed lines start. It passed every in-process probe that did not delete a line. Removals now happen
+  last, after every handle the edit reads. The proof printed nothing before the crash, because its
+  roster prints at the end — a per-case print, added and removed, found it.
+- **The editor's paper was the ink.** The page colour was sampled one pixel inside the block's
+  top-left, and a block's box is its glyphs' ink, so the first letter set the background. It now
+  takes the most common of four points just outside the corners. Seen only on screen.
+- **The shortcut listener took the editor's keys.** Ctrl+Home turned the document to its first page
+  from inside the editor, and Ctrl+Z would have undone the document instead of the typing.
+  `useShortcuts` listened on the document with no rule for a text field — a gap
+  `annotationData.ts` had already named while keeping Ctrl+V off. `fieldOwnsChord` is now the one
+  rule: a field keeps plain keys and its own editing and navigation chords; Ctrl+S, Ctrl+K and F1
+  stay the application's.
+
+**And one the screen showed after the fix:** a wrapped line is a new object at the end of the
+content stream, so in reading order it came after the paragraph and joined the block above,
+splitting the paragraph in two outlines. The block pass now orders pieces top to bottom, and blocks
+keep reading order for Tab.
+
+**Live, 2026-09-23**, driving the development build through Playwright's Electron support with
+the Open dialog answered inside main: a CV-style page, six blocks outlined, a line typed past its
+block wrapped onto a new line with the paragraph pushed down, saved, and read back from a fresh
+process with the words present; looked at in light, dark and high contrast.
+
+**What was measured and what was only looked at.** The proof's eleven block cases are against the
+real library, reopened bytes, and three were mutation-checked (no move-down, no wrap, no read-back).
+The editor's vertical alignment over the words is about three pixels low and its wrap is the
+browser's approximation of the page's font; both were looked at and neither is measured.
+
+---
+
 ## 2026-09-23 — Save back to cloud left the document reading dirty
 
 **The entry below is wrong in one sentence and this corrects it.** It says *"Save back to cloud

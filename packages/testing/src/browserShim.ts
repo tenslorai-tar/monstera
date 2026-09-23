@@ -481,7 +481,7 @@ export interface BrowserShimOptions {
     readonly name: string;
   }[];
   /**
-   * The visual lines `document.textLines` answers, each with its runs.
+   * The editable blocks `document.textBlocks` answers, on every page.
    *
    * A list, for `flatFieldCandidates`' reason. **`null` is a third state and
    * not the same as `[]`**: an installation with no PDFium answers
@@ -489,13 +489,11 @@ export interface BrowserShimOptions {
    * shim that could only express the second would leave the branch a user
    * without the engine actually takes untested, which is most of them.
    */
-  readonly textLines?:
-    | readonly { readonly runs: readonly { readonly index: number; readonly text: string }[] }[]
-    | null;
+  readonly textBlocks?: ChannelResult<'document.textBlocks'>['blocks'] | null;
   /**
    * The objects `document.pageObjects` answers.
    *
-   * `textLines`' three states, for its reason: `null` and `undefined` are the
+   * `textBlocks`' three states, for its reason: `null` and `undefined` are the
    * machine with no PDFium, and `[]` is a page with nothing on it.
    */
   readonly pageObjects?:
@@ -1777,7 +1775,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
-    'document.textLines': ({ docId }) => {
+    'document.textBlocks': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       // THE ENGINE'S ABSENCE IS THE DEFAULT HERE, and that is deliberate rather
@@ -1785,16 +1783,16 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // the honest answer for a shim with no engine behind it is the refusal a
       // machine without one gives — so a surface that assumed the read succeeds
       // fails in the browser shim first, which is where it is cheap.
-      const lines = options.textLines;
-      if (lines === undefined || lines === null) {
+      const blocks = options.textBlocks;
+      if (blocks === undefined || blocks === null) {
         return Promise.resolve(err({ code: 'engine-unavailable' }));
       }
       return Promise.resolve(
-        // `unaddressable: 0`, and it is a claim rather than a placeholder: a
-        // shim's fixture is text a case wrote down, so all of it is
-        // addressable by construction. A shim that could report otherwise
-        // would be inventing a Form XObject nobody built.
-        ok({ version: asDocVersion(current), lines, truncated: false, unaddressable: 0 }),
+        // `unaddressable: 0` and `rotated: 0`, and they are claims rather than
+        // placeholders: a shim's fixture is text a case wrote down, upright and
+        // addressable by construction. A shim that could report otherwise would
+        // be inventing a Form XObject nobody built.
+        ok({ version: asDocVersion(current), blocks, truncated: false, rotated: 0, unaddressable: 0 }),
       );
     },
 
@@ -1814,7 +1812,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'document.pageObjects': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-      // THE ENGINE'S ABSENCE IS THE DEFAULT, `document.textLines`' reason.
+      // THE ENGINE'S ABSENCE IS THE DEFAULT, `document.textBlocks`' reason.
       const objects = options.pageObjects;
       if (objects === undefined || objects === null) {
         return Promise.resolve(err({ code: 'engine-unavailable' }));

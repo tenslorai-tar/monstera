@@ -53,6 +53,70 @@ export function chordOf(event: KeyChord): string {
   return normaliseChord(parts.join('+'));
 }
 
+/**
+ * Whether a key press aimed at `target` belongs to the TEXT FIELD it was typed in.
+ *
+ * ## The dispatcher listens on the document, and a field has keys of its own
+ *
+ * Until 2026-09-23 there was no rule here, and it cost nothing visible while
+ * the fields were a search box and a dialog's inputs. Text edited in place on
+ * the page (ADR-0096) is where it bit: Ctrl+Home in the editor turned the
+ * document to its first page and left the caret where it was, and Ctrl+Z would
+ * have undone the document rather than the typing. `annotationData.ts` had
+ * already kept Ctrl+V off the keyboard for this exact reason, waiting on this
+ * rule.
+ *
+ * ## What a field owns
+ *
+ * Every key pressed without Ctrl, Alt or Meta — characters, Shift+characters,
+ * Delete, Backspace, Enter, the arrows, Home and End — except the function
+ * keys, which no field gives a meaning to. And the Ctrl chords every text field
+ * answers itself: undo and redo, select all, copy, cut and paste, and moving or
+ * deleting by word and to the ends of the text. Everything else — Ctrl+S,
+ * Ctrl+K, F1 — stays the application's, because a shortcut that stopped
+ * working whenever a field had focus is one people report as intermittent.
+ */
+export function fieldOwnsChord(target: EventTarget | null, event: KeyChord): boolean {
+  if (!isTypingField(target)) return false;
+  const key = event.key.toLowerCase();
+  if (/^f\d{1,2}$/u.test(key)) return false;
+  if (!event.ctrlKey && !event.altKey && !event.metaKey) return true;
+  if (event.altKey || event.metaKey) return false;
+  return FIELD_CTRL_KEYS.has(key);
+}
+
+/** The keys a text field answers itself when pressed with Ctrl (and Shift). */
+const FIELD_CTRL_KEYS: ReadonlySet<string> = new Set([
+  'z',
+  'y',
+  'a',
+  'c',
+  'x',
+  'v',
+  'home',
+  'end',
+  'arrowleft',
+  'arrowright',
+  'arrowup',
+  'arrowdown',
+  'backspace',
+  'delete',
+]);
+
+/** Whether an element is one a person types text into. */
+function isTypingField(target: EventTarget | null): boolean {
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target instanceof HTMLTextAreaElement) return !target.readOnly;
+  if (target instanceof HTMLInputElement) {
+    return !target.readOnly && TYPED_INPUTS.has(target.type);
+  }
+  return false;
+}
+
+/** The input types a person types text into, as opposed to ticks, sliders and buttons. */
+const TYPED_INPUTS: ReadonlySet<string> = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number']);
+
 /** What a key press did, so a caller knows whether to let the browser have it. */
 export type Dispatch =
   | { readonly kind: 'ran'; readonly command: UiCommand }

@@ -85,11 +85,12 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 4);
+refuseStaleBuild(root, PDFIUM_COMMAND, 5);
 
-const { openPdfium, pdfiumWriter, pageText, textObjectIndices } = await import(
+const { openPdfium, pdfiumWriter, pageText, textObjectIndices, textRuns } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'
 );
+const { groupIntoBlocks } = await import('../../packages/kernel/dist/textLines.js');
 const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
 
@@ -125,7 +126,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 35 });
+const roster = createRoster(failures, { cases: 46 });
 
 /**
  * @param {string} name
@@ -400,6 +401,7 @@ async function main() {
 
   await replaceAllCases();
   await promotionCases();
+  await blockEditCases();
 
   process.stdout.write(
     failures.length > 0
@@ -720,6 +722,169 @@ async function promotionCases() {
     'a promotion REFUSES to capture, because PDFium cannot rebuild a Form XObject',
     prior.captured === false && prior.reason.includes('Form XObject'),
     prior.captured === false ? prior.reason : 'it claimed to capture something',
+  );
+}
+
+/**
+ * A paragraph of three lines, set as three text objects 14pt apart in Helvetica 11 — one block by
+ * ADR-0096's grouping — and a second block far below it that no edit may touch.
+ */
+const BLOCK_LINES = ['The first line of the block', 'a second line that changes', 'and the third line ends it'];
+const FAR_BELOW = 'A separate block far below';
+
+async function aParagraph() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, line] of BLOCK_LINES.entries()) {
+    page.drawText(line, { x: 72, y: 300 - at * 14, size: 11, font });
+  }
+  page.drawText(FAR_BELOW, { x: 72, y: 80, size: 11, font });
+  return document.save();
+}
+
+/**
+ * Page 0's runs and blocks, read from BYTES through the same read and grouping main uses.
+ *
+ * @param {Uint8Array} bytes
+ */
+async function blocksOf(bytes) {
+  const session = await pdfiumWriter.open(bytes);
+  try {
+    const { runs } = await textRuns(session, 0);
+    return { runs, blocks: groupIntoBlocks(runs) };
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/**
+ * `editTextBlock` ([ADR-0096](../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md))
+ * through the routing, against the real library. Every reading is from reopened bytes, and each
+ * case names what only the correct write produces: an edit that fits makes NO new object; one that
+ * grows past the block makes one AND moves the line below AND leaves nothing past the edge.
+ */
+async function blockEditCases() {
+  record(
+    'the declaration routes editTextBlock to pdfium, terminal, with a checkpoint undo',
+    declaredCommands.editTextBlock.writer === 'pdfium' &&
+      declaredCommands.editTextBlock.invertible === false &&
+      declaredCommands.editTextBlock.undo === 'checkpoint',
+    `writer=${declaredCommands.editTextBlock.writer} invertible=${String(declaredCommands.editTextBlock.invertible)}`,
+  );
+
+  const original = await aParagraph();
+  const before = await blocksOf(original);
+  const [block, separate] = before.blocks;
+  record(
+    'the fixture reads as TWO blocks, the paragraph of three lines and the one far below',
+    before.blocks.length === 2 && block?.lines.length === 3 && separate?.lines.length === 1,
+    `${String(before.blocks.length)} block(s), lines ${before.blocks.map((b) => b.lines.length).join('/')}`,
+  );
+  if (block === undefined) return;
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  const right = block.box.x1;
+  const objectsBefore = (await textIndicesOf(original)).length;
+
+  /** @param {string} text */
+  const edit = (text) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        lines,
+        text,
+        version: 1,
+      }),
+      source: undefined,
+      reads: undefined,
+    });
+
+  const refusedCapture = await localPdfiumExecution.capture(original, {
+    kind: 'editTextBlock',
+    page: 0,
+    lines,
+    text: 'x',
+    version: /** @type {never} */ (1),
+  });
+  record(
+    'a block edit REFUSES to capture, because PDFium cannot rebuild what it removes',
+    refusedCapture.captured === false && refusedCapture.reason.includes('rebuild'),
+    refusedCapture.captured === false ? refusedCapture.reason : 'it claimed to capture something',
+  );
+
+  // AN EDIT THAT FITS writes the one run it touched and makes NOTHING new.
+  const fitted = await edit([BLOCK_LINES[0], 'a second line, edited', BLOCK_LINES[2]].join('\n'));
+  const fittedText = await textOf(fitted);
+  record(
+    'an edit that fits changes its line, leaves the others, and makes no new object',
+    fittedText.includes('a second line, edited') &&
+      !fittedText.includes('that changes') &&
+      fittedText.includes(BLOCK_LINES[0] ?? '') &&
+      fittedText.includes(FAR_BELOW) &&
+      (await textIndicesOf(fitted)).length === objectsBefore,
+    `${String((await textIndicesOf(fitted)).length)} objects against ${String(objectsBefore)}`,
+  );
+
+  // A LINE THAT GROWS PAST THE BLOCK WRAPS: a new object, the next line moved down, and no
+  // object's right edge past the block's.
+  const grown = `${BLOCK_LINES[0] ?? ''} and then a great many more words than fit`;
+  const wrapped = await edit([grown, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n'));
+  const after = await blocksOf(wrapped);
+  const wrappedText = await textOf(wrapped);
+  const secondBefore = before.runs.find((run) => run.text.startsWith('a second'));
+  const secondAfter = after.runs.find((run) => run.text.startsWith('a second'));
+  const widest = Math.max(...after.runs.filter((run) => run.top > 150).map((run) => run.right));
+  record(
+    'a line that grows past the block WRAPS into a new object in the page’s own font',
+    (await textIndicesOf(wrapped)).length > objectsBefore &&
+      ['great', 'many', 'more', 'words', 'than', 'fit'].every((word) => wrappedText.includes(word)),
+    `${String((await textIndicesOf(wrapped)).length)} objects against ${String(objectsBefore)}`,
+  );
+  record(
+    'and the line below it MOVES DOWN, so the wrap does not overprint it',
+    secondBefore !== undefined && secondAfter !== undefined && secondAfter.top < secondBefore.bottom,
+    `the second line's top ${String(secondAfter?.top)} against its old bottom ${String(secondBefore?.bottom)}`,
+  );
+  record(
+    'and no line reaches past the block’s right edge',
+    widest <= right + 0.5,
+    `widest right ${widest.toFixed(2)} against the block's ${right.toFixed(2)}`,
+  );
+  record(
+    'CONTROL: the block far below is untouched by the wrap',
+    after.runs.some((run) => run.text.trim() === FAR_BELOW && Math.abs(run.bottom - (before.runs.find((r) => r.text.trim() === FAR_BELOW)?.bottom ?? -1)) < 0.01),
+    'a layout that moved every line on the page would satisfy the wrap case above',
+  );
+
+  // LINES REMOVED AND ADDED.
+  const shortened = await edit([BLOCK_LINES[0], BLOCK_LINES[1]].join('\n'));
+  record(
+    'a line the person deleted is removed from the page',
+    !(await textOf(shortened)).includes('third line') && (await textIndicesOf(shortened)).length === objectsBefore - 1,
+    `${String((await textIndicesOf(shortened)).length)} objects against ${String(objectsBefore)}`,
+  );
+  const lengthened = await edit([...BLOCK_LINES, 'and a fourth line typed below'].join('\n'));
+  const fourth = (await blocksOf(lengthened)).runs.find((run) => run.text.startsWith('and a fourth'));
+  const third = before.runs.find((run) => run.text.startsWith('and the third'));
+  record(
+    'a line the person typed below the block is made, below its last line',
+    fourth !== undefined && third !== undefined && fourth.top < third.bottom && fourth.left === third.left,
+    fourth === undefined ? 'no fourth line on the page' : `at ${fourth.left.toFixed(2)},${fourth.bottom.toFixed(2)}`,
+  );
+
+  // A CHARACTER THE FONT CANNOT CARRY is refused by NAME, before anything is written.
+  let refused = null;
+  try {
+    await edit([BLOCK_LINES[0], 'a second line with 中 in it', BLOCK_LINES[2]].join('\n'));
+  } catch (error) {
+    refused = error instanceof Error ? error.name : String(error);
+  }
+  record(
+    'a character the page’s font cannot carry is refused as TextNotWritableError',
+    refused === 'TextNotWritableError',
+    refused ?? 'it was written',
   );
 }
 

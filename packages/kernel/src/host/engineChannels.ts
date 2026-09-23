@@ -1243,7 +1243,19 @@ export interface WireShape<
   TWrite extends z.ZodRawShape,
   TWrote extends z.ZodType,
   TTransferFailure extends readonly string[],
+  TApplyFailure extends readonly string[] = readonly [],
 > {
+  /**
+   * What `engine/apply` ALONE can refuse with, beyond the transfer failures.
+   *
+   * A refusal only an apply can produce belongs on the apply and nowhere else:
+   * listed with the transfer failures, it would be declared on capture and
+   * invert too, which cannot produce it — a failure on a wire with nothing
+   * behind it, which is what ADR-0048 refuses one channel up. PDFium's
+   * `text-not-writable` (ADR-0096) is the first; the generic wires carry none,
+   * and an engine's own channel set adds its own.
+   */
+  readonly applyFailures?: TApplyFailure;
   /**
    * What `engine/open` carries beyond the two granted directories.
    *
@@ -1601,12 +1613,13 @@ export function coreEngineChannels<
   TWrite extends z.ZodRawShape,
   TWrote extends z.ZodType,
   const TTransferFailure extends readonly string[],
+  const TApplyFailure extends readonly string[] = readonly [],
 >(
   schemas: CoreChannelSchemas<
     TCommand,
     TCapture,
     TInverse,
-    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure>
+    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure, TApplyFailure>
   >,
 ) {
   const wire = schemas.wire;
@@ -1672,7 +1685,7 @@ export function coreEngineChannels<
         })
         .strict(),
       wire.wrote,
-      ['no-such-session', 'asset-missing', ...wire.transferFailures],
+      ['no-such-session', 'asset-missing', ...wire.transferFailures, ...(wire.applyFailures ?? ([] as const))],
     ),
 
     'engine/capture': channel(
@@ -2579,4 +2592,11 @@ export type EngineFailureCode =
   // is *is the host sick*, and neither of them is; main refuses the command
   // either way, and the supervisor rebuilds for neither. A pair of codes here
   // would be two names for one decision.
-  | 'engine-refused';
+  | 'engine-refused'
+  // A THIRD REFUSAL THAT IS NOT THE HOST'S, and its own code because it answers
+  // a different question: not *is the host sick* but *what can the person do*.
+  // An in-place edit whose typed text the page's font cannot carry is refused
+  // before anything is generated (ADR-0096), and main turns this into the
+  // sentence that says so — where `engine-refused` becomes `internal` with an
+  // incident id, for a document the engine could not work with.
+  | 'text-not-writable';

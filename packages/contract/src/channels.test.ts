@@ -111,9 +111,9 @@ const handlers: ContractHandlers = {
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
-  'document.textLines': () =>
+  'document.textBlocks': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), lines: [], truncated: false, unaddressable: 0 }),
+      ok({ version: asDocVersion(1), blocks: [], truncated: false, rotated: 0, unaddressable: 0 }),
     ),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], truncated: false })),

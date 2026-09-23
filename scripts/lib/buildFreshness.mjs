@@ -114,6 +114,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
   ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
   ['packages/kernel/src/pdfiumTextEdit.ts', 'packages/kernel/dist/pdfiumTextEdit.js', 'tsc'],
+  // THE BLOCK GROUPING, which the block-edit cases read through to name what they edit.
+  ['packages/kernel/src/textLines.ts', 'packages/kernel/dist/textLines.js', 'tsc'],
   [
     'packages/kernel/src/commandDeclarations.ts',
     'packages/kernel/dist/commandDeclarations.js',

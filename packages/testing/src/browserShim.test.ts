@@ -261,7 +261,7 @@ describe('browser shim', () => {
       'document.signatures',
       'document.snapshotRegion',
       'document.split',
-      'document.textLines',
+      'document.textBlocks',
       'document.undo',
       'document.unlock',
       'document.unsaved',

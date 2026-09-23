@@ -2,10 +2,9 @@ import { MAX_OBJECT_SCALE, MAX_PAGE_COORDINATE, MIN_OBJECT_SCALE } from '@monste
 import { z } from 'zod';
 
 /**
- * What the object editor answers with — its own module for
- * `replaceTextObjectResult.ts`'s forced reason: the entry imports the body
- * lazily and the body needs this type, so declaring it beside the entry would
- * make the two circular.
+ * What the object editor answers with — its own module for a forced reason:
+ * the entry imports the body lazily and the body needs this type, so declaring
+ * it beside the entry would make the two circular.
  *
  * ## A DISCRIMINATED UNION, because the dialog dispatches one of THREE commands
  *

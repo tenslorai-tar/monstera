@@ -123,7 +123,7 @@ import {
   type AnnotationDataSource,
   type BarcodeWriter,
   lazyBarcodeWriter,
-  type DocumentTextLinesReader,
+  type DocumentTextBlocksReader,
   type DocumentPageObjectsReader,
   type DocumentPageRasteriser,
   EngineUnavailableError,
@@ -533,10 +533,10 @@ const noFlatFields: DocumentFlatFieldsReader = () =>
  * that reached it and saw a bare `Error` would be reading a fixture; seeing
  * `EngineUnavailableError` it is reading the boundary's own input.
  */
-const noTextLines: DocumentTextLinesReader = () =>
+const noTextBlocks: DocumentTextBlocksReader = () =>
   Promise.reject(new EngineUnavailableError('reading a page’s text'));
 
-/** {@link noTextLines}' sibling on the object read, and for its reason. */
+/** {@link noTextBlocks}' sibling on the object read, and for its reason. */
 const noPageObjects: DocumentPageObjectsReader = () =>
   Promise.reject(new EngineUnavailableError('reading a page’s objects'));
 
@@ -679,7 +679,7 @@ const INERT = {
   pageTables: noPageTables,
   pageLinks: noPageLinks,
   destinations: noDestinations,
-  // REFUSES IN BOTH SETS, for the reason `textLines` gives below: recognition is
+  // REFUSES IN BOTH SETS, for the reason `textBlocks` gives below: recognition is
   // the engine host's, and a fixture answering plausible words would be this file
   // inventing one. `ocrTextLayer.test.ts` is where the write is proven and
   // `commandBus.test.ts` is where the pre-read's resolution is.
@@ -694,7 +694,7 @@ const INERT = {
   barcodes: noBarcodes,
   writeBarcode: noBarcodeWriter,
   accessibility: () => Promise.reject(new Error('this case does not check accessibility')),
-  textLines: noTextLines,
+  textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
   duplicates: noDuplicates,
@@ -774,7 +774,7 @@ const LOCAL_READS = {
   // omission. Every other reader here has a local composition because MuPDF is
   // in this process for these cases; PDFium is not, and a fixture that answered
   // plausible lines would be this file inventing an engine.
-  textLines: noTextLines,
+  textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
   duplicates: localDuplicates,

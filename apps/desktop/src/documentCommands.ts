@@ -34,6 +34,7 @@ import {
   type DocusignRefusalKind,
   type SignRefusal,
   type TimestampAuthority,
+  type TextBlockStyle,
   sourceIdsOf,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
@@ -110,6 +111,7 @@ import {
   TimestampRefusedError,
   TimestampUnreachableError,
   type DocusignSigner,
+  type EditableBlock,
   EngineCallFailed,
   writeDocumentCopy,
   writeDocumentSplit,
@@ -1586,31 +1588,33 @@ export class EngineUnavailableError extends Error {
  * gives `replaceTextObject` `targets: 'text-object'` precisely because that is a
  * third index space.
  *
- * The grouping into lines happens at the composition point rather than here or
- * in the host — ADR-0049 permits it only while its output reaches a dialog a
- * person answers, and one call site is what makes that readable.
+ * The grouping into blocks happens at the composition point rather than here
+ * or in the host — ADR-0049 permits it only while its output reaches the
+ * in-place editor a person answers (ADR-0096), and one call site is what makes
+ * that readable.
  */
-export type DocumentTextLinesReader = (
+export type DocumentTextBlocksReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
-) => Promise<{
-  readonly lines: readonly { readonly runs: readonly { index: number; text: string }[] }[];
-  readonly truncated: boolean;
-  readonly unaddressable: number;
-}>;
+) => Promise<Omit<DocumentTextBlocks, 'version'>>;
 
-/** The lines, stamped with the version the lane read them at. */
-export interface DocumentTextLines {
+/** The blocks, stamped with the version the lane read them at. */
+export interface DocumentTextBlocks {
   readonly version: DocVersion;
-  readonly lines: readonly { readonly runs: readonly { index: number; text: string }[] }[];
+  readonly blocks: readonly EditableBlock<TextBlockStyle>[];
   readonly truncated: boolean;
+  /**
+   * Characters on this page set at an angle, which are not offered for editing
+   * in place: an editor cannot be placed along an axis the page is not set on.
+   */
+  readonly rotated: number;
   /**
    * Characters on this page no command can name — text inside a Form XObject.
    *
    * See `PageText.unaddressable`. A surface owes the reader a sentence when
-   * this is non-zero, because the alternative is a chooser that looks half
-   * empty with nothing saying why.
+   * this is non-zero, because the alternative is a page that looks half
+   * editable with nothing saying why.
    */
   readonly unaddressable: number;
 }
@@ -1634,7 +1638,7 @@ export interface DocumentPageObject {
 /**
  * Every object on a page, in the EDITING engine's numbering.
  *
- * {@link DocumentTextLinesReader}'s shape on the other read, and it groups
+ * {@link DocumentTextBlocksReader}'s shape on the other read, and it groups
  * nothing: an object is what the engine answered.
  */
 export type DocumentPageObjectsReader = (
@@ -1939,7 +1943,7 @@ export interface DocumentCommandsParts {
    * a decided answer, and a default of `undefined` would make *this build cannot
    * edit text* a state a caller reaches by saying nothing.
    */
-  readonly textLines: DocumentTextLinesReader;
+  readonly textBlocks: DocumentTextBlocksReader;
   /** The editing engine's reading of a page's objects, or a thrower. */
   readonly pageObjects: DocumentPageObjectsReader;
   /** The editing engine's raster of a page, or a thrower. */
@@ -1952,7 +1956,7 @@ export interface DocumentCommandsParts {
   readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
    * The compose host, or `null` where none can exist. Required and undefaulted for
-   * `textLines`' reason: *this build cannot import* is a decided answer, not a state a
+   * `textBlocks`' reason: *this build cannot import* is a decided answer, not a state a
    * caller reaches by saying nothing.
    */
   readonly compose: ComposeImport;
@@ -2117,7 +2121,7 @@ export class DocumentCommands {
   readonly #barcodes: DocumentBarcodesReader;
   readonly #accessibility: DocumentAccessibilityReader;
   readonly #writeBarcode: BarcodeWriter;
-  readonly #textLines: DocumentTextLinesReader;
+  readonly #textBlocks: DocumentTextBlocksReader;
   readonly #pageObjects: DocumentPageObjectsReader;
   readonly #renderPage: DocumentPageRasteriser;
   readonly #duplicates: DocumentDuplicatesReader;
@@ -2182,7 +2186,7 @@ export class DocumentCommands {
     this.#barcodes = parts.barcodes;
     this.#accessibility = parts.accessibility;
     this.#writeBarcode = parts.writeBarcode;
-    this.#textLines = parts.textLines;
+    this.#textBlocks = parts.textBlocks;
     this.#pageObjects = parts.pageObjects;
     this.#renderPage = parts.renderPage;
     this.#duplicates = parts.duplicates;
@@ -2827,7 +2831,7 @@ export class DocumentCommands {
    * about — the missing engine is a different state and {@link
    * EngineUnavailableError} is the one that says so.
    */
-  async textLines(docId: DocId, page: number): Promise<DocumentTextLines> {
+  async textBlocks(docId: DocId, page: number): Promise<DocumentTextBlocks> {
     const { version, value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -2835,21 +2839,16 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      return this.#textLines(docId, sessions, page);
+      return this.#textBlocks(docId, sessions, page);
     });
 
-    return {
-      version,
-      lines: value.lines,
-      truncated: value.truncated,
-      unaddressable: value.unaddressable,
-    };
+    return { version, ...value };
   }
 
   /**
    * Every object on a page, inside the document's lane.
    *
-   * {@link textLines}' guards in its order and for its reasons: the poison
+   * {@link textBlocks}' guards in its order and for its reasons: the poison
    * guard first, then a session guard naming `mupdf` because the bytes this
    * read hands PDFium come from the live MuPDF session. The version comes back
    * with the answer, and it is what the three object commands carry — a chooser

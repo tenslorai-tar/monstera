@@ -54,7 +54,7 @@ if (!existsSync(library)) {
   });
 }
 
-refuseStaleBuild(root, PDFIUM_COMMAND, 4);
+refuseStaleBuild(root, PDFIUM_COMMAND, 5);
 
 const { openPdfium, pdfiumWriter, pageObjects, pageText } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type GroupableRun, groupIntoLines } from './textLines.js';
+import { type BlockableRun, type GroupableRun, groupIntoBlocks, groupIntoLines } from './textLines.js';
 
 /**
  * The editor's line grouping, cased on the shapes the measurement produced.
@@ -118,8 +118,106 @@ describe('grouping runs into visual lines', () => {
 
   it('answers nothing for a page with no text runs', () => {
     // A page of images is a real page. An empty list is the honest answer and
-    // the dialog says so in words; a grouping that threw would make *this page
+    // the editor says so in words; a grouping that threw would make *this page
     // has no text* an error somebody reports.
     expect(groupIntoLines([])).toStrictEqual([]);
+  });
+});
+
+/**
+ * A run with a horizontal extent, for the block grouping. The style is the
+ * run's own index, so a case can say which run a block took its style from.
+ */
+const placed = (
+  index: number,
+  text: string,
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+): BlockableRun<number> => ({ index, text, left, right, bottom, top, style: index });
+
+describe('grouping lines into the blocks a person edits in place (ADR-0096)', () => {
+  it('joins a paragraph’s lines into ONE block, however many lines it has', () => {
+    // THE CASE THE ROW EXISTS FOR, in the owner's recording: a bulleted list
+    // with a wrapped line inside it is one outline. Lines 14pt apart at 11pt
+    // text leave a 3pt gap, well under a line's height.
+    const blocks = groupIntoBlocks([
+      placed(3, 'Help in providing care', 175, 400, 700.2, 711.1),
+      placed(8, 'Offers assistance during labour', 175, 440, 686.0, 697.0),
+      placed(12, 'identifies and recognize', 175, 380, 671.9, 682.9),
+    ]);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.lines.map(covers)).toStrictEqual([[3], [8], [12]]);
+    expect(blocks[0]?.box).toStrictEqual({ x0: 175, y0: 671.9, x1: 440, y1: 711.1 });
+  });
+
+  it('CONTROL: a gap TALLER than a line starts a new block', () => {
+    // What separates *a block is lines close together* from *a block is the
+    // page*: the same two lines, moved apart by more than a line's height, must
+    // be two outlines. A grouping that joined everything horizontally
+    // overlapping passes the case above and fails here.
+    const blocks = groupIntoBlocks([
+      placed(3, 'WORK EXPERIENCE', 147, 336, 700, 711),
+      placed(8, '09/2024 till date', 147, 428, 676, 687),
+    ]);
+
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[3]], [[8]]]);
+  });
+
+  it('SPLITS one line across a gap wider than the line is tall — two columns on one baseline', () => {
+    // PDFium's overlap puts both columns in one line; a block across both would
+    // be edited as one string that is not on the page. The runs share a
+    // baseline to the tenth, as measured runs do.
+    const blocks = groupIntoBlocks([
+      placed(1, 'Left column words', 72, 280, 700.0, 711.0),
+      placed(2, 'Right column words', 320, 540, 699.9, 711.1),
+    ]);
+
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[1]], [[2]]]);
+  });
+
+  it('CONTROL: runs a word-space apart stay ONE line of one block', () => {
+    // The same line with the second run starting 3pt after the first ends — the
+    // gap a space leaves. A splitter that split at every run boundary passes the
+    // case above and would break a bold word off the sentence it is in.
+    const blocks = groupIntoBlocks([
+      placed(1, 'HEALTH CARE ASSISTANT ', 147, 395, 700.0, 711.0),
+      placed(2, 'FLONEFAIR BEAUTY SPA', 398, 637, 699.9, 711.1),
+    ]);
+
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[1, 2]]]);
+  });
+
+  it('keeps the ENGINE’S indices, and takes the style of the block’s FIRST run', () => {
+    // Indices non-contiguous and not from zero, for ADR-0049's first decision;
+    // the style identifies which run it came from.
+    const blocks = groupIntoBlocks([
+      placed(9, 'First line', 100, 300, 700, 711),
+      placed(4, 'second line', 100, 280, 686, 697),
+    ]);
+
+    expect(blocks[0]?.style).toBe(9);
+    expect(blocks[0]?.lines.map(covers)).toStrictEqual([[9], [4]]);
+  });
+
+  it('a line that comes LAST in reading order still joins its paragraph, in its place', () => {
+    // THE SHAPE A WRAP LEAVES, seen in the running build: the new line is a new
+    // object at the end of the content stream, so its run arrives last though it
+    // sits second on the page. Grouped in reading order it joined the line above
+    // and split the paragraph in two outlines.
+    const blocks = groupIntoBlocks([
+      placed(3, 'First line of the paragraph', 72, 400, 700, 711),
+      placed(8, 'third line, moved down', 72, 380, 670, 681),
+      placed(12, 'fourth line', 72, 200, 655, 666),
+      placed(40, 'the wrapped words', 72, 300, 685, 696),
+    ]);
+
+    expect(blocks.map((block) => block.lines.map(covers))).toStrictEqual([[[3], [40], [8], [12]]]);
+  });
+
+  it('answers nothing for a page with no runs', () => {
+    expect(groupIntoBlocks([])).toStrictEqual([]);
   });
 });

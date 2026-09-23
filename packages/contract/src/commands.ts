@@ -4147,6 +4147,69 @@ export const replaceAllTextSchema = z.object({
   regex: z.boolean().optional(),
 });
 
+/**
+ * How many lines a block edit may name, and how many a person may type into one.
+ *
+ * `MAX_TEXT_OBJECTS`' figure: a block is a piece of a page, and the densest page
+ * this build has measured — a 12×70 table at 6pt — has 840 lines as
+ * `document.pageTextLayer` counts them, most of them single cells that the
+ * block grouping keeps apart. A block of 512 lines is a page of prose set at
+ * under two points.
+ */
+export const MAX_BLOCK_LINES = 512;
+
+/**
+ * Edit one block of a page's text in place, reflowing what no longer fits
+ * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
+ *
+ * ## The block AS THE PERSON SAW IT, and what they typed
+ *
+ * `lines` is the block's lines, each the runs it is made of, in the engine's
+ * own object numbering — exactly what `document.textBlocks` answered at
+ * `version`. `text` is the block's words after the edit, lines separated by
+ * line breaks. The kernel re-reads each run's text off the page at that version
+ * and diffs against it; a renderer never says which object a typed character
+ * belongs to, because that is `replacementsForLine`'s question and it is asked
+ * once, where the write happens.
+ *
+ * ## An INTENT, not a layout
+ *
+ * Where a line breaks, where a new line goes and how far the lines below move
+ * are the kernel's — it measures with the engine that will draw the words. A
+ * renderer does not have the page's fonts, so a list of positions from it
+ * would be a guess about a font it cannot load, and a payload that scales with
+ * the text rather than with the intent.
+ *
+ * ## TERMINAL
+ *
+ * It creates and removes objects, and PDFium can describe an object and cannot
+ * rebuild one — `deletePageObjects`' reason. Undo takes a checkpoint.
+ *
+ * ## One index once
+ *
+ * An object named in two lines is two opinions about which line it is in, and
+ * the boundary refuses it, as `replaceTextObjectSchema` refuses one named twice.
+ */
+export const editTextBlockSchema = z
+  .object({
+    kind: z.literal('editTextBlock'),
+    /** Zero-based index of the page the block is on. */
+    page: z.number().int().nonnegative(),
+    /** The block's lines, top to bottom, each its runs' indices in reading order. */
+    lines: z
+      .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_TEXT_REPLACEMENTS))
+      .min(1)
+      .max(MAX_BLOCK_LINES)
+      .refine((lines) => new Set(lines.flat()).size === lines.flat().length, {
+        message: 'an object may be named once in a block edit',
+      }),
+    /** The block's words after the edit, lines separated by line breaks. */
+    text: z.string().max(MAX_REPLACED_TEXT),
+    /** The version the block was read at. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .strict();
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -4196,6 +4259,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
+  editTextBlockSchema,
 ]);
 
 /**
@@ -4398,6 +4462,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // 52.9% line-agreement score refuses. The kernel finds them in the editing
   // engine's own runs.
   replaceAllTextSchema,
+  // RENDERABLE: the block a person saw, as indices a read answered, and the
+  // words they typed. What it cannot express is where a line breaks or where a
+  // new one goes — the renderer does not have the page's fonts, so those are
+  // the kernel's (ADR-0096).
+  editTextBlockSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -4564,6 +4633,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'placePageObject') return command.version;
   if (command.kind === 'recolorPageObjects') return command.version;
   if (command.kind === 'deletePageObjects') return command.version;
+  if (command.kind === 'editTextBlock') return command.version;
   if (command.kind === 'replacePage') return command.version;
   if (command.kind === 'importPageAsLayer') return command.version;
   return undefined;
@@ -4639,7 +4709,8 @@ export type NamesATextObject =
   | 'replaceTextObject'
   | 'placePageObject'
   | 'recolorPageObjects'
-  | 'deletePageObjects';
+  | 'deletePageObjects'
+  | 'editTextBlock';
 const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
 void _theObjectNameIsACommandKind;
 
