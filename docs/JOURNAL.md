@@ -892,6 +892,55 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-23 — Stage 10: the title bar projects, the ribbon folds, and CI answered three questions this machine could not
+
+The owner's design drove five pieces of work, and the interesting record is not what was built but
+what only CI could see.
+
+**ADR-0095, the title bar as a placement surface.** Donate and Rate Us sit between the tabs and the
+command search, and §7 had five surfaces and none of them was that row — so the amendment went
+first, alone, and `title-bar` carries an `emphasis` because a bar reading a command's id to choose a
+variant is the layout table §7 forbids, one field narrower. Donate ships; **Rate Us is blocked on the
+Microsoft Store product id**, and its address is declared empty rather than guessed, because a
+plausible id sends a person to somebody else's listing.
+
+**`app.openWebPage` takes a place, never a URL.** The renderer cannot compose a destination, so there
+is no allowlist in `main` for a later caller to forget — invariant 2's argument for `FileHandle`, one
+noun along.
+
+**The ribbon's fold found its own defect before it drew anything.** A group's first fold can make it
+*wider*, because the *More* costs more than the button it hides; the first loop folded, found the row
+still too wide, and folded again, spending the space it was buying. Two more came from wiring it: the
+projection is rebuilt every render, so an effect keyed on its identity looped and put the ribbon
+behind the error boundary — *Part of this window stopped working*, on screen — and the row's border
+box over-stated the room by padding plus flex gaps, 57 px, which left it scrolling sideways.
+
+**`MINIMUM_WINDOW` = 1024 × 720, measured**: 13 px of overflow at 900, fits at 960, and the margin is
+stated as roughly one more group's floor because only the Home section was measured.
+
+**Three CI reds, and the annotations endpoint is why any of them were readable.** Job logs answer 403
+from this seat; `/check-runs/{id}/annotations` is public and carries what the runner printed.
+
+1. The palette's trap case. My first fix asserted a precondition it had only assumed — correct, and
+   not the cause: it failed again at the same line. The case was testing
+   `.m-palette.contains(activeElement)`, which is a statement about DOM position, and a tooltip is
+   portaled out of the dialog's subtree. The predicate is now the promise a layered trap makes.
+2. Then my own fold case: the overflow menu would not open there, under a click and then under Enter
+   on a focused trigger, while opening every time here and with every other assertion in that case
+   green. **Opening it in a browser is no longer asserted** — the claim it carried, *nothing
+   disappears when a group folds*, is `splitFold`'s partition at every depth, which is stronger and
+   is measurable.
+
+The general shape, three times in one day: **a case can be correct about its subject and wrong about
+its instrument.** Each of these tested something real through a mechanism that only works here.
+
+**Also**: the floating pill now gets a strip of its own, so it never covers a page — measured at 44 px
+of overlap before the fix; the square logo master is retired and the mark alone is the application
+icon; every Settings page introduces itself, and a page is no longer listed merely for having a note,
+which would have put `settings2.png`'s empty page straight back.
+
+---
+
 ## 2026-09-22 — Stage audit of `57de0e0..d2989fc` — findings NNNNNN-1 to NNNNNN-4
 
 43 commits, 199 files, 14 proofs added and 41 modified, 26 source files added and 72 changed

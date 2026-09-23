@@ -22,9 +22,9 @@ import { SECTION_IDS, type SectionId } from '../registries/placement.js';
 import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
-import { type OrderedEntry, type RibbonSection, ribbonModel } from './projections.js';
+import { type RibbonSection, ribbonModel } from './projections.js';
 import { RibbonMore } from './RibbonMore.js';
-import type { GroupFold } from './ribbonFolding.js';
+import { splitFold } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
 
 /**
@@ -229,7 +229,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
         {groupsOf(sections, active).map((group, index) => (
           <div className="m-ribbon__group" key={group.group} ref={fold.groupRef(index)}>
             <div className="m-ribbon__buttons">
-              {shownOf(group.entries, fold.folds?.[index]).map((entry) => (
+              {splitFold(group.entries, fold.folds?.[index]).shown.map((entry) => (
                 <ToolButton
                   key={entry.command.id}
                   command={entry.command.id}
@@ -259,10 +259,10 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
               {/* WHAT DID NOT FIT, in this group's own More. A fold is a presentation of the
                   projection above and never a second list: these entries are the tail of the same
                   array the buttons came from. */}
-              {foldedAway(group.entries, fold.folds?.[index]).length === 0 ? null : (
+              {splitFold(group.entries, fold.folds?.[index]).folded.length === 0 ? null : (
                 <RibbonMore
                   context={context}
-                  entries={foldedAway(group.entries, fold.folds?.[index])}
+                  entries={splitFold(group.entries, fold.folds?.[index]).folded}
                   onChosen={() => {
                     if (mode === 'studio') setOverlay(false);
                   }}
@@ -284,28 +284,6 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
       ) : null}
     </div>
   );
-}
-
-/**
- * The entries a group draws in place — all of them until the row has been measured.
- *
- * `undefined` is *not measured yet* and is deliberately not the same as a fold showing everything:
- * before the first measurement there is nothing to fold from, and treating the two alike would draw
- * a folded ribbon for one frame on a window wide enough for the whole of it.
- */
-function shownOf(entries: readonly OrderedEntry[], fold: GroupFold | undefined): readonly OrderedEntry[] {
-  return fold === undefined ? entries : entries.slice(0, fold.shown);
-}
-
-/**
- * The entries this group's *More* holds — empty before the row is measured, and empty when nothing
- * folded.
- *
- * Derived from the same array rather than from `fold.more`, so the button and its contents cannot
- * disagree: a *More* is drawn exactly when there is something in it.
- */
-function foldedAway(entries: readonly OrderedEntry[], fold: GroupFold | undefined): readonly OrderedEntry[] {
-  return fold === undefined ? [] : entries.slice(fold.shown);
 }
 
 /** One section's groups, or none when it is not in the model. */

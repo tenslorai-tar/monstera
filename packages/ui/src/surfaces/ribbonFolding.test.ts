@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { foldGroups, type GroupWidths } from './ribbonFolding.js';
+import { foldGroups, splitFold, type GroupWidths } from './ribbonFolding.js';
 
 /**
  * The ribbon's fold, over widths alone.
@@ -113,5 +113,34 @@ describe('foldGroups', () => {
 
   it('an EMPTY row of groups is an empty answer, not a hang', () => {
     expect(foldGroups([], 0, MORE)).toStrictEqual([]);
+  });
+});
+
+describe('splitFold — nothing is lost when a group folds', () => {
+  const tools = ['open', 'save', 'print', 'undo', 'redo'];
+
+  it('the two halves are a PARTITION at every depth, in order', () => {
+    // THE WIRED-TOOLS RULE APPLIED TO FOLDING: a tool that vanished when the window narrowed would
+    // be a control that stops existing at a width. Asserted at every depth rather than at one,
+    // because an off-by-one in the slice is correct at exactly one of them.
+    for (let shown = 1; shown <= tools.length; shown += 1) {
+      const split = splitFold(tools, { shown, more: shown < tools.length });
+      expect([...split.shown, ...split.folded], `shown ${String(shown)}`).toStrictEqual(tools);
+      expect(split.shown).toHaveLength(shown);
+    }
+  });
+
+  it('NOT MEASURED YET draws everything and folds nothing', () => {
+    // Distinct from a fold that hides nothing, which is what the control below says.
+    expect(splitFold(tools, undefined)).toStrictEqual({ shown: tools, folded: [] });
+  });
+
+  it('CONTROL: a fold that hides nothing also folds nothing, and the two are reached differently', () => {
+    // Without this the case above passes for a function that ignores its fold entirely.
+    const split = splitFold(tools, { shown: tools.length, more: false });
+    expect(split.folded).toStrictEqual([]);
+    expect(split.shown).toStrictEqual(tools);
+    // AND A FOLD THAT HIDES EVERYTHING BUT ONE really does, so `shown` is read rather than assumed.
+    expect(splitFold(tools, { shown: 1, more: true }).folded).toStrictEqual(['save', 'print', 'undo', 'redo']);
   });
 });

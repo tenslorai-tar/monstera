@@ -110,3 +110,25 @@ export function foldGroups(
 
   return state.map((entry) => ({ shown: entry.shown, more: entry.shown < entry.group.buttons.length }));
 }
+
+/**
+ * Splits a group's entries into the ones drawn in place and the ones its *More* holds.
+ *
+ * **One function for both halves, because the property that matters is that they are a partition**:
+ * every command a group has is either a button or in its overflow, never lost between them and never
+ * in both. That is the wired-tools rule applied to folding — a tool that vanished when the window
+ * narrowed would be a control that stops existing at a width — and as two separate slices at a call
+ * site it is a property nothing states.
+ *
+ * `undefined` is *not measured yet*, which draws everything and folds nothing. It is deliberately
+ * not the same as a fold that hides nothing: before the first measurement there is nothing to fold
+ * from, and treating the two alike would draw a folded ribbon for one frame on a window wide enough
+ * for the whole of it.
+ */
+export function splitFold<T>(entries: readonly T[], fold: GroupFold | undefined): {
+  readonly shown: readonly T[];
+  readonly folded: readonly T[];
+} {
+  if (fold === undefined) return { shown: entries, folded: [] };
+  return { shown: entries.slice(0, fold.shown), folded: entries.slice(fold.shown) };
+}
