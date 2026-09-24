@@ -267,7 +267,9 @@ describe('sendEnvelope', () => {
 });
 
 describe('completedDocument', () => {
-  it('reads the combined document’s bytes from documents/combined', async () => {
+  it('reads the combined document’s bytes from documents/combined, ASKING for the certificate', async () => {
+    // THE WHOLE URL, query included: DocuSign leaves the certificate of completion out of `combined`
+    // unless `certificate=true` is asked for, and the owner's first signed copy came back without it.
     const signed = Uint8Array.of(1, 2, 3, 4);
     const { fetchImpl, asked } = recording(() => new Response(signed));
 
@@ -278,7 +280,7 @@ describe('completedDocument', () => {
 
     expect(Array.from(bytes)).toStrictEqual([1, 2, 3, 4]);
     expect(asked[0]?.url).toBe(
-      'https://na3.docusign.net/restapi/v2.1/accounts/acct/envelopes/env-1/documents/combined',
+      'https://na3.docusign.net/restapi/v2.1/accounts/acct/envelopes/env-1/documents/combined?certificate=true',
     );
   });
 });

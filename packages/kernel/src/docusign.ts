@@ -465,7 +465,15 @@ export async function envelopeStatus(
   return status;
 }
 
-/** A completed envelope's documents as one PDF (`documents/combined`). */
+/**
+ * A completed envelope's documents as one PDF, WITH DocuSign's certificate of completion.
+ *
+ * **`certificate=true` is required, not a preference**: *EnvelopeDocuments: get*, read 2026-09-24,
+ * says the certificate is included in `combined` only when that parameter is true — *"When false,
+ * (the default) the certificate of completion is not included"*. The request asked for nothing, so
+ * the owner's first signed copy (2026-09-24) came back with its five pages and no certificate, while
+ * {@link MAX_DOCUMENT_BYTES}' own reasoning counted on the certificate pages being there.
+ */
 export async function completedDocument(
   request: { readonly account: DocusignAccount; readonly accessToken: string; readonly envelopeId: string },
   fetchImpl: typeof fetch = fetch,
@@ -473,7 +481,7 @@ export async function completedDocument(
   return call(
     fetchImpl,
     `${request.account.basePath}/v2.1/accounts/${encodeURIComponent(request.account.accountId)}` +
-      `/envelopes/${encodeURIComponent(request.envelopeId)}/documents/combined`,
+      `/envelopes/${encodeURIComponent(request.envelopeId)}/documents/combined?certificate=true`,
     { method: 'GET', headers: { authorization: `Bearer ${request.accessToken}` } },
     MAX_DOCUMENT_BYTES,
   );

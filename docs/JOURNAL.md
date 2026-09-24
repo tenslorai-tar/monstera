@@ -892,6 +892,33 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — DocuSign end to end, and the certificate the signed copy did not carry
+
+With `sendingAccount` taking the only account, the owner's run through the application passed every
+step of the click list:
+
+- Send to DocuSign answered *"Sent. DocuSign is emailing each signer now."*;
+- the e-mail came from DocuSign's demo service;
+- the signer signed, and placed a date of their own;
+- DocuSign reported *"The agreement has been signed successfully"* and mailed *Completed*;
+- **Save signed copy from DocuSign** saved a PDF that reopened in Monstera, carrying the envelope-ID
+  stamp, DocuSign's *DEMONSTRATION DOCUMENT ONLY* header and the signer's date.
+
+That settles the row's last open question: **an envelope with no tabs is accepted**, and DocuSign lets
+the signer place fields on it.
+
+**One thing the run showed was missing, and I had told the owner to expect it**: the saved copy had the
+original's five pages and **no certificate of completion**. *EnvelopeDocuments: get*, read 2026-09-24:
+for `combined`, *"When true, the certificate of completion is included … When false, (the default) the
+certificate of completion is not included."* `completedDocument` asked for nothing. Yet
+`MAX_DOCUMENT_BYTES`' own comment reasons about *"DocuSign's signature and certificate pages"*, so
+the module assumed the certificate and never requested it. It now requests
+`documents/combined?certificate=true`. The kernel case asserts the whole URL, query included, so
+removing the parameter is red. The run that shows the certificate page is still owed: one more send,
+sign and save.
+
+---
+
 ## 2026-09-24 — DocuSign, read rather than reasoned: one account, marked `false`
 
 **Correction to the entry below.** It says the first run was refused because the parse compared
