@@ -31,8 +31,9 @@ import { readWithin } from './verifiedDownload.js';
  *   §4.1.3 requires it whenever the authorization request carried one.
  * - **The account**: Docusign's *From the Trenches: Who are you?* — `userinfo`
  *   answers `accounts[]` with `account_id`, `account_name`, `base_uri` and
- *   `is_default`, **`is_default` being the STRING `"true"` or `"false"`**, and the
- *   REST base path is `base_uri` plus `/restapi`; its examples are
+ *   `is_default`, the REST base path being `base_uri` plus `/restapi`. **That article spells
+ *   `is_default` as a STRING, and the endpoint's reference declares a BOOLEAN** — see
+ *   `isDefaultAccount`, which takes both after a live run was refused on the second. Its examples are
  *   `https://eu.docusign.net` and `https://na3.docusign.net`. DocuSign's own Java
  *   SDK test builds the base path the same way.
  * - **The envelope**: Docusign's eSignature OpenAPI (v2.1) — `POST
@@ -309,11 +310,27 @@ export interface DocusignAccount {
 }
 
 /**
- * The default account a token belongs to.
+ * Whether one `userinfo` account entry is the person's default.
  *
- * **`is_default` is compared as the STRING `"true"`**, which is what DocuSign's own
- * example answer shows; a comparison with the boolean would never match, and would
- * report every person as having no account.
+ * **THE BOOLEAN `true` is DocuSign's declared type**: *User info endpoint reference*, read
+ * 2026-09-24, types `is_default` as `boolean` and its example answers `"is_default": true`. The
+ * STRING `"true"` is the other shape DocuSign has published, in *From the Trenches: Who are you?*,
+ * which this module followed alone until the owner's first live run (2026-09-24) was refused with
+ * `no-account` — the sign-in had succeeded, so a string-only comparison matched no entry. Both
+ * published spellings are the rule; anything else is not a default.
+ */
+function isDefaultAccount(account: unknown): account is Record<string, unknown> {
+  if (typeof account !== 'object' || account === null) return false;
+  const flag = (account as Record<string, unknown>)['is_default'];
+  return flag === true || flag === 'true';
+}
+
+/**
+ * The default account a token belongs to — the entry {@link isDefaultAccount} names.
+ *
+ * DocuSign's reference allows an answer with no default in *"some rare error cases"*, and asks
+ * that its support repair the user's records, so that answer is refused by name rather than
+ * guessed at by taking the first account.
  */
 export async function defaultAccount(
   request: { readonly environment: DocusignEnvironment; readonly accessToken: string },
@@ -328,12 +345,7 @@ export async function defaultAccount(
   if (!Array.isArray(accounts)) {
     throw new DocusignRefused('unreadable-answer', 'userinfo answered no accounts list');
   }
-  const chosen = accounts.find(
-    (account: unknown) =>
-      typeof account === 'object' &&
-      account !== null &&
-      (account as Record<string, unknown>)['is_default'] === 'true',
-  ) as Record<string, unknown> | undefined;
+  const chosen = accounts.find(isDefaultAccount);
   if (chosen === undefined) {
     throw new DocusignRefused('no-account', 'userinfo named no default account');
   }

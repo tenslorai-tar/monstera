@@ -892,6 +892,48 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — DocuSign's first live run: the sign-in worked, and `is_default` is a boolean
+
+The owner created a developer account, registered the app as the click list below says (the three
+redirect addresses, no secret), stored the integration key and pressed **Send to DocuSign**. The sign-in
+completed in the browser and Monstera answered *"Your DocuSign sign-in has no account this application
+can send from."*
+
+**What that sentence proves before anything else**: `no-account` is raised only after `/oauth/userinfo`
+answered an accounts list, and that call needs an access token — so the loopback redirect on a
+registered port, PKCE, and a token exchange **with no client secret** all worked. That settles the
+question the discovery documents left open, where only secret-based token methods are listed. DocuSign's
+app page labels this registration *Implicit Grant*; the exchange that ran is the authorization code with
+PKCE, whatever the page calls it.
+
+**The mechanism.** `defaultAccount` chose the entry whose `is_default` was the STRING `"true"`, following
+the article *From the Trenches: Who are you?*. DocuSign's *User info endpoint reference*, read 2026-09-24,
+types the field as `boolean` and answers `"is_default": true` in its example. A string comparison matches
+no boolean, so every person read as having no default account. **The tests agreed with the defect**: every
+fixture spelt the string, and the case titled *CONTROL* asserted that a boolean `true` names no account —
+the bug, written down as the specification. Knowing the authority's rule and checking it against one of
+its two published statements is B3a's partial reimplementation: it agreed with one source perfectly.
+
+**The fix** is one named rule, `isDefaultAccount`: DocuSign's two published spellings, the boolean and the
+string, and nothing else. Cases: the boolean chosen when the default is **second** (so taking the first
+account is also red), the string still taken, and a control across `false` in both spellings, absent,
+and truthy values that are neither (`1`, `"yes"`) — each refused as `no-account`, not guessed. Mutations:
+string-only reddens ten cases across both files; loose truthiness reddens the control.
+
+**The click list was wrong at step 7.** *Send to DocuSign* opens the dialog first, and the browser
+sign-in starts when **Send** is pressed. Steps 7 and 8, corrected:
+
+7. Open any PDF. **Protect › Signatures › Send to DocuSign**. Enter a subject and one signer — your own
+   name and e-mail address — and press **Send**.
+8. Your browser opens at DocuSign: sign in with the developer account and accept if asked. When the tab
+   says it can be closed, return to Monstera, which should say *"Sent. DocuSign is emailing each signer
+   now."*
+
+Steps 9 and 10 stand, and **Monstera must stay open from step 7 to step 10**: which envelope a document
+was sent as is held only while the application runs.
+
+---
+
 ## 2026-09-24 — Stage audit of `d2989fc..22b709d` — findings OOOOOO-1 to OOOOOO-3
 
 30 commits, 200 files, 10 proofs added and 37 modified, 24 source files added, 77 changed and 3

@@ -81,7 +81,7 @@ function docusignFake(): DocusignFake {
       return json({ access_token: `access-${String(issued)}`, refresh_token: `refresh-${String(issued)}`, expires_in: 3600 });
     }
     if (url.pathname === '/oauth/userinfo') {
-      return json({ accounts: [{ account_id: 'acct', is_default: 'true', base_uri: 'https://na3.docusign.net' }] });
+      return json({ accounts: [{ account_id: 'acct', is_default: true, base_uri: 'https://na3.docusign.net' }] });
     }
     if (url.pathname.endsWith('/envelopes') && init?.method === 'POST') {
       fake.envelopesSent.push(fake.envelopesSent.length + 1);

@@ -160,10 +160,11 @@ describe('defaultAccount', () => {
   const ask = (accounts: unknown) =>
     recording(() => json({ sub: 'user', accounts }));
 
-  it('chooses the account whose is_default is the STRING "true", and forms the base path', async () => {
+  it('chooses the account whose is_default is the BOOLEAN true — the reference’s type — and forms the base path', async () => {
+    // THE DEFAULT IS SECOND, so taking the first account would choose `other`.
     const { fetchImpl, asked } = ask([
-      { account_id: 'other', is_default: 'false', account_name: 'Other', base_uri: 'https://eu.docusign.net' },
-      { account_id: 'chosen', is_default: 'true', account_name: 'Chosen', base_uri: 'https://na3.docusign.net' },
+      { account_id: 'other', is_default: false, account_name: 'Other', base_uri: 'https://eu.docusign.net' },
+      { account_id: 'chosen', is_default: true, account_name: 'Chosen', base_uri: 'https://na3.docusign.net' },
     ]);
 
     const account = await defaultAccount({ environment: 'production', accessToken: 'access' }, fetchImpl);
@@ -173,13 +174,25 @@ describe('defaultAccount', () => {
     expect((asked[0]?.init?.headers as Record<string, string>)['authorization']).toBe('Bearer access');
   });
 
-  it('CONTROL: a BOOLEAN true is not DocuSign’s shape, and names no account', async () => {
-    // Without this, a comparison with the boolean passes the case above only if the
-    // fixture happened to use one — and would report every real person as having no
-    // default account.
+  it('also takes the STRING "true", DocuSign’s other published spelling', async () => {
     const { fetchImpl } = ask([
-      { account_id: 'chosen', is_default: true, base_uri: 'https://na3.docusign.net' },
+      { account_id: 'other', is_default: 'false', base_uri: 'https://eu.docusign.net' },
+      { account_id: 'chosen', is_default: 'true', base_uri: 'https://na3.docusign.net' },
     ]);
+    const account = await defaultAccount({ environment: 'production', accessToken: 'a' }, fetchImpl);
+    expect(account.accountId).toBe('chosen');
+  });
+
+  it.each([
+    ['false in both spellings', [false, 'false']],
+    ['absent', [undefined]],
+    ['a truthy value that is neither spelling', [1, 'yes']],
+  ])('CONTROL: an answer whose accounts are %s names no default, and is refused rather than guessed', async (_label, flags) => {
+    // THE RULE IS TWO SPELLINGS, not truthiness: a comparison loosened to "anything true-ish" would
+    // choose an account DocuSign never said was the default.
+    const { fetchImpl } = ask(
+      flags.map((flag, index) => ({ account_id: `a${String(index)}`, is_default: flag, base_uri: 'https://na3.docusign.net' })),
+    );
     const refused = await refusalOf(defaultAccount({ environment: 'production', accessToken: 'a' }, fetchImpl));
     expect(refused.reason).toBe('no-account');
   });
@@ -189,7 +202,7 @@ describe('defaultAccount', () => {
     ['plain HTTP', 'http://na3.docusign.net'],
     ['another domain entirely', 'https://example.com'],
   ])('refuses a base URI on %s, before a token is ever sent to it', async (_label, baseUri) => {
-    const { fetchImpl, asked } = ask([{ account_id: 'chosen', is_default: 'true', base_uri: baseUri }]);
+    const { fetchImpl, asked } = ask([{ account_id: 'chosen', is_default: true, base_uri: baseUri }]);
     const refused = await refusalOf(defaultAccount({ environment: 'production', accessToken: 'a' }, fetchImpl));
     expect(refused.reason).toBe('unlisted-host');
     // ONE CALL: userinfo. Nothing went to the refused host.
