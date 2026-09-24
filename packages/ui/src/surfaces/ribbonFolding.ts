@@ -1,3 +1,5 @@
+import type { MessageKey } from '@monstera/shared';
+
 /**
  * How many of each ribbon group's buttons are drawn, and which fold into that group's *More*.
  *
@@ -143,6 +145,54 @@ export function foldGroups(
 }
 
 /**
+ * One button in a group's row: a single tool, or a named menu of tools (ADR-0101).
+ *
+ * `key` is the first member's command id, which is what the row measures a button by, so a menu and
+ * the tool it would otherwise be are measured the same way.
+ */
+export interface RibbonUnit<T> {
+  readonly key: string;
+  readonly menu: MessageKey | undefined;
+  readonly entries: readonly T[];
+}
+
+/** What a ribbon entry has to carry for the row to be built from it. */
+interface UnitEntry {
+  readonly secondary: boolean;
+  readonly menu: MessageKey | undefined;
+  readonly command: { readonly id: string };
+}
+
+/**
+ * A group's PRIMARY entries as the buttons its row draws.
+ *
+ * **The one place a button is defined**, which the fold's measurement and the drawing both call: a
+ * second opinion about whether two menu members are one button would make the fold charge for a
+ * width the row never draws. Members of a menu are gathered where the first of them falls, in their
+ * own order; secondaries are not buttons and are left out.
+ */
+export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonly RibbonUnit<T>[] {
+  const units: { key: string; menu: MessageKey | undefined; entries: T[] }[] = [];
+  const byMenu = new Map<MessageKey, { key: string; menu: MessageKey | undefined; entries: T[] }>();
+  for (const entry of entries) {
+    if (entry.secondary) continue;
+    if (entry.menu === undefined) {
+      units.push({ key: entry.command.id, menu: undefined, entries: [entry] });
+      continue;
+    }
+    const existing = byMenu.get(entry.menu);
+    if (existing !== undefined) {
+      existing.entries.push(entry);
+      continue;
+    }
+    const unit = { key: entry.command.id, menu: entry.menu, entries: [entry] };
+    byMenu.set(entry.menu, unit);
+    units.push(unit);
+  }
+  return units;
+}
+
+/**
  * Splits a group's entries into the ones drawn in place and the ones its *More* holds.
  *
  * **One function for both halves, because the property that matters is that they are a partition**:
@@ -161,15 +211,20 @@ export function foldGroups(
  * because the window is narrow is one of the group's more-used tools, so it comes before the ones the
  * design always keeps out of the row.
  */
-export function splitFold<T extends { readonly secondary: boolean }>(
+export function splitFold<T extends UnitEntry>(
   entries: readonly T[],
   fold: GroupFold | undefined,
 ): {
-  readonly shown: readonly T[];
+  /** The buttons drawn in the row, each a tool or a named menu. */
+  readonly shown: readonly RibbonUnit<T>[];
+  /** What the group's *More* lists, one command per line — a folded menu's members included. */
   readonly folded: readonly T[];
 } {
-  const primaries = entries.filter((entry) => !entry.secondary);
+  const units = ribbonUnits(entries);
   const secondaries = entries.filter((entry) => entry.secondary);
-  if (fold === undefined) return { shown: primaries, folded: secondaries };
-  return { shown: primaries.slice(0, fold.shown), folded: [...primaries.slice(fold.shown), ...secondaries] };
+  if (fold === undefined) return { shown: units, folded: secondaries };
+  return {
+    shown: units.slice(0, fold.shown),
+    folded: [...units.slice(fold.shown).flatMap((unit) => unit.entries), ...secondaries],
+  };
 }

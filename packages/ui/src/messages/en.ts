@@ -1428,6 +1428,11 @@ export const RIBBON_OPEN = messageKey('surface.ribbon.open');
 export const RIBBON_SELECT = messageKey('surface.ribbon.select');
 export const RIBBON_HIGHLIGHT = messageKey('surface.ribbon.highlight');
 export const RIBBON_COMMENT = messageKey('surface.ribbon.comment');
+/** v5-08's Forms captions: the Data menus (ADR-0101), Detect, and Flatten. */
+export const RIBBON_FORM_DATA_EXPORT = messageKey('surface.ribbon.form-data-export');
+export const RIBBON_FORM_DATA_IMPORT = messageKey('surface.ribbon.form-data-import');
+export const RIBBON_DETECT_FIELDS = messageKey('surface.ribbon.detect-fields');
+export const RIBBON_FLATTEN_FORM = messageKey('surface.ribbon.flatten-form');
 export const GROUP_EXPORT = messageKey('surface.ribbon.group.export');
 export const GROUP_COMBINE = messageKey('surface.ribbon.group.combine');
 export const GROUP_ADJUST = messageKey('surface.ribbon.group.adjust');
@@ -1650,7 +1655,6 @@ export const RIBBON_MERGE = messageKey('ribbon.merge');
 export const RIBBON_IMPORT_LAYER = messageKey('ribbon.import-layer');
 export const RIBBON_EDIT_EXTERNALLY = messageKey('ribbon.edit-externally');
 export const RIBBON_FIND_DUPLICATES = messageKey('ribbon.find-duplicates');
-export const RIBBON_FLAT_FIELDS = messageKey('ribbon.flat-fields');
 export const RIBBON_FORM_EXPORT_JSON = messageKey('ribbon.form-export-json');
 export const RIBBON_FORM_EXPORT_XFDF = messageKey('ribbon.form-export-xfdf');
 export const RIBBON_FORM_EXPORT_FDF = messageKey('ribbon.form-export-fdf');
@@ -3556,6 +3560,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_SELECT]: 'Select',
   [RIBBON_HIGHLIGHT]: 'Highlight',
   [RIBBON_COMMENT]: 'Comment',
+  [RIBBON_FORM_DATA_EXPORT]: 'Export',
+  [RIBBON_FORM_DATA_IMPORT]: 'Import',
+  [RIBBON_DETECT_FIELDS]: 'Detect…',
+  [RIBBON_FLATTEN_FORM]: 'Flatten',
   [GROUP_EXPORT]: 'Export',
   [GROUP_COMBINE]: 'Combine',
   [GROUP_ADJUST]: 'Adjust',
@@ -3630,7 +3638,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_IMPORT_LAYER]: 'As layer…',
   [RIBBON_EDIT_EXTERNALLY]: 'External edit…',
   [RIBBON_FIND_DUPLICATES]: 'Duplicates…',
-  [RIBBON_FLAT_FIELDS]: 'Find fields…',
   [RIBBON_FORM_EXPORT_JSON]: 'Export JSON…',
   [RIBBON_FORM_EXPORT_XFDF]: 'Export XFDF…',
   [RIBBON_FORM_EXPORT_FDF]: 'Export FDF…',

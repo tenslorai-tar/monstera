@@ -67,6 +67,8 @@ export interface RibbonEntry {
    * `when`, so a group never draws as a caption over a lone *More*.
    */
   readonly secondary: boolean;
+  /** The menu this entry is drawn under, or `undefined` for its own button (ADR-0101). */
+  readonly menu: MessageKey | undefined;
 }
 
 /** One captioned group within a ribbon section. */
@@ -109,7 +111,7 @@ export function ribbonModel(
       // the eight — so this cannot be reached, and is not defended against.
       if (groups === undefined) continue;
       const entries = groups.get(slot.group) ?? [];
-      entries.push({ command, order: slot.order, secondary: slot.secondary });
+      entries.push({ command, order: slot.order, secondary: slot.secondary, menu: slot.menu });
       groups.set(slot.group, entries);
     }
   }
@@ -179,7 +181,13 @@ function railOrder(placement: Placement): number | undefined {
 function ribbonSlot(
   placement: Placement,
 ):
-  | { readonly section: SectionId; readonly group: string; readonly order: number; readonly secondary: boolean }
+  | {
+      readonly section: SectionId;
+      readonly group: string;
+      readonly order: number;
+      readonly secondary: boolean;
+      readonly menu: MessageKey | undefined;
+    }
   | undefined {
   switch (placement.surface) {
     case 'ribbon':
@@ -188,6 +196,7 @@ function ribbonSlot(
         group: placement.group,
         order: placement.order,
         secondary: placement.prominence === 'secondary',
+        menu: placement.menu,
       };
     case 'quick-toolbar':
     case 'context-menu':

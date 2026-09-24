@@ -87,7 +87,9 @@ import {
   GROUP_ENCRYPTION,
   GROUP_REDACT,
   GROUP_SIGNATURES,
+  GROUP_DATA,
   GROUP_FIELDS,
+  GROUP_MANAGE,
   GROUP_EXPORT,
   GROUP_FILE,
   GROUP_FIND,
@@ -172,7 +174,11 @@ import {
   RIBBON_FIND_DUPLICATES,
   RIBBON_EDIT_TEXT,
   RIBBON_EDIT_OBJECT,
-  RIBBON_FLAT_FIELDS,
+  RIBBON_DETECT_FIELDS,
+  RIBBON_FLATTEN_FORM,
+  RIBBON_FORM_DATA_EXPORT,
+  RIBBON_FORM_DATA_IMPORT,
+  FORMS_FLATTEN,
   RIBBON_FORM_EXPORT_JSON,
   RIBBON_FORM_EXPORT_XFDF,
   RIBBON_FORM_EXPORT_FDF,
@@ -764,7 +770,9 @@ export function showPanelCommand(
         ? // LAST IN MARKUP: the group folds from its end, and the list is also a tab on the left
           // panel, where the marks are not.
           { surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 59 }
-        : { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 1 },
+        : // A SECONDARY in Fields since the owner's v5-08, whose Fields group draws the five field
+          // tools; the list is the left panel's Forms tab, which the design shows open.
+          { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 76, prominence: 'secondary' },
     ],
     when: hasDocument,
     run: (): void => {
@@ -2791,10 +2799,9 @@ function exportFormDataCommand(
     title,
     ribbonTitle,
     icon,
-    // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
-    // caller's, so import and export interleave by the numbering that already
-    // existed rather than by a second one.
-    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order }],
+    // FORMS › DATA, under v5-08's *Export* menu (ADR-0101): the three formats are three commands
+    // and the menu is what states the choice. The `order` is the caller's.
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_DATA, order, menu: RIBBON_FORM_DATA_EXPORT }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2824,15 +2831,17 @@ export const exportFormDataJsonCommand = exportFormDataCommand(
   'document.export-form-data-json',
   EXPORT_FORM_DATA_JSON_TITLE,
   RIBBON_FORM_EXPORT_JSON,
-  32,
-  'Braces',
+  90,
+  // THE DOWNLOAD GLYPH, because this is the first of the *Export* menu and a menu draws its first
+  // member's glyph (ADR-0101) — v5-08 draws Export with a download arrow.
+  'FileDown',
 );
 export const exportFormDataXfdfCommand = exportFormDataCommand(
   'xfdf',
   'document.export-form-data-xfdf',
   EXPORT_FORM_DATA_XFDF_TITLE,
   RIBBON_FORM_EXPORT_XFDF,
-  33,
+  91,
   'FileCode',
 );
 export const exportFormDataFdfCommand = exportFormDataCommand(
@@ -2840,8 +2849,8 @@ export const exportFormDataFdfCommand = exportFormDataCommand(
   'document.export-form-data-fdf',
   EXPORT_FORM_DATA_FDF_TITLE,
   RIBBON_FORM_EXPORT_FDF,
-  34,
-  'FileDown',
+  92,
+  'FileOutput',
 );
 
 /**
@@ -2874,10 +2883,9 @@ function importFormDataCommand(
     title,
     ribbonTitle,
     icon,
-    // FORMS › FIELDS, where `docs/FEATURES.md` puts D5. The `order` is the
-    // caller's, so import and export interleave by the numbering that already
-    // existed rather than by a second one.
-    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order }],
+    // FORMS › DATA, under v5-08's *Import* menu (ADR-0101): the three formats are three commands
+    // and the menu is what states the choice. The `order` is the caller's.
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_DATA, order, menu: RIBBON_FORM_DATA_IMPORT }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2919,7 +2927,7 @@ export const importFormDataJsonCommand = importFormDataCommand(
   'document.import-form-data-json',
   IMPORT_FORM_DATA_JSON_TITLE,
   RIBBON_FORM_IMPORT_JSON,
-  35,
+  95,
   'FileUp',
 );
 export const importFormDataXfdfCommand = importFormDataCommand(
@@ -2927,7 +2935,7 @@ export const importFormDataXfdfCommand = importFormDataCommand(
   'document.import-form-data-xfdf',
   IMPORT_FORM_DATA_XFDF_TITLE,
   RIBBON_FORM_IMPORT_XFDF,
-  36,
+  96,
   'FileUp',
 );
 export const importFormDataFdfCommand = importFormDataCommand(
@@ -2935,7 +2943,7 @@ export const importFormDataFdfCommand = importFormDataCommand(
   'document.import-form-data-fdf',
   IMPORT_FORM_DATA_FDF_TITLE,
   RIBBON_FORM_IMPORT_FDF,
-  37,
+  97,
   'FileUp',
 );
 
@@ -2963,14 +2971,44 @@ export const importFormDataFdfCommand = importFormDataCommand(
  * separates a tick box from a rule. The dialog says so, and the five drawing
  * tools are the answer for the rest.
  */
+/**
+ * Flattening the whole form: every field's value burnt into the page, the fields gone.
+ *
+ * **One function with two triggers** — v5-08's Forms › Manage › *Flatten*, and the Forms panel's own
+ * button, which calls this rather than a second dispatch beside it.
+ *
+ * **Takes no handle**: MuPDF's `bake` acts on the document and names neither a page nor a field, so
+ * there is no answer this could be composed against and therefore no version to be refused on.
+ * `targets: 'none'` says the same thing from the declaration side. It is one command and one undo.
+ */
+export async function flattenForm(deps: DocumentCommandDeps, docId: DocId): Promise<void> {
+  await applyDocumentCommand(deps, docId, { kind: 'flattenFormFields' });
+}
+
+export function flattenFormCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.flatten-form',
+    icon: 'Layers',
+    title: FORMS_FLATTEN,
+    ribbonTitle: RIBBON_FLATTEN_FORM,
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 82 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      await flattenForm(deps, context.docId);
+    },
+  };
+}
+
 export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.find-flat-fields',
     icon: 'SquareDashedMousePointer',
     title: FLAT_FIELDS_COMMAND_TITLE,
-    ribbonTitle: RIBBON_FLAT_FIELDS,
+    // v5-08's Forms › Manage › *Detect*: this proposes fields where a page has only drawn boxes.
+    ribbonTitle: RIBBON_DETECT_FIELDS,
     placements: [
-      { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 10 },
+      { surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 80 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {

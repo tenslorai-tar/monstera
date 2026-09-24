@@ -1,9 +1,11 @@
 import { Menu } from '@base-ui/react/menu';
 import { useLingui } from '@lingui/react';
+import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
 import { RIBBON_MORE } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
+import type { IconName } from '../primitives/icons.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { OrderedEntry } from './projections.js';
 
@@ -28,18 +30,29 @@ export function RibbonMore({
   entries,
   context,
   onChosen,
+  named,
 }: {
   readonly entries: readonly OrderedEntry[];
   readonly context: CommandContext;
   /** Told after a command runs, so Studio's overlay dismisses as it does for any tool. */
   readonly onChosen: () => void;
+  /**
+   * A NAMED menu (ADR-0101): its caption, its glyph, and the command id the row measures it by.
+   * Absent, this is the group's *More*. One component for both, so a named menu and *More* cannot
+   * drift apart in how they open, what their items are named, or how a keyboard reaches them.
+   */
+  readonly named?: { readonly label: MessageKey; readonly icon: IconName; readonly measuredAs: string };
 }): ReactElement {
   const { i18n } = useLingui();
 
   return (
     <Menu.Root>
-      <Menu.Trigger className="m-tool-button m-ribbon__more" nativeButton>
-        <MoreFace label={i18n._(RIBBON_MORE)} />
+      <Menu.Trigger
+        className={named === undefined ? 'm-tool-button m-ribbon__more' : 'm-tool-button m-ribbon__menu'}
+        data-command={named?.measuredAs}
+        nativeButton
+      >
+        <MoreFace icon={named?.icon ?? 'Ellipsis'} label={i18n._(named?.label ?? RIBBON_MORE)} />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner align="start" side="bottom">
@@ -70,10 +83,10 @@ export function RibbonMore({
 }
 
 /** What a *More* draws: ONE definition, so the gauge below cannot measure a different face. */
-function MoreFace({ label }: { readonly label: string }): ReactElement {
+function MoreFace({ label, icon }: { readonly label: string; readonly icon: IconName }): ReactElement {
   return (
     <>
-      <Icon name="Ellipsis" size="ribbon" />
+      <Icon name={icon} size="ribbon" />
       {/* THE LABEL AND ITS CHEVRON ON ONE LINE, which is how the design draws it. A tool button is
           a column — glyph over caption — so a third child would be a third row, and the chevron
           would sit under the word instead of beside it. */}
@@ -104,7 +117,7 @@ export function RibbonMoreGauge(): ReactElement {
   const { i18n } = useLingui();
   return (
     <span aria-hidden="true" className="m-tool-button m-ribbon__more m-ribbon__more-gauge">
-      <MoreFace label={i18n._(RIBBON_MORE)} />
+      <MoreFace icon="Ellipsis" label={i18n._(RIBBON_MORE)} />
     </span>
   );
 }

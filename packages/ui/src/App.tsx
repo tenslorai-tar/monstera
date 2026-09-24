@@ -57,6 +57,8 @@ import {
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
   detectFlatFieldsCommand,
+  flattenForm,
+  flattenFormCommand,
   EDIT_TEXT_TOOL_ID,
   commitTextBlock,
   editTextCommand,
@@ -972,19 +974,12 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   );
 
   /**
-   * Flattening the whole form.
-   *
-   * **Takes no handle**, unlike its two neighbours, and that is not this call
-   * site simplifying: MuPDF's `bake` acts on the document and names neither a
-   * page nor a field, so there is no answer this could be composed against and
-   * therefore no version to be refused on. `targets: 'none'` says the same
-   * thing from the declaration side.
+   * The Forms panel's Flatten, which runs the same function as the ribbon's *Flatten* command
+   * (`flattenForm` in `documentCommands.ts`, where the reason it takes no handle is written).
    */
-  const flattenForm = useCallback((): void => {
+  const flattenActiveForm = useCallback((): void => {
     if (activeId === undefined) return;
-    void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
-      kind: 'flattenFormFields',
-    });
+    void flattenForm({ client, onApplied: applied, ask }, activeId);
   }, [activeId, applied, ask, client]);
 
   /**
@@ -2189,6 +2184,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         exportAnnotationsFdfCommand({ client, onApplied: applied, ask }),
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask }),
+        flattenFormCommand({ client, onApplied: applied, ask }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
@@ -2738,7 +2734,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
                 docId={open.docId}
                 onDelete={deleteFormField}
                 onFill={fillFormField}
-                onFlatten={flattenForm}
+                onFlatten={flattenActiveForm}
                 onJump={navigator.jumpTo}
                 version={open.version}
               />

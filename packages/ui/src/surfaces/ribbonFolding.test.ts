@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { foldGroups, splitFold, type GroupWidths } from './ribbonFolding.js';
+import { type MessageKey, messageKey } from '@monstera/shared';
+
+import { foldGroups, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
 
 /**
  * The ribbon's fold, over widths alone.
@@ -162,11 +164,16 @@ describe('foldGroups', () => {
 });
 
 describe('splitFold — nothing is lost when a group folds', () => {
-  const tool = (id: string, secondary = false): { readonly id: string; readonly secondary: boolean } => ({
-    id,
-    secondary,
-  });
-  const ids = (entries: readonly { readonly id: string }[]): string[] => entries.map((entry) => entry.id);
+  interface Tool {
+    readonly command: { readonly id: string };
+    readonly secondary: boolean;
+    readonly menu: MessageKey | undefined;
+  }
+  const tool = (id: string, secondary = false, menu?: MessageKey): Tool => ({ command: { id }, secondary, menu });
+  const ids = (entries: readonly Tool[]): string[] => entries.map((entry) => entry.command.id);
+  /** A row's buttons by the command each is measured as, a menu written as its members. */
+  const buttons = (units: readonly RibbonUnit<Tool>[]): string[] =>
+    units.map((unit) => (unit.menu === undefined ? unit.key : `${unit.menu}[${ids(unit.entries).join(',')}]`));
   const tools = ['open', 'save', 'print', 'undo', 'redo'].map((id) => tool(id));
 
   it('the two halves are a PARTITION at every depth, in order', () => {
@@ -175,23 +182,49 @@ describe('splitFold — nothing is lost when a group folds', () => {
     // because an off-by-one in the slice is correct at exactly one of them.
     for (let shown = 1; shown <= tools.length; shown += 1) {
       const split = splitFold(tools, { shown, more: shown < tools.length });
-      expect([...split.shown, ...split.folded], `shown ${String(shown)}`).toStrictEqual(tools);
+      expect([...split.shown.flatMap((unit) => unit.entries), ...split.folded], `shown ${String(shown)}`).toStrictEqual(tools);
       expect(split.shown).toHaveLength(shown);
     }
   });
 
   it('NOT MEASURED YET draws everything and folds nothing', () => {
     // Distinct from a fold that hides nothing, which is what the control below says.
-    expect(splitFold(tools, undefined)).toStrictEqual({ shown: tools, folded: [] });
+    const split = splitFold(tools, undefined);
+    expect(buttons(split.shown)).toStrictEqual(['open', 'save', 'print', 'undo', 'redo']);
+    expect(split.folded).toStrictEqual([]);
   });
 
   it('CONTROL: a fold that hides nothing also folds nothing, and the two are reached differently', () => {
     // Without this the case above passes for a function that ignores its fold entirely.
     const split = splitFold(tools, { shown: tools.length, more: false });
     expect(split.folded).toStrictEqual([]);
-    expect(split.shown).toStrictEqual(tools);
+    expect(buttons(split.shown)).toStrictEqual(['open', 'save', 'print', 'undo', 'redo']);
     // AND A FOLD THAT HIDES EVERYTHING BUT ONE really does, so `shown` is read rather than assumed.
     expect(ids(splitFold(tools, { shown: 1, more: true }).folded)).toStrictEqual(['save', 'print', 'undo', 'redo']);
+  });
+
+  it('a NAMED MENU is ONE button, gathered where its first member falls (ADR-0101)', () => {
+    const EXPORT = messageKey('test.menu.export');
+    const IMPORT = messageKey('test.menu.import');
+    // Interleaved, as `order` can put them: the six format commands, export and import alternating.
+    const data = [
+      tool('export-json', false, EXPORT),
+      tool('import-json', false, IMPORT),
+      tool('export-xfdf', false, EXPORT),
+      tool('import-xfdf', false, IMPORT),
+    ];
+    expect(buttons(ribbonUnits(data))).toStrictEqual([
+      'test.menu.export[export-json,export-xfdf]',
+      'test.menu.import[import-json,import-xfdf]',
+    ]);
+    // A FOLDED MENU'S MEMBERS reach the More one per line, so nothing becomes unreachable at a width.
+    const narrow = splitFold(data, { shown: 1, more: true });
+    expect(buttons(narrow.shown)).toStrictEqual(['test.menu.export[export-json,export-xfdf]']);
+    expect(ids(narrow.folded)).toStrictEqual(['import-json', 'import-xfdf']);
+  });
+
+  it('CONTROL: entries with no menu are a button each, so the gathering is what the menu key causes', () => {
+    expect(buttons(ribbonUnits([tool('a'), tool('b')]))).toStrictEqual(['a', 'b']);
   });
 
   it('SECONDARIES are folded from the first frame and at every width, AFTER the width-folded primaries', () => {
@@ -200,7 +233,7 @@ describe('splitFold — nothing is lost when a group folds', () => {
     const mixed = [tool('open'), tool('save-copy', true), tool('save'), tool('pdfa', true), tool('print')];
 
     // NOT MEASURED YET: every primary drawn, every secondary already in the More.
-    expect(ids(splitFold(mixed, undefined).shown)).toStrictEqual(['open', 'save', 'print']);
+    expect(buttons(splitFold(mixed, undefined).shown)).toStrictEqual(['open', 'save', 'print']);
     expect(ids(splitFold(mixed, undefined).folded)).toStrictEqual(['save-copy', 'pdfa']);
 
     // ROOM FOR EVERY PRIMARY: the secondaries are still folded.
@@ -208,7 +241,7 @@ describe('splitFold — nothing is lost when a group folds', () => {
 
     // NARROW: the width-folded primary comes FIRST in the More, as the more-used tool.
     const narrow = splitFold(mixed, { shown: 2, more: true });
-    expect(ids(narrow.shown)).toStrictEqual(['open', 'save']);
+    expect(buttons(narrow.shown)).toStrictEqual(['open', 'save']);
     expect(ids(narrow.folded)).toStrictEqual(['print', 'save-copy', 'pdfa']);
   });
 });

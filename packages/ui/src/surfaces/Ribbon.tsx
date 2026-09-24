@@ -252,7 +252,25 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
         {groupsOf(sections, active).map((group, index) => (
           <div className="m-ribbon__group" key={group.group} ref={fold.groupRef(index)}>
             <div className="m-ribbon__buttons">
-              {splitFold(group.entries, fold.folds?.[index]).shown.map((entry) => (
+              {splitFold(group.entries, fold.folds?.[index]).shown.map((unit) => {
+                // A NAMED MENU (ADR-0101): one button opening its members, drawn by the same
+                // component as the group's More, glyph from its first member.
+                const [entry] = unit.entries;
+                if (entry === undefined) return null;
+                if (unit.menu !== undefined) {
+                  return (
+                    <RibbonMore
+                      context={context}
+                      entries={unit.entries}
+                      key={unit.key}
+                      named={{ label: unit.menu, icon: entry.command.icon ?? 'File', measuredAs: unit.key }}
+                      onChosen={() => {
+                        if (mode === 'studio') setOverlay(false);
+                      }}
+                    />
+                  );
+                }
+                return (
                 <ToolButton
                   key={entry.command.id}
                   command={entry.command.id}
@@ -278,7 +296,8 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
                     if (mode === 'studio') setOverlay(false);
                   }}
                 />
-              ))}
+                );
+              })}
               {/* WHAT DID NOT FIT, in this group's own More. A fold is a presentation of the
                   projection above and never a second list: these entries are the tail of the same
                   array the buttons came from. */}

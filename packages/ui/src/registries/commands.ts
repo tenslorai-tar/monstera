@@ -277,6 +277,14 @@ export class CommandRegistry {
     for (const command of this.#byId.values()) {
       for (const placement of command.placements) {
         if (placement.surface !== 'ribbon') continue;
+        // A MENU IS NOT A SECONDARY (ADR-0101): a secondary is already in a menu, the group's More,
+        // so the pair would name two menus for one tool.
+        if (placement.menu !== undefined && placement.prominence === 'secondary') {
+          throw new Error(
+            `"${command.id}" names a menu and is secondary in ${placement.section} › ${placement.group}. ` +
+              `A secondary is already in its group's More; drop one of the two (ADR-0101).`,
+          );
+        }
         const key = `${placement.section} › ${placement.group}`;
         primaries.set(key, (primaries.get(key) ?? false) || placement.prominence !== 'secondary');
       }

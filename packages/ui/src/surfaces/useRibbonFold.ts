@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { foldGroups, type GroupFold, type GroupWidths } from './ribbonFolding.js';
+import { foldGroups, ribbonUnits, type GroupFold, type GroupWidths } from './ribbonFolding.js';
 import type { RibbonSection } from './projections.js';
 
 /**
@@ -68,15 +68,17 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     const widths: GroupWidths[] = section.groups.map((group, index) => {
       const element = groups.current[index] ?? null;
       const chrome = element === null ? 0 : element.getBoundingClientRect().width - buttonsWidth(element);
-      // PRIMARIES ONLY: a secondary is never drawn in the row, so it has no width to fold by, and
-      // what it costs is the *More* its group then always draws (ADR-0098).
+      // THE ROW'S BUTTONS, from the one function that defines them: primaries only, a named menu as
+      // one (ADR-0098, ADR-0101). A secondary is never drawn in the row, so it has no width to fold
+      // by, and what it costs is the *More* its group then always draws.
+      const units = ribbonUnits(group.entries);
       const primaries = group.entries.filter((entry) => !entry.secondary);
-      const buttons = primaries.map((entry) => {
-        const drawn = element?.querySelector<HTMLElement>(`[data-command="${CSS.escape(entry.command.id)}"]`);
+      const buttons = units.map((unit) => {
+        const drawn = element?.querySelector<HTMLElement>(`[data-command="${CSS.escape(unit.key)}"]`);
         const width = drawn?.getBoundingClientRect().width ?? 0;
-        if (width > 0) naturals.current.set(entry.command.id, width);
-        const known = naturals.current.get(entry.command.id);
-        if (known === undefined) unmeasured.add(entry.command.id);
+        if (width > 0) naturals.current.set(unit.key, width);
+        const known = naturals.current.get(unit.key);
+        if (known === undefined) unmeasured.add(unit.key);
         return known ?? 0;
       });
       return {

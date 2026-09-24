@@ -100,6 +100,13 @@ export type Placement =
        * in two groups at once — so it is on the placement.
        */
       readonly prominence?: 'secondary';
+      /**
+       * Placements in one group naming the same `menu` draw as ONE captioned button that opens them
+       * ([ADR-0101](../../../../docs/DECISIONS/0101-a-ribbon-placement-may-name-a-menu.md)) — the owner's
+       * Forms › Data is *Export* and *Import* over six format commands. Never with `'secondary'`, which
+       * is already a menu; the registry refuses the pair.
+       */
+      readonly menu?: MessageKey;
     }
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }

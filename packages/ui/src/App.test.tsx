@@ -305,13 +305,15 @@ async function openPanel(name: string): Promise<void> {
  * a reader, rather than a command in a flat list — and it fails loudly, with
  * the sections it tried, when a command is placed nowhere at all.
  */
-async function pressCommand(name: string): Promise<void> {
+async function pressCommand(name: string, section?: string): Promise<void> {
   const tried: string[] = [];
   const found = (): HTMLElement | null => screen.queryByRole('button', { name });
 
   let control = found();
   if (control === null) {
-    for (const tab of screen.queryAllByRole('button', { name: /^(Home|Comment|Edit|Organize|Forms|Review|Protect|Tools)$/u })) {
+    // THE NAMED SECTION ALONE when a case names one, for the reason given at the More search below.
+    const tabs = section === undefined ? /^(Home|Comment|Edit|Organize|Forms|Review|Protect|Tools)$/u : new RegExp(`^${section}$`, 'u');
+    for (const tab of screen.queryAllByRole('button', { name: tabs })) {
       if (tab.hasAttribute('disabled')) continue;
       tried.push(tab.textContent);
       await act(async () => {
@@ -324,8 +326,12 @@ async function pressCommand(name: string): Promise<void> {
   }
   if (control === null) {
     // IN A GROUP'S MORE, which is where a SECONDARY tool always is (ADR-0098) and a narrow window
-    // puts a primary one: section by section, each More opened and read, then closed again.
-    for (const tab of screen.queryAllByRole('button', { name: /^(Home|Comment|Edit|Organize|Forms|Review|Protect|Tools)$/u })) {
+    // puts a primary one: each More opened and read, then closed again. ONLY IN THE SECTION NAMED
+    // when a case names one: opening every More in all eight sections is some sixty renders, which
+    // is what pushed three cases past their time under the full suite, and naming the section is
+    // also the stronger claim — the tool is reachable where the design puts it.
+    const sections = section === undefined ? /^(Home|Comment|Edit|Organize|Forms|Review|Protect|Tools)$/u : new RegExp(`^${section}$`, 'u');
+    for (const tab of screen.queryAllByRole('button', { name: sections })) {
       if (tab.hasAttribute('disabled')) continue;
       await act(async () => {
         tab.click();
@@ -892,7 +898,7 @@ describe('App', () => {
       // SECONDARIES since the owner's v5 design (ADR-0098), so they are menu items in Pages' More,
       // and a menu item is named by the command's full title.
       for (const name of ['Rotate page', 'Rotate page 180°', 'Rotate page 270°']) {
-        await pressCommand(name);
+        await pressCommand(name, 'Organize');
       }
 
       expect(
@@ -979,7 +985,7 @@ describe('App', () => {
       await withDocumentOpen();
 
       // A SECONDARY in Pages' More (ADR-0098), so its menu item's full title.
-      await pressCommand('Find duplicate pages…');
+      await pressCommand('Find duplicate pages…', 'Organize');
 
       // ONE-BASED IN THE LABEL. The model's `[0, 3]` reads as pages 1 and 4,
       // and a body that showed the indices would name two pages the reader
@@ -1057,7 +1063,7 @@ describe('App', () => {
       await withDocumentOpen();
 
       // A SECONDARY in Pages' More (ADR-0098), so its menu item's full title.
-      await pressCommand('Insert blank page');
+      await pressCommand('Insert blank page', 'Organize');
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
@@ -1683,6 +1689,24 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
     });
 
+    it('FORMS › MANAGE › FLATTEN sends flattenFormFields, the command the Forms panel’s button runs', async () => {
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await pressCommand('Flatten', 'Forms');
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect((executed[0]?.params as { command: { kind: string } }).command.kind).toBe('flattenFormFields');
+    });
+
     it('the RAIL’S FOOT carries Settings, and pressing it opens the Settings dialog (ADR-0098)', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
@@ -1737,19 +1761,19 @@ describe('App', () => {
       await withDocumentOpen();
       expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
 
-      await pressCommand('Rotate page');
+      await pressCommand('Rotate page', 'Organize');
       await settle();
       expect(document.title).toBe('annual.pdf ● — Monstera PDF Editor');
 
-      await pressCommand('Save');
+      await pressCommand('Save', 'Home');
       await settle();
       expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
 
-      await pressCommand('Rotate page');
+      await pressCommand('Rotate page', 'Organize');
       await settle();
       expect(document.title).toBe('annual.pdf ● — Monstera PDF Editor');
 
-      await pressCommand('Save back to cloud');
+      await pressCommand('Save back to cloud', 'Home');
       await settle();
       expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
     });
