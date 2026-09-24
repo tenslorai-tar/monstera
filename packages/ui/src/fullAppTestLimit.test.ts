@@ -19,7 +19,7 @@ const SOURCES: Readonly<Record<string, string>> = import.meta.glob<string>(['./*
 /** A JSX element named exactly `App` — `<App ` or `<App>` or `<App/>`, never `<AppRoot`. */
 const RENDERS_APP = /<App[\s/>]/u;
 const TAKES_LIMIT = 'vi.setConfig({ testTimeout: FULL_APP_TEST_TIMEOUT });';
-const NAMES_LIMIT = /FULL_APP_TEST_TIMEOUT/u;
+const NAMES_LIMIT = 'FULL_APP_TEST_TIMEOUT';
 
 describe('FULL_APP_TEST_TIMEOUT', () => {
   const files = Object.keys(SOURCES)
@@ -40,6 +40,6 @@ describe('FULL_APP_TEST_TIMEOUT', () => {
   });
 
   it('and no file that does not render App names it', () => {
-    expect(files.filter((file) => !rendering.includes(file) && NAMES_LIMIT.test(text(file)))).toStrictEqual([]);
+    expect(files.filter((file) => !rendering.includes(file) && text(file).includes(NAMES_LIMIT))).toStrictEqual([]);
   });
 });
