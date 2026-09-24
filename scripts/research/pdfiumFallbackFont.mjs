@@ -40,6 +40,15 @@
  * - `FPDFText_LoadPage`: median about 6 ms, max about 32–45 ms, over 336 loads (three runs).
  * - A page closed WITHOUT generating keeps its original text on reload: **5 of 5**.
  *
+ * - **Live against saved**: every write is also read from the saved bytes, reopened. Own-font writes:
+ *   132 equal on both, 0 equal live only, 325 equal on neither. Twins: 308 on both, 0 live only. On
+ *   these fonts the live page never claimed a write a reader of the file would not see.
+ *
+ * **That last line is about THESE fonts.** A fixture found the exception the same day: a Helvetica
+ * twin on a page already holding a Helvetica-family font in StandardEncoding reads right live and is
+ * saved into that font's dictionary, where `E9` is `Ø` (ADR-0097's correction). No corpus page held
+ * such a font, which is why the product reads every write back from the saved bytes regardless.
+ *
  * **The first run read the twin back as 0 of 325, and it was the instrument.** The twin had written
  * every character; the read-back carried one trailing U+0020, which the text page generates between
  * objects stacked at one position. The positive control is what exposed it, and a read differing by
@@ -102,6 +111,35 @@ const GetWeight = required('int FPDFFont_GetWeight(void *font)');
 const CreateTextObj = required('void *FPDFPageObj_CreateTextObj(void *doc, void *font, float size)');
 const LoadStandardFont = required('void *FPDFText_LoadStandardFont(void *doc, const char *font)');
 const FontClose = required('void FPDFFont_Close(void *font)');
+const GenerateContent = required('int FPDFPage_GenerateContent(void *page)');
+const SaveWithVersion = required('int FPDF_SaveWithVersion(void *doc, void *writer, int flags, int version)');
+const WriteBlock = koffi.pointer(koffi.proto('int WriteBlock(void *self, const void *data, unsigned long size)'));
+
+/**
+ * The document's bytes as PDFium writes them — `pdfiumReflow.mjs`' serialiser.
+ *
+ * @param {unknown} document
+ * @returns {Uint8Array}
+ */
+function serialise(document) {
+  /** @type {number[]} */
+  const chunks = [];
+  const writeBlock = koffi.register(
+    /** @param {unknown} _self @param {unknown} data @param {number} size */
+    (_self, data, size) => {
+      for (const byte of koffi.decode(data, 'unsigned char', size)) chunks.push(byte);
+      return 1;
+    },
+    WriteBlock,
+  );
+  const writer = koffi.alloc('void *', 2);
+  koffi.encode(writer, 0, 'int', 1);
+  koffi.encode(writer, koffi.sizeof('void *'), 'void *', writeBlock);
+  const written = SaveWithVersion(document, writer, 0, 17);
+  koffi.unregister(writeBlock);
+  if (written !== 1) throw new Error('FPDF_SaveWithVersion refused the document.');
+  return new Uint8Array(chunks);
+}
 
 InitLibrary();
 
@@ -183,6 +221,11 @@ function corpus(directory) {
   let discardHeld = 0;
   /** @type {Map<string, number>} */
   const standards = new Map();
+  /** Live read-back against the reopened bytes, per kind of write. */
+  const ownSaved = { bothEqual: 0, liveOnly: 0, savedOnly: 0, neither: 0 };
+  const twinSaved = { bothEqual: 0, liveOnly: 0, savedOnly: 0, neither: 0 };
+  /** What the saved bytes said where the live page claimed the own-font write was right. */
+  let lieSample = '';
 
   for (const name of readdirSync(directory).filter((entry) => entry.toLowerCase().endsWith('.pdf'))) {
     const bytes = readFileSync(join(directory, name));
@@ -247,6 +290,13 @@ function corpus(directory) {
       return font;
     };
 
+    /**
+     * Every own-font and twin write, by the index it was inserted at, with what the LIVE text page
+     * said about it — compared below against the SAVED bytes, reopened.
+     *
+     * @type {{ index: number, kind: 'own' | 'twin', live: boolean }[]}
+     */
+    const tracked = [];
     for (const plan of plans) {
       runs += 1;
       const own = CreateTextObj(document, plan.font, plan.size);
@@ -254,9 +304,11 @@ function corpus(directory) {
       SetText(own, wide(LATIN));
       SetMatrix(own, plan.matrix);
       InsertObject(page, own);
+      const ownIndex = CountObjects(page) - 1;
       const ownPage = LoadTextPage(page);
       const ownOk = textOf(own, ownPage) === LATIN;
       CloseTextPage(ownPage);
+      tracked.push({ index: ownIndex, kind: 'own', live: ownOk });
       if (ownOk) {
         ownEqual += 1;
         continue;
@@ -270,6 +322,7 @@ function corpus(directory) {
       SetText(twin, wide(LATIN));
       SetMatrix(twin, plan.matrix);
       InsertObject(page, twin);
+      const twinIndex = CountObjects(page) - 1;
       // HOW DIFFERENT IT LOOKS: the twin saying the run's OWN text, against the run's width.
       const same = CreateTextObj(document, font, plan.size);
       SetText(same, wide(plan.text));
@@ -301,10 +354,32 @@ function corpus(directory) {
       if (matches(textOf(alien, twinPage), ALIEN)) alienEqual += 1;
       if (matches(textOf(plain, twinPage), ASCII)) plainEqual += 1;
       CloseTextPage(twinPage);
+      tracked.push({ index: twinIndex, kind: 'twin', live: matches(read, LATIN) });
     }
     for (const font of loaded.values()) if (font !== null) FontClose(font);
+
+    // THE SAVED BYTES, REOPENED: does what the live text page said survive a writer and a reader?
+    GenerateContent(page);
+    const saved = serialise(document);
     ClosePage(page);
     CloseDocument(document);
+    const reopened = LoadMemDocument(saved, saved.length, null);
+    const again = LoadPage(reopened, 0);
+    const againText = LoadTextPage(again);
+    for (const entry of tracked) {
+      const read = textOf(GetObject(again, entry.index), againText);
+      const kept = read === LATIN || read === `${LATIN} `;
+      const tally = entry.kind === 'own' ? ownSaved : twinSaved;
+      if (entry.live && kept) tally.bothEqual += 1;
+      else if (entry.live && !kept) {
+        tally.liveOnly += 1;
+        if (entry.kind === 'own' && lieSample === '') lieSample = [...read].map((c) => c.charCodeAt(0).toString(16)).join(' ');
+      } else if (!entry.live && kept) tally.savedOnly += 1;
+      else tally.neither += 1;
+    }
+    CloseTextPage(againText);
+    ClosePage(again);
+    CloseDocument(reopened);
   }
 
   process.stdout.write(
@@ -318,7 +393,10 @@ function corpus(directory) {
       `  twin width / run width for the run's own text: median ${median(widthRatios).toFixed(3)} over ${String(widthRatios.length)}\n` +
       `  standard fonts chosen: ${[...standards].map(([label, count]) => `${label} ${String(count)}`).join(', ')}\n` +
       `  FPDFText_LoadPage: median ${median(textPageMs).toFixed(2)} ms, max ${Math.max(...textPageMs).toFixed(2)} ms over ${String(textPageMs.length)}\n` +
-      `  a page closed WITHOUT generating kept its original text on reload: ${String(discardHeld)} of ${String(discardTried)}\n`,
+      `  a page closed WITHOUT generating kept its original text on reload: ${String(discardHeld)} of ${String(discardTried)}\n` +
+      `  LIVE vs SAVED, own-font writes: both equal ${String(ownSaved.bothEqual)}, LIVE ONLY ${String(ownSaved.liveOnly)}, saved only ${String(ownSaved.savedOnly)}, neither ${String(ownSaved.neither)}\n` +
+      `  LIVE vs SAVED, twin writes: both equal ${String(twinSaved.bothEqual)}, LIVE ONLY ${String(twinSaved.liveOnly)}, saved only ${String(twinSaved.savedOnly)}, neither ${String(twinSaved.neither)}\n` +
+      `  what the saved bytes said for the first live-only own-font write (hex): ${lieSample === '' ? '(none)' : lieSample}\n`,
   );
 }
 

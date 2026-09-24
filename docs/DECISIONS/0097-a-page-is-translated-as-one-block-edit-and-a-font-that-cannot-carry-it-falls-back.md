@@ -122,3 +122,26 @@ paid for and then refused block by block, so it is not offered.
 - `docs/FEATURES.md`'s *Translate document text* row is unblocked to this design and closes when a real page
   is translated, survives save and reopen, and has its pair — its live test on the cheapest Claude model, by
   the owner's order.
+
+## Corrected 2026-09-24, the same day — a twin is checked in the SAVED bytes, and one kind of page refuses
+
+Decision 1 checked each write on the live text page. Building it showed that check is sound for a run's own
+font and **not for a twin**:
+
+- **Own font: live and saved agree.** Over the corpus, 0 of 457 own-font writes read differently on the live
+  page and in the reopened file; a Helvetica, Arial or Times-Roman declared in StandardEncoding writes `é` as
+  `ÿ` and says so on both (`scripts/research/pdfiumFallbackFont.mjs`, a scratch read of three fixtures).
+  ADR-0096's refusal, as shipped, is not affected.
+- **Twin: live and saved can disagree.** In a document already holding a Helvetica-family font declared in
+  StandardEncoding — Helvetica, Helvetica-Bold, or Arial, which PDFium maps to it — the Helvetica twin reads
+  `é` on the live page and is saved into that font's own dictionary, where a reader decodes the byte `E9` as
+  `Ø`. Measured from the saved content stream (`<…64E96AE0…>`, one font dictionary on the page). Times-Roman
+  and Courier in the same encoding twin correctly: their twin is a different font.
+
+So **every write is also read back from the saved bytes, reopened**, and anything that reads other than what
+was written refuses the edit. There is no retry: the failure is the twin collapsing into the page's font, and a
+second attempt makes the same twin. A page whose Helvetica-family font lacks a letter is therefore refused for
+that letter — a stated limit, and the corpus's real fonts never reached it.
+
+`pdfiumCommand.proof.mjs` carries both sides: a renamed font and Times-Roman, each written through a real twin,
+and Helvetica refused; removing the saved-bytes read turns the refusal into a saved `Ø` and the case red.
