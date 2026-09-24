@@ -32,10 +32,10 @@ import type { SettingDefinition } from '../registries/settings.js';
  * it: `SettingCategory` is the registry's own list of drawers, and the founding
  * record already named this one.
  *
- * ## All three default OFF or to a person's own unit, and none is a preference
- *   about the document
+ * ## None is a preference about the document
  *
- * A ruler and a grid are reading aids. They are stored per install rather than
+ * Each defaults off, or to a person's own unit, except the rulers, which the owner's design draws
+ * on every document screen. A ruler and a grid are reading aids. They are stored per install rather than
  * per document, because a document does not have an opinion about whether you
  * want a ruler — which is the same reason the zoom is not a setting.
  */
@@ -44,7 +44,9 @@ export const RULERS_SETTING: SettingDefinition<z.ZodBoolean> = {
   title: RULERS_TITLE,
   description: RULERS_DESCRIPTION,
   schema: z.boolean(),
-  fallback: false,
+  // ON BY DEFAULT since the owner's v5 design (2026-09-24), which draws the rulers along the top and
+  // left of the page area on every document screen. A stored choice still wins.
+  fallback: true,
   category: 'viewing',
 };
 

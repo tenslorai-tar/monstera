@@ -3716,3 +3716,39 @@ textarea {
 .m-page-list--panning .m-page-slot * {
   pointer-events: none;
 }
+
+/* THE PAGES STRIP IN TWO COLUMNS with each page's number under it (v5-02). The thumbnail keeps its
+   one width, so pages of different sizes still line up in each column. */
+.m-thumbnails {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: center;
+  align-content: start;
+  gap: var(--space-8);
+  background: transparent;
+  border-inline-end: none;
+}
+
+.m-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2);
+  border-radius: var(--radius-4);
+}
+
+.m-thumb-current {
+  border-color: var(--accent);
+}
+
+.m-thumb-number {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-thumb-current .m-thumb-number {
+  color: var(--text);
+  font-weight: 600;
+}

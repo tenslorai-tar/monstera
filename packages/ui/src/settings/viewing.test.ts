@@ -20,10 +20,11 @@ describe('applyDarkPage', () => {
 });
 
 describe('the viewing settings', () => {
-  it('are all off, or a persons own unit, by default', () => {
-    // A reading aid that arrived switched on would be a decision this
-    // application made for every reader on a fresh install.
-    expect(RULERS_SETTING.fallback).toBe(false);
+  it('are off by default, except the rulers the owner’s design draws on every document screen', () => {
+    // A reading aid that arrived switched on is a decision made for every reader on a fresh install —
+    // which is why only the owner makes one. Their v5 design (2026-09-24) draws the rulers on every
+    // document screen, so they arrive on; the grid and the dark page do not appear there.
+    expect(RULERS_SETTING.fallback).toBe(true);
     expect(GRID_SETTING.fallback).toBe(false);
     expect(DARK_PAGE_SETTING.fallback).toBe(false);
   });

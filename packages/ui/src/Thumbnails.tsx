@@ -190,6 +190,11 @@ export function Thumbnails({
             draw={visible.has(page) && rotations.has(page)}
             rotation={rotations.get(page)}
           />
+          {/* THE PAGE'S NUMBER UNDER IT, as v5-02 draws the strip. Seen, not read: the button's
+              accessible name already says which page this is. */}
+          <span aria-hidden="true" className="m-thumb-number">
+            {pdfjsPageOf(page)}
+          </span>
         </button>
         );
         // THE KEY ON THE OUTERMOST ELEMENT, so wrapping a thumbnail in its menu does not make React
