@@ -533,55 +533,201 @@ textarea {
 }
 
 /*
- * The style controls — what the NEXT annotation is drawn in.
- *
- * No `max-block-size` and no scroll, unlike the panels above it: this is a fixed
- * set of five controls rather than a list of whatever the document holds, so a
- * scroll region here would be furniture around content that never overflows.
+ * The Properties tab (v5-02, ADR-0102): the selected marks' style, or with nothing selected what the
+ * next mark is drawn in. One column of labelled rows, each label bold above its control, the actions
+ * at the foot of the tab.
  */
-.m-style-panel {
+.m-properties {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-8);
-  background: var(--bg2);
-  border-block-start: 1px solid var(--border); /* decorative: separates a panel from the document area; each control carries its own focus ring */
+  gap: var(--space-16);
+  min-block-size: 100%;
+  padding: var(--space-16);
+  color: var(--text);
+  font-size: var(--font-chrome-12);
 }
 
-/*
- * The comment styles panel — what the SELECTED annotations look like.
- *
- * Beside `.m-style-panel` and deliberately not merged with it: one says what the
- * next mark will be and the other says what these are, and a person reading the
- * second needs to see the first to know what *Apply* would write.
- */
-.m-comment-styles {
+.m-properties__head {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-8);
-  background: var(--bg2);
-  border-block-start: 1px solid var(--border); /* decorative: separates the panel from the one above; the control carries its own focus ring */
+  gap: var(--space-2);
 }
 
-.m-comment-styles__empty,
-.m-comment-styles__current {
+.m-properties__title {
+  margin: 0;
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+}
+
+.m-properties__meta {
+  margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-11);
 }
 
-.m-comment-styles__swatch {
-  color: var(--muted);
-  font-size: var(--font-chrome-11);
+.m-properties__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
 }
 
-.m-style-row {
-  display: flex;
+.m-properties__row--inline {
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
+}
+
+.m-properties__label-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-8);
+}
+
+.m-properties__label {
+  font-weight: 600;
+}
+
+.m-properties__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.m-properties__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* A swatch is its colour, so its ring is the only chrome: a border to separate it from the panel, and
+   the accent around the one in force. */
+.m-properties__swatch,
+.m-properties__custom {
+  position: relative;
+  inline-size: var(--icon-20);
+  block-size: var(--icon-20);
+  padding: 0;
+  border: 1px solid var(--border-control);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.m-properties__swatch[aria-pressed='true'],
+.m-properties__custom[data-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* EACH TOOL'S OWN is no colour, so it is drawn as the absence of one: the panel's own ground, struck
+   through once. */
+.m-properties__swatch--auto {
+  background: linear-gradient(135deg, transparent 45%, var(--muted) 45%, var(--muted) 55%, transparent 55%), var(--surface);
+}
+
+.m-properties__custom {
+  overflow: hidden;
+  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+}
+
+/* The native colour input fills the ring and is invisible, so the ring is what is seen and the input
+   is what is pressed — its picker is the platform's, labelled by the input's own name. */
+.m-properties__custom-input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.m-properties__custom:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.m-properties__slider {
+  inline-size: 100%;
+  accent-color: var(--accent);
+}
+
+.m-properties__segments {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.m-properties__segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: var(--control-panel-tab);
+  padding: 0 var(--space-8);
+  background: var(--surface);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  cursor: pointer;
+}
+
+.m-properties__segment[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.m-properties__stroke {
+  inline-size: 100%;
+  background: var(--text);
+  border-radius: 1px;
+}
+
+/* THE STROKE AT ITS WIDTH, one pixel per point: a chart of the four choices rather than a label. */
+.m-properties__stroke[data-width='1'] { block-size: 1px; }
+.m-properties__stroke[data-width='2'] { block-size: 2px; }
+.m-properties__stroke[data-width='3'] { block-size: 3px; }
+.m-properties__stroke[data-width='5'] { block-size: 5px; }
+
+.m-properties__number {
+  inline-size: 6em;
+  padding: var(--space-4);
+  background: var(--surface);
   color: var(--text);
-  font-size: var(--font-chrome-11);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  font: inherit;
+}
+
+.m-properties__comment {
+  resize: vertical;
+  padding: var(--space-8);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  font: inherit;
+}
+
+/* THE CHECKBOX BESIDE ITS WORDS: the box and the label are one control, so they sit together at the
+   start of the row rather than at its two ends. */
+.m-properties__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  cursor: pointer;
+}
+
+.m-properties__check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* EACH BUTTON TAKES AN EQUAL SHARE, v5-02's two halves, and a command whose full title is long
+   wraps inside its half rather than pushing the other out of the panel. */
+.m-properties__foot {
+  display: flex;
+  gap: var(--space-8);
+  margin-block-start: auto;
+}
+
+.m-properties__foot > * {
+  flex: 1 1 0;
 }
 
 .m-destinations-list,

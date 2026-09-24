@@ -892,6 +892,53 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — The Properties tab edits the selection, and a selection survives the edit
+
+v5-02 draws the right panel's Properties tab changing a selected mark as each control is used. Two
+things stood in the way, and [ADR-0102](DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)
+(its own commit, `6bc8833`) amended §6 and §7 for them before this was built.
+
+**A selection did not outlive its own command.** ADR-0041 drops a selection whenever the version
+moves, so every control would have emptied the tab it sat on — and it is also why an arrow key moved
+a selected mark one point and then nothing. The contract now names the annotation commands that keep
+the page's walk, `KEEPS_THE_ANNOTATION_WALK`: place, restyle, retext. **Measured before the ADR was
+written**, on a page carrying a square, an ink stroke, a highlight and a note: each leaves the walk
+`0:square, 1:ink, 2:highlight, 3:sticky-note` as it was, including a note edit whose `update()` writes
+a `/Popup` into `/Annots`. The controls in the same case: a removal and a reply both change it. The
+cases are keyed by a `Record` over the set's type, so a member added without a case does not compile.
+
+After one of the three applies, `applyCarrying` reads the walk at the version it produced and only
+then moves the version and carries the selection, in one render — moving the version first would
+show *nothing selected* for a round trip and unmount the control under the pointer. A failed read
+still moves the version and drops the selection, which is the old behaviour. Nudges and drags go the
+same way, so a mark can now be moved more than once.
+
+**`styleAnnotation` names only what changed.** Its colour and opacity were required, so recolouring
+three marks of three opacities would have set all three to one opacity. All three properties are
+optional now, and the schema refuses a restyle naming none (an undo step for no change). Kernel case:
+two marks at 0.5 and 0.8 recoloured by one colour-only command keep 0.5 and 0.8.
+
+**The tab.** `PropertiesPanel` replaces `StylePanel` and `CommentStylesPanel`. With marks selected:
+the kind and page, eight colour swatches and a custom colour, opacity on a slider that sends on
+release (a drag is one undo step), four line-width segments (hidden for a kind with no `/BS`, where
+it says so), the comment for a single mark sent on blur, *Use as default for new annotations* (a
+remembered setting, on by default as the design draws it), and *Reply* and *Delete* at the foot
+through a new `properties` placement. With nothing selected, the same rows write the authoring
+settings, with *Each tool's own* first and the font size. *Apply* is gone.
+
+**Edit is offered on every kind now.** `EDITABLE_TEXT_KINDS` recorded its own expiry — *"the day
+anything renders a markup's comment, the kind joins this list"* — and the tab shows every selected
+mark's comment, so the list is gone rather than widened.
+
+**Not built, for the owner:** v5-02's *Author* field, *Blend* control and *created today 09:38* line.
+The walk carries no `/T`, `/BM` or `/CreationDate`, and no command writes them.
+
+Also found while linting the tree with the project's verb: two errors in commits from the regroup and
+the ribbon capture (an unused import, a check on a tuple element that is always present), committed
+alone as `93708fb`. Those commits had been linted by file list.
+
+---
+
 ## 2026-09-24 — A toast no longer vanishes from under a keyboard user
 
 `Toast.tsx` timed each message out after four seconds regardless of what the person was doing. Its ×

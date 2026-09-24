@@ -138,7 +138,7 @@ describe('ContextMenuArea', () => {
     const selection = {
       page: 0,
       version: asDocVersion(1),
-      items: [{ index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, kind: 'square', contents: '', style: { colour: [1, 0, 0] as const, opacity: 1, borderWidth: 2 } }],
+      items: [{ index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 }, kind: 'square' as const, contents: '', style: { colour: [1, 0, 0] as const, opacity: 1, borderWidth: 2 } }],
     };
     const registry = new CommandRegistry([
       selectionPropertiesCommand({

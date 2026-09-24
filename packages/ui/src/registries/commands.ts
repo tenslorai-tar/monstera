@@ -219,6 +219,7 @@ const DRAWS_A_GLYPH: ReadonlySet<SurfaceId> = new Set<SurfaceId>([
   'status-bar',
   // §10.4: "16 px primary controls (rail …)" — the rail's foot draws the command's glyph (ADR-0098).
   'rail',
+  // NOT `properties`: v5-02 draws the Properties tab's foot as two text buttons, Reply and Delete.
 ]);
 
 export class CommandRegistry {

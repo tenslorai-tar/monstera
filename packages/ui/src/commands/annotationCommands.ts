@@ -573,7 +573,11 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
     title: DELETE_SELECTION_TITLE,
     // LAST IN THE ANNOTATION MENU, which is the owner's order for it (§7's row, 2026-09-19):
     // edit, reply, properties, copy, delete. The numbers between are what the owed items take.
-    placements: [{ surface: 'context-menu', context: 'annotation', order: 50 }],
+    // AND AT THE PROPERTIES TAB'S FOOT, after Reply, which is v5-02's order (ADR-0102).
+    placements: [
+      { surface: 'context-menu', context: 'annotation', order: 50 },
+      { surface: 'properties', order: 20 },
+    ],
     shortcut: 'Delete',
     when: () => deps.selection() !== undefined,
     run: (): void => {
@@ -585,34 +589,6 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
 }
 
 /**
- * Which subtypes this build offers to EDIT the text of.
- *
- * ## An allowlist in the surface, and not in the command
- *
- * `/Contents` is legal on every markup subtype, and `applyEditAnnotationText`
- * writes it without asking what the mark is — a kernel-side list would be a
- * second opinion about the format (B3a). What this list decides is a different
- * question: **which marks does this application draw the text of**, so that
- * *Edit* is offered where a person will see their change and hidden where the
- * text would go into the file and nowhere else.
- *
- * The four here are the ones whose words are visible: a note's popup, and the
- * three subtypes whose appearance IS their text. A highlight carrying a comment
- * is a real thing in the format and this build has no surface that shows one,
- * so offering *Edit* on a highlight would be a control whose effect a person
- * cannot see — the display-only defect with the pieces the other way round.
- *
- * **The trigger for widening it is a surface, not a subtype**: the day anything
- * renders a markup's comment, the kind joins this list in that commit.
- */
-const EDITABLE_TEXT_KINDS: ReadonlySet<string> = new Set([
-  'sticky-note',
-  'text-box',
-  'typewriter',
-  'callout',
-]);
-
-/**
  * Rewrites what ONE selected mark says.
  *
  * ## First in the annotation menu, and singular where its neighbours are not
@@ -621,6 +597,14 @@ const EDITABLE_TEXT_KINDS: ReadonlySet<string> = new Set([
  * four marks is one decision. Editing is not: there is one box to type in, so
  * the item is hidden unless exactly one mark is selected rather than acting on
  * the first of several — which would be a control that quietly picks.
+ *
+ * ## Offered on EVERY kind, because every kind's text is now drawn
+ *
+ * `/Contents` is legal on every markup subtype, and the kernel writes it without asking what the mark
+ * is. What decided where *Edit* was offered was which marks this application SHOWS the text of — a
+ * change nobody can see is the display-only defect — and that was four kinds until the Properties
+ * tab, which draws any selected mark's comment (ADR-0102). The list recorded that trigger as its own
+ * expiry, and it fired.
  *
  * ## The text comes from the SELECTION, not from a read
  *
@@ -645,8 +629,7 @@ export function editSelectionCommand(
   const only = (): SelectedAnnotation | undefined => {
     const selection = deps.selection();
     if (selection?.items.length !== 1) return undefined;
-    const item = selection.items[0];
-    return item !== undefined && EDITABLE_TEXT_KINDS.has(item.kind) ? item : undefined;
+    return selection.items[0];
   };
   return {
     id: 'annotate.edit-selection',
@@ -716,8 +699,11 @@ export function replySelectionCommand(
     id: 'annotate.reply-selection',
     title: REPLY_SELECTION_TITLE,
     // SECOND, which is the owner's order for this menu: edit, reply,
-    // properties, copy, delete.
-    placements: [{ surface: 'context-menu', context: 'annotation', order: 20 }],
+    // properties, copy, delete. And first at the Properties tab's foot (ADR-0102).
+    placements: [
+      { surface: 'context-menu', context: 'annotation', order: 20 },
+      { surface: 'properties', order: 10 },
+    ],
     when: () => only() !== undefined,
     run: async (): Promise<void> => {
       const selection = deps.selection();

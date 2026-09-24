@@ -170,7 +170,7 @@ export function AnnotationsPanel({
                   type="button"
                 >
                   {i18n._(ANNOTATIONS_ROW, {
-                    kind: i18n._(KIND_LABELS[annotation.kind]),
+                    kind: i18n._(ANNOTATION_KIND_LABELS[annotation.kind]),
                     page: pdfjsPageOf(annotation.page),
                   })}
                   {annotation.inReplyTo === null ? null : (
@@ -247,13 +247,14 @@ export function AnnotationsPanel({
 }
 
 /**
- * A label per kind, which is what the contract's closed union buys.
+ * A label per kind, which is what the contract's closed union buys. Exported for the Properties
+ * tab's heading, so a kind is named the same in the list and in the tab.
  *
  * A `Record` over the union rather than a lookup with a fallback: a member
  * added to the channel without a label here is a compile error, where a
  * fallback would render every new kind as *Annotation* and look correct.
  */
-const KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
+export const ANNOTATION_KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
   square: ANNOTATIONS_KIND_SQUARE,
   circle: ANNOTATIONS_KIND_CIRCLE,
   line: ANNOTATIONS_KIND_LINE,
@@ -297,7 +298,7 @@ interface PanelAnnotation {
    * **THE CONTRACT'S TYPE, not a copy of its members.**
    *
    * This was the same nine names written out again, and the comment above
-   * {@link KIND_LABELS} claimed that a kind added to the channel without a
+   * {@link ANNOTATION_KIND_LABELS} claimed that a kind added to the channel without a
    * label here is a compile error. It was not: the copy would have gone on
    * satisfying the table while the channel grew past it, and the error the
    * comment promised would never have arrived. Taking the type is what makes

@@ -2540,19 +2540,35 @@ export const MAX_STYLED_ANNOTATIONS = 1024;
  * callers. Absent means *leave the width alone*, and the kernel skips a subtype
  * that has none whatever it is asked.
  */
-export const styleAnnotationSchema = z.object({
-  kind: z.literal('styleAnnotation'),
-  /** Zero-based index of the page they sit on. */
-  page: z.number().int().nonnegative(),
-  /** Their positions in the walk that produced the answer this names. */
-  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_STYLED_ANNOTATIONS).readonly(),
-  colour: annotationColourSchema,
-  opacity: annotationOpacitySchema,
-  /** Points. Absent leaves each annotation's width as it is. */
-  borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).optional(),
-  /** The version that answer carried. Refused if the document has moved. */
-  version: docVersionSchema,
-});
+export const styleAnnotationSchema = z
+  .object({
+    kind: z.literal('styleAnnotation'),
+    /** Zero-based index of the page they sit on. */
+    page: z.number().int().nonnegative(),
+    /** Their positions in the walk that produced the answer this names. */
+    indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_STYLED_ANNOTATIONS).readonly(),
+    /**
+     * Absent leaves each annotation's colour as it is — and the same for the two below.
+     *
+     * **Each property is optional, because the Properties tab changes one at a time**
+     * (ADR-0102). A person who picks a colour for three marks of three opacities has changed their
+     * colour; a payload that had to carry an opacity too would set all three to one of them, which
+     * is a change nobody asked for arriving with one they did.
+     */
+    colour: annotationColourSchema.optional(),
+    opacity: annotationOpacitySchema.optional(),
+    /** Points. */
+    borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).optional(),
+    /** The version that answer carried. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  // A RESTYLE THAT NAMES NO PROPERTY IS NOT A COMMAND: it would move the version and put an undo
+  // step in the log for a document that did not change.
+  .refine(
+    (command) =>
+      command.colour !== undefined || command.opacity !== undefined || command.borderWidth !== undefined,
+    { message: 'a restyle names at least one of colour, opacity and line width' },
+  );
 
 /**
  * Rewrites what ONE annotation says — its `/Contents`.
@@ -2655,6 +2671,38 @@ export const replyToAnnotationSchema = z.object({
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
 });
+
+/**
+ * The commands naming annotations that leave the page's annotation walk as it was: every mark in
+ * the same place, of the same kind, and none added or removed
+ * ([ADR-0102](../../../docs/DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)).
+ *
+ * After one of these, a handle minted at the version it was composed against names the same mark at
+ * the version it produced, so a selection is re-read there rather than dropped. The walk is a total
+ * order over a fixed set per version (ADR-0041), and these three change neither the order nor the
+ * set: a restyle writes `/C`, `/CA` and `/BS`, an edit writes `/Contents`, and a placement writes
+ * the geometry — each on the object the handle names, in place.
+ *
+ * `removeAnnotation` shrinks the set and `replyToAnnotation` grows it, so neither is here. **The
+ * kernel proves each member keeps the walk and each of those two does not**, against the engine, so
+ * a member whose apply started adding or reordering marks turns that case red rather than leaving a
+ * selection pointing at the wrong mark.
+ */
+export const KEEPS_THE_ANNOTATION_WALK: ReadonlySet<WalkKeepingKind> = new Set([
+  'placeAnnotation',
+  'styleAnnotation',
+  'editAnnotationText',
+] as const);
+
+/** The kinds {@link KEEPS_THE_ANNOTATION_WALK} names. */
+export type WalkKeepingKind = 'placeAnnotation' | 'styleAnnotation' | 'editAnnotationText';
+
+/** Whether `command` is one of them — the set's one reader for a command in hand. */
+export function keepsTheAnnotationWalk<C extends { readonly kind: string }>(
+  command: C,
+): command is Extract<C, { readonly kind: WalkKeepingKind }> {
+  return (KEEPS_THE_ANNOTATION_WALK as ReadonlySet<string>).has(command.kind);
+}
 
 /**
  * How many form fields one deletion may name.

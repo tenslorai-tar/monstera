@@ -77,9 +77,8 @@ function toHex(fill: NonNullable<OfferedObject['fill']>): string {
  * type="color">` insists on for a control that cannot be operated, and
  * `hexFromColour` carries the same note for the same reason one module along.
  *
- * The input is disabled whenever this is what it holds, which is the honest
- * arrangement `StylePanel` reaches for too: a control that cannot say *none*
- * must not be operable while none is the answer.
+ * The input is disabled whenever this is what it holds: a control that cannot
+ * say *none* must not be operable while none is the answer.
  */
 const NO_COLOUR = toHex({ red: 0, green: 0, blue: 0, alpha: 255 });
 

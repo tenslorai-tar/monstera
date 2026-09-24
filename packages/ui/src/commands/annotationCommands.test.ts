@@ -352,9 +352,11 @@ describe('deleteSelectionCommand', () => {
     });
     expect(command.shortcut).toBe('Delete');
     // LAST in the owner's order for that menu — edit, reply, properties, copy, delete — which is
-    // why this is 50 rather than 10, with the gaps held for the items still owed.
+    // why this is 50 rather than 10, with the gaps held for the items still owed. And second at
+    // the Properties tab's foot, after Reply, which is v5-02's order (ADR-0102).
     expect(command.placements).toStrictEqual([
       { surface: 'context-menu', context: 'annotation', order: 50 },
+      { surface: 'properties', order: 20 },
     ]);
   });
 });
@@ -427,16 +429,24 @@ describe('editSelectionCommand', () => {
     expect(placed).toStrictEqual([]);
   });
 
-  it('is HIDDEN for a kind whose text this build does not DRAW', async () => {
-    // A highlight may carry a comment in the format, and nothing here renders
-    // one — so offering *Edit* on it would be a control whose effect a person
-    // cannot see. The run is asserted too: a `when` that hid the item while the
-    // command still acted would be caught by nothing else.
-    const highlight = { ...SELECTION, items: [{ ...NOTE, kind: 'highlight' }] };
-    const { command, placed } = editing(highlight, { text: 'ignored' });
-    expect(command.when?.(WITH_DOCUMENT)).toBe(false);
+  it('is OFFERED on a highlight, whose comment the Properties tab now draws', async () => {
+    // Until ADR-0102 nothing rendered a highlight's comment, and Edit was hidden
+    // on one for that reason. The Properties tab shows every selected mark's
+    // comment, so the edit is a change a person can see — and it is sent for the
+    // highlight's own index.
+    const highlight = { ...SELECTION, items: [{ ...NOTE, kind: 'highlight' as const }] };
+    const { command, placed } = editing(highlight, { text: 'confirm the rate' });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(true);
     await command.run(WITH_DOCUMENT);
-    expect(placed).toStrictEqual([]);
+    expect(placed).toStrictEqual([
+      {
+        kind: 'editAnnotationText',
+        page: SELECTION.page,
+        index: NOTE.index,
+        text: 'confirm the rate',
+        version: SELECTION.version,
+      },
+    ]);
   });
 
   it('is HIDDEN when TWO marks are selected, rather than editing the first', async () => {
@@ -542,9 +552,10 @@ describe('replySelectionCommand', () => {
     expect(replying(undefined, undefined).command.when?.(WITH_DOCUMENT)).toBe(false);
   });
 
-  it('sits SECOND in the annotation menu, where the owner’s order puts it', () => {
+  it('sits SECOND in the annotation menu and FIRST at the Properties tab’s foot', () => {
     expect(replying(SELECTION, undefined).command.placements).toStrictEqual([
       { surface: 'context-menu', context: 'annotation', order: 20 },
+      { surface: 'properties', order: 10 },
     ]);
   });
 });

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { overlayTransform } from './annotationSpace.js';
 import type { ErasableAnnotation } from './eraserTool.js';
 import type { AnnotationSelection } from './selectTool.js';
-import { SELECT_TOOL_ID, selectTool } from './selectTool.js';
+import { SELECT_TOOL_ID, carrySelection, selectTool } from './selectTool.js';
 
 /**
  * The select tool's controller, driven without a DOM.
@@ -281,5 +281,60 @@ describe('selectTool', () => {
       selected: () => undefined,
     });
     expect(tool.id).toBe(SELECT_TOOL_ID);
+  });
+});
+
+describe('carrySelection (ADR-0102)', () => {
+  const BEFORE = asDocVersion(7);
+  const AFTER = asDocVersion(8);
+  const BOX = { x0: 10, y0: 10, x1: 20, y1: 20 };
+  const picked: AnnotationSelection = {
+    page: 1,
+    version: BEFORE,
+    items: [{ index: 2, rect: BOX, ...CARRIED }],
+  };
+  /** The walk after a restyle: the same marks, the picked one now blue and saying something. */
+  const walk = {
+    version: AFTER,
+    annotations: [
+      { page: 1, index: 1, rect: BOX, ...CARRIED },
+      { page: 1, index: 2, rect: BOX, style: { colour: [0, 0, 1], opacity: 0.4, borderWidth: 2 }, kind: 'square', contents: 'done' },
+      { page: 2, index: 2, rect: BOX, ...CARRIED },
+    ],
+  } as const;
+
+  it('names the SAME index at the new version, with every field read from the new walk', () => {
+    expect(carrySelection(picked, { page: 1, version: BEFORE }, AFTER, walk)).toStrictEqual({
+      page: 1,
+      version: AFTER,
+      items: [
+        {
+          index: 2,
+          rect: BOX,
+          style: { colour: [0, 0, 1], opacity: 0.4, borderWidth: 2 },
+          kind: 'square',
+          contents: 'done',
+        },
+      ],
+    });
+  });
+
+  it('DROPS it when the read answers any other version, because something else moved the document', () => {
+    expect(carrySelection(picked, { page: 1, version: BEFORE }, AFTER, { ...walk, version: asDocVersion(9) })).toBeUndefined();
+    expect(carrySelection(picked, { page: 1, version: BEFORE }, AFTER, undefined)).toBeUndefined();
+  });
+
+  it('DROPS it when the walk no longer answers a picked index', () => {
+    const shorter = { ...walk, annotations: walk.annotations.filter((entry) => entry.index !== 2 || entry.page !== 1) };
+    expect(carrySelection(picked, { page: 1, version: BEFORE }, AFTER, shorter)).toBeUndefined();
+  });
+
+  it('LEAVES ALONE a selection other than the one the command was composed from', () => {
+    // A person who picked something else while the command was in flight keeps what they picked; the
+    // version check in `App` then decides whether it still describes the document.
+    const other: AnnotationSelection = { ...picked, version: asDocVersion(6) };
+    expect(carrySelection(other, { page: 1, version: BEFORE }, AFTER, walk)).toBe(other);
+    const elsewhere: AnnotationSelection = { ...picked, page: 2 };
+    expect(carrySelection(elsewhere, { page: 1, version: BEFORE }, AFTER, walk)).toBe(elsewhere);
   });
 });

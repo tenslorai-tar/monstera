@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAX_TEXT_REPLACEMENTS, replaceTextObjectSchema } from './commands.js';
+import { MAX_TEXT_REPLACEMENTS, replaceTextObjectSchema, styleAnnotationSchema } from './commands.js';
 
 /**
  * What `replaceTextObject`'s payload REFUSES, which is the half a shape test
@@ -115,5 +115,19 @@ describe('the in-place text edit payload', () => {
         replacements: [{ index: 4, text: 'HELLO', page: 1 }],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('the restyle payload', () => {
+  const named = { kind: 'styleAnnotation', page: 0, indices: [1, 2], version: 3 } as const;
+
+  it('takes any ONE of colour, opacity and line width, which is how the Properties tab sends them', () => {
+    expect(styleAnnotationSchema.safeParse({ ...named, colour: [0, 0, 1] }).success).toBe(true);
+    expect(styleAnnotationSchema.safeParse({ ...named, opacity: 0.4 }).success).toBe(true);
+    expect(styleAnnotationSchema.safeParse({ ...named, borderWidth: 3 }).success).toBe(true);
+  });
+
+  it('REFUSES one naming none of them, which would be an undo step for no change', () => {
+    expect(styleAnnotationSchema.safeParse(named).success).toBe(false);
   });
 });

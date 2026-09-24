@@ -1,4 +1,4 @@
-import type { RenderableCommand } from '@monstera/contract';
+import type { AnnotationKindName, RenderableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform } from '@monstera/shared';
 import { pdfPoint, toViewport } from '@monstera/shared';
 
@@ -79,14 +79,15 @@ export interface ErasableAnnotation {
     readonly borderWidth: number | null;
   };
   /**
-   * What subtype it is, as the walk names it.
+   * What subtype it is, as the walk names it — the contract's closed union, so the Properties tab's
+   * heading can name every kind by a `Record` over it and a kind the walk gains is a compile error
+   * there rather than a missing label.
    *
-   * **The eraser does not read this either** — it is the select tool's, whose
-   * *Edit* item is hidden for a mark whose kind this build cannot put text on.
-   * Shared for the same reason `style` is: a second row type differing by one
-   * field would be two shapes over one channel answer.
+   * **The eraser does not read this either** — it is the select tool's, carried to the Properties
+   * tab. Shared for the same reason `style` is: a second row type differing by one field would be two
+   * shapes over one channel answer.
    */
-  readonly kind: string;
+  readonly kind: AnnotationKindName;
   /**
    * What it says — `/Contents`, as the walk answers it.
    *

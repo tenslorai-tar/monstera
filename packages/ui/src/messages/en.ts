@@ -903,13 +903,29 @@ export const EDITING_LINE_WIDTH_TITLE = messageKey('setting.editing.annotation-l
 export const EDITING_FONT_SIZE_TITLE = messageKey('setting.editing.annotation-font-size');
 export const EDITING_IMAGE_PAGES_TITLE = messageKey('setting.editing.image-pages');
 export const STYLE_PANEL_LABEL = messageKey('surface.style.label');
-export const COMMENT_STYLES_LABEL = messageKey('surface.comment-styles.label');
-export const COMMENT_STYLES_NONE = messageKey('surface.comment-styles.none');
-export const COMMENT_STYLES_CURRENT = messageKey('surface.comment-styles.current');
-export const COMMENT_STYLES_APPLY = messageKey('surface.comment-styles.apply');
 export const COMMENT_STYLES_NO_WIDTH = messageKey('surface.comment-styles.no-width');
 export const STYLE_COLOUR_AUTO = messageKey('surface.style.colour-auto');
-export const STYLE_COLOUR_CHOOSE = messageKey('surface.style.colour-choose');
+export const PROPERTIES_AS_DEFAULT = messageKey('surface.properties.as-default');
+export const PROPERTIES_COLOUR = messageKey('surface.properties.colour');
+export const PROPERTIES_OPACITY = messageKey('surface.properties.opacity');
+export const PROPERTIES_OPACITY_VALUE = messageKey('surface.properties.opacity-value');
+export const PROPERTIES_LINE_WIDTH = messageKey('surface.properties.line-width');
+export const PROPERTIES_WIDTH_VALUE = messageKey('surface.properties.width-value');
+export const PROPERTIES_FONT_SIZE = messageKey('surface.properties.font-size');
+export const PROPERTIES_COMMENT = messageKey('surface.properties.comment');
+export const PROPERTIES_NEW_HEADING = messageKey('surface.properties.new-heading');
+export const PROPERTIES_NEW_HINT = messageKey('surface.properties.new-hint');
+export const PROPERTIES_WHERE = messageKey('surface.properties.where');
+export const PROPERTIES_ACTIONS = messageKey('surface.properties.actions');
+export const PROPERTIES_CUSTOM_COLOUR = messageKey('surface.properties.custom-colour');
+export const PROPERTIES_COLOUR_YELLOW = messageKey('surface.properties.colour.yellow');
+export const PROPERTIES_COLOUR_GREEN = messageKey('surface.properties.colour.green');
+export const PROPERTIES_COLOUR_BLUE = messageKey('surface.properties.colour.blue');
+export const PROPERTIES_COLOUR_PINK = messageKey('surface.properties.colour.pink');
+export const PROPERTIES_COLOUR_ORANGE = messageKey('surface.properties.colour.orange');
+export const PROPERTIES_COLOUR_PURPLE = messageKey('surface.properties.colour.purple');
+export const PROPERTIES_COLOUR_RED = messageKey('surface.properties.colour.red');
+export const PROPERTIES_COLOUR_GREY = messageKey('surface.properties.colour.grey');
 export const ANNOTATIONS_KIND_CALLOUT = messageKey('surface.annotations.kind.callout');
 export const ANNOTATIONS_KIND_TYPEWRITER = messageKey('surface.annotations.kind.typewriter');
 export const ANNOTATIONS_KIND_MEASURE_DISTANCE = messageKey('surface.annotations.kind.measure-distance');
@@ -2382,13 +2398,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDITING_FONT_SIZE_TITLE]: 'Annotation font size',
   [EDITING_IMAGE_PAGES_TITLE]: 'Place images on',
   [STYLE_PANEL_LABEL]: 'Annotation style',
-  [COMMENT_STYLES_LABEL]: 'Style of the selected annotations',
-  [COMMENT_STYLES_NONE]: 'Select annotations to change how they look.',
-  // NAMES THE COUNT, because the swatch beside it shows ONE of them: a panel
-  // that showed one style as though it were all is the compound claim this
-  // project keeps paying for.
-  [COMMENT_STYLES_CURRENT]: '{count, plural, one {One annotation selected} other {# annotations selected; showing the first}}',
-  [COMMENT_STYLES_APPLY]: 'Apply the current style',
   // SAID RATHER THAN SHOWN AS ZERO. Six subtypes have no `/BS` at all, and a 0
   // reads as *no border* rather than *no such property* — which is what a person
   // would then try to set.
@@ -2397,7 +2406,29 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // means: a highlighter stays yellow and a caret stays red. *Automatic* would
   // suggest something is being worked out from the page.
   [STYLE_COLOUR_AUTO]: 'Each tool’s own',
-  [STYLE_COLOUR_CHOOSE]: 'Choose a colour',
+  // *ANNOTATIONS* AND NOT v5-02's *highlights*: the four style settings are shared by every tool, so
+  // naming the selected kind would promise a per-kind default nothing stores.
+  [PROPERTIES_AS_DEFAULT]: 'Use as default for new annotations',
+  [PROPERTIES_COLOUR]: 'Colour',
+  [PROPERTIES_OPACITY]: 'Opacity',
+  [PROPERTIES_OPACITY_VALUE]: '{opacity, number, percent}',
+  [PROPERTIES_LINE_WIDTH]: 'Line width',
+  [PROPERTIES_WIDTH_VALUE]: '{width, number} pt',
+  [PROPERTIES_FONT_SIZE]: 'Font size',
+  [PROPERTIES_COMMENT]: 'Comment',
+  [PROPERTIES_NEW_HEADING]: 'New annotations',
+  [PROPERTIES_NEW_HINT]: 'These set how the next annotation is drawn. Select one on the page to change it.',
+  [PROPERTIES_WHERE]: '{count, plural, one {Page {page}} other {# selected · page {page}}}',
+  [PROPERTIES_ACTIONS]: 'Selected annotation',
+  [PROPERTIES_CUSTOM_COLOUR]: 'Custom colour',
+  [PROPERTIES_COLOUR_YELLOW]: 'Yellow',
+  [PROPERTIES_COLOUR_GREEN]: 'Green',
+  [PROPERTIES_COLOUR_BLUE]: 'Blue',
+  [PROPERTIES_COLOUR_PINK]: 'Pink',
+  [PROPERTIES_COLOUR_ORANGE]: 'Orange',
+  [PROPERTIES_COLOUR_PURPLE]: 'Purple',
+  [PROPERTIES_COLOUR_RED]: 'Red',
+  [PROPERTIES_COLOUR_GREY]: 'Grey',
   [ANNOTATIONS_KIND_CALLOUT]: 'Callout',
   [ANNOTATIONS_KIND_TYPEWRITER]: 'Typed text',
   // NAMED AS MEASUREMENTS rather than as the shapes they are: the file itself

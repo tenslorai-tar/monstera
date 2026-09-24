@@ -10,7 +10,12 @@ import {
   PDFString,
   StandardFonts,
 } from '@cantoo/pdf-lib';
-import type { AnnotationDraft, AnnotationRect, CommandOfKind } from '@monstera/contract';
+import {
+  KEEPS_THE_ANNOTATION_WALK,
+  type AnnotationDraft,
+  type AnnotationRect,
+  type CommandOfKind,
+} from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { ColorSpace, Pixmap } from 'mupdf';
 import { describe, expect, it } from 'vitest';
@@ -1838,6 +1843,33 @@ describe('applyStyleAnnotation', () => {
     await expect(styled(drawn, [0, 0])).rejects.toThrow(/more than once/u);
   });
 
+  it('A COLOUR ALONE leaves each mark its own opacity, which is why the other two are optional', async () => {
+    // Two marks of two opacities, recoloured by one command naming the colour only. A payload that
+    // had to carry an opacity would set both to one value — the change the Properties tab must not
+    // make when a person has only picked a colour (ADR-0102).
+    const two = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: { ...SQUARE, opacity: 0.5 } })),
+      command({ annotation: { ...SQUARE, opacity: 0.8 } }),
+    );
+    const recoloured = await onSession(two, async (session) => {
+      await applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0, 1],
+        colour: [...BLUE],
+        version: asDocVersion(1),
+      });
+      return mupdfWriter.serialise(session);
+    });
+    const listed = await onSession(recoloured, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.style.colour)).toStrictEqual([
+      [0, 0, 1],
+      [0, 0, 1],
+    ]);
+    expect(listed.annotations[0]?.style.opacity).toBeCloseTo(0.5, 3);
+    expect(listed.annotations[1]?.style.opacity).toBeCloseTo(0.8, 3);
+  });
+
   it('changes NOTHING when one index in the list is out of range', async () => {
     const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
     const before = await onSession(drawn, (session) => readAnnotations(session));
@@ -3171,5 +3203,142 @@ describe('captureAddAnnotation', () => {
     await expect(
       onSession(await fixture(), (session) => captureAddAnnotation(session, command({ page: 9 }))),
     ).rejects.toThrow(/outside this/u);
+  });
+});
+
+/**
+ * `KEEPS_THE_ANNOTATION_WALK`, proven against the engine (ADR-0102).
+ *
+ * A selection is carried across a command in that set by re-reading the walk at the new version and
+ * taking the SAME indices, so the claim each member makes is that no mark moved position, changed
+ * kind, arrived or left. The fixture is the hard shape for it: four kinds, one of them a note whose
+ * `update()` writes a `/Popup` into `/Annots` beside it — an object the walk must go on not counting.
+ */
+describe('the commands that keep the annotation walk', () => {
+  type Keeping = typeof KEEPS_THE_ANNOTATION_WALK extends ReadonlySet<infer K> ? K : never;
+
+  const NOTE: Extract<AnnotationDraft, { type: 'sticky-note' }> = {
+    type: 'sticky-note',
+    at: { x: 150, y: 200 },
+    text: 'check the figure',
+    colour: [1, 0.8, 0.2],
+    opacity: 1,
+  };
+
+  /** A square, an ink stroke, a highlight and a note, in that walk order. */
+  async function fourMarks(): Promise<Uint8Array> {
+    let bytes = await drawnOn(await withText(), command({ annotation: SQUARE }));
+    bytes = await drawnOn(bytes, command({ annotation: INK }));
+    bytes = await drawnOn(
+      bytes,
+      command({
+        annotation: {
+          type: 'highlight',
+          from: { x: 22, y: 256 },
+          to: { x: 100, y: 252 },
+          colour: [1, 0.9, 0.2],
+          opacity: 1,
+        },
+      }),
+    );
+    return drawnOn(bytes, command({ annotation: NOTE }));
+  }
+
+  /** What a carried handle relies on: each position's kind, and how many there are. */
+  async function walkOf(bytes: Uint8Array): Promise<readonly string[]> {
+    const listed = await onSession(bytes, (session) => readAnnotations(session));
+    return listed.annotations.map((entry) => `${String(entry.index)}:${entry.kind}`);
+  }
+
+  async function after(bytes: Uint8Array, work: (session: MupdfSession) => Promise<void>): Promise<Uint8Array> {
+    return onSession(bytes, async (session) => {
+      await work(session);
+      return mupdfWriter.serialise(session);
+    });
+  }
+
+  /**
+   * One command per member, EXHAUSTIVE BY TYPE: a kind added to the set without an entry here is a
+   * compile error, so no member is claimed without being run. Each names the note, the mark whose
+   * rewrite adds an object to `/Annots`, and the square before it.
+   */
+  const APPLY: Record<Keeping, (session: MupdfSession) => Promise<void>> = {
+    styleAnnotation: (session) =>
+      applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0, 3],
+        colour: [0, 0, 1],
+        opacity: 0.4,
+        borderWidth: 3,
+        version: asDocVersion(1),
+      }),
+    editAnnotationText: (session) =>
+      applyEditAnnotationText(session, {
+        kind: 'editAnnotationText',
+        page: 0,
+        index: 3,
+        text: 'the figure is on page 9',
+        version: asDocVersion(1),
+      }),
+    placeAnnotation: (session) =>
+      applyPlaceAnnotation(session, {
+        kind: 'placeAnnotation',
+        page: 0,
+        placements: [
+          { index: 0, rect: { x0: 30, y0: 100, x1: 130, y1: 150 } },
+          { index: 3, rect: { x0: 160, y0: 160, x1: 180, y1: 180 } },
+        ],
+        version: asDocVersion(1),
+      }),
+  };
+
+  for (const kind of KEEPS_THE_ANNOTATION_WALK) {
+    it(`${kind} leaves every mark where it was, of the kind it was`, async () => {
+      const before = await fourMarks();
+      const walk = await walkOf(before);
+      // THE FIXTURE IS WHAT IT SAYS, or the comparison below compares two empty lists.
+      expect(walk).toStrictEqual(['0:square', '1:ink', '2:highlight', '3:sticky-note']);
+      expect(await walkOf(await after(before, APPLY[kind]))).toStrictEqual(walk);
+    });
+  }
+
+  it('AND A COMMENT ON A HIGHLIGHT, which the Properties tab now writes', async () => {
+    const before = await fourMarks();
+    const edited = await after(before, (session) =>
+      applyEditAnnotationText(session, {
+        kind: 'editAnnotationText',
+        page: 0,
+        index: 2,
+        text: 'confirm the rate',
+        version: asDocVersion(1),
+      }),
+    );
+    expect(await walkOf(edited)).toStrictEqual(await walkOf(before));
+    const listed = await onSession(edited, (session) => readAnnotations(session));
+    expect(listed.annotations[2]?.contents).toBe('confirm the rate');
+  });
+
+  it('CONTROL: a removal and a reply change the walk, and neither is in the set', async () => {
+    // The two annotation-naming commands left out, each shown to do what keeps it out — so the
+    // instrument above can see a walk change when one happens.
+    const before = await fourMarks();
+    const removed = await after(before, (session) =>
+      applyRemoveAnnotation(session, { kind: 'removeAnnotation', page: 0, indices: [1], version: asDocVersion(1) }),
+    );
+    const replied = await after(before, (session) =>
+      applyReplyToAnnotation(session, {
+        kind: 'replyToAnnotation',
+        page: 0,
+        index: 0,
+        text: 'agreed',
+        version: asDocVersion(1),
+      }),
+    );
+    expect(await walkOf(removed)).not.toStrictEqual(await walkOf(before));
+    expect(await walkOf(replied)).not.toStrictEqual(await walkOf(before));
+    const named: ReadonlySet<string> = KEEPS_THE_ANNOTATION_WALK;
+    expect(named.has('removeAnnotation')).toBe(false);
+    expect(named.has('replyToAnnotation')).toBe(false);
   });
 });

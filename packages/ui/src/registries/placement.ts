@@ -113,7 +113,19 @@ export type Placement =
   | { readonly surface: 'start-screen'; readonly slot: StartScreenSlot; readonly order: number }
   | StatusBarPlacement
   | TitleBarPlacement
-  | RailPlacement;
+  | RailPlacement
+  | PropertiesPlacement;
+
+/**
+ * A button at the FOOT of the right panel's Properties tab, drawn while marks are selected
+ * ([ADR-0102](../../../../docs/DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)).
+ * The owner's v5-02 draws *Reply* and *Delete* there. Each is drawn while its own `when` holds, so a
+ * foot never offers a command the context menu has hidden.
+ */
+export interface PropertiesPlacement {
+  readonly surface: 'properties';
+  readonly order: number;
+}
 
 /**
  * An icon button at the FOOT of the section rail, below the eight sections

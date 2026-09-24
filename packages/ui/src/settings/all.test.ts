@@ -69,6 +69,7 @@ describe('the registered settings', () => {
       'appearance.quick-toolbar-edge',
       'appearance.quick-toolbar-open',
       'appearance.ribbon-section',
+      'editing.style-as-default',
       'viewing.split',
     ]);
 

@@ -281,6 +281,7 @@ import { styleFrom } from './annotations/annotationStyle.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID } from './annotations/selectTool.js';
+import { applyCarrying } from './commands/applyCarrying.js';
 import {
   deleteSelectionCommand,
   editSelectionCommand,
@@ -323,10 +324,9 @@ import {
   AZURE_DI_ENDPOINT_SETTING,
   OCR_LANGUAGE_SETTING,
 } from './settings/editing.js';
-import { CommentStylesPanel } from './CommentStylesPanel.js';
 import { AssistantPanel } from './AssistantPanel.js';
 import type { EventSubscriber } from './bridge.js';
-import { StylePanel } from './StylePanel.js';
+import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -1011,6 +1011,25 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   );
 
   /**
+   * What the select tool has picked, or `undefined` for nothing.
+   *
+   * **Held here rather than in the tool**, which is what let the select tool
+   * land as a registration: a selection outlives every gesture and a controller
+   * is a value (ADR-0029 Decision 1). `SelectionLayer` draws it and
+   * `deleteSelectionCommand` acts on it, so the two surfaces read one state.
+   * Declared above `send`, which carries it across a command that keeps the walk.
+   */
+  const [picked, setPicked] = useState<AnnotationSelection | undefined>(undefined);
+
+  /** A command sent to one document, carrying the selection across it where it keeps the walk (ADR-0102). */
+  const send = useCallback(
+    (docId: DocId, command: RenderableCommand): void => {
+      void applyCarrying({ client, onApplied: applied, ask, carry: setPicked }, docId, command);
+    },
+    [applied, ask, client],
+  );
+
+  /**
    * Sending a command the surface built, through the one dispatcher.
    *
    * `onCommand`'s body without the overlay around it: the nudge commands build a
@@ -1020,9 +1039,9 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const dispatch = useCallback(
     (command: RenderableCommand): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, command);
+      send(activeId, command);
     },
-    [activeId, applied, ask, client],
+    [activeId, send],
   );
 
   /**
@@ -1508,15 +1527,6 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
   /**
-   * What the select tool has picked, or `undefined` for nothing.
-   *
-   * **Held here rather than in the tool**, which is what let the select tool
-   * land as a registration: a selection outlives every gesture and a controller
-   * is a value (ADR-0029 Decision 1). `SelectionLayer` draws it and
-   * `deleteSelectionCommand` acts on it, so the two surfaces read one state.
-   */
-  const [picked, setPicked] = useState<AnnotationSelection | undefined>(undefined);
-  /**
    * Reading every annotation in the open document, for the eraser.
    *
    * **A read, not a dispatch**, which is why it is here rather than a second
@@ -1834,32 +1844,40 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
   );
 
   /**
-   * Restyling everything the select tool has picked.
+   * Restyling everything the select tool has picked, one property at a time — the Properties tab's
+   * controls (ADR-0102).
    *
    * `removeSelection`'s shape with an appearance instead of a deletion, and the
    * same two rules: ONE command for the whole selection, because five marks
    * restyled is one decision; and the version comes from the selection rather
    * than from this component's, so a document that has moved refuses instead of
-   * restyling by arithmetic.
-   *
-   * The style is the authoring controls' — `colour([0, 0, 0])` resolves the
-   * tri-state by handing over a colour used only when nobody has chosen, and
-   * black is the honest *no tool asked* here, this not being a tool.
+   * restyling by arithmetic. Through `dispatch`, so the selection is carried to
+   * the version the restyle produces and the next control acts on the same marks.
    */
   const restyleSelection = useCallback(
-    (chosen: AnnotationSelection): void => {
-      if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+    (chosen: AnnotationSelection, change: StyleChange): void => {
+      dispatch({
         kind: 'styleAnnotation',
         page: chosen.page,
         indices: chosen.items.map((item) => item.index),
-        colour: style.colour([0, 0, 0]),
-        opacity: style.opacity,
-        borderWidth: style.lineWidth,
+        ...change,
         version: chosen.version,
       });
     },
-    [activeId, applied, ask, client, style],
+    [dispatch],
+  );
+
+  /**
+   * Rewriting the one selected mark's comment, from the Properties tab — `editSelectionCommand`'s
+   * payload, typed in the tab rather than a dialog, and carried the same way as a restyle.
+   */
+  const commentSelection = useCallback(
+    (chosen: AnnotationSelection, text: string): void => {
+      const item = chosen.items[0];
+      if (chosen.items.length !== 1 || item === undefined) return;
+      dispatch({ kind: 'editAnnotationText', page: chosen.page, index: item.index, text, version: chosen.version });
+    },
+    [dispatch],
   );
 
   /** What the selection commands need, composed once so nine entries share it. */
@@ -2365,11 +2383,13 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     return {
       tool,
       onCommand: (command: RenderableCommand): void => {
-        void applyDocumentCommand({ client, onApplied: applied, ask }, docId, command);
+        // A DRAG OF THE SELECTION is a `placeAnnotation`, which keeps the walk, so the marks stay
+        // selected for the next drag — the same route an arrow key takes.
+        send(docId, command);
       },
       selection,
     };
-  }, [applied, ask, client, open, selection, toolId, tools]);
+  }, [open, selection, send, toolId, tools]);
 
   /**
    * Edit text's mode on the document on show, or `undefined` when it is off
@@ -2688,14 +2708,16 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
               }
               settings={settings}
             >
-              {/* THE STYLE CONTROLS, which take no document at all: they set what the
-                  NEXT annotation is drawn in, so they do not change when the version
-                  moves. That is what makes them settings rather than document state. */}
-              <StylePanel settings={settings} />
-              {/* THE OTHER HALF: what the selected annotations look like now, and the
-                  command that changes them. Takes the same resolved style the tools
-                  take, so *Apply* writes what the controls above say. */}
-              <CommentStylesPanel onApply={restyleSelection} selection={selection} style={style} />
+              {/* THE SELECTED MARKS' STYLE, changed as each control is used, or with nothing
+                  selected the authoring settings (ADR-0102). */}
+              <PropertiesPanel
+                context={context}
+                onComment={commentSelection}
+                onRestyle={restyleSelection}
+                registry={registry}
+                selection={selection}
+                settings={settings}
+              />
             </ContextPanel>
           }
           // §10.3's DOCUMENT PANELS other than Pages, built here where their state lives.

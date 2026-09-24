@@ -27,6 +27,7 @@ import {
   MEASURE_UNIT_TITLE,
   IMAGE_PAGES_TITLES,
   OCR_LANGUAGE_NAMES,
+  PROPERTIES_AS_DEFAULT,
   STYLE_COLOUR_AUTO,
   UNIT_TITLES,
 } from '../messages/en.js';
@@ -352,4 +353,21 @@ export const ANNOTATION_FONT_SIZE_SETTING: SettingDefinition<z.ZodNumber> = {
   schema: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
   fallback: 12,
   category: 'editing',
+};
+
+/**
+ * Whether a change made to selected marks in the Properties tab is also written to the four settings
+ * above, so the next mark is drawn the same way (ADR-0102).
+ *
+ * **On by default, because the owner's v5-02 draws it ticked.** REMEMBERED: the checkbox under the
+ * tab's controls is where it is changed, and a Settings row beside it would be a second control for
+ * one value.
+ */
+export const STYLE_AS_DEFAULT_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'editing.style-as-default',
+  title: PROPERTIES_AS_DEFAULT,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'editing',
+  remembered: true,
 };

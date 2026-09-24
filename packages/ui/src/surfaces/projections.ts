@@ -169,6 +169,43 @@ function railOrder(placement: Placement): number | undefined {
     case 'start-screen':
     case 'status-bar':
     case 'title-bar':
+    case 'properties':
+      return undefined;
+    default: {
+      const unhandled: never = placement;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * The commands at the foot of the Properties tab, drawn while marks are selected (§7,
+ * [ADR-0102](../../../../docs/DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)).
+ * `available` has already applied each command's `when`, so a foot never offers what the annotation
+ * menu has hidden.
+ */
+export function propertiesModel(registry: CommandRegistry, context: CommandContext): readonly OrderedEntry[] {
+  const entries: OrderedEntry[] = [];
+  for (const command of registry.available(context)) {
+    for (const placement of command.placements) {
+      const order = propertiesOrder(placement);
+      if (order !== undefined) entries.push({ command, order });
+    }
+  }
+  return ordered(entries);
+}
+
+function propertiesOrder(placement: Placement): number | undefined {
+  switch (placement.surface) {
+    case 'properties':
+      return placement.order;
+    case 'ribbon':
+    case 'quick-toolbar':
+    case 'context-menu':
+    case 'start-screen':
+    case 'status-bar':
+    case 'title-bar':
+    case 'rail':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -204,6 +241,7 @@ function ribbonSlot(
     case 'status-bar':
     case 'title-bar':
     case 'rail':
+    case 'properties':
       return undefined;
     default: {
       // Decision 4. A new `Placement` variant lands here as a compile error, in
@@ -253,6 +291,7 @@ function quickToolbarOrder(placement: Placement): number | undefined {
     case 'status-bar':
     case 'title-bar':
     case 'rail':
+    case 'properties':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -295,6 +334,7 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
     case 'status-bar':
     case 'title-bar':
     case 'rail':
+    case 'properties':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -340,6 +380,7 @@ function startScreenSlot(
     case 'status-bar':
     case 'title-bar':
     case 'rail':
+    case 'properties':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -406,6 +447,7 @@ function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; read
     case 'start-screen':
     case 'title-bar':
     case 'rail':
+    case 'properties':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -453,6 +495,7 @@ function titleBarSlot(placement: Placement): TitleBarPlacement | undefined {
     case 'start-screen':
     case 'status-bar':
     case 'rail':
+    case 'properties':
       return undefined;
     default: {
       const unhandled: never = placement;

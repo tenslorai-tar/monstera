@@ -1974,7 +1974,8 @@ export const applyPlaceAnnotation: Apply<'mupdf', 'placeAnnotation'> = (
  * per annotation, and the payload's width is optional so a caller that has none
  * to give says nothing rather than sending a number.
  *
- * Colour and opacity are set on everything, because every subtype takes them.
+ * Colour and opacity are set on everything the command names them for, because every subtype takes
+ * them. Each of the three is optional, and an absent one is left as each annotation has it.
  */
 export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
   session: MupdfSession,
@@ -1993,8 +1994,9 @@ export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
     // undo step describes.
     const targets = command.indices.map((index) => annotationAt(loaded, index));
     for (const annotation of targets) {
-      annotation.setColor([...command.colour]);
-      annotation.setOpacity(command.opacity);
+      // ONLY WHAT THE COMMAND NAMES: an absent property is each mark's own, left as it was.
+      if (command.colour !== undefined) annotation.setColor([...command.colour]);
+      if (command.opacity !== undefined) annotation.setOpacity(command.opacity);
       if (command.borderWidth !== undefined && annotation.hasBorder()) {
         annotation.setBorderWidth(command.borderWidth);
       }

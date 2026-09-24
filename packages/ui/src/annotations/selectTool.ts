@@ -105,6 +105,53 @@ export interface AnnotationSelection {
   readonly items: readonly SelectedAnnotation[];
 }
 
+/**
+ * One walk entry as a selected item, or `undefined` for a mark on a page that displays no region —
+ * there is nowhere to draw it selected. The select tool and {@link carrySelection} both build items
+ * here, so a field joining the item is read from the walk in one place.
+ */
+function selectedFrom(entry: ErasableAnnotation): SelectedAnnotation | undefined {
+  if (entry.rect === null) return undefined;
+  return {
+    index: entry.index,
+    rect: entry.rect,
+    style: entry.style,
+    kind: entry.kind,
+    contents: entry.contents,
+  };
+}
+
+/**
+ * The selection a command in `KEEPS_THE_ANNOTATION_WALK` leaves behind (ADR-0102).
+ *
+ * `composed` is the command's own page and version — what it was sent against. The result names the
+ * same indices at `produced`, the version the command answered with, and takes every field from
+ * `walk`, the read made after it: a carried selection is a fresh read by position, never the old
+ * items with a new version on them.
+ *
+ * **Anything that does not line up drops it.** A selection other than the one the command was
+ * composed from is left alone; a read at any version but `produced` means something else moved the
+ * document in between, so the positions are not known to name the same marks; and an index the
+ * read does not answer, or answers with no region, cannot be drawn.
+ */
+export function carrySelection(
+  current: AnnotationSelection | undefined,
+  composed: { readonly page: number; readonly version: DocVersion },
+  produced: DocVersion,
+  walk: AnnotationSnapshot | undefined,
+): AnnotationSelection | undefined {
+  if (current?.page !== composed.page || current.version !== composed.version) return current;
+  if (walk?.version !== produced) return undefined;
+  const items: SelectedAnnotation[] = [];
+  for (const item of current.items) {
+    const entry = walk.annotations.find((candidate) => candidate.page === current.page && candidate.index === item.index);
+    const carried = entry === undefined ? undefined : selectedFrom(entry);
+    if (carried === undefined) return undefined;
+    items.push(carried);
+  }
+  return { page: current.page, version: produced, items };
+}
+
 export interface SelectDeps {
   /** The same read the eraser holds. */
   readonly annotations: () => Promise<AnnotationSnapshot | undefined>;
@@ -348,14 +395,8 @@ export function selectTool(deps: SelectDeps): UiTool {
             });
 
       const items = picked
-        .map((entry) => ({
-          index: entry.index,
-          rect: entry.rect,
-          style: entry.style,
-          kind: entry.kind,
-          contents: entry.contents,
-        }))
-        .filter((entry): entry is SelectedAnnotation => entry.rect !== null);
+        .map(selectedFrom)
+        .filter((entry): entry is SelectedAnnotation => entry !== undefined);
 
       deps.onSelect(
         items.length === 0 ? undefined : { page, version: snapshot.version, items },
