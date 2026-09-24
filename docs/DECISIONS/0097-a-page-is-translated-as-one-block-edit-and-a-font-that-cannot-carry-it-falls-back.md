@@ -145,3 +145,39 @@ that letter — a stated limit, and the corpus's real fonts never reached it.
 
 `pdfiumCommand.proof.mjs` carries both sides: a renamed font and Times-Roman, each written through a real twin,
 and Helvetica refused; removing the saved-bytes read turns the refusal into a saved `Ø` and the case red.
+
+## Extended 2026-09-24 — a translated block keeps the page's layout
+
+The first real page translated end to end (a four-block newsletter, `claude-haiku-4-5-20251001`, looked at in
+the development build) was correct and unusable: the title wrapped at its own old width with half the page
+free, the grown heading overprinted the paragraph below it, and the paragraph's lines broke raggedly because
+each original line was kept as a line. Three decisions, each amending ADR-0096 Decision 5 as this ADR's
+Decision 2 already does:
+
+**4a. A one-line block wraps at its column, not at its own end.** A one-line block's right edge is where its
+old text happened to stop, so one more word wrapped it. It now wraps at the larger of that edge and the page's
+width less the block's left margin — the margin mirrored, which is the column a single-column page sets and
+never less than the block itself. A block of several lines keeps its own right edge: that is the measure its
+paragraph was set to. This is the in-place editor's rule too; typing into a heading no longer wraps it at once.
+
+**4b. A translated block is FITTED to the box it had.** `editTextBlock`'s blocks carry `fit`: `reflow`, what a
+person typing gets, grows downward as ADR-0096 describes; `shrink`, what a translation asks for, scales every
+object of the block uniformly — size, and position about the block's top-left — by the largest factor whose
+layout ends above the block's original bottom. The factor is found by bisection on trial layouts made on a
+page that is then closed WITHOUT generating, which discards them — measured this morning, 5 of 5 pages kept
+their original text on reload (`pdfiumFallbackFont.mjs`). It never goes below **0.6**: 11-point text at 0.6 is
+6.6 points, the size of fine print, and smaller is not a translation anyone can read; a block that needs more
+is written at 0.6 and may overlap, which is the remaining stated limit.
+
+**4c. A block's soft-wrapped lines are joined before it is translated.** A wrapped paragraph's line breaks are
+layout and an address's are content, and the test that separates them has no constant in it: **a line was
+soft-wrapped if the next line's first word would not have fitted at its end** — the rule every typesetter
+wrapped it by. The first word's width is the next line's width in proportion to its characters. Joined lines
+are sent as one line; hard breaks stay line breaks; the kernel then re-wraps the paragraph in its own style
+under 4a and 4b.
+
+**Rejected:** moving the blocks below a grown block down the page — a PDF records positions, not flow, and
+moving every later block re-lays out a document that has no layout to re-lay (ADR-0096's reason, still
+true); a fixed shrink step, which is a constant nothing measures; shrinking every block of a page by one
+factor, which makes a short heading pay for a long paragraph; and a percentage-of-width test for soft wraps,
+which is a constant where the typesetter's own relation exists.
