@@ -959,6 +959,10 @@ export const STATUS_CHROME_GROUP = messageKey('surface.status.chrome-group');
  * which a renderer holding no path could not read (invariant 2).
  */
 export const STATUS_SAVED_STATE = messageKey('surface.status.saved-state');
+/** v5-02's *"24 pages · 2.4 MB"* in the status bar's document line. */
+export const STATUS_PAGES = messageKey('surface.status.pages');
+export const STATUS_SIZE_KB = messageKey('surface.status.size-kb');
+export const STATUS_SIZE_MB = messageKey('surface.status.size-mb');
 export const STATUS_UNSAVED = messageKey('surface.status.unsaved');
 export const STATUS_SAVED = messageKey('surface.status.saved');
 export const STATUS_SAVED_JUST_NOW = messageKey('surface.status.saved-just-now');
@@ -2550,6 +2554,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STATUS_ZOOM_GROUP]: 'Zoom',
   [STATUS_CHROME_GROUP]: 'Panels and toolbars',
   [STATUS_SAVED_STATE]: 'Saved state',
+  [STATUS_PAGES]: '{count, plural, one {# page} other {# pages}}',
+  [STATUS_SIZE_KB]: '{size, number} KB',
+  [STATUS_SIZE_MB]: '{size, number} MB',
   [STATUS_UNSAVED]: 'Unsaved changes',
   [STATUS_SAVED]: 'Saved',
   [STATUS_SAVED_JUST_NOW]: 'Saved just now',

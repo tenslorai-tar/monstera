@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { asDocId, asDocVersion, messageKey } from '@monstera/shared';
+import { type MessageKey, asDocId, asDocVersion, messageKey } from '@monstera/shared';
 import { fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -62,6 +62,8 @@ function drawn(
     readonly task?: RunningTask | undefined;
     readonly commands?: readonly UiCommand[];
     readonly saved?: SavedState;
+    readonly byteLength?: number;
+    readonly mode?: MessageKey;
   } = {},
 ): Drawn {
   const went = vi.fn();
@@ -77,6 +79,8 @@ function drawn(
         onZoom={zoomed}
         registry={new CommandRegistry(over.commands ?? [])}
         context={context}
+        byteLength={over.byteLength ?? 2_516_582}
+        mode={over.mode}
         task={over.task}
         // THE DEFAULT IS THE DIRTY ONE, deliberately: every case that does not care renders a
         // document with unsaved changes, so a bar that dropped the cell shows it in none of
@@ -128,6 +132,24 @@ describe('StatusBar', () => {
     // of which the plain "is the cell there" assertion above would pass.
     const older = drawn({ saved: savedState(4, 4, at, at + 125_000) });
     expect(older.container.querySelector('.m-status-saved')?.textContent).toBe('Saved 2 min ago');
+  });
+
+  it('the DOCUMENT LINE reads name · pages · size · saved, as v5-02 draws it', () => {
+    const { container } = drawn({ byteLength: 2_516_582 });
+    const line = container.querySelector('.m-status-document')?.textContent ?? '';
+    // 2,516,582 bytes is 2.4 MB to one decimal; ten pages from the helper's page count. The saved
+    // state ends the line and is the helper's own, asserted by the case above.
+    expect(line.startsWith('annual.pdf·10 pages·2.4 MB·')).toBe(true);
+    // UNDER A MEGABYTE it reads in whole KB, never "0.0 MB".
+    const small = drawn({ byteLength: 51_200 }).container.querySelector('.m-status-document')?.textContent ?? '';
+    expect(small).toContain('50 KB');
+  });
+
+  it('names the TOOL THAT IS ON beside the page field, and nothing when none is', () => {
+    const on = drawn({ mode: messageKey('command.hand-tool.title') });
+    expect(on.container.querySelector('.m-status-mode')?.textContent).toBe('Hand — drag to move the pages');
+    // CONTROL: with no tool, no line at all rather than an empty one.
+    expect(drawn().container.querySelector('.m-status-mode')).toBeNull();
   });
 
   it('shows the zoom as a percentage, rounded for display', () => {

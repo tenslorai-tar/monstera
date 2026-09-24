@@ -1,7 +1,12 @@
+import type { I18n } from '@lingui/core';
 import { useLingui } from '@lingui/react';
+import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useId, useState } from 'react';
 
 import {
+  STATUS_PAGES,
+  STATUS_SIZE_KB,
+  STATUS_SIZE_MB,
   STATUS_CHROME_GROUP,
   STATUS_GO_TO,
   STATUS_GO_TO_OUTSIDE,
@@ -29,6 +34,19 @@ const SLIDER_MIN = ZOOM_STEPS[0];
 const SLIDER_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? SLIDER_MIN;
 /** Five percent a step: fine enough to aim, coarse enough that an arrow key visibly moves it. */
 const SLIDER_STEP = 0.05;
+
+const KILOBYTE = 1024;
+const MEGABYTE = KILOBYTE * 1024;
+
+/**
+ * The document's size as a person reads it: whole KB under a megabyte, MB to one decimal above,
+ * as v5-02's *"2.4 MB"*. The number goes through the catalogue's ICU `number`, so the decimal
+ * separator is the reader's language's and not JavaScript's.
+ */
+function documentSize(i18n: I18n, bytes: number): string {
+  if (bytes < MEGABYTE) return i18n._(STATUS_SIZE_KB, { size: Math.max(1, Math.round(bytes / KILOBYTE)) });
+  return i18n._(STATUS_SIZE_MB, { size: Math.round((bytes / MEGABYTE) * 10) / 10 });
+}
 
 /**
  * The strip along the bottom: which document this is, where the reader is and how to move, how
@@ -87,6 +105,8 @@ export function StatusBar({
   context,
   task,
   saved,
+  byteLength,
+  mode,
 }: {
   /** The document's name, as main stated it on `document.open`. */
   readonly name: string;
@@ -112,6 +132,13 @@ export function StatusBar({
    * answer, which is one comparison and not two (B3a).
    */
   readonly saved: SavedState;
+  /** The document's size in bytes, as main stated it — v5-02 draws *"24 pages · 2.4 MB"*. */
+  readonly byteLength: number;
+  /**
+   * The name of the tool that is on, or `undefined` for none — v5-02 draws the active tool's line
+   * beside the page field, so a person who pressed something can see what a press on the page does.
+   */
+  readonly mode: MessageKey | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   // `null` until a person types: the field then shows what they typed, and otherwise the page.
@@ -142,16 +169,6 @@ export function StatusBar({
 
   return (
     <footer className="m-status-bar" role="status" aria-label={i18n._(STATUS_LABEL)}>
-      {/* FIRST, at the far end from the numbers: which document this is. */}
-      <span className="m-status-name" title={name}>
-        {name}
-      </span>
-      {/* AND WHETHER IT IS ON DISK, beside the name, as the owner's document export draws it.
-          Here rather than in the navigation cluster because it is about the file, not the view —
-          and next to the name because those are the two facts about the document itself. */}
-      <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
-        {i18n._(saved.message, saved.values)}
-      </span>
       {/* THE ANNOUNCEMENT, as text in the status region, visually hidden. */}
       <span className="m-status-page m-visually-hidden">
         {i18n._(STATUS_PAGE_OF, { page: pdfjsPageOf(page), count: pageCount })}
@@ -210,6 +227,29 @@ export function StatusBar({
       {outside ? (
         <span className="m-status-problem">{i18n._(STATUS_GO_TO_OUTSIDE, { count: pageCount })}</span>
       ) : null}
+      {/* THE TOOL THAT IS ON, beside the page field as v5-02 draws it, and nothing when none is. */}
+      {mode === undefined ? null : <span className="m-status-mode">{i18n._(mode)}</span>}
+      {/* THE DOCUMENT ITSELF, at the far end from the page field, as v5-02 draws it: its name, its
+          length, its size, and whether it is on disk — the four facts about the file rather than the
+          view, in one line with separators the design draws. */}
+      <span className="m-status-document">
+        <span className="m-status-name" title={name}>
+          {name}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>{i18n._(STATUS_PAGES, { count: pageCount })}</span>
+        <span aria-hidden="true">·</span>
+        <span>{documentSize(i18n, byteLength)}</span>
+        <span aria-hidden="true">·</span>
+        <span className="m-status-saved" data-dirty={saved.dirty ? 'true' : 'false'}>
+          {i18n._(saved.message, saved.values)}
+        </span>
+      </span>
+      {model.chrome.length === 0 ? null : (
+        <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_CHROME_GROUP)}>
+          {buttons(model.chrome)}
+        </div>
+      )}
       <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_ZOOM_GROUP)}>
         {buttons(model.zoom.before)}
         <input
@@ -235,11 +275,6 @@ export function StatusBar({
         </span>
         {buttons(model.zoom.after)}
       </div>
-      {model.chrome.length === 0 ? null : (
-        <div className="m-status-cluster" role="group" aria-label={i18n._(STATUS_CHROME_GROUP)}>
-          {buttons(model.chrome)}
-        </div>
-      )}
       {/* THE RUNNING TASK, absent rather than empty when nothing is running, and last, so the
           numbers a reader checks do not move sideways while one runs. */}
       {task === undefined ? null : (

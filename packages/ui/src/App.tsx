@@ -2789,6 +2789,9 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           context={context}
           task={task}
           saved={saved}
+          byteLength={open.byteLength}
+          // THE TOOL THAT IS ON, by its own command's title, so the bar names nothing itself.
+          mode={toolId === undefined ? undefined : registry.get(toolId)?.title}
         />
       )}
       {/* ALWAYS MOUNTED, unlike the status bar above and deliberately so: a live region

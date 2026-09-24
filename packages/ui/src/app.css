@@ -3676,6 +3676,30 @@ textarea {
 .m-status-bar {
   block-size: auto;
   min-block-size: var(--space-32);
+  /* v5-02's ORDER: the page field and the tool that is on at the start, the document's own line
+     from the middle on, then the panel toggles and the zoom at the end. */
+  justify-content: flex-start;
+}
+
+.m-status-saved {
+  margin-inline-end: 0;
+}
+
+.m-status-mode {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* THE DOCUMENT'S LINE takes the free space before it, so it sits right of centre as the design
+   draws it, and gives up its name first when the bar is narrow. */
+.m-status-document {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  margin-inline-start: auto;
+  white-space: nowrap;
 }
 
 /* THE HAND TOOL (§10.3's floating toolbar): a grab cursor over the page area, a grabbing one while a
