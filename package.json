@@ -63,6 +63,7 @@
     "probe:picker": "node scripts/probes/recordPickerProbe.mjs",
     "probe:azure": "node scripts/probes/azureLive.mjs",
     "probe:claude": "node scripts/probes/claudeLive.mjs",
+    "probe:docusign": "node scripts/probes/docusignLive.mjs",
     "probe:translate": "node scripts/probes/translateLive.mjs",
     "probe:tsa": "node scripts/probes/tsaLive.mjs",
     "proof:pickerprobe": "node scripts/proofs/pickerProbe.proof.mjs",

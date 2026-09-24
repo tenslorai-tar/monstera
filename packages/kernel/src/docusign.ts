@@ -315,24 +315,39 @@ export interface DocusignAccount {
  * **THE BOOLEAN `true` is DocuSign's declared type**: *User info endpoint reference*, read
  * 2026-09-24, types `is_default` as `boolean` and its example answers `"is_default": true`. The
  * STRING `"true"` is the other shape DocuSign has published, in *From the Trenches: Who are you?*,
- * which this module followed alone until the owner's first live run (2026-09-24) was refused with
- * `no-account` — the sign-in had succeeded, so a string-only comparison matched no entry. Both
- * published spellings are the rule; anything else is not a default.
+ * which this module followed alone until 2026-09-24. Both published spellings are the rule;
+ * anything else is not a default.
  */
-function isDefaultAccount(account: unknown): account is Record<string, unknown> {
+function isDefaultAccount(account: unknown): boolean {
   if (typeof account !== 'object' || account === null) return false;
   const flag = (account as Record<string, unknown>)['is_default'];
   return flag === true || flag === 'true';
 }
 
 /**
- * The default account a token belongs to — the entry {@link isDefaultAccount} names.
+ * The account a token acts in: **the default where one is marked, else the ONLY account.**
  *
- * DocuSign's reference allows an answer with no default in *"some rare error cases"*, and asks
- * that its support repair the user's records, so that answer is refused by name rather than
- * guessed at by taking the first account.
+ * **The second clause is what a live answer required.** The owner's developer account, read through
+ * `npm run probe:docusign` on 2026-09-24, answered ONE account with `"is_default": false`. DocuSign's
+ * reference calls an answer with no default a *"rare error case"* for its support to repair — and it
+ * also says an integration may list the accounts and *"ask the user to pick"*. With one account there
+ * is nothing to pick between, so it is the account, and refusing it would refuse a person over a flag
+ * that changes nothing about where they can send from.
+ *
+ * **SEVERAL with none marked is still refused**, because there choosing one would be a guess about
+ * which organisation a document goes out under. The host check below applies to whichever is chosen.
  */
-export async function defaultAccount(
+function chosenAccount(accounts: readonly unknown[]): Record<string, unknown> | undefined {
+  const entries = accounts.filter(
+    (account): account is Record<string, unknown> => typeof account === 'object' && account !== null,
+  );
+  const marked = entries.find(isDefaultAccount);
+  if (marked !== undefined) return marked;
+  return entries.length === 1 ? entries[0] : undefined;
+}
+
+/** The account a token acts in, read from `userinfo` — {@link chosenAccount}'s rule. */
+export async function sendingAccount(
   request: { readonly environment: DocusignEnvironment; readonly accessToken: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<DocusignAccount> {
@@ -345,14 +360,17 @@ export async function defaultAccount(
   if (!Array.isArray(accounts)) {
     throw new DocusignRefused('unreadable-answer', 'userinfo answered no accounts list');
   }
-  const chosen = accounts.find(isDefaultAccount);
+  const chosen = chosenAccount(accounts);
   if (chosen === undefined) {
-    throw new DocusignRefused('no-account', 'userinfo named no default account');
+    throw new DocusignRefused(
+      'no-account',
+      `userinfo answered ${String(accounts.length)} account(s) and marked none as the default`,
+    );
   }
   const accountId = chosen['account_id'];
   const baseUri = chosen['base_uri'];
   if (typeof accountId !== 'string' || accountId === '' || typeof baseUri !== 'string') {
-    throw new DocusignRefused('unreadable-answer', 'the default account lacks an id or a base URI');
+    throw new DocusignRefused('unreadable-answer', 'the chosen account lacks an id or a base URI');
   }
   let host: URL;
   try {

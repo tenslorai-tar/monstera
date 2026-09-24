@@ -625,7 +625,7 @@ export {
 export {
   authorizationUrl,
   completedDocument,
-  defaultAccount,
+  sendingAccount,
   DOCUSIGN_ACCOUNT_HOSTS,
   DOCUSIGN_REST_DOMAIN,
   DOCUSIGN_SCOPE,

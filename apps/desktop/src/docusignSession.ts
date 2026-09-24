@@ -9,7 +9,7 @@ import {
   authorizationUrl,
   completedDocument,
   DOCUSIGN_REDIRECT_PORTS,
-  defaultAccount,
+  sendingAccount,
   type DocusignAccount,
   DocusignRefused,
   type DocusignSigner,
@@ -249,7 +249,7 @@ export function createDocusignSession(deps: {
       fetchImpl,
       now,
     );
-    const account = await defaultAccount({ environment, accessToken: tokens.accessToken }, fetchImpl);
+    const account = await sendingAccount({ environment, accessToken: tokens.accessToken }, fetchImpl);
     const session: KeptSession = { environment, ...tokens, account };
     keep(session);
     return session;

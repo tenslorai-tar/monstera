@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   authorizationUrl,
   completedDocument,
-  defaultAccount,
   DocusignRefused,
   exchangeCode,
   pkcePair,
   sendEnvelope,
+  sendingAccount,
 } from './docusign.js';
 
 /**
@@ -156,7 +156,7 @@ describe('exchangeCode', () => {
   });
 });
 
-describe('defaultAccount', () => {
+describe('sendingAccount', () => {
   const ask = (accounts: unknown) =>
     recording(() => json({ sub: 'user', accounts }));
 
@@ -167,7 +167,7 @@ describe('defaultAccount', () => {
       { account_id: 'chosen', is_default: true, account_name: 'Chosen', base_uri: 'https://na3.docusign.net' },
     ]);
 
-    const account = await defaultAccount({ environment: 'production', accessToken: 'access' }, fetchImpl);
+    const account = await sendingAccount({ environment: 'production', accessToken: 'access' }, fetchImpl);
 
     expect(account).toStrictEqual({ accountId: 'chosen', basePath: 'https://na3.docusign.net/restapi' });
     expect(asked[0]?.url).toBe('https://account.docusign.com/oauth/userinfo');
@@ -179,31 +179,50 @@ describe('defaultAccount', () => {
       { account_id: 'other', is_default: 'false', base_uri: 'https://eu.docusign.net' },
       { account_id: 'chosen', is_default: 'true', base_uri: 'https://na3.docusign.net' },
     ]);
-    const account = await defaultAccount({ environment: 'production', accessToken: 'a' }, fetchImpl);
+    const account = await sendingAccount({ environment: 'production', accessToken: 'a' }, fetchImpl);
     expect(account.accountId).toBe('chosen');
+  });
+
+  it('takes the ONLY account when none is marked — the owner’s live answer, 2026-09-24', async () => {
+    // THE SHAPE `npm run probe:docusign` READ: one entry, `is_default: false`, on the demo host. The
+    // rule that took only a marked default refused this person, who has exactly one account.
+    const { fetchImpl } = ask([
+      { account_id: 'only', is_default: false, account_name: 'Only', base_uri: 'https://demo.docusign.net' },
+    ]);
+    const account = await sendingAccount({ environment: 'demo', accessToken: 'a' }, fetchImpl);
+    expect(account).toStrictEqual({ accountId: 'only', basePath: 'https://demo.docusign.net/restapi' });
   });
 
   it.each([
     ['false in both spellings', [false, 'false']],
-    ['absent', [undefined]],
+    ['absent', [undefined, undefined]],
     ['a truthy value that is neither spelling', [1, 'yes']],
-  ])('CONTROL: an answer whose accounts are %s names no default, and is refused rather than guessed', async (_label, flags) => {
-    // THE RULE IS TWO SPELLINGS, not truthiness: a comparison loosened to "anything true-ish" would
-    // choose an account DocuSign never said was the default.
+  ])('CONTROL: SEVERAL accounts whose flags are %s name no default, and are refused rather than guessed', async (_label, flags) => {
+    // TWO ENTRIES EACH, so the only-account clause cannot apply: choosing one of several unmarked
+    // accounts would be a guess about which organisation a document goes out under. And the rule is
+    // two spellings, not truthiness — `1` and `"yes"` are not DocuSign saying "default".
     const { fetchImpl } = ask(
       flags.map((flag, index) => ({ account_id: `a${String(index)}`, is_default: flag, base_uri: 'https://na3.docusign.net' })),
     );
-    const refused = await refusalOf(defaultAccount({ environment: 'production', accessToken: 'a' }, fetchImpl));
+    const refused = await refusalOf(sendingAccount({ environment: 'production', accessToken: 'a' }, fetchImpl));
+    expect(refused.reason).toBe('no-account');
+  });
+
+  it('CONTROL: no accounts at all is refused', async () => {
+    const { fetchImpl } = ask([]);
+    const refused = await refusalOf(sendingAccount({ environment: 'production', accessToken: 'a' }, fetchImpl));
     expect(refused.reason).toBe('no-account');
   });
 
   it.each([
-    ['a look-alike domain', 'https://evil-docusign.net'],
-    ['plain HTTP', 'http://na3.docusign.net'],
-    ['another domain entirely', 'https://example.com'],
-  ])('refuses a base URI on %s, before a token is ever sent to it', async (_label, baseUri) => {
-    const { fetchImpl, asked } = ask([{ account_id: 'chosen', is_default: true, base_uri: baseUri }]);
-    const refused = await refusalOf(defaultAccount({ environment: 'production', accessToken: 'a' }, fetchImpl));
+    ['a look-alike domain', 'https://evil-docusign.net', true],
+    ['plain HTTP', 'http://na3.docusign.net', true],
+    ['another domain entirely', 'https://example.com', true],
+    // THE ONLY-ACCOUNT PATH TOO: the host check guards whichever account is chosen, not only a marked one.
+    ['another domain, on an only account none marked', 'https://example.com', false],
+  ])('refuses a base URI on %s, before a token is ever sent to it', async (_label, baseUri, isDefault) => {
+    const { fetchImpl, asked } = ask([{ account_id: 'chosen', is_default: isDefault, base_uri: baseUri }]);
+    const refused = await refusalOf(sendingAccount({ environment: 'production', accessToken: 'a' }, fetchImpl));
     expect(refused.reason).toBe('unlisted-host');
     // ONE CALL: userinfo. Nothing went to the refused host.
     expect(asked).toHaveLength(1);

@@ -892,6 +892,67 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — DocuSign, read rather than reasoned: one account, marked `false`
+
+**Correction to the entry below.** It says the first run was refused because the parse compared
+`is_default` with the string `"true"`. **That was never shown, and it was not the cause.** The owner's
+second run used a build that accepted both spellings — started 10:17, after the 10:01 build — and was
+refused with the same sentence. The entry below reasoned from the reference to the refusal; nothing in
+it read what DocuSign had answered. Taking the boolean remains right by the reference's declared type.
+The stated mechanism does not.
+
+**What had to change before anything could be read.** The session turns every refusal into one code
+and keeps nothing of the answer, and `no-account` also covers a base URI outside DocuSign's domain. So
+the answer was visible to nobody. The owner's `Account's Base URI`, `https://demo.docusign.net`, ruled
+out the host. Then `npm run probe:docusign` was written. It signs in through the same kernel
+functions and the same loopback ports and prints the `userinfo` answer's shape: counts, field names,
+the flag's spelling and hosts, never an id, a name, an e-mail address or a token.
+
+**Its first version opened Explorer's Documents folder instead of a browser.** The probe handed the
+authorization URL to `explorer.exe` as an argument. It now uses `Start-Process`, which calls
+`ShellExecute` as Electron's `shell.openExternal` does, with the URL passed in an environment variable
+so no command line parses it. The key is read from the owner's user environment and never appears in
+a command. A first attempt typed it inline and the session's safety check refused it, correctly.
+
+**The reading** (2026-09-24, the owner's developer account):
+
+```
+accounts: 1 entry
+  [0] fields: account_id, account_name, base_uri, is_default
+      is_default: boolean false
+      base_uri:   https://demo.docusign.net
+```
+
+**The mechanism.** DocuSign answers this person with one account, and marks it not the default. The
+rule took only a marked default, so it refused a person who has exactly one account to send from.
+DocuSign's reference names an answer with no default a *"rare error case"* for its support. It also
+says an integration may list the accounts and *"ask the user to pick"*. With one account there is
+nothing to pick between.
+
+**The rule now**, `chosenAccount` in `docusign.ts`, renamed `defaultAccount` → `sendingAccount`
+because it no longer only takes a default:
+
+- the default where one is marked;
+- otherwise the ONLY account;
+- **several unmarked are refused**, because choosing one would be a guess about which organisation a
+  document goes out under.
+
+The host check guards whichever is chosen. Cases:
+
+- the live shape, taken;
+- several unmarked, in three spellings of *not marked*, refused;
+- none at all, refused;
+- a foreign host on the only-account path, refused before a token is sent.
+
+Mutations: default-only reddens the live-shape and host cases, and take-the-first reddens the three
+several-account controls.
+
+**Re-read with the fixed build**: *"This build's rule CHOOSES an account, on
+https://demo.docusign.net."* What remains is the owner's run through the application — send, sign,
+save the signed copy — which the click list below covers.
+
+---
+
 ## 2026-09-24 — DocuSign's first live run: the sign-in worked, and `is_default` is a boolean
 
 The owner created a developer account, registered the app as the click list below says (the three
