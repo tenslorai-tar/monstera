@@ -287,7 +287,7 @@ planner counting a table of rows as a table of untouched work.
 | Native-binaries manager (status, verify, download) | 10 | — |
 | Updater: Store channel and web channel | 10 | — |
 | Review prompt (EngagementService) | 10 | — |
-| Onboarding | 10 | — |
+| Onboarding. **The same feature as D11's *First-run onboarding***: `BUILD-PROMPT.md`:520 lists it in D12 as *"onboarding (Part E5)"*, and Part E5 is that row's subject — so it is built once, there, and this row points at it rather than owing a second one. | 10 | **done** — see D11's *First-run onboarding* (the owner's run, 2026-09-23) |
 
 ---
 
