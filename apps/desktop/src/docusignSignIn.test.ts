@@ -1,4 +1,4 @@
-import { type AddressInfo } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { createServer } from 'node:http';
 
 import { describe, expect, it } from 'vitest';
@@ -75,7 +75,11 @@ describe('signInThroughLoopback', () => {
     await new Promise<void>((resolve) => spare.listen(0, '127.0.0.1', resolve));
     const heldPort = (held.address() as AddressInfo).port;
     const sparePort = (spare.address() as AddressInfo).port;
-    await new Promise<void>((resolve) => spare.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+      spare.close(() => {
+        resolve();
+      });
+    });
     try {
       let redirect = '';
       await signInThroughLoopback({
@@ -103,7 +107,11 @@ describe('signInThroughLoopback', () => {
       ).rejects.toMatchObject({ reason: 'listener-failed' });
       expect(opened).toBe(false);
     } finally {
-      await new Promise<void>((resolve) => held.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        held.close(() => {
+          resolve();
+        });
+      });
     }
   });
 
