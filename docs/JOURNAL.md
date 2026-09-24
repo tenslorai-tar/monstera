@@ -892,6 +892,17 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — DocuSign's row is done: the certificate arrived
+
+The owner's run with `certificate=true` sent a two-page document, signed it, and saved the signed
+copy. It reopened with **three** pages (*2 / 3* in the status bar), the last being DocuSign's
+*Certificate of Completion*: the envelope's status *Completed*, the signer's events with timestamps and the envelope
+summary. So D7's DocuSign row is **done**, on the developer (demo) environment. **Production is not
+exercised**: a production integration key needs DocuSign's go-live review, and the environment switch is
+the one setting that differs. That is a release step for the owner, not a gap in this row.
+
+---
+
 ## 2026-09-24 — DocuSign end to end, and the certificate the signed copy did not carry
 
 With `sendingAccount` taking the only account, the owner's run through the application passed every
