@@ -3091,6 +3091,41 @@ export class DocumentCommands {
   }
 
   /**
+   * Steps one entry forward, inside the document's lane — {@link undo}'s guards, in its order.
+   *
+   * ## The second documents are asked for before they can be resolved
+   *
+   * A redo of *Merge PDFs* re-runs against the source document's session, and which document that
+   * is lives in the log entry, not in anything this method was handed. `pendingRedoSources` is the
+   * bus saying what it is about to re-apply, so the byte images are resolved here and the bus still
+   * finds nothing itself (ADR-0040 Decision 3). Read inside the lane, where no other command can
+   * move the cursor between the question and the redo.
+   *
+   * `historyDropped: 0` for undo's reason: redo does not grow the log.
+   *
+   * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link DocumentPoisonedError},
+   *   {@link MissingSessionError}.
+   */
+  async redo(docId: DocId): Promise<Applied | undefined> {
+    const stepped = { yes: false };
+
+    const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      stepped.yes =
+        (await this.#bus.redo(sessions, context, this.#byteImage(docId, this.#bus.pendingRedoSources(context)))) !==
+        undefined;
+      return context.byteLength;
+    });
+
+    return stepped.yes ? { version, byteLength, historyDropped: 0 } : undefined;
+  }
+
+  /**
    * §4's save pipeline, inside the document's lane.
    *
    * ## Every guard is `execute`'s, in the same order — and here the ORDER is

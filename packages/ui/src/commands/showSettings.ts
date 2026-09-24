@@ -48,7 +48,9 @@ export function showSettingsCommand(deps: {
     title: SETTINGS_COMMAND_TITLE,
     placements: [
       { surface: 'start-screen', slot: 'footer', order: 3 },
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 5 },
+      // 900s: Application is the LAST group on Tools. The section is for working on documents, and
+      // a ribbon that opened on Settings and About put the application ahead of the work.
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 905 },
     ],
     run: async (): Promise<void> => {
       const secrets = await deps.client['settings.loadSecrets']({});

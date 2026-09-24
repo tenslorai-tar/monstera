@@ -31,6 +31,8 @@ import {
   signDocument,
   snapshotRegion,
   findCommand,
+  movePageCommand,
+  showPanelCommand,
   showSearchPanel,
   fitCommand,
   deletePageCommand,
@@ -93,6 +95,7 @@ import {
   saveCommand,
   saveDocument,
   undoCommand,
+  redoCommand,
   zoomCommand,
 } from './commands/documentCommands.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
@@ -2148,6 +2151,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         generateTocCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
+        redoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask, toast, onSaved }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
@@ -2179,6 +2183,11 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
         findCommand({ settings }),
+        // THE TWO LISTS, from their own ribbon sections (the placement audit, 2026-09-23).
+        showPanelCommand({ settings }, 'comments'),
+        showPanelCommand({ settings }, 'forms'),
+        movePageCommand({ client, onApplied: applied, ask }, 'earlier'),
+        movePageCommand({ client, onApplied: applied, ask }, 'later'),
         // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
         // tools' own style; *Search* opens the Search panel and seeds the find field.
         ...(() => {

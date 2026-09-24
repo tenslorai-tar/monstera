@@ -1282,6 +1282,7 @@ export const FIND_EMPTY = messageKey('surface.find.empty');
 export const FIND_TRUNCATED = messageKey('surface.find.truncated');
 export const FIND_REFUSED = messageKey('surface.find.refused');
 export const UNDO_TITLE = messageKey('command.undo.title');
+export const REDO_TITLE = messageKey('command.redo.title');
 export const SAVE_TITLE = messageKey('command.save.title');
 export const DOCUMENT_TOOLS_LABEL = messageKey('surface.quick-toolbar.label');
 
@@ -1332,6 +1333,15 @@ export const GROUP_INSERT = messageKey('surface.ribbon.group.insert');
 export const GROUP_TEXT = messageKey('surface.ribbon.group.text');
 export const GROUP_PROOFING = messageKey('surface.ribbon.group.proofing');
 export const GROUP_MARKUP = messageKey('surface.ribbon.group.markup');
+export const GROUP_SHAPES = messageKey('surface.ribbon.group.shapes');
+export const GROUP_STAMPS = messageKey('surface.ribbon.group.stamps');
+export const GROUP_MEASURE = messageKey('surface.ribbon.group.measure');
+export const GROUP_LINKS = messageKey('surface.ribbon.group.links');
+export const GROUP_LANGUAGE = messageKey('surface.ribbon.group.language');
+export const SHOW_COMMENTS_TITLE = messageKey('command.view.show-comments');
+export const SHOW_FIELDS_TITLE = messageKey('command.view.show-fields');
+export const MOVE_PAGE_EARLIER_TITLE = messageKey('command.document.move-page-earlier');
+export const MOVE_PAGE_LATER_TITLE = messageKey('command.document.move-page-later');
 export const GROUP_FIELDS = messageKey('surface.ribbon.group.fields');
 export const GROUP_DISPLAY = messageKey('surface.ribbon.group.display');
 export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
@@ -2787,6 +2797,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIND_REPLACED]:
     'Replaced throughout the document. A word a PDF drew in separate pieces is left as it was — edit those a line at a time.',
   [UNDO_TITLE]: 'Undo',
+  [REDO_TITLE]: 'Redo',
   [SAVE_TITLE]: 'Save',
   // "Save a copy" and NOT "Save as". They are different operations and the
   // label is the only thing telling the user which one this is: the document
@@ -3398,6 +3409,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_TEXT]: 'Text',
   [GROUP_PROOFING]: 'Proofing',
   [GROUP_MARKUP]: 'Markup',
+  [GROUP_SHAPES]: 'Shapes',
+  [GROUP_STAMPS]: 'Stamps',
+  [GROUP_MEASURE]: 'Measure',
+  [GROUP_LINKS]: 'Links',
+  [GROUP_LANGUAGE]: 'Language',
+  [SHOW_COMMENTS_TITLE]: 'Comments list',
+  [SHOW_FIELDS_TITLE]: 'Fields list',
+  [MOVE_PAGE_EARLIER_TITLE]: 'Move page up',
+  [MOVE_PAGE_LATER_TITLE]: 'Move page down',
   [GROUP_FIELDS]: 'Fields',
   [GROUP_DISPLAY]: 'Display',
   [GROUP_NAVIGATE]: 'Navigate',

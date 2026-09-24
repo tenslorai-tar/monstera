@@ -23,7 +23,7 @@ import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
 import { type RibbonSection, ribbonModel } from './projections.js';
-import { RibbonMore } from './RibbonMore.js';
+import { RibbonMore, RibbonMoreGauge } from './RibbonMore.js';
 import { splitFold } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
 
@@ -226,6 +226,8 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
         }}
         role="toolbar"
       >
+        {/* FIRST, so `.m-ribbon__group:last-child` still names the last group. */}
+        <RibbonMoreGauge />
         {groupsOf(sections, active).map((group, index) => (
           <div className="m-ribbon__group" key={group.group} ref={fold.groupRef(index)}>
             <div className="m-ribbon__buttons">

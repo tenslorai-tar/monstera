@@ -298,6 +298,52 @@ describe('the composition root, with an engine host platform', () => {
     expect(again.value.kind).toBe('nothing-to-undo');
   });
 
+  it('redoes through the host what undo stepped back, and answers nothing-to-redo otherwise', async () => {
+    // THE COMPOSITION ROOT IS THE SUBJECT: the kernel's redo is proven in `commandBus.test.ts`
+    // against a local writer, and until 2026-09-24 nothing in this process called it. This case
+    // runs the handler the renderer reaches, through the host the product builds.
+    const spy = platformAnswering(ENGINE);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('redone.pdf')),
+      enginePlatform: spy.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const docId = opened.value.docId;
+    const applies = (): number => spy.harness.calls.filter((call) => call === 'peer.request:engine/apply').length;
+
+    const executed = await handlers['document.execute']({
+      docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+    if (!executed.ok) throw new Error('the rotate should have succeeded');
+
+    // CONTROL: nothing has been undone, so there is nothing to redo — and the engine is NOT asked,
+    // which is what separates a redo that consults the log from one that re-runs the last command.
+    const early = await handlers['document.redo']({ docId });
+    if (!early.ok) throw new Error('an early redo should not fail');
+    expect(early.value.kind).toBe('nothing-to-redo');
+    expect(applies()).toBe(1);
+
+    const undone = await handlers['document.undo']({ docId });
+    if (!undone.ok || undone.value.kind !== 'undone') throw new Error('the undo should have succeeded');
+
+    const redone = await handlers['document.redo']({ docId });
+    if (!redone.ok) throw new Error('the redo should have succeeded');
+    if (redone.value.kind !== 'redone') throw new Error(`expected redone, got ${redone.value.kind}`);
+    // UP AGAIN, for undo's reason: the version names a state, not a position in the history.
+    expect(redone.value.version).toBeGreaterThan(undone.value.version);
+    // THE COMMAND REACHED THE HOST A SECOND TIME — re-applied, as `reapply-intent` declares.
+    expect(applies()).toBe(2);
+
+    const spent = await handlers['document.redo']({ docId });
+    if (!spent.ok) throw new Error('a spent redo should not fail');
+    expect(spent.value.kind).toBe('nothing-to-redo');
+  });
+
   it('THE HARD SHAPE: a page whose /Rotate is non-numeric takes a CHECKPOINT', async () => {
     // `rotatePages.ts:148` refuses to record prior state for a page carrying a
     // non-numeric `/Rotate` — `{ captured: false }` — and that is the ONE input

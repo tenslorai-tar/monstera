@@ -1652,6 +1652,33 @@ export const channels = {
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
   /**
+   * Steps one entry forward over what undo stepped back — {@link 'document.undo'}'s other half.
+   *
+   * **A `DocId` and nothing else, for undo's reason**: the kernel decides what to re-apply from the
+   * log, by the entry's own §3a declaration — re-running its intent, or re-installing the effect it
+   * kept — and a renderer that named what to redo could dictate it.
+   *
+   * The kernel had `CommandBus.redo` from Stage 0 and nothing reached it until 2026-09-24: no channel,
+   * no control, no chord. The placement audit found it as Home › History holding Undo alone, which the
+   * owner's design draws beside Redo.
+   *
+   * `nothing-to-redo` is an outcome for undo's reason too: it is where every document starts, and
+   * where a new command leaves one, since a command truncates the redo tail.
+   */
+  'document.redo': channel(
+    'Steps one entry forward in an open document’s command log.',
+    z.object({ docId: docIdSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('redone'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('nothing-to-redo') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+  /**
    * Save, and every part of its shape is invariant 18 or ADR-0009 §9.
    *
    * ## The request carries a `DocId` and nothing else

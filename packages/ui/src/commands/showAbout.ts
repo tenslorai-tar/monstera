@@ -31,7 +31,7 @@ export function showAboutCommand(deps: {
     title: ABOUT_COMMAND_TITLE,
     placements: [
       { surface: 'start-screen', slot: 'footer', order: 1 },
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 20 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 920 },
     ],
     run: async (): Promise<void> => {
       const answer = await deps.client['app.info']({});

@@ -699,6 +699,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   let clipboardCount = 0;
   /** How many entries each document's log would have to step back through. */
   const undoable = new Map<string, number>();
+  /** How many entries each log could step forward over — what undo stepped back, until a command. */
+  const redoable = new Map<string, number>();
   const incidents: Incident[] = [];
   let minted = 0;
 
@@ -999,6 +1001,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const next = current + 1;
       versions.set(docId, next);
       undoable.set(docId, (undoable.get(docId) ?? 0) + 1);
+      // A COMMAND TRUNCATES THE REDO TAIL, as the real log's cursor does.
+      redoable.set(docId, 0);
       // THE BYTE LENGTH CHANGES, and it changes by a different amount than the
       // renderer would guess. A command rewrites the document, and a shim that
       // answered with the length it already had would let a transport bound to
@@ -1035,6 +1039,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (depth === 0) return Promise.resolve(ok({ kind: 'nothing-to-undo' as const }));
 
       undoable.set(docId, depth - 1);
+      redoable.set(docId, (redoable.get(docId) ?? 0) + 1);
       // THE VERSION GOES UP, and that is not a mistake for an operation that
       // moves a document backwards. §4: the counter is bumped by every applied
       // mutation *"including undo and redo"* — it identifies a state, not a
@@ -1044,6 +1049,25 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       versions.set(docId, next);
       return Promise.resolve(
         ok({ kind: 'undone' as const, version: asDocVersion(next), byteLength: byteLengthOf(docId) }),
+      );
+    },
+
+    /** Undo's mirror: a depth, stepped over what undo stepped back, and the version still goes up. */
+    'document.redo': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const depth = redoable.get(docId) ?? 0;
+      if (depth === 0) return Promise.resolve(ok({ kind: 'nothing-to-redo' as const }));
+
+      redoable.set(docId, depth - 1);
+      undoable.set(docId, (undoable.get(docId) ?? 0) + 1);
+      const next = current + 1;
+      versions.set(docId, next);
+      return Promise.resolve(
+        ok({ kind: 'redone' as const, version: asDocVersion(next), byteLength: byteLengthOf(docId) }),
       );
     },
     /**

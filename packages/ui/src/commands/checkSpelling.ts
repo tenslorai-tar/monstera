@@ -94,7 +94,8 @@ export function checkSpellingCommand(deps: {
     // registry saying so; a second command would be a second opinion about what
     // a spell check pass does.
     placements: [
-      { surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 10 },
+      // 210 ON EDIT: after Text (from 10) and Find (110), the owner's order for the section.
+      { surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 210 },
       { surface: 'ribbon', section: 'review', group: GROUP_PROOFING, order: 10 },
     ],
     when: hasDocument,

@@ -252,6 +252,7 @@ describe('browser shim', () => {
       'document.print',
       'document.readRange',
       'document.recent',
+      'document.redo',
       'document.reimportExternalEdit',
       'document.renderPage',
       'document.save',

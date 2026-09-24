@@ -25,8 +25,13 @@ import type { TextSelection } from '../TextLayer.js';
 /**
  * *Open the assistant* — the owner's *a shortcut and a palette command*: reveals the right panel on
  * the Assistant tab and puts the cursor in the composer, so the chord is followed by typing. No
- * document is needed; the assistant answers without one. Palette-only, with its chord: the ribbon
- * already reaches the panel through its own controls.
+ * document is needed; the assistant answers without one.
+ *
+ * ## And on Review › AI, since 2026-09-23
+ *
+ * It was palette-only on the reasoning that the ribbon reaches the panel through its own controls;
+ * the placement audit found no control on Review that did, so the AI group — *Set up AI*,
+ * *Summarise comments* — offered everything about the assistant except the assistant.
  */
 export function openAssistantCommand(deps: { readonly open: () => void }): UiCommand {
   return {
@@ -34,7 +39,7 @@ export function openAssistantCommand(deps: { readonly open: () => void }): UiCom
     icon: 'Sparkles',
     title: OPEN_ASSISTANT_TITLE,
     shortcut: 'Ctrl+Shift+A',
-    placements: [],
+    placements: [{ surface: 'ribbon', section: 'review', group: GROUP_AI, order: 1 }],
     run: (): void => {
       deps.open();
     },

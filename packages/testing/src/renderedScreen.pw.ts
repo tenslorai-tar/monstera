@@ -1264,6 +1264,20 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await expect(more).toHaveCount(0);
   const wideButtons = await tools.locator('.m-tool-button[data-command]').count();
   expect(wideButtons).toBeGreaterThan(0);
+  // EACH SECTION'S WIDEST BUTTON, read at the primary width where (nearly) every button is drawn: the
+  // fold below may leave at most that much room unused, or it hid a button that fitted.
+  const sections = page.locator('.m-ribbon__tab:not([disabled])');
+  const widest: number[] = [];
+  for (let index = 0; index < (await sections.count()); index += 1) {
+    await sections.nth(index).click();
+    await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+    widest.push(
+      await tools
+        .locator('.m-tool-button[data-command]')
+        .evaluateAll((buttons) => Math.max(...buttons.map((button) => button.getBoundingClientRect().width))),
+    );
+  }
+  await sections.first().click();
 
   // AT THE NARROWEST WINDOW THE APPLICATION ALLOWS, so the constant `main` refuses sizes below and
   // the row that has to fit inside it are checked against each other rather than separately. A
@@ -1277,6 +1291,33 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   // NOTHING SCROLLS SIDEWAYS — the order's words. The row's content fits the box it is drawn in.
   const overflow = await tools.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+
+  // AND IT FOLDED NO DEEPER THAN IT HAD TO, in EVERY section. The room left after the last group is
+  // less than the widest button the row can draw, or some hidden button would have fitted. Until
+  // 2026-09-24 the first fold charged every More at the widest button's width, because no More had
+  // been drawn to measure — about 200 px of empty ribbon at this width on the Comment section, whose
+  // widest button is a long measuring tool. Every section, because the defect's size scales with
+  // how wide a section's widest button is, and Home's is not the one that shows it.
+  const unusedRoom = (): Promise<number> =>
+    tools.evaluate((element) => {
+      const last = [...element.querySelectorAll('.m-ribbon__group')].at(-1);
+      if (last === undefined) return Number.POSITIVE_INFINITY;
+      const end = element.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(element).paddingRight);
+      return end - last.getBoundingClientRect().right;
+    });
+  let checked = 0;
+  for (let index = 0; index < (await sections.count()); index += 1) {
+    await sections.nth(index).click();
+    await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
+    if ((await more.count()) === 0) continue;
+    // A SETTLED fold: the room is read once the row stops changing, not on its first frame.
+    await expect.poll(unusedRoom).toBeLessThan(widest[index] ?? 0);
+    expect(await unusedRoom()).toBeGreaterThanOrEqual(-1);
+    checked += 1;
+  }
+  // A LOOP THAT CHECKED NOTHING passes for a fold that never ran; at this width most sections fold.
+  expect(checked).toBeGreaterThan(1);
+  await sections.first().click();
 
   // EVERY GROUP STILL HAS A NAMED TOOL. A group folded into nothing but a More is a caption over an
   // anonymous control, which the folding module refuses and this asserts on the screen.

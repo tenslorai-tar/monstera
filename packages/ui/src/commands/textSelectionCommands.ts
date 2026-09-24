@@ -9,6 +9,7 @@ import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import {
   COMMENT_SELECTION_TITLE,
   COPY_SELECTION_TITLE,
+  GROUP_TEXT,
   HIGHLIGHT_SELECTION_TITLE,
   REDACT_SELECTION_TITLE,
   SEARCH_SELECTION_TITLE,
@@ -60,7 +61,12 @@ export function copySelectionCommand(deps: TextSelectionDeps): UiCommand {
     id: 'text.copy',
     title: COPY_SELECTION_TITLE,
     shortcut: 'Ctrl+C',
-    placements: [{ surface: 'context-menu', context: 'selection', order: 10 }],
+    icon: 'Copy',
+    placements: [
+      { surface: 'context-menu', context: 'selection', order: 10 },
+      // AND EDIT › TEXT, D4's *select and copy*: present while there is a selection to copy.
+      { surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 50 },
+    ],
     when: selected(deps),
     run: (): void => {
       deps.copy();

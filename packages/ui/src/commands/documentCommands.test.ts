@@ -63,6 +63,8 @@ import {
   docusignSendCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
+  movePageCommand,
+  redoCommand,
   rotatePageCommand,
   saveCommand,
   undoCommand,
@@ -313,6 +315,79 @@ describe('rotate page', () => {
 
     expect(command.when?.(NO_DOCUMENT)).toBe(false);
     expect(command.when?.(CONTEXT)).toBe(true);
+  });
+});
+
+describe('redo', () => {
+  it('hands back both scalars when the log stepped forward', async () => {
+    const { applied, onApplied, ask } = recorder();
+    const client = clientAnswering('document.redo', { kind: 'redone', version: asDocVersion(4), byteLength: 777 });
+
+    await redoCommand({ client, onApplied, ask }).run(CONTEXT);
+
+    expect(applied).toStrictEqual([{ version: 4, byteLength: 777 }]);
+  });
+
+  it('nothing-to-redo changed nothing, so the view is not rebuilt — the call not made', async () => {
+    const { applied, shown, onApplied, ask } = recorder();
+
+    await redoCommand({ client: clientAnswering('document.redo', { kind: 'nothing-to-redo' }), onApplied, ask }).run(
+      CONTEXT,
+    );
+
+    expect(applied).toStrictEqual([]);
+    expect(shown).toStrictEqual([]);
+  });
+
+  it('a declared failure is REPORTED, with its code', async () => {
+    const { applied, shown, onApplied, ask } = recorder();
+
+    await redoCommand({ client: clientFailing('document-busy'), onApplied, ask }).run(CONTEXT);
+
+    expect(applied).toStrictEqual([]);
+    expect(shown).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'document-busy' } }]);
+  });
+});
+
+describe('move page up / down — Organize › Arrange', () => {
+  function recordingExecute(): { client: ContractClient; sent: { id: string; params: unknown }[] } {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+    });
+    return { client, sent };
+  }
+
+  it.each([
+    ['earlier', 2],
+    ['later', 4],
+  ] as const)('moves the page on show one place %s, as the drag would', async (direction, to) => {
+    // FROM THE CONTEXT'S PAGE, which is 3 and not 0 — a command sending a literal would move
+    // another page and pass any case whose fixture sat at the start.
+    const { client, sent } = recordingExecute();
+    const { onApplied, ask } = recorder();
+
+    await movePageCommand({ client, onApplied, ask }, direction).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      { id: 'document.execute', params: { docId: DOC, command: { kind: 'movePage', from: 3, to } } },
+    ]);
+  });
+
+  it('is hidden at the end it cannot move past, and shown everywhere else', () => {
+    // Asserted on BOTH commands at BOTH ends: a `when` that tested the wrong bound for one
+    // direction would hide *Move page up* on the last page, which no single-end case sees.
+    const { onApplied, ask } = recorder();
+    const client = clientFailing('document-busy');
+    const up = movePageCommand({ client, onApplied, ask }, 'earlier');
+    const down = movePageCommand({ client, onApplied, ask }, 'later');
+    const first = { ...CONTEXT, page: 0 };
+    const last = { ...CONTEXT, page: 9 };
+
+    expect([up.when?.(first), up.when?.(last), up.when?.(CONTEXT)]).toStrictEqual([false, true, true]);
+    expect([down.when?.(first), down.when?.(last), down.when?.(CONTEXT)]).toStrictEqual([true, false, true]);
+    expect([up.when?.(NO_DOCUMENT), down.when?.(NO_DOCUMENT)]).toStrictEqual([false, false]);
   });
 });
 

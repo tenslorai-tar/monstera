@@ -96,6 +96,11 @@ import {
   GROUP_PAGES,
   GROUP_TEXT,
   EDIT_TEXT_COMMAND_TITLE,
+  GROUP_MARKUP,
+  SHOW_COMMENTS_TITLE,
+  SHOW_FIELDS_TITLE,
+  MOVE_PAGE_EARLIER_TITLE,
+  MOVE_PAGE_LATER_TITLE,
   EDIT_PAGE_OBJECT_COMMAND_TITLE,
   PROTECT_DOCUMENT_COMMAND_TITLE,
   APPLY_REDACTIONS_COMMAND_TITLE,
@@ -187,6 +192,7 @@ import {
   TOAST_SAVED,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
+  REDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
   ZOOM_IN_TITLE,
   ZOOM_OUT_TITLE,
@@ -728,6 +734,72 @@ export function showSearchPanel(settings: SettingsStore): void {
   settings.set(DOCUMENT_PANEL_SETTING.id, 'search');
 }
 
+/**
+ * Shows one of the document panel's lists from its own ribbon section — the comments list from
+ * Comment, the fields list from Forms.
+ *
+ * ## A placement defect the audit of 2026-09-23 found
+ *
+ * The comments list (D3), the fields list with its delete and flatten (D5) were done and reached
+ * only from the panel's own tabs: a person on the Comment or Forms ribbon had no control there
+ * that led to them. The setting is the one owner of which panel shows, as `showSearchPanel`'s is.
+ */
+export function showPanelCommand(
+  deps: { readonly settings: SettingsStore },
+  panel: 'comments' | 'forms',
+): UiCommand {
+  const comments = panel === 'comments';
+  return {
+    id: comments ? 'view.show-comments' : 'view.show-fields',
+    icon: comments ? 'MessageSquare' : 'ClipboardList',
+    title: comments ? SHOW_COMMENTS_TITLE : SHOW_FIELDS_TITLE,
+    placements: [
+      comments
+        ? // LAST IN MARKUP: the group folds from its end, and the list is also a tab on the left
+          // panel, where the marks are not.
+          { surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 59 }
+        : { surface: 'ribbon', section: 'forms', group: GROUP_FIELDS, order: 1 },
+    ],
+    when: hasDocument,
+    run: (): void => {
+      deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
+      deps.settings.set(DOCUMENT_PANEL_SETTING.id, panel);
+    },
+  };
+}
+
+/**
+ * Moves the page on show one place earlier or later — `movePage`, from Organize › Arrange.
+ *
+ * ## A placement defect the audit of 2026-09-23 found
+ *
+ * D2's reorder was done and reachable only by dragging a thumbnail (and Alt+Arrow on one): nothing
+ * on the Organize ribbon moved a page. The command is the drag's own, so a move from here and a
+ * move by dragging are one command and one undo. Hidden at the end it cannot move past, rather
+ * than offered and refused.
+ */
+export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' | 'later'): UiCommand {
+  const earlier = direction === 'earlier';
+  return {
+    id: earlier ? 'document.move-page-earlier' : 'document.move-page-later',
+    icon: earlier ? 'MoveUp' : 'MoveDown',
+    title: earlier ? MOVE_PAGE_EARLIER_TITLE : MOVE_PAGE_LATER_TITLE,
+    // LAST IN THE GROUP, because these two come and go as the page on show reaches an end: at the
+    // end of a group, appearing and hiding moves no other button under the pointer.
+    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: earlier ? 90 : 91 }],
+    when: (context) =>
+      hasDocument(context) &&
+      context.page !== undefined &&
+      context.pageCount !== undefined &&
+      (earlier ? context.page > 0 : context.page < context.pageCount - 1),
+    run: async (context): Promise<void> => {
+      const { docId, page } = context;
+      if (docId === undefined || page === undefined) return;
+      await applyDocumentCommand(deps, docId, { kind: 'movePage', from: page, to: earlier ? page - 1 : page + 1 });
+    },
+  };
+}
+
 export function findCommand(deps: { readonly settings: SettingsStore }): UiCommand {
   return {
     id: 'document.find',
@@ -736,6 +808,10 @@ export function findCommand(deps: { readonly settings: SettingsStore }): UiComma
     shortcut: 'Ctrl+F',
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_FIND, order: 10 },
+      // AND EDIT › FIND: the find bar is where D4's find-and-replace and replace-all live, so it
+      // is reached from the section that owns them as well as from Home. 110 puts the group after
+      // Text (from 10) and before Proofing (210): the owner's Text · Find · Proofing · Language.
+      { surface: 'ribbon', section: 'edit', group: GROUP_FIND, order: 110 },
     ],
     when: hasDocument,
     run: (): void => {
@@ -1772,6 +1848,34 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
         version: answer.value.version,
         byteLength: answer.value.byteLength,
       });
+    },
+  };
+}
+
+/**
+ * Steps one entry forward over what undo stepped back — Home › History beside Undo, where the
+ * owner's design draws it.
+ *
+ * **`Ctrl+Y`**, the Windows chord for it. `nothing-to-redo` changed nothing, so the view is not
+ * rebuilt — undo's reasoning, one direction along.
+ */
+export function redoCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.redo',
+    icon: 'Redo2',
+    title: REDO_TITLE,
+    shortcut: 'Ctrl+Y',
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_HISTORY, order: 20 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = await deps.client['document.redo']({ docId: context.docId });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind !== 'redone') return;
+      deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
     },
   };
 }

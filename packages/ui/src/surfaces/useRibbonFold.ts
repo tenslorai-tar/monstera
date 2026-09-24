@@ -53,7 +53,6 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
   const groups = useRef<(HTMLDivElement | null)[]>([]);
   /** Each button's natural width by command id, so a folded-away button still has one. */
   const naturals = useRef<Map<string, number>>(new Map());
-  const moreWidth = useRef<number | null>(null);
 
   const measure = useCallback((): void => {
     const container = row.current;
@@ -77,16 +76,15 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         if (known === undefined) unmeasured.add(entry.command.id);
         return known ?? 0;
       });
-      return { buttons, chrome: Math.max(chrome, 0) };
+      return { buttons, chrome: Math.max(chrome, 0), gap: buttonGap(element) };
     });
     if (unmeasured.size > 0) return;
 
-    const drawn = container.querySelector<HTMLElement>('.m-ribbon__more');
-    if (drawn !== null) moreWidth.current = drawn.getBoundingClientRect().width;
-    // A MORE THAT HAS NEVER BEEN DRAWN has no measured width, so the first fold is computed against
-    // the widest button in the row — never against zero, which would let the fold spend space it did
-    // not have and hide one button too few.
-    const more = moreWidth.current ?? widest(widths);
+    // THE GAUGE, which is always drawn (`RibbonMoreGauge`), so a More's width is known before any
+    // group has folded. Absent or unlaid-out means the row is not ready, which is the same answer
+    // as an unmeasured button: fold nothing yet rather than fold against a guess.
+    const more = container.querySelector<HTMLElement>('.m-ribbon__more-gauge')?.getBoundingClientRect().width ?? 0;
+    if (more <= 0) return;
     const folds = foldGroups(widths, availableIn(container, widths.length), more);
 
     // AN EQUAL ANSWER MUST NOT RE-RENDER. The fold is a pure function of the widths and the row, so
@@ -103,7 +101,6 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     // A DIFFERENT ROW HAS NEVER BEEN MEASURED. Its buttons carry other labels, so their widths and
     // the width of a *More* beside them are somebody else's numbers.
     naturals.current = new Map();
-    moreWidth.current = null;
     const observer = new ResizeObserver(() => {
       measure();
     });
@@ -163,15 +160,14 @@ function availableIn(row: HTMLElement, groups: number): number {
   return row.getBoundingClientRect().width - padding - gap * Math.max(groups - 1, 0);
 }
 
+/** The gap between a group's buttons, from the computed style `app.css` owns rather than a copy. */
+function buttonGap(group: HTMLElement | null): number {
+  const buttons = group?.querySelector<HTMLElement>('.m-ribbon__buttons') ?? null;
+  return buttons === null ? 0 : Number.parseFloat(getComputedStyle(buttons).columnGap) || 0;
+}
+
 /** The buttons row inside a group, so the rest of the group's width is its chrome and caption. */
 function buttonsWidth(group: HTMLElement): number {
   const buttons = group.querySelector<HTMLElement>('.m-ribbon__buttons');
   return buttons === null ? 0 : buttons.getBoundingClientRect().width;
-}
-
-/** The widest button anywhere in the row — the stand-in for an unmeasured *More*. */
-function widest(groups: readonly GroupWidths[]): number {
-  let most = 0;
-  for (const group of groups) for (const width of group.buttons) most = Math.max(most, width);
-  return most;
 }

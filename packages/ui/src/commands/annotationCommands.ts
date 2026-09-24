@@ -73,8 +73,15 @@ import {
   FORM_FIELD_TEXT_TOOL_TITLE,
   GROUP_BARCODES,
   GROUP_FIELDS,
+  GROUP_LINKS,
   GROUP_MARKUP,
+  GROUP_MEASURE,
+  GROUP_OCR,
+  GROUP_REDACT,
+  GROUP_SHAPES,
   GROUP_SIGNATURES,
+  GROUP_STAMPS,
+  GROUP_TEXT,
   PLACE_BARCODE_TOOL_TITLE,
   RIBBON_SNAPSHOT,
   RIBBON_STRIKEOUT,
@@ -275,20 +282,51 @@ function toolCommand(
   };
 }
 
+/**
+ * The Comment ribbon's groups, the owner's own: Markup · Shapes · Stamps · Measure · Links · Redact.
+ *
+ * Twenty-nine tools sat in ONE group until 2026-09-23, so the per-group fold had nothing to fold
+ * by and the section overflowed. Grouped, each group folds its less-used tools into More on a
+ * narrow window, which is what the owner's narrow exports show. No D3 tool leaves the section.
+ *
+ * **The groups sit in that order by their tools' `order` numbers**, because `ribbonModel` places a
+ * group by its earliest member: Shapes from 40, Stamps 52, Measure 56, Links 60, Redact 62. A tool
+ * renumbered past a later group's first number moves its whole group.
+ */
+const SHAPES = { section: 'comment', group: GROUP_SHAPES } as const;
+const STAMPS = { section: 'comment', group: GROUP_STAMPS } as const;
+const MEASURE = { section: 'comment', group: GROUP_MEASURE } as const;
+const LINKS = { section: 'comment', group: GROUP_LINKS } as const;
+const REDACT_MARKS = { section: 'comment', group: GROUP_REDACT } as const;
+/**
+ * The recognition tools are D6's, whose ribbon is Tools › OCR — beside *OCR pages*, where a person
+ * looking for recognition looks. They sat in Comment by the factory's default, not by a decision.
+ */
+const OCR_TOOLS = { section: 'tools', group: GROUP_OCR } as const;
+
+/**
+ * A tool command with a SECOND ribbon placement. §7: a command may sit in more than one surface,
+ * and the record lists the typewriter under D3 and D4 alike — it is one command in two places, not
+ * two commands.
+ */
+function alsoOn(command: UiCommand, placement: UiCommand['placements'][number]): UiCommand {
+  return { ...command, placements: [...command.placements, placement] };
+}
+
 export function rectangleToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(RECTANGLE_TOOL_ID, RECTANGLE_TOOL_TITLE, 'Square', 40, deps);
+  return toolCommand(RECTANGLE_TOOL_ID, RECTANGLE_TOOL_TITLE, 'Square', 40, deps, SHAPES);
 }
 
 export function ellipseToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(ELLIPSE_TOOL_ID, ELLIPSE_TOOL_TITLE, 'Circle', 41, deps);
+  return toolCommand(ELLIPSE_TOOL_ID, ELLIPSE_TOOL_TITLE, 'Circle', 41, deps, SHAPES);
 }
 
 export function lineToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(LINE_TOOL_ID, LINE_TOOL_TITLE, 'Minus', 42, deps);
+  return toolCommand(LINE_TOOL_ID, LINE_TOOL_TITLE, 'Minus', 42, deps, SHAPES);
 }
 
 export function arrowToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(ARROW_TOOL_ID, ARROW_TOOL_TITLE, 'MoveUpRight', 43, deps);
+  return toolCommand(ARROW_TOOL_ID, ARROW_TOOL_TITLE, 'MoveUpRight', 43, deps, SHAPES);
 }
 
 export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
@@ -300,8 +338,9 @@ export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
     REDACT_TOOL_ID,
     { full: REDACT_TOOL_TITLE, ribbon: RIBBON_REDACT_MARK },
     'RectangleHorizontal',
-    45,
+    62,
     deps,
+    REDACT_MARKS,
   );
 }
 
@@ -315,7 +354,13 @@ export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
  * layer up.
  */
 export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 'TextCursorInput', 46, deps);
+  // AND ON EDIT › TEXT, beside Edit text: a text box is how new words are put on a page.
+  return alsoOn(toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 'TextCursorInput', 46, deps), {
+    surface: 'ribbon',
+    section: 'edit',
+    group: GROUP_TEXT,
+    order: 30,
+  });
 }
 
 /**
@@ -356,11 +401,11 @@ export function caretToolCommand(deps: ToolCommandDeps): UiCommand {
  * overlay holds.
  */
 export function polygonToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(POLYGON_TOOL_ID, POLYGON_TOOL_TITLE, 'Pentagon', 49, deps);
+  return toolCommand(POLYGON_TOOL_ID, POLYGON_TOOL_TITLE, 'Pentagon', 49, deps, SHAPES);
 }
 
 export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(POLYLINE_TOOL_ID, POLYLINE_TOOL_TITLE, 'Spline', 50, deps);
+  return toolCommand(POLYLINE_TOOL_ID, POLYLINE_TOOL_TITLE, 'Spline', 50, deps, SHAPES);
 }
 
 /**
@@ -419,7 +464,13 @@ export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
  * it to make room would touch ten call sites to move one.
  */
 export function typewriterToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 'Keyboard', 46.5, deps);
+  // AND ON EDIT › TEXT, where the record's D4 lists it too.
+  return alsoOn(toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 'Keyboard', 46.5, deps), {
+    surface: 'ribbon',
+    section: 'edit',
+    group: GROUP_TEXT,
+    order: 40,
+  });
 }
 
 export function linkAddressToolCommand(deps: ToolCommandDeps): UiCommand {
@@ -427,8 +478,9 @@ export function linkAddressToolCommand(deps: ToolCommandDeps): UiCommand {
     LINK_ADDRESS_TOOL_ID,
     { full: LINK_ADDRESS_TOOL_TITLE, ribbon: RIBBON_LINK_ADDRESS },
     'Link',
-    53,
+    60,
     deps,
+    LINKS,
   );
 }
 
@@ -437,8 +489,9 @@ export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
     LINK_PAGE_TOOL_ID,
     { full: LINK_PAGE_TOOL_TITLE, ribbon: RIBBON_LINK_PAGE },
     'Link2',
-    54,
+    61,
     deps,
+    LINKS,
   );
 }
 
@@ -873,7 +926,7 @@ export function eraserToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(CLOUD_TOOL_ID, CLOUD_TOOL_TITLE, 'Cloud', 51, deps);
+  return toolCommand(CLOUD_TOOL_ID, CLOUD_TOOL_TITLE, 'Cloud', 51, deps, SHAPES);
 }
 
 /**
@@ -890,15 +943,15 @@ export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
  * registrations from the same factory, each one line.
  */
 export function measureDistanceToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_DISTANCE_TOOL_ID, MEASURE_DISTANCE_TOOL_TITLE, 'RulerDimensionLine', 56, deps);
+  return toolCommand(MEASURE_DISTANCE_TOOL_ID, MEASURE_DISTANCE_TOOL_TITLE, 'RulerDimensionLine', 56, deps, MEASURE);
 }
 
 export function measureAreaToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_AREA_TOOL_ID, MEASURE_AREA_TOOL_TITLE, 'SquareDashed', 57, deps);
+  return toolCommand(MEASURE_AREA_TOOL_ID, MEASURE_AREA_TOOL_TITLE, 'SquareDashed', 57, deps, MEASURE);
 }
 
 export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_PERIMETER_TOOL_ID, MEASURE_PERIMETER_TOOL_TITLE, 'Hexagon', 58, deps);
+  return toolCommand(MEASURE_PERIMETER_TOOL_ID, MEASURE_PERIMETER_TOOL_TITLE, 'Hexagon', 58, deps, MEASURE);
 }
 
 /**
@@ -927,7 +980,10 @@ export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
       SNAPSHOT_TOOL_ID,
       { full: SNAPSHOT_TOOL_TITLE, ribbon: RIBBON_SNAPSHOT },
       'Camera',
-      29,
+      // LATE IN MARKUP, which folds from the end: a snapshot is not a mark, and the marks a person
+      // reaches for first — highlight, underline, strike — are what stay drawn on a narrow window.
+      // The pill keeps its own 29.
+      58,
       deps,
     ),
     29,
@@ -948,8 +1004,10 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
     PLACE_IMAGE_TOOL_ID,
     { full: PLACE_IMAGE_TOOL_TITLE, ribbon: RIBBON_PLACE_IMAGE },
     'Image',
-    59,
+    52,
     deps,
+    // A STAMP: D3's custom-image stamp IS this tool (its FEATURES row says so).
+    STAMPS,
   );
 }
 
@@ -999,8 +1057,9 @@ export function ocrRegionToolCommand(deps: ToolCommandDeps): UiCommand {
     OCR_REGION_TOOL_ID,
     { full: OCR_REGION_TOOL_TITLE, ribbon: RIBBON_OCR_REGION },
     'ScanSearch',
-    60,
+    50,
     deps,
+    OCR_TOOLS,
   );
 }
 
@@ -1016,9 +1075,9 @@ export function cloudRegionToolCommand(deps: ToolCommandDeps): UiCommand {
     CLOUD_REGION_TOOL_ID,
     { full: CLOUD_REGION_TOOL_TITLE, ribbon: RIBBON_CLOUD_REGION },
     'CloudUpload',
-    62,
+    52,
     deps,
-    { section: 'comment', group: GROUP_MARKUP },
+    OCR_TOOLS,
     () => deps.cloudReady?.() ?? true,
   );
 }
@@ -1035,9 +1094,9 @@ export function claudeRegionToolCommand(deps: ToolCommandDeps): UiCommand {
     CLAUDE_REGION_TOOL_ID,
     { full: CLAUDE_REGION_TOOL_TITLE, ribbon: RIBBON_CLAUDE_REGION },
     'Sparkles',
-    63,
+    53,
     deps,
-    { section: 'comment', group: GROUP_MARKUP },
+    OCR_TOOLS,
     () => deps.claudeReady?.() ?? true,
   );
 }

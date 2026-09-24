@@ -280,6 +280,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // limits in their own schemas.
   'document.execute': 'needs an engine session',
   'document.undo': 'needs an engine session',
+  'document.redo': 'needs an engine session',
   'document.save': 'needs an engine session',
   // Needs an engine session for the flush, and a DIALOG besides — its whole
   // request is a `DocId` and its whole answer is a byte count and three

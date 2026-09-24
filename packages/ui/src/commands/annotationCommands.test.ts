@@ -1,7 +1,16 @@
 import { channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 
-import { GROUP_MARKUP } from '../messages/en.js';
+import {
+  GROUP_LINKS,
+  GROUP_MARKUP,
+  GROUP_MEASURE,
+  GROUP_REDACT,
+  GROUP_SHAPES,
+  GROUP_STAMPS,
+} from '../messages/en.js';
+import { CommandRegistry } from '../registries/commands.js';
+import { ribbonModel } from '../surfaces/projections.js';
 import { describe, expect, it } from 'vitest';
 
 import { PLAIN_STYLE } from '../annotations/annotationStyle.js';
@@ -212,20 +221,41 @@ describe('rectangleToolCommand', () => {
     // surface moved on 2026-09-08 and the property did not: two tools sharing a
     // number fall back to an id comparison, which is deterministic and is not
     // what anybody meant to declare.
-    const placements = shapeToolCommands({
-      activeTool: () => undefined,
-      onSelect: () => undefined,
-    }).flatMap((command) => command.placements);
-    const orders = placements
-      .filter((placement) => placement.surface === 'ribbon')
-      .map((placement) => placement.order);
-    expect(new Set(orders).size).toBe(orders.length);
+    //
+    // A SLOT IS A SECTION, A GROUP AND AN ORDER since the Comment ribbon was
+    // grouped (2026-09-23): two tools may share a number in different groups,
+    // and the text box and typewriter each have a second place, on Edit › Text.
+    const commands = shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined });
+    const slots = commands
+      .flatMap((command) => command.placements)
+      .flatMap((placement) =>
+        placement.surface === 'ribbon' ? [`${placement.section}/${placement.group}/${String(placement.order)}`] : [],
+      );
+    expect(new Set(slots).size).toBe(slots.length);
     // AND EVERY TOOL IS IN THE RIBBON, which is the half a filter can lose: a
-    // tool placed nowhere contributes no order, so the uniqueness above would
+    // tool placed nowhere contributes no slot, so the uniqueness above would
     // pass for a set of one.
-    expect(orders).toHaveLength(
-      shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined }).length,
-    );
+    for (const command of commands) {
+      expect(command.placements.some((placement) => placement.surface === 'ribbon'), command.id).toBe(true);
+    }
+  });
+
+  it('puts the Comment groups in the owner\'s order: Markup · Shapes · Stamps · Measure · Links · Redact', () => {
+    // THROUGH `ribbonModel`, which orders groups by their earliest member — so the order is a
+    // consequence of every tool's number, and a case reading the numbers would restate them
+    // rather than check what the ribbon draws. The tools here are every Comment tool this
+    // module places; Markup's own first member (the Comments list) is registered elsewhere,
+    // and a Markup tool is still earliest without it.
+    const registry = new CommandRegistry([...shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined })]);
+    const comment = ribbonModel(registry, WITH_DOCUMENT).find((section) => section.section === 'comment');
+    expect(comment?.groups.map((group) => group.group)).toStrictEqual([
+      GROUP_MARKUP,
+      GROUP_SHAPES,
+      GROUP_STAMPS,
+      GROUP_MEASURE,
+      GROUP_LINKS,
+      GROUP_REDACT,
+    ]);
   });
 
   it('is placed in the ribbon SECTION §7 names, and nowhere else', () => {
@@ -237,8 +267,9 @@ describe('rectangleToolCommand', () => {
     // both are visible at once. §10.3's pill list is select, hand, text
     // selection, zoom, crop, snapshot, bookmark and comment; a rectangle is
     // none of them.
+    // SHAPES since the Comment ribbon took the owner's groups (2026-09-23).
     expect(built(undefined).command.placements).toStrictEqual([
-      { surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 40 },
+      { surface: 'ribbon', section: 'comment', group: GROUP_SHAPES, order: 40 },
     ]);
   });
 });

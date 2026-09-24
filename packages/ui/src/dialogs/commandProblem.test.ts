@@ -24,7 +24,7 @@ import { COMMAND_PROBLEM_DIALOG } from './commandProblem.js';
  */
 
 /** The channels whose refusals reach a user through this dialog. */
-const REPORTED = ['document.execute', 'document.undo', 'document.save'] as const;
+const REPORTED = ['document.execute', 'document.undo', 'document.redo', 'document.save'] as const;
 
 describe('the command-problem dialog covers every code a document command can report', () => {
   it('accepts every failure the reporting channels declare', () => {

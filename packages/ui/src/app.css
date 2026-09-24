@@ -2307,6 +2307,14 @@ textarea {
   flex: none;
 }
 
+/* THE FOLD'S RULER (`RibbonMoreGauge`): laid out at its natural width and never seen. Out of flow, so
+   it takes no gap and is no group's sibling in the row's arithmetic. */
+.m-ribbon__more-gauge {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .m-ribbon__more-label {
   display: inline-flex;
   align-items: center;

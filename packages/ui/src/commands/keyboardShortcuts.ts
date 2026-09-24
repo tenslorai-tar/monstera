@@ -26,7 +26,7 @@ export function keyboardShortcutsCommand(deps: {
     icon: 'Keyboard',
     title: KEYBOARD_SHORTCUTS_COMMAND_TITLE,
     shortcut: 'F1',
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 30 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930 }],
     run: (): void => {
       // Voided, for `showAbout`'s reason: this dialog declares no result and settles only on dismissal.
       void deps.ask(KEYBOARD_SHORTCUTS_DIALOG_ID, { entries: [...deps.shortcuts()] });

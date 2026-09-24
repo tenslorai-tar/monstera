@@ -39,14 +39,7 @@ export function RibbonMore({
   return (
     <Menu.Root>
       <Menu.Trigger className="m-tool-button m-ribbon__more" nativeButton>
-        <Icon name="Ellipsis" size="ribbon" />
-        {/* THE LABEL AND ITS CHEVRON ON ONE LINE, which is how the design draws it. A tool button is
-            a column — glyph over caption — so a third child would be a third row, and the chevron
-            would sit under the word instead of beside it. */}
-        <span className="m-tool-button__label m-ribbon__more-label">
-          {i18n._(RIBBON_MORE)}
-          <Icon name="ChevronDown" size="chrome" />
-        </span>
+        <MoreFace label={i18n._(RIBBON_MORE)} />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner align="start" side="bottom">
@@ -73,5 +66,45 @@ export function RibbonMore({
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
+  );
+}
+
+/** What a *More* draws: ONE definition, so the gauge below cannot measure a different face. */
+function MoreFace({ label }: { readonly label: string }): ReactElement {
+  return (
+    <>
+      <Icon name="Ellipsis" size="ribbon" />
+      {/* THE LABEL AND ITS CHEVRON ON ONE LINE, which is how the design draws it. A tool button is
+          a column — glyph over caption — so a third child would be a third row, and the chevron
+          would sit under the word instead of beside it. */}
+      <span className="m-tool-button__label m-ribbon__more-label">
+        {label}
+        <Icon name="ChevronDown" size="chrome" />
+      </span>
+    </>
+  );
+}
+
+/**
+ * A *More* that is never seen, drawn so the fold knows a More's width before it has folded anything.
+ *
+ * ## Why the fold cannot wait for a real one
+ *
+ * A More exists only once a group is folded, and deciding the fold needs its width. The stand-in used
+ * until 2026-09-24 was the widest button in the row, which is wrong both ways: on the Comment ribbon it
+ * was *Measure perimeter*, twice a More, so every folded group was charged double and the row folded
+ * about 200 px too far at 1024 px; and a group whose floor with that stand-in exceeded its natural
+ * width was never folded at all. Measuring a real face removes the unmeasured state rather than
+ * guessing through it.
+ *
+ * `aria-hidden` and `visibility: hidden` keep it out of the accessibility tree and off the screen; it
+ * is a span, not a button, so there is nothing to focus.
+ */
+export function RibbonMoreGauge(): ReactElement {
+  const { i18n } = useLingui();
+  return (
+    <span aria-hidden="true" className="m-tool-button m-ribbon__more m-ribbon__more-gauge">
+      <MoreFace label={i18n._(RIBBON_MORE)} />
+    </span>
   );
 }

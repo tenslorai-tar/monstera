@@ -27,6 +27,17 @@ export interface GroupWidths {
    * the caption is wider than the buttons that remain.
    */
   readonly chrome: number;
+  /**
+   * The space between two adjacent buttons in the group's row, a More included.
+   *
+   * **Its own field because nothing else carries it**: a button's width excludes the gap beside it,
+   * and `chrome` is measured as the group minus its buttons row, which already contains the gaps. So
+   * a sum of buttons plus chrome is short by one gap per neighbour pair. It was absent until
+   * 2026-09-24 and nothing showed it, because the More was being charged at the widest button's
+   * width, which over-paid by more than the gaps under-paid; measuring the More properly moved one
+   * section 4.7 px past its row at 1024.
+   */
+  readonly gap: number;
 }
 
 /** What the ribbon draws for one group. */
@@ -46,19 +57,28 @@ export interface GroupFold {
 function widthOf(group: GroupWidths, shown: number, moreWidth: number): number {
   let total = group.chrome;
   for (let index = 0; index < shown; index += 1) total += group.buttons[index] ?? 0;
-  if (shown < group.buttons.length) total += moreWidth;
-  return total;
+  const folded = shown < group.buttons.length;
+  if (folded) total += moreWidth;
+  const items = shown + (folded ? 1 : 0);
+  return total + group.gap * Math.max(items - 1, 0);
 }
 
 /**
  * How many buttons each group shows so the row fits `available`.
  *
- * ## One button at a time, from the widest group that would actually get NARROWER
+ * ## One button at a time, from the group SHOWING THE MOST, widest first among equals
  *
  * Folding a whole group at once would empty one and leave its neighbour untouched, which is not
- * what the design shows — every group there is folded to about the same size. Taking one button
- * from whichever group is currently **widest** spreads the loss evenly without a rule about
- * fairness, and it terminates: each step removes one button and there are finitely many.
+ * what the design shows. `document-light-narrow.png` folds every group to the **same count** — two
+ * buttons and a More, in File, Quick tools, Display and Export alike — so the count is the axis the
+ * loss is spread along, and width only breaks a tie. It terminates: each step removes one button and
+ * there are finitely many.
+ *
+ * **Width was the axis until 2026-09-24, and it chose badly on the Comment ribbon at 1280.** A group
+ * of eleven short marks folded to two, because together they were wide, while *Measure distance ·
+ * Measure area · Measure perimeter* stayed whole, because three long labels were each narrower than
+ * the marks combined. The loss was even in pixels and uneven in controls — and a person scans
+ * controls, not pixels. Folding by count keeps each group's first few, which are its most used.
  *
  * **The first fold of a group can make it WIDER**, and that is not a corner case — it happens
  * whenever the button being hidden is narrower than the *More* that replaces it, which is most of
@@ -90,7 +110,7 @@ export function foldGroups(
     // — every group is at its floor, or the only folds available would cost more than they free —
     // and the loop ends with the row still too wide rather than hiding controls for nothing.
     let chosen: { group: GroupWidths; shown: number } | undefined;
-    let widestWidth = -1;
+    let chosenWidth = -1;
     for (const entry of state) {
       if (entry.shown <= 1) continue;
       const width = widthOf(entry.group, entry.shown, moreWidth);
@@ -99,9 +119,10 @@ export function foldGroups(
       // and a rule that refused that step would refuse every fold of a group whose widest button is
       // the problem. The floor — one button plus the More — is what the question is asked against.
       if (widthOf(entry.group, 1, moreWidth) >= width) continue;
-      if (width > widestWidth) {
+      const shows = chosen === undefined ? -1 : chosen.shown;
+      if (entry.shown > shows || (entry.shown === shows && width > chosenWidth)) {
         chosen = entry;
-        widestWidth = width;
+        chosenWidth = width;
       }
     }
     if (chosen === undefined) break;

@@ -892,6 +892,76 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — Every section reaches its own features, and the fold stopped guessing
+
+The owner's order: *"a feature that is done and has no way to reach it from its own ribbon section
+is a placement defect."* The audit walked every section against the done rows and against a live
+capture of each section, three themes, at 1920, 1280 and 1024 (a scratch Playwright driver over the
+development build with a real document; not committed).
+
+**Found and fixed:**
+
+| section | defect | now |
+|---|---|---|
+| Edit | four tools; D4's copy, find/replace, typewriter and text box reachable only elsewhere | Text (Edit text · Edit object · Text box · Typewriter · Copy) · Find · Proofing, in the owner's order |
+| Comment | twenty-nine tools in one group, so the per-group fold had nothing to fold by; the Comments list not on the ribbon | the owner's Markup · Shapes · Stamps · Measure · Links · Redact, the list last in Markup |
+| Tools | D6's three region-recognition tools sat in Comment by a factory default, not a decision | Tools › OCR |
+| Review | the AI group offered everything about the assistant except the assistant | *Open the assistant* first in Review › AI |
+| Forms | the Fields list reachable only from the left panel | Forms › Fields, first |
+| Organize | D2's reorder reachable only by dragging a thumbnail | *Move page up / down* in Arrange, the drag's own `movePage`, hidden at the end it cannot pass |
+| Tools | Settings · Diagnostics · About opened the section ahead of the work | Application last |
+| Home | History held Undo alone; redo existed only in the kernel | *Redo* beside Undo, `Ctrl+Y` (below) |
+
+Group order is not a second number: `ribbonModel` places a group by its earliest member, so the
+owner's orders are tools' own `order` values, and the Comment order is asserted through
+`ribbonModel` rather than by reading the numbers back.
+
+**Not placements, and left where they are:** D9's edit-externally, import-as-layer and page images
+sit in Organize by their own rows; spell check is on both Edit and Review because BUILD-PROMPT lists
+it under both.
+
+**Redo was built in the kernel and reachable from nothing.** `CommandBus.redo` and
+`pendingRedoSources` have been proven in `commandBus.test.ts` since Stage 0 against a local writer;
+no channel, command, control or chord called them, and Home › History held Undo alone where the
+owner's design draws Undo and Redo side by side. Now `document.redo` (a `DocId` and nothing else, for
+undo's §3a reason), main's `redo` inside the lane with undo's guards in undo's order, *Redo* on
+Home › History with `Ctrl+Y`. The pair: `compositionHost.test.ts` through the handler the renderer
+reaches — nothing to redo before an undo and the engine not asked, then re-applied once — and
+`App.test.tsx` counting two dispatches, button and chord. Live on the development build with a real
+document: rotate, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+Z`, the Redo button — the page read 842×595, 595×842,
+842×595, 595×842, 842×595.
+
+### Two fold defects, and the first was hiding the second
+
+The capture at 1280 showed Comment's Markup folded to two tools while *Measure distance · Measure
+area · Measure perimeter* stood whole, and at 1024 about 200 px of empty ribbon to the right of
+groups folded to one button.
+
+**The fold took from the WIDEST group, which is even in pixels and uneven in controls.** Eleven short
+marks are wider together than three long labels, so the marks went first. The owner's narrow export
+folds every group to the same count, so the count is now the axis and width breaks ties
+(`ribbonFolding.ts`; its case separates the two rules on numbers worked both ways).
+
+**The empty space was a guessed width.** A More exists only once something folds, so the first fold
+charged each More at the widest button in the row — *Measure perimeter*, twice a More — and nothing
+measured again, because a fold changes the groups and not the row the observer watched. A hidden,
+same-faced More (`RibbonMoreGauge`, one `MoreFace` for both) is now always there to be measured, so
+the unmeasured state no longer exists. Observing the groups was tried first and would have fixed the
+over-charge only: a stand-in wide enough makes a group's floor exceed its width, so it never folds,
+no More is ever drawn, and nothing is ever re-measured.
+
+**Measuring the More properly moved one section 4.7 px past its row.** The arithmetic summed buttons
+and chrome and never the gaps between buttons, which the double-charged More had been over-paying.
+`GroupWidths.gap` is read from the computed style.
+
+`renderedScreen.pw.ts`' fold case now visits every section at the minimum window and requires the
+unused room to be less than that section's widest button. Against the stand-in it failed at
+209.25 px unused (limit 109.95); with the gauge and no gap it failed at −4.66 px; with both it
+passes.
+
+Seen in the captures and **not** fixed here, owed to section 6's pass: the Properties panel draws
+*Each tool's own* at the far right with its checkbox at the far left.
+
 ## 2026-09-23 — Text is edited where it is: the dialog is gone
 
 The owner rejected Edit text's line-picking dialog and supplied a recording of the standard

@@ -1604,6 +1604,27 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.undo')).toHaveLength(2);
     });
 
+    it('the REDO control dispatches document.redo, and Ctrl+Y dispatches the same', async () => {
+      // Undo's pair, one direction along. Redo was built in the kernel from Stage 0 and reachable
+      // from nothing until 2026-09-24; the count of two is what says both routes are live.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.redo': { kind: 'redone' as const, version: asDocVersion(3), byteLength: 900 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await pressCommand('Redo');
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', ctrlKey: true }));
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'document.redo')).toHaveLength(2);
+      // AND NEITHER ROUTE REACHED UNDO, which a chord map keyed on the wrong letter would.
+      expect(sent.filter((call) => call.id === 'document.undo')).toHaveLength(0);
+    });
+
     it('an exhausted undo changes nothing, so the view is not rebuilt', async () => {
       // ASSERT THE CALL THAT WAS NOT MADE. `nothing-to-undo` is a success, and a
       // renderer that treated it as a move would reopen the document — a visible

@@ -73,7 +73,7 @@ export function showWordCountCommand(deps: {
     // rendered one, and that a placement would read in the registry as a
     // control nobody can find. `docs/FEATURES.md` puts D4 on **Edit**; the
     // group is Proofing, which this shares with spell check.
-    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 20 }],
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_PROOFING, order: 220 }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;

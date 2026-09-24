@@ -291,6 +291,7 @@ export function createContractHandlers(deps: {
     'document.unsaved': unsavedHandler(deps.documents),
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
+    'document.redo': redoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
     'document.extract': extractHandler(deps.commands),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands),
@@ -2287,6 +2288,25 @@ function undoHandler(commands: DocumentCommands): ContractHandlers['document.und
       // `DocumentNotOpenError` exists as a class at all. Each of these is an
       // outcome the renderer can act on; everything else is rethrown and
       // becomes `internal` with the diagnostic recorded main-side.
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** Redo: {@link undoHandler} one direction along — `undefined` is `nothing-to-redo`, the rest by class. */
+function redoHandler(commands: DocumentCommands): ContractHandlers['document.redo'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.redo']>>> => {
+    try {
+      const applied = await commands.redo(docId);
+      return ok(
+        applied === undefined
+          ? ({ kind: 'nothing-to-redo' } as const)
+          : ({ kind: 'redone', version: applied.version, byteLength: applied.byteLength } as const),
+      );
+    } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

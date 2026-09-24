@@ -97,6 +97,7 @@ const handlers: ContractHandlers = {
     ),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
+  'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),

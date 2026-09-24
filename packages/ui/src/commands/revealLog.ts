@@ -36,7 +36,7 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     // diagnostics behind the thing that is failing.
     placements: [
       { surface: 'start-screen', slot: 'footer', order: 2 },
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 10 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910 },
     ],
     run: async (): Promise<void> => {
       await deps.client['log.reveal']({});
