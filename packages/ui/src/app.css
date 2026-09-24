@@ -592,10 +592,14 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* ONE ROW AT THE PANEL'S DEFAULT WIDTH, spread across it: fixed tracks that `auto-fit` counts from the
+   width, spaced out between, so ten swatches fill the row and a narrower panel wraps them onto aligned
+   columns rather than a ragged second line. */
 .m-properties__swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, var(--icon-16));
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-4);
 }
 
 /* A swatch is its colour, so its ring is the only chrome: a border to separate it from the panel, and
@@ -603,8 +607,8 @@ textarea {
 .m-properties__swatch,
 .m-properties__custom {
   position: relative;
-  inline-size: var(--icon-20);
-  block-size: var(--icon-20);
+  inline-size: var(--icon-16);
+  block-size: var(--icon-16);
   padding: 0;
   border: 1px solid var(--border-control);
   border-radius: 50%;
@@ -614,7 +618,7 @@ textarea {
 .m-properties__swatch[aria-pressed='true'],
 .m-properties__custom[data-pressed='true'] {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 /* EACH TOOL'S OWN is no colour, so it is drawn as the absence of one: the panel's own ground, struck
@@ -641,7 +645,7 @@ textarea {
 
 .m-properties__custom:focus-within {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .m-properties__slider {
