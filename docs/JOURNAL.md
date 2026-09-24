@@ -892,6 +892,34 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — The Stage 9 close's sweep: a first run starved, a second sealed ok
+
+**The first full sweep sealed `failed (1 timed out)`.** `provision:mupdf` passed its 180-second
+bound, and the sweep stopped there by design, having attempted 83 of 158. Its own line gave the reason:
+*"machine: 99% busy (99% of 4 cores — this machine had company)"*.
+
+**The company was this session.** The provisioner run alone took **12 seconds** and ended *Done*, so
+its bound was not the defect. Process CPU time read during the sweep put the Claude application — the
+session's host — at about 38 minutes of CPU since it started at 13:22. The session had been reading
+design exports and screenshots while the sweep ran. The rule is not to run a long sweep beside
+anything else, and *anything* includes reading images, because the host does the work of rendering
+them. **The bound was not raised.**
+
+**The second run, with the session idle:** `SEALED: ok (153 passed)`, 158 of 158 attempted.
+
+**Five were UNVERIFIABLE, and that is not a pass**: `proof:editfidelity`, `proof:lineagreement`,
+`proof:scannedpages`, `proof:textbounds` and `proof:ocrrecognise` read the owner's corpus, which the
+sweep was not given. Each was then run with `MONSTERA_CORPUS` and read all 11 documents:
+
+- 8 fidelity cases passed;
+- 9 scanned-page cases passed;
+- 18 recognition cases passed;
+- the line-agreement and text-bounds instruments printed their figures.
+
+The owner ordered on 2026-09-24 that a second failure would not hold the stage. It did not fail.
+
+---
+
 ## 2026-09-24 — Stage 9 closes: 4.00×, the gate armed, continue
 
 **Cloud storage, the last row, live on both providers.**
