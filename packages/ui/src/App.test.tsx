@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
-import { act, cleanup, fireEvent, render as renderBare, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -1653,6 +1653,29 @@ describe('App', () => {
       });
 
       expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
+    });
+
+    it('the RAIL’S FOOT carries Settings, and pressing it opens the Settings dialog (ADR-0098)', async () => {
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'settings.loadSecrets': { stored: [], available: true },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      // INSIDE THE RAIL, by its landmark, so the Tools › Application button of the same name is not
+      // what this finds.
+      const rail = screen.getByRole('navigation', { name: 'Sections' });
+      const gear = within(rail).getByRole('button', { name: 'Settings' });
+      // COUNTED FROM HERE: the window asks for the stored secrets at startup too.
+      const before = sent.filter((call) => call.id === 'settings.loadSecrets').length;
+      await act(async () => {
+        gear.click();
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'settings.loadSecrets')).toHaveLength(before + 1);
+      expect(await screen.findByRole('dialog', { name: 'Settings' })).toBeDefined();
     });
 
     it('the WINDOW TITLE carries the tab’s dot: after an edit, cleared by Save and by Save back to cloud', async () => {

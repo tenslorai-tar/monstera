@@ -68,7 +68,10 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
     const widths: GroupWidths[] = section.groups.map((group, index) => {
       const element = groups.current[index] ?? null;
       const chrome = element === null ? 0 : element.getBoundingClientRect().width - buttonsWidth(element);
-      const buttons = group.entries.map((entry) => {
+      // PRIMARIES ONLY: a secondary is never drawn in the row, so it has no width to fold by, and
+      // what it costs is the *More* its group then always draws (ADR-0098).
+      const primaries = group.entries.filter((entry) => !entry.secondary);
+      const buttons = primaries.map((entry) => {
         const drawn = element?.querySelector<HTMLElement>(`[data-command="${CSS.escape(entry.command.id)}"]`);
         const width = drawn?.getBoundingClientRect().width ?? 0;
         if (width > 0) naturals.current.set(entry.command.id, width);
@@ -76,7 +79,12 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         if (known === undefined) unmeasured.add(entry.command.id);
         return known ?? 0;
       });
-      return { buttons, chrome: Math.max(chrome, 0), gap: buttonGap(element) };
+      return {
+        buttons,
+        chrome: Math.max(chrome, 0),
+        gap: buttonGap(element),
+        secondaries: group.entries.length - primaries.length,
+      };
     });
     if (unmeasured.size > 0) return;
 

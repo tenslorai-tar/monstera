@@ -22,7 +22,7 @@ import { SECTION_IDS, type SectionId } from '../registries/placement.js';
 import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
-import { type RibbonSection, ribbonModel } from './projections.js';
+import { type RibbonSection, railModel, ribbonModel } from './projections.js';
 import { RibbonMore, RibbonMoreGauge } from './RibbonMore.js';
 import { splitFold } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
@@ -163,6 +163,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
   // fold was wired. `registry` and `context` are both memoised by `App`, so this changes when the
   // commands do and not when anything else re-renders.
   const sections = useMemo(() => ribbonModel(registry, context), [registry, context]);
+  const foot = useMemo(() => railModel(registry, context), [registry, context]);
   const filled = sections.filter((section) => section.groups.length > 0);
 
   // THE CHOSEN SECTION ONLY IF IT STILL HOLDS SOMETHING. A section can empty out under the reader —
@@ -214,6 +215,26 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
             </button>
           );
         })}
+        {/* THE RAIL'S FOOT (ADR-0098): the commands placed on `rail`, below the sections — the
+            owner's design draws Settings there. A projection like every other surface here. */}
+        {foot.length === 0 ? null : (
+          <div className="m-ribbon__rail-foot">
+            {foot.map((entry) => (
+              <button
+                className="m-ribbon__tab"
+                data-command={entry.command.id}
+                key={entry.command.id}
+                onClick={() => {
+                  void entry.command.run(context);
+                }}
+                type="button"
+              >
+                <Icon name={entry.command.icon ?? 'File'} size="control" />
+                <span className="m-ribbon__tab-label">{i18n._(entry.command.ribbonTitle ?? entry.command.title)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </nav>
       {mode === 'ribbon' || overlay ? (
       <div

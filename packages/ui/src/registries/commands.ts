@@ -217,6 +217,8 @@ const DRAWS_A_GLYPH: ReadonlySet<SurfaceId> = new Set<SurfaceId>([
   'start-screen',
   // §10.4: "14 px status bar". Its buttons are icon-only (ADR-0067).
   'status-bar',
+  // §10.4: "16 px primary controls (rail …)" — the rail's foot draws the command's glyph (ADR-0098).
+  'rail',
 ]);
 
 export class CommandRegistry {
@@ -267,6 +269,25 @@ export class CommandRegistry {
         );
       }
       this.#byId.set(command.id, command);
+    }
+    // A GROUP OF SECONDARIES ONLY would be a caption over a lone *More* — the shape the width fold
+    // already refuses to produce (ADR-0098 Decision 1). Refused here, naming the group, so the
+    // mistake is a startup crash rather than a ribbon somebody has to look at.
+    const primaries = new Map<string, boolean>();
+    for (const command of this.#byId.values()) {
+      for (const placement of command.placements) {
+        if (placement.surface !== 'ribbon') continue;
+        const key = `${placement.section} › ${placement.group}`;
+        primaries.set(key, (primaries.get(key) ?? false) || placement.prominence !== 'secondary');
+      }
+    }
+    for (const [group, hasPrimary] of primaries) {
+      if (!hasPrimary) {
+        throw new Error(
+          `The ribbon group ${group} holds only secondary tools, so it would draw as a caption over a ` +
+            `lone More. Make at least one of its placements primary (ADR-0098).`,
+        );
+      }
     }
   }
 

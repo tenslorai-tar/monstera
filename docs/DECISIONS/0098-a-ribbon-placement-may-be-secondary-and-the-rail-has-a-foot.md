@@ -91,3 +91,17 @@ not drawn while a document is open, and the exports put the gear on the document
   already scans `packages/ui/src/surfaces`, where the rail lives.
 - Which commands are secondary in which group is **the feature commit's** decision, taken from the
   exports, and each one is visible in the placement that declares it.
+
+## Correction, 2026-09-24 — two details the building found
+
+**The *More* lists width-folded primaries FIRST, then the secondaries.** Decision 1 said *after*. A
+primary folded because the window is narrow is one of the group's more-used tools, and putting the
+tools the design always keeps out of the row ahead of it inverts the order the prominence exists to
+express. `splitFold` builds the *More* primaries-first, and its case asserts the order.
+
+**"A group must hold at least one primary" is checked in two places, because it can fail in two
+ways.** The registry refuses a group whose REGISTERED placements are all secondary, at construction,
+naming the group, as Decision 1 says. A `when` rule can still hide every primary IN A CONTEXT, and
+refusing then would crash the ribbon over a state a person produced by closing a document. So the
+model draws the first remaining entry of such a group as primary. That keeps the property Decision 1
+wanted, never a caption over a lone *More*, without making a context an error. Each has its case.

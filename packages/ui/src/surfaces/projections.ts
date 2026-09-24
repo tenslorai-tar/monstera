@@ -61,6 +61,12 @@ function ordered<T extends { readonly order: number; readonly command: UiCommand
 export interface RibbonEntry {
   readonly command: UiCommand;
   readonly order: number;
+  /**
+   * Drawn in the group's *More* at every width (ADR-0098). The registry refuses a group with no
+   * primary at all; this is `false` for the first entry of a group whose primaries are all hidden by
+   * `when`, so a group never draws as a caption over a lone *More*.
+   */
+  readonly secondary: boolean;
 }
 
 /** One captioned group within a ribbon section. */
@@ -103,7 +109,7 @@ export function ribbonModel(
       // the eight — so this cannot be reached, and is not defended against.
       if (groups === undefined) continue;
       const entries = groups.get(slot.group) ?? [];
-      entries.push({ command, order: slot.order });
+      entries.push({ command, order: slot.order, secondary: slot.secondary });
       groups.set(slot.group, entries);
     }
   }
@@ -114,7 +120,7 @@ export function ribbonModel(
       // Groups are ordered by their earliest member, so a feature controls where
       // its group sits by the same number that controls its buttons — rather
       // than by a second ordering nobody would know to set.
-      .map(([group, entries]) => ({ group, entries: ordered(entries) }))
+      .map(([group, entries]) => ({ group, entries: withAPrimary(ordered(entries)) }))
       .sort(
         (left, right) =>
           (left.entries[0]?.order ?? 0) - (right.entries[0]?.order ?? 0) ||
@@ -123,18 +129,72 @@ export function ribbonModel(
   }));
 }
 
-/** The ribbon's view of one placement, or `undefined` when it belongs elsewhere. */
-function ribbonSlot(
-  placement: Placement,
-): { readonly section: SectionId; readonly group: string; readonly order: number } | undefined {
+/**
+ * A group's entries with at least one drawn as primary.
+ *
+ * The registry refuses a group whose placements are ALL secondary. What it cannot see is a group
+ * whose primaries `when` hides in this context, and that would draw a caption over a lone *More*. So
+ * the first remaining entry is drawn instead, which is the least surprising stand-in: it is the tool
+ * the group's order already puts first.
+ */
+function withAPrimary(entries: readonly RibbonEntry[]): readonly RibbonEntry[] {
+  if (entries.length === 0 || entries.some((entry) => !entry.secondary)) return entries;
+  return entries.map((entry, index) => (index === 0 ? { ...entry, secondary: false } : entry));
+}
+
+/**
+ * The commands at the rail's foot, below the eight sections (§10.3,
+ * [ADR-0098](../../../../docs/DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)).
+ */
+export function railModel(registry: CommandRegistry, context: CommandContext): readonly OrderedEntry[] {
+  const entries: OrderedEntry[] = [];
+  for (const command of registry.available(context)) {
+    for (const placement of command.placements) {
+      const order = railOrder(placement);
+      if (order !== undefined) entries.push({ command, order });
+    }
+  }
+  return ordered(entries);
+}
+
+function railOrder(placement: Placement): number | undefined {
   switch (placement.surface) {
+    case 'rail':
+      return placement.order;
     case 'ribbon':
-      return { section: placement.section, group: placement.group, order: placement.order };
     case 'quick-toolbar':
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
     case 'title-bar':
+      return undefined;
+    default: {
+      const unhandled: never = placement;
+      return unhandled;
+    }
+  }
+}
+
+/** The ribbon's view of one placement, or `undefined` when it belongs elsewhere. */
+function ribbonSlot(
+  placement: Placement,
+):
+  | { readonly section: SectionId; readonly group: string; readonly order: number; readonly secondary: boolean }
+  | undefined {
+  switch (placement.surface) {
+    case 'ribbon':
+      return {
+        section: placement.section,
+        group: placement.group,
+        order: placement.order,
+        secondary: placement.prominence === 'secondary',
+      };
+    case 'quick-toolbar':
+    case 'context-menu':
+    case 'start-screen':
+    case 'status-bar':
+    case 'title-bar':
+    case 'rail':
       return undefined;
     default: {
       // Decision 4. A new `Placement` variant lands here as a compile error, in
@@ -183,6 +243,7 @@ function quickToolbarOrder(placement: Placement): number | undefined {
     case 'start-screen':
     case 'status-bar':
     case 'title-bar':
+    case 'rail':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -224,6 +285,7 @@ function contextMenuOrder(placement: Placement, menu: MenuContext): number | und
     case 'start-screen':
     case 'status-bar':
     case 'title-bar':
+    case 'rail':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -268,6 +330,7 @@ function startScreenSlot(
     case 'context-menu':
     case 'status-bar':
     case 'title-bar':
+    case 'rail':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -333,6 +396,7 @@ function statusBarSlot(placement: Placement): { readonly gap: StatusBarGap; read
     case 'context-menu':
     case 'start-screen':
     case 'title-bar':
+    case 'rail':
       return undefined;
     default: {
       const unhandled: never = placement;
@@ -379,6 +443,7 @@ function titleBarSlot(placement: Placement): TitleBarPlacement | undefined {
     case 'context-menu':
     case 'start-screen':
     case 'status-bar':
+    case 'rail':
       return undefined;
     default: {
       const unhandled: never = placement;

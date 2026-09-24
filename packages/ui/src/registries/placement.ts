@@ -92,12 +92,32 @@ export type Placement =
        */
       readonly group: MessageKey;
       readonly order: number;
+      /**
+       * `'secondary'` draws the tool in its group's *More* at EVERY width; absent is primary, which the
+       * width fold alone decides ([ADR-0098](../../../../docs/DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)).
+       * The owner's design draws fewer tools per group than are placed there and folds the less-used
+       * ones, and which those are is a fact about this command IN THIS GROUP — Highlight is primary
+       * in two groups at once — so it is on the placement.
+       */
+      readonly prominence?: 'secondary';
     }
   | { readonly surface: 'quick-toolbar'; readonly order: number }
   | { readonly surface: 'context-menu'; readonly context: MenuContext; readonly order: number }
   | { readonly surface: 'start-screen'; readonly slot: StartScreenSlot; readonly order: number }
   | StatusBarPlacement
-  | TitleBarPlacement;
+  | TitleBarPlacement
+  | RailPlacement;
+
+/**
+ * An icon button at the FOOT of the section rail, below the eight sections
+ * ([ADR-0098](../../../../docs/DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)).
+ * The owner's design draws Settings there on every document screen. Labelled in Ribbon mode as the
+ * sections are, icon-only in Studio; not drawn in Focus, which draws no rail.
+ */
+export interface RailPlacement {
+  readonly surface: 'rail';
+  readonly order: number;
+}
 
 /**
  * A labelled button in the title bar (ARCHITECTURE §7 and §10.3,

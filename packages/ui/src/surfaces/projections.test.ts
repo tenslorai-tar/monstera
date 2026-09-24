@@ -9,6 +9,7 @@ import {
   normaliseChord,
   paletteModel,
   quickToolbarModel,
+  railModel,
   ribbonModel,
   shortcutListModel,
   shortcutMapOf,
@@ -129,6 +130,67 @@ describe('ribbonModel', () => {
 
     const edit = ribbonModel(registry, context).find((section) => section.section === 'edit');
     expect(ids(edit?.groups[0]?.entries ?? [])).toStrictEqual(['edit.shown']);
+  });
+});
+
+describe('secondary placements and the rail (ADR-0098)', () => {
+  const FILE = messageKey('test.group.file');
+
+  it('carries PROMINENCE through: absent is primary, secondary is marked', () => {
+    const registry = new CommandRegistry([
+      command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1 }]),
+      command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 2, prominence: 'secondary' }]),
+    ]);
+    const entries = ribbonModel(registry, context).find((section) => section.section === 'home')?.groups[0]?.entries;
+    expect(entries?.map((entry) => [entry.command.id, entry.secondary])).toStrictEqual([
+      ['doc.open', false],
+      ['doc.pdfa', true],
+    ]);
+  });
+
+  it('a group whose primaries `when` hides draws its FIRST remaining tool, never a lone More', () => {
+    const registry = new CommandRegistry([
+      command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1 }], { when: () => false }),
+      command('doc.save-copy', [{ surface: 'ribbon', section: 'home', group: FILE, order: 2, prominence: 'secondary' }]),
+      command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 3, prominence: 'secondary' }]),
+    ]);
+    const entries = ribbonModel(registry, context).find((section) => section.section === 'home')?.groups[0]?.entries;
+    expect(entries?.map((entry) => [entry.command.id, entry.secondary])).toStrictEqual([
+      ['doc.save-copy', false],
+      ['doc.pdfa', true],
+    ]);
+  });
+
+  it('the REGISTRY refuses a group whose placements are all secondary, naming it', () => {
+    expect(
+      () =>
+        new CommandRegistry([
+          command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1, prominence: 'secondary' }]),
+        ]),
+    ).toThrow(/home › test\.group\.file holds only secondary tools/u);
+    // CONTROL: the same group with one primary beside it is accepted.
+    expect(
+      () =>
+        new CommandRegistry([
+          command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 0 }]),
+          command('doc.pdfa', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1, prominence: 'secondary' }]),
+        ]),
+    ).not.toThrow();
+  });
+
+  it('the RAIL projects its own placements in order, and nothing else', () => {
+    const registry = new CommandRegistry([
+      command('app.about', [{ surface: 'rail', order: 20 }]),
+      command('app.settings', [{ surface: 'rail', order: 10 }]),
+      command('doc.open', [{ surface: 'ribbon', section: 'home', group: FILE, order: 1 }]),
+    ]);
+    expect(ids(railModel(registry, context))).toStrictEqual(['app.settings', 'app.about']);
+  });
+
+  it('the registry refuses a RAIL command with no icon, since the rail draws a glyph', () => {
+    // BUILT WITHOUT THE HELPER, which supplies an icon by default.
+    const bare: UiCommand = { id: 'app.settings', title: ANY_TITLE, placements: [{ surface: 'rail', order: 1 }], run: () => undefined };
+    expect(() => new CommandRegistry([bare])).toThrow(/placed on the rail and names no icon/u);
   });
 });
 

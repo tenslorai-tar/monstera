@@ -38,6 +38,13 @@ export interface GroupWidths {
    * section 4.7 px past its row at 1024.
    */
   readonly gap: number;
+  /**
+   * How many of this group's tools are SECONDARY (ADR-0098), drawn in its *More* at every width.
+   *
+   * They are not in `buttons`, because they are never drawn in the row and so have no width to fold
+   * by. What they cost the row is the *More* itself, which a group carrying any secondary always draws.
+   */
+  readonly secondaries: number;
 }
 
 /** What the ribbon draws for one group. */
@@ -57,7 +64,7 @@ export interface GroupFold {
 function widthOf(group: GroupWidths, shown: number, moreWidth: number): number {
   let total = group.chrome;
   for (let index = 0; index < shown; index += 1) total += group.buttons[index] ?? 0;
-  const folded = shown < group.buttons.length;
+  const folded = shown < group.buttons.length || group.secondaries > 0;
   if (folded) total += moreWidth;
   const items = shown + (folded ? 1 : 0);
   return total + group.gap * Math.max(items - 1, 0);
@@ -129,7 +136,10 @@ export function foldGroups(
     chosen.shown -= 1;
   }
 
-  return state.map((entry) => ({ shown: entry.shown, more: entry.shown < entry.group.buttons.length }));
+  return state.map((entry) => ({
+    shown: entry.shown,
+    more: entry.shown < entry.group.buttons.length || entry.group.secondaries > 0,
+  }));
 }
 
 /**
@@ -141,15 +151,25 @@ export function foldGroups(
  * narrowed would be a control that stops existing at a width — and as two separate slices at a call
  * site it is a property nothing states.
  *
- * `undefined` is *not measured yet*, which draws everything and folds nothing. It is deliberately
- * not the same as a fold that hides nothing: before the first measurement there is nothing to fold
- * from, and treating the two alike would draw a folded ribbon for one frame on a window wide enough
- * for the whole of it.
+ * `undefined` is *not measured yet*, which draws every PRIMARY and folds only the secondaries. It is
+ * deliberately not the same as a fold that hides nothing: before the first measurement there is
+ * nothing to fold from, and treating the two alike would draw a folded ribbon for one frame on a
+ * window wide enough for the whole of it. Secondaries are folded from the first frame, because they
+ * are folded at every width (ADR-0098) and would otherwise flash in the row once.
+ *
+ * **The *More* lists the width-folded primaries FIRST, then the secondaries.** A primary folded
+ * because the window is narrow is one of the group's more-used tools, so it comes before the ones the
+ * design always keeps out of the row.
  */
-export function splitFold<T>(entries: readonly T[], fold: GroupFold | undefined): {
+export function splitFold<T extends { readonly secondary: boolean }>(
+  entries: readonly T[],
+  fold: GroupFold | undefined,
+): {
   readonly shown: readonly T[];
   readonly folded: readonly T[];
 } {
-  if (fold === undefined) return { shown: entries, folded: [] };
-  return { shown: entries.slice(0, fold.shown), folded: entries.slice(fold.shown) };
+  const primaries = entries.filter((entry) => !entry.secondary);
+  const secondaries = entries.filter((entry) => entry.secondary);
+  if (fold === undefined) return { shown: primaries, folded: secondaries };
+  return { shown: primaries.slice(0, fold.shown), folded: [...primaries.slice(fold.shown), ...secondaries] };
 }
