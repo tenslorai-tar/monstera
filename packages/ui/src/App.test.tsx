@@ -323,8 +323,35 @@ async function pressCommand(name: string): Promise<void> {
     }
   }
   if (control === null) {
+    // IN A GROUP'S MORE, which is where a SECONDARY tool always is (ADR-0098) and a narrow window
+    // puts a primary one: section by section, each More opened and read, then closed again.
+    for (const tab of screen.queryAllByRole('button', { name: /^(Home|Comment|Edit|Organize|Forms|Review|Protect|Tools)$/u })) {
+      if (tab.hasAttribute('disabled')) continue;
+      await act(async () => {
+        tab.click();
+        await Promise.resolve();
+      });
+      for (const more of screen.queryAllByRole('button', { name: 'More' })) {
+        await act(async () => {
+          fireEvent.click(more);
+          await Promise.resolve();
+        });
+        const item = screen.queryByRole('menuitem', { name });
+        if (item !== null) {
+          await act(async () => {
+            item.click();
+            await Promise.resolve();
+          });
+          return;
+        }
+        await act(async () => {
+          fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+          await Promise.resolve();
+        });
+      }
+    }
     throw new Error(
-      `No control named "${name}" in any ribbon section. Tried: ${tried.join(', ') || 'none'}. ` +
+      `No control named "${name}" in any ribbon section or any group's More. Tried: ${tried.join(', ') || 'none'}. ` +
         `A command with no placement is reachable only from the palette, which is legitimate — ` +
         `and then this case is asserting the wrong thing rather than finding a defect.`,
     );
@@ -860,12 +887,11 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      // THE RIBBON'S OWN CAPTIONS, which is what a person presses and what the
-      // accessible name is. Two of the three are abbreviations since the design
-      // pass (2026-09-21) and carry the full title as their description; a case
-      // naming the full title here would be looking for a string the ribbon does
-      // not put on the control.
-      for (const name of ['Rotate page', 'Rotate 180°', 'Rotate 270°']) {
+      // WHAT A PERSON PRESSES, which is the accessible name where the tool is drawn. The quarter
+      // turn is a button carrying its ribbon caption; the half and three-quarter turns are
+      // SECONDARIES since the owner's v5 design (ADR-0098), so they are menu items in Pages' More,
+      // and a menu item is named by the command's full title.
+      for (const name of ['Rotate page', 'Rotate page 180°', 'Rotate page 270°']) {
         await pressCommand(name);
       }
 
@@ -952,7 +978,8 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await pressCommand('Duplicates…');
+      // A SECONDARY in Pages' More (ADR-0098), so its menu item's full title.
+      await pressCommand('Find duplicate pages…');
 
       // ONE-BASED IN THE LABEL. The model's `[0, 3]` reads as pages 1 and 4,
       // and a body that showed the indices would name two pages the reader
@@ -1029,7 +1056,8 @@ describe('App', () => {
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
-      await pressCommand('Blank page');
+      // A SECONDARY in Pages' More (ADR-0098), so its menu item's full title.
+      await pressCommand('Insert blank page');
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);

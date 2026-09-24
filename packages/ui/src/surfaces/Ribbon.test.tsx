@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import {
-  GROUP_ARRANGE,
+  GROUP_ADJUST,
   GROUP_FILE,
   GROUP_MARKUP,
   GROUP_PAGES,
@@ -91,7 +91,7 @@ describe('the ribbon', () => {
     { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
   ]);
   const ROTATE = commandOf('b.rotate', 'test.rotate', [
-    { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 10 },
+    { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 10 },
   ]);
 
   it('renders NOTHING when no section holds anything', () => {

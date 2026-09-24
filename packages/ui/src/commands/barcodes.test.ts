@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PAGE_BARCODES_DIALOG_ID } from '../dialogs/pageBarcodes.js';
 import { PLACE_BARCODE_DIALOG_ID } from '../dialogs/placeBarcode.js';
-import { GROUP_BARCODES } from '../messages/en.js';
+import { GROUP_MARKS } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import { placeBarcode, readBarcodesCommand } from './barcodes.js';
 
@@ -79,11 +79,11 @@ describe('Read barcodes', () => {
     expect(opened).toStrictEqual([]);
   });
 
-  it('sits in Organize › Barcodes, after the tool that adds one', () => {
+  it('sits in Organize › Marks as a secondary, after the tool that adds one (ADR-0098)', () => {
     const { client } = clientAnswering('read');
     const { ask } = recordingAsk();
     expect(readBarcodesCommand({ client, ask }).placements).toStrictEqual([
-      { surface: 'ribbon', section: 'organize', group: GROUP_BARCODES, order: 20 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 62, prominence: 'secondary' },
     ]);
   });
 });

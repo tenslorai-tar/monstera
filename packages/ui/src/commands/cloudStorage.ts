@@ -35,7 +35,7 @@ export function cloudStorageCommand(deps: {
     // HOME › FILE, beside the other ways a document is opened and saved. It needs no document —
     // it is a way to START with one — so it declares no `when`, and the palette reaches it on the
     // start screen too.
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 35 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 35, prominence: 'secondary' }],
     run: async (context: CommandContext): Promise<void> => {
       let listing: { provider: CloudProviderId; files: readonly CloudFile[] } | undefined;
       let problem: CloudRefusal | undefined;
@@ -133,7 +133,7 @@ export function saveBackCommand(
     id: 'cloud.save-back',
     icon: 'CloudUpload',
     title: SAVE_BACK_TITLE,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 36 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 36, prominence: 'secondary' }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId } = context;

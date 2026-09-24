@@ -1,7 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
-import { GROUP_FILE, OPEN_DOCUMENT_TITLE } from '../messages/en.js';
+import { GROUP_FILE, OPEN_DOCUMENT_TITLE, RIBBON_OPEN } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
 /**
@@ -85,6 +85,8 @@ export function openDocumentCommand(deps: OpenDocumentDeps): UiCommand {
     id: 'document.open',
     icon: 'FolderOpen',
     title: OPEN_DOCUMENT_TITLE,
+    // v5-02's Home › File caption. The start screen's button keeps the full *Open PDF…*.
+    ribbonTitle: RIBBON_OPEN,
     // The chord is a property of the command, not an entry in a keymap — the
     // shortcut map is a projection of this registry, so declaring it here is the
     // whole of registering it. `Ctrl+O` because that is what every application

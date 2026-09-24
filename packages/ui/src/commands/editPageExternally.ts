@@ -89,7 +89,7 @@ export function editPageExternallyCommand(
     icon: 'ExternalLink',
     title: EDIT_PAGE_EXTERNALLY_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_EXTERNALLY,
-    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 75 }],
+    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 30, prominence: 'secondary' }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined || context.version === undefined) {

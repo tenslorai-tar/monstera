@@ -7,7 +7,7 @@ import {
   type CompareDocumentsAnswer,
   MAX_COMPARE_CHANGES,
 } from '../dialogs/compareDocuments.js';
-import { COMPARE_COMMAND_TITLE, COMPARE_PROGRESS, GROUP_COMPARE } from '../messages/en.js';
+import { COMPARE_COMMAND_TITLE, COMPARE_PROGRESS, GROUP_COMPARE, GROUP_DISPLAY } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import type { TrackTask } from '../runningTask.js';
@@ -47,7 +47,11 @@ export function compareDocumentsCommand(deps: {
     id: 'document.compare',
     icon: 'Columns2',
     title: COMPARE_COMMAND_TITLE,
-    placements: [{ surface: 'ribbon', section: 'review', group: GROUP_COMPARE, order: 10 }],
+    placements: [
+      { surface: 'ribbon', section: 'review', group: GROUP_COMPARE, order: 10 },
+      // AND HOME › DISPLAY, last, as v5-02 draws *Compare*: two documents side by side is a way of viewing.
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 208 },
+    ],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId } = context;

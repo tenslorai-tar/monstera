@@ -3,7 +3,7 @@ import { type DocId, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { COMPARE_DOCUMENTS_DIALOG_ID, COMPARE_RESULT_DIALOG_ID, MAX_COMPARE_CHANGES } from '../dialogs/compareDocuments.js';
-import { GROUP_COMPARE } from '../messages/en.js';
+import { GROUP_COMPARE, GROUP_DISPLAY } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import { type TrackTask, UNTRACKED } from '../runningTask.js';
 import { compareDocumentsCommand, compareOpenDocuments } from './compareDocuments.js';
@@ -186,10 +186,11 @@ describe('the compare command', () => {
     expect(reads).toStrictEqual([]);
   });
 
-  it('sits in Review › Compare', () => {
+  it('sits in Review › Compare, and in Home › Display where the owner’s v5 design draws it', () => {
     const { client } = clientFor({ pages: [] }, { pages: [] });
     expect(compareDocumentsCommand({ client, ask: () => Promise.resolve(undefined), track: UNTRACKED }).placements).toStrictEqual([
       { surface: 'ribbon', section: 'review', group: GROUP_COMPARE, order: 10 },
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 208 },
     ]);
   });
 });

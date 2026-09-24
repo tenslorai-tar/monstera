@@ -246,7 +246,15 @@ describe('rectangleToolCommand', () => {
     // rather than check what the ribbon draws. The tools here are every Comment tool this
     // module places; Markup's own first member (the Comments list) is registered elsewhere,
     // and a Markup tool is still earliest without it.
-    const registry = new CommandRegistry([...shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined })]);
+    //
+    // FILTERED TO THE TOOLS PLACED IN COMMENT, which is what that sentence says the registry is. The
+    // module also builds the barcode tool, which is a SECONDARY in Organize › Marks (ADR-0098); alone
+    // in a registry it is a group with no primary, which the registry rightly refuses — the real one
+    // has Bates, Header and the rest beside it.
+    const inComment = shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined }).filter((command) =>
+      command.placements.some((placement) => placement.surface === 'ribbon' && placement.section === 'comment'),
+    );
+    const registry = new CommandRegistry(inComment);
     const comment = ribbonModel(registry, WITH_DOCUMENT).find((section) => section.section === 'comment');
     expect(comment?.groups.map((group) => group.group)).toStrictEqual([
       GROUP_MARKUP,

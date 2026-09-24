@@ -71,7 +71,7 @@ import {
   FORM_FIELD_LISTBOX_TOOL_TITLE,
   FORM_FIELD_RADIO_TOOL_TITLE,
   FORM_FIELD_TEXT_TOOL_TITLE,
-  GROUP_BARCODES,
+  GROUP_MARKS,
   GROUP_FIELDS,
   GROUP_LINKS,
   GROUP_MARKUP,
@@ -94,6 +94,10 @@ import {
   RIBBON_CLAUDE_REGION,
   RIBBON_PLACE_BARCODE,
   RIBBON_PLACE_SIGNATURE,
+  RIBBON_COMMENT,
+  RIBBON_HIGHLIGHT,
+  RIBBON_SELECT,
+  GROUP_QUICK_TOOLS,
   RIBBON_FIELD_TEXT,
   RIBBON_FIELD_CHECKBOX,
   RIBBON_FIELD_RADIO,
@@ -373,7 +377,11 @@ export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
  * gestured would be the overlay's dispatch table one layer up.
  */
 export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
-  return alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, TOOL_STICKY_NOTE_TITLE, 'StickyNote', 47, deps), 47);
+  // AND HOME › QUICK TOOLS as v5-02's *Comment* — a note is how a comment is put on a page.
+  return alsoOn(
+    alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, { full: TOOL_STICKY_NOTE_TITLE, ribbon: RIBBON_COMMENT }, 'StickyNote', 47, deps), 47),
+    { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 106 },
+  );
 }
 
 /**
@@ -417,7 +425,13 @@ export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
  * the overlay are all untouched.
  */
 export function highlightToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(HIGHLIGHT_TOOL_ID, HIGHLIGHT_TOOL_TITLE, 'Highlighter', 36, deps);
+  // AND HOME › QUICK TOOLS, §7's own example of one command in two groups.
+  return alsoOn(toolCommand(HIGHLIGHT_TOOL_ID, { full: HIGHLIGHT_TOOL_TITLE, ribbon: RIBBON_HIGHLIGHT }, 'Highlighter', 36, deps), {
+    surface: 'ribbon',
+    section: 'home',
+    group: GROUP_QUICK_TOOLS,
+    order: 104,
+  });
 }
 
 export function underlineToolCommand(deps: ToolCommandDeps): UiCommand {
@@ -503,7 +517,11 @@ export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
  * has never depended on what the tool does when it is on.
  */
 export function selectToolCommand(deps: ToolCommandDeps): UiCommand {
-  return alsoOnThePill(toolCommand(SELECT_TOOL_ID, SELECT_TOOL_TITLE, 'MousePointer2', 39, deps), 39);
+  // AND HOME › QUICK TOOLS, first, as v5-02 draws it.
+  return alsoOn(
+    alsoOnThePill(toolCommand(SELECT_TOOL_ID, { full: SELECT_TOOL_TITLE, ribbon: RIBBON_SELECT }, 'MousePointer2', 39, deps), 39),
+    { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 100 },
+  );
 }
 
 /**
@@ -1020,23 +1038,35 @@ export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
  * signatures* at 20, so the group reads invisible, visible, verify.
  */
 export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(PLACE_SIGNATURE_TOOL_ID, { full: PLACE_SIGNATURE_TOOL_TITLE, ribbon: RIBBON_PLACE_SIGNATURE }, 'PenTool', 15, deps, {
-    section: 'protect',
-    group: GROUP_SIGNATURES,
-  });
+  // AND HOME › QUICK TOOLS as v5-02's *Sign*. Captioned *Signature* in both places: *Sign* beside
+  // Protect's *Sign document* would read as two names for one thing.
+  return alsoOn(
+    toolCommand(PLACE_SIGNATURE_TOOL_ID, { full: PLACE_SIGNATURE_TOOL_TITLE, ribbon: RIBBON_PLACE_SIGNATURE }, 'PenTool', 15, deps, {
+      section: 'protect',
+      group: GROUP_SIGNATURES,
+    }),
+    { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 108 },
+  );
 }
 
 /**
  * The place-barcode tool's command.
  *
- * **Organize › Barcodes, at 10**, beside *Read barcodes* at 20: a barcode is something a page is
- * given, like an inserted image or a Bates number, and the group reads make, then read.
+ * **Organize › Marks, secondary, at 60**, beside *Read barcodes* at 62: a barcode is something a page
+ * is given, like a Bates number or a watermark, and the owner's v5 Marks group draws Bates · Header ·
+ * Watermark · Background · TOC, so the two barcode tools sit in its More (ADR-0098), make then read.
  */
 export function placeBarcodeToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(PLACE_BARCODE_TOOL_ID, { full: PLACE_BARCODE_TOOL_TITLE, ribbon: RIBBON_PLACE_BARCODE }, 'QrCode', 10, deps, {
+  const command = toolCommand(PLACE_BARCODE_TOOL_ID, { full: PLACE_BARCODE_TOOL_TITLE, ribbon: RIBBON_PLACE_BARCODE }, 'QrCode', 60, deps, {
     section: 'organize',
-    group: GROUP_BARCODES,
+    group: GROUP_MARKS,
   });
+  return {
+    ...command,
+    placements: command.placements.map((placement) =>
+      placement.surface === 'ribbon' ? { ...placement, prominence: 'secondary' as const } : placement,
+    ),
+  };
 }
 
 /**

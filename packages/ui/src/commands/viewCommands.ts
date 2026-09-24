@@ -118,13 +118,11 @@ export function commandPaletteCommand(deps: { readonly onToggle: () => void }): 
     icon: 'Command',
     title: PALETTE_TITLE,
     shortcut: 'Ctrl+K',
-    // HOME › FIND, beside the find bar's own control, because both answer
-    // "where is the thing I am looking for" — one in the document, one in the
-    // application. §10.3 also puts a command search in the title bar; that is a
-    // second SURFACE for the same command when the title bar is built, not a
-    // reason for this one to appear nowhere. It carried an empty array while no
-    // ribbon existed, which was the honest state and is no longer.
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FIND, order: 20 }],
+    // NO RIBBON PLACEMENT since the owner's v5 design (2026-09-24). The title bar's command search
+    // is this command's surface on every screen — a field-shaped opener that runs it (ADR-0095) —
+    // and the v5 Home draws File · Quick tools · Display · Export with no Find group. It had a Home
+    // placement while that search did not exist, which was right then and is a duplicate now.
+    placements: [],
     run: (): void => {
       deps.onToggle();
     },
@@ -179,6 +177,8 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
     shortcut: 'Ctrl+Shift+E',
     placements: [
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90 },
+      // AND HOME › DISPLAY, v5-02's *Split View*.
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 204 },
     ],
     when: hasDocument,
     run: (): void => {
@@ -201,6 +201,8 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
     shortcut: 'Ctrl+Shift+D',
     placements: [
       { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70 },
+      // AND HOME › DISPLAY as v5-02's *Dim Pages*: this is the command that dims a page for a dark room.
+      { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 206 },
     ],
     when: hasDocument,
     run: (): void => {

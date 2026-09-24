@@ -239,7 +239,6 @@ export const PRINT_DPI_150 = messageKey('dialog.print.dpi-150');
 export const PRINT_DPI_300 = messageKey('dialog.print.dpi-300');
 export const PRINT_DPI_600 = messageKey('dialog.print.dpi-600');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
-export const GROUP_BARCODES = messageKey('surface.ribbon.group.barcodes');
 export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
 export const GROUP_COMMENT_FILES = messageKey('surface.ribbon.group.comment-files');
 export const ACCESSIBILITY_COMMAND_TITLE = messageKey('command.accessibility-check.title');
@@ -1404,12 +1403,9 @@ export const RIBBON_SECTION_OPTION_TITLES = {
 } as const;
 
 export const GROUP_FILE = messageKey('surface.ribbon.group.file');
-export const GROUP_HISTORY = messageKey('surface.ribbon.group.history');
 export const GROUP_FIND = messageKey('surface.ribbon.group.find');
 export const GROUP_PAGES = messageKey('surface.ribbon.group.pages');
-export const GROUP_ARRANGE = messageKey('surface.ribbon.group.arrange');
 export const GROUP_MARKS = messageKey('surface.ribbon.group.marks');
-export const GROUP_INSERT = messageKey('surface.ribbon.group.insert');
 export const GROUP_TEXT = messageKey('surface.ribbon.group.text');
 export const GROUP_PROOFING = messageKey('surface.ribbon.group.proofing');
 export const GROUP_MARKUP = messageKey('surface.ribbon.group.markup');
@@ -1423,6 +1419,20 @@ export const SHOW_FIELDS_TITLE = messageKey('command.view.show-fields');
 export const MOVE_PAGE_EARLIER_TITLE = messageKey('command.document.move-page-earlier');
 export const MOVE_PAGE_LATER_TITLE = messageKey('command.document.move-page-later');
 export const GROUP_FIELDS = messageKey('surface.ribbon.group.fields');
+/** The owner's v5 groups (ADR-0098): Home's Quick tools and Export, Organize's Combine and Adjust, Forms' Manage and Data. */
+export const GROUP_QUICK_TOOLS = messageKey('surface.ribbon.group.quick-tools');
+/** v5-02's Home › Export captions: *Share* is Email (the owner's mapping), *Open* the open command. */
+export const RIBBON_SHARE = messageKey('surface.ribbon.share');
+export const RIBBON_OPEN = messageKey('surface.ribbon.open');
+/** v5-02's Home › Quick tools captions, the short forms of the tools' full names. */
+export const RIBBON_SELECT = messageKey('surface.ribbon.select');
+export const RIBBON_HIGHLIGHT = messageKey('surface.ribbon.highlight');
+export const RIBBON_COMMENT = messageKey('surface.ribbon.comment');
+export const GROUP_EXPORT = messageKey('surface.ribbon.group.export');
+export const GROUP_COMBINE = messageKey('surface.ribbon.group.combine');
+export const GROUP_ADJUST = messageKey('surface.ribbon.group.adjust');
+export const GROUP_MANAGE = messageKey('surface.ribbon.group.manage');
+export const GROUP_DATA = messageKey('surface.ribbon.group.data');
 export const GROUP_DISPLAY = messageKey('surface.ribbon.group.display');
 export const GROUP_NAVIGATE = messageKey('surface.ribbon.group.navigate');
 export const GROUP_APPLICATION = messageKey('surface.ribbon.group.application');
@@ -3099,7 +3109,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PRINT_DPI_300]: 'Standard — 300 dots per inch',
   [PRINT_DPI_600]: 'High — up to 600 dots per inch, lower on a large page',
   [PRINT_APPLY]: 'Choose a printer…',
-  [GROUP_BARCODES]: 'Barcodes',
   [GROUP_COMPARE]: 'Compare',
   [GROUP_COMMENT_FILES]: 'Comment files',
   [ACCESSIBILITY_COMMAND_TITLE]: 'Accessibility check',
@@ -3375,10 +3384,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SECTION_PROTECT]: 'Protect',
   [SECTION_TOOLS]: 'Tools',
   [GROUP_FILE]: 'File',
-  [GROUP_HISTORY]: 'History',
   [GROUP_FIND]: 'Find',
   [GROUP_PAGES]: 'Pages',
-  [GROUP_ARRANGE]: 'Arrange',
   [GROUP_ENCRYPTION]: 'Encryption',
   [GROUP_REDACT]: 'Redact',
   [PROTECT_DOCUMENT_COMMAND_TITLE]: 'Password and permissions',
@@ -3530,7 +3537,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'These checks compare the signature against the bytes it covers. They do not say whether the certificate itself is one you should trust.',
 
   [GROUP_MARKS]: 'Marks',
-  [GROUP_INSERT]: 'Insert',
   [GROUP_TEXT]: 'Text',
   [GROUP_PROOFING]: 'Proofing',
   [GROUP_MARKUP]: 'Markup',
@@ -3544,6 +3550,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MOVE_PAGE_EARLIER_TITLE]: 'Move page up',
   [MOVE_PAGE_LATER_TITLE]: 'Move page down',
   [GROUP_FIELDS]: 'Fields',
+  [GROUP_QUICK_TOOLS]: 'Quick tools',
+  [RIBBON_SHARE]: 'Share…',
+  [RIBBON_OPEN]: 'Open…',
+  [RIBBON_SELECT]: 'Select',
+  [RIBBON_HIGHLIGHT]: 'Highlight',
+  [RIBBON_COMMENT]: 'Comment',
+  [GROUP_EXPORT]: 'Export',
+  [GROUP_COMBINE]: 'Combine',
+  [GROUP_ADJUST]: 'Adjust',
+  [GROUP_MANAGE]: 'Manage',
+  [GROUP_DATA]: 'Data',
   [GROUP_DISPLAY]: 'Display',
   [GROUP_NAVIGATE]: 'Navigate',
   [GROUP_APPLICATION]: 'Application',

@@ -82,16 +82,17 @@ import {
   FIND_TITLE,
   FIT_PAGE_TITLE,
   FIT_WIDTH_TITLE,
-  GROUP_ARRANGE,
+  GROUP_ADJUST,
   GROUP_DISPLAY,
   GROUP_ENCRYPTION,
   GROUP_REDACT,
   GROUP_SIGNATURES,
   GROUP_FIELDS,
+  GROUP_EXPORT,
   GROUP_FILE,
   GROUP_FIND,
-  GROUP_HISTORY,
-  GROUP_INSERT,
+  RIBBON_SHARE,
+  GROUP_COMBINE,
   GROUP_MARKS,
   GROUP_PAGES,
   GROUP_TEXT,
@@ -714,6 +715,11 @@ export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
         group: GROUP_DISPLAY,
         order: fit === 'width' ? 30 : 40,
       },
+      // AND HOME › DISPLAY, where v5-02 draws *Fit Width* first. Fit page is not drawn there, so it
+      // sits in the group's More (ADR-0098).
+      fit === 'width'
+        ? { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 200 }
+        : { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 202, prominence: 'secondary' },
       // §10.3's "fit mode", at the end of the zoom cluster after the percentage.
       { surface: 'status-bar', cluster: 'zoom', side: 'after', order: fit === 'width' ? 20 : 30 },
     ],
@@ -786,7 +792,9 @@ export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' 
     title: earlier ? MOVE_PAGE_EARLIER_TITLE : MOVE_PAGE_LATER_TITLE,
     // LAST IN THE GROUP, because these two come and go as the page on show reaches an end: at the
     // end of a group, appearing and hiding moves no other button under the pointer.
-    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: earlier ? 90 : 91 }],
+    placements: [
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: earlier ? 26 : 27, prominence: 'secondary' },
+    ],
     when: (context) =>
       hasDocument(context) &&
       context.page !== undefined &&
@@ -807,10 +815,10 @@ export function findCommand(deps: { readonly settings: SettingsStore }): UiComma
     title: FIND_TITLE,
     shortcut: 'Ctrl+F',
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_FIND, order: 10 },
-      // AND EDIT › FIND: the find bar is where D4's find-and-replace and replace-all live, so it
-      // is reached from the section that owns them as well as from Home. 110 puts the group after
-      // Text (from 10) and before Proofing (210): the owner's Text · Find · Proofing · Language.
+      // EDIT › FIND: the find bar is where D4's find-and-replace and replace-all live. 110 puts the
+      // group after Text (from 10) and before Proofing (210): the owner's Text · Find · Proofing ·
+      // Language. The v5 Home draws no Find group, so Home's placement went with the design; Ctrl+F
+      // reaches it from every section.
       { surface: 'ribbon', section: 'edit', group: GROUP_FIND, order: 110 },
     ],
     when: hasDocument,
@@ -891,8 +899,18 @@ export function rotatePageCommand(
     // about how the three relate. The PAGE MENU carries the quarter turn only
     // (the owner's list, 2026-09-19: *rotate*), and the page it rotates is the
     // one right-clicked, because the menu hands that page in as `context.page`.
+    //
+    // ORGANIZE › PAGES since the owner's v5 design, where *Rotate* is the second tool. The quarter turn
+    // is that primary; the half and three-quarter turns follow it in its group's More, in the table's
+    // sequence, by an offset from the quarter turn's own number (ADR-0098).
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order },
+      {
+        surface: 'ribbon',
+        section: 'organize',
+        group: GROUP_PAGES,
+        order: 12 + (order - ROTATIONS[1].order) / 10,
+        ...(quarterTurns === 1 ? {} : { prominence: 'secondary' as const }),
+      },
       ...(quarterTurns === 1 ? [{ surface: 'context-menu', context: 'page', order: 10 } as const] : []),
     ],
     when: hasDocument,
@@ -936,7 +954,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
     title: INSERT_BLANK_PAGE_TITLE,
     ribbonTitle: RIBBON_INSERT_BLANK,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 10 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 22, prominence: 'secondary' },
       { surface: 'context-menu', context: 'page', order: 20 },
     ],
     when: hasDocument,
@@ -965,7 +983,7 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'CopyPlus',
     title: DUPLICATE_PAGE_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 10 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1011,7 +1029,8 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileMinus',
     title: DELETE_PAGE_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
+      // SECONDARY: v5-09's *Delete* is the range dialog, which deletes this page too.
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 21, prominence: 'secondary' },
       { surface: 'context-menu', context: 'page', order: 40 },
     ],
     when: hasDocument,
@@ -1057,7 +1076,8 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Trash2',
     title: DELETE_PAGES_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 30 },
+      // v5-09's *Delete*, first in Pages.
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 10 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1099,7 +1119,7 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
     placements: [
       // On the pill too — §10.3 names crop in its list. See `zoomCommand`.
       { surface: 'quick-toolbar', order: 16 },
-      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 10 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 40 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1151,7 +1171,7 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
     title: HEADER_FOOTER_COMMAND_TITLE,
     ribbonTitle: RIBBON_HEADER_FOOTER,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 30 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 52 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1187,7 +1207,7 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Hash',
     title: BATES_NUMBER_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 40 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 50 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1228,7 +1248,7 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
     title: PAGE_TRANSITION_COMMAND_TITLE,
     ribbonTitle: RIBBON_PAGE_TRANSITION,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 46, prominence: 'secondary' },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1261,7 +1281,7 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Scaling',
     title: RESIZE_PAGES_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 20 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 42 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1307,7 +1327,7 @@ export function deskewPagesCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'RotateCwSquare',
     title: DESKEW_PAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_DESKEW,
-    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 30 }],
+    placements: [{ surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 44 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -1344,7 +1364,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'ImagePlus',
     title: INSERT_IMAGE_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 30 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 23, prominence: 'secondary' },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1427,7 +1447,7 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
     title: GENERATE_TOC_COMMAND_TITLE,
     ribbonTitle: RIBBON_GENERATE_TOC,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 40 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 58 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1481,7 +1501,7 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     title: MERGE_DOCUMENT_COMMAND_TITLE,
     ribbonTitle: RIBBON_MERGE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 60 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_COMBINE, order: 30 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1544,7 +1564,8 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
     title: INSERT_FROM_PDF_COMMAND_TITLE,
     ribbonTitle: RIBBON_INSERT_FROM_PDF,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_INSERT, order: 20 },
+      // v5-09's *Insert*: pages from another PDF. A blank page and an image are its secondaries.
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 14 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1600,7 +1621,7 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Replace',
     title: REPLACE_PAGE_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 70 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 18 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1657,7 +1678,7 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
     title: IMPORT_PAGE_AS_LAYER_COMMAND_TITLE,
     ribbonTitle: RIBBON_IMPORT_LAYER,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 72 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 28, prominence: 'secondary' },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1707,7 +1728,7 @@ export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
     title: PAGE_BACKGROUND_COMMAND_TITLE,
     ribbonTitle: RIBBON_PAGE_BACKGROUND,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 10 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 56 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1739,7 +1760,7 @@ export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Droplet',
     title: WATERMARK_PAGES_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 20 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_MARKS, order: 54 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1789,7 +1810,7 @@ export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand 
     title: FIND_DUPLICATES_COMMAND_TITLE,
     ribbonTitle: RIBBON_FIND_DUPLICATES,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 80 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 29, prominence: 'secondary' },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1833,7 +1854,8 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     title: UNDO_TITLE,
     shortcut: 'Ctrl+Z',
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_HISTORY, order: 10 },
+      // IN FILE, as v5-02 draws Open · Save · Print · Undo · Redo in one group.
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 24 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1865,7 +1887,7 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Redo2',
     title: REDO_TITLE,
     shortcut: 'Ctrl+Y',
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_HISTORY, order: 20 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2144,7 +2166,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile): Ui
     icon: 'FileOutput',
     title: EXTRACT_PAGES_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 40 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16 },
       { surface: 'context-menu', context: 'page', order: 30 },
     ],
     when: hasDocument,
@@ -2193,7 +2215,7 @@ export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Scissors',
     title: SPLIT_DOCUMENT_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 50 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_COMBINE, order: 32 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2235,7 +2257,7 @@ export function exportTextCommand(deps: DocumentCommandDeps): UiCommand {
     title: EXPORT_TEXT_COMMAND_TITLE,
     // HOME › FILE, beside Save a copy: `docs/FEATURES.md` places D10 under Home ›
     // Export, and File is the Home group that writes a file out today.
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 40 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 312, prominence: 'secondary' }],
     when: hasDocument,
     run: (context) => runTextExport(deps, context, 'plain'),
   };
@@ -2255,7 +2277,7 @@ export function exportLayoutTextCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileText',
     title: EXPORT_LAYOUT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_LAYOUT_TEXT,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 41 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 314, prominence: 'secondary' }],
     when: hasDocument,
     run: (context) => runTextExport(deps, context, 'layout'),
   };
@@ -2274,7 +2296,7 @@ export function exportWordCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileText',
     title: EXPORT_WORD_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_WORD,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 42 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2307,7 +2329,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileImage',
     title: EXPORT_POWERPOINT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_POWERPOINT,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 43 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 308, prominence: 'secondary' }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2357,7 +2379,7 @@ export function exportExcelCommand(
     icon: 'FileSpreadsheet',
     title: EXPORT_EXCEL_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_EXCEL,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 44 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 304 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       const { docId } = context;
@@ -2455,7 +2477,7 @@ export function exportPdfaCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'FileCheck',
     title: EXPORT_PDFA_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PDFA,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 46 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 310, prominence: 'secondary' }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2518,7 +2540,8 @@ export function optimizeCommand(
     icon: 'Shrink',
     title: OPTIMIZE_COMMAND_TITLE,
     ribbonTitle: RIBBON_OPTIMIZE,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 47 }],
+    // SECONDARY in File: the owner's v5 Home draws Open · Save · Print · Undo · Redo (ADR-0098).
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 40, prominence: 'secondary' }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       const { docId } = context;
@@ -2601,7 +2624,7 @@ export function printCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.print',
     icon: 'Printer',
     title: PRINT_COMMAND_TITLE,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 45 }],
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 22 }],
     shortcut: 'Ctrl+P',
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2636,7 +2659,9 @@ export function emailCommand(deps: DocumentCommandDeps): UiCommand {
     id: 'document.email',
     icon: 'Mail',
     title: EMAIL_COMMAND_TITLE,
-    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 47 }],
+    // v5-02's Home › Export › *Share*, the owner's own mapping: sharing a document is emailing it.
+    ribbonTitle: RIBBON_SHARE,
+    placements: [{ surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 306 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
@@ -2699,7 +2724,8 @@ export function exportPageImagesCommand(deps: DocumentCommandDeps): UiCommand {
     title: EXPORT_PAGE_IMAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_PAGE_IMAGES,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 55 },
+      // v5-02's Home › Export › *Image*, the first of the group.
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 300 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2998,7 +3024,7 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
     title: SAVE_COPY_TITLE,
     ribbonTitle: RIBBON_SAVE_COPY,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 30 },
+      { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 30, prominence: 'secondary' },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {

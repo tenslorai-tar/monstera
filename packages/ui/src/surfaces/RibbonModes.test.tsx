@@ -6,7 +6,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, GROUP_ARRANGE, GROUP_FILE } from '../messages/en.js';
+import { EN, GROUP_ADJUST, GROUP_FILE } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
 import { SettingsRegistry } from '../registries/settings.js';
@@ -47,7 +47,7 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 const SAVE_RUN = vi.fn();
 const SAVE = commandOf('a.save', 'test.modes.save', [{ surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 }], SAVE_RUN);
 const ROTATE = commandOf('b.rotate', 'test.modes.rotate', [
-  { surface: 'ribbon', section: 'organize', group: GROUP_ARRANGE, order: 10 },
+  { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 10 },
 ]);
 
 function draw(stored: Record<string, unknown> = {}): {
