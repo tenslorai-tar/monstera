@@ -146,6 +146,32 @@ describe('SettingsBody', () => {
     expect(reported.at(-1)).toStrictEqual({ values: { [ANNOTATION_COLOUR_SETTING.id]: '#0000ff' }, secrets: {} });
   });
 
+  it('a chosen colour ticked back reports the no-choice value', () => {
+    // FROM A STORED CHOICE, so the report is a change: from the fallback the same click would leave
+    // the setting where it was, which is the control below.
+    const { reported } = opened({ values: { [ANNOTATION_COLOUR_SETTING.id]: '#0000ff' } });
+    const swatch = control(ANNOTATION_COLOUR_SETTING) as HTMLInputElement;
+    expect(swatch.disabled).toBe(false);
+    expect(swatch.value).toBe('#0000ff');
+
+    fireEvent.click(screen.getByLabelText(english(STYLE_COLOUR_AUTO)));
+
+    expect(reported.at(-1)).toStrictEqual({ values: { [ANNOTATION_COLOUR_SETTING.id]: 'auto' }, secrets: {} });
+  });
+
+  it('CONTROL: unticking and ticking back from no choice leaves the setting at no choice', () => {
+    // WHAT WAS LAST REPORTED FOR IT, or nothing at all: a body that kept the starting colour it
+    // offered on the untick would leave that colour stored after a round trip that chose nothing.
+    const { reported } = opened({});
+    goTo(ANNOTATION_COLOUR_SETTING.category);
+    const auto = screen.getByLabelText(english(STYLE_COLOUR_AUTO));
+    fireEvent.click(auto);
+    fireEvent.click(auto);
+
+    const last = reported.filter((answer) => ANNOTATION_COLOUR_SETTING.id in answer.values).at(-1);
+    expect(last?.values[ANNOTATION_COLOUR_SETTING.id] ?? 'auto').toBe('auto');
+  });
+
   it('the key field is WRITE-ONLY: empty with a placeholder when a key is stored, and typing replaces it', () => {
     const { reported } = opened({ storedSecrets: [AZURE_KEY_SETTING_ID] });
     const field = control(AZURE_DI_KEY_SETTING) as HTMLInputElement;
@@ -184,11 +210,26 @@ describe('SettingsBody', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Save chat history').disabled).toBe(false);
   });
 
-  it('with no secure storage the key field is disabled and the row says why', () => {
+  it('with no secure storage EVERY key field is disabled, and each says why', () => {
+    // NO "AND NO SECRET IS REPORTED": with nothing typed that clause holds for a body that ignores
+    // the store entirely, and typing into a disabled field is a thing only a synthetic event can do.
+    // Measured 2026-09-24: such an event IS reported. What stops a real one is the disabled field,
+    // asserted here, and main's store refusing to write with no cipher (`secretStore.ts`).
     opened({ secretsAvailable: false });
-    goTo(AZURE_DI_KEY_SETTING.category);
-    expect((control(AZURE_DI_KEY_SETTING) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByText(/no secure place to keep a key/u)).toBeDefined();
+    const secretSettings = DIALOG_SETTINGS.filter((setting) => controlFor(setting) === 'secret');
+    // A VACUITY GUARD, then the join against the REGISTERED set rather than a list typed here: a
+    // provider's key is shown only while its provider is chosen, so the chooser is set first.
+    expect(secretSettings.length).toBeGreaterThan(1);
+    for (const setting of secretSettings) {
+      goTo(setting.category);
+      const provider = Object.entries(AI_PROVIDERS).find(([, entry]) => entry.keySetting === setting.id)?.[0];
+      if (provider !== undefined) {
+        fireEvent.change(screen.getByLabelText('Provider'), { target: { value: provider } });
+      }
+      const field = screen.getByLabelText<HTMLInputElement>(english(setting.title));
+      expect(field.disabled, setting.id).toBe(true);
+      expect(screen.getAllByText(/no secure place to keep a key/u).length, setting.id).toBeGreaterThan(0);
+    }
   });
 
   describe('the AI page asks which provider first', () => {

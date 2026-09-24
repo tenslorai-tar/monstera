@@ -6,8 +6,11 @@ import { createServer } from 'node:http';
  *
  * ## What it does, in the order it does it
  *
- * 1. Listens on `127.0.0.1`, on a port the operating system assigns — never
- *    `0.0.0.0`, and never a known port something could be waiting on.
+ * 1. Listens on `127.0.0.1` — never `0.0.0.0` — on a port the operating system
+ *    assigns, or, for a provider that matches its redirect exactly, the first free
+ *    port of those registered with it. A known port is safe here for PKCE's reason:
+ *    a process squatting on it receives a code it cannot exchange without the
+ *    verifier, which never leaves `main`.
  * 2. Builds the redirect URI from that port and hands it to the caller, which builds
  *    the authorization URL and its `state`.
  * 3. Opens that URL in the person's own browser, through a function the composition
@@ -104,6 +107,14 @@ export async function signInThroughLoopback(options: {
    * `127.0.0.1` whatever this says; `localhost` is for a provider that matches only that name.
    */
   readonly redirectHost?: 'localhost' | '127.0.0.1';
+  /**
+   * The ports a provider has REGISTERED, tried in order, for a provider that matches its redirect
+   * exactly — DocuSign's documentation, read 2026-09-24: *"The redirect URI strings must match
+   * exactly"*. Absent is a port the operating system assigns, which RFC 8252 §7.3 lets a provider
+   * accept and Microsoft and Google do. A list rather than one, so a port something else holds does
+   * not end the sign-in.
+   */
+  readonly ports?: readonly number[];
 }): Promise<SignInCode> {
   const path = options.path ?? SIGN_IN_PATH;
   let settle: { resolve: (code: string) => void; reject: (error: SignInRefused) => void } | null =
@@ -158,19 +169,32 @@ export async function signInThroughLoopback(options: {
   options.signal?.addEventListener('abort', onAbort, { once: true });
 
   try {
-    const port = await new Promise<number>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, '127.0.0.1', () => {
-        const address = server.address();
-        if (address === null || typeof address === 'string') {
-          reject(new Error('the sign-in listener bound to no numeric port'));
-          return;
-        }
-        resolve(address.port);
+    const bind = (wanted: number): Promise<number> =>
+      new Promise<number>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(wanted, '127.0.0.1', () => {
+          server.off('error', reject);
+          const address = server.address();
+          if (address === null || typeof address === 'string') {
+            reject(new Error('the sign-in listener bound to no numeric port'));
+            return;
+          }
+          resolve(address.port);
+        });
       });
-    }).catch((cause: unknown) => {
-      throw new SignInRefused('listener-failed', 'the sign-in listener could not be opened', { cause });
-    });
+    let port: number | undefined;
+    let lastCause: unknown;
+    for (const wanted of options.ports ?? [0]) {
+      try {
+        port = await bind(wanted);
+        break;
+      } catch (cause) {
+        lastCause = cause;
+      }
+    }
+    if (port === undefined) {
+      throw new SignInRefused('listener-failed', 'the sign-in listener could not be opened', { cause: lastCause });
+    }
 
     const redirectUri = `http://${options.redirectHost ?? '127.0.0.1'}:${String(port)}${path}`;
     const { url, state } = options.authorize(redirectUri);

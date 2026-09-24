@@ -8,6 +8,7 @@ import {
 import {
   authorizationUrl,
   completedDocument,
+  DOCUSIGN_REDIRECT_PORTS,
   defaultAccount,
   type DocusignAccount,
   DocusignRefused,
@@ -204,6 +205,8 @@ export function createDocusignSession(deps: {
   readonly fetchImpl?: typeof fetch;
   readonly now?: () => number;
   readonly signInTimeoutMs?: number;
+  /** The loopback ports to try; `DOCUSIGN_REDIRECT_PORTS` unless a case needs free ones. */
+  readonly redirectPorts?: readonly number[];
 }): DocusignSession {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
@@ -236,6 +239,9 @@ export function createDocusignSession(deps: {
         state,
       }),
       openInBrowser: deps.openInBrowser,
+      // THE REGISTERED PORTS: DocuSign matches a redirect exactly, port included (ADR-0059's
+      // correction of 2026-09-24), so a port the system assigns would never match.
+      ports: deps.redirectPorts ?? DOCUSIGN_REDIRECT_PORTS,
       ...(deps.signInTimeoutMs === undefined ? {} : { timeoutMs: deps.signInTimeoutMs }),
     });
     const tokens = await exchangeCode(

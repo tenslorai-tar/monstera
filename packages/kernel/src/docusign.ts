@@ -68,6 +68,21 @@ export const DOCUSIGN_REST_DOMAIN = 'docusign.net';
 export const DOCUSIGN_SCOPE = 'signature';
 
 /**
+ * The loopback ports a sign-in listens on, IN ORDER, each registered with the integration key as
+ * `http://127.0.0.1:{port}/docusign`.
+ *
+ * ## Declared, because DocuSign matches the redirect exactly
+ *
+ * Its documentation, read 2026-09-24 (*How to get an access token using Public Authorization Code
+ * Grant*, "Invalid RedirectUri"): *"The redirect URI strings must match exactly, including space
+ * and slash characters."* ADR-0059 anticipated this — *"If Docusign requires an exact port, the port
+ * becomes a declared constant"* — when the page could not be read. Three, so a port some other
+ * program holds does not end a sign-in; chosen from the registered range, clear of the ephemeral
+ * ports the system hands out, and named nowhere else.
+ */
+export const DOCUSIGN_REDIRECT_PORTS: readonly number[] = [8791, 8792, 8793];
+
+/**
  * The largest JSON answer read, in received bytes.
  *
  * **A bound, not a measurement**: every answer this module reads as JSON is a small

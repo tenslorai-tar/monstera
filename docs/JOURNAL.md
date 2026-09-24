@@ -892,6 +892,173 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — Stage audit of `d2989fc..22b709d` — findings OOOOOO-1 to OOOOOO-3
+
+30 commits, 200 files, 10 proofs added and 37 modified, 24 source files added, 77 changed and 3
+removed (`npm run audit:scope`). The range is Stage 10's first screens, in-place text editing,
+Translate this page and the placement audit. The commit gate stopped the DocuSign port fix at 205
+files, so this audit rides in that commit.
+
+Every modified proof carrying deletions was read line by line, and the four whose lines were added
+and rewritten inside the range were read commit by commit (`git log -p`). **All three findings are
+coverage that left with a rewrite and did not arrive at the replacement.** In each, the new code was
+right and the case that would say so was gone.
+
+**OOOOOO-1 — Edit text's refusal on a machine with no editing engine had no case.** The rule is
+*say so once, however many pages ask, and leave the mode*. It lives in `App.tsx`'s composition and
+nowhere else. Its predecessor's case — *Replace Text sends nothing when the machine has no editing
+engine* — left with the dialog in 1db8328. A case in `App.test.tsx` now counts `reportProblem`'s
+calls through a pass-through spy, because the dialog host shows one dialog and a second replaces the
+first, so the screen cannot tell once from twice. It reads *left* from the next press, since the
+ribbon does not mark an active tool: a mode still on is turned off by it and reads nothing. **Its
+vacuity guard fired on the first run**: happy-dom has no IntersectionObserver, so only the seeded
+page asked and *once* was not yet a claim. The case stubs the observer for itself alone. Mutations:
+the once-flag removed gives two calls, and the leave removed gives no second read. Both are red.
+
+**OOOOOO-2 — the Settings rewrite (add98b5) dropped three assertions, and a case its
+replacement also needed.** Ticking *no colour* back reports `'auto'`. Unticking and re-ticking from
+no colour leaves it `'auto'`. And **every** key field is disabled with no secure storage, which had
+narrowed to Azure's alone. All three are restored. With the pair's tick box mutated to always report
+the starting colour, both colour cases go red, **and every case the range left behind stays
+green**. That is the loss, measured. The old third clause, *no secret is answered*, is not restored,
+because it was vacuous: nothing was typed, so a body that ignored the store passed it. Measured
+2026-09-24: a synthetic change on a disabled key field **is** reported. A browser delivers no input
+to a disabled field, and `main`'s store refuses to write without a cipher (`secretStore.ts`). Those
+two are the guard, and the case says so rather than asserting a third.
+
+**OOOOOO-3 — a count that agrees with any shrink, in `settings/all.test.ts`.** *Nothing is lost*
+became `dialog + excluded + remembered = all`, with `remembered` derived from the list the count
+polices. Mark a real setting `remembered: true` by mistake and it leaves the Settings dialog while
+the sum still holds. `SettingsBody.test.tsx`'s reachability case skips remembered settings too, so
+nothing saw it. This is item 4c's shape exactly. `remembered` is now pinned by id, as `excluded`
+already was. Mutation: `appearance.theme` marked remembered. Red. **Correction to the previous
+audit's 4c** (2026-09-22, below): it said the join is asserted *in both directions*. That is true
+only with remembered-ness taken as given, and remembered-ness is the input that can be wrong.
+
+### 1. Root cause or workaround?
+
+Root causes, each with its mechanism in the commit that fixed it:
+
+- The fold, count-first with a measured More: the stand-in had overcharged ~209 px, and a missing gap
+  gave −4.66 px.
+- The barcode split: one five-second budget summed six independent round trips.
+- The palette's trap: Base UI's focus guard moves focus on the next animation frame. Reproduced 3 of
+  3 by delaying `requestAnimationFrame`.
+- The twin check in the saved bytes: `FPDFText_LoadStandardFont` returns the page's existing
+  Helvetica-family font.
+
+Two responses meet causes outside this repository, and both say so where they are made:
+
+- Invisible characters are stripped from a model's answer. The model inserts them, and no standard
+  font carries them.
+- An unreadable translation answer is asked for **once** more. A model's output is not
+  deterministic, and the second refusal is reported by name.
+
+**The one lowered number is the fold case's vacuity guard, > 1 → > 0 (202a5e1).** CI's fonts fold
+one section where this machine's fold two. The property the case asserts is unchanged: unused room
+is narrower than the section's widest button.
+
+### 2. Verified against the easy shape only?
+
+No. The hard shapes: a newsletter's multi-column page for the reflow; five pages of the corpus
+translated live; and a font that cannot carry the text, refused before generation. Not covered: the
+packaged build, and rotated pages, which the block read counts and refuses rather than edits.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Twice, both stated in their commits. The palette's trap case accepts the trap's own focus guard on
+its first read, asserted by name, and still fails an escape to the page. The barcode round trips are
+six cases rather than one, with the same assertions and a join that makes a new format owe one.
+
+### 3. Would CI have caught it?
+
+Answered from run 35961691184 at 22b709d, read 2026-09-24: green on both legs. *Prove in-place text
+editing as a command* passed on both, Windows with `--require-pdfium`, so it could not pass as
+unverifiable there. **None of the three findings would have reddened anything**: a missing case is
+silent by construction. The new cases run in vitest on both legs.
+
+### 4. Are the proofs non-vacuous?
+
+Each new or restored case was run against a mutation and went red, as recorded above. The
+mutations went to the branches no case reached, which is where all three findings were.
+
+### 4a. Has every instrument passed a resolution test?
+
+`ribbonFolding` is an instrument: it measures widths and decides a fold. Its case asserts, in every
+section at the window floor, that the unused room is narrower than the section's widest button,
+which separates a fold that fits from one that overcharges. The translation read-back (`drawnTexts`)
+is a comparison, and its control is the twin-collapse case, which it must refuse.
+
+### 4b. Is the instrument a search? Then it needs a positive control.
+
+No search-shaped instrument arrived in this range.
+
+### 4c. Derived extents
+
+OOOOOO-3.
+
+### 5. Executed, or asserted?
+
+**Executed**: Translate this page live on Claude Haiku 4.5 against the corpus (`npm run
+probe:translate`), and every mutation above. **Asserted only**: that DocuSign accepts the declared
+ports. That rests on its documentation, read 2026-09-24, and the owner's live run is what executes
+it. The packaged build.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, each in its own commit: ADR-0095 (746c67a) ahead of Donate, ADR-0096 (de2e94e) ahead of the
+in-place editor, and ADR-0097 (09f89f9, e2acbf8) ahead of Translate, with its correction (ed54a10)
+recorded rather than edited.
+
+### 7. Do the documents still match the code?
+
+Neither kernel module added in the range (`textEditRefusals.ts`, `translation.ts`) imports `mupdf`,
+so CLAUDE.md's engine-surface figures stand. `replaceTextObject` survives in
+`docs/ARCHITECTURE.md` only in the amendment log, which is history, and as the command, which still
+exists. ADR-0059's open question on DocuSign's port is answered by a dated correction in this commit.
+
+## 2026-09-24 — DocuSign re-read against its current documentation, and the owner's click list
+
+The row said *not done — one live run*, and the order was to confirm the build still matches DocuSign's
+current API before that run. Read today: both discovery documents (`account-d` and `account`) still
+publish `/oauth/auth`, `/oauth/token` and `/oauth/userinfo` and the `signature` scope, and still list only
+secret-based token authentication; DocuSign's *How to get an access token using Public Authorization Code
+Grant* confirms PKCE with no secret for an app that answers **No** to storing a secret. **One mismatch
+was found**: that page says a redirect *"must match exactly"*, and the sign-in listened on a port the
+system chose afresh each time, so the run would have failed at its first step. The sign-in now listens on
+registered ports 8791, 8792 and 8793, in order ([ADR-0059](DECISIONS/0059-a-sign-in-redirect-returns-on-loopback-for-one-request.md)'s
+correction). `docusignSignIn.test.ts` asserts a busy registered port is skipped and all busy is refused
+before any browser opens.
+
+**The click list — the live run, on the developer (demo) environment first:**
+
+1. Sign in at **developers.docusign.com** and open **Apps and Keys** (from your profile menu, *My Apps &
+   Keys*).
+2. Under *Apps and Integration Keys*, choose **Add App and Integration Key**; name it *Monstera*; select
+   **Create App**.
+3. Under *Authentication*, *User Application*: for **"Is your application able to securely store a client
+   secret?"** select **No**; for the app type select **Native OS Application**. Do not add a secret.
+4. Under *Additional settings*, *Redirect URIs*, choose **Add URI** three times and enter exactly:
+   `http://127.0.0.1:8791/docusign`, `http://127.0.0.1:8792/docusign`, `http://127.0.0.1:8793/docusign`.
+5. Select **Save**. Copy the **Integration Key** shown at the top of the app's page.
+6. In Monstera: **Settings › Integrations**. Paste the key into **DocuSign integration key**; set
+   **DocuSign environment** to **Developer demo**. Close Settings.
+7. Open any PDF. **Protect › Signatures › Send to DocuSign**. Your browser opens at DocuSign: sign in with
+   the developer account and select **Accept** on the consent screen. The browser tab then says it can be
+   closed; return to Monstera.
+8. In the dialog, enter a subject and one signer — your own e-mail address — and send. Monstera says the
+   envelope was sent.
+9. Open that e-mail, select **Review Document**, and sign anywhere DocuSign offers (the document carries
+   no signature fields, which is the second thing this run settles).
+10. Back in Monstera, with the same document open: **Protect › Signatures › Save signed copy from
+    DocuSign**, and save it. Open the saved copy: it should carry DocuSign's signature and its certificate
+    page.
+
+Tell me what each step showed — especially any DocuSign error page in step 7, whose words decide the next
+change. The row closes on a run that reaches step 10.
+
+---
+
 ## 2026-09-24 — Translate this page, and four defects it found in yesterday's editor
 
 *Translate document text* is built to [ADR-0097](DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)

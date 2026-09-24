@@ -1,3 +1,6 @@
+import { type AddressInfo } from 'node:net';
+import { createServer } from 'node:http';
+
 import { describe, expect, it } from 'vitest';
 
 import { SIGN_IN_PATH, SignInRefused, signInThroughLoopback } from './docusignSignIn.js';
@@ -61,6 +64,47 @@ describe('signInThroughLoopback', () => {
     // CLOSED: the decision is the assertion — a second request finds nothing
     // listening, so an ended sign-in holds no port for the session.
     await expect(fetch(`${redirect}?code=late&state=the-state`)).rejects.toThrow();
+  });
+
+  it('REGISTERED PORTS (DocuSign, exact match): the first FREE one is the redirect’s, a busy one skipped', async () => {
+    // TWO PORTS THE SYSTEM HANDS US, the first then held by another listener — so the case does not
+    // depend on any fixed port being free on the machine running it.
+    const held = createServer();
+    await new Promise<void>((resolve) => held.listen(0, '127.0.0.1', resolve));
+    const spare = createServer();
+    await new Promise<void>((resolve) => spare.listen(0, '127.0.0.1', resolve));
+    const heldPort = (held.address() as AddressInfo).port;
+    const sparePort = (spare.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => spare.close(() => resolve()));
+    try {
+      let redirect = '';
+      await signInThroughLoopback({
+        authorize,
+        ports: [heldPort, sparePort],
+        openInBrowser: async (url) => {
+          redirect = redirectOf(url);
+          await fetch(`${redirect}?code=the-code&state=the-state`);
+        },
+      });
+      // THE SECOND, because the first was taken — and not a port the system chose instead.
+      expect(Number(new URL(redirect).port)).toBe(sparePort);
+
+      // ALL TAKEN: refused by name before any browser opens.
+      let opened = false;
+      await expect(
+        signInThroughLoopback({
+          authorize,
+          ports: [heldPort],
+          openInBrowser: () => {
+            opened = true;
+            return Promise.resolve();
+          },
+        }),
+      ).rejects.toMatchObject({ reason: 'listener-failed' });
+      expect(opened).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => held.close(() => resolve()));
+    }
   });
 
   it('MICROSOFT’S SHAPE (ADR-0091): the redirect string says localhost on the root path, and the listener is still 127.0.0.1', async () => {

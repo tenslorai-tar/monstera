@@ -7,6 +7,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
+import { reportProblem } from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
@@ -73,6 +74,14 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
   renderPage: () =>
     Promise.resolve({ width: 595, height: 842, crop: [0, 0, 595, 842], rotation: 0 }),
 }));
+
+// A PASS-THROUGH SPY, so a case can count how many times App reports a refusal. The dialog host
+// shows one dialog at a time and a second replaces the first, which makes the screen blind to the
+// count. Every case still gets the real function.
+vi.mock('./commands/documentCommands.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./commands/documentCommands.js')>();
+  return { ...actual, reportProblem: vi.fn(actual.reportProblem) };
+});
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
@@ -1749,6 +1758,88 @@ describe('App', () => {
 
       expect(await screen.findByRole('dialog', { name: 'That could not be done' })).toBeDefined();
       expect(await screen.findByText(/still open and unsaved/u)).toBeDefined();
+    });
+
+    it('EDIT TEXT with no editing engine says so ONCE for every page asking, and LEAVES the mode', async () => {
+      // THE COMPOSITION'S OWN RULE, which lives in App and nowhere else: every visible page asks
+      // for its blocks at once, so without the once-flag a machine with no PDFium raises the same
+      // sentence per page. The dialog host shows one dialog at a time and a second replaces the
+      // first, so the screen cannot separate once from twice — the CALLS are counted instead.
+      vi.mocked(reportProblem).mockClear();
+      const blockReads: string[] = [];
+      const client = createClient(channels, (id) => {
+        if (id === 'document.textBlocks') {
+          blockReads.push(id);
+          return Promise.resolve(err({ code: 'engine-unavailable' as const }));
+        }
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      // BOTH PAGES ON SCREEN, which happy-dom never reports: it has no IntersectionObserver, so the
+      // scroller shows only the page it was seeded with, and one page asking cannot race another.
+      // Installed for this case alone and restored, because every other case here was written
+      // against the seeded single page.
+      const observed: { callback: IntersectionObserverCallback; elements: Element[] }[] = [];
+      const host: { IntersectionObserver?: typeof IntersectionObserver } = globalThis;
+      const original = host.IntersectionObserver;
+      host.IntersectionObserver = class {
+        constructor(callback: IntersectionObserverCallback) {
+          observed.push({ callback, elements: [] });
+        }
+        observe(element: Element): void {
+          observed[observed.length - 1]?.elements.push(element);
+        }
+        unobserve(): void {
+          // Nothing here reads the unobserved set.
+        }
+        disconnect(): void {
+          // Recorded by absence.
+        }
+      } as unknown as typeof IntersectionObserver;
+      try {
+        render(<App client={client} settings={freshSettings()} />);
+        await withDocumentOpen();
+        await act(async () => {
+          for (const { callback, elements } of observed) {
+            const slots = elements.filter((element) => element.classList.contains('m-page-slot'));
+            if (slots.length === 0) continue;
+            callback(
+              slots.map((target) => ({ target, isIntersecting: true }) as unknown as IntersectionObserverEntry),
+              {} as IntersectionObserver,
+            );
+          }
+          await Promise.resolve();
+        });
+
+        await pressCommand('Edit text');
+        await act(async () => {
+          await Promise.resolve();
+        });
+      } finally {
+        if (original === undefined) delete host.IntersectionObserver;
+        else host.IntersectionObserver = original;
+      }
+
+      // VACUITY GUARD: once is only a claim when more than one page asked.
+      expect(blockReads.length).toBeGreaterThan(1);
+      expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(reportProblem).mock.calls[0]?.[1]).toStrictEqual({ code: 'engine-unavailable' });
+      expect(await screen.findByText(/cannot edit text in place/u)).toBeDefined();
+
+      // LEFT, asserted by the next press: a mode still on would be turned OFF by it and read
+      // nothing, and a mode that was left is turned on again and asks again.
+      const before = blockReads.length;
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        await Promise.resolve();
+      });
+      await pressCommand('Edit text');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(blockReads.length).toBeGreaterThan(before);
     });
   });
 

@@ -629,6 +629,7 @@ export {
   DOCUSIGN_ACCOUNT_HOSTS,
   DOCUSIGN_REST_DOMAIN,
   DOCUSIGN_SCOPE,
+  DOCUSIGN_REDIRECT_PORTS,
   type DocusignAccount,
   type DocusignRefusal,
   DocusignRefused,

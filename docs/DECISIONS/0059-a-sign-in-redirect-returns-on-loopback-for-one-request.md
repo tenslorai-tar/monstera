@@ -160,3 +160,26 @@ sentences here without changing the route.
   stands. The redirect STRING differs for Microsoft: Entra ignores the port only for a `localhost`
   redirect, and an `http` redirect on `127.0.0.1` cannot be registered in its portal. So
   Microsoft's is `http://localhost:{port}/` while the listener is bound to `127.0.0.1` alone.
+
+## Correction, 2026-09-24 — DocuSign's port is declared, as this decision said it would be
+
+The first open question above — *whether Docusign accepts a loopback redirect with a varying port* —
+could not be answered from DocuSign's pages on 2026-09-13; they rendered client-side. Read on
+2026-09-24 in a browser, *How to get an access token using Public Authorization Code Grant*, under
+"Invalid RedirectUri": *"The redirect URI strings must match exactly, including space and slash
+characters."* So a port the system assigns afresh at each sign-in would never match a registered
+redirect, and the owner's live run would have failed at its first step.
+
+This decision's own consequence is applied: **the port becomes a declared constant** —
+`DOCUSIGN_REDIRECT_PORTS`, three ports tried in order (8791, 8792, 8793), each registered with the
+integration key as `http://127.0.0.1:{port}/docusign`. Three rather than one so that a port another
+program holds does not end a sign-in. Decision 2's *"never a known port something could be waiting
+on"* is narrowed for DocuSign alone, and PKCE is why that is safe: a process squatting on the port
+receives a code it cannot exchange without the verifier, which never leaves `main`. Microsoft and
+Google keep a port the system assigns, which they accept.
+
+The same page confirms the rest of what the build assumed: Public Authorization Code Grant uses PKCE
+with no client secret, chosen in Apps and Keys by answering **No** to *"Is your application able to
+securely store a client secret?"*, with the app type **Native OS Application** where no CORS is used.
+The discovery documents, read the same day, still list only secret-based token authentication; the
+live run is still what settles that.

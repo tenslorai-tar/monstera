@@ -50,10 +50,27 @@ describe('the registered settings', () => {
 
     // REMEMBERED STATE IS ALSO NOT A ROW (the owner's design pass): a panel's width is stored and
     // exported like any setting, and its control is the splitter rather than a number box here.
+    //
+    // PINNED BY ID for the excluded list's reason, and one more: this list is SUBTRACTED from the
+    // dialog, so a count derived from it agrees with any setting wrongly marked remembered — which
+    // would leave the dialog in silence (found by the audit of d2989fc..22b709d).
     const remembered = ALL_SETTINGS.filter(
       (setting) => setting.remembered === true && controlFor(setting) !== undefined,
-    ).map((setting) => setting.id);
-    expect(remembered.length).toBeGreaterThan(0);
+    )
+      .map((setting) => setting.id)
+      .sort();
+    expect(remembered).toStrictEqual([
+      'appearance.context-panel-open',
+      'appearance.context-panel-tab',
+      'appearance.context-panel-width',
+      'appearance.document-panel',
+      'appearance.document-panel-open',
+      'appearance.document-panel-width',
+      'appearance.quick-toolbar-edge',
+      'appearance.quick-toolbar-open',
+      'appearance.ribbon-section',
+      'viewing.split',
+    ]);
 
     // AND NOTHING ELSE IS LOST: every setting is in the dialog, named above, or remembered.
     expect(DIALOG_SETTINGS.length + excluded.length + remembered.length).toBe(ALL_SETTINGS.length);
