@@ -74,6 +74,8 @@ interface Bound {
   readonly pageCount: Native;
   readonly loadPage: Native;
   readonly closePage: Native;
+  readonly newPage: Native;
+  readonly deletePage: Native;
   readonly countObjects: Native;
   readonly getObject: Native;
   readonly objectType: Native;
@@ -100,6 +102,7 @@ interface Bound {
   readonly formObject: Native;
   readonly removeFormObject: Native;
   readonly insertObject: Native;
+  readonly insertObjectAt: Native;
   readonly textFont: Native;
   readonly textFontSize: Native;
   readonly createTextObject: Native;
@@ -108,6 +111,9 @@ interface Bound {
   readonly fontBaseName: Native;
   readonly fontAscent: Native;
   readonly fontDescent: Native;
+  readonly loadStandardFont: Native;
+  readonly pageBox: Native;
+  readonly closeFont: Native;
   readonly createBitmap: Native;
   readonly fillRect: Native;
   readonly renderPage: Native;
@@ -192,6 +198,9 @@ export function openPdfium(libraryPath: string): void {
     e: 'float',
     f: 'float',
   });
+  // FS_RECTF, the same way, for the page's bounding box in its own coordinates — where a CropBox
+  // origin is not zero, the page's left edge is not zero either.
+  koffi.struct('FS_RECTF', { left: 'float', top: 'float', right: 'float', bottom: 'float' });
 
   const api: Bound = {
     writeBlock,
@@ -204,6 +213,11 @@ export function openPdfium(libraryPath: string): void {
     pageCount: native(library.func('int FPDF_GetPageCount(void *document)')),
     loadPage: native(library.func('void *FPDF_LoadPage(void *document, int index)')),
     closePage: native(library.func('void FPDF_ClosePage(void *page)')),
+    // A SCRATCH PAGE for a block edit's font probes, appended and deleted within the edit (ADR-0097):
+    // PDFium's text-page builder aborts on an object far outside its page, so a probe is read on a
+    // blank page of its own rather than off the edge of the one being edited.
+    newPage: native(library.func('void *FPDFPage_New(void *document, int index, double width, double height)')),
+    deletePage: native(library.func('void FPDFPage_Delete(void *document, int index)')),
     countObjects: native(library.func('int FPDFPage_CountObjects(void *page)')),
     getObject: native(library.func('void *FPDFPage_GetObject(void *page, int index)')),
     objectType: native(library.func('int FPDFPageObj_GetType(void *object)')),
@@ -326,6 +340,11 @@ export function openPdfium(libraryPath: string): void {
     ),
     removeFormObject: native(library.func('int FPDFFormObj_RemoveObject(void *form, void *object)')),
     insertObject: native(library.func('int FPDFPage_InsertObject(void *page, void *object)')),
+    // AT A POSITION IN THE PAGE'S ORDER, which is the order generation writes and every reader
+    // extracts text in. A line an edit makes goes right after the line it continues, or a page's
+    // copied, searched and read-aloud text ends with its wrapped words — measured 2026-09-24 on a
+    // live translation, whose continuation lines read after the page's last block.
+    insertObjectAt: native(library.func('int FPDFPage_InsertObjectAtIndex(void *page, void *object, size_t index)')),
     // WHAT A BLOCK EDIT WRITES WITH ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
     // A line that grows past its block needs a line the page did not have, in
     // the font of the run it continues — so the font is read off an existing
@@ -361,6 +380,14 @@ export function openPdfium(libraryPath: string): void {
     // measure a pitch from.
     fontAscent: native(library.func('int FPDFFont_GetAscent(void *font, float size, _Out_ float *ascent)')),
     fontDescent: native(library.func('int FPDFFont_GetDescent(void *font, float size, _Out_ float *descent)')),
+    // ONE OF THE FOURTEEN STANDARD FONTS, for a write the page's own font cannot
+    // carry (ADR-0097). Loaded by name and never embedded — every conforming
+    // reader supplies them. THIS handle IS ours, unlike `textFont`'s, so
+    // `closeFont` releases it once the edit's objects hold their own references.
+    loadStandardFont: native(library.func('void *FPDFText_LoadStandardFont(void *document, const char *font)')),
+    // THE PAGE'S BOX in page space — a one-line block's column is measured against it (ADR-0097).
+    pageBox: native(library.func('int FPDF_GetPageBoundingBox(void *page, _Out_ FS_RECTF *rect)')),
+    closeFont: native(library.func('void FPDFFont_Close(void *font)')),
     // THE RASTERISER, and it is the only part of this adapter a READER uses.
     // §6.1's setting, amended 2026-09-10: a second opinion about how a page
     // looks rather than a better one, the two engines having been measured at
@@ -624,6 +651,50 @@ export function textObjectText(
   );
 }
 
+/**
+ * What each of `objects` DRAWS on a text page — its characters, with the ones the text page
+ * GENERATED left out. The read-back of an edit, in one pass over the page's characters.
+ *
+ * ## Why not {@link objectTextOn}
+ *
+ * `FPDFTextObj_GetText` answers an object's characters as the text page assigns them, and the
+ * text page attributes a space it generates between two runs to the run before it. So a line an
+ * edit lays out beside other text reads back with a trailing space it was never given — measured
+ * 2026-09-24 on a live translation, a new line written `prochaine` read `prochaine ` once the next
+ * block sat after it — and a correct write was refused. `FPDFText_IsGenerated` says which
+ * characters those are; the question the read-back asks is whether the FONT carried what was
+ * written, and a generated space is no font's answer.
+ */
+function drawnTextOn(bindings: Bound, textPage: unknown, objects: readonly unknown[]): readonly string[] {
+  const slot = new Map(objects.map((object, at) => [String(koffi.address(object)), at]));
+  const texts = objects.map(() => '');
+  const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
+  for (let at = 0; at < chars; at += 1) {
+    if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) continue;
+    const index = slot.get(String(koffi.address(bindings.charObject(textPage, at))));
+    if (index === undefined) continue;
+    const buffer = new Uint16Array(2);
+    numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
+    texts[index] = `${texts[index] ?? ''}${String.fromCharCode(buffer[0] ?? 0)}`;
+  }
+  return texts;
+}
+
+/**
+ * What a text page reports for an object that draws `text` — the only form a read-back can be
+ * compared in.
+ *
+ * Measured 2026-09-24 (`FPDFText_GetUnicode` over one object on a blank page): two spaces read as
+ * ONE, and an object of spaces alone reads as nothing; a single leading or trailing space is kept.
+ * So `…org  Plot 14`, a real document's own spacing, read back `…org Plot 14`, and a font that
+ * carried it was refused. Compared raw, a read-back is testing the text page's whitespace rule
+ * rather than the font; compared through this, it tests the font.
+ */
+function asTextPageReads(text: string): string {
+  const collapsed = text.replace(/ {2,}/gu, ' ');
+  return collapsed.trim() === '' ? '' : collapsed;
+}
+
 /** One object's own string, read through a text page the caller holds. */
 function objectTextOn(bindings: Bound, object: unknown, textPage: unknown): string {
   const bytes = numberFrom(bindings.textObjectText(object, textPage, null, 0), 'FPDFTextObj_GetText');
@@ -827,7 +898,7 @@ interface WalkedRun {
 
 /**
  * The walk {@link textRuns} answers from, on a page already loaded — shared with
- * {@link editTextBlock}, which must read a line's text exactly as the person
+ * {@link editTextBlocks}, which must read a line's text exactly as the person
  * was shown it before it diffs what they typed against it. Two walks would be
  * two opinions about which character belongs to which object.
  */
@@ -1124,19 +1195,43 @@ export function replaceTextObjects(
 /**
  * One block of text as a person edited it in place.
  *
- * `editTextBlock`'s payload, minus the page: the block's lines as the person
+ * One entry of `editTextBlock`'s `blocks`: the block's lines as the person
  * saw them, each the indices of the runs it is made of in reading order, and
  * what they typed, lines separated by line breaks.
  */
 export interface BlockEdit {
   readonly lines: readonly (readonly number[])[];
   readonly text: string;
+  /**
+   * `reflow`: a person typing — the block grows downward (ADR-0096). `shrink`: a translation — the
+   * block is scaled uniformly to end above its original last line, never below {@link MIN_FIT}
+   * (ADR-0097).
+   */
+  readonly fit: 'reflow' | 'shrink';
 }
+
+/**
+ * The smallest a fitted block is scaled to: 11-point text at 0.6 is 6.6 points, the size of fine
+ * print, and smaller is not a translation anyone can read (ADR-0097 4b). A block needing more is
+ * written at this and may overlap what is below it.
+ */
+const MIN_FIT = 0.6;
+
+/**
+ * How many bisection steps find a block's scale: the interval [0.6, 1] halved six times is 0.00625
+ * wide — at 11 points, under a tenth of a point of size, which no reader sees.
+ */
+const FIT_STEPS = 6;
 
 /** A named run, resolved on a loaded page. */
 interface HeldRun {
   readonly index: number;
-  readonly object: unknown;
+  /**
+   * The object that draws it — REASSIGNED when a write the run's font cannot carry puts a
+   * standard-font twin in its place (ADR-0097), so every later move and measurement of this run
+   * reaches the object that is actually on the page.
+   */
+  object: unknown;
   /** What the person was shown it saying — the walk's text, generated spaces included. */
   readonly text: string;
 }
@@ -1174,9 +1269,25 @@ function moveBy(bindings: Bound, object: unknown, dx: number, dy: number): void 
 }
 
 function setTextOn(bindings: Bound, object: unknown, text: string): void {
-  if (numberFrom(bindings.setText(object, wideString(text)), 'FPDFText_SetText') !== 1) {
+  if (!trySetText(bindings, object, text)) {
     throw new Error(`FPDFText_SetText refused a block edit (FPDF_GetLastError ${String(bindings.lastError())}).`);
   }
+}
+
+/**
+ * Sets an object's text, answering whether PDFium would.
+ *
+ * ## A refusal here IS the font's answer
+ *
+ * `FPDFText_SetText` refuses a string the object's font cannot encode — measured 2026-09-24 on the
+ * corpus, where every first page with editable text is set in embedded subset fonts and a French
+ * translation was refused at this call, on 5 of 5 pages, with `FPDF_GetLastError` 0. So a block
+ * edit treats it as *this font cannot carry it*: the write goes to a standard-font twin (ADR-0097),
+ * where a throw here had made it an internal error in place of the refusal the edit is designed to
+ * give.
+ */
+function trySetText(bindings: Bound, object: unknown, text: string): boolean {
+  return numberFrom(bindings.setText(object, wideString(text)), 'FPDFText_SetText') === 1;
 }
 
 /**
@@ -1188,9 +1299,10 @@ function lastBreak(text: string): number {
 }
 
 /**
- * Edits one block of text in place, reflowing a line that grows past the block
- * into new lines in the page's own fonts, and regenerates the page's content
- * **once**.
+ * Edits blocks of text on one page in place, reflowing a line that grows past
+ * its block into new lines in the page's own fonts, and regenerates the page's
+ * content **once** — for one block a person typed into, or for every block of a
+ * translated page ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)).
  *
  * [ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)
  * Decision 5, in order:
@@ -1215,98 +1327,131 @@ function lastBreak(text: string): number {
  *    an old line keeps the gap it had to the line above it, and a new line
  *    takes the block's pitch — the gap between its first two baselines, or the
  *    font's ascent to descent where there is one line.
- * 6. **Every written object is read back** from a live text page. One that says
- *    something other than what was written means the font cannot carry what was
- *    typed, and the edit is refused with {@link TextNotWritableError} before
- *    generation — measured 426 of 457 round-trips, and 0 of 642 for the
- *    control.
+ * 6. **Every write is read back** from a live text page AS IT IS MADE. One that
+ *    says something other than what was written means the run's font cannot
+ *    carry it, and the object is replaced by a TWIN in the nearest standard
+ *    font — same size, matrix and colour — which ADR-0097 measured carrying an
+ *    accented Western string for 308 of 325 runs whose own font did not. Only a
+ *    twin that cannot carry it either refuses the edit, with
+ *    {@link TextNotWritableError}, before generation. Every write is read back
+ *    once more at the end, after the layout has moved it.
  *
- * @throws TextNotWritableError when a font cannot carry the typed text.
+ * @throws TextNotWritableError when neither a run's font nor its standard twin
+ * can carry the text.
  * @throws when an index is not a text object, or names a run the page's text
  * reading cannot place, or when the edit changes nothing — regenerating a
  * page's content for no change is the whole cost of an edit paid for nothing.
  */
-export function editTextBlock(session: PdfiumSession, page: number, edit: BlockEdit): Promise<void> {
-  return promised(() => {
-    onPage(session, page, (handle) => {
+export async function editTextBlocks(
+  session: PdfiumSession,
+  page: number,
+  edits: readonly BlockEdit[],
+): Promise<readonly WrittenText[]> {
+  const scales = await fitScales(session, page, edits);
+  const outcome = await promised(() =>
+    onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, scales, 'write')),
+  );
+  return outcome.placed;
+}
+
+/**
+ * The scale each block is written at: 1 for `reflow`, and for `shrink` the largest that ends above
+ * its original last line (ADR-0097 4b).
+ *
+ * ## Found on TRIAL pages, which are thrown away
+ *
+ * Each trial loads the page, lays every shrinking block out at a candidate scale, measures, and
+ * closes the page WITHOUT generating — which discards everything it did (5 of 5 pages kept their
+ * original text on reload, `pdfiumFallbackFont.mjs`). All the blocks bisect at once, one trial per
+ * step, because they do not touch each other's objects; so a page costs at most `FIT_STEPS + 1`
+ * trials however many blocks it has. A trial writes without reading back: it asks where the words
+ * land, and whether a font can carry them is the real pass's question.
+ */
+async function fitScales(session: PdfiumSession, page: number, edits: readonly BlockEdit[]): Promise<number[]> {
+  const scales = edits.map(() => 1);
+  const trial = (candidate: readonly number[]) =>
+    promised(() => onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, candidate, 'trial')));
+  if (!edits.some((edit) => edit.fit === 'shrink')) return scales;
+  const first = await trial(scales);
+  // KNOWN TO FIT is `low`, known not to is `high`. The floor is accepted without a trial: a block
+  // that does not fit even there is written there, which is the stated limit.
+  const bounds = new Map<number, { low: number; high: number }>();
+  for (const [at, edit] of edits.entries()) {
+    if (edit.fit === 'shrink' && first.fits[at] !== true) bounds.set(at, { low: MIN_FIT, high: 1 });
+  }
+  for (let step = 0; step < FIT_STEPS && bounds.size > 0; step += 1) {
+    const candidate = scales.map((scale, at) => {
+      const bound = bounds.get(at);
+      return bound === undefined ? scale : (bound.low + bound.high) / 2;
+    });
+    const { fits } = await trial(candidate);
+    for (const [at, bound] of bounds) {
+      const tried = candidate[at] ?? 1;
+      if (fits[at] === true) bound.low = tried;
+      else bound.high = tried;
+    }
+  }
+  for (const [at, bound] of bounds) scales[at] = bound.low;
+  return scales;
+}
+
+/**
+ * One pass over a page's block edits: `write` makes the edit and answers where each write sits;
+ * `trial` lays the blocks out at the scales given, writes without reading back, generates nothing,
+ * and answers which blocks ended above their original last line.
+ */
+function layOutBlocks(
+  session: PdfiumSession,
+  handle: unknown,
+  page: number,
+  edits: readonly BlockEdit[],
+  scales: readonly number[],
+  mode: 'write' | 'trial',
+): { readonly placed: readonly WrittenText[]; readonly fits: readonly boolean[] } {
       const bindings = api();
       const document = documentFor(session);
       const walked = walkRuns(bindings, handle);
+      /** Per block: did its layout end above its original last line? */
+      const fits = edits.map(() => true);
+      // THE PAGE'S BOX, for a one-line block's column (ADR-0097 4a).
+      const box: Record<string, number> = {};
+      const hasBox = numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') === 1;
+      const pageLeft = hasBox ? (box['left'] ?? 0) : 0;
+      const pageRight = hasBox ? (box['right'] ?? 0) : Number.NEGATIVE_INFINITY;
 
-      // RESOLVED IN FULL FIRST, against the untouched page, so a bad index
-      // refuses before anything is written.
-      const lines: HeldRun[][] = edit.lines.map((line) =>
-        line.map((index) => {
-          const object = textObjectAt(bindings, handle, page, index);
-          const run = walked.runs.get(index);
-          if (run === undefined) {
-            throw new Error(
-              `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place.`,
-            );
-          }
-          return { index, object, text: run.text };
-        }),
-      );
-      const [firstLine] = lines;
-      const [firstRun] = firstLine ?? [];
-      if (firstLine === undefined || firstRun === undefined) {
-        throw new Error(`A block edit on page ${String(page)} named no line.`);
+      // EVERY BLOCK RESOLVED IN FULL FIRST, against the untouched page, so a bad
+      // index refuses before anything is written — and so a later block's
+      // indices are the page's own, not whatever an earlier block left behind.
+      const blocks = edits.map((edit) => ({
+        text: edit.text,
+        fit: edit.fit,
+        lines: edit.lines.map((line) =>
+          line.map((index): HeldRun => {
+            const object = textObjectAt(bindings, handle, page, index);
+            const run = walked.runs.get(index);
+            if (run === undefined) {
+              throw new Error(
+                `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place.`,
+              );
+            }
+            return { index, object, text: run.text };
+          }),
+        ),
+      }));
+      if (blocks.length === 0) throw new Error(`A block edit on page ${String(page)} named no block.`);
+      // A RUN IN TWO BLOCKS would be written twice, the second write undoing
+      // the first's layout. The contract refuses it; this is the write keeping
+      // the rule for a caller that did not ask.
+      const named = blocks.flatMap((block) => block.lines.flat().map((run) => run.index));
+      if (new Set(named).size !== named.length) {
+        throw new Error(`A block edit on page ${String(page)} names one run in two blocks.`);
       }
-      // ROTATED OR SKEWED TEXT IS REFUSED rather than wrapped along an axis it
-      // is not set on. The read offers no such block; this is the write keeping
-      // the same rule for a caller that did not ask.
-      for (const run of lines.flat()) {
-        const matrix = matrixOn(bindings, run.object);
-        if (!isUpright(matrix.a, matrix.b, matrix.c, matrix.d)) {
-          throw new Error(`Object ${String(run.index)} on page ${String(page)} is not set upright, so it is not edited in place.`);
-        }
-      }
-
-      // THE BLOCK'S RIGHT EDGE, in the measure every later comparison uses: the
-      // objects' own bounds, read before anything moves.
-      const blockRight = Math.max(
-        ...lines.flatMap((line) => line.map((run) => boundsOf(bindings, run.object).right)),
-      );
-      const baselines = lines.map((line) => matrixOn(bindings, (line[0] ?? firstRun).object).f);
-      const pitch = blockPitch(bindings, firstRun.object, baselines);
 
       /** Every object this edit wrote, and what it wrote, for the read-back. */
       const written: { object: unknown; text: string }[] = [];
-      /** Objects this edit made; inserted once the layout is known. */
-      const made: unknown[] = [];
-
-      const typed = edit.text.replace(/\r\n?/gu, '\n').split('\n');
-
-      /** The visual lines the block will have, top to bottom. */
-      const visual: { objects: unknown[]; oldBaseline: number | undefined; gapAbove: number }[] = [];
-
       /**
-       * Makes a continuation line in `source`'s style holding `text`, starting
-       * at `left`, and wraps it again if it does not fit. Appends each to
-       * `visual`.
-       */
-      const continueWith = (source: unknown, text: string, left: number): void => {
-        let rest = text;
-        while (rest !== '') {
-          const object = makeTextLike(bindings, document, source, left);
-          setTextOn(bindings, object, rest);
-          let tail = '';
-          // THE SAME WRAP AS AN OLD LINE'S, on the object's own bounds.
-          while (boundsOf(bindings, object).right > blockRight && lastBreak(rest) > 0) {
-            const cut = lastBreak(rest);
-            tail = tail === '' ? rest.slice(cut + 1).trimEnd() : `${rest.slice(cut + 1).trimEnd()} ${tail}`;
-            rest = rest.slice(0, cut);
-            setTextOn(bindings, object, rest);
-          }
-          written.push({ object, text: rest });
-          made.push(object);
-          visual.push({ objects: [object], oldBaseline: undefined, gapAbove: pitch });
-          rest = tail;
-        }
-      };
-
-      /**
-       * The runs of lines the person removed, unlinked LAST.
+       * The runs of lines the person removed, and the originals a twin replaced,
+       * unlinked LAST.
        *
        * Removing an object destroys it, and a handle read after that is freed
        * memory: measured 2026-09-23, reading the matrix of a removed line's
@@ -1314,115 +1459,434 @@ export function editTextBlock(session: PdfiumSession, page: number, edit: BlockE
        * process with `0xC0000409`. So nothing is removed until every other
        * handle this edit reads has been read.
        */
-      const removed: HeldRun[] = [];
+      const removed: unknown[] = [];
+      /** The standard fonts this edit loaded, by name — ours to close. */
+      const standardFonts = new Map<string, unknown>();
 
-      for (const [k, line] of lines.entries()) {
-        const next = typed[k];
-        if (next === undefined) {
-          // THE PERSON REMOVED THIS LINE; its objects go at the end.
-          removed.push(...line);
-          continue;
-        }
-        const replacements = new Map(
-          replacementsForLine(line, next).map((replacement) => [replacement.index, replacement.text]),
-        );
-        // PUSHED ALONG THE LINE by what the runs before grew.
-        let push = 0;
-        for (const run of line) {
-          moveBy(bindings, run.object, push, 0);
-          const text = replacements.get(run.index);
-          if (text === undefined) continue;
-          const before = boundsOf(bindings, run.object);
-          setTextOn(bindings, run.object, text);
-          const after = boundsOf(bindings, run.object);
-          push += after.right - after.left - (before.right - before.left);
-          written.push({ object: run.object, text });
-        }
-        const last = line[line.length - 1] ?? firstRun;
-        const start = matrixOn(bindings, (line[0] ?? firstRun).object).e;
-        let lastText = replacements.get(last.index) ?? last.text;
-        let tail = '';
-        // A LINE THAT GREW PAST THE BLOCK WRAPS; one that did not grow never
-        // does, however its rewrite measures.
-        while (push > 0 && boundsOf(bindings, last.object).right > blockRight && lastBreak(lastText) > 0) {
-          const cut = lastBreak(lastText);
-          tail = tail === '' ? lastText.slice(cut + 1).trimEnd() : `${lastText.slice(cut + 1).trimEnd()} ${tail}`;
-          lastText = lastText.slice(0, cut);
-          setTextOn(bindings, last.object, lastText);
-        }
-        if (tail !== '') {
-          const entry = written.find((write) => write.object === last.object);
-          if (entry === undefined) written.push({ object: last.object, text: lastText });
-          else entry.text = lastText;
-        }
-        visual.push({
-          objects: line.map((run) => run.object),
-          oldBaseline: baselines[k],
-          gapAbove: k === 0 ? 0 : (baselines[k - 1] ?? 0) - (baselines[k] ?? 0),
-        });
-        if (tail !== '') continueWith(last.object, tail, start);
-      }
-
-      // LINES TYPED BELOW THE BLOCK'S LAST, in its last line's last run's style.
-      const lastLine = lines[lines.length - 1] ?? firstLine;
-      const lastRunOfBlock = lastLine[lastLine.length - 1] ?? firstRun;
-      const blockStart = matrixOn(bindings, (lastLine[0] ?? firstRun).object).e;
-      for (const extra of typed.slice(lines.length)) {
-        if (extra === '') {
-          visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch });
-          continue;
-        }
-        continueWith(lastRunOfBlock.object, extra, blockStart);
-      }
-
-      if (written.length === 0 && removed.length === 0) {
-        throw new Error(
-          `A block edit on page ${String(page)} changed nothing. Regenerating a page's content ` +
-            'stream is the whole cost of an edit, and this one would change nothing.',
-        );
-      }
-
-      // THE LAYOUT, top to bottom: the first line stays where it is, and each
-      // line after it sits its own gap below the one above.
-      let baseline = baselines[0] ?? 0;
-      for (const [at, line] of visual.entries()) {
-        if (at > 0) baseline -= line.gapAbove;
-        if (line.oldBaseline !== undefined) {
-          for (const object of line.objects) moveBy(bindings, object, 0, baseline - line.oldBaseline);
-        } else {
-          for (const object of line.objects) {
-            const matrix = matrixOn(bindings, object);
-            setMatrixOn(bindings, object, { ...matrix, f: baseline });
+      /**
+       * Inserts `object` right after `anchor` in the page's order — the line it continues, or the
+       * run it replaces — so the saved page reads in the order it is seen.
+       */
+      const insertAfter = (object: unknown, anchor: unknown): void => {
+        const wanted = String(koffi.address(anchor));
+        const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+        let at = count - 1;
+        for (let index = 0; index < count; index += 1) {
+          if (String(koffi.address(bindings.getObject(handle, index))) === wanted) {
+            at = index;
+            break;
           }
         }
-      }
-      for (const object of made) {
-        if (numberFrom(bindings.insertObject(handle, object), 'FPDFPage_InsertObject') !== 1) {
-          throw new Error(`FPDFPage_InsertObject refused a line this edit made on page ${String(page)}.`);
+        if (numberFrom(bindings.insertObjectAt(handle, object, at + 1), 'FPDFPage_InsertObjectAtIndex') !== 1) {
+          throw new Error(`FPDFPage_InsertObjectAtIndex refused a line this edit made on page ${String(page)}.`);
         }
-      }
-      for (const run of removed) {
-        if (numberFrom(bindings.removeObject(handle, run.object), 'FPDFPage_RemoveObject') !== 1) {
-          throw new Error(`FPDFPage_RemoveObject refused object ${String(run.index)} on page ${String(page)}.`);
+      };
+      /**
+       * The blank page the font probes are read on, made on first use: appended after the
+       * document's last page, US Letter, and closed and DELETED in this pass's `finally` — before
+       * the caller generates or serialises, so nothing of it reaches the saved file.
+       */
+      let scratch: { readonly handle: unknown; readonly index: number } | undefined;
+      const scratchPage = (): unknown => {
+        if (scratch !== undefined) return scratch.handle;
+        const index = numberFrom(bindings.pageCount(document), 'FPDF_GetPageCount');
+        const made: unknown = bindings.newPage(document, index, 612, 792);
+        if (made === null) throw new Error('FPDFPage_New refused a scratch page for a block edit.');
+        scratch = { handle: made, index };
+        return made;
+      };
+      /**
+       * Whether `object`'s font carries `text` — asked of a throwaway object, never of `object`.
+       *
+       * ## Apart from everything, because a text page reads by position
+       *
+       * A line is written before the layout moves it, so at the moment of writing a continuation
+       * sits exactly on the line it continues; read in place, the overlap corrupted its reading and
+       * a line in a font that carries it was refused (measured 2026-09-24, `pdfiumCommand.proof.mjs`'
+       * fitted-block cases). The question here is the font's, not the position's: so a probe in the
+       * same font and size is read alone. The checks after the layout read the real objects where
+       * they end up.
+       *
+       * ## On a SCRATCH PAGE, never off the edge of this one
+       *
+       * The first version set the probe a page's height below the page, and PDFium's text-page
+       * builder aborted the process on it — `FPDFText_LoadPage`, a libc++ bounds assertion, traced
+       * call by call on a corpus page on 2026-09-24. So the probe goes on a blank page appended for
+       * this edit and deleted before anything is generated or saved (`scratch`, below).
+       */
+      const carries = (object: unknown, text: string): boolean => {
+        const probe = makeTextLike(bindings, document, object, 0);
+        if (!trySetText(bindings, probe, text)) {
+          bindings.destroyObject(probe);
+          return false;
         }
-        bindings.destroyObject(run.object);
-      }
+        const matrix = matrixOn(bindings, probe);
+        setMatrixOn(bindings, probe, { ...matrix, e: 72, f: 396 });
+        const sheet = scratchPage();
+        if (numberFrom(bindings.insertObject(sheet, probe), 'FPDFPage_InsertObject') !== 1) {
+          throw new Error('FPDFPage_InsertObject refused a probe on the scratch page.');
+        }
+        try {
+          const textPage: unknown = bindings.loadTextPage(sheet);
+          if (textPage === null) throw new Error('PDFium could not load the scratch page to read a probe.');
+          try {
+            return drawnTextOn(bindings, textPage, [probe])[0] === asTextPageReads(text);
+          } finally {
+            bindings.closeTextPage(textPage);
+          }
+        } finally {
+          if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
+        }
+      };
+      /** The standard font nearest `object`'s, loaded once per edit and closed with it. */
+      const standardFontLike = (object: unknown): unknown => {
+        const name = standardFontFor(styleOf(bindings, object));
+        let font = standardFonts.get(name);
+        if (font === undefined) {
+          font = bindings.loadStandardFont(document, name);
+          if (font === null) throw new Error(`FPDFText_LoadStandardFont refused ${name}.`);
+          standardFonts.set(name, font);
+        }
+        return font;
+      };
+      const record = (object: unknown, text: string): void => {
+        const entry = written.find((write) => write.object === object);
+        if (entry === undefined) written.push({ object, text });
+        else entry.text = text;
+      };
+      /**
+       * Writes `text` into an object ON THE PAGE and answers the object that now
+       * says it: the same one, or a standard-font twin in its place (ADR-0097).
+       *
+       * Read back AS IT IS WRITTEN rather than only at the end, because the
+       * answer decides which object the rest of the edit measures and moves: a
+       * run whose font cannot carry `é` is replaced before its width is used to
+       * push the runs after it. A twin that cannot carry it either is the
+       * refusal ADR-0096 had, and it is still whole-edit and before generation.
+       */
+      const write = (object: unknown, text: string): unknown => {
+        // THE OBJECT'S OWN FONT FIRST: set, and — on a real pass — confirmed by a probe. A TRIAL
+        // skips the probe (it asks where the words land) and still takes a twin where PDFium
+        // refuses the set, so it measures the font that will really be drawn.
+        if (trySetText(bindings, object, text) && (mode === 'trial' || carries(object, text))) {
+          if (mode === 'write') record(object, text);
+          return object;
+        }
+        const twin = makeTextLike(bindings, document, object, matrixOn(bindings, object).e, standardFontLike(object));
+        if (!trySetText(bindings, twin, text) || (mode === 'write' && !carries(twin, text))) {
+          bindings.destroyObject(twin);
+          throw new TextNotWritableError();
+        }
+        insertAfter(twin, object);
+        removed.push(object);
+        if (mode === 'write') {
+          const at = written.findIndex((write) => write.object === object);
+          if (at !== -1) written.splice(at, 1);
+          record(twin, text);
+        }
+        return twin;
+      };
 
-      // THE READ-BACK, from a live text page, before anything is generated. A
-      // throw here leaves the document as it came: nothing has been generated,
-      // and the session is discarded with the page.
-      const textPage: unknown = bindings.loadTextPage(handle);
-      if (textPage === null) throw new Error('PDFium could not load the page to read the edit back.');
       try {
-        for (const write of written) {
-          if (objectTextOn(bindings, write.object, textPage) !== write.text) throw new TextNotWritableError();
+        for (const [blockAt, block] of blocks.entries()) {
+          const { lines } = block;
+          const [firstLine] = lines;
+          const [firstRun] = firstLine ?? [];
+          if (firstLine === undefined || firstRun === undefined) {
+            throw new Error(`A block edit on page ${String(page)} named no line.`);
+          }
+          // ROTATED OR SKEWED TEXT IS REFUSED rather than wrapped along an axis
+          // it is not set on. The read offers no such block; this is the write
+          // keeping the same rule for a caller that did not ask.
+          for (const run of lines.flat()) {
+            const matrix = matrixOn(bindings, run.object);
+            if (!isUpright(matrix.a, matrix.b, matrix.c, matrix.d)) {
+              throw new Error(
+                `Object ${String(run.index)} on page ${String(page)} is not set upright, so it is not edited in place.`,
+              );
+            }
+          }
+
+          // THE BLOCK'S EDGES, in the measure every later comparison uses: the
+          // objects' own bounds, read before anything moves or scales.
+          const edges = lines.flat().map((run) => boundsOf(bindings, run.object));
+          const blockLeft = Math.min(...edges.map((edge) => edge.left));
+          const blockTop = Math.max(...edges.map((edge) => edge.top));
+          // A ONE-LINE BLOCK WRAPS AT ITS COLUMN (ADR-0097 4a): its own right edge is only where
+          // its old text stopped. The column is the page less the block's left margin, mirrored —
+          // never narrower than the block itself. A block of several lines keeps the measure its
+          // paragraph was set to.
+          const ownRight = Math.max(...edges.map((edge) => edge.right));
+          const blockRight =
+            lines.length === 1 ? Math.max(ownRight, pageRight - (blockLeft - pageLeft)) : ownRight;
+          // WHERE THE BLOCK ENDED, before anything moves: a fitted block must end above it.
+          const lastBaselineBefore = matrixOn(bindings, (lines[lines.length - 1]?.[0] ?? firstRun).object).f;
+
+          // SCALED UNIFORMLY about the block's top-left (ADR-0097 4b) — size, and position — so a
+          // fitted block shrinks into the corner it started from and every later measure is of
+          // the scaled objects. The right edge is NOT scaled: smaller words fill the same measure.
+          const scale = scales[blockAt] ?? 1;
+          if (scale !== 1) {
+            for (const run of lines.flat()) {
+              const matrix = matrixOn(bindings, run.object);
+              setMatrixOn(bindings, run.object, {
+                a: matrix.a * scale,
+                b: matrix.b * scale,
+                c: matrix.c * scale,
+                d: matrix.d * scale,
+                e: blockLeft + (matrix.e - blockLeft) * scale,
+                f: blockTop + (matrix.f - blockTop) * scale,
+              });
+            }
+          }
+          const baselines = lines.map((line) => matrixOn(bindings, (line[0] ?? firstRun).object).f);
+          const pitch = blockPitch(bindings, firstRun.object, baselines);
+
+          const typed = block.text.replace(/\r\n?/gu, '\n').split('\n');
+
+          /** The visual lines the block will have, top to bottom. */
+          const visual: { objects: unknown[]; oldBaseline: number | undefined; gapAbove: number }[] = [];
+          /** The object the block's reading order currently ends at, for lines typed below it. */
+          let blockEnd: unknown = firstRun.object;
+
+          /**
+           * Makes a continuation line in `source`'s style holding `text`,
+           * starting at `left`, and wraps it again if it does not fit. Appends
+           * each to `visual`.
+           *
+           * INSERTED AS IT IS MADE, not once the layout is known, because the
+           * read-back that decides whether it needs a twin reads a text page,
+           * and a text page holds only what is on the page. An insertion
+           * appends, so no index this edit resolved moves.
+           */
+          const continueWith = (source: unknown, text: string, left: number, after: unknown): unknown => {
+            let rest = text;
+            // EACH NEW LINE FOLLOWS THE ONE BEFORE IT in the page's order, starting after `after`.
+            let anchor = after;
+            while (rest !== '') {
+              let object = makeTextLike(bindings, document, source, left);
+              // A FONT THAT REFUSES THE WORDS makes the line in its standard twin from the start, so
+              // the wrap below measures the font that will be drawn.
+              if (!trySetText(bindings, object, rest)) {
+                bindings.destroyObject(object);
+                object = makeTextLike(bindings, document, source, left, standardFontLike(source));
+                if (!trySetText(bindings, object, rest)) {
+                  bindings.destroyObject(object);
+                  throw new TextNotWritableError();
+                }
+              }
+              let tail = '';
+              // THE SAME WRAP AS AN OLD LINE'S, on the object's own bounds.
+              while (boundsOf(bindings, object).right > blockRight && lastBreak(rest) > 0) {
+                const cut = lastBreak(rest);
+                tail = tail === '' ? rest.slice(cut + 1).trimEnd() : `${rest.slice(cut + 1).trimEnd()} ${tail}`;
+                rest = rest.slice(0, cut);
+                setTextOn(bindings, object, rest);
+              }
+              insertAfter(object, anchor);
+              anchor = write(object, rest);
+              visual.push({ objects: [anchor], oldBaseline: undefined, gapAbove: pitch });
+              rest = tail;
+            }
+            return anchor;
+          };
+
+          for (const [k, line] of lines.entries()) {
+            const next = typed[k];
+            if (next === undefined) {
+              // THE PERSON REMOVED THIS LINE; its objects go at the end.
+              removed.push(...line.map((run) => run.object));
+              continue;
+            }
+            const replacements = new Map(
+              replacementsForLine(line, next).map((replacement) => [replacement.index, replacement.text]),
+            );
+            // PUSHED ALONG THE LINE by what the runs before grew.
+            let push = 0;
+            /** Runs the diff emptied — removed with the edit's other removals, never set to nothing. */
+            const emptied = new Set<number>();
+            for (const run of line) {
+              moveBy(bindings, run.object, push, 0);
+              const text = replacements.get(run.index);
+              if (text === undefined) continue;
+              const before = boundsOf(bindings, run.object);
+              // AN EMPTIED RUN IS REMOVED. `lineEdit`'s diff empties the runs an edit crossed, and
+              // `FPDFText_SetText` REFUSES the empty string (measured 2026-09-24) — so a translation,
+              // or a person retyping across a bold word, was refused where nothing was wrong.
+              if (text === '') {
+                emptied.add(run.index);
+                removed.push(run.object);
+                push -= before.right - before.left;
+                continue;
+              }
+              // THE RUN NOW NAMES WHATEVER SAYS IT — itself, or its twin.
+              run.object = write(run.object, text);
+              const after = boundsOf(bindings, run.object);
+              push += after.right - after.left - (before.right - before.left);
+            }
+            // THE LINE ENDS AT ITS LAST RUN WITH TEXT: an emptied run after it is going, and a wrap
+            // that looked at it would never wrap the words the first run now carries.
+            const kept = line.filter((run) => !emptied.has(run.index));
+            const last = kept[kept.length - 1] ?? line[line.length - 1] ?? firstRun;
+            const start = matrixOn(bindings, (line[0] ?? firstRun).object).e;
+            let lastText = replacements.get(last.index) ?? last.text;
+            let tail = '';
+            // A LINE THAT GREW PAST THE BLOCK WRAPS; one that did not grow never
+            // does, however its rewrite measures.
+            while (push > 0 && boundsOf(bindings, last.object).right > blockRight && lastBreak(lastText) > 0) {
+              const cut = lastBreak(lastText);
+              tail = tail === '' ? lastText.slice(cut + 1).trimEnd() : `${lastText.slice(cut + 1).trimEnd()} ${tail}`;
+              lastText = lastText.slice(0, cut);
+              setTextOn(bindings, last.object, lastText);
+            }
+            if (tail !== '') record(last.object, lastText);
+            visual.push({
+              objects: line.map((run) => run.object),
+              oldBaseline: baselines[k],
+              gapAbove: k === 0 ? 0 : (baselines[k - 1] ?? 0) - (baselines[k] ?? 0),
+            });
+            if (tail !== '') blockEnd = continueWith(last.object, tail, start, last.object);
+            else blockEnd = last.object;
+          }
+
+          // LINES TYPED BELOW THE BLOCK'S LAST, in its last line's last run's style, after whatever
+          // the block's last line now ends with in the page's order.
+          const lastLine = lines[lines.length - 1] ?? firstLine;
+          const lastRunOfBlock = lastLine[lastLine.length - 1] ?? firstRun;
+          const blockStart = matrixOn(bindings, (lastLine[0] ?? firstRun).object).e;
+          for (const extra of typed.slice(lines.length)) {
+            if (extra === '') {
+              visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch });
+              continue;
+            }
+            blockEnd = continueWith(lastRunOfBlock.object, extra, blockStart, blockEnd);
+          }
+
+          // THE LAYOUT, top to bottom: the first line stays where it is, and
+          // each line after it sits its own gap below the one above.
+          let baseline = baselines[0] ?? 0;
+          for (const [at, line] of visual.entries()) {
+            if (at > 0) baseline -= line.gapAbove;
+            if (line.oldBaseline !== undefined) {
+              for (const object of line.objects) moveBy(bindings, object, 0, baseline - line.oldBaseline);
+            } else {
+              for (const object of line.objects) {
+                const matrix = matrixOn(bindings, object);
+                setMatrixOn(bindings, object, { ...matrix, f: baseline });
+              }
+            }
+          }
+          // A FITTED BLOCK FITS when its last line sits no lower than its old last line did. A
+          // baseline, not a bounding box: a descender is not a line, and comparing bottoms would
+          // shrink a block for a `g`.
+          if (block.fit === 'shrink') fits[blockAt] = baseline >= lastBaselineBefore;
         }
+
+        // A TRIAL ENDS HERE: nothing removed, nothing read back, nothing generated — the page is
+        // closed and its changes go with it.
+        if (mode === 'trial') return { placed: [], fits };
+
+        if (written.length === 0 && removed.length === 0) {
+          throw new Error(
+            `A block edit on page ${String(page)} changed nothing. Regenerating a page's content ` +
+              'stream is the whole cost of an edit, and this one would change nothing.',
+          );
+        }
+
+        for (const object of removed) {
+          if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
+            throw new Error(`FPDFPage_RemoveObject refused an object this edit removes on page ${String(page)}.`);
+          }
+          bindings.destroyObject(object);
+        }
+
+        // THE READ-BACK, from a live text page, before anything is generated —
+        // every write once more, after every other write has moved it. A throw
+        // here leaves the document as it came: nothing has been generated, and
+        // the session is discarded with the page.
+        const textPage: unknown = bindings.loadTextPage(handle);
+        if (textPage === null) throw new Error('PDFium could not load the page to read the edit back.');
+        try {
+          const drawn = drawnTextOn(
+            bindings,
+            textPage,
+            written.map((write) => write.object),
+          );
+          if (written.some((write, at) => drawn[at] !== asTextPageReads(write.text))) throw new TextNotWritableError();
+        } finally {
+          bindings.closeTextPage(textPage);
+        }
+
+        // WHERE EACH WRITE NOW SITS in the page's object order, which is the order
+        // generation writes and a reopened page reads — so the caller can read
+        // every write back from the SAVED bytes. The live read-back above cannot
+        // stand in for that for a twin: measured 2026-09-24, a Helvetica twin in a
+        // document already holding a Helvetica-family font in StandardEncoding reads
+        // `é` here and is saved into that font's dictionary, where `E9` is `Ø`.
+        const indexOf = new Map<string, number>();
+        const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+        for (let at = 0; at < count; at += 1) indexOf.set(String(koffi.address(bindings.getObject(handle, at))), at);
+        const placed = written.map((write) => {
+          const index = indexOf.get(String(koffi.address(write.object)));
+          if (index === undefined) throw new Error(`A write on page ${String(page)} is not on the page it was written to.`);
+          // WHAT A READER OF THE SAVED FILE WILL SEE, by the same whitespace rule.
+          return { index, text: asTextPageReads(write.text) };
+        });
+
+        generate(bindings, handle);
+        return { placed, fits };
+      } finally {
+        // OURS TO CLOSE, and only ours: each object holds its own reference to
+        // the font it was made in, so closing the caller's handle frees nothing
+        // the page still draws.
+        for (const font of standardFonts.values()) bindings.closeFont(font);
+        // THE SCRATCH PAGE GOES before the caller can generate or save anything.
+        if (scratch !== undefined) {
+          bindings.closePage(scratch.handle);
+          bindings.deletePage(document, scratch.index);
+        }
+      }
+}
+
+/** One write an edit made: where it sits on the page afterwards, and what it says. */
+export interface WrittenText {
+  readonly index: number;
+  readonly text: string;
+}
+
+/**
+ * What each named text object on a page DRAWS, read through ONE text page — the reopened-bytes
+ * read-back {@link editTextBlocks}' caller makes, by {@link drawnTextOn}'s rule.
+ *
+ * @throws when an index is not a text object, for {@link textObjectText}'s reason.
+ */
+export function drawnTexts(session: PdfiumSession, page: number, indices: readonly number[]): Promise<readonly string[]> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const objects = indices.map((index) => textObjectAt(bindings, handle, page, index));
+      const textPage: unknown = bindings.loadTextPage(handle);
+      if (textPage === null) throw new Error('PDFium could not load the page for text reading.');
+      try {
+        return drawnTextOn(bindings, textPage, objects);
       } finally {
         bindings.closeTextPage(textPage);
       }
-      generate(bindings, handle);
-    });
-  });
+    }),
+  );
+}
+
+/**
+ * The standard font nearest a run's style: Courier for fixed pitch, Times for
+ * serif, Helvetica otherwise, each bold and italic as the style says — the
+ * twelve of the fourteen that set text (ADR-0097). Read from {@link styleOf},
+ * the one reading of a run's style, rather than from the flags again.
+ */
+function standardFontFor(style: RunStyle): string {
+  const { bold, italic } = style;
+  if (style.mono) return `Courier${bold && italic ? '-BoldOblique' : bold ? '-Bold' : italic ? '-Oblique' : ''}`;
+  if (style.serif) return `Times${bold && italic ? '-BoldItalic' : bold ? '-Bold' : italic ? '-Italic' : '-Roman'}`;
+  return `Helvetica${bold && italic ? '-BoldOblique' : bold ? '-Bold' : italic ? '-Oblique' : ''}`;
 }
 
 /**
@@ -1457,13 +1921,20 @@ function blockPitch(bindings: Bound, object: unknown, baselines: readonly number
  * A new, uninserted text object set like `source` — its font, its size, its
  * matrix and its fill — starting at `left`.
  *
- * The font is the page's own ({@link Bound.textFont}), so nothing is loaded
- * and nothing is closed here.
+ * The font is the page's own ({@link Bound.textFont}) unless a twin's standard
+ * font is handed in; either way nothing is loaded and nothing is closed here —
+ * a standard font is the edit's to close.
  */
-function makeTextLike(bindings: Bound, document: unknown, source: unknown, left: number): unknown {
+function makeTextLike(
+  bindings: Bound,
+  document: unknown,
+  source: unknown,
+  left: number,
+  /** A standard font for a twin (ADR-0097); otherwise the source's own. */
+  font: unknown = bindings.textFont(source),
+): unknown {
   const size = [0];
   numberFrom(bindings.textFontSize(source, size), 'FPDFTextObj_GetFontSize');
-  const font: unknown = bindings.textFont(source);
   if (font === null) throw new Error('A text object answered no font, so a line in its style cannot be made.');
   const object: unknown = bindings.createTextObject(document, font, size[0] ?? 0);
   if (object === null) throw new Error('FPDFPageObj_CreateTextObj refused the font of the line it continues.');

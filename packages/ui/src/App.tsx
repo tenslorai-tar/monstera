@@ -175,6 +175,8 @@ import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
 import { COMPARE_DOCUMENTS_DIALOG, COMPARE_RESULT_DIALOG } from './dialogs/compareDocuments.js';
 import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { OCR_DIALOG } from './dialogs/ocr.js';
+import { TRANSLATE_PAGE_DIALOG } from './dialogs/translatePage.js';
+import { translatePageCommand } from './commands/translatePage.js';
 import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
 import { ENHANCE_OUTCOME_DIALOG } from './dialogs/enhanceOutcome.js';
 import { SCAN_OUTCOME_DIALOG } from './dialogs/scanOutcome.js';
@@ -705,6 +707,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         PAGE_STRUCTURE_DIALOG,
         SPELL_CHECK_DIALOG,
         OCR_DIALOG,
+        TRANSLATE_PAGE_DIALOG,
         OCR_OUTCOME_DIALOG,
         ENHANCE_OUTCOME_DIALOG,
         SCAN_OUTCOME_DIALOG,
@@ -2004,6 +2007,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         aiSetup,
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ client, ask, track }),
+        translatePageCommand({ client, onApplied: applied, ask, toast, track, storedSecrets: () => storedSecrets }),
         inspectPageStructureCommand({ client, ask }),
         accessibilityCheckCommand({ client, ask }),
         readBarcodesCommand({ client, ask }),
@@ -2292,6 +2296,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       azureReady,
       claudeKeyStored,
       docusignKeyStored,
+      // *TRANSLATE THIS PAGE* offers the providers with a key, read from this list when it runs.
+      storedSecrets,
       changeZoom,
       client,
       navigator,

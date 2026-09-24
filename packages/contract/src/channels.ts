@@ -13,7 +13,8 @@ import {
   cloudStateSchema,
 } from './cloudProviders.js';
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
-import { subscriptionIdSchema } from './events.js';
+import { AI_ANSWER_REFUSALS, subscriptionIdSchema } from './events.js';
+import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
 import {
   MAX_ANNOTATION_BORDER,
   MAX_REMOVED_ANNOTATIONS,
@@ -24,7 +25,9 @@ import {
   MAX_LINK_URI,
   MAX_LAYER_NAME_LENGTH,
   MAX_BLOCK_LINES,
+  MAX_EDIT_BLOCKS,
   MAX_REPLACED_TEXT,
+  MAX_TEXT_REPLACEMENTS,
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
@@ -4552,6 +4555,62 @@ export const channels = {
     'Stops a streaming assistant answer.',
     z.object({ subscription: subscriptionIdSchema }).strict(),
     z.object({ stopped: z.boolean() }),
+  ),
+
+  /**
+   * Translates a page's editable blocks, and answers them ready to write
+   * ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)).
+   *
+   * ## `main` reads the page, asks, and hands back an INTENT
+   *
+   * The blocks are read in the document's lane the way `document.textBlocks` reads them, so what
+   * is sent is what the in-place editor would outline — ADR-0088's rule that a page's words are
+   * read in `main` for every ask. One request goes to the named provider and model; the answer is
+   * the blocks that CHANGED, each as `editTextBlock` names a block, with the version they were read
+   * at. The renderer writes them with that command, so the undo, the view and the save are every
+   * edit's.
+   *
+   * ## A refusal is an OUTCOME
+   *
+   * `refused` carries the provider's reason by the one list a streamed answer's end uses, and
+   * `unreadable` also covers an answer that is not an array of exactly the blocks sent — which
+   * could not be matched to them. `nothing-to-translate` is a page with no editable text, or one
+   * already in the language asked for.
+   */
+  'ai.translatePage': channel(
+    'Translates the editable text of one page and answers the blocks to write.',
+    z
+      .object({
+        docId: docIdSchema,
+        page: z.number().int().nonnegative(),
+        provider: z.enum(AI_PROVIDER_IDS),
+        model: z.string().min(1).max(MAX_MODEL_ID),
+        language: z.enum(TRANSLATION_LANGUAGE_IDS),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('translated'),
+        version: docVersionSchema,
+        blocks: z
+          .array(
+            z
+              .object({
+                lines: z
+                  .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_TEXT_REPLACEMENTS))
+                  .min(1)
+                  .max(MAX_BLOCK_LINES),
+                text: z.string().max(MAX_REPLACED_TEXT),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(MAX_EDIT_BLOCKS),
+      }),
+      z.object({ kind: z.literal('nothing-to-translate') }),
+      z.object({ kind: z.literal('refused'), problem: z.enum(AI_ANSWER_REFUSALS) }),
+    ]),
+    ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),
 
   'settings.loadSecrets': channel(

@@ -4,7 +4,7 @@ export {
   pdfiumWriter,
   pageCount,
   countObjects,
-  editTextBlock,
+  editTextBlocks,
   pageText,
   pageObjects,
   placeObject,

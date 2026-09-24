@@ -6,7 +6,9 @@ import {
   MAX_ASK_CONTEXT,
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
+  MAX_REPLACED_TEXT,
   SECRET_SETTING_IDS,
+  TRANSLATION_LANGUAGES,
   type ChannelResult,
   type ContractHandlers,
   type DocumentAccess,
@@ -26,11 +28,15 @@ import {
   EngineAnnotationDataExportFailed,
   StaleTargetError,
   type WriteTargetVerdict,
+  paragraphText,
   readDocumentRange,
+  readTranslation,
+  translationInstruction,
+  translationRequest,
 } from '@monstera/kernel';
 import { writeFile } from 'node:fs/promises';
 
-import { type DocId, err, ok } from '@monstera/shared';
+import { type DocId, err, lineText, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
 import {
@@ -475,6 +481,7 @@ export function createContractHandlers(deps: {
         : err({ code: 'subscription-in-use' });
     },
     'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),
+    'ai.translatePage': translatePageHandler(deps),
     ...cloudHandlers(deps),
 
     'settings.loadSecrets': () => {
@@ -2120,6 +2127,79 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
     }
+  };
+}
+
+/**
+ * A page's translation (ADR-0097): read the page's blocks as `document.textBlocks` reads them, ask
+ * once, answer the blocks that changed as `editTextBlock` names them.
+ *
+ * ## Each block's text is a PARAGRAPH: `lineText` per line, soft wraps joined
+ *
+ * Lines are read with `lineText`, the rule the kernel diffs with, and joined by `paragraphText`:
+ * where the next line's first word would not have fitted, the break was the typesetter's and becomes
+ * a space; otherwise it stays a line break (ADR-0097 4c). The kernel then writes the translation's
+ * lines over the block's and re-wraps what no longer fits. An unchanged block is not answered:
+ * rewriting it would regenerate content for nothing, and a translation that changed nothing is
+ * `nothing-to-translate`.
+ *
+ * ## An answer longer than a block may carry is unreadable, not cut
+ *
+ * `MAX_REPLACED_TEXT` bounds what a block edit writes; a translation past it would have to be cut
+ * to fit, and a translation cut mid-sentence is a wrong one. So the whole answer is refused.
+ */
+function translatePageHandler(deps: {
+  readonly commands: DocumentCommands;
+  readonly assistant: Assistant;
+}): ContractHandlers['ai.translatePage'] {
+  return async ({ docId, page, provider, model, language }) => {
+    let read: Awaited<ReturnType<DocumentCommands['textBlocks']>>;
+    try {
+      read = await deps.commands.textBlocks(docId, page);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+    // A PARAGRAPH, not its lines (ADR-0097 4c): soft wraps joined, hard breaks kept, so the kernel
+    // re-wraps the translation as one paragraph instead of keeping each old line's break.
+    const texts = read.blocks.map((block) =>
+      paragraphText(
+        block.lines.map((line) => ({ text: lineText(line.runs), box: line.box })),
+        block.box.x1,
+      ),
+    );
+    if (texts.every((text) => text.trim() === '')) return ok({ kind: 'nothing-to-translate' } as const);
+
+    // ASKED AT MOST TWICE, and only again when the answer could not be READ. Measured 2026-09-24 over
+    // the corpus's five first pages with text, twice each: one answer in ten was not valid JSON — a
+    // model's slip, not the page — and a second ask read cleanly. A provider's refusal is never
+    // asked again: it would be refused again, and paid for again.
+    let translated: readonly string[] | undefined;
+    for (let attempt = 0; attempt < 2 && translated === undefined; attempt += 1) {
+      const answer = await deps.assistant.complete({
+        provider,
+        model,
+        system: translationInstruction(TRANSLATION_LANGUAGES[language]),
+        messages: [{ role: 'user', text: translationRequest(texts) }],
+      });
+      if (answer.refusal !== undefined) return ok({ kind: 'refused', problem: answer.refusal } as const);
+      translated = readTranslation(answer.text, texts.length);
+    }
+    if (translated === undefined || translated.some((text) => text.length > MAX_REPLACED_TEXT)) {
+      return ok({ kind: 'refused', problem: 'unreadable' } as const);
+    }
+    const blocks = read.blocks.flatMap((block, at) => {
+      const text = translated[at];
+      return text === undefined || text === texts[at]
+        ? []
+        : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }];
+    });
+    const [first, ...rest] = blocks;
+    return first === undefined
+      ? ok({ kind: 'nothing-to-translate' } as const)
+      : ok({ kind: 'translated', version: read.version, blocks: [first, ...rest] } as const);
   };
 }
 

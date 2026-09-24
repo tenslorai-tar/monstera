@@ -4159,12 +4159,25 @@ export const replaceAllTextSchema = z.object({
 export const MAX_BLOCK_LINES = 512;
 
 /**
- * Edit one block of a page's text in place, reflowing what no longer fits
- * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
+ * How many blocks one edit may carry — a whole page's, for a translation (ADR-0097).
  *
- * ## The block AS THE PERSON SAW IT, and what they typed
+ * The same densest page: 840 lines, most of them single cells the grouping keeps apart as blocks
+ * of their own. 1,024 covers it, and each block's text is still bounded by `MAX_REPLACED_TEXT`, so
+ * the payload is a page's words, never a document's.
+ */
+export const MAX_EDIT_BLOCKS = 1024;
+
+/** How a block edit takes words that no longer fit its box (ADR-0097 4b). */
+export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
+
+/**
+ * Edit blocks of a page's text in place, reflowing what no longer fits
+ * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md);
+ * a list of blocks since [ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)).
  *
- * `lines` is the block's lines, each the runs it is made of, in the engine's
+ * ## Each block AS THE PERSON SAW IT, and what they typed
+ *
+ * A block's `lines` are its lines, each the runs it is made of, in the engine's
  * own object numbering — exactly what `document.textBlocks` answered at
  * `version`. `text` is the block's words after the edit, lines separated by
  * line breaks. The kernel re-reads each run's text off the page at that version
@@ -4193,19 +4206,44 @@ export const MAX_BLOCK_LINES = 512;
 export const editTextBlockSchema = z
   .object({
     kind: z.literal('editTextBlock'),
-    /** Zero-based index of the page the block is on. */
+    /** Zero-based index of the page the blocks are on. */
     page: z.number().int().nonnegative(),
-    /** The block's lines, top to bottom, each its runs' indices in reading order. */
-    lines: z
-      .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_TEXT_REPLACEMENTS))
+    /**
+     * The blocks this edit writes — one for a person typing, every block of the page for a
+     * translation (ADR-0097). One command, so one checkpoint and one undo either way.
+     */
+    blocks: z
+      .array(
+        z
+          .object({
+            /** The block's lines, top to bottom, each its runs' indices in reading order. */
+            lines: z
+              .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_TEXT_REPLACEMENTS))
+              .min(1)
+              .max(MAX_BLOCK_LINES),
+            /** The block's words after the edit, lines separated by line breaks. */
+            text: z.string().max(MAX_REPLACED_TEXT),
+            /**
+             * How the block takes words that no longer fit (ADR-0097 4b): `reflow` grows downward,
+             * which is what a person typing sees; `shrink` scales the block to the box it had,
+             * which is what a translation keeps. REQUIRED, so a caller cannot write a translation
+             * without deciding what happens to the page's layout.
+             */
+            fit: z.enum(TEXT_FIT_MODES),
+          })
+          .strict(),
+      )
       .min(1)
-      .max(MAX_BLOCK_LINES)
-      .refine((lines) => new Set(lines.flat()).size === lines.flat().length, {
-        message: 'an object may be named once in a block edit',
-      }),
-    /** The block's words after the edit, lines separated by line breaks. */
-    text: z.string().max(MAX_REPLACED_TEXT),
-    /** The version the block was read at. Refused if the document has moved. */
+      .max(MAX_EDIT_BLOCKS)
+      // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
+      .refine(
+        (blocks) => {
+          const named = blocks.flatMap((block) => block.lines.flat());
+          return new Set(named).size === named.length;
+        },
+        { message: 'an object may be named once in a block edit' },
+      ),
+    /** The version the blocks were read at. Refused if the document has moved. */
     version: docVersionSchema,
   })
   .strict();

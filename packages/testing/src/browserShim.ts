@@ -491,6 +491,13 @@ export interface BrowserShimOptions {
    */
   readonly textBlocks?: ChannelResult<'document.textBlocks'>['blocks'] | null;
   /**
+   * What `ai.translatePage` answers. Absent is a refusal with no key — no provider exists in a
+   * browser — so a case that wants the write that follows a translation hands one in.
+   */
+  readonly translation?: ChannelResult<'ai.translatePage'>;
+  /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
+  readonly aiModels?: ChannelResult<'ai.models'>;
+  /**
    * The objects `document.pageObjects` answers.
    *
    * `textBlocks`' three states, for its reason: `null` and `undefined` are the
@@ -1889,7 +1896,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // model list is this build's own and an ask starts nothing. `started: false` is what a
     // surface must already handle — it is the answer a real `main` gives when the
     // subscription is in use or the provider has no key.
-    'ai.models': () => Promise.resolve(ok({ source: 'fallback' as const, models: [] })),
+    'ai.models': () => Promise.resolve(ok(options.aiModels ?? { source: 'fallback' as const, models: [] })),
     // REFUSED, because the shim has no provider to ask and a key it cannot check is not one it may keep.
     'ai.checkKey': () => Promise.resolve(ok({ accepted: false as const, problem: 'unreachable' as const })),
     // NOTHING SAVED, the setting's default: the shim keeps no conversation between pages.
@@ -1905,6 +1912,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),
+    // NO PROVIDER IN A BROWSER, so no key: what `main` answers a translation with none stored —
+    // unless a case hands one in to drive the write that follows.
+    'ai.translatePage': () =>
+      Promise.resolve(ok(options.translation ?? { kind: 'refused' as const, problem: 'no-key' as const })),
     // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider
     // is what a build without its values is — not configured (ADR-0091 Decision 2).
     'cloud.status': () =>

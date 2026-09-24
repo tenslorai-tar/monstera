@@ -200,6 +200,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.models': 'names a provider from the registry and answers a bounded list of bounded model ids',
   'ai.ask': 'every field is bounded: the subscription id, the model id, and the conversation’s turns',
   'ai.stop': 'one bounded subscription id',
+  // A page's blocks, each bounded by `MAX_REPLACED_TEXT`, at most `MAX_EDIT_BLOCKS` — a page's
+  // words, never a document's — and it needs an engine session to read them.
+  'ai.translatePage': 'needs an engine session; a page of bounded blocks',
   'ai.checkKey': 'a provider and a key bounded by MAX_SECRET_SETTING in; accepted or one declared problem out',
   // CHAT HISTORY (ADR-0093): a conversation, never a document — MAX_CHAT_TURNS of MAX_CHAT_TEXT each.
   'ai.history.load': 'one DocId in; at most MAX_CHAT_TURNS bounded turns out, whatever the document’s size',

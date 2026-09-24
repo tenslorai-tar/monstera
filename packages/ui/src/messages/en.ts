@@ -1,4 +1,11 @@
-import type { AiProviderId, CloudProviderId, CloudRefusal, CloudState, OcrLanguage } from '@monstera/contract';
+import type {
+  AiProviderId,
+  CloudProviderId,
+  CloudRefusal,
+  CloudState,
+  OcrLanguage,
+  TranslationLanguage,
+} from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { messageKey } from '@monstera/shared';
 
@@ -573,6 +580,72 @@ export const OCR_LANGUAGE_NAMES = {
   kor: OCR_LANGUAGE_KOR,
   chi_sim: OCR_LANGUAGE_CHI_SIM,
 } as const satisfies Record<OcrLanguage, MessageKey>;
+/**
+ * Translate page (ADR-0097). The language names are the catalogue's, keyed by the contract's ids, so
+ * a twenty-first language is a compile error here rather than a blank option — `OCR_LANGUAGE_NAMES`'
+ * shape.
+ */
+export const TRANSLATE_PAGE_TITLE = messageKey('command.edit.translate-page');
+export const RIBBON_TRANSLATE_PAGE = messageKey('command.edit.translate-page.ribbon');
+export const TRANSLATE_PAGE_DIALOG_TITLE = messageKey('dialog.translate-page.title');
+export const TRANSLATE_PAGE_INTRO = messageKey('dialog.translate-page.intro');
+export const TRANSLATE_PAGE_LANGUAGE = messageKey('dialog.translate-page.language');
+export const TRANSLATE_PAGE_CHOOSE_LANGUAGE = messageKey('dialog.translate-page.choose-language');
+export const TRANSLATE_PAGE_PROVIDER = messageKey('dialog.translate-page.provider');
+export const TRANSLATE_PAGE_LIMITS = messageKey('dialog.translate-page.limits');
+export const TRANSLATE_PAGE_NO_PROVIDER = messageKey('dialog.translate-page.no-provider');
+export const TRANSLATE_PAGE_START = messageKey('dialog.translate-page.start');
+export const TRANSLATE_PAGE_PROGRESS = messageKey('task.translate-page');
+export const TOAST_PAGE_TRANSLATED = messageKey('toast.page-translated');
+export const TOAST_NOTHING_TO_TRANSLATE = messageKey('toast.nothing-to-translate');
+export const TOAST_TRANSLATE_REJECTED = messageKey('toast.translate-rejected');
+export const TOAST_TRANSLATE_UNREADABLE = messageKey('toast.translate-unreadable');
+export const TOAST_TRANSLATE_NO_MODEL = messageKey('toast.translate-no-model');
+export const TOAST_TRANSLATE_NOT_WRITABLE = messageKey('toast.translate-not-writable');
+// NAMED, one constant each, because the catalogue's reachability check reads exported names — an
+// inline `messageKey(…)` in the map below would be an entry no check can see is used.
+export const TRANSLATION_LANGUAGE_EN = messageKey('translation.language.en');
+export const TRANSLATION_LANGUAGE_FR = messageKey('translation.language.fr');
+export const TRANSLATION_LANGUAGE_DE = messageKey('translation.language.de');
+export const TRANSLATION_LANGUAGE_ES = messageKey('translation.language.es');
+export const TRANSLATION_LANGUAGE_IT = messageKey('translation.language.it');
+export const TRANSLATION_LANGUAGE_PT = messageKey('translation.language.pt');
+export const TRANSLATION_LANGUAGE_NL = messageKey('translation.language.nl');
+export const TRANSLATION_LANGUAGE_CA = messageKey('translation.language.ca');
+export const TRANSLATION_LANGUAGE_GL = messageKey('translation.language.gl');
+export const TRANSLATION_LANGUAGE_DA = messageKey('translation.language.da');
+export const TRANSLATION_LANGUAGE_SV = messageKey('translation.language.sv');
+export const TRANSLATION_LANGUAGE_NB = messageKey('translation.language.nb');
+export const TRANSLATION_LANGUAGE_FI = messageKey('translation.language.fi');
+export const TRANSLATION_LANGUAGE_ET = messageKey('translation.language.et');
+export const TRANSLATION_LANGUAGE_IS = messageKey('translation.language.is');
+export const TRANSLATION_LANGUAGE_GA = messageKey('translation.language.ga');
+export const TRANSLATION_LANGUAGE_AF = messageKey('translation.language.af');
+export const TRANSLATION_LANGUAGE_ID = messageKey('translation.language.id');
+export const TRANSLATION_LANGUAGE_MS = messageKey('translation.language.ms');
+export const TRANSLATION_LANGUAGE_SW = messageKey('translation.language.sw');
+export const TRANSLATION_LANGUAGE_NAMES = {
+  en: TRANSLATION_LANGUAGE_EN,
+  fr: TRANSLATION_LANGUAGE_FR,
+  de: TRANSLATION_LANGUAGE_DE,
+  es: TRANSLATION_LANGUAGE_ES,
+  it: TRANSLATION_LANGUAGE_IT,
+  pt: TRANSLATION_LANGUAGE_PT,
+  nl: TRANSLATION_LANGUAGE_NL,
+  ca: TRANSLATION_LANGUAGE_CA,
+  gl: TRANSLATION_LANGUAGE_GL,
+  da: TRANSLATION_LANGUAGE_DA,
+  sv: TRANSLATION_LANGUAGE_SV,
+  nb: TRANSLATION_LANGUAGE_NB,
+  fi: TRANSLATION_LANGUAGE_FI,
+  et: TRANSLATION_LANGUAGE_ET,
+  is: TRANSLATION_LANGUAGE_IS,
+  ga: TRANSLATION_LANGUAGE_GA,
+  af: TRANSLATION_LANGUAGE_AF,
+  id: TRANSLATION_LANGUAGE_ID,
+  ms: TRANSLATION_LANGUAGE_MS,
+  sw: TRANSLATION_LANGUAGE_SW,
+} as const satisfies Record<TranslationLanguage, MessageKey>;
 export const EDITING_PERSONAL_DICTIONARY_TITLE = messageKey(
   'setting.editing.personal-dictionary.title',
 );
@@ -1914,6 +1987,48 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_LANGUAGE_NAMES.jpn]: 'Japanese',
   [OCR_LANGUAGE_NAMES.kor]: 'Korean',
   [OCR_LANGUAGE_NAMES.chi_sim]: 'Chinese (Simplified)',
+  [TRANSLATE_PAGE_TITLE]: 'Translate this page…',
+  [RIBBON_TRANSLATE_PAGE]: 'Translate',
+  [TRANSLATE_PAGE_DIALOG_TITLE]: 'Translate this page',
+  [TRANSLATE_PAGE_INTRO]:
+    'The text on this page is sent to the AI provider below, translated, and written back into the page where it was. Undo puts the original back.',
+  [TRANSLATE_PAGE_LANGUAGE]: 'Translate into',
+  [TRANSLATE_PAGE_CHOOSE_LANGUAGE]: 'Choose a language',
+  [TRANSLATE_PAGE_PROVIDER]: 'Using',
+  [TRANSLATE_PAGE_LIMITS]:
+    'Languages written in the Latin alphabet. Where the page’s own font lacks a letter, that text is set in a standard font.',
+  [TRANSLATE_PAGE_NO_PROVIDER]:
+    'Translating uses an AI provider, and none is set up yet. Add a key in Settings › AI, then come back.',
+  [TRANSLATE_PAGE_START]: 'Translate',
+  [TRANSLATE_PAGE_PROGRESS]: 'Translating the page',
+  [TOAST_PAGE_TRANSLATED]: 'Page translated. Undo puts the original back.',
+  [TOAST_NOTHING_TO_TRANSLATE]: 'Nothing on this page needed translating.',
+  [TOAST_TRANSLATE_REJECTED]: 'The provider refused to translate this page. Nothing was changed.',
+  [TOAST_TRANSLATE_UNREADABLE]:
+    'The provider’s answer could not be matched to the page’s text, so nothing was changed. Try again.',
+  [TOAST_TRANSLATE_NO_MODEL]: 'That provider offered no model to translate with. Nothing was changed.',
+  [TOAST_TRANSLATE_NOT_WRITABLE]:
+    'Some translated letters cannot be shown in this page’s fonts, so nothing was changed.',
+  [TRANSLATION_LANGUAGE_NAMES.en]: 'English',
+  [TRANSLATION_LANGUAGE_NAMES.fr]: 'French',
+  [TRANSLATION_LANGUAGE_NAMES.de]: 'German',
+  [TRANSLATION_LANGUAGE_NAMES.es]: 'Spanish',
+  [TRANSLATION_LANGUAGE_NAMES.it]: 'Italian',
+  [TRANSLATION_LANGUAGE_NAMES.pt]: 'Portuguese',
+  [TRANSLATION_LANGUAGE_NAMES.nl]: 'Dutch',
+  [TRANSLATION_LANGUAGE_NAMES.ca]: 'Catalan',
+  [TRANSLATION_LANGUAGE_NAMES.gl]: 'Galician',
+  [TRANSLATION_LANGUAGE_NAMES.da]: 'Danish',
+  [TRANSLATION_LANGUAGE_NAMES.sv]: 'Swedish',
+  [TRANSLATION_LANGUAGE_NAMES.nb]: 'Norwegian (Bokmål)',
+  [TRANSLATION_LANGUAGE_NAMES.fi]: 'Finnish',
+  [TRANSLATION_LANGUAGE_NAMES.et]: 'Estonian',
+  [TRANSLATION_LANGUAGE_NAMES.is]: 'Icelandic',
+  [TRANSLATION_LANGUAGE_NAMES.ga]: 'Irish',
+  [TRANSLATION_LANGUAGE_NAMES.af]: 'Afrikaans',
+  [TRANSLATION_LANGUAGE_NAMES.id]: 'Indonesian',
+  [TRANSLATION_LANGUAGE_NAMES.ms]: 'Malay',
+  [TRANSLATION_LANGUAGE_NAMES.sw]: 'Swahili',
   [EDITING_PERSONAL_DICTIONARY_TITLE]: 'Personal dictionary',
   [EDITING_OCR_LANGUAGE_TITLE]: 'Recognition language',
   [EDITING_OCR_LANGUAGE_DESCRIPTION]: 'Used when you recognise text, unless you choose another for that run.',

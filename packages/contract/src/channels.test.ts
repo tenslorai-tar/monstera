@@ -339,6 +339,7 @@ const handlers: ContractHandlers = {
   'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
   'ai.stop': () => Promise.resolve(ok({ stopped: false })),
+  'ai.translatePage': () => Promise.resolve(ok({ kind: 'nothing-to-translate' as const })),
   'cloud.status': () => Promise.resolve(ok({ providers: [{ provider: 'onedrive' as const, state: 'signed-out' as const }] })),
   'cloud.signIn': () => Promise.resolve(ok({ kind: 'done' as const })),
   'cloud.signOut': () => Promise.resolve(ok({ state: 'signed-out' as const })),

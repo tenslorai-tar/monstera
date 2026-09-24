@@ -1073,7 +1073,12 @@ describe('the composition root, with BOTH engine hosts', () => {
       if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
       const executed = await handlers['document.execute']({
         docId: opened.value.docId,
-        command: { kind: 'editTextBlock', page: 0, lines: [[2, 4], [7]], text: 'new words', version: opened.value.version },
+        command: {
+          kind: 'editTextBlock',
+          page: 0,
+          blocks: [{ lines: [[2, 4], [7]], text: 'new words', fit: 'reflow' }],
+          version: opened.value.version,
+        },
       });
       return { executed, second, mupdf, version: opened.value.version };
     };

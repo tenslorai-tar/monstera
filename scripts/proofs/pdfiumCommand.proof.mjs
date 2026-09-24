@@ -63,7 +63,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -87,7 +87,7 @@ if (!existsSync(library)) {
 // routing and say nothing about the diff under review.
 refuseStaleBuild(root, PDFIUM_COMMAND, 5);
 
-const { openPdfium, pdfiumWriter, pageText, textObjectIndices, textRuns } = await import(
+const { openPdfium, pdfiumWriter, pageText, replaceTextObjects, textObjectIndices, textRuns } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'
 );
 const { groupIntoBlocks } = await import('../../packages/kernel/dist/textLines.js');
@@ -126,7 +126,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 46 });
+const roster = createRoster(failures, { cases: 58 });
 
 /**
  * @param {string} name
@@ -744,6 +744,32 @@ async function aParagraph() {
 }
 
 /**
+ * {@link aParagraph} with its font re-encoded in StandardEncoding — an encoding with NO accented
+ * lowercase letters, so the page's own font cannot carry `é` (ADR-0097). A subset built with MuPDF
+ * read back with every glyph width zero (`pdfiumReflow.mjs`), so the encoding is what is narrowed
+ * rather than the glyphs.
+ *
+ * `baseFont` renames it. Under its own name the standard twin is a new Helvetica in WinAnsi and can
+ * carry `é`; left as Helvetica, PDFium's standard-font load hands back THIS font — measured
+ * 2026-09-24, the twin's write landed in the same StandardEncoding dictionary — so there is no twin
+ * to be had and the edit must be refused.
+ *
+ * @param {string} baseFont
+ */
+async function aParagraphInStandardEncoding(baseFont) {
+  const document = await PDFDocument.load(await aParagraph());
+  let fonts = 0;
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict) || object.get(PDFName.of('Type')) !== PDFName.of('Font')) continue;
+    object.set(PDFName.of('Encoding'), PDFName.of('StandardEncoding'));
+    object.set(PDFName.of('BaseFont'), PDFName.of(baseFont));
+    fonts += 1;
+  }
+  if (fonts === 0) throw new Error('The paragraph fixture carried no font dictionary to re-encode.');
+  return document.save();
+}
+
+/**
  * Page 0's runs and blocks, read from BYTES through the same read and grouping main uses.
  *
  * @param {Uint8Array} bytes
@@ -793,8 +819,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        lines,
-        text,
+        blocks: [{ lines, text, fit: 'reflow' }],
         version: 1,
       }),
       source: undefined,
@@ -804,8 +829,7 @@ async function blockEditCases() {
   const refusedCapture = await localPdfiumExecution.capture(original, {
     kind: 'editTextBlock',
     page: 0,
-    lines,
-    text: 'x',
+    blocks: [{ lines, text: 'x', fit: 'reflow' }],
     version: /** @type {never} */ (1),
   });
   record(
@@ -841,6 +865,15 @@ async function blockEditCases() {
     (await textIndicesOf(wrapped)).length > objectsBefore &&
       ['great', 'many', 'more', 'words', 'than', 'fit'].every((word) => wrappedText.includes(word)),
     `${String((await textIndicesOf(wrapped)).length)} objects against ${String(objectsBefore)}`,
+  );
+  record(
+    'and the wrapped words READ where they are seen: before the next line, not at the page’s end',
+    // THE PAGE'S TEXT ORDER, which is the object order generation writes and copy, search and a
+    // screen reader take. Appended, the wrap read after the block far below — measured 2026-09-24.
+    wrappedText.indexOf('great') !== -1 &&
+      wrappedText.indexOf('great') < wrappedText.indexOf('a second') &&
+      wrappedText.indexOf('fit') < wrappedText.indexOf(FAR_BELOW),
+    wrappedText.replace(/\s+/gu, ' ').slice(0, 200),
   );
   record(
     'and the line below it MOVES DOWN, so the wrap does not overprint it',
@@ -882,9 +915,283 @@ async function blockEditCases() {
     refused = error instanceof Error ? error.name : String(error);
   }
   record(
-    'a character the page’s font cannot carry is refused as TextNotWritableError',
+    'a character NEITHER the page’s font NOR a standard one can carry is refused as TextNotWritableError',
     refused === 'TextNotWritableError',
     refused ?? 'it was written',
+  );
+
+  // A LINE LAID OUT BESIDE OTHER TEXT READS BACK WITH A SPACE THE TEXT PAGE GENERATED, and that is
+  // not the font refusing. Measured 2026-09-24 on a live translation: a heading wrapped one word
+  // onto a new line above the next block, the new line read back `prochaine ` for `prochaine`, and
+  // a correct write was refused. The layout is that page's.
+  const newsletter = await (async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([595, 842]);
+    const heading = await document.embedFont(StandardFonts.HelveticaBold);
+    const body = await document.embedFont(StandardFonts.Helvetica);
+    page.drawText('Spring planting starts next week', { x: 60, y: 720, size: 14, font: heading });
+    page.drawText('Volunteers are welcome every Saturday morning from nine until noon.', { x: 60, y: 690, size: 11, font: body });
+    return document.save();
+  })();
+  const newsletterBlocks = (await blocksOf(newsletter)).blocks;
+  const headingLines = (newsletterBlocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+  /** @type {string} */
+  let headingOutcome;
+  try {
+    const result = await localPdfiumExecution.apply({
+      session: newsletter,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        blocks: [{ lines: headingLines, text: 'Les plantations de printemps commencent la semaine prochaine', fit: 'reflow' }],
+        version: 1,
+      }),
+      source: undefined,
+      reads: undefined,
+    });
+    const text = (await textOf(result)).replace(/\s+/gu, ' ');
+    headingOutcome = text.includes('prochaine') && text.includes('Volunteers') ? 'written' : `saved as ${text.slice(0, 120)}`;
+  } catch (error) {
+    headingOutcome = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  record(
+    'a wrapped line beside the next block is WRITTEN — a generated space is not the font refusing',
+    headingOutcome === 'written',
+    headingOutcome,
+  );
+
+  // A ONE-LINE BLOCK WRAPS AT ITS COLUMN, not at its own old end (ADR-0097 4a). The block far below
+  // is one line; a few more words fit the page easily, so it must stay ONE line — no new object.
+  const farLines = (separate?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+  /** @param {string} text @param {'reflow' | 'shrink'} fit @param {number[][]} target */
+  const editOne = (text, fit, target) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        blocks: [{ lines: target, text, fit }],
+        version: 1,
+      }),
+      source: undefined,
+      reads: undefined,
+    });
+  // `, two more` takes the line past its old end (the old rule wrapped it there) and not past the
+  // column: 400 wide, 72 in, so the column ends at 328 and the line at about 270.
+  const widened = await editOne(`${FAR_BELOW}, two more`, 'reflow', farLines);
+  record(
+    'a one-line block that grows stays ONE line while its column has room',
+    (await textOf(widened)).includes('two more') &&
+      (await textIndicesOf(widened)).length === objectsBefore,
+    `${String((await textIndicesOf(widened)).length)} objects against ${String(objectsBefore)}`,
+  );
+
+  // A FITTED BLOCK ENDS WHERE IT DID (ADR-0097 4b). The paragraph, given twice its words: `reflow`
+  // grows below its old last line — the control — and `shrink` ends at or above it, every word kept.
+  const doubled = [BLOCK_LINES.join(' '), BLOCK_LINES.join(' ')].join(' ');
+  const lastBottom = (/** @type {Awaited<ReturnType<typeof blocksOf>>} */ read) =>
+    Math.min(...read.runs.filter((run) => run.top > 150).map((run) => run.bottom));
+  const oldBottom = lastBottom(before);
+  const grownBottom = lastBottom(await blocksOf(await editOne(doubled, 'reflow', lines)));
+  const shrunk = await editOne(doubled, 'shrink', lines);
+  const shrunkRead = await blocksOf(shrunk);
+  const shrunkText = (await textOf(shrunk)).replace(/\s+/gu, ' ');
+  record(
+    'a SHRINK block ends at or above its old last line with every word, where REFLOW grows below it',
+    grownBottom < oldBottom - 1 &&
+      lastBottom(shrunkRead) >= oldBottom - 1 &&
+      doubled.split(' ').every((word) => shrunkText.includes(word)),
+    `old bottom ${oldBottom.toFixed(2)}, reflow ${grownBottom.toFixed(2)}, shrink ${lastBottom(shrunkRead).toFixed(2)}`,
+  );
+
+  // AND AT THE FLOOR, WRITTEN: text that cannot fit even at 0.6 is written there, not refused.
+  const flood = Array.from({ length: 12 }, () => BLOCK_LINES.join(' ')).join(' ');
+  /** @type {string} */
+  let floorOutcome;
+  try {
+    const floored = (await textOf(await editOne(flood, 'shrink', lines))).replace(/\s+/gu, ' ');
+    floorOutcome = floored.includes('ends it The first') ? 'written' : 'written without all its words';
+  } catch (error) {
+    floorOutcome = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  record('a block too long even at the floor is WRITTEN at the floor, not refused', floorOutcome === 'written', floorOutcome);
+
+  // A LINE OF TWO RUNS REPLACED WHOLE — the shape of every translated line in a real document, and
+  // of a person retyping across a bold word. The diff empties the second run, and PDFium refuses to
+  // set an empty string (measured 2026-09-24): the run must be REMOVED, and the words the first run
+  // now carries must wrap at the line's last run WITH TEXT, not at the emptied one.
+  const twoRuns = await (async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 400]);
+    const bold = await document.embedFont(StandardFonts.HelveticaBold);
+    const regular = await document.embedFont(StandardFonts.Helvetica);
+    page.drawText('Bold start', { x: 72, y: 300, size: 11, font: bold });
+    page.drawText(' and the rest', { x: 72 + bold.widthOfTextAtSize('Bold start', 11), y: 300, size: 11, font: regular });
+    return document.save();
+  })();
+  const twoRunLines = ((await blocksOf(twoRuns)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+  const replacedWhole = 'Un début tout neuf, suivi de bien plus de mots que la ligne ne pouvait en contenir';
+  /** @type {string} */
+  let twoRunOutcome;
+  try {
+    const result = await localPdfiumExecution.apply({
+      session: twoRuns,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        blocks: [{ lines: twoRunLines, text: replacedWhole, fit: 'reflow' }],
+        version: 1,
+      }),
+      source: undefined,
+      reads: undefined,
+    });
+    const text = (await textOf(result)).replace(/\s+/gu, ' ');
+    const runsAfter = (await blocksOf(result)).runs;
+    const widest = Math.max(...runsAfter.map((run) => run.right));
+    twoRunOutcome =
+      replacedWhole.split(' ').every((word) => text.includes(word)) && !text.includes('the rest') && widest <= 400
+        ? 'written'
+        : `written wrongly: ${String(runsAfter.length)} run(s), widest right ${widest.toFixed(1)}`;
+  } catch (error) {
+    twoRunOutcome = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  record(
+    'a line of TWO runs replaced whole is written: the emptied run removed, the words wrapped inside the page',
+    twoRunOutcome === 'written',
+    twoRunOutcome,
+  );
+
+  // TWO BLOCKS IN ONE COMMAND (ADR-0097): both written, by one apply.
+  if (separate === undefined) return;
+  const both = await localPdfiumExecution.apply({
+    session: original,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      blocks: [
+        { lines, text: [BLOCK_LINES[0], 'a second line, rewritten', BLOCK_LINES[2]].join('\n'), fit: 'reflow' },
+        {
+          lines: separate.lines.map((line) => line.runs.map((run) => run.index)),
+          text: 'The block below, rewritten',
+          fit: 'reflow',
+        },
+      ],
+      version: 1,
+    }),
+    source: undefined,
+    reads: undefined,
+  });
+  const bothText = await textOf(both);
+  record(
+    'ONE edit carrying two blocks writes both, and leaves what neither named',
+    bothText.includes('a second line, rewritten') &&
+      bothText.includes('The block below, rewritten') &&
+      !bothText.includes(FAR_BELOW) &&
+      bothText.includes(BLOCK_LINES[0] ?? ''),
+    bothText.replace(/\s+/gu, ' ').slice(0, 160),
+  );
+
+  // A STANDARD-FONT TWIN (ADR-0097), and the reopened read that decides when one is needed.
+  const accented = 'a second line, déjà vu';
+  /**
+   * The narrowed fixture, its block's lines, and an apply writing `accented` into its second line.
+   *
+   * @param {string} baseFont
+   */
+  const narrowedFixture = async (baseFont) => {
+    const bytes = await aParagraphInStandardEncoding(baseFont);
+    const found = await blocksOf(bytes);
+    const narrowedLines = (found.blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+    const apply = () =>
+      localPdfiumExecution.apply({
+        session: bytes,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          blocks: [{ lines: narrowedLines, text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n'), fit: 'reflow' }],
+          version: 1,
+        }),
+        source: undefined,
+        reads: undefined,
+      });
+    /** The saved page's text, or the refusal's name — so a case records a refusal rather than crashing on it. */
+    const written = async () => {
+      try {
+        return await textOf(await apply());
+      } catch (error) {
+        return `refused: ${error instanceof Error ? error.name : String(error)}`;
+      }
+    };
+    return { bytes, narrowedLines, apply, written };
+  };
+  const renamed = await narrowedFixture('MonsteraNarrowSans');
+
+  // THE PREMISE, asserted rather than assumed: the fixture's own font writes `é` and a reader of the
+  // SAVED file does not see it — the defect the reopened read exists for. Without it the case below
+  // passes for a build that never twins, on a font that could carry the word all along.
+  let premise = 'the page’s own font carried é';
+  try {
+    const session = await pdfiumWriter.open(renamed.bytes);
+    try {
+      const [object] = renamed.narrowedLines[1] ?? [];
+      if (object !== undefined) {
+        await replaceTextObjects(session, 0, [{ index: object, text: accented }]);
+        const saved = await pdfiumWriter.serialise(session);
+        premise = (await textOf(saved)).includes('déjà') ? 'the page’s own font carried é' : 'held';
+      }
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  } catch (error) {
+    premise = `the premise could not be read: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  record('PREMISE: a font in StandardEncoding writes é that a reader of the saved file does not see', premise === 'held', premise);
+
+  const twinnedText = await renamed.written();
+  record(
+    'a word the page’s font cannot carry is WRITTEN through a standard-font twin, read from the saved bytes',
+    // AND THE ORIGINAL IS GONE: left in place it would still say what its own encoding made of the
+    // word — `ÿ`, measured — beside the twin.
+    twinnedText.includes(accented) && !twinnedText.includes('ÿ'),
+    twinnedText.includes(accented) ? 'written' : twinnedText.replace(/\s+/gu, ' ').slice(0, 120),
+  );
+
+  // A STANDARD-NAMED font twins too, where its twin is a different font. Times-Roman in
+  // StandardEncoding cannot carry `é`; its twin is Helvetica, which this page does not have, so the
+  // twin is a real one — the contrast to the refusal below, whose twin would be the page's own font.
+  const timesText = await (await narrowedFixture('Times-Roman')).written();
+  record(
+    'a standard-named font whose twin is a DIFFERENT font writes the word through it',
+    timesText.includes(accented),
+    timesText.includes(accented) ? 'written' : timesText.replace(/\s+/gu, ' ').slice(0, 120),
+  );
+
+  // THE SCRATCH PAGE LEAVES NOTHING: every write above probed its font on a page appended and deleted
+  // within the edit. A page object in the saved bytes beyond the document's own would be that page,
+  // orphaned — counted in the file's text, since a page no tree names is invisible to a page count.
+  const pageObjects = (/** @type {Uint8Array} */ bytes) =>
+    (Buffer.from(bytes).toString('latin1').match(/\/Type\s*\/Page(?![A-Za-z])/gu) ?? []).length;
+  const probedSaved = await renamed.apply();
+  record(
+    'a probed edit leaves NO page object behind: the saved file has exactly the pages it had',
+    pageObjects(probedSaved) === pageObjects(renamed.bytes) && pageObjects(renamed.bytes) === 1,
+    `page objects in the saved file ${String(pageObjects(probedSaved))}, before ${String(pageObjects(renamed.bytes))}`,
+  );
+
+  // AND WHERE NO TWIN CAN BE HAD, REFUSED — never saved as `Ø`. Helvetica itself in StandardEncoding:
+  // the standard load returns this very font, so the retry reads wrong again.
+  /** @type {string} */
+  let helveticaRefusal;
+  try {
+    const result = await (await narrowedFixture('Helvetica')).apply();
+    helveticaRefusal = `it was written, saying ${JSON.stringify((await textOf(result)).split(/\r?\n/u)[1] ?? '')}`;
+  } catch (error) {
+    helveticaRefusal = error instanceof Error ? error.name : String(error);
+  }
+  record(
+    'where the twin would be the same font, the edit is REFUSED rather than saved as a different letter',
+    helveticaRefusal === 'TextNotWritableError',
+    helveticaRefusal,
   );
 }
 

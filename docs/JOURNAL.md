@@ -892,7 +892,54 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
-## 2026-09-24 — Every section reaches its own features, and the fold stopped guessing
+## 2026-09-24 — Translate this page, and four defects it found in yesterday's editor
+
+*Translate document text* is built to [ADR-0097](DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)
+and its two same-day extensions. The path: Edit › Language › *Translate this page…*; a dialog naming a
+language and a provider with a key, saying the page's text is sent before the control that sends it;
+`ai.translatePage` in `main` reading the page's blocks, joining soft-wrapped lines, asking once (twice
+if the answer cannot be read) and answering the changed blocks; the renderer writing them as one
+`editTextBlock` with `fit: shrink`, so one Undo restores the page.
+
+**Live, on the cheapest Claude model** — `claude-haiku-4-5-20251001`, the first Haiku Anthropic's models
+endpoint lists, never hard-coded (`npm run probe:translate`, PASSED). Over the corpus's first pages
+(six carry no editable upright text): five of five translated and written in one run, 112 blocks, 4–7 s
+a page; four of five in another, the fifth answer not valid JSON — which is why a second ask exists.
+
+### What the first real pages showed, in order
+
+1. **A drawn newsletter translated correctly and looked wrong.** The title wrapped at its own old
+   width, the grown heading overprinted the paragraph, the paragraph broke line by line. ADR-0097's
+   extension: a one-line block wraps at its column; a translated block is fitted to its box by a
+   uniform scale found by bisection on trial pages closed without generating; soft wraps are joined
+   by the typesetter's test. The same page then kept its layout.
+2. **Wrapped words read at the END of the page** — copy, search and a screen reader got them last —
+   because new lines were appended to the page's objects. They now go after the line they continue.
+   **A shipped defect of the in-place editor.**
+3. **A correct wrap was refused**: `FPDFTextObj_GetText` counts a space the text page generates
+   after an object as that object's, so a line laid out beside the next block read back
+   `prochaine ` for `prochaine`. Read-backs now count drawn characters only, and compare through the
+   text page's own whitespace rule (two spaces read as one; spaces alone read as nothing, measured).
+   **Shipped: yesterday's editor refused such edits.**
+4. **On real pages every write failed with an internal error**: `FPDFText_SetText` refuses a string a
+   subset font cannot encode (5 of 5 pages), and refuses the EMPTY string, which the line diff uses to
+   empty a run an edit crossed. A refused set is now the font's answer (a twin), and an emptied run is
+   removed; the wrap follows the line's last run with text. **Shipped: retyping across a bold word, or
+   typing a letter the subset lacks, gave an internal error rather than an edit or the designed
+   refusal.**
+5. **Two refusals of my own making, fixed before any commit**: the twin collapses into a page's own
+   Helvetica-family font on save (caught by the new saved-bytes read-back; refused, never saved as
+   `Ø`); and a font probe placed off the page aborted PDFium's text-page builder, so probes are read
+   on a scratch page appended and deleted inside the edit — the proof asserts no page object is left.
+
+Each has a case in `pdfiumCommand.proof.mjs` (58) that its own mutation turns red.
+
+### And a dialog class that had no style
+
+The translation dialog showed raw browser selects, white on the dark theme, each caption running into
+its control. `.m-document-choice` — used by seven dialogs, AI setup among them — had no CSS rule at
+all. It now draws as the text-field primitive does, and each theme declares `color-scheme`, which the
+platform reads for a select's list and the scrollbars and which no theme had set.
 
 The owner's order: *"a feature that is done and has no way to reach it from its own ribbon section
 is a placement defect."* The audit walked every section against the done rows and against a live

@@ -718,6 +718,161 @@ describe('ai.checkKey', () => {
   });
 });
 
+describe('ai.translatePage (ADR-0097)', () => {
+  const DOC = asDocId('00000000-0000-4000-8000-0000000000b7');
+  const run = (index: number, text: string) => ({ index, text });
+  const box = { x0: 0, y0: 0, x1: 100, y1: 10 };
+  /**
+   * Two blocks: a heading of one line, and a paragraph of two lines of two runs whose first line
+   * ends SHORT — at 50 of 100, where `within` (about 37 wide on the next line's measure) would have
+   * fitted — so its break is a hard one and the text keeps it (ADR-0097 4c).
+   */
+  const BLOCKS = [
+    { box, style: undefined, lines: [{ box, runs: [run(3, 'Invoice')] }] },
+    {
+      box,
+      style: undefined,
+      lines: [
+        { box: { x0: 0, y0: 0, x1: 50, y1: 10 }, runs: [run(5, 'Payment is '), run(6, 'due')] },
+        { box: { x0: 0, y0: 0, x1: 80, y1: 10 }, runs: [run(8, 'within 30 days.')] },
+      ],
+    },
+  ];
+
+  /**
+   * Handlers whose page holds `blocks` and whose provider answers `reply` as a streamed OpenAI-format
+   * answer (or `status` when not 200), recording what it was asked.
+   */
+  function translating(blocks: readonly unknown[], replies: string | readonly string[], status = 200) {
+    /** One reply per ask, the last repeated — so a case can make the first answer unreadable. */
+    const sequence = typeof replies === 'string' ? [replies] : replies;
+    const secrets = createEphemeralSecrets();
+    secrets.write('ai.openai-key', 'a-key');
+    const asked: { system: string; user: string }[] = [];
+    const assistant = createAssistant({
+      secret: (id) => secrets.read()[id],
+      setting: () => undefined,
+      send: () => undefined,
+      fetchImpl: ((_url: string, init?: { body?: string }) => {
+        const body = JSON.parse(init?.body ?? '{}') as { messages: { role: string; content: string }[] };
+        asked.push({
+          system: body.messages.find((message) => message.role === 'system')?.content ?? '',
+          user: body.messages.find((message) => message.role === 'user')?.content ?? '',
+        });
+        const reply = sequence[Math.min(asked.length - 1, sequence.length - 1)] ?? '';
+        const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\ndata: [DONE]\n\n`;
+        return Promise.resolve(new Response(status === 200 ? chunk : '{}', { status }));
+      }) as unknown as typeof fetch,
+    });
+    const commands = {
+      textBlocks: (docId: DocId) =>
+        docId === DOC
+          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 0 })
+          : Promise.reject(new DocumentNotOpenError(docId, 'read its text blocks')),
+    } as unknown as DocumentCommands;
+    const handlers = createContractHandlers({
+      assistant,
+      appInfo,
+      capabilities: new CapabilityRegistry(),
+      commands,
+      documents: {} as unknown as DocumentService,
+      openedDocument: () => Promise.resolve(),
+      unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
+      pickDocument: () => Promise.resolve(null),
+      recent: createRecentFiles(createEphemeralSettings()),
+      settings: createEphemeralSettings(),
+      secrets,
+      chatHistory: NO_HISTORY,
+      pickSettingsFile: () => Promise.resolve(null),
+      revealLog: () => Promise.resolve(false),
+      titleBarOverlay: () => false,
+      confirmClose: () => false,
+      copySelection: () => false,
+      copyText: () => false,
+      openWebPage: () => Promise.resolve(false),
+      closeListening: () => false,
+      cloud: unconfiguredCloud(),
+      readDictionary: () => Promise.resolve(null),
+      ocrLanguages: () => Promise.resolve([]),
+    });
+    return { handlers, asked };
+  }
+  const ASK = { docId: DOC, page: 2, provider: 'openai', model: 'gpt-x', language: 'fr' } as const;
+
+  it('asks once with each block as lineText joins it, and answers ONLY the blocks that changed', async () => {
+    // THE SECOND BLOCK COMES BACK UNCHANGED, so a handler that answered every block would rewrite
+    // it for nothing — the case separates *changed* from *answered*.
+    const { handlers, asked } = translating(
+      BLOCKS,
+      JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.']),
+    );
+
+    const result = await handlers['ai.translatePage'](ASK);
+
+    expect(result).toStrictEqual({
+      ok: true,
+      value: { kind: 'translated', version: 7, blocks: [{ lines: [[3]], text: 'Facture' }] },
+    });
+    expect(asked).toHaveLength(1);
+    // THE BLOCKS AS THE KERNEL WILL DIFF THEM: runs joined as they are, lines by a line break.
+    expect(JSON.parse(asked[0]?.user ?? '[]')).toStrictEqual(['Invoice', 'Payment is due\nwithin 30 days.']);
+    expect(asked[0]?.system).toContain('into French');
+  });
+
+  it('an answer of the WRONG LENGTH is refused as unreadable — after ONE more ask, never matched by guess', async () => {
+    const { handlers, asked } = translating(BLOCKS, JSON.stringify(['Facture']));
+    expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
+      ok: true,
+      value: { kind: 'refused', problem: 'unreadable' },
+    });
+    // TWICE AND NO MORE: a third ask would be paying again for the same slip.
+    expect(asked).toHaveLength(2);
+  });
+
+  it('an unreadable FIRST answer is asked again, and a readable second one is written', async () => {
+    const { handlers, asked } = translating(BLOCKS, ['not an array', JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.'])]);
+    expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
+      ok: true,
+      value: { kind: 'translated', version: 7, blocks: [{ lines: [[3]], text: 'Facture' }] },
+    });
+    expect(asked).toHaveLength(2);
+  });
+
+  it('a provider REFUSAL is not asked again', async () => {
+    const { handlers, asked } = translating(BLOCKS, '', 401);
+    await handlers['ai.translatePage'](ASK);
+    expect(asked).toHaveLength(1);
+  });
+
+  it('the provider’s own refusal crosses by name', async () => {
+    const { handlers } = translating(BLOCKS, '', 401);
+    expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
+      ok: true,
+      value: { kind: 'refused', problem: 'unauthorised' },
+    });
+  });
+
+  it('a page with no editable text is nothing to translate, and the provider is NOT asked', async () => {
+    // THE CALL NOT MADE is the assertion: sending an empty array would still be a request a
+    // person pays for.
+    const { handlers, asked } = translating([], JSON.stringify([]));
+    expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
+      ok: true,
+      value: { kind: 'nothing-to-translate' },
+    });
+    expect(asked).toStrictEqual([]);
+  });
+
+  it('a document that is not open is refused by its code', async () => {
+    const { handlers } = translating(BLOCKS, '[]');
+    const other = asDocId('00000000-0000-4000-8000-0000000000b8');
+    expect(await handlers['ai.translatePage']({ ...ASK, docId: other })).toStrictEqual({
+      ok: false,
+      error: { code: 'document-not-open' },
+    });
+  });
+});
+
 describe('ai.history (ADR-0093)', () => {
   const DOC = asDocId('00000000-0000-4000-8000-0000000000a9');
 

@@ -1,6 +1,34 @@
 import { describe, expect, it } from 'vitest';
 
-import { type BlockableRun, type GroupableRun, groupIntoBlocks, groupIntoLines } from './textLines.js';
+import { type BlockableRun, type GroupableRun, groupIntoBlocks, groupIntoLines, paragraphText } from './textLines.js';
+
+describe('paragraphText (ADR-0097 4c)', () => {
+  /** A line of `text` from 0 to `x1`: ten characters take 50, so a character is 5 wide. */
+  const line = (text: string, x1: number) => ({ text, box: { x0: 0, x1 } });
+
+  it('joins a line the next line’s first word would NOT have fitted after — a soft wrap', () => {
+    // `jumps` is 5 characters and a space: 30 at 5 each. 180 + 30 = 210 > 200, so it wrapped.
+    expect(paragraphText([line('The quick brown fox', 180), line('jumps over the dog', 90)], 200)).toBe(
+      'The quick brown fox jumps over the dog',
+    );
+  });
+
+  it('keeps a break where the word WOULD have fitted — a short line was broken on purpose', () => {
+    // 120 + 30 = 150 < 200: room for `jumps`, so the break was the writer's, as in an address.
+    expect(paragraphText([line('14 Elm Street', 120), line('jumps over the dog', 90)], 200)).toBe(
+      '14 Elm Street\njumps over the dog',
+    );
+  });
+
+  it('decides line by line, so a paragraph then an address keeps only the address’s breaks', () => {
+    expect(
+      paragraphText(
+        [line('Please send the forms to', 190), line('our office at', 65), line('14 Elm Street', 65)],
+        200,
+      ),
+    ).toBe('Please send the forms to our office at\n14 Elm Street');
+  });
+});
 
 /**
  * The editor's line grouping, cased on the shapes the measurement produced.

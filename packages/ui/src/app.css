@@ -31,6 +31,9 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
   font-size: var(--font-chrome-13);
+  /* THE NATIVE CONTROLS TAKE THE BRAND'S ACCENT — a checkbox's tick, a slider's track — where they
+     drew the platform's blue beside green everywhere else. A token, so each theme's own accent. */
+  accent-color: var(--accent);
 }
 
 /* CONTROLS INHERIT IT. Chromium gives `button`, `input`, `select` and `textarea` a font of
@@ -2516,6 +2519,56 @@ textarea {
 }
 
 .m-ai-setup__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+/* A LABELLED CHOICE — a caption over a select — in the text-field primitive's shape (`.m-field`,
+   `.m-input`), so a dialog's drop-downs and text boxes read as one family. There was no rule for
+   this class at all: every dialog using it drew its caption run into a browser-default select. */
+.m-document-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-document-choice select {
+  padding: var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--bg2);
+  color: var(--text);
+  font-size: var(--font-chrome-13);
+}
+
+.m-document-choice select:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
+}
+
+/* TRANSLATE THIS PAGE (ADR-0097): the AI setup dialog's layout, so the two AI dialogs read alike. */
+.m-translate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-translate__intro {
+  margin: 0;
+  color: var(--text);
+}
+
+/* THE LIMIT IS SECONDARY TEXT, said before the action rather than discovered after it. */
+.m-translate__limits {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-translate__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-8);

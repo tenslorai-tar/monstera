@@ -194,6 +194,7 @@ describe('browser shim', () => {
       'ai.history.save',
       'ai.models',
       'ai.stop',
+      'ai.translatePage',
       'app.info',
       'app.ocrLanguages',
       'app.openWebPage',

@@ -1504,6 +1504,50 @@ test('an existing REDACT mark is drawn as a SOLID preview over the region it cov
   }
 });
 
+// TRANSLATE THIS PAGE (ADR-0097), in every theme: the dialog says what it sends before the control
+// that sends it, passes the gate, and a translation ends in ONE edit and its toast.
+for (const look of LOOKS) {
+  test(`${look.name}: TRANSLATE THIS PAGE says what it sends, passes axe, and writes the translation`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e2');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'translate.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      // A STORED KEY IS WHAT OFFERS A PROVIDER; the value is a fixture no provider sees.
+      secrets: { 'ai.openai-key': 'a-fixture-key' },
+      aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
+      translation: { kind: 'translated', version: asDocVersion(1), blocks: [{ lines: [[3]], text: 'Bonjour' }] },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Translate this page');
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Translate this page' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('The text on this page is sent to the AI provider below', { exact: false })).toBeVisible();
+    // NO LANGUAGE CHOSEN FOR THE PERSON: the start waits.
+    await expect(dialog.getByRole('button', { name: 'Translate' })).toBeDisabled();
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+
+    await dialog.locator('[data-translate-language]').selectOption('fr');
+    await dialog.getByRole('button', { name: 'Translate' }).click();
+    // THE WRITE'S OWN TOAST, which only a document.execute that answered produces.
+    await expect(page.getByText('Page translated. Undo puts the original back.')).toBeVisible();
+  });
+}
+
 // EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
 // page, the editor opens over a block, and nothing on that screen fails the gate.
 for (const look of LOOKS) {

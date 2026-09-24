@@ -97,6 +97,9 @@
   --accent-hover: #3bc677;
   --accent-soft: rgba(47, 185, 106, 0.14);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  /* THE NATIVE PARTS FOLLOW THE THEME: a select's list and the scrollbars are drawn by the
+     platform, which reads this and nothing else — without it they were light on a dark window. */
+  color-scheme: dark;
 }
 
 [data-theme='light'] {
@@ -117,6 +120,7 @@
   --accent-hover: #159645;
   --accent-soft: rgba(22, 163, 74, 0.12);
   --shadow: 0 10px 30px rgba(30, 35, 40, 0.18);
+  color-scheme: light;
 }
 
 [data-theme='hc'] {
@@ -137,6 +141,7 @@
   --accent-hover: #6ff5ab;
   --accent-soft: rgba(63, 240, 143, 0.28);
   --shadow: none;
+  color-scheme: dark;
 }
 
 /* ─── scales, identical in every theme ─────────────────────────────────────

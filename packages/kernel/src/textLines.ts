@@ -7,11 +7,13 @@
  * permits a grouping of ours where no engine answers, and
  * [ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)
  * moved its one consumer from a dialog onto the page: **it is permitted only
- * while its output reaches the in-place editor a person answers.** That is the
- * rule, and it is checkable rather than a judgement: *does this grouping's
- * output reach any consumer other than the in-place editor?* A second caller is
- * the moment it has become the second extraction path Part E2 bans, and this
- * file's header is where the next reader meets that.
+ * while its output reaches the in-place editor a person answers — or, since
+ * [ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md),
+ * a translation written back into the very blocks it was read from.** That is
+ * the rule, and it is checkable rather than a judgement: *does this grouping's
+ * output reach any consumer other than those two?* A third caller is the moment
+ * it has become the second extraction path Part E2 bans, and this file's header
+ * is where the next reader meets that.
  *
  * So nothing here is exported to the renderer's text layer, to search, to
  * extraction or to export. Those read MuPDF's structured text through
@@ -280,4 +282,37 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
       },
     ];
   });
+}
+
+/**
+ * A block's text as a paragraph: its SOFT-wrapped lines joined by a space, its hard breaks kept as
+ * line breaks — what a translation is sent, so the paragraph re-wraps as one (ADR-0097 4c).
+ *
+ * ## The typesetter's own test, and no constant
+ *
+ * A line was soft-wrapped when **the next line's first word would not have fitted at its end**:
+ * that is the only reason a typesetter breaks a line inside a paragraph. The first word's width is
+ * the next line's width in proportion to its characters, a space included. A line that ends short
+ * of where that word would have reached — an address line, a list entry, a paragraph's last line —
+ * was broken on purpose, and the break is kept.
+ *
+ * @param lines the block's lines, top to bottom, each its text and its box
+ * @param right the block's right edge
+ */
+export function paragraphText(
+  lines: readonly { readonly text: string; readonly box: { readonly x0: number; readonly x1: number } }[],
+  right: number,
+): string {
+  let text = '';
+  for (const [at, line] of lines.entries()) {
+    text += line.text;
+    const next = lines[at + 1];
+    if (next === undefined) break;
+    const nextText = next.text.trimStart();
+    const firstWord = nextText.split(/\s/u)[0] ?? '';
+    const perCharacter = nextText.length === 0 ? 0 : (next.box.x1 - next.box.x0) / nextText.length;
+    const soft = firstWord !== '' && line.box.x1 + (firstWord.length + 1) * perCharacter > right;
+    text = soft ? `${text.trimEnd()} ` : `${text}\n`;
+  }
+  return text;
 }

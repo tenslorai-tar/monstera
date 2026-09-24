@@ -2,7 +2,14 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
-import { editTextBlock, pdfiumWriter, replaceTextObjects, textObjectText } from './pdfiumFfi.js';
+import {
+  editTextBlocks,
+  pdfiumWriter,
+  replaceTextObjects,
+  textObjectText,
+  drawnTexts,
+} from './pdfiumFfi.js';
+import { TextNotWritableError } from './textEditRefusals.js';
 
 /**
  * In-place text editing, as the bus calls it: **region replacement**.
@@ -177,26 +184,47 @@ export async function invertReplaceTextObject(
 }
 
 /**
- * Edits one block of text in place and answers the document's new bytes
- * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
+ * Edits blocks of text on one page in place and answers the document's new bytes
+ * ([ADR-0096](../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md),
+ * [ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)).
  *
  * Everything the edit decides — which runs change, where a line breaks, where
- * the new lines go — is `editTextBlock`'s in the adapter, on one loaded page:
- * the diff must read the runs at the moment it writes them, and a read taken in
- * a separate open would be a second reading of the page to diff against.
+ * the new lines go, which writes need a standard-font twin — is
+ * `editTextBlocks`' in the adapter, on one loaded page: the diff must read the
+ * runs at the moment it writes them, and a read taken in a separate open would
+ * be a second reading of the page to diff against.
  *
- * A font that cannot carry what was typed throws `TextNotWritableError` before
- * the page is generated, and this answers no bytes — so the document is exactly
- * what it was.
+ * Text neither a run's font nor its twin can carry throws `TextNotWritableError`
+ * and this answers no bytes — so the document is exactly what it was.
+ *
+ * ## Every write is read back from the SAVED bytes, reopened
+ *
+ * The adapter reads each write back from the live page, and for a run's own font
+ * that agrees with a reader of the file — 0 disagreements in 457 corpus writes
+ * (`scripts/research/pdfiumFallbackFont.mjs`). A standard-font TWIN is where it
+ * does not: measured 2026-09-24, in a document already holding a Helvetica-family
+ * font declared in StandardEncoding (Helvetica, Helvetica-Bold, Arial), the
+ * Helvetica twin reads `é` on the live page and is saved into that font's own
+ * dictionary, where a reader decodes the byte `E9` as `Ø`. Times-Roman and
+ * Courier in the same encoding twin correctly, because their twin is a different
+ * font.
+ *
+ * So the new bytes are opened again and every write read back as a reader reads
+ * it, and anything that says other than what was written refuses the edit. There
+ * is no retry: the failure this catches is the twin collapsing into the page's
+ * font, and a second attempt would make the same twin.
  */
 export async function applyEditTextBlock(
   image: ByteImage,
   command: CommandOfKind<'editTextBlock'>,
 ): Promise<ByteImage> {
-  return onImage(image, async (session) => {
-    await editTextBlock(session, command.page, { lines: command.lines, text: command.text });
-    return pdfiumWriter.serialise(session);
+  const { bytes, written } = await onImage(image, async (session) => {
+    const placed = await editTextBlocks(session, command.page, command.blocks);
+    return { bytes: await pdfiumWriter.serialise(session), written: placed };
   });
+  const read = await onImage(bytes, (session) => drawnTexts(session, command.page, written.map((write) => write.index)));
+  if (written.some((write, at) => read[at] !== write.text)) throw new TextNotWritableError();
+  return bytes;
 }
 
 /**

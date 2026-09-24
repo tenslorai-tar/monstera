@@ -7,7 +7,14 @@ import {
   MAX_EVENT_TEXT,
   checkEvent,
 } from '@monstera/contract';
-import { type ChatImage, type ChatMessage, type ChatRefusal, listModels, streamChat } from '@monstera/kernel';
+import {
+  type ChatAnswer,
+  type ChatImage,
+  type ChatMessage,
+  type ChatRefusal,
+  listModels,
+  streamChat,
+} from '@monstera/kernel';
 
 /**
  * The assistant, in `main`
@@ -66,6 +73,12 @@ export interface Assistant {
   readonly ask: (request: AskRequest) => { readonly started: boolean };
   /** `stopped: false` means nothing was streaming to that subscription. */
   readonly stop: (subscription: string) => { readonly stopped: boolean };
+  /**
+   * One whole answer, gathered rather than streamed — a translation's (ADR-0097), which is read
+   * as one array and written, so no piece of it is shown as it arrives. The same `streamChat`
+   * every ask goes through: one resolver of how each provider is asked (B3a).
+   */
+  readonly complete: (request: Omit<AskRequest, 'subscription' | 'image'>) => Promise<ChatAnswer>;
 }
 
 /** The pieces one delta becomes, each within the event's bound. */
@@ -154,5 +167,16 @@ export function createAssistant(parts: AssistantParts): Assistant {
       controller.abort();
       return { stopped: true };
     },
+
+    complete: ({ provider, model, messages, system }) =>
+      streamChat({
+        provider,
+        model,
+        key: keyFor(provider),
+        endpoint: endpointFor(provider),
+        messages,
+        ...(system === undefined ? {} : { system }),
+        ...(parts.fetchImpl === undefined ? {} : { fetchImpl: parts.fetchImpl }),
+      }),
   };
 }

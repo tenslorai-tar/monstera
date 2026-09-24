@@ -3114,9 +3114,9 @@ export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'refused';
  *
  * ## `text-not-writable` is the EDITOR's to say
  *
- * The page's font cannot carry what was typed; the editor stays open with the
- * words and says so beside them, where the person can change them. Every other
- * refusal goes where every refusal goes.
+ * Neither the page's font nor a standard one can carry what was typed (ADR-0097);
+ * the editor stays open with the words and says so beside them, where the person
+ * can change them. Every other refusal goes where every refusal goes.
  */
 export async function commitTextBlock(
   deps: DocumentCommandDeps,
@@ -3136,8 +3136,8 @@ export async function commitTextBlock(
     {
       kind: 'editTextBlock',
       page,
-      lines: block.lines.map((line) => line.runs.map((run) => run.index)),
-      text,
+      // REFLOW: a person typing sees the block grow as they type, and it stays that way.
+      blocks: [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text, fit: 'reflow' }],
       version,
     },
     {

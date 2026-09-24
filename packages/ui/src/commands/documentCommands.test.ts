@@ -1118,8 +1118,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           command: {
             kind: 'editTextBlock',
             page: 3,
-            lines: [[4, 9], [2]],
-            text: 'The quick brown dog\njumps over',
+            blocks: [{ lines: [[4, 9], [2]], text: 'The quick brown dog\njumps over', fit: 'reflow' }],
             version: 7,
           },
         },

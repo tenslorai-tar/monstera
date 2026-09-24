@@ -34,6 +34,15 @@ export const subscriptionIdSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9
  */
 export const MAX_EVENT_TEXT = 8192;
 
+/**
+ * Why a provider gave no answer, or no more of one — ONE list, for a streamed answer's end and for
+ * a translation's (ADR-0097), because both are the kernel's `ChatRefusal` crossing the wire.
+ *
+ * `out-of-credit` is Anthropic's account refusal, told apart from `rejected` because it is the one
+ * the person fixes by paying (anthropicCredit.ts).
+ */
+export const AI_ANSWER_REFUSALS = ['no-key', 'unauthorised', 'out-of-credit', 'rejected', 'unreachable', 'unreadable'] as const;
+
 export const EVENTS = {
   /**
    * A piece of an assistant answer, as it arrives. Many per answer, in order.
@@ -53,11 +62,7 @@ export const EVENTS = {
     .object({
       subscription: subscriptionIdSchema,
       stopped: z.boolean(),
-      // `out-of-credit` is Anthropic's account refusal, told apart from `rejected` because it is
-      // the one the person fixes by paying (anthropicCredit.ts).
-      refusal: z
-        .enum(['no-key', 'unauthorised', 'out-of-credit', 'rejected', 'unreachable', 'unreadable'])
-        .optional(),
+      refusal: z.enum(AI_ANSWER_REFUSALS).optional(),
     })
     .strict(),
 

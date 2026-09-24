@@ -230,6 +230,8 @@ export {
   type ChatRequest,
   streamChat,
 } from './aiChat.js';
+// A PAGE'S TRANSLATION (ADR-0097): the instruction, the request and the one reading of the answer.
+export { readTranslation, translationInstruction, translationRequest } from './translation.js';
 export {
   type AskWindow,
   type ReadPageText,
@@ -292,6 +294,7 @@ export {
   type EditableLine,
   type GroupableRun,
   groupIntoBlocks,
+  paragraphText,
   groupIntoLines,
 } from './textLines.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
