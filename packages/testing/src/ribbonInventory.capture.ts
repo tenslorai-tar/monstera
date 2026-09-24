@@ -15,8 +15,8 @@ const OUT = process.env['CAPTURE_OUT'] ?? 'capture';
 
 test('the ribbon, section by section, at 1920 × 1080', async ({ page }) => {
   test.setTimeout(120_000);
+  // THE FIRST LOOK, which `LOOKS`' literal type says is always there — `designBaselines.visual.ts` takes it the same way.
   const look = LOOKS[0];
-  if (look === undefined) throw new Error('no look is declared');
   await page.setViewportSize({ width: 1920, height: 1080 });
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
