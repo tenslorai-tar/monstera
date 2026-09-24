@@ -1315,8 +1315,11 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
     expect(await unusedRoom()).toBeGreaterThanOrEqual(-1);
     checked += 1;
   }
-  // A LOOP THAT CHECKED NOTHING passes for a fold that never ran; at this width most sections fold.
-  expect(checked).toBeGreaterThan(1);
+  // A LOOP THAT CHECKED NOTHING passes for a fold that never ran. AT LEAST ONE, and not *most*:
+  // how many sections fold at this width depends on the machine's fonts — more than one on the
+  // machine this case was written on, exactly one on both CI runners (the run for 08ec8de,
+  // 2026-09-24), which is what a threshold read on one machine costs.
+  expect(checked).toBeGreaterThan(0);
   await sections.first().click();
 
   // EVERY GROUP STILL HAS A NAMED TOOL. A group folded into nothing but a More is a caption over an
