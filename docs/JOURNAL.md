@@ -892,6 +892,36 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — The full-app tests take a measured time limit, the owner's decision
+
+The pre-push `npm run test` failed three tests in `AppClose.test.tsx` and `AppTabs.test.tsx` at
+Vitest's default 5000 ms. They were investigated before anything changed, all on the development
+machine (Windows 11, 4 cores, 11.9 GB):
+
+- **Not a loop.** One test rendered `App` 8 times and 256 tooltips in all (a probe written to stdout,
+  since happy-dom's console prints nothing). A CPU profile gave about 15% of the time to React's
+  development `jsx`, which records a stack for every element.
+- **Not one commit.** The two files, one worker, two runs per commit across the Stage 10 batch: every
+  commit between 18.4 and 24.6 s with no step, against 17.9–19.7 s at `5dfb3c3`. The difference is
+  inside the spread.
+- **Not the rulers**, which were the suspect: 21.1–24.6 s with them off.
+- **The spread itself crosses the default.** Alone, 0.66–2.5 s per test; two files together, up to
+  6.4 s; a passing full suite, slowest 3.4 and 3.9 s; the failing one, 5.8 s.
+
+The default was never chosen for these tests, and it sits inside their normal spread, so they failed
+at random, as was already noted before this batch. Asked, the owner chose a measured limit, with two
+conditions: it applies to exactly the test files that render the whole `App`, found by searching the
+code; and the readings and the machine sit beside the constant, with CI's possibly slower runners
+named: *if CI ever comes close to 20 s, re-measure rather than raise the number.*
+
+`FULL_APP_TEST_TIMEOUT` is 20 000 ms in `packages/ui/src/fullAppTestLimit.ts`. The five files that
+render `<App` set it. `fullAppTestLimit.test.ts` finds them by scanning `packages/ui/src` for a JSX
+element named exactly `App`: its positive control requires `App.test.tsx` among more than a hundred
+test files, and it fails when a rendering file lacks the limit (mutated on `AppViewLifetime.test.tsx`:
+red, naming the file) or a file that does not render `App` names it.
+
+---
+
 ## 2026-09-24 — The Properties tab edits the selection, and a selection survives the edit
 
 v5-02 draws the right panel's Properties tab changing a selected mark as each control is used. Two

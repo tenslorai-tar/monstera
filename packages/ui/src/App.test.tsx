@@ -17,6 +17,10 @@ import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
 import { resetSharedPainter } from './searchHighlight.js';
 import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
+import { FULL_APP_TEST_TIMEOUT } from './fullAppTestLimit.js';
+
+// THIS FILE RENDERS THE WHOLE APP, whose tests' measured spread crosses Vitest's default limit.
+vi.setConfig({ testTimeout: FULL_APP_TEST_TIMEOUT });
 
 /**
  * The UI-level half of the wired-tools pair for `document.open`.
