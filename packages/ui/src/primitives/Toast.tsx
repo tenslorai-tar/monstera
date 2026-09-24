@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { X } from 'lucide-react';
 import type { MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Icon } from './Icon.js';
 import { IconButton } from './IconButton.js';
@@ -38,6 +38,15 @@ export interface ToastMessage {
  * One timer per message rather than one sweep over the queue: two saves a second apart must
  * leave a second apart, and a shared interval would round them to its own tick. The effect's
  * cleanup clears it, so a toast dismissed by hand takes its timer with it.
+ *
+ * ## And the timer STOPS while a person is on it
+ *
+ * The × is a tab stop, so a keyboard user can be on it when the lifetime runs out — and a toast
+ * removed from under its own focused button drops focus to the page, losing the reader's place
+ * (WCAG 2.2.1 asks that a time limit can be extended; 2.4.3 that focus keeps its order). So the
+ * timer runs only while the toast has neither the pointer over it nor focus inside it, and on
+ * leaving it resumes with what was LEFT rather than starting again, so hovering on the way past
+ * does not make a toast stay twice as long.
  */
 function ToastRow({
   toast,
@@ -52,18 +61,44 @@ function ToastRow({
 }): ReactElement {
   const { _ } = useLingui();
   const { id } = toast;
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  // WHAT IS LEFT of the lifetime, carried across a pause. A ref, because spending it is not
+  // something the toast re-renders for.
+  const remaining = useRef(lifetime);
+  const held = hovered || focused;
 
   useEffect(() => {
+    if (held) return undefined;
+    const started = Date.now();
     const timer = setTimeout(() => {
       onDismiss(id);
-    }, lifetime);
+    }, remaining.current);
     return () => {
       clearTimeout(timer);
+      remaining.current = Math.max(0, remaining.current - (Date.now() - started));
     };
-  }, [id, lifetime, onDismiss]);
+  }, [held, id, onDismiss]);
 
   return (
-    <div className={`m-toast m-toast--${toast.kind}`}>
+    <div
+      className={`m-toast m-toast--${toast.kind}`}
+      onBlur={(event) => {
+        // FOCUS MOVING BETWEEN THIS TOAST'S OWN PARTS is not leaving it.
+        if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) {
+          setFocused(false);
+        }
+      }}
+      onFocus={() => {
+        setFocused(true);
+      }}
+      onMouseEnter={() => {
+        setHovered(true);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+      }}
+    >
       <Icon name={toast.kind === 'done' ? 'CircleCheck' : 'CircleAlert'} size="dense" />
       <p className="m-toast__message">{_(toast.message)}</p>
       <IconButton

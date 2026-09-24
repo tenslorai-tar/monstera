@@ -892,6 +892,29 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-24 — A toast no longer vanishes from under a keyboard user
+
+`Toast.tsx` timed each message out after four seconds regardless of what the person was doing. Its ×
+is a tab stop, so a keyboard user could be on it when the timer fired. The toast was removed from
+under its focused button and focus dropped to the page, losing the reader's place. WCAG 2.2.1 asks
+that a time limit be extendable, and 2.4.3 that focus keep its order.
+
+The timer now runs only while the toast has **neither the pointer over it nor focus inside it**. On
+leaving, it resumes with **what was left**, not a fresh lifetime, so hovering on the way past does not
+make a toast stay twice as long. Focus moving between the toast's own parts is not leaving it.
+
+`primitives/Toast.test.tsx` is the primitive's first test, with four cases:
+
+- the × focused, and three lifetimes later the toast is there with focus still on it;
+- the control: nothing on it, gone at exactly its lifetime and not a millisecond before;
+- resuming with the second that was left;
+- the same hold under the pointer.
+
+Mutations: a timer that ignores the hold reddens the focus and pointer cases, and a restart in place of
+a resume reddens the resume case.
+
+---
+
 ## 2026-09-24 — The Stage 9 close's sweep: a first run starved, a second sealed ok
 
 **The first full sweep sealed `failed (1 timed out)`.** `provision:mupdf` passed its 180-second
