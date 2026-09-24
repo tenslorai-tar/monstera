@@ -968,6 +968,13 @@ export const STATUS_SAVED_HOURS = messageKey('surface.status.saved-hours');
 export const STATUS_SAVED_DAYS = messageKey('surface.status.saved-days');
 /** The tab's dot: what a screen reader hears where a sighted reader sees it. */
 export const TAB_UNSAVED = messageKey('surface.tabs.unsaved');
+/**
+ * The WINDOW's title — the taskbar's, Alt+Tab's and a screen reader's name for the window. The
+ * product is "Monstera PDF Editor", never "Monstera" alone.
+ */
+export const WINDOW_TITLE = messageKey('surface.window.title');
+export const WINDOW_TITLE_DOCUMENT = messageKey('surface.window.title-document');
+export const WINDOW_TITLE_UNSAVED = messageKey('surface.window.title-unsaved');
 /** The toast strip's × and the confirmations the save commands raise. */
 export const TOAST_DISMISS = messageKey('action.toast-dismiss.label');
 export const TOAST_SAVED = messageKey('toast.saved');
@@ -2529,6 +2536,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [STATUS_SAVED_HOURS]: '{count, plural, one {Saved 1 hr ago} other {Saved # hr ago}}',
   [STATUS_SAVED_DAYS]: '{count, plural, one {Saved 1 day ago} other {Saved # days ago}}',
   [TAB_UNSAVED]: 'Unsaved changes',
+  [WINDOW_TITLE]: 'Monstera PDF Editor',
+  [WINDOW_TITLE_DOCUMENT]: '{file} — Monstera PDF Editor',
+  [WINDOW_TITLE_UNSAVED]: '{file} ● — Monstera PDF Editor',
   [TOAST_DISMISS]: 'Dismiss',
   [TOAST_SAVED]: 'Saved',
   [TOAST_COPY_SAVED]: 'Copy saved',

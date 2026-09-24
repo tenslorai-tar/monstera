@@ -1655,6 +1655,54 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
     });
 
+    it('the WINDOW TITLE carries the tab’s dot: after an edit, cleared by Save and by Save back to cloud', async () => {
+      // THE VERSIONS MOVE AS MAIN'S DO: each edit mints the next, and each save states the one it
+      // wrote. A fixed answer would make the second edit land on the version already saved, and
+      // the dot could never come back for the save-back half of the case.
+      let version = 1;
+      const client = createClient(channels, (id) => {
+        if (id === 'document.execute') {
+          version += 1;
+          return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
+        }
+        if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version) }));
+        if (id === 'cloud.saveBack') {
+          return Promise.resolve(ok({ kind: 'saved-back' as const, version: asDocVersion(version) }));
+        }
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      const settle = async (): Promise<void> => {
+        await act(async () => {
+          await Promise.resolve();
+        });
+      };
+      render(<App client={client} settings={freshSettings()} />);
+      // THE PRODUCT'S NAME with no document, never "Monstera" alone.
+      expect(document.title).toBe('Monstera PDF Editor');
+
+      await withDocumentOpen();
+      expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
+
+      await pressCommand('Rotate page');
+      await settle();
+      expect(document.title).toBe('annual.pdf ● — Monstera PDF Editor');
+
+      await pressCommand('Save');
+      await settle();
+      expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
+
+      await pressCommand('Rotate page');
+      await settle();
+      expect(document.title).toBe('annual.pdf ● — Monstera PDF Editor');
+
+      await pressCommand('Save back to cloud');
+      await settle();
+      expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
+    });
+
     it('the SAVE control dispatches document.save, and does NOT rebuild the view', async () => {
       // A save changes the file, not the document. The version bumps — §4 bumps
       // it for every applied mutation — and the canonical image is the same

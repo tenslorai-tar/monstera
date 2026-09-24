@@ -12,6 +12,7 @@ import {
   type RenderableCommand,
 } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
+import { useLingui } from '@lingui/react';
 import {
   useCallback,
   useEffect,
@@ -326,7 +327,7 @@ import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
 import { ToastStrip } from './primitives/Toast.js';
-import { isDirty, savedState, savedTick } from './savedState.js';
+import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -614,6 +615,15 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     () => tabs.map((tab) => ({ ...tab, dirty: isDirty(tab.version, tab.savedVersion) })),
     [tabs],
   );
+  // THE WINDOW'S TITLE, which Electron copies from the page's: what the taskbar, Alt+Tab and a
+  // screen reader call this window. The same rule as the tab's dot, and a string rather than an
+  // object in the dependency, so the title is written when its words change and not on a tick.
+  const { _ } = useLingui();
+  const titleParts = windowTitle(open);
+  const title = _(titleParts.message, titleParts.values);
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
 
   /**
    * One store per open document, minted with its tab and dropped with it.

@@ -7,8 +7,11 @@ import {
   STATUS_SAVED_JUST_NOW,
   STATUS_SAVED_MINUTES,
   STATUS_UNSAVED,
+  WINDOW_TITLE,
+  WINDOW_TITLE_DOCUMENT,
+  WINDOW_TITLE_UNSAVED,
 } from './messages/en.js';
-import { isDirty, savedState, savedTick } from './savedState.js';
+import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 
 /** An arbitrary wall-clock moment. Every case is relative to it, so its value decides nothing. */
 const AT = 1_700_000_000_000;
@@ -25,6 +28,20 @@ describe('isDirty', () => {
     // clean. A rule written once has to be right for every caller, including one that hands
     // the arguments over in the other order.
     expect(isDirty(4, 5)).toBe(true);
+  });
+});
+
+describe('windowTitle', () => {
+  it('names the product alone, the file, or the file with the dot — by isDirty', () => {
+    expect(windowTitle(undefined)).toStrictEqual({ message: WINDOW_TITLE, values: {} });
+    expect(windowTitle({ name: 'lease.pdf', version: 4, savedVersion: 4 })).toStrictEqual({
+      message: WINDOW_TITLE_DOCUMENT,
+      values: { file: 'lease.pdf' },
+    });
+    expect(windowTitle({ name: 'lease.pdf', version: 5, savedVersion: 4 })).toStrictEqual({
+      message: WINDOW_TITLE_UNSAVED,
+      values: { file: 'lease.pdf' },
+    });
   });
 });
 

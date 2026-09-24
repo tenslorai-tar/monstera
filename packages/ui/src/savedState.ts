@@ -1,6 +1,9 @@
 import type { MessageKey } from '@monstera/shared';
 
 import {
+  WINDOW_TITLE,
+  WINDOW_TITLE_DOCUMENT,
+  WINDOW_TITLE_UNSAVED,
   STATUS_SAVED,
   STATUS_SAVED_DAYS,
   STATUS_SAVED_HOURS,
@@ -14,11 +17,11 @@ import {
  *
  * ## One function, because three surfaces ask the same question
  *
- * The status bar draws the words, the tab draws a dot and the close path decides whether to
- * ask. Each reading the two version numbers for itself would be three opinions about what
- * *dirty* means, which is how a tab ends up clean beside a bar saying otherwise (B3a). The
- * close path stays on `document.unsaved` — main's own answer, and the one that must not be
- * wrong — and the two drawn surfaces take {@link savedState} from here.
+ * The status bar draws the words, the tab draws a dot, the window's title carries the same dot
+ * and the close path decides whether to ask. Each reading the two version numbers for itself
+ * would be four opinions about what *dirty* means, which is how a tab ends up clean beside a bar
+ * saying otherwise (B3a). The close path stays on `document.unsaved` — main's own answer, and
+ * the one that must not be wrong — and the drawn surfaces take {@link isDirty} from here.
  *
  * ## The clock is PASSED IN
  *
@@ -56,6 +59,26 @@ export interface SavedState {
  */
 export function isDirty(version: number, savedVersion: number): boolean {
   return version !== savedVersion;
+}
+
+/**
+ * The window's title: the product alone with no document, else the focused file's name, with the
+ * tab's dot when it holds changes its file does not.
+ *
+ * **The dot is {@link isDirty}'s**, the tab's own rule, so a title can never say clean beside a
+ * dotted tab. Save and *Save back to cloud* both clear it the same way, through `onSaved` moving
+ * `savedVersion` — which is why neither needs a line here.
+ *
+ * @param focused the focused document's name and its two version numbers, or `undefined` for none
+ */
+export function windowTitle(
+  focused: { readonly name: string; readonly version: number; readonly savedVersion: number } | undefined,
+): { readonly message: MessageKey; readonly values: Readonly<Record<string, string>> } {
+  if (focused === undefined) return { message: WINDOW_TITLE, values: {} };
+  return {
+    message: isDirty(focused.version, focused.savedVersion) ? WINDOW_TITLE_UNSAVED : WINDOW_TITLE_DOCUMENT,
+    values: { file: focused.name },
+  };
 }
 
 /**
