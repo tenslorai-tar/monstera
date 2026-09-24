@@ -1270,6 +1270,17 @@ and a stale index answered from a new walk deletes an annotation out of two of
 them. Handles are never written to the file and
 survive no save.
 
+**A selection survives a command that keeps the walk** (amended 2026-09-24,
+[ADR-0102](DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)).
+The contract's `KEEPS_THE_ANNOTATION_WALK` names the annotation commands that
+leave every mark at its position and of its kind, adding and removing none —
+placing, restyling and retexting — and the kernel proves each against the engine,
+with removal and reply as the controls that do change it. After one applies to a
+selection, the renderer re-reads the walk at the version it produced and selects
+the same indices there; if the answer carries any other version, the selection is
+dropped. Nothing about a handle's meaning across versions changes: this is a
+version change whose walk is asked for again.
+
 **Coordinates.** Five spaces exist — `PdfPoint` (y-up), `FitzPoint` (y-down),
 `ViewportPoint` (CSS px), `XObjectPoint`, `RasterPoint`. They are **branded
 types**; passing one where another is expected is a compile error. One
@@ -1392,6 +1403,7 @@ type Placement =
   | { surface: 'status-bar';    cluster: 'chrome'; order: number }
   | { surface: 'title-bar';     emphasis: 'primary' | 'normal'; order: number }
   | { surface: 'rail';          order: number }
+  | { surface: 'properties';    order: number }
 ```
 
 A command may carry several placements — Highlight legitimately lives in
@@ -1399,7 +1411,7 @@ Home › Quick tools, Comment › Markup, and the annotation context menu.
 
 `SectionId` is exactly the eight sections of §10.3. The ribbon, floating
 toolbar, context menus, start-screen shortcuts, the status bar's command buttons,
-the title bar's and the rail's foot are all **derived** from placements. **A
+the title bar's, the rail's foot and the Properties tab's foot are all **derived** from placements. **A
 hand-maintained layout file for any of them is the second wiring place this
 registry exists to forbid.**
 
@@ -1420,6 +1432,13 @@ group naming the same `menu` draw as one captioned button opening their commands
 the way *More* does with a name: the owner's Forms › Data is *Export* and *Import*
 over six format commands. A menu is one primary unit of the row, and it does not
 combine with `secondary`.
+
+**The Properties tab has a foot** (amended 2026-09-24,
+[ADR-0102](DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md)).
+A command placed on `properties` is drawn at the foot of the right panel's
+Properties tab while a selection exists and its `when` holds: the design's
+*Reply* and *Delete*. The tab's controls edit the selection as they are used, and
+with nothing selected they show the authoring settings.
 
 **The title bar projects the application's own commands** (amended 2026-09-23,
 [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
@@ -2662,6 +2681,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-24 | **A selection survives a command that keeps the walk, and the Properties tab edits it** (§6, §7's `Placement`). v5-02's Properties tab changes the selected mark as each control is used, with no *Apply*, and ADR-0041's rule — a selection is dropped when the version moves — would empty the tab on every change. The contract's `KEEPS_THE_ANNOTATION_WALK` names placing, restyling and retexting; **measured** on a page of four kinds, including a note whose rewrite adds a `/Popup` to `/Annots`, each leaves the walk exactly as it was, and removal and reply are the controls that change it. After one applies, the renderer re-reads the walk at the version it produced and selects the same indices, dropping the selection on any other version. `properties` is a placement drawn at the tab's foot, for *Reply* and *Delete*. Author, blend and the creation line are not built: the walk carries none of them. **Rejected:** dropping the selection; renderer arithmetic over the old items; a per-answer flag; keeping *Apply*; footer buttons named by id | §6's selection rule for commands that keep the walk; §7's placement union without `properties` | [ADR-0102](DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md) |
 | 2026-09-24 | **A ribbon placement may name a menu** (§7's `Placement`). v5-08 draws Forms › Data as *Export* and *Import* over six format commands, which `exportFormDataCommand` keeps as six on purpose — *"a dialog whose only control is a three-way choice spends a click on something the menu can say."* Placements in a group naming the same `menu` draw as one captioned button opening them; it is one primary unit to the fold and does not combine with `secondary`. **Rejected:** a format dialog; six primary buttons; one format as the primary; a menu declared by the surface | §7's ribbon placement with no menu | [ADR-0101](DECISIONS/0101-a-ribbon-placement-may-name-a-menu.md) |
 | 2026-09-24 | **A ribbon placement may be secondary, and the rail has a foot** (§7's `Placement`, §10.3's rail clause). The owner's v5 design draws four Home groups and nineteen tools where the running ribbon places fourteen in *File* alone, and says the rest fold into each group's *More*; the width fold cannot say *less-used*. `prominence: 'secondary'` on a ribbon placement puts a tool in its group's *More* at every width, absent meaning primary, a group holding at least one primary. The design's Settings gear sits at the rail's foot, and `rail` joins the union as a projected surface. **Rejected:** a layout file of the design's buttons; removing what the design does not draw; an `order` threshold; prominence on the command; one section-wide *More*; Settings in the title bar | §7's `Placement` with seven surfaces and no prominence; §10.3's rail as the eight sections alone | [ADR-0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md) |
 | 2026-09-24 | **A dropped file is opened by the preload, and its path never reaches the page** (§5's bridge, §10.3's start-screen clause). A drop is a page event whose `File` has no path, and a contract channel taking a path is L2's violation. The bridge gains `openDropped(file)`; the preload resolves the path with `webUtils.getPathForFile` — invariant 1's third name — and asks main on `document.openDropped`, a preload channel the page's client cannot name; a `File` built in script resolves to no path, so the page cannot forge one. **Rejected:** handing the page the path; intercepting Chromium's navigation-on-drop; a drop token main cannot issue; exposing `getPathForFile` to the page | §10.3's *"Drag-drop a PDF anywhere to open"*, which had no mechanism | [ADR-0099](DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md) |

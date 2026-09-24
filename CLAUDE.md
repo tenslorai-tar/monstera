@@ -570,7 +570,10 @@ its page field and zoom slider take values and stay the bar's own controls. The
 title bar joined it 2026-09-23,
 [ADR-0095](docs/DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md),
 for Donate and Rate Us; its tabs, search and layout switcher each hold a value
-and stay the bar's own the same way.) A hand-maintained layout file for
+and stay the bar's own the same way. The Properties tab's foot joined it
+2026-09-24,
+[ADR-0102](docs/DECISIONS/0102-a-selection-survives-a-command-that-keeps-the-walk.md),
+for Reply and Delete.) A hand-maintained layout file for
 any surface is exactly the second wiring place the registry exists to forbid.
 
 If a feature cannot be registered into an existing seam → **B4**. Stop and amend
