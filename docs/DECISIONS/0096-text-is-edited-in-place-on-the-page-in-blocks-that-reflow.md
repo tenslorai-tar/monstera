@@ -148,3 +148,14 @@ two opinions about it.
   document, survives save and reopen, and has its pair.
 - Document-wide replace-all and translate's write-back stay on their own commands; translate may write
   through this one, block by block, which is where its overflow would otherwise go.
+
+## Amended 2026-09-24 by ADR-0097 — a standard-font twin, a page's blocks in one command, and a second consumer
+
+[ADR-0097](0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md).
+Decision 5's refusal now applies only where a **standard-font twin** cannot carry the text either: a run's
+own font carries an accented Western string for 132 of 457 corpus runs, the twin for 308 of 325 of the rest.
+`editTextBlock` carries **a list of blocks** on one page, so a translated page is one command and one undo;
+the in-place editor sends one. Decision 2's consumer gains exactly one more — a translation written back into
+the blocks it was read from. The first stated limit reads accordingly. The last consequence above said
+*"block by block"*, and the decision taken is one command for the page, for the checkpoint and undo reasons
+ADR-0097 gives.
