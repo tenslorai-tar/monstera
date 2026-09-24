@@ -25,6 +25,8 @@ function harness(options: {
   readonly loadRefuses?: boolean;
   readonly saveRefuses?: boolean;
   readonly answer?: unknown;
+  /** What the dialog reports while it is open, each delivered before it answers (ADR-0094). */
+  readonly reports?: readonly unknown[];
 }): {
   readonly run: () => Promise<void>;
   readonly settings: SettingsStore;
@@ -51,14 +53,18 @@ function harness(options: {
           : ok({ stored: true }),
       );
     }
-    throw new Error(`this fixture answers only the secret channels, not ${id}`);
+    // THE FOOTER'S TWO CHANNELS, answered so a case can see which of them an action reached.
+    if (id === 'ai.history.clear') return Promise.resolve(ok({ cleared: 2 }));
+    if (id === 'settings.export') return Promise.resolve(ok({ kind: 'cancelled' as const }));
+    throw new Error(`this fixture answers only the secret and footer channels, not ${id}`);
   });
   const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   const command = showSettingsCommand({
     client,
     settings,
-    ask: (id, props) => {
+    ask: (id, props, onUpdate) => {
       asked.push({ id, props });
+      if (id === SETTINGS_DIALOG_ID) for (const report of options.reports ?? []) onUpdate?.(report);
       return Promise.resolve(id === SETTINGS_DIALOG_ID ? options.answer : undefined);
     },
     onSecretsChanged: () => {
@@ -141,6 +147,34 @@ describe('showSettingsCommand', () => {
     await run();
 
     expect((asked[0]?.props as { secretsAvailable: boolean }).secretsAvailable).toBe(false);
+  });
+
+  it('each FOOTER ACTION reaches its own channel, and only its own', async () => {
+    // THE STEP BETWEEN THE PAIR'S HALVES: `SettingsBody.test.tsx` proves the button reports the
+    // action, `contractHandlers.test.ts` that the channel clears the history, and only this case
+    // crosses the command that turns one into the other. A report is applied without being awaited,
+    // so the case waits a turn for the call it asserts.
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const footer = (id: string): string[] =>
+      id === 'ai.history.clear' || id === 'settings.export' ? [id] : [];
+
+    const cleared = harness({ reports: [{ values: {}, secrets: {}, action: 'clear-chat-history' }] });
+    await cleared.run();
+    await settle();
+    expect(cleared.sent.flatMap((call) => footer(call.id))).toStrictEqual(['ai.history.clear']);
+
+    const exported = harness({ reports: [{ values: {}, secrets: {}, action: 'export' }] });
+    await exported.run();
+    await settle();
+    expect(exported.sent.flatMap((call) => footer(call.id))).toStrictEqual(['settings.export']);
+
+    // RESET puts a changed setting back, and calls neither channel.
+    const reset = harness({ reports: [{ values: {}, secrets: {}, action: 'reset' }] });
+    reset.settings.set(THEME_SETTING.id, 'dark');
+    await reset.run();
+    await settle();
+    expect(reset.settings.get(THEME_SETTING.id)).toBe(THEME_SETTING.fallback);
+    expect(reset.sent.flatMap((call) => footer(call.id))).toStrictEqual([]);
   });
 
   it('CONTROL: a dismissed dialog writes nothing anywhere', async () => {
