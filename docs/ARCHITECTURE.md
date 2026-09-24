@@ -1108,6 +1108,16 @@ pressing Stop and paying for the rest of the answer. Stage 9's assistant is why:
 a provider streams, keys never leave `main`, and §9.27's CSP gives the renderer
 no network to ask for itself.
 
+**AND ONE PRELOAD CHANNEL, for a dropped file** (amended 2026-09-24,
+[ADR-0099](DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md)).
+The bridge gains `openDropped(file)`: the page hands over the `File` a drop gave
+it, the preload resolves it with `webUtils.getPathForFile` and asks main on
+`document.openDropped`, and the page receives what `document.open` answers.
+**The path never reaches the page.** That channel is declared and validated like
+every other, but the page's client is typed over renderer channels only, so
+page code cannot name it. A `File` built in script has no path, so no page can
+forge one.
+
 The worker protocol takes the same shape, and the **intended** vehicle is one
 `defineWorkerContract` helper shared by both hosts. *That helper does not exist
 yet* (finding XX-1, 2026-08-22). This paragraph asserted it in the present tense
@@ -1336,7 +1346,7 @@ A feature is finished when it is **registered**, not when it is wired.
 
 | Registry | Entry | Derives |
 |---|---|---|
-| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, title-bar buttons |
+| **Commands** (`UiCommand`) | id, title (i18n key), icon, shortcut, `when(ctx)`, `run(ctx)`, **`placements[]`** | ribbon, floating toolbar, menus, command palette, shortcut map, context menus, start-screen shortcuts, status-bar buttons, title-bar buttons, the rail's foot |
 | **Dialogs** | id, lazy component, props schema, **result schema** | one mount point, one focus trap, one Escape/backdrop handler, and the promise an opener awaits |
 | **Settings** | id, type, default, category, i18n key, **a title per member of an enumerated setting**, **an unset title for a colour setting**, `secret?`, migration | the entire Settings dialog — **one control per schema kind, a colour as a no-choice checkbox beside a colour input, a secret write-only and never read back** ([ADR-0056](DECISIONS/0056-the-settings-dialog-derives-a-control-from-a-schema-and-a-secret-is-write-only.md)) — persistence, export (secrets excluded) |
 | **Annotation types** | geometry adapter, renderer, kernel writer mapping | overlay, panel, persistence |
@@ -1373,7 +1383,7 @@ data to project from, so every command declares where it appears:
 
 ```ts
 type Placement =
-  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number }
+  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary' }
   | { surface: 'quick-toolbar'; order: number }
   | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab'; order: number }
   | { surface: 'start-screen';  slot: 'primary' | 'shortcut' | 'footer'; order: number }
@@ -1381,16 +1391,28 @@ type Placement =
   | { surface: 'status-bar';    cluster: 'zoom'; side: 'before' | 'between' | 'after'; order: number }
   | { surface: 'status-bar';    cluster: 'chrome'; order: number }
   | { surface: 'title-bar';     emphasis: 'primary' | 'normal'; order: number }
+  | { surface: 'rail';          order: number }
 ```
 
 A command may carry several placements — Highlight legitimately lives in
 Home › Quick tools, Comment › Markup, and the annotation context menu.
 
 `SectionId` is exactly the eight sections of §10.3. The ribbon, floating
-toolbar, context menus, start-screen shortcuts, the status bar's command buttons
-and the title bar's are all **derived** from placements. **A hand-maintained
-layout file for any of them is the second wiring place this registry exists to
-forbid.**
+toolbar, context menus, start-screen shortcuts, the status bar's command buttons,
+the title bar's and the rail's foot are all **derived** from placements. **A
+hand-maintained layout file for any of them is the second wiring place this
+registry exists to forbid.**
+
+**A ribbon placement may be secondary, and the rail has a foot** (amended
+2026-09-24,
+[ADR-0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)).
+The owner's design draws fewer tools per group than the registry places, and
+says the rest fold into the group's *More*. `prominence: 'secondary'` puts a tool
+in its group's *More* at **every** width; absent means primary, and the width
+fold works on primaries as before. A group must hold at least one primary. A
+command placed on `rail` is drawn at the foot of the section rail, below the
+eight sections — the design's Settings gear — labelled in Ribbon mode and
+icon-only in Studio.
 
 **The title bar projects the application's own commands** (amended 2026-09-23,
 [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
@@ -2471,7 +2493,10 @@ them.
   registry between the tabs and the search), the Ctrl+K command search, and the
   layout switcher.
 - **Left section rail:** the eight feature sections — Home, Comment, Edit,
-  Organize, Forms, Review, Protect, Tools — as labeled icons. Selecting a
+  Organize, Forms, Review, Protect, Tools — as labeled icons, and at its foot
+  the commands placed on `rail` (amended 2026-09-24,
+  [ADR-0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md)
+  — the owner's design draws Settings there). Selecting a
   section populates the top tool ribbon. Beside it, one document panel at a
   time — Pages, Bookmarks, Comments, Forms, Layers, Search — switched by a
   **panel-tab strip** of six icon tabs (24 px tabs, 14 px icons) at the panel's
@@ -2519,11 +2544,23 @@ them.
   scanned pages · Split & merge · Encrypt & sign · Export anywhere), **each a
   real entry point**. Recent files appear below the grid when they exist.
   Footer: "Press F1 for keyboard shortcuts" and version + © Tenslor Inc.
-  Drag-drop a PDF anywhere to open.
+  Drag-drop a PDF anywhere to open — through the preload, so the page never holds
+  the path (amended 2026-09-24,
+  [ADR-0099](DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md)).
+  **A recent file shows a picture of its first page, its name, and when and where
+  it was last opened** — the picture kept by main from when the document was open,
+  the place a branded `DisplayLocation` main writes and no channel accepts, and
+  both deleted with the entry (amended 2026-09-24,
+  [ADR-0100](DECISIONS/0100-a-recent-file-shows-where-it-is-and-a-preview-both-from-main.md)).
 
 ### 10.4 Type, icons and controls
 
 - System font stack (`Segoe UI` first on Windows). No webfonts for UI chrome.
+  **The start screen's wordmark is not chrome**: it is the product's name set as
+  artwork, in **Marcellus** (SIL OFL 1.1, Astigmatic, the free Google Fonts
+  release — never *Marcellus Pro*), bundled because §9.27 allows no remote font,
+  its licence in `NOTICE` (amended 2026-09-24,
+  [ADR-0100](DECISIONS/0100-a-recent-file-shows-where-it-is-and-a-preview-both-from-main.md)).
 - **One icon set: lucide**, consistent stroke, at exactly four sizes with a
   stated use each: **12 px** inline chrome · **14 px** status bar, dense
   controls and the document panel's tabs · **16 px** primary controls (rail,
@@ -2618,6 +2655,9 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-24 | **A ribbon placement may be secondary, and the rail has a foot** (§7's `Placement`, §10.3's rail clause). The owner's v5 design draws four Home groups and nineteen tools where the running ribbon places fourteen in *File* alone, and says the rest fold into each group's *More*; the width fold cannot say *less-used*. `prominence: 'secondary'` on a ribbon placement puts a tool in its group's *More* at every width, absent meaning primary, a group holding at least one primary. The design's Settings gear sits at the rail's foot, and `rail` joins the union as a projected surface. **Rejected:** a layout file of the design's buttons; removing what the design does not draw; an `order` threshold; prominence on the command; one section-wide *More*; Settings in the title bar | §7's `Placement` with seven surfaces and no prominence; §10.3's rail as the eight sections alone | [ADR-0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md) |
+| 2026-09-24 | **A dropped file is opened by the preload, and its path never reaches the page** (§5's bridge, §10.3's start-screen clause). A drop is a page event whose `File` has no path, and a contract channel taking a path is L2's violation. The bridge gains `openDropped(file)`; the preload resolves the path with `webUtils.getPathForFile` — invariant 1's third name — and asks main on `document.openDropped`, a preload channel the page's client cannot name; a `File` built in script resolves to no path, so the page cannot forge one. **Rejected:** handing the page the path; intercepting Chromium's navigation-on-drop; a drop token main cannot issue; exposing `getPathForFile` to the page | §10.3's *"Drag-drop a PDF anywhere to open"*, which had no mechanism | [ADR-0099](DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md) |
+| 2026-09-24 | **A recent file shows where it is and a preview, both made in main; the wordmark is Marcellus** (§10.3's start-screen clause, §10.4's type clause). The design draws each recent file as a card with a picture of page 1, its name and *"Today · Documents › Leases"*. The location is a branded `DisplayLocation` main writes, at most two folders and never a drive or full path, which no channel accepts; the picture is kept by main from when the document was open, asked for by handle on `document.recentPreview`, deleted with its entry, and a Privacy setting, on by default. The wordmark is Marcellus (SIL OFL, bundled, licence in `NOTICE`), because it is artwork and not chrome. **Rejected:** a full path the start screen trims; rendering previews at launch; the Windows thumbnail cache; no preview; a runtime webfont | §10.3's recent files with no stated content; §10.4's *"No webfonts for UI chrome"* read as covering the wordmark | [ADR-0100](DECISIONS/0100-a-recent-file-shows-where-it-is-and-a-preview-both-from-main.md) |
 | 2026-09-24 | **A translated block keeps the page's layout** (§3's in-place editing row). The first page translated end to end was correct and unusable: a title wrapped at its own old width, a grown heading overprinted the paragraph below, and the paragraph broke raggedly line by line. So a one-line block wraps at its column — the larger of its own edge and the page width less its left margin — which the in-place editor gains too; `editTextBlock`'s blocks carry `fit`, and `shrink` scales a translated block uniformly by the largest factor whose layout ends above its original bottom, found by bisection on trial pages closed without generating (5 of 5 discard, measured), never below 0.6; and a block's soft-wrapped lines — where the next line's first word would not have fitted — are joined before translation. **Rejected:** moving later blocks down; a fixed shrink step; one factor for the whole page; a percentage-of-width soft-wrap test | ADR-0096 Decision 5's wrap edge for a one-line block, and its *grows downward* for every edit | [0097](DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md) |
 | 2026-09-24 | **A page is translated as one block edit, and a font that cannot carry the words falls back to a standard one** (§3's in-place editing row, §3.2's grouping rule). The owner ordered *Translate document text* built once the provider registry and in-place editing had landed. Measured over the corpus: a run's own font carries an accented Western string for 132 of 457 runs, so ADR-0096's refusal would leave most of a translated page untouched; a twin in the nearest standard font — never embedded, since every reader supplies the fourteen — carries it for 308 of 325 of the rest (positive control 316, `中` 0). So a write the run's font cannot carry becomes a standard-font twin, refused only when the twin cannot carry it either; `editTextBlock` carries a page's blocks, so a translated page is one command, one checkpoint and one undo; and the grouping gains exactly one more consumer — a translation written back into the blocks it was read from. `main` reads the page and asks the provider through `streamChat`; the renderer dispatches the write. Languages are those WinAnsi can write. **Rejected:** refusing and reporting untranslated blocks; embedding a system font; a second command writing text blocks; one command per block; the renderer sending the text; MuPDF's units, which cannot be written back | ADR-0096 Decision 2's one consumer, Decision 5's *one command per block* and its whole-edit refusal | [0097](DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md) |
 | 2026-09-23 | **Text is edited in place on the page, in blocks that reflow** (§3's in-place editing row, §3.2's grouping rule). The owner rejected Edit text's line-picking dialog — *"what if the page is full of text"* — and supplied a recording of the standard: every block outlined in place, a caret on click, the paragraph reflowing as it is typed into, a click away committing. Three clauses stopped it and each was written for the dialog: ADR-0049 licensed the grouping only while it reached *a dialog a person answers*; its extent could not leave the kernel; and nothing could write a line the page did not have. **The rule keeps its shape and changes its consumer** — the in-place editor, where the grouping is drawn around the words it would replace and nothing is written until a person types. Blocks join lines by gaps compared against the line's own height, a relation like ADR-0049's overlap. `editTextBlock` is one terminal command per block: it diffs each line by `lineEdit`'s rule (moved to `@monstera/shared`), wraps a line wider than the block into new objects in the line's last run's font — measured by laying out the object that will be written, 355 of 457 against summed glyph widths' 176 — moves later lines down, reads every write back from the live text page and refuses before generation when a font cannot carry what was typed (426 of 457 round-trip; the control 0 of 642). **Rejected:** keeping the dialog beside it; a dialog per block; summing glyph widths; letting the renderer lay out; an invertible prior that would restore half an edit; blanking deleted lines; a spacing constant | ADR-0049 Decision 3's consumer and its *"the extent does not leave"*; `replaceTextObject` as the only in-place write | [0096](DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md) |
