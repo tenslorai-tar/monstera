@@ -16,8 +16,8 @@ the fact is not a baseline, it is a rationalisation.
 | 6 — OCR | **2 working days** (owner, 2026-09-09) | **3 days worked** (2026-09-10 → 2026-09-12), 38 commits — began at `70f52b7`, the commit after Stage 5 closed. **Nine of ten rows done at closing; the tenth, D6 row 8, passed its live run 2026-09-15 — ten of ten, figure unchanged** | **1.50× — continue** |
 | 7 — security and signatures | **2 working days** (owner, 2026-09-12) | **2 days worked** (2026-09-12 → 2026-09-13), 33 commits — began at `fd7d12e`, the commit after Stage 6 closed. **Fourteen of fifteen rows done; DocuSign is built and carries one trigger only its owner can clear.** Two OCR rows were built inside the window and are counted here | **1.00× — continue** |
 | 8 — import/export/convert and non-AI review | **2 working days** (owner, 2026-09-12) | **5 days worked** (2026-09-13 → 2026-09-17; the 13th is shared with Stage 7's close), commits from `9b212cb` to the closing commit — `git rev-list --count ae6d7f9..<closing commit>`. **10 of 27 rows done, 13 built and owing a run in the application, 2 partly built, 2 blocked.** About half the commits are not Stage 8 rows: the design pass, audits, defect fixes and corrections to earlier stages | **2.50× — continue** |
-| 9 — AI and cloud | **2 working days** (owner, 2026-09-12) | **in progress** — opened 2026-09-17 at `f72575e`, the commit after Stage 8 closed | — |
-| 10 — ship | **2 working days** (owner, 2026-09-12) | — | — |
+| 9 — AI and cloud | **2 working days** (owner, 2026-09-12) | **8 days worked** (2026-09-17 → 2026-09-24; the 17th is shared with Stage 8's close), 147 commits from `f72575e` to the commit before the closing one — `git log --format=%ad --date=short 1c73f9c..HEAD \| sort \| uniq -c`. **Every Stage 9 row done.** Stage 10 opened 2026-09-22 and ran beside it, so the days carry both | **4.00× — the gate ARMED; continue**, from the owner's order of 2026-09-24 |
+| 10 — ship | **2 working days** (owner, 2026-09-12) | **in progress** — opened 2026-09-22 (*Stage 10 opens*), beside Stage 9's last days | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -889,6 +889,60 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-24 — Stage 9 closes: 4.00×, the gate armed, continue
+
+**Cloud storage, the last row, live on both providers.**
+
+- **The owner's runs, 2026-09-23.** Google Drive: signed in, uploaded, opened. OneDrive: the first
+  sign-in failed with Entra's `userAudience` error, because the app registration was single-tenant
+  while the application signs in at `/common`. The owner set the registration to multitenant plus
+  personal Microsoft accounts. Then sign-in, *Save back to cloud* and reopening all worked. **No code
+  changed**: the fault was in the registration, and ADR-0091 already names `/common`.
+- **My run, 2026-09-24**, on the development build at `6c97df6`, driving the running window:
+  - **Google Drive**: *Sign in* opened the browser, and Google completed the consent with nothing
+    typed, landing on *"You can close this tab and return to Monstera."* The dialog then read *Signed
+    in*. *Show my PDFs* listed four files and one opened with its annotations drawn. *Save back to
+    cloud* ended at *Saved just now*.
+  - **OneDrive**: *Sign in* reached Microsoft's page, which asks for the account's credential. I
+    entered nothing, and the sign-in completed in the browser while the application waited. *Show my
+    PDFs* listed three, one opened, and *Save back to cloud* ended at *Saved just now*.
+
+**Found on the way, owed to the Stage 10 design pass rather than to this row:**
+
+- the loopback page a sign-in lands on is bare text on an empty page;
+- four files with one name are four identical rows, with no date or size to tell them apart;
+- for about sixteen seconds between choosing a file and its tab appearing, nothing on screen says a
+  download is under way;
+- the Comments panel at its default width sets each entry's label one word to a line and draws
+  *Remove this annotation* over it.
+
+**The figure, pushed the unflattering way.** Opened 2026-09-17 at `f72575e`, the commit after Stage 8's
+close (`1c73f9c`). Eight calendar days carry commits: 14, 18, 20, 13, 14, 32, 20 and 16 of them,
+`git log --format=%ad --date=short 1c73f9c..HEAD | sort | uniq -c`, read before this commit, 147 in
+all. The 17th is also counted in Stage 8. Against the owner's 2-day baseline that is **4.00×, past
+the 3× trigger: the gate is armed** and a decision is owed in writing.
+
+**The decision: continue.** It is not mine to take, and it has been taken. The owner's order of
+2026-09-24 directs Stage 10 straight through with one report at the end, and it was written with Stage
+9's length in front of them. It is recorded here so the armed gate is not silent. The report names it,
+so the owner can reverse it.
+
+**What the eight days are.** Stage 9's own rows are a minority of them:
+
+- **Stage 10 opened 2026-09-22** and ran beside it: the Settings dialog, the title bar's projection
+  and Donate, the logos, the ribbon's fold, the floating pill's strip, the toasts and the placement
+  audit;
+- **Stage 5's rows**: in-place editing rebuilt in blocks, and Translate this page;
+- **Stage 7's DocuSign**, closed live 2026-09-24;
+- **two stage audits** (`050549f`, `27c4f5c`).
+
+**Stage 9's rows**: every D11 row is done — the assistant, summarisation, vision, the provider registry,
+onboarding, keys through `safeStorage`, and the honest no-key states. D8's comment summarisation is done,
+and so is cloud storage for OneDrive and Google Drive. Dropbox, Box and SharePoint are later entries by
+the owner's scope (ADR-0091).
 
 ---
 
