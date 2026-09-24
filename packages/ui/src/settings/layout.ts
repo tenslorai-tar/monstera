@@ -222,12 +222,15 @@ export const CONTEXT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
 /**
  * The narrowest the right contextual panel may be, in CSS pixels.
  *
- * MEASURED, not summed: its rows are a label and a native control spread apart, so no declaration
- * states a width. In the production build at 1280 × 800 on 2026-09-14, the style controls'
- * min-content width was 211.39 px — the widest row, the opacity slider's, at 195.39, plus the
- * panel's padding — and with the panel's 1 px border that is 212.39, raised to 216 on §10.2's 8 px
- * grid. The comment styles panel measured 73.55 px with nothing selected; with a selection it is
- * UNMEASURED, and this floor does not claim to hold it.
+ * SET 2026-09-14 from the style controls' min-content width, 211.39 px in the production build at
+ * 1280 × 800, plus the panel's 1 px border, raised to 216 on §10.2's 8 px grid.
+ *
+ * **Those controls are gone and the figure no longer binds** (ADR-0102). The Properties tab that
+ * replaced them measured 146.55 px min-content with nothing selected (production build, 1280 × 800,
+ * 2026-09-24, printed by `renderedScreen.pw.ts`' minimum-width case), because its rows wrap and its
+ * comment field takes a percentage width. With marks selected it is UNMEASURED — no harness can
+ * select one yet — and so is the Assistant tab. So 216 is kept rather than lowered: nothing measured
+ * says what a lower floor would clip.
  */
 export const CONTEXT_PANEL_MIN_WIDTH = 216;
 

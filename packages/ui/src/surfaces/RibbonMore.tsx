@@ -31,6 +31,7 @@ export function RibbonMore({
   context,
   onChosen,
   named,
+  widthFolded,
 }: {
   readonly entries: readonly OrderedEntry[];
   readonly context: CommandContext;
@@ -42,6 +43,12 @@ export function RibbonMore({
    * drift apart in how they open, what their items are named, or how a keyboard reaches them.
    */
   readonly named?: { readonly label: MessageKey; readonly icon: IconName; readonly measuredAs: string };
+  /**
+   * How many of a *More*'s entries are primaries the WIDTH folded, as opposed to secondaries, which
+   * are in it at every width (ADR-0098). Written on the trigger so a layout check can tell *this row
+   * did not fit* from *this group has secondaries* — the same button either way.
+   */
+  readonly widthFolded?: number;
 }): ReactElement {
   const { i18n } = useLingui();
 
@@ -50,6 +57,7 @@ export function RibbonMore({
       <Menu.Trigger
         className={named === undefined ? 'm-tool-button m-ribbon__more' : 'm-tool-button m-ribbon__menu'}
         data-command={named?.measuredAs}
+        data-width-folded={widthFolded === undefined ? undefined : String(widthFolded)}
         nativeButton
       >
         <MoreFace icon={named?.icon ?? 'Ellipsis'} label={i18n._(named?.label ?? RIBBON_MORE)} />

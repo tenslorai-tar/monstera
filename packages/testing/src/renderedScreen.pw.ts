@@ -435,8 +435,8 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
   const right = page.getByRole('separator', { name: 'Resize the properties panel' });
   await expect(right).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Properties' })).toBeVisible();
-  // THE STYLE CONTROLS MOVED HERE, out of the row under the status bar.
-  await expect(page.getByRole('complementary', { name: 'Properties' }).locator('.m-style-panel')).toBeVisible();
+  // THE STYLE CONTROLS ARE HERE, out of the row under the status bar — the Properties tab (ADR-0102).
+  await expect(page.getByRole('complementary', { name: 'Properties' }).locator('.m-properties')).toBeVisible();
 
   // Each drawn pane is within its handle's width of its stored width — the library's layout rule,
   // measured for the left pane in the case above; two handles now share the root.
@@ -467,35 +467,69 @@ test('the RIGHT contextual panel resizes on its own handle, persists, and leaves
   await expect(page.getByRole('complementary', { name: 'Properties' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Show the properties panel' })).toBeVisible();
   await expect(page.getByRole('separator', { name: 'Resize the properties panel' })).toHaveCount(0);
-  expect(Math.abs((await panelPaneWidth(page)) - leftBefore)).toBeLessThan(1.5);
+  // THE LEFT'S STORED WIDTH, not its drawn one. The library draws a pane as its share of the root
+  // minus the handles, each share rounded to three figures (`Splitter.tsx`), so removing a handle
+  // moves every drawn width while writing none. Measured 2026-09-24 at 1280 × 800: root 1166.33 px,
+  // 8 px handles, the left drawn 236.23 before and 238.61 after — the freed handle's share plus the
+  // rounded shares summing to 100.3 before and 100.0 after. What a collapse must not do is WRITE the
+  // other side, and that is in the settings. The collapse's own write is read in the same answer, so
+  // an answer from before the click cannot pass.
+  await expect
+    .poll(async () => (await storedSettings(page))['appearance.context-panel-open'])
+    .toBe(false);
+  expect((await storedSettings(page))['appearance.document-panel-width']).toBe(240);
 });
 
-test('at its MINIMUM width the right contextual panel still holds the widest style row', async ({ page }) => {
-  // `CONTEXT_PANEL_MIN_WIDTH` is 216, MEASURED: the style controls' min-content width was 211.39 px,
-  // the opacity row's slider being the widest. This is the rendered panel at that width, asserting
-  // no style row runs past the pane — what a person would see clipped.
+/**
+ * What the shim holds as main's settings file — what a resize or a collapse writes.
+ *
+ * Asked through the page's own bridge, the route every renderer call takes, rather than by reaching
+ * into the shim from here.
+ */
+async function storedSettings(page: Page): Promise<Readonly<Record<string, unknown>>> {
+  const answer = await page.evaluate(() =>
+    (window as unknown as { __monsteraInvoke: (channel: string, params: unknown) => Promise<unknown> }).__monsteraInvoke(
+      'settings.load',
+      {},
+    ),
+  );
+  const parsed = answer as { readonly ok?: boolean; readonly value?: { readonly stored?: Record<string, unknown> } };
+  if (parsed.ok !== true || parsed.value?.stored === undefined) throw new Error('the shim refused settings.load');
+  return parsed.value.stored;
+}
+
+test('at its MINIMUM width the right contextual panel still holds every Properties control', async ({ page }) => {
+  // `CONTEXT_PANEL_MIN_WIDTH` is 216, MEASURED against the tab's min-content width, which this case
+  // prints. This is the rendered panel at that width, asserting no control runs past the pane — what
+  // a person would see clipped.
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeWithDocument(page, { 'appearance.context-panel-width': 216 }, 1);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const region = page.getByRole('complementary', { name: 'Properties' });
-  await expect(region.locator('.m-style-panel')).toBeVisible();
+  await expect(region.locator('.m-properties')).toBeVisible();
   await expect.poll(() => contextPaneWidth(page)).toBeGreaterThan(200);
-  const overflow = await page.evaluate(() => {
+  const measured = await page.evaluate(() => {
     const panes = document.querySelectorAll('.m-splitter__pane');
     const pane = panes[panes.length - 1];
-    if (pane === undefined) return null;
+    const tab = pane?.querySelector<HTMLElement>('.m-properties');
+    if (pane === undefined || tab === null || tab === undefined) return null;
     const paneRight = pane.getBoundingClientRect().right;
-    return [...pane.querySelectorAll('.m-style-row')].map((row) => {
-      // The row's LAST control, which is what space-between pushes to the pane's edge.
-      const last = row.lastElementChild;
-      return (last?.getBoundingClientRect().right ?? 0) - paneRight;
-    });
+    const overflow = [...tab.querySelectorAll('button, input, textarea, output')].map(
+      (control) => control.getBoundingClientRect().right - paneRight,
+    );
+    // THE TAB'S OWN MIN-CONTENT WIDTH, read by laying it out at that keyword for one frame.
+    tab.style.inlineSize = 'min-content';
+    const minContent = tab.getBoundingClientRect().width;
+    tab.style.inlineSize = '';
+    return { overflow, minContent };
   });
-  expect(overflow).not.toBeNull();
-  expect((overflow ?? []).length).toBeGreaterThan(0);
-  for (const past of overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
+  expect(measured).not.toBeNull();
+  console.log(`Properties tab min-content width: ${String(measured?.minContent)} px`);
+  // THE CONTROLS WERE FOUND, or the loop below checks nothing.
+  expect((measured?.overflow ?? []).length).toBeGreaterThan(10);
+  for (const past of measured?.overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
 });
 
 test('the ASSISTANT fits its panel: the hint under Send is inside it and nothing scrolls', async ({ page }) => {
@@ -545,12 +579,18 @@ test('the page list FITS its pane: nothing of it sits above the pane or under th
     const status = document.querySelector('.m-status-bar');
     if (list === null || pane === null || status === null) return null;
     const listBox = list.getBoundingClientRect();
-    const paneBox = pane.getBoundingClientRect();
+    // THE INSIDE OF THE PANEL THE LIST FILLS. Since the owner's v5 surfaces (72d1ecc) the canvas area is
+    // an inset panel with a 1 px border — measured 2026-09-24, `.m-canvas-area` border-top 1px and the
+    // list 1 px below the pane — so the list's box is the area's padding box, not the pane's.
+    const area = list.parentElement;
+    if (area === null) return null;
+    const areaBox = area.getBoundingClientRect();
+    const areaStyle = getComputedStyle(area);
     return {
       listTop: listBox.top,
       listBottom: listBox.bottom,
-      paneTop: paneBox.top,
-      paneBottom: paneBox.bottom,
+      paneTop: areaBox.top + Number.parseFloat(areaStyle.borderTopWidth),
+      paneBottom: areaBox.bottom - Number.parseFloat(areaStyle.borderBottomWidth),
       statusTop: status.getBoundingClientRect().top,
       paneScrollTop: pane.scrollTop,
       paneSurplus: pane.scrollHeight - pane.clientHeight,
@@ -730,7 +770,9 @@ test('OPEN SIDE BY SIDE puts the right-clicked tab’s document in the second pa
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
-  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  // THE SECOND FROM THE RIBBON, where a person opens another with one already open: Home › File's
+  // Open, whose caption is its short title (the start screen's button is gone once a document is).
+  await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Open…', exact: true }).click();
 
   // THE SECOND OPEN IS FOCUSED, so `first.pdf` is the background tab and the one to right-click.
   const background = page.locator('nav.m-tabs button', { hasText: 'first.pdf' }).first();
@@ -1254,19 +1296,30 @@ test('the RIBBON FOLDS PER GROUP below 1920, nothing scrolls sideways, and every
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
   const tools = page.locator('.m-ribbon__tools');
-  const more = tools.getByRole('button', { name: 'More' });
+  // A MORE THE WIDTH FILLED. Since ADR-0098 a group's More also holds its secondary tools at every
+  // width, so the button's presence no longer means *this row did not fit*; its count of folded
+  // primaries does. The control below asserts that at least one More exists here, so a selector that
+  // matched nothing could not pass this case.
+  // `[data-width-folded]` FIRST, because the hidden gauge that measures a More's width carries the class
+  // and no count, and matched the negation on its own — measured 2026-09-24, the one "folded" More at
+  // 1920 was the gauge.
+  const more = tools.locator('.m-ribbon__more[data-width-folded]:not([data-width-folded="0"])');
   // THE RIBBON IS THE SUBJECT, so the wait is on the ribbon: a document opening is what fills it,
   // and waiting on the page list instead would tie this case to a panel it says nothing about.
   await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
 
   // AT THE PRIMARY WIDTH, nothing folds. This is the control: without it, a ribbon that folded at
-  // every width would pass every assertion below.
+  // every width would pass every assertion below. Home's groups carry secondaries, so their Mores
+  // are here — each holding none of the width's.
+  await expect(tools.locator('.m-ribbon__more[data-width-folded="0"]').first()).toBeVisible();
   await expect(more).toHaveCount(0);
   const wideButtons = await tools.locator('.m-tool-button[data-command]').count();
   expect(wideButtons).toBeGreaterThan(0);
   // EACH SECTION'S WIDEST BUTTON, read at the primary width where (nearly) every button is drawn: the
   // fold below may leave at most that much room unused, or it hid a button that fitted.
-  const sections = page.locator('.m-ribbon__tab:not([disabled])');
+  // THE SECTIONS BY THEIR OWN ATTRIBUTE: the rail's foot draws Settings with the same class (ADR-0098),
+  // and a loop over the class opened the Settings dialog over the ribbon it was measuring.
+  const sections = page.locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])');
   const widest: number[] = [];
   for (let index = 0; index < (await sections.count()); index += 1) {
     await sections.nth(index).click();

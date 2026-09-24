@@ -698,7 +698,11 @@ textarea {
   font: inherit;
 }
 
+/* A PERCENTAGE WIDTH, so the field takes the panel's width and contributes none of its own to the
+   panel's minimum — a textarea's intrinsic width is twenty columns, wider than the narrowest panel. */
 .m-properties__comment {
+  box-sizing: border-box;
+  inline-size: 100%;
   resize: vertical;
   padding: var(--space-8);
   background: var(--surface);

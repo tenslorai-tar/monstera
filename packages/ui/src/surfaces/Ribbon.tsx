@@ -305,6 +305,7 @@ export function Ribbon({ registry, context, settings }: RibbonProps): ReactEleme
                 <RibbonMore
                   context={context}
                   entries={splitFold(group.entries, fold.folds?.[index]).folded}
+                  widthFolded={splitFold(group.entries, fold.folds?.[index]).folded.filter((entry) => !entry.secondary).length}
                   onChosen={() => {
                     if (mode === 'studio') setOverlay(false);
                   }}
