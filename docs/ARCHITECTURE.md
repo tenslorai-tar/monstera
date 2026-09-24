@@ -1383,7 +1383,7 @@ data to project from, so every command declares where it appears:
 
 ```ts
 type Placement =
-  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary' }
+  | { surface: 'ribbon';        section: SectionId; group: MessageKey; order: number; prominence?: 'secondary'; menu?: MessageKey }
   | { surface: 'quick-toolbar'; order: number }
   | { surface: 'context-menu';  context: 'page' | 'annotation' | 'selection' | 'tab'; order: number }
   | { surface: 'start-screen';  slot: 'primary' | 'shortcut' | 'footer'; order: number }
@@ -1413,6 +1413,13 @@ fold works on primaries as before. A group must hold at least one primary. A
 command placed on `rail` is drawn at the foot of the section rail, below the
 eight sections — the design's Settings gear — labelled in Ribbon mode and
 icon-only in Studio.
+
+**A ribbon placement may name a menu** (amended 2026-09-24,
+[ADR-0101](DECISIONS/0101-a-ribbon-placement-may-name-a-menu.md)). Placements in one
+group naming the same `menu` draw as one captioned button opening their commands,
+the way *More* does with a name: the owner's Forms › Data is *Export* and *Import*
+over six format commands. A menu is one primary unit of the row, and it does not
+combine with `secondary`.
 
 **The title bar projects the application's own commands** (amended 2026-09-23,
 [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
@@ -2655,6 +2662,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-24 | **A ribbon placement may name a menu** (§7's `Placement`). v5-08 draws Forms › Data as *Export* and *Import* over six format commands, which `exportFormDataCommand` keeps as six on purpose — *"a dialog whose only control is a three-way choice spends a click on something the menu can say."* Placements in a group naming the same `menu` draw as one captioned button opening them; it is one primary unit to the fold and does not combine with `secondary`. **Rejected:** a format dialog; six primary buttons; one format as the primary; a menu declared by the surface | §7's ribbon placement with no menu | [ADR-0101](DECISIONS/0101-a-ribbon-placement-may-name-a-menu.md) |
 | 2026-09-24 | **A ribbon placement may be secondary, and the rail has a foot** (§7's `Placement`, §10.3's rail clause). The owner's v5 design draws four Home groups and nineteen tools where the running ribbon places fourteen in *File* alone, and says the rest fold into each group's *More*; the width fold cannot say *less-used*. `prominence: 'secondary'` on a ribbon placement puts a tool in its group's *More* at every width, absent meaning primary, a group holding at least one primary. The design's Settings gear sits at the rail's foot, and `rail` joins the union as a projected surface. **Rejected:** a layout file of the design's buttons; removing what the design does not draw; an `order` threshold; prominence on the command; one section-wide *More*; Settings in the title bar | §7's `Placement` with seven surfaces and no prominence; §10.3's rail as the eight sections alone | [ADR-0098](DECISIONS/0098-a-ribbon-placement-may-be-secondary-and-the-rail-has-a-foot.md) |
 | 2026-09-24 | **A dropped file is opened by the preload, and its path never reaches the page** (§5's bridge, §10.3's start-screen clause). A drop is a page event whose `File` has no path, and a contract channel taking a path is L2's violation. The bridge gains `openDropped(file)`; the preload resolves the path with `webUtils.getPathForFile` — invariant 1's third name — and asks main on `document.openDropped`, a preload channel the page's client cannot name; a `File` built in script resolves to no path, so the page cannot forge one. **Rejected:** handing the page the path; intercepting Chromium's navigation-on-drop; a drop token main cannot issue; exposing `getPathForFile` to the page | §10.3's *"Drag-drop a PDF anywhere to open"*, which had no mechanism | [ADR-0099](DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md) |
 | 2026-09-24 | **A recent file shows where it is and a preview, both made in main; the wordmark is Marcellus** (§10.3's start-screen clause, §10.4's type clause). The design draws each recent file as a card with a picture of page 1, its name and *"Today · Documents › Leases"*. The location is a branded `DisplayLocation` main writes, at most two folders and never a drive or full path, which no channel accepts; the picture is kept by main from when the document was open, asked for by handle on `document.recentPreview`, deleted with its entry, and a Privacy setting, on by default. The wordmark is Marcellus (SIL OFL, bundled, licence in `NOTICE`), because it is artwork and not chrome. **Rejected:** a full path the start screen trims; rendering previews at launch; the Windows thumbnail cache; no preview; a runtime webfont | §10.3's recent files with no stated content; §10.4's *"No webfonts for UI chrome"* read as covering the wordmark | [ADR-0100](DECISIONS/0100-a-recent-file-shows-where-it-is-and-a-preview-both-from-main.md) |
