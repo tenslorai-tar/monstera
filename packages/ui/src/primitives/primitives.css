@@ -384,6 +384,16 @@
   max-block-size: calc(100vh - 2 * var(--space-32));
 }
 
+/* THE POPUP IS WHERE FOCUS LANDS, NOT A CONTROL, so it draws no ring. `Dialog.tsx` focuses the popup on open
+   rather than its first control (the Close tooltip reason), and a dialog opened from the keyboard — F1, a
+   chord — makes that focus `:focus-visible`, so Chromium drew its default ring around the whole dialog: the
+   owner's noted defect, measured 2026-09-24 in the keyboard shortcuts baseline. The dialog in front of a
+   dimmed window already says where the keyboard is; Tab moves into its controls, and every one of those
+   keeps its own ring. This is the one element exempt from the rule above, because it is not a control. */
+.m-dialog:focus-visible {
+  outline: none;
+}
+
 .m-dialog__header {
   display: flex;
   align-items: center;
