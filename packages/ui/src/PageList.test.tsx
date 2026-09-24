@@ -7,7 +7,7 @@ import {
   createClient,
 } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
-import { render as renderBare, act } from '@testing-library/react';
+import { render as renderBare, act, fireEvent } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -314,6 +314,66 @@ describe('PageList', () => {
     // first frame rather than growing as pages arrive, which is the property
     // that makes a long document usable while it opens.
     expect(container.querySelectorAll('.m-page-slot')).toHaveLength(5);
+  });
+
+  it('the HAND drags the pages: a press and a move set the scroll from where the press started', async () => {
+    const { client } = clientAnswering();
+    const drawList = (panning: boolean): ReturnType<typeof render> =>
+      render(
+        <PageList
+          client={client}
+          view={undefined}
+          pageCount={5}
+          docId={DOC}
+          version={VERSION}
+          onCurrentPage={vi.fn()}
+          mode={SCALE_1}
+          onZoom={vi.fn()}
+          onShownZoom={vi.fn()}
+          goTo={undefined}
+          startAt={FIRST_PAGE.kernel}
+          onWentTo={vi.fn()}
+          loupe={false}
+          rulers={false}
+          showGrid={false}
+          unit="in"
+          search={undefined}
+          secondRasteriser={undefined}
+          pageMenu={undefined}
+          panning={panning}
+        />,
+      );
+    // happy-dom has no pointer capture; the drag's arithmetic is what this case is about.
+    HTMLElement.prototype.setPointerCapture = (): void => undefined;
+
+    const { container, unmount } = drawList(true);
+    await settle();
+    const list = container.querySelector<HTMLElement>('.m-page-list');
+    if (list === null) throw new Error('no page list rendered');
+    expect(list.classList.contains('m-page-list--panning')).toBe(true);
+    list.scrollTop = 300;
+    list.scrollLeft = 40;
+    fireEvent.pointerDown(list, { button: 0, clientX: 200, clientY: 500, pointerId: 1 });
+    fireEvent.pointerMove(list, { clientX: 180, clientY: 380, pointerId: 1 });
+    // DRAGGING UP BY 120 REVEALS WHAT IS BELOW: the scroll moves the other way from the pointer.
+    expect(list.scrollTop).toBe(420);
+    expect(list.scrollLeft).toBe(60);
+    fireEvent.pointerUp(list, { pointerId: 1 });
+    fireEvent.pointerMove(list, { clientX: 0, clientY: 0, pointerId: 1 });
+    // RELEASED: a move after the press ends scrolls nothing.
+    expect(list.scrollTop).toBe(420);
+    unmount();
+
+    // CONTROL: without the hand, the same press and move scroll nothing and mark no mode.
+    const plain = drawList(false);
+    await settle();
+    const still = plain.container.querySelector<HTMLElement>('.m-page-list');
+    if (still === null) throw new Error('no page list rendered');
+    expect(still.classList.contains('m-page-list--panning')).toBe(false);
+    still.scrollTop = 300;
+    fireEvent.pointerDown(still, { button: 0, clientX: 200, clientY: 500, pointerId: 1 });
+    fireEvent.pointerMove(still, { clientX: 180, clientY: 380, pointerId: 1 });
+    expect(still.scrollTop).toBe(300);
   });
 
   it('draws only the pages reported visible, not every page', async () => {

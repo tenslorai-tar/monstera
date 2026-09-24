@@ -62,6 +62,9 @@ import {
   EDIT_TEXT_TOOL_ID,
   commitTextBlock,
   editTextCommand,
+  handToolCommand,
+  HAND_TOOL_ID,
+  selectTextCommand,
   promoteTextOnPage,
   reportProblem,
   editPageObjectCommand,
@@ -2188,6 +2191,8 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
+        handToolCommand({ activeTool: readTool, onSelect: setToolId }),
+        selectTextCommand({ onSelect: setToolId }),
         editPageObjectCommand({ client, onApplied: applied, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
@@ -2615,6 +2620,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
           onCompareWentTo={compareWentTo}
           drawing={drawing}
           editing={editing}
+          panning={toolId === HAND_TOOL_ID}
           others={tabs}
           onCompare={setCompareId}
           search={search ?? undefined}
@@ -2966,6 +2972,7 @@ function PageCanvas({
   onCompare,
   drawing,
   editing,
+  panning,
   search,
   secondRenderer,
   settings,
@@ -3023,6 +3030,8 @@ function PageCanvas({
   readonly drawing: PageListProps['drawing'];
   /** Edit text's mode, or `undefined` when it is off. Both panes take it. */
   readonly editing: PageListProps['editing'];
+  /** The hand tool is on: a drag moves the pages (§10.3). */
+  readonly panning: boolean;
   /** What the find bar last answered, painted over both panes' text layers. */
   readonly search: SearchHighlight | undefined;
   /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
@@ -3268,6 +3277,7 @@ function PageCanvas({
         unit={unit}
         drawing={drawing}
         editing={editing}
+        panning={panning}
         search={search}
         // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
         // the only thing that decides. `PageList` falls back to PDF.js for an
@@ -3355,6 +3365,7 @@ function PageCanvas({
               // silently does nothing.
               drawing={drawing}
               editing={editing}
+              panning={panning}
               // BOTH PANES PAINT the same matches, for the same reason: it is
               // one document, and a split where the search highlighted one half
               // would read as the second pane showing a different document.

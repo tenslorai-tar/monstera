@@ -3677,3 +3677,18 @@ textarea {
   block-size: auto;
   min-block-size: var(--space-32);
 }
+
+/* THE HAND TOOL (§10.3's floating toolbar): a grab cursor over the page area, a grabbing one while a
+   drag is under way, and nothing on a page takes the pointer — so a drag moves the pages and never
+   selects text or picks a mark on the way. */
+.m-page-list--panning {
+  cursor: grab;
+}
+
+.m-page-list--panning.is-grabbing {
+  cursor: grabbing;
+}
+
+.m-page-list--panning .m-page-slot * {
+  pointer-events: none;
+}

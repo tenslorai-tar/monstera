@@ -379,7 +379,8 @@ export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
 export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
   // AND HOME › QUICK TOOLS as v5-02's *Comment* — a note is how a comment is put on a page.
   return alsoOn(
-    alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, { full: TOOL_STICKY_NOTE_TITLE, ribbon: RIBBON_COMMENT }, 'StickyNote', 47, deps), 47),
+    // LAST ON THE STRIP (80), as v5-02 draws the comment there.
+    alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, { full: TOOL_STICKY_NOTE_TITLE, ribbon: RIBBON_COMMENT }, 'StickyNote', 47, deps), 80),
     { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 106 },
   );
 }
@@ -533,9 +534,11 @@ export function selectToolCommand(deps: ToolCommandDeps): UiCommand {
  * other command on both is the same button twice; a helper with this comment on
  * it is what makes adding a thirty-seventh one a decision rather than a habit.
  *
- * Three of that list exist as commands today — select, snapshot and the sticky
- * note. Hand, text selection and bookmark are not built; zoom and crop declare
- * their own pair in `documentCommands.ts`, where they live.
+ * Three of that list are commands here — select, snapshot and the sticky note.
+ * Hand and text selection (2026-09-24), zoom and crop declare their own in
+ * `documentCommands.ts`, where they live. Bookmark is not built: the design draws
+ * it as an unlabelled glyph, and whether it adds a bookmark or shows the panel is
+ * a question for the owner.
  */
 function alsoOnThePill(command: UiCommand, order: number): UiCommand {
   return { ...command, placements: [...command.placements, { surface: 'quick-toolbar', order }] };
@@ -1000,11 +1003,11 @@ export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
       'Camera',
       // LATE IN MARKUP, which folds from the end: a snapshot is not a mark, and the marks a person
       // reaches for first — highlight, underline, strike — are what stay drawn on a narrow window.
-      // The pill keeps its own 29.
+      // The pill has its own order: after crop, as v5-02's strip draws it.
       58,
       deps,
     ),
-    29,
+    72,
   );
 }
 

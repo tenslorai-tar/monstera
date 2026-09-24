@@ -1428,6 +1428,13 @@ export const RIBBON_OPEN = messageKey('surface.ribbon.open');
 export const RIBBON_SELECT = messageKey('surface.ribbon.select');
 export const RIBBON_HIGHLIGHT = messageKey('surface.ribbon.highlight');
 export const RIBBON_COMMENT = messageKey('surface.ribbon.comment');
+/** §10.3's hand and text-selection tools, v5-02's *Hand* and *Text*. */
+export const HAND_TOOL_TITLE = messageKey('command.hand-tool.title');
+export const RIBBON_HAND = messageKey('surface.ribbon.hand');
+export const SELECT_TEXT_TITLE = messageKey('command.select-text.title');
+export const RIBBON_TEXT = messageKey('surface.ribbon.text');
+/** v5-02's Home › Display caption for Compare documents. */
+export const RIBBON_COMPARE = messageKey('surface.ribbon.compare');
 /** v5-08's Forms captions: the Data menus (ADR-0101), Detect, and Flatten. */
 export const RIBBON_FORM_DATA_EXPORT = messageKey('surface.ribbon.form-data-export');
 export const RIBBON_FORM_DATA_IMPORT = messageKey('surface.ribbon.form-data-import');
@@ -3560,6 +3567,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_SELECT]: 'Select',
   [RIBBON_HIGHLIGHT]: 'Highlight',
   [RIBBON_COMMENT]: 'Comment',
+  [HAND_TOOL_TITLE]: 'Hand — drag to move the pages',
+  [RIBBON_HAND]: 'Hand',
+  [SELECT_TEXT_TITLE]: 'Select text',
+  [RIBBON_TEXT]: 'Text',
+  [RIBBON_COMPARE]: 'Compare…',
   [RIBBON_FORM_DATA_EXPORT]: 'Export',
   [RIBBON_FORM_DATA_IMPORT]: 'Import',
   [RIBBON_DETECT_FIELDS]: 'Detect…',
@@ -3633,7 +3645,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_GENERATE_TOC]: 'Contents',
   [RIBBON_PAGE_BACKGROUND]: 'Background',
   [RIBBON_HEADER_FOOTER]: 'Headers…',
-  [RIBBON_EXPORT_PAGE_IMAGES]: 'Page images…',
+  [RIBBON_EXPORT_PAGE_IMAGES]: 'Image…',
   [RIBBON_MERGE]: 'Merge…',
   [RIBBON_IMPORT_LAYER]: 'As layer…',
   [RIBBON_EDIT_EXTERNALLY]: 'External edit…',

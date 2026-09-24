@@ -175,6 +175,11 @@ import {
   RIBBON_EDIT_TEXT,
   RIBBON_EDIT_OBJECT,
   RIBBON_DETECT_FIELDS,
+  HAND_TOOL_TITLE,
+  RIBBON_HAND,
+  SELECT_TEXT_TITLE,
+  RIBBON_TEXT,
+  GROUP_QUICK_TOOLS,
   RIBBON_FLATTEN_FORM,
   RIBBON_FORM_DATA_EXPORT,
   RIBBON_FORM_DATA_IMPORT,
@@ -1126,7 +1131,9 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
     title: CROP_PAGES_COMMAND_TITLE,
     placements: [
       // On the pill too — §10.3 names crop in its list. See `zoomCommand`.
-      { surface: 'quick-toolbar', order: 16 },
+      // ON THE STRIP after zoom, as v5-02 draws it: select · hand · text · zoom in · zoom out · crop ·
+      // snapshot · comment.
+      { surface: 'quick-toolbar', order: 70 },
       { surface: 'ribbon', section: 'organize', group: GROUP_ADJUST, order: 40 },
     ],
     when: hasDocument,
@@ -3136,6 +3143,57 @@ export function editTextCommand(deps: {
       // READ THROUGH THE FUNCTION, `toolCommand`'s rule: the command is built
       // once, and a captured id would toggle against whatever was active then.
       deps.onSelect(deps.activeTool() === EDIT_TEXT_TOOL_ID ? undefined : EDIT_TEXT_TOOL_ID);
+    },
+  };
+}
+
+/** The hand tool's id, in the one slot the drawing tools and Edit text share. */
+export const HAND_TOOL_ID = 'view.hand';
+
+/**
+ * The HAND: §10.3 lists it first among the floating toolbar's *"always-needed tools (select, hand,
+ * text selection, …)"*, and v5-02 draws it in Home › Quick tools and on the strip. While it is on, a
+ * drag moves the pages (`PageList`'s `panning`). A mode like Edit text, turned on and off again.
+ */
+export function handToolCommand(deps: {
+  readonly activeTool: () => string | undefined;
+  readonly onSelect: (id: string | undefined) => void;
+}): UiCommand {
+  return {
+    id: HAND_TOOL_ID,
+    icon: 'Hand',
+    title: HAND_TOOL_TITLE,
+    ribbonTitle: RIBBON_HAND,
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 102 },
+      { surface: 'quick-toolbar', order: 40 },
+    ],
+    when: hasDocument,
+    run: (): void => {
+      deps.onSelect(deps.activeTool() === HAND_TOOL_ID ? undefined : HAND_TOOL_ID);
+    },
+  };
+}
+
+/**
+ * TEXT SELECTION, §10.3's third always-needed tool: back to selecting the page's text, which is what
+ * a press on a page does when no tool is on. So it turns off whatever tool is on rather than being
+ * a mode of its own — a *text* tool that was a second way of having no tool would be two states that
+ * behave the same.
+ */
+export function selectTextCommand(deps: { readonly onSelect: (id: string | undefined) => void }): UiCommand {
+  return {
+    id: 'view.select-text',
+    icon: 'TextCursor',
+    title: SELECT_TEXT_TITLE,
+    ribbonTitle: RIBBON_TEXT,
+    placements: [
+      { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 103 },
+      { surface: 'quick-toolbar', order: 41 },
+    ],
+    when: hasDocument,
+    run: (): void => {
+      deps.onSelect(undefined);
     },
   };
 }

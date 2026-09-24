@@ -17,6 +17,9 @@ import {
   exportFormDataXfdfCommand,
   detectFlatFieldsCommand,
   EDIT_TEXT_TOOL_ID,
+  HAND_TOOL_ID,
+  handToolCommand,
+  selectTextCommand,
   type TextBlock,
   commitTextBlock,
   editTextCommand,
@@ -1067,6 +1070,33 @@ describe('delete pages — the mutation-dialog gate', () => {
     active = 'annotate.rectangle';
     void command.run(CONTEXT);
     expect(active).toBe(EDIT_TEXT_TOOL_ID);
+  });
+
+  it('the HAND turns its mode on and off, and from another tool switches to the hand (§10.3)', () => {
+    let active: string | undefined;
+    const command = handToolCommand({
+      activeTool: () => active,
+      onSelect: (id) => {
+        active = id;
+      },
+    });
+    void command.run(CONTEXT);
+    expect(active).toBe(HAND_TOOL_ID);
+    void command.run(CONTEXT);
+    expect(active).toBeUndefined();
+    active = 'annotate.rectangle';
+    void command.run(CONTEXT);
+    expect(active).toBe(HAND_TOOL_ID);
+  });
+
+  it('TEXT SELECTION turns whatever tool is on OFF, since selecting text is what no tool does', () => {
+    let active: string | undefined = HAND_TOOL_ID;
+    void selectTextCommand({
+      onSelect: (id) => {
+        active = id;
+      },
+    }).run(CONTEXT);
+    expect(active).toBeUndefined();
   });
 
   /**

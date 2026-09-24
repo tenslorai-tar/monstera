@@ -196,6 +196,12 @@ export interface PageListProps {
    * and a surface that is not a gesture has nothing to put in `tool`.
    */
   readonly editing?: TextEditing | undefined;
+  /**
+   * The HAND tool (§10.3's floating toolbar): a drag on the page area scrolls it, and the pages' own
+   * layers stop taking the pointer so a drag never selects text on the way. Another value of the same
+   * one slot the drawing tools and Edit text share, so it never holds beside them.
+   */
+  readonly panning?: boolean;
   readonly drawing?:
     | {
         readonly tool: UiTool;
@@ -332,12 +338,18 @@ export function PageList({
   startAt,
   drawing,
   editing,
+  panning = false,
   search,
   secondRasteriser,
   pageMenu,
   onActivate,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
+  // WHERE A HAND DRAG STARTED: the pointer and the scroll position at the press, so each move sets
+  // the scroll from the start rather than accumulating deltas that drift with rounding.
+  const [grab, setGrab] = useState<
+    { readonly x: number; readonly y: number; readonly left: number; readonly top: number } | undefined
+  >(undefined);
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
   // question of a different container, and a second implementation here would
   // be two opinions about what *near the viewport* means (B3a).
@@ -533,9 +545,15 @@ export function PageList({
    */
   const onPointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>): void => {
+      // A HAND DRAG IN PROGRESS moves the pane with the pointer: dragging down reveals what is above.
+      const box = scroller.current;
+      if (grab !== undefined && box !== null) {
+        box.scrollLeft = grab.left - (event.clientX - grab.x);
+        box.scrollTop = grab.top - (event.clientY - grab.y);
+        return;
+      }
       if (!loupe) return;
       const target = event.target instanceof HTMLElement ? event.target.closest('[data-page]') : null;
-      const box = scroller.current;
       if (!(target instanceof HTMLElement) || box === null) {
         setLens(undefined);
         return;
@@ -556,7 +574,7 @@ export function PageList({
         screen: { x: event.clientX - outer.left, y: event.clientY - outer.top },
       });
     },
-    [loupe],
+    [grab, loupe],
   );
 
   const onPointerLeave = useCallback((): void => {
@@ -686,7 +704,40 @@ export function PageList({
 
   return (
     <div
-      className={grid === undefined ? 'm-page-list' : 'm-page-list m-page-list-grid'}
+      className={[
+        'm-page-list',
+        grid === undefined ? '' : 'm-page-list-grid',
+        panning ? 'm-page-list--panning' : '',
+        grab === undefined ? '' : 'is-grabbing',
+      ]
+        .filter((name) => name !== '')
+        .join(' ')}
+      // THE HAND TOOL'S DRAG. Pointer capture keeps the drag alive when the pointer leaves the pane,
+      // and the scroll is set from where the press started, never summed from deltas.
+      onPointerDown={
+        panning
+          ? (event) => {
+              const element = scroller.current;
+              if (event.button !== 0 || element === null) return;
+              element.setPointerCapture(event.pointerId);
+              setGrab({ x: event.clientX, y: event.clientY, left: element.scrollLeft, top: element.scrollTop });
+            }
+          : undefined
+      }
+      onPointerUp={
+        panning
+          ? () => {
+              setGrab(undefined);
+            }
+          : undefined
+      }
+      onPointerCancel={
+        panning
+          ? () => {
+              setGrab(undefined);
+            }
+          : undefined
+      }
       // THE SPACING IS A CUSTOM PROPERTY, not an inline background. The grid is
       // a repeating gradient in `app.css`, so its colour is a token there and
       // this passes only the number that has to be computed — which is the
