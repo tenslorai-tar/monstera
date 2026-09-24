@@ -80,19 +80,22 @@
   /* Colour. Seeded from DESIGN-DRAFT.html, which M2 names as the seed and the
      naming authority; `--border-control` is ADR-0003's solved value, which the
      draft predates and does not carry. */
-  --bg: #191c1e;
-  --bg2: #1f2225;
-  --surface: #24282b;
-  --surface2: #2a2f33;
-  --canvas: #141618;
+  /* THE OWNER'S v5 PALETTE (2026-09-24), sampled from `v5-02-document-dark.png` rather than set by eye:
+     a green-black ground (#040807 read there) under panels of #0e1613, the hairline between them
+     about #1a1e1d. The panels are `--bg`; `--canvas` is the ground the document and the panels sit on. */
+  --bg: #0e1613;
+  --bg2: #0b120f;
+  --surface: #131d19;
+  --surface2: #18241f;
+  --canvas: #050a08;
   --page: #ffffff;
   --redact-mark: #000000;
-  --text: #e7eaec;
-  --muted: #9aa2a8;
-  --faint: #939ba3;
-  --border-control: #74787c;
-  --border: #33393e;
-  --border-soft: #2b3034;
+  --text: #e6ece8;
+  --muted: #9aa8a1;
+  --faint: #929f98;
+  --border-control: #6e7a74;
+  --border: #1f2b26;
+  --border-soft: #17211c;
   --accent: #2fb96a;
   --accent-hover: #3bc677;
   --accent-soft: rgba(47, 185, 106, 0.14);
@@ -103,19 +106,20 @@
 }
 
 [data-theme='light'] {
-  --bg: #f4f5f7;
-  --bg2: #ececef;
+  /* v5-04's light palette: a mint-grey ground (#dce5e0 read there) under near-white panels (#f5f8f6). */
+  --bg: #f5f8f6;
+  --bg2: #edf2ef;
   --surface: #ffffff;
-  --surface2: #f7f8f9;
-  --canvas: #e2e4e7;
+  --surface2: #f3f7f5;
+  --canvas: #dde6e1;
   --page: #ffffff;
   --redact-mark: #000000;
   --text: #1d2023;
   --muted: #5d656c;
   --faint: #5f6770;
   --border-control: #848688;
-  --border: #dcdfe3;
-  --border-soft: #e6e8eb;
+  --border: #d6dfda;
+  --border-soft: #e3eae6;
   --accent: #16a34a;
   --accent-hover: #159645;
   --accent-soft: rgba(22, 163, 74, 0.12);

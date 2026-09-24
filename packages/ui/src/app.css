@@ -3625,3 +3625,55 @@ textarea {
     animation: none;
   }
 }
+
+/*
+ * THE OWNER'S v5 SURFACES (2026-09-24, `v5-02`, `v5-04`, `v5-05`).
+ *
+ * Every region of the document screen is a PANEL on a ground: the rail, the ribbon, the document
+ * panel, the page area, the contextual panel and the status bar each have their own rounded,
+ * hairlined box, with 8 px of ground between them and at the window's edges. The title bar sits on
+ * the ground itself. The ground carries the design's green glow at the top, from `--accent-soft`,
+ * so each theme's own accent tints it and high contrast, whose soft accent is a flat state
+ * surface, reads as the design's plain black.
+ *
+ * ONE BLOCK, AFTER EVERYTHING IT RESTYLES, so a rule above that set a region's background or
+ * border is overridden here by position rather than by a specificity nobody chose.
+ */
+.m-document-surface {
+  gap: var(--space-8);
+  padding: 0 var(--space-8) var(--space-8);
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 0%, var(--accent-soft), transparent 70%),
+    var(--canvas);
+}
+
+/* The title bar spans the window, over the ground's own edge padding, so its drag region and the
+   Window Controls Overlay reach the window's edges as before. */
+.m-title-bar {
+  margin-inline: calc(-1 * var(--space-8));
+  background: transparent;
+  border-block-end: none;
+}
+
+.m-ribbon__rail,
+.m-ribbon__tools,
+.m-document-panel,
+.m-context-panel,
+.m-canvas-area,
+.m-status-bar {
+  background: var(--bg);
+  border: 1px solid var(--border); /* decorative: the panel's edge on the ground; every control inside draws its own focus ring */
+  border-radius: var(--radius-10);
+}
+
+/* The page area's panel is the ground's own colour, as the design draws the canvas: the page is
+   the bright thing, and a lighter box behind it would compete. */
+.m-canvas-area {
+  background: var(--canvas);
+  overflow: hidden;
+}
+
+.m-status-bar {
+  block-size: auto;
+  min-block-size: var(--space-32);
+}

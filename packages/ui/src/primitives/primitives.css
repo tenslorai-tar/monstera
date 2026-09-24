@@ -174,12 +174,13 @@
   min-block-size: 0;
 }
 
-/* The handle is a CONTROL a person drags and focuses: a 4 px strip on the 2/4 px interior scale,
-   its seam decorative, its focus ring the control boundary every keyboard user must see. */
+/* The handle is a CONTROL a person drags and focuses, and since the owner's v5 design (2026-09-24) it
+   is also THE GAP between two panels: 8 px of ground, the same gap the shell leaves everywhere else,
+   transparent until the pointer is on it. Its focus ring is the control boundary every keyboard user
+   must see, so a handle that is invisible at rest is still found by Tab. */
 .m-splitter__handle {
-  inline-size: var(--space-4);
-  background: var(--bg2);
-  border-inline: 1px solid var(--border-soft); /* decorative: the seam between the panes */
+  inline-size: var(--space-8);
+  background: transparent;
 }
 
 .m-splitter__handle:hover,
