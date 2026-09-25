@@ -52,9 +52,27 @@ export const STORE_REVIEW_URI = `ms-windows-store://review/?ProductId=${STORE_PR
 /** Every page's address, keyed by the channel's own union so a page with no entry is a compile error. */
 export type WebAddresses = Readonly<Record<WebPage, string>>;
 
+/**
+ * This project's source — the AGPL's offer of the corresponding source, which About links (BUILD-PROMPT's
+ * *"'Source code' link in About"*). `package.json`'s `repository`, where the code is developed in public.
+ *
+ * **The repository, not this build's revision**: no commit or tag is baked into a build yet, so a link to
+ * the exact tree would be a guess. The packaging row owns tagging a release and pointing this at it.
+ */
+const SOURCE = 'https://github.com/tenslorai-tar/monstera';
+
+/**
+ * The third-party notices — `NOTICE`, generated from the production dependency tree — as the repository
+ * holds it. Online for the reason `SOURCE` is the repository: the installed layout carrying `NOTICE` is
+ * the packaging row's (b), still owed, and a link to a file the build may not ship would be worse.
+ */
+const LICENCES = 'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE';
+
 const ADDRESSES: WebAddresses = {
   donate: DONATE,
   'store-listing': STORE_LISTING,
+  source: SOURCE,
+  licences: LICENCES,
 };
 
 /**

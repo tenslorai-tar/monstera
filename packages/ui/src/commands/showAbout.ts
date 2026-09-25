@@ -1,6 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 
-import { ABOUT_DIALOG_ID } from '../dialogs/about.js';
+import { ABOUT_DIALOG_ID, ABOUT_RESULT } from '../dialogs/about.js';
 import { ABOUT_COMMAND_TITLE, GROUP_APPLICATION } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
@@ -36,13 +36,16 @@ export function showAboutCommand(deps: {
     run: async (): Promise<void> => {
       const answer = await deps.client['app.info']({});
       if (!answer.ok) return;
-      // Voided: this dialog declares no result and can only settle on
-      // dismissal, so awaiting it would keep the command running until the user
-      // closed a message about the build.
-      void deps.ask(ABOUT_DIALOG_ID, {
-        version: answer.value.version,
-        installChannel: answer.value.installChannel,
-      });
+      const chosen = ABOUT_RESULT.safeParse(
+        await deps.ask(ABOUT_DIALOG_ID, {
+          version: answer.value.version,
+          installChannel: answer.value.installChannel,
+        }),
+      );
+      // A DISMISSAL ANSWERS NOTHING the schema accepts, and opens nothing (ADR-0038).
+      if (!chosen.success) return;
+      // THE PAGE BY NAME: `main` knows the address, so this command cannot compose one (ADR-0095).
+      await deps.client['app.openWebPage']({ page: chosen.data });
     },
   };
 }

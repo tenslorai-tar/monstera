@@ -2808,11 +2808,30 @@ textarea {
  * `grid` rather than the browser's default `dd` indent, because that indent is a
  * user-agent value this repository did not choose and it differs between them.
  */
+/* About: the build's facts as label and value, then two lines of prose, then the two pages. */
 .m-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  max-inline-size: 32rem;
+}
+
+.m-about__facts {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--space-4) var(--space-16);
   margin: 0;
+}
+
+.m-about__line {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.m-about__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
 }
 
 .m-about dt {

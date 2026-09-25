@@ -5048,7 +5048,8 @@ export const channels = {
    */
   'app.openWebPage': channel(
     'Opens one of this project’s own pages in the person’s browser.',
-    z.object({ page: z.enum(['donate', 'store-listing']) }).strict(),
+    // `source` and `licences` are About's (AGPL's source offer and the third-party notices).
+    z.object({ page: z.enum(['donate', 'store-listing', 'source', 'licences']) }).strict(),
     z.object({ opened: z.boolean() }),
   ),
 } as const;

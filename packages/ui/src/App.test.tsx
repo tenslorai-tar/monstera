@@ -803,7 +803,43 @@ describe('App', () => {
     // assertion; the dialog it sits in is checked by the query's own ancestry.
     expect(await screen.findByRole('dialog', { name: 'About Monstera' })).toBeDefined();
     expect(await screen.findByText('1.2.3')).toBeDefined();
-    expect(await screen.findByText('development')).toBeDefined();
+    // THE CHANNEL IN WORDS, and the update line that belongs to it (E4).
+    expect(await screen.findByText('Development build')).toBeDefined();
+    expect(await screen.findByText('A development build. It does not check for updates.')).toBeDefined();
+  });
+
+  it('About’s two pages are OPENED BY NAME — the source and the third-party licences — and closing opens nothing', async () => {
+    for (const [control, page] of [
+      ['Source code', 'source'],
+      ['Third-party licences', 'licences'],
+    ] as const) {
+      const sent: Sent[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'app.info') return Promise.resolve(ok({ version: '1.2.3', installChannel: 'store', userName: 'A. Tester' }));
+        if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
+        return Promise.resolve(ok(OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));
+      });
+      const { unmount } = render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        screen.getByRole('button', { name: 'About' }).click();
+        await Promise.resolve();
+      });
+      // The Store build's own line, against the development one above.
+      expect(await screen.findByText(/Updates are managed by the Microsoft Store/u)).toBeDefined();
+      await act(async () => {
+        (await screen.findByRole('button', { name: control })).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await new Promise((settle) => setTimeout(settle, 0));
+      });
+      // THE WHOLE PARAMETER: a place, never an address.
+      expect(sent.filter((call) => call.id === 'app.openWebPage'), control).toStrictEqual([
+        { id: 'app.openWebPage', params: { page } },
+      ]);
+      unmount();
+    }
   });
 
   it('CONTROL: nothing is mounted until the dialog is opened', async () => {

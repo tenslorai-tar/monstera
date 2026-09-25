@@ -892,6 +892,23 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — About says what the build is, how it updates, and where its source is
+
+BUILD-PROMPT D12 lists *"About (version, licences, source offer)"*, E4 asks About to say *"Updates are
+managed by Microsoft Store"* and that update checks are the only phone-home, and the AGPL section asks for
+a *"'Source code' link in About"*. About showed the version and the channel's enum value and nothing else.
+
+- **The channel in words, and its update line.** No build checks for updates on its own today — the Store
+  never lets a Store app update itself, and the web channel's updater is unbuilt — so each line states
+  that rather than describing a later build.
+- **Source code and Third-party licences answer the dialog; the command opens the page by name.** Both
+  addresses are the repository's, from `package.json`, which a case now compares against the copy in
+  `webPages.ts`. A link to this build's exact revision needs a commit or tag baked into the build, and the
+  installed layout carrying `NOTICE` is the packaging row's (b); both stay there rather than being guessed
+  at here.
+
+---
+
 ## 2026-09-25 — The Stage 9 run's other three: the cloud list, the download, the sign-in page
 
 - **Four files with one name were four identical rows.** The listing already carried each file's size

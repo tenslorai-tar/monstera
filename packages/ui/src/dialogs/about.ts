@@ -34,6 +34,14 @@ export const ABOUT_DIALOG_ID = 'dialog.about';
  * string: it is one of three values and a fourth would be a channel nobody
  * declared.
  */
+/**
+ * What About answers: one of its two pages to open, or nothing. The dialog makes no call — the command
+ * opens the page (ADR-0038) — so a dismissal and *Close* are the same answer.
+ */
+export const ABOUT_RESULT = z.enum(['source', 'licences']);
+
+export type AboutAnswer = z.infer<typeof ABOUT_RESULT>;
+
 export const ABOUT_DIALOG = declareDialog({
   id: ABOUT_DIALOG_ID,
   title: ABOUT_TITLE,
@@ -41,6 +49,7 @@ export const ABOUT_DIALOG = declareDialog({
     version: z.string().min(1),
     installChannel: z.enum(['store', 'web', 'development']),
   }),
+  result: ABOUT_RESULT,
   // Lazy, per ADR-0029 Decision 7: a mounted-but-closed dialog keeps its body's
   // state across opens and costs its chunk on first paint. Nothing is loaded
   // until this dialog is actually opened.

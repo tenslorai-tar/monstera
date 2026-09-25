@@ -480,6 +480,15 @@ export const DUPLICATE_PAGES_TRUNCATED = messageKey('dialog.duplicate-pages.trun
 export const FIND_DUPLICATES_COMMAND_TITLE = messageKey('command.find-duplicate-pages.title');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
+export const ABOUT_CHANNEL_STORE = messageKey('dialog.about.channel-store');
+export const ABOUT_CHANNEL_WEB = messageKey('dialog.about.channel-web');
+export const ABOUT_CHANNEL_DEVELOPMENT = messageKey('dialog.about.channel-development');
+export const ABOUT_UPDATES_STORE = messageKey('dialog.about.updates-store');
+export const ABOUT_UPDATES_WEB = messageKey('dialog.about.updates-web');
+export const ABOUT_UPDATES_DEVELOPMENT = messageKey('dialog.about.updates-development');
+export const ABOUT_LICENCE = messageKey('dialog.about.licence');
+export const ABOUT_SOURCE = messageKey('dialog.about.source');
+export const ABOUT_LICENCES = messageKey('dialog.about.licences');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
 export const ROTATE_PAGE_180_TITLE = messageKey('command.rotate-page-180.title');
 export const ROTATE_PAGE_270_TITLE = messageKey('command.rotate-page-270.title');
@@ -1942,6 +1951,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REVEAL_LOG_TITLE]: 'Reveal diagnostics log',
   [ABOUT_VERSION_LABEL]: 'Version',
   [ABOUT_CHANNEL_LABEL]: 'Install channel',
+  [ABOUT_CHANNEL_STORE]: 'Microsoft Store',
+  [ABOUT_CHANNEL_WEB]: 'Download from monsterapdf.com',
+  [ABOUT_CHANNEL_DEVELOPMENT]: 'Development build',
+  // E4: the Store updates a Store app, and nothing in this build checks for updates on its own.
+  [ABOUT_UPDATES_STORE]: 'Updates are managed by the Microsoft Store. Monstera does not check for updates itself.',
+  [ABOUT_UPDATES_WEB]: 'This build does not check for updates. Newer versions are on monsterapdf.com.',
+  [ABOUT_UPDATES_DEVELOPMENT]: 'A development build. It does not check for updates.',
+  [ABOUT_LICENCE]:
+    'Monstera is free software under the GNU Affero General Public License, version 3 or later. You can read and build its source code.',
+  [ABOUT_SOURCE]: 'Source code',
+  [ABOUT_LICENCES]: 'Third-party licences',
   // "Rotate page" and not "Rotate": the command rotates the page on screen, and
   // a name that promised the document would be a name the behaviour contradicts
   // the moment there is a second page.

@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { openWebPage } from './webPages.js';
@@ -42,13 +46,34 @@ describe('openWebPage', () => {
     expect(opened).toStrictEqual(['https://apps.microsoft.com/detail/9NHV3B1PV3XS']);
   });
 
+  it('opens About’s two pages: the source and the third-party notices, in this project’s repository', async () => {
+    const { open, opened } = opener();
+    await openWebPage('source', open);
+    await openWebPage('licences', open);
+    // THE WHOLE ADDRESSES, for the donation case's reason — and the repository is `package.json`'s.
+    expect(opened).toStrictEqual([
+      'https://github.com/tenslorai-tar/monstera',
+      'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE',
+    ]);
+    // THE COPY AGAINST ITS SOURCE: `package.json`'s repository, so a move of the repository reads here.
+    const manifest = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../package.json'), 'utf8'),
+    ) as { repository: { url: string } };
+    expect(manifest.repository.url).toBe(`git+${opened[0] ?? ''}.git`);
+  });
+
   it('a page this build has no address for OPENS NOTHING, rather than opening something wrong', async () => {
     const { open, opened } = opener();
 
     // No shipped build lacks an address today, so the table is the case's: the donation page present, so
     // a version that opened the wrong entry would reach the opener rather than agree by opening nothing.
     await expect(
-      openWebPage('store-listing', open, { donate: 'https://monsterapdf.com/donate', 'store-listing': '' }),
+      openWebPage('store-listing', open, {
+        donate: 'https://monsterapdf.com/donate',
+        'store-listing': '',
+        source: 'https://github.com/tenslorai-tar/monstera',
+        licences: 'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE',
+      }),
     ).resolves.toBe(false);
 
     // ASSERT THE CALL, not the answer: a version that handed `''` to the opener would also resolve
@@ -63,7 +88,9 @@ describe('openWebPage', () => {
     const { open, opened } = opener();
     await openWebPage('donate', open);
     await openWebPage('store-listing', open);
-    expect(opened).toHaveLength(2);
+    await openWebPage('source', open);
+    await openWebPage('licences', open);
+    expect(opened).toHaveLength(4);
     for (const url of opened) expect(new URL(url).protocol).toBe('https:');
   });
 });
