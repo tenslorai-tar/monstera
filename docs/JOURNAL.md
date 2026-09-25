@@ -892,6 +892,26 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — The Organize grid, and a store version nothing had ever moved
+
+v5-09's Organize canvas, built on ADR-0104 (committed on its own first). The grid is the thumbnail strip with
+a `grid` half — selection, open, delete — so reordering stays one implementation; the section decides what
+the canvas shows; `targetPages` is the one reading of which pages a command means.
+
+- **The App case found a defect the unit cases could not.** After *Rotate* acted on a ticked page, Delete on
+  another card removed the ticked page instead. The store clears its selection in `observed`, and `observed`
+  had **no production caller** — App's own comment on `OpenDocument` records it: the version that moves is
+  the tab's, and the store's never left the opening one. Nothing had read the store's version, so it had
+  cost nothing until something needed it to move. `applied` now tells the store; the case passed after, and
+  failed before, which is the control.
+- **A selection counts only while the grid is on screen**, and a right-click on a page outside it means that
+  page. Both decided before building: a page ticked in Organize and left behind would otherwise redirect a
+  rotate given in the reading view, with nothing on screen saying so.
+- **Not moved to `targetPages` yet**: extract, duplicate, crop, headers and the rest still read the page on
+  show. Rotate and Delete are the two the grid's header names; the others are on the row as owed.
+
+---
+
 ## 2026-09-25 — Autosave, off by default
 
 The founding record's *"Autosave (interval setting; off by default)"*, on the Saving page, which it gives its

@@ -172,6 +172,11 @@ export interface DocumentState {
    * `undefined` until a person chooses, because no default is honest.
    */
   readonly sides: AskSides | undefined;
+  /**
+   * The pages ticked in the Organize grid, zero-based and sorted, empty with none (ADR-0104). Per document,
+   * as every other piece of state here is; emptied whenever the version moves.
+   */
+  readonly selectedPages: readonly number[];
 }
 
 export interface DocumentActions {
@@ -255,6 +260,9 @@ export interface DocumentActions {
   /** Records the magnification the reader chose for THIS document. */
   readonly zoomed: (mode: ZoomMode) => void;
 
+  /** Replaces the Organize grid's page selection (ADR-0104). Sorted, de-duplicated and bounded by the count. */
+  readonly selectPages: (pages: readonly number[]) => void;
+
   /** Replaces this document's conversation — the panel holds the turns it is assembling. */
   readonly converse: (turns: readonly ConversationTurn[]) => void;
 
@@ -311,10 +319,21 @@ export function createDocumentStore(
     pageCount: undefined,
     conversation: [],
     sides: undefined,
+    selectedPages: [],
     observed: (next) => {
       if (next <= get().version) return false;
-      set({ version: next });
+      // THE SELECTION GOES WITH THE VERSION IT WAS MADE AT (ADR-0104): a page number means nothing across a
+      // reorder or a delete, and a selection that survived one would name pages the person never ticked.
+      set({ version: next, selectedPages: [] });
       return true;
+    },
+    selectPages: (pages) => {
+      const count = get().pageCount;
+      // SORTED, UNIQUE AND IN RANGE, so every reader takes one shape and a stale number cannot enter.
+      const next = [...new Set(pages)]
+        .filter((page) => Number.isInteger(page) && page >= 0 && (count === undefined || page < count))
+        .sort((a, b) => a - b);
+      set({ selectedPages: next });
     },
     viewing: (next) => {
       if (next === get().page) return;

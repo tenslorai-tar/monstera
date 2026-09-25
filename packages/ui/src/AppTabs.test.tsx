@@ -13,7 +13,7 @@ import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
-import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from './settings/layout.js';
+import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING, RIBBON_SECTION_SETTING } from './settings/layout.js';
 import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
 import { FULL_APP_TEST_TIMEOUT } from './fullAppTestLimit.js';
 
@@ -245,6 +245,101 @@ async function press(container: HTMLElement, selector: string): Promise<void> {
     await Promise.resolve();
   });
 }
+
+describe('the Organize grid, driven through App (ADR-0104)', () => {
+  /** This file's parse and answers, plus `document.execute`, recording what each command sent. */
+  function organizing(): { readonly client: ContractClient; readonly executed: unknown[] } {
+    const executed: unknown[] = [];
+    let version = 1;
+    const answers = client();
+    const built = createClient(channels, (id, params) => {
+      if (id === 'document.execute') {
+        executed.push((params as { command: unknown }).command);
+        version += 1;
+        return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
+      }
+      if (id === 'document.viewModel') {
+        return Promise.resolve(ok({ version: asDocVersion(version), pageCount: PAGES[FIRST] ?? 1, rotations: [] }));
+      }
+      return (answers.client as unknown as Record<string, (p: unknown) => Promise<unknown>>)[id]?.(params) ?? Promise.reject(new Error(id));
+    });
+    return { client: built, executed };
+  }
+
+  function organizeSettings(): SettingsStore {
+    const settings = freshSettings();
+    settings.set(RIBBON_SECTION_SETTING.id, 'organize');
+    return settings;
+  }
+
+  const card = (container: HTMLElement, page: number): HTMLElement => {
+    const found = container.querySelector<HTMLElement>(`.m-page-grid [data-thumb-page="${String(page)}"]`);
+    if (found === null) throw new Error(`no grid card for page ${String(page)}`);
+    return found;
+  };
+
+  it('ORGANIZE shows the pages as a grid in place of the reading view, and Home shows the reading view', async () => {
+    const { client: built } = organizing();
+    const settings = organizeSettings();
+    const { container } = render(<App client={built} settings={settings} />);
+    await openOne();
+
+    expect(container.querySelector('.m-page-grid')).not.toBeNull();
+    expect(container.querySelector('.m-page-list')).toBeNull();
+    // CONTROL: the same document under Home is the reading view — the section is what decides.
+    await act(async () => {
+      settings.set(RIBBON_SECTION_SETTING.id, 'home');
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.m-page-grid')).toBeNull();
+    expect(container.querySelector('.m-page-list')).not.toBeNull();
+  });
+
+  it('a TICKED page is what Rotate acts on, and Delete removes it — the ribbon and the key both read the grid', async () => {
+    const { client: built, executed } = organizing();
+    const { container } = render(<App client={built} settings={organizeSettings()} />);
+    await openOne();
+
+    // PAGE 2 TICKED while page 1 is the one on show: a rotate that read `page` would send [0].
+    await act(async () => {
+      fireEvent.click(card(container, 1));
+      await Promise.resolve();
+    });
+    expect(card(container, 1).getAttribute('aria-pressed')).toBe('true');
+    await act(async () => {
+      const rotate = [...container.querySelectorAll<HTMLButtonElement>('.m-ribbon button')].find(
+        (button) => button.textContent === 'Rotate page',
+      );
+      if (rotate === undefined) throw new Error('no Rotate page in the Organize ribbon');
+      rotate.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(executed.at(-1)).toMatchObject({ kind: 'rotatePages', pages: [1] });
+
+    // THE VERSION MOVED, so the selection went with it; Delete then removes the focused card's page.
+    await act(async () => {
+      fireEvent.keyDown(card(container, 0), { key: 'Delete' });
+      await Promise.resolve();
+    });
+    expect(executed.at(-1)).toStrictEqual({ kind: 'deletePages', pages: [0] });
+  });
+
+  it('ENTER on a card opens that page in the reading view, which is Home', async () => {
+    const { client: built } = organizing();
+    const settings = organizeSettings();
+    const { container } = render(<App client={built} settings={settings} />);
+    await openOne();
+
+    await act(async () => {
+      fireEvent.keyDown(card(container, 1), { key: 'Enter' });
+      await Promise.resolve();
+    });
+    expect(settings.get(RIBBON_SECTION_SETTING.id)).toBe('home');
+    expect(container.querySelector('.m-page-grid')).toBeNull();
+    expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 2 of 2');
+  });
+});
 
 describe('multi-document tabs', () => {
   it('opens a SECOND document beside the first and brings it forward', async () => {

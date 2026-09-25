@@ -122,6 +122,96 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
 
+describe('Thumbnails as the Organize grid (ADR-0104)', () => {
+  /** A grid whose selection is held here, as the document store holds it, so a gesture's result is visible. */
+  function grid(selected: readonly number[] = []) {
+    const calls = { select: [] as (readonly number[])[], open: [] as number[], remove: [] as (readonly number[])[], jump: [] as number[], swap: 0 };
+    const { container, rerender } = render(
+      <Wrapped>
+        <Thumbnails
+          {...reads()}
+          view={view()}
+          pageCount={4}
+          current={0}
+          onJump={(page) => calls.jump.push(page)}
+          onSwap={() => {
+            calls.swap += 1;
+          }}
+          grid={{
+            width: 110,
+            selected,
+            onSelect: (pages) => calls.select.push(pages),
+            onOpen: (page) => calls.open.push(page),
+            onDelete: (pages) => calls.remove.push(pages),
+          }}
+        />
+      </Wrapped>,
+    );
+    const card = (page: number): HTMLElement => {
+      const found = container.querySelector<HTMLElement>(`[data-thumb-page="${String(page)}"]`);
+      if (found === null) throw new Error(`no card for page ${String(page)}`);
+      return found;
+    };
+    return { calls, card, container, rerender };
+  }
+
+  it('a click SELECTS the page and does not jump; Ctrl+click toggles; Shift+click extends from the last click', () => {
+    const { calls, card } = grid([2]);
+    fireEvent.click(card(1));
+    // THE ANCHOR is page 1 now, so Shift+click on 3 takes 1 to 3 — and swaps nothing, which Shift means in the strip.
+    fireEvent.click(card(3), { shiftKey: true });
+    fireEvent.click(card(2), { ctrlKey: true });
+    fireEvent.click(card(0), { ctrlKey: true });
+    expect(calls.select).toStrictEqual([[1], [1, 2, 3], [], [2, 0]]);
+    expect(calls.jump).toStrictEqual([]);
+    expect(calls.swap).toBe(0);
+  });
+
+  it('draws the ticked pages as ticked, and announces each card’s state', () => {
+    const { container } = grid([1, 3]);
+    const cards = [...container.querySelectorAll('button')];
+    expect(cards.map((button) => button.getAttribute('aria-pressed'))).toStrictEqual(['false', 'true', 'false', 'true']);
+    expect(cards.map((button) => button.classList.contains('is-selected'))).toStrictEqual([false, true, false, true]);
+  });
+
+  it('Enter and a double-click OPEN a page; Delete removes the ticked ones, or the focused one with none ticked', () => {
+    const ticked = grid([0, 2]);
+    fireEvent.keyDown(ticked.card(1), { key: 'Enter' });
+    fireEvent.doubleClick(ticked.card(3));
+    fireEvent.keyDown(ticked.card(1), { key: 'Delete' });
+    expect(ticked.calls.open).toStrictEqual([1, 3]);
+    expect(ticked.calls.remove).toStrictEqual([[0, 2]]);
+    // ENTER DOES NOT ALSO SELECT: it is prevented, so the button's own click does not follow it.
+    expect(ticked.calls.select).toStrictEqual([]);
+  });
+
+  it('CONTROL: the side strip — no grid — jumps on click, swaps on Shift+click, and Delete does nothing', () => {
+    const jumps: number[] = [];
+    let swaps = 0;
+    const { container } = render(
+      <Wrapped>
+        <Thumbnails
+          {...reads()}
+          view={view()}
+          pageCount={4}
+          current={0}
+          onJump={(page) => jumps.push(page)}
+          onSwap={() => {
+            swaps += 1;
+          }}
+        />
+      </Wrapped>,
+    );
+    const buttons = container.querySelectorAll('button');
+    fireEvent.click(buttons[2] as Element);
+    fireEvent.click(buttons[3] as Element, { shiftKey: true });
+    fireEvent.keyDown(buttons[1] as Element, { key: 'Delete' });
+    expect(jumps).toStrictEqual([2]);
+    expect(swaps).toBe(1);
+    expect([...buttons].map((button) => button.getAttribute('aria-pressed'))).toStrictEqual([null, null, null, null]);
+  });
+});
+
 describe('Thumbnails', () => {
   it('renders a control per page, named by the number a person reads', () => {
     const { container } = render(

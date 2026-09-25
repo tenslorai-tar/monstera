@@ -34,6 +34,7 @@ afterEach(() => {
 });
 
 const CONTEXT: CommandContext = {
+  selectedPages: [],
   docId: asDocId('00000000-0000-4000-8000-000000000001'),
   version: asDocVersion(1),
   hasSelection: false,

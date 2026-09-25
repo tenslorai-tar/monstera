@@ -35,6 +35,27 @@ describe('createDocumentStore', () => {
   });
 });
 
+describe('the Organize grid’s page selection (ADR-0104)', () => {
+  it('is kept sorted, without repeats, and inside the page count', () => {
+    const store = createDocumentStore(ONE, asDocVersion(1));
+    store.getState().counted(5);
+    store.getState().selectPages([3, 1, 3, 7, -1, 2.5]);
+    // 7 is past the last page, -1 and 2.5 are no page: a stale or invented number cannot enter.
+    expect(store.getState().selectedPages).toStrictEqual([1, 3]);
+  });
+
+  it('is EMPTIED when the version moves — a page number means nothing across a reorder or a delete', () => {
+    const store = createDocumentStore(ONE, asDocVersion(1));
+    store.getState().counted(5);
+    store.getState().selectPages([0, 2]);
+    // CONTROL: an older version is ignored, and so is the selection's clearing with it.
+    expect(store.getState().observed(asDocVersion(1))).toBe(false);
+    expect(store.getState().selectedPages).toStrictEqual([0, 2]);
+    expect(store.getState().observed(asDocVersion(2))).toBe(true);
+    expect(store.getState().selectedPages).toStrictEqual([]);
+  });
+});
+
 describe('DocumentStores', () => {
   it('gives two documents two stores, and a write to one leaves the other alone', () => {
     // THE RACE CLASS, asserted rather than assumed away. §6's claim is that an

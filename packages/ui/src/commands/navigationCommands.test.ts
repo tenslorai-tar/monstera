@@ -14,6 +14,7 @@ import { historyCommand, pageMoveCommand } from './navigationCommands.js';
 
 function contextAt(page: number, pageCount: number): CommandContext {
   return {
+    selectedPages: [],
     docId: asDocId('00000000-0000-4000-8000-0000000000aa'),
     version: asDocVersion(1),
     hasSelection: false,
@@ -73,6 +74,7 @@ describe('pageMoveCommand', () => {
 
   it('is absent with no document', () => {
     const noDocument: CommandContext = {
+      selectedPages: [],
       docId: undefined,
       version: undefined,
       hasSelection: false,

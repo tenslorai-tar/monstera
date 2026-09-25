@@ -7,6 +7,7 @@ import { chordOf, dispatchChord, shortcutsFor, type KeyChord } from './shortcuts
 const ANY_TITLE = messageKey('command.any.label');
 
 const context: CommandContext = {
+  selectedPages: [],
   docId: undefined,
   version: undefined,
   hasSelection: false,

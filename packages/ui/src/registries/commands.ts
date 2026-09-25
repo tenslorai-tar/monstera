@@ -100,6 +100,22 @@ export interface CommandContext {
    * merge into, and an empty list says that without a second absent state.
    */
   readonly openDocuments: readonly ComparableDocument[];
+  /**
+   * The pages ticked in the Organize grid, zero-based and sorted, empty with none (ADR-0104). **Read it
+   * through {@link targetPages}**, never alone: a command that took this and ignored `page`, or the reverse,
+   * would be a second reading of which pages a person means.
+   */
+  readonly selectedPages: readonly number[];
+}
+
+/**
+ * The pages a page command acts on — the ONE reading (ADR-0104 Decision 3): the pages ticked in the Organize
+ * grid when there are any, else the page on show, else none. A command that read `page` while four pages were
+ * ticked would act on the one the person was not looking at, and nothing on screen would say so.
+ */
+export function targetPages(context: CommandContext): readonly number[] {
+  if (context.selectedPages.length > 0) return context.selectedPages;
+  return context.page === undefined ? [] : [context.page];
 }
 
 /**

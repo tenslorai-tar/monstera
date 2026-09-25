@@ -212,7 +212,7 @@ import {
   ZOOM_OUT_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
-import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type CommandContext, targetPages, type UiCommand } from '../registries/commands.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import { SPLIT_VIEW_SETTING } from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -945,14 +945,16 @@ export function rotatePageCommand(
       // state the type allows and the scroller has not produced — rotating page
       // 0 by default would be the plausible wrong action `SHOWN_PAGE`'s own
       // history is about.
-      if (context.docId === undefined || context.page === undefined) return;
+      // THE PAGES ARE `targetPages`' (ADR-0104): the ticked ones in the Organize grid, else the page on show.
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
       // THE FOUR STEPS ARE IN `applyDocumentCommand`, not here — the refusal
       // report, the version, invariant 18's dialog and their order. They were
       // written inline in this function and moved out when drag-reorder needed
       // the same four from a surface rather than a command.
       await applyDocumentCommand(deps, context.docId, {
         kind: 'rotatePages',
-        pages: [context.page],
+        pages: [...pages],
         quarterTurns,
       });
     },
@@ -1061,10 +1063,12 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show.
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
       await applyDocumentCommand(deps, context.docId, {
         kind: 'deletePages',
-        pages: [context.page],
+        pages: [...pages],
       });
     },
   };

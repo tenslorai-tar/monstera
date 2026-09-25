@@ -6,6 +6,7 @@ import {
   CommandRegistry,
   type CommandContext,
   type UiCommand,
+  targetPages,
 } from './commands.js';
 import {
   DialogNotRegistered,
@@ -17,6 +18,7 @@ import { SettingsRegistry, type SettingDefinition, colourKindOf, colourSchema } 
 import { ToolRegistry, type UiTool, pointerPath } from './tools.js';
 
 const context: CommandContext = {
+  selectedPages: [],
   docId: asDocId('00000000-0000-4000-8000-000000000001'),
   version: asDocVersion(1),
   hasSelection: false,
@@ -136,6 +138,7 @@ describe('CommandRegistry', () => {
     ]);
 
     const other: CommandContext = {
+      selectedPages: [],
       docId: undefined,
       version: undefined,
       hasSelection: true,
@@ -147,6 +150,15 @@ describe('CommandRegistry', () => {
     registry.available(other);
 
     expect(seen).toStrictEqual([other]);
+  });
+});
+
+describe('targetPages — the one reading of which pages a command means (ADR-0104)', () => {
+  it('is the ticked pages when there are any, the page on show otherwise, and nothing with no page', () => {
+    expect(targetPages({ ...context, page: 4, selectedPages: [1, 2] })).toStrictEqual([1, 2]);
+    // THE PAGE ON SHOW is not added to a selection: a person who ticked 1 and 2 meant 1 and 2.
+    expect(targetPages({ ...context, page: 4, selectedPages: [] })).toStrictEqual([4]);
+    expect(targetPages({ ...context, page: undefined, selectedPages: [] })).toStrictEqual([]);
   });
 });
 

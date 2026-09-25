@@ -66,6 +66,8 @@ describe('the registered settings', () => {
       'appearance.document-panel',
       'appearance.document-panel-open',
       'appearance.document-panel-width',
+      // THE ORGANIZE GRID'S CARD SIZE (ADR-0104): its control is the grid's own Medium / Large.
+      'appearance.organize-grid-size',
       'appearance.quick-toolbar-edge',
       'appearance.quick-toolbar-open',
       'appearance.ribbon-section',

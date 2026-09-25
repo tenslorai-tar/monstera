@@ -74,6 +74,7 @@ function harness(options: {
   return {
     run: async () => {
       await command.run({
+        selectedPages: [],
         docId: undefined,
         version: undefined,
         hasSelection: false,

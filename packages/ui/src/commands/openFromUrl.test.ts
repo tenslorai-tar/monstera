@@ -15,6 +15,7 @@ import { openFromUrlCommand } from './openFromUrl.js';
 const FETCHED = asDocId('doc-from-url');
 
 const CONTEXT: CommandContext = {
+  selectedPages: [],
   docId: undefined,
   version: undefined,
   hasSelection: false,

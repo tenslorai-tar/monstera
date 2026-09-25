@@ -70,6 +70,7 @@ import {
   movePageCommand,
   redoCommand,
   rotatePageCommand,
+  deletePageCommand,
   saveCommand,
   undoCommand,
 } from './documentCommands.js';
@@ -96,6 +97,7 @@ import {
 
 const DOC = asDocId('doc-1');
 const CONTEXT: CommandContext = {
+  selectedPages: [],
   docId: DOC,
   version: asDocVersion(1),
   hasSelection: false,
@@ -121,6 +123,7 @@ const CONTEXT: CommandContext = {
 
 /** The context with no document, for the `when` cases. */
 const NO_DOCUMENT: CommandContext = {
+  selectedPages: [],
   docId: undefined,
   version: undefined,
   hasSelection: false,
@@ -4052,6 +4055,31 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
       '2026-09-24T09:38:00.000Z',
       '2026-09-24T09:41:00.000Z',
     ]);
+  });
+
+  it('ROTATE and DELETE act on the pages ticked in the Organize grid, and on the page on show without any', async () => {
+    // ADR-0104's `targetPages`, as the two commands read it. The ticked pages exclude the page on show (2), so
+    // a command still reading `page` sends [2] here and reads differently.
+    for (const [factory, kind] of [
+      [rotatePageCommand, 'rotatePages'],
+      [deletePageCommand, 'deletePages'],
+    ] as const) {
+      const ticked = sending();
+      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run({
+        ...CONTEXT,
+        page: 2,
+        selectedPages: [0, 3],
+      });
+      expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[0, 3]]);
+
+      const none = sending();
+      await factory({ client: none.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp }).run({
+        ...CONTEXT,
+        page: 2,
+        selectedPages: [],
+      });
+      expect(none.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[2]]);
+    }
   });
 
   it('CONTROL: a command that creates nothing goes out with no stamp', async () => {

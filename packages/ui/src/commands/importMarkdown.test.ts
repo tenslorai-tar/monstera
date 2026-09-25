@@ -23,6 +23,7 @@ const DOC = asDocId('doc-1');
 const COMPOSED = asDocId('doc-9');
 
 const CONTEXT: CommandContext = {
+  selectedPages: [],
   docId: DOC,
   version: asDocVersion(1),
   hasSelection: false,

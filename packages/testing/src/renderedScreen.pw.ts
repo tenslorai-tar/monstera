@@ -1696,6 +1696,39 @@ test('the COMMENTS panel at its default width sets each row on one line, with th
   }
 });
 
+// THE ORGANIZE GRID (ADR-0104), in every theme: drawn in place of the reading view, its cards drawn, and clean.
+for (const look of LOOKS) {
+  test(`${look.name}: the ORGANIZE GRID draws the pages as cards, a ticked one marked, and passes axe`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e4');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'organize.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      settings: { 'appearance.ribbon-section': 'organize' },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+    const grid = page.getByRole('region', { name: 'Pages to organize' });
+    await expect(grid).toBeVisible();
+    await expect(page.locator('.m-page-list')).toHaveCount(0);
+    const card = grid.locator('[data-thumb-page="0"]');
+    // DRAWN, not an empty slot: the card's canvas carries the page's pixels at the grid's width.
+    await expect(card.locator('canvas')).toHaveJSProperty('width', 110);
+    await card.click();
+    await expect(card).toHaveAttribute('aria-pressed', 'true');
+    await expect(grid).toContainText('1 selected');
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
 // TRANSLATE THIS PAGE (ADR-0097), in every theme: the dialog says what it sends before the control
 // that sends it, passes the gate, and a translation ends in ONE edit and its toast.
 for (const look of LOOKS) {

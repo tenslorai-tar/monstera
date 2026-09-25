@@ -52,6 +52,18 @@ export const THUMBNAIL_SIZE_OPTION_TITLES = {
   medium: THUMBNAIL_SIZE_MEDIUM,
   large: THUMBNAIL_SIZE_LARGE,
 } as const;
+export const ORGANIZE_GRID_SIZE_TITLE = messageKey('setting.appearance-organize-grid-size.title');
+export const ORGANIZE_GRID_MEDIUM = messageKey('setting.appearance-organize-grid-size.medium');
+export const ORGANIZE_GRID_LARGE = messageKey('setting.appearance-organize-grid-size.large');
+/** `appearance.organize-grid-size`'s members, each its own exported key as the other option sets are. */
+export const ORGANIZE_GRID_SIZE_OPTION_TITLES = {
+  medium: ORGANIZE_GRID_MEDIUM,
+  large: ORGANIZE_GRID_LARGE,
+} as const;
+export const ORGANIZE_GRID_LABEL = messageKey('surface.organize.label');
+export const ORGANIZE_GRID_COUNT = messageKey('surface.organize.count');
+export const ORGANIZE_GRID_SELECTED = messageKey('surface.organize.selected');
+export const ORGANIZE_GRID_HINT = messageKey('surface.organize.hint');
 export const AUTOSAVE_TITLE = messageKey('setting.saving-autosave.title');
 export const AUTOSAVE_DESCRIPTION = messageKey('setting.saving-autosave.description');
 export const AUTOSAVE_OFF = messageKey('setting.saving-autosave.off');
@@ -1926,6 +1938,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [THUMBNAIL_SIZE_OPTION_TITLES.small]: 'Small',
   [THUMBNAIL_SIZE_OPTION_TITLES.medium]: 'Medium',
   [THUMBNAIL_SIZE_OPTION_TITLES.large]: 'Large',
+  [ORGANIZE_GRID_SIZE_TITLE]: 'Card size',
+  [ORGANIZE_GRID_SIZE_OPTION_TITLES.medium]: 'Medium',
+  [ORGANIZE_GRID_SIZE_OPTION_TITLES.large]: 'Large',
+  [ORGANIZE_GRID_LABEL]: 'Pages to organize',
+  [ORGANIZE_GRID_COUNT]: '{count, plural, one {# page} other {# pages}}',
+  [ORGANIZE_GRID_SELECTED]: '{count} selected',
+  // v5-09's own line: what a person can do here, in the order the design says it.
+  [ORGANIZE_GRID_HINT]: 'Drag to reorder · Ctrl+click to select several · Delete removes · Enter opens',
   [AUTOSAVE_TITLE]: 'Save automatically',
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',

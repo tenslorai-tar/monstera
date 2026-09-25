@@ -10,6 +10,7 @@ import { featureShortcutCommands } from './featureShortcuts.js';
 import type { OpenOutcome } from './openDocument.js';
 
 const noDocument = {
+  selectedPages: [],
   docId: undefined,
   version: undefined,
   hasSelection: false,

@@ -53,6 +53,7 @@ import {
  */
 
 const WITH_DOCUMENT: CommandContext = {
+  selectedPages: [],
   docId: asDocId('00000000-0000-4000-8000-000000000001'),
   version: asDocVersion(1),
   hasSelection: false,
@@ -63,6 +64,7 @@ const WITH_DOCUMENT: CommandContext = {
 };
 
 const START_SCREEN: CommandContext = {
+  selectedPages: [],
   docId: undefined,
   version: undefined,
   hasSelection: false,

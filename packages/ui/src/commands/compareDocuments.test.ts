@@ -59,6 +59,7 @@ function clientFor(here: Script, other: Script): { client: ContractClient; reads
 
 function contextWith(open: readonly DocId[]): CommandContext {
   return {
+    selectedPages: [],
     docId: HERE,
     version: asDocVersion(1),
     hasSelection: false,

@@ -22,6 +22,7 @@ const EDITED = asDocId('doc-edited');
 
 /** A document on screen, on page 3 (zero-based), read at version 7. NOT page 0, the rotate's lesson. */
 const CONTEXT: CommandContext = {
+  selectedPages: [],
   docId: DOC,
   version: asDocVersion(7),
   hasSelection: false,

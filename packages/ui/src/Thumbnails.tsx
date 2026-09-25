@@ -65,6 +65,7 @@ export function Thumbnails({
   onSwap,
   pageMenu,
   size = 'medium',
+  grid,
 }: {
   /** How large the pictures are drawn (the Appearance setting). Medium for a strip with no setting behind it. */
   readonly size?: ThumbnailSize;
@@ -117,6 +118,21 @@ export function Thumbnails({
    * never reaches a click handler. Shift has no such meaning on a button.
    */
   readonly onSwap?: ((a: number, b: number) => void) | undefined;
+  /**
+   * The Organize grid's half (ADR-0104): present, the strip is laid out across the canvas at `width` and its
+   * pages are SELECTED rather than jumped to. Click selects one, Ctrl+click toggles one, Shift+click extends
+   * from the last clicked; Enter or a double-click opens a page in the reading view; Delete removes the
+   * selection. Absent — the side strip — none of that exists, and Shift+click keeps meaning swap.
+   */
+  readonly grid?:
+    | {
+        readonly width: number;
+        readonly selected: readonly number[];
+        readonly onSelect: (pages: readonly number[]) => void;
+        readonly onOpen: (page: number) => void;
+        readonly onDelete: (pages: readonly number[]) => void;
+      }
+    | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const { visible, slotRef } = useVisiblePages('50%');
@@ -125,32 +141,56 @@ export function Thumbnails({
   // and re-rendering the whole strip mid-drag would replace the element the
   // browser is dragging.
   const dragging = useRef<number | null>(null);
+  // WHERE A SHIFT+CLICK EXTENDS FROM: the page last clicked without Shift. A ref for `dragging`'s reason.
+  const anchor = useRef<number | null>(null);
 
-  const { width, columns } = THUMBNAIL_SIZES[size];
+  const strip = THUMBNAIL_SIZES[size];
+  const width = grid?.width ?? strip.width;
+  const { columns } = strip;
 
   return (
     <nav
-      className="m-thumbnails"
+      className={grid === undefined ? 'm-thumbnails' : 'm-thumbnails m-thumbnails--grid'}
       aria-label={i18n._(THUMBNAILS_LABEL)}
       // THE SIZE IS TWO CUSTOM PROPERTIES, the grid's column count and a picture's width, because they change
       // together and `app.css` lays both out — the token rule's own line: values that are genuinely dynamic.
       style={{ '--m-thumb-columns': String(columns), '--m-thumb-width': `${String(width)}px` } as React.CSSProperties}
     >
       {Array.from({ length: pageCount }, (_, page) => {
+        const ticked = grid?.selected.includes(page) === true;
         const thumbnail = (
         <button
           key={page}
           type="button"
-          className={page === current ? 'm-thumb m-thumb-current' : 'm-thumb'}
+          className={['m-thumb', page === current ? 'm-thumb-current' : '', ticked ? 'is-selected' : '']
+            .filter((name) => name !== '')
+            .join(' ')}
           // THE PAGE A PERSON READS, which is the 1-based one. The value passed
           // back is the zero-based index, and `pageNumbering.ts` is the only
           // place the two meet.
           aria-label={i18n._(THUMBNAIL_PAGE, { page: pdfjsPageOf(page) })}
           aria-current={page === current ? 'true' : undefined}
+          // IN THE GRID, whether it is ticked — a toggle's state, which is what `aria-pressed` announces.
+          aria-pressed={grid === undefined ? undefined : ticked}
           ref={slotRef(page)}
           draggable={onMove !== undefined}
           data-thumb-page={String(page)}
           onClick={(event) => {
+            if (grid !== undefined) {
+              if (event.shiftKey && anchor.current !== null) {
+                const from = Math.min(anchor.current, page);
+                const to = Math.max(anchor.current, page);
+                grid.onSelect(Array.from({ length: to - from + 1 }, (__, at) => from + at));
+                return;
+              }
+              anchor.current = page;
+              if (event.ctrlKey || event.metaKey) {
+                grid.onSelect(ticked ? grid.selected.filter((each) => each !== page) : [...grid.selected, page]);
+                return;
+              }
+              grid.onSelect([page]);
+              return;
+            }
             // SHIFT MEANS SWAP, and a swap with the page already being read is
             // not a command — `swapPages` accepts it and inverts to a no-op,
             // but dispatching it would put an undo step in the log for a
@@ -161,6 +201,9 @@ export function Thumbnails({
               return;
             }
             onJump(page);
+          }}
+          onDoubleClick={() => {
+            grid?.onOpen(page);
           }}
           onDragStart={() => {
             dragging.current = page;
@@ -185,6 +228,20 @@ export function Thumbnails({
             onMove?.(from, page);
           }}
           onKeyDown={(event) => {
+            if (grid !== undefined && !event.altKey) {
+              // ENTER OPENS, and is prevented so the button's own click — which would select — does not follow.
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                grid.onOpen(page);
+                return;
+              }
+              // DELETE REMOVES THE TICKED PAGES, or this one when none is ticked: *"Delete removes"* (v5-09).
+              if (event.key === 'Delete') {
+                event.preventDefault();
+                grid.onDelete(grid.selected.length > 0 ? grid.selected : [page]);
+                return;
+              }
+            }
             if (onMove === undefined || !event.altKey) return;
             const to = event.key === 'ArrowUp' ? page - 1 : event.key === 'ArrowDown' ? page + 1 : page;
             if (to === page || to < 0 || to >= pageCount) return;

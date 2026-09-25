@@ -124,6 +124,7 @@ import {
   CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
   LAYOUT_MODE_SETTING,
+  RIBBON_SECTION_SETTING,
 } from './settings/layout.js';
 import type { AskAssistant, AssistantRequest } from './assistantRequest.js';
 import {
@@ -342,6 +343,7 @@ import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
 import { ToastStrip } from './primitives/Toast.js';
 import { ReviewPrompt } from './surfaces/ReviewPrompt.js';
+import { PageGrid } from './surfaces/PageGrid.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING } from './settings/saving.js';
@@ -485,6 +487,9 @@ const NO_EVENTS: EventSubscriber = () => () => undefined;
  * rebuild the subscription on every one.
  */
 const NO_DOCUMENT_SUBSCRIBE = (): (() => void) => (): void => undefined;
+
+/** No pages ticked — one stable empty list, so a context memo does not rebuild for a new `[]` each render. */
+const NO_PAGES: readonly number[] = [];
 
 /**
  * How far in from the page's top-right corner an answer's note is placed, in PDF points: half an
@@ -891,8 +896,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       setTabs((current) =>
         current.map((tab) => (tab.docId === activeId ? { ...tab, ...next } : tab)),
       );
+      // THE DOCUMENT'S STORE HEARS OF IT TOO — `observed`'s first production caller. It had none, so the store's
+      // version never left the opening one; nothing read it, and the Organize grid's selection (ADR-0104), which
+      // must go when the version moves, is the first thing that needs it to move.
+      if (activeId !== undefined) stores.get(activeId)?.getState().observed(next.version);
     },
-    [activeId],
+    [activeId, stores],
   );
 
   /**
@@ -1282,6 +1291,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
   const currentPage = view?.page ?? FIRST_PAGE.kernel;
   const pageCount = view?.pageCount;
   const zoomMode = view?.zoom ?? DEFAULT_ZOOM;
+  // THE ORGANIZE GRID (ADR-0104): the canvas shows it while Organize is the rail's section, and the selection
+  // counts only then — a page ticked there and left must not redirect a rotate given in the reading view.
+  const organizing = useSetting(settings, RIBBON_SECTION_SETTING) === 'organize';
+  const selectedPages = organizing ? (view?.selectedPages ?? NO_PAGES) : NO_PAGES;
 
   /**
    * Releases documents: each tab, its store, and what main holds for it.
@@ -1490,6 +1503,32 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     }),
     [store],
   );
+
+  /**
+   * The Organize grid's gestures (ADR-0104), `undefined` outside Organize — which is what keeps the reading
+   * view on every other section. The selection is the document store's; Delete is `deletePages` through the
+   * one dispatcher, undone like any command, so it asks nothing first.
+   */
+  const organize = useMemo(() => {
+    if (!organizing || store === undefined || activeId === undefined) return undefined;
+    return {
+      selected: selectedPages,
+      onSelect: (pages: readonly number[]) => {
+        store.getState().selectPages(pages);
+      },
+      onOpen: (page: number) => {
+        // TO READ A PAGE IS TO CHOOSE A SECTION THAT READS: the section is the one value the canvas follows.
+        navigator.jumpTo(page);
+        settings.set(RIBBON_SECTION_SETTING.id, 'home');
+      },
+      onDelete: (pages: readonly number[]) => {
+        void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+          kind: 'deletePages',
+          pages: [...pages],
+        });
+      },
+    };
+  }, [activeId, applied, ask, client, navigator, organizing, selectedPages, settings, stamp, store]);
 
   /**
    * What a command last asked of the assistant (ADR-0088), and the one way to ask it.
@@ -2555,8 +2594,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
       // the ids; a command reading them from anywhere else would be the second
       // answer `pageCount`'s note above is about.
       openDocuments: tabs,
+      // THE ORGANIZE GRID'S TICKED PAGES, read by commands only through `targetPages` (ADR-0104).
+      selectedPages: open === undefined ? NO_PAGES : selectedPages,
     }),
-    [currentPage, open, pageCount, tabs, textSelection],
+    [currentPage, open, pageCount, selectedPages, tabs, textSelection],
   );
 
   useShortcuts(registry, context);
@@ -2721,6 +2762,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           onJump={navigator.jumpTo}
           onMove={movePage}
           onSwap={swapPages}
+          organize={organize}
           loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}
@@ -2753,7 +2795,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           pageMenu={(page, element) => (
             <ContextMenuArea
               registry={registry}
-              context={{ ...context, page }}
+              // THE RIGHT-CLICKED PAGE, and the selection only when that page is in it: a right-click on a page
+              // outside what is ticked means THAT page, so the menu's commands must not act on the ticked ones.
+              context={{ ...context, page, selectedPages: context.selectedPages.includes(page) ? context.selectedPages : NO_PAGES }}
               menus={[
                 ...(textSelection?.page === page ? (['selection'] as const) : []),
                 ...(selection?.page === page ? (['annotation'] as const) : []),
@@ -3106,6 +3150,7 @@ function PageCanvas({
   showGrid,
   unit,
   split,
+  organize,
   compare,
   onComparePage,
   compareGoTo,
@@ -3150,6 +3195,18 @@ function PageCanvas({
   readonly onMove: (from: number, to: number) => void;
   /** Exchanges two pages, from the strip's Shift+click. */
   readonly onSwap: (a: number, b: number) => void;
+  /**
+   * The Organize grid's selection and gestures while Organize is the active section, else `undefined` —
+   * which is what decides that the canvas shows the grid (ADR-0104 Decision 1).
+   */
+  readonly organize:
+    | {
+        readonly selected: readonly number[];
+        readonly onSelect: (pages: readonly number[]) => void;
+        readonly onOpen: (page: number) => void;
+        readonly onDelete: (pages: readonly number[]) => void;
+      }
+    | undefined;
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
@@ -3385,6 +3442,25 @@ function PageCanvas({
       />
       }
       page={
+      // ORGANIZE'S CANVAS IS THE GRID (ADR-0104), in place of both panes — a split of a grid is two copies of
+      // one selection, and the reading view returns with the section.
+      organize !== undefined ? (
+        <PageGrid
+          client={client}
+          docId={open.docId}
+          version={open.version}
+          view={ready}
+          pageCount={ready.document.numPages}
+          current={current}
+          selected={organize.selected}
+          settings={settings}
+          onSelect={organize.onSelect}
+          onOpen={organize.onOpen}
+          onMove={onMove}
+          onDelete={organize.onDelete}
+          pageMenu={pageMenu}
+        />
+      ) : (
       <>
       <PageList
         client={client}
@@ -3528,6 +3604,7 @@ function PageCanvas({
         </div>
       ) : null}
       </>
+      )
       }
     />
   );

@@ -19,6 +19,7 @@ import { CommandRegistry, type CommandContext, type UiCommand } from './registri
  */
 
 const CONTEXT: CommandContext = {
+  selectedPages: [],
   docId: asDocId('00000000-0000-4000-8000-0000000000bb'),
   version: asDocVersion(1),
   hasSelection: false,
@@ -29,6 +30,7 @@ const CONTEXT: CommandContext = {
 };
 
 const NO_DOCUMENT: CommandContext = {
+  selectedPages: [],
   docId: undefined,
   version: undefined,
   hasSelection: false,

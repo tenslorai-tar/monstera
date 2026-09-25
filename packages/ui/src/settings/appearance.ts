@@ -6,6 +6,8 @@ import {
   THEME_DESCRIPTION,
   THEME_OPTION_TITLES,
   THEME_TITLE,
+  ORGANIZE_GRID_SIZE_OPTION_TITLES,
+  ORGANIZE_GRID_SIZE_TITLE,
   THUMBNAIL_SIZE_DESCRIPTION,
   THUMBNAIL_SIZE_OPTION_TITLES,
   THUMBNAIL_SIZE_TITLE,
@@ -111,6 +113,26 @@ export const THUMBNAIL_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ small: 'small
   category: 'appearance',
   optionTitles: THUMBNAIL_SIZE_OPTION_TITLES,
 };
+
+/**
+ * The Organize grid's card size (ADR-0104) — v5-09's Medium / Large, drawn by the grid itself.
+ *
+ * REMEMBERED, not a Settings row: the control for it is the grid's own segmented control, as a panel's width's
+ * is its splitter. The widths are v5-09's cards at a 1280 px window — six columns across the canvas at Medium,
+ * about four at Large — read off the export, a picture's width in CSS pixels.
+ */
+export const ORGANIZE_GRID_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ medium: 'medium'; large: 'large' }>> = {
+  id: 'appearance.organize-grid-size',
+  title: ORGANIZE_GRID_SIZE_TITLE,
+  schema: z.enum(['medium', 'large']),
+  fallback: 'medium',
+  category: 'appearance',
+  remembered: true,
+  optionTitles: ORGANIZE_GRID_SIZE_OPTION_TITLES,
+};
+
+/** A grid card's width in CSS pixels, per {@link ORGANIZE_GRID_SIZE_SETTING}. */
+export const ORGANIZE_GRID_WIDTHS: Readonly<Record<'medium' | 'large', number>> = { medium: 110, large: 160 };
 
 /** One of {@link THUMBNAIL_SIZE_SETTING}'s sizes. */
 export type ThumbnailSize = z.infer<(typeof THUMBNAIL_SIZE_SETTING)['schema']>;

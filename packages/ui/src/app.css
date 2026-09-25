@@ -4204,3 +4204,69 @@ textarea {
   color: var(--text);
   font-weight: 600;
 }
+
+/*
+ * THE ORGANIZE GRID (v5-09, ADR-0104): the page area's whole width, the line of counts and gestures above the
+ * cards, and as many columns as fit. The strip's own rules above still apply to each card; these only lay the
+ * cards out across the canvas instead of down the panel.
+ */
+.m-page-grid {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  block-size: 100%;
+  background: var(--bg);
+}
+
+.m-page-grid__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-16);
+  padding: var(--space-8) var(--space-16);
+}
+
+.m-page-grid__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-8);
+  margin: 0;
+  font-size: var(--font-chrome-12);
+}
+
+.m-page-grid__summary > span + span::before,
+.m-page-grid__summary > strong + span::before {
+  content: '·';
+  padding-inline-end: var(--space-8);
+  color: var(--muted);
+}
+
+.m-page-grid__hint {
+  color: var(--muted);
+}
+
+.m-thumbnails.m-thumbnails--grid {
+  flex: 1 1 auto;
+  grid-template-columns: repeat(auto-fill, minmax(var(--m-thumb-width), max-content));
+  justify-content: start;
+  gap: var(--space-16);
+  padding: var(--space-8) var(--space-16) var(--space-16);
+}
+
+/* A TICKED CARD: the accent round it, which is what v5-09 draws, and heavier than the current page's line. */
+.m-thumb.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.m-thumb.is-selected .m-thumb-number {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.m-thumb:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 2px;
+}
