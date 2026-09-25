@@ -1691,7 +1691,24 @@ for (const look of LOOKS) {
     await page.keyboard.type('Edit text on the page');
     await page.keyboard.press('Enter');
     const outline = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
-    await expect(outline).toHaveCount(1);
+    // SELF-DESCRIBING ON FAILURE. This failed once on the Linux runner at 940133c (dark only) and passed 30 of 30
+    // here; the one output readable without a token is the step's annotation, so a failure carries the page's
+    // state rather than only the count. The palette-focus race was tested and rejected (focused at 12x CPU
+    // throttle), so this is what should say what the mechanism is if it recurs.
+    await expect(outline)
+      .toHaveCount(1)
+      .catch(async (cause: unknown) => {
+        const state = await page.evaluate(() => ({
+          palette: document.querySelector('.m-palette') !== null,
+          query: document.querySelector<HTMLInputElement>('.m-palette-query')?.value ?? null,
+          focused: document.activeElement?.className ?? null,
+          layers: document.querySelectorAll('[data-text-edit-layer]').length,
+          blocks: document.querySelectorAll('[data-text-block]').length,
+          problem: document.querySelector('[role="alert"]')?.textContent ?? null,
+          toasts: [...document.querySelectorAll('.m-toast')].map((toast) => toast.textContent),
+        }));
+        throw new Error(`the page when the outline did not appear: ${JSON.stringify(state)}`, { cause });
+      });
 
     const pageBox = await canvas.boundingBox();
     const drawn = await outline.boundingBox();

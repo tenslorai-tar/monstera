@@ -892,6 +892,26 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — OPEN: the dark Edit-text case failed once on the Linux runner, and the mechanism is not known
+
+`main` went red at 940133c on `ubuntu-latest` only, at the accessibility gate: *"dark: EDIT TEXT outlines
+each block ON the page"* found no outline 5 s after the palette's Enter. Light and high contrast passed
+in the same run; Windows passed; the previous push (805cfdb), without the glass, was green on both legs.
+Read from the step's annotation (`/check-runs/…/annotations`, public), since the job log needs a token.
+
+**Tested and rejected**: that the case types before the palette's field has focus. A probe typing
+straight after Control+K found the field focused and holding the text at 1×, 6× and 12× CPU throttling
+(`Emulation.setCPUThrottlingRate`), so that race is not reachable by slowness alone; the case was not
+changed on it. **Not reproduced**: the case passed 30 of 30 here (`--repeat-each 10`, all three themes).
+
+So the case now **describes itself when it fails**: whether the palette is still open and what its field
+holds, the focused element, how many edit layers and blocks exist, any alert and any toast — pointed once
+at an outline that cannot exist, it printed that state. The glass (d25fcc6) is the only change in that
+range touching what the page composites, and Linux runs a software compositor, so it is the first
+suspect; that is a suspicion, not a finding. The next run on the runner says which.
+
+---
+
 ## 2026-09-25 — Settings: Reduce motion and Thumbnail size, and what v5-10's Appearance page gets instead
 
 v5-10's Appearance page lists six rows. Theme and Accent existed. Of the other four:
