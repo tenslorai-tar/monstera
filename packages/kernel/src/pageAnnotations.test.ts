@@ -3083,6 +3083,18 @@ describe('applyPlaceImage', () => {
     expect(listed.annotations.map((entry) => entry.authored)).toEqual([true]);
   });
 
+  it('carries ITS command’s stamp — the author and instant the walk reads back', async () => {
+    // A stamp unlike the shared STAMP, so a placement that stamped from anywhere but its own command reads
+    // wrong here. The reply case's own is in the stamp block; this is the second creation site.
+    const stamp = { author: 'Ines Duarte', created: '2026-09-23T17:05:12.000Z' };
+    const listed = await onSession(await placedOn(await fixture(), { ...placement(), stamp }), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations.map((entry) => [entry.author, entry.created])).toStrictEqual([
+      [stamp.author, stamp.created],
+    ]);
+  });
+
   /** How many image XObjects the whole document holds. */
   async function imageObjects(bytes: Uint8Array): Promise<number> {
     const document = await PDFDocument.load(bytes, { updateMetadata: false });
@@ -3488,7 +3500,7 @@ describe('an annotation carries its author, its creation time and its blend', ()
     }
   });
 
-  it('a reply and a placed image carry their own stamp', async () => {
+  it('a reply carries its own stamp (a placed image’s is in the applyPlaceImage block)', async () => {
     const replied = await onSession(await drawnOn(await fixture(), command()), async (session) => {
       await applyReplyToAnnotation(session, {
         kind: 'replyToAnnotation',
@@ -3513,6 +3525,18 @@ describe('an annotation carries its author, its creation time and its blend', ()
     // square names "Someone Else" and carries no `/CreationDate`.
     const listed = await onSession(await fixture({ foreign: true }), (session) => readAnnotations(session));
     expect(listed.annotations.map((entry) => [entry.author, entry.created])).toStrictEqual([['Someone Else', null]]);
+  });
+
+  it('a stamp’s FRACTION of a second is dropped — a PDF date holds whole seconds, and it truncates', async () => {
+    // The schema accepts milliseconds and the renderer's clock supplies them, so a mark's `created` reads back
+    // earlier than it was sent by up to a second. Measured 2026-09-25: .900 is written `…3807Z` and read `:07.000`.
+    // Asserted so a writer that rounded, or cut to the minute, reads differently here.
+    const drawn = await drawnOn(await fixture(), {
+      ...command(),
+      stamp: { author: STAMP.author, created: '2026-09-24T09:38:07.900Z' },
+    });
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.created).toBe('2026-09-24T09:38:07.000Z');
   });
 
   it('CONTROL: a mark this build drew with an empty author reads empty, not a name from elsewhere', async () => {

@@ -118,9 +118,17 @@ describe('the rating prompt’s record (E3)', () => {
 
   it('a record that is not what this build writes starts again rather than throwing', () => {
     const file = aFile();
-    file.write({ installDate: 'yesterday', sessions: -3, promptCount: 1.5 });
+    file.write({ installDate: 'yesterday', sessions: -3, promptCount: 1.5, lastPromptAt: Number.NaN, reviewedAt: 'x' });
     const engagement = launched(file, 0);
     expect(engagement.due()).toBe(false);
-    expect(file.read()['sessions']).toBe(1);
+    // THE WHOLE RECORD, because `due` alone is decided by the one session: every field it would not read today
+    // must still have been cleaned, or a later launch reads `promptCount: 1.5` as a count.
+    expect(file.read()).toStrictEqual({
+      installDate: INSTALL,
+      sessions: 1,
+      lastPromptAt: null,
+      promptCount: 0,
+      reviewedAt: null,
+    });
   });
 });

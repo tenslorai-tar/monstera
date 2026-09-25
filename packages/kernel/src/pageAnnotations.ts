@@ -1825,12 +1825,15 @@ function authorOf(annotation: PDFAnnotation): string {
 }
 
 /**
- * `/CreationDate` as a UTC instant, or `null`. The KEY decides whether there is a date: MuPDF's getter
- * answers a date for a mark that has none (measured 2026-09-24: 1969-12-31T23:59:59Z, epoch minus a
- * second), so reading the getter alone would invent one.
+ * `/CreationDate` as a UTC instant, or `null`.
+ *
+ * **MuPDF's getter answers one sentinel for every date it cannot give**: epoch minus a second
+ * (1969-12-31T23:59:59Z) for a mark with no `/CreationDate`, for an unreadable one, for an empty one and
+ * for one before 1970, which it reports as out of range (measured 2026-09-25 against the `mupdf` package
+ * this kernel resolves). So an instant before the epoch is that sentinel and never a date, and it is the
+ * one rule here: checking the key as well would be a second guard deciding what this one already does.
  */
 function createdOf(annotation: PDFAnnotation): string | null {
-  if (!annotation.getObject().get('CreationDate').isString()) return null;
   const created = annotation.getCreationDate();
   return Number.isNaN(created.getTime()) || created.getTime() < 0 ? null : created.toISOString();
 }

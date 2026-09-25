@@ -89,6 +89,36 @@ describe('recent pictures (ADR-0100)', () => {
     expect(files.held.size).toBe(0);
   });
 
+  it('keeps nothing when the setting went OFF while its page was drawing', async () => {
+    // The check after the draw has two halves, and the case above reaches only `listed`. The setting is on
+    // when the capture starts — so the check before the draw passes — and off when the picture arrives.
+    let enabled = true;
+    let drawn = 0;
+    const { store, files } = pictures({
+      enabled: () => enabled,
+      picture: () => {
+        drawn += 1;
+        enabled = false;
+        return Promise.resolve(JPEG);
+      },
+    });
+
+    await store.capture(DOC, PATH);
+
+    expect(drawn).toBe(1);
+    expect(files.held.size).toBe(0);
+  });
+
+  it('keeps a picture exactly AT the bound — the bound is the largest allowed, not the first refused', async () => {
+    const atBound = new Uint8Array(MAX_RECENT_PREVIEW_BYTES);
+    const { store, files, reported } = pictures({ picture: () => Promise.resolve(atBound) });
+
+    await store.capture(DOC, PATH);
+
+    expect(files.held.get(pictureName(PATH))?.length).toBe(MAX_RECENT_PREVIEW_BYTES);
+    expect(reported).toStrictEqual([]);
+  });
+
   it('keeps nothing past the bound, and says so with the size rather than the path', async () => {
     const { store, files, reported } = pictures({
       picture: () => Promise.resolve(new Uint8Array(MAX_RECENT_PREVIEW_BYTES + 1)),

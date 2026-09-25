@@ -892,6 +892,165 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — Stage audit of `5b55d66..1e1bfad` — findings QQQQQQ-1 to QQQQQQ-13
+
+19 commits, 183 files, 10 proofs added, 60 modified and none removed, 12 source files added, 83 changed
+and none removed (`npm run audit:scope`). The range is Stage 10's start screen (drop to open, where and
+when, first-page pictures, Marcellus, the six cards), the glass dialogs, Settings' Reduce motion and
+Thumbnail size, and Rate Us with the E3 rating prompt. The commit gate stopped the baselines for Rate
+Us at 207 files, so this audit rides in its own commit and they follow it.
+
+Every modified proof was read commit by commit (`git log -p`) by two reviewers, one per side of the
+boundary, and each finding below was then checked by hand before anything changed: the quotation
+located, the mutation run against the old case to see it stay green, and again against the new one to
+see it go red. **No check in the range was loosened**; every removed assertion had a replacement at
+least as strong. What the range had instead is the item-4 shape, twelve times over: cases whose fixture
+the defect would also pass.
+
+**QQQQQQ-1 — the first-page capture the root chains on every open was crossed by no case.** The handler
+cases drive it with a fake picture function and the composition cases pass no picture folder — on
+purpose, since their fake host answers no page image and a capture there held the lane. So the join
+`picture: (docId) => commands.firstPagePicture(docId)` ran nowhere. `compositionHost.test.ts` now opens
+through the real lane with a host that draws `engine/pageImage` into the granted directory, waits for the
+picture, asserts what the host was asked (page 0, JPEG, quality 60) and the bytes kept, and runs a command
+afterwards. Reddened with the join made to reject. **Measured on the way, and recorded in the case**: a
+command sent straight after an open reaches the lane BEFORE the capture, since the capture waits for the
+open's sessions — the first draft asserted the opposite and was wrong.
+
+**QQQQQQ-2 — two refusal fixtures were rejections, and they were written in this range.** `rateUs.test.ts`
+and a new *Clear list* case answered `err({ code: 'internal' })`. `failureSchema` requires an `incident` of
+`internal`, so the envelope is malformed, the client throws, and each "refused" case was the rejected case
+a second time. Found because removing *Clear list*'s `if (!answer.ok) return` left its case green. Both now
+carry an incident, and the mutation goes red. The fix-induced finding of the range: written while closing
+another finding, by the seat that wrote the rule about fixtures the bug also passes.
+
+**QQQQQQ-3 — the annotation date.** `a reply and a placed image carry their own stamp` asserted a reply
+only; `applyPlaceImage`'s stamp had no case (now one, reddened with `writeStamp` removed there). The
+reader had two guards — the key, then *before the epoch is none* — and measured against the `mupdf`
+package, the getter answers one sentinel (epoch minus a second) for an absent, empty, unreadable or
+pre-1970 date, so the key check decided nothing the second did not; it is removed and the remaining guard
+reddens its case. And a stamp's fraction of a second is truncated (`.900` reads `.000`), now pinned.
+ADR-0103 carries the correction.
+
+**QQQQQQ-4 — the root's *no engagement record* control separated nothing.** A fresh record is one session
+old, so it is never due either. The control now asserts what only an absent record does — a rating opens
+nothing — and reddened with the root building a record anyway. A second case shows a due record asks and
+the page's toggle is the one the root reads.
+
+**QQQQQQ-5 — *the deepest known folder wins* was indistinguishable from *the first*,** because the fixture
+listed Documents before OneDrive, as `knownRoots` does. A reversed list now separates them (reddened with
+first-match). The dropped over-long folder name had no case; now it has one at the bound and one past it.
+
+**QQQQQQ-6 — the picture store's check after the draw has two halves and one was reached.** A setting
+turned off during the draw now has its case, and the bound is tested at exactly `MAX_RECENT_PREVIEW_BYTES`
+as well as one past it. Reddened with `enabled` dropped from the second check.
+
+**QQQQQQ-7 — the engagement record's clean-up was unobserved**: `due()` was decided by the one session, so
+`promptCount: 1.5` surviving could not show. The case asserts the whole record; reddened with
+`Number.isInteger` removed.
+
+**QQQQQQ-8 — four page cases a defect would pass.** The opacity floor read the slider, which happy-dom
+itself clamps to `min` — now the readout, reddened with the clamp removed. The drop target's text-drag
+control now asserts the drop is not cancelled, reddened with its guard removed. The rating banner's title
+said the other answers never toast and asserted it for none — now all three, reddened with a toast in
+`answer`. And the stamp-per-send case sent once, so a cached stamp passed; two sends with a moving clock
+now, and a module-level cache reddens only the new case.
+
+**QQQQQQ-9 — the App's dispatch filter hides a write.** `commandCalls` drops `app.reviewPrompt`, but a `due`
+answer is recorded by main as a prompt shown. `AppTabs.test.tsx` now counts it across a document opening
+and closing — once per window — and reddened with the banner keyed on the active document.
+
+**QQQQQQ-10 — the reduced-motion scan was blind to longhand and credited any rule.** It knew `transition`
+and `animation` only, and counted any rule under the attribute as stilling. It now reads the longhands,
+requires a stilling value in the same family, and carries constructed controls, since the stylesheets
+spell no longhand today. Reddened with the toast's `animation: none` replaced by `opacity: 1`.
+
+**QQQQQQ-11 — two searches with one spelling.** The redraw scan matched `.update()` only; it now matches
+`.update?.()` and `['update']()` and refuses a hash's `.update(bytes)`, with constructed controls. The
+display-location walk finds its schema by identity, so a restated or extended shape escapes it — stated
+in the file as the limit rather than closed, since comparing shapes would report every `{ within, folder }`.
+
+**QQQQQQ-12 — *each opens a dialog* was false for Rate Us.** ADR-0095 and ARCHITECTURE said both title-bar
+buttons open a dialog; Rate Us goes straight to the Store. The ADR carries a dated correction, the
+architecture body is edited.
+
+**QQQQQQ-13, OPEN — the author a new mark carries is composed in `App.tsx` and crossed by no case.**
+`authorFor(typedAuthor, userName)` is unit-tested and every command case injects its own `stamp`, but no
+App case draws a mark, so `authorFor(typedAuthor, '')` survives the suite. Closing it needs an App-level
+case that creates an annotation, which no App test does today (the page never parses under happy-dom);
+**trigger:** the first such case, or a Chromium case in `renderedScreen.pw.ts` that draws one.
+
+### 1. Root cause or workaround?
+
+The range's fixes: the cards' border (a card that is a button has a control's edge — root), the glass
+script taking the check's colour maths rather than its own (B3a — root), option titles as exported keys
+(the catalogue's orphan rule — root), `webPages.test.ts` given a table parameter (the empty address is a
+real state no shipped build now has — root). The one that read as scoping rather than a fix — *no folder,
+no picture store* — was a test double answering nothing; QQQQQQ-1 is the coverage it had left out. The
+dark Edit-text failure is a diagnostic, not a fix, and stays open.
+
+### 2. Verified against the easy shape only?
+
+The picture bound was measured on Letter pages of the corpus; A3 is about twice the pixels and the bound
+is 3.5× the largest reading. Folder nesting was the easy order until QQQQQQ-5. Both path styles run,
+since CI runs the location cases on Linux too.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, in the direction of more: the date reader's key check went (QQQQQQ-3), and the foreign-mark case
+that used to pass under either guard now reddens without the one that remains. The motion scan's
+widening (QQQQQQ-10) is coverage arriving, not moving.
+
+### 3. Would CI have caught it?
+
+`affectedProofs` over this range and the unpushed commits names `proof:hookintegrity`, `hookprobe`,
+`preload`, `rendererpolicy`, `canvaspixels`, `rendergeometry`, `contract`, `auditscope`, `ocrmodels`
+and `composehost`; they run before the push. `main` read green at `c0c95c4` at 13:43Z on both legs, and
+the Linux-only Edit-text failure did not recur there — one run, which says little.
+
+### 4. Are the proofs non-vacuous?
+
+Every finding above was mutated both ways. The new instruments: `recentPreviewSize.mjs` carries a blank
+page as its control; `canvasHarness`' pixel read is the overlay proof's subject; the motion and redraw
+scans now carry constructed controls for the spellings the tree does not contain.
+
+### 4a. Has every instrument passed a resolution test?
+
+`recentPreviewSize.mjs` read 6,243 bytes for a blank page against a 73,186 maximum before it settled the
+quality, which separates a page from nothing. `dialogGlassContrast.mjs` reports by the check's own maths
+(940133c), so its resolution is the check's. The MuPDF date probe read 2026 and 1965 differently before
+its sentinel reading was believed.
+
+### 4b. Is the instrument a search, with a positive control on every run?
+
+Three searches in the range: the motion scan (finds the switch and the toast; now also constructed
+longhand), the redraw scan (finds `redraw`'s own call; now also three constructed spellings), and the
+display-location walk (finds the location inside `document.recent`'s answer; its identity limit is
+stated).
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The browser shim's channel list stays a literal anchor and grew by hand (d926dc61), which is the
+direction 4c wants for a list whose danger is shrinking. The redraw scan's `files.length > 50` is a
+floor, not a count, and the case it guards names its one call by file and text.
+
+### 5. Executed, or asserted?
+
+Executed: every mutation named here, the MuPDF date probe, the capture through the composition root.
+Asserted and not measured: the lane time one capture costs after an open on a live host, and the web
+listing's 410, read once.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: the bridge refusing a preload channel's id (834427c4) is its own B4 commit ahead of the drop.
+
+### 7. Do the documents still match the code?
+
+ADR-0095 and ARCHITECTURE (QQQQQQ-12) and ADR-0103 (QQQQQQ-3) are corrected in this commit. FEATURES rows
+274 and 290 were written in the range and name their expiry.
+
+---
+
 ## 2026-09-25 — Rate Us and the rating prompt
 
 The owner gave the Store identity on 2026-09-25 (product `9NHV3B1PV3XS`, package

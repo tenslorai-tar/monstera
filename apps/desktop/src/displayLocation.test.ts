@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_NAME_LENGTH } from '@monstera/contract';
 import { resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -36,6 +37,24 @@ describe('displayLocationOf (ADR-0100)', () => {
     expect(displayLocationOf(at(HOME, 'OneDrive', 'Legal', 'a.pdf'), ROOTS)).toStrictEqual({
       within: 'onedrive',
       folder: 'Legal',
+    });
+    // AND WITH THE SHALLOWER ROOT LISTED FIRST. `ROOTS` and `knownRoots` both put Documents ahead of OneDrive,
+    // so in that order *the first root containing it* gives the same answer as *the deepest*; reversed, only
+    // the deepest does.
+    expect(displayLocationOf(at(HOME, 'OneDrive', 'Documents', 'Leases', 'a.pdf'), [...ROOTS].reverse())).toStrictEqual({
+      within: 'documents',
+      folder: 'Leases',
+    });
+  });
+
+  it('a folder name longer than a name may be is DROPPED, never cut — a cut name is a wrong one', () => {
+    const long = 'x'.repeat(MAX_DOCUMENT_NAME_LENGTH + 1);
+    expect(displayLocationOf(at(HOME, 'Downloads', long, 'a.pdf'), ROOTS)).toStrictEqual({ within: 'downloads', folder: null });
+    // CONTROL at the bound itself: a name exactly as long as allowed is shown whole.
+    const longest = 'y'.repeat(MAX_DOCUMENT_NAME_LENGTH);
+    expect(displayLocationOf(at(HOME, 'Downloads', longest, 'a.pdf'), ROOTS)).toStrictEqual({
+      within: 'downloads',
+      folder: longest,
     });
   });
 

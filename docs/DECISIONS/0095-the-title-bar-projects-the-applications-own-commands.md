@@ -83,3 +83,12 @@ claim the ribbon, the pill and the context menu each already contradict.
   here.
 - Nothing about the Window Controls Overlay changes. The projected buttons sit inside the draggable region's
   cut-out like the search and the switcher do, so they are not under the window's own controls.
+
+## Correction, 2026-09-25
+
+*"Both are ordinary application commands — each opens a dialog"* is true of Donate and was never built true of
+Rate Us. When Rate Us landed (the E3 rating prompt, same day as this correction) it opens the Store's review
+page directly through `app.review`, the prompt's own channel, so that a rating given from the title bar and
+one given from the prompt are one fact in main's record. A dialog in front of it would have been a
+confirmation of a press that already says what it does. The decision above is unaffected: both are still
+ordinary commands projected by placement, and nothing about the surface depended on what `run` does.

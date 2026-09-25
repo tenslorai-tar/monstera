@@ -126,6 +126,8 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'log.reveal') return Promise.resolve(ok({ revealed: false }));
     // The shell announces its close subscription on every mount (`windowClose.ts`).
     if (id === 'window.closeListening') return Promise.resolve(ok({ acknowledged: true }));
+    // E3's prompt asks once per mount; not due, so no banner sits over the tabs these cases drive.
+    if (id === 'app.reviewPrompt') return Promise.resolve(ok({ due: false }));
     throw new Error(`this fixture has no answer for ${id}`);
   });
   return { client: built, sent };
@@ -332,6 +334,22 @@ describe('multi-document tabs', () => {
     // tab still in the strip.
     expect(container.querySelectorAll('.m-tab')).toHaveLength(1);
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
+  });
+
+  it('asks main whether the rating prompt is due ONCE per window, across a document opening and closing', async () => {
+    // A `due: true` answer is RECORDED by main as a prompt shown (E3), so asking is a write and its count
+    // matters. `App.test.tsx` filters the ask out of its dispatch counts; this is where the count is the
+    // subject. A prompt mounted inside the start screen's branch would ask again when the last tab closed.
+    const { client: built, sent } = client();
+    const { container } = render(<App client={built} settings={freshSettings()} />);
+
+    await openOne();
+    await press(container, `[data-tab-close="${FIRST}"]`);
+    // BACK ON THE START SCREEN, which is the state a misplaced prompt would remount in.
+    expect(container.querySelectorAll('.m-tab')).toHaveLength(0);
+    await openOne();
+
+    expect(sent.filter((call) => call.id === 'app.reviewPrompt')).toHaveLength(1);
   });
 
   it('ACTIVATES the existing tab when the picked file is already open', async () => {

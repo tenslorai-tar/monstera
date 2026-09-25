@@ -4030,6 +4030,30 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     ]);
   });
 
+  it('two sends through ONE set of deps carry two stamps — the stamp is asked per send, never kept', async () => {
+    // One send cannot tell *asked at the send* from *asked once and cached per deps*: both ask once. A clock
+    // that answers differently each time can.
+    const { client, sent } = sending();
+    const times = ['2026-09-24T09:38:00.000Z', '2026-09-24T09:41:00.000Z'];
+    const deps = {
+      client,
+      ask: () => Promise.resolve(undefined),
+      onApplied: () => undefined,
+      stamp: (): AnnotationStamp => ({ author: 'Priya Raman', created: times.shift() ?? 'exhausted' }),
+    };
+    const mark: Parameters<typeof applyDocumentCommand>[2] = {
+      kind: 'addAnnotation',
+      page: 0,
+      annotation: { type: 'square', rect: { x0: 10, y0: 20, x1: 110, y1: 70 }, colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+    };
+    await applyDocumentCommand(deps, DOC, mark);
+    await applyDocumentCommand(deps, DOC, mark);
+    expect(sent.map((command) => (command as { stamp?: AnnotationStamp }).stamp?.created ?? null)).toStrictEqual([
+      '2026-09-24T09:38:00.000Z',
+      '2026-09-24T09:41:00.000Z',
+    ]);
+  });
+
   it('CONTROL: a command that creates nothing goes out with no stamp', async () => {
     const { client, sent } = sending();
     await applyDocumentCommand(

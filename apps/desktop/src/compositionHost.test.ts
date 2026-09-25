@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { type EngineHostPlatform, createShellDependencies } from './composition.js';
 import type { AppInfo } from './contractHandlers.js';
@@ -15,6 +15,7 @@ import {
 } from './engineHostFake.js';
 import type { DirectoryCreationSurface, DirectoryPath } from './sessionDirectories.js';
 import { harnessSurfaces } from './harnessComposition.js';
+import { pictureName } from './recentPictures.js';
 
 /**
  * The composition root WITH an engine host platform — finding KKKK-7.
@@ -252,6 +253,53 @@ describe('the composition root, with an engine host platform', () => {
     // so the terminate the uncontained case asserts separates the two verdicts
     // rather than reporting a teardown every run performs.
     expect(spy.harness.calls).not.toContain('host.terminate');
+  });
+
+  it('an open KEEPS A PICTURE of page 1 through the host, and a command after it still runs (ADR-0100)', async () => {
+    // THE CAPTURE THE ROOT CHAINS ON EVERY OPEN, through the real lane and the real remote writer. The
+    // handler cases drive it with a fake picture function; every other case here passes no folder, so without
+    // this one the join `picture: (docId) => commands.firstPagePicture(docId)` was reached by nothing — and it
+    // runs in the document's lane, where a capture that never finished would hold every later command.
+    // NOT an ordering claim: a command sent straight after the open was measured to reach the lane BEFORE the
+    // capture (2026-09-25, this case's first draft), since the capture waits for the open's sessions.
+    const peer = picturingEngine();
+    const spy = platformAnswering(peer.answer);
+    const held = new Map<string, Uint8Array>();
+    const path = aDocument('pictured.pdf');
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(path),
+      enginePlatform: spy.platform,
+      recentPictureFiles: {
+        write: (name, bytes) => held.set(name, bytes),
+        read: (name) => (held.has(name) ? new Uint8Array(held.get(name) ?? []) : null),
+        remove: (name) => held.delete(name),
+        names: () => [...held.keys()],
+      },
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    // The capture is chained on the open's sessions and is not awaited by the open, so the picture lands after.
+    await vi.waitFor(() => {
+      expect(held.size).toBe(1);
+    });
+
+    // AND THE LANE IS FREE AFTERWARDS: a command sent once the picture is kept completes. A capture that held
+    // its lane would leave this waiting, which is how the fake host's unanswered page image first showed.
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+    expect(executed.ok).toBe(true);
+
+    // PAGE 1 AS A JPEG AT QUALITY 60 — the parameters ADR-0100 measured, as the host received them.
+    expect(peer.asked).toStrictEqual([{ page: 0, format: 'jpeg', quality: 60 }]);
+    // AND THE BYTES THE HOST WROTE are the picture kept, under the path's digest.
+    expect([...held.keys()]).toStrictEqual([pictureName(path)]);
+    expect([...(held.get(pictureName(path)) ?? [])]).toStrictEqual([...PICTURE]);
   });
 
   it('undoes through the host, and answers nothing-to-undo when the log is spent', async () => {
@@ -772,6 +820,42 @@ function serialisingEngine(): FakePeer {
     const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
     writeFileSync(join(output, into), bytes);
     return { ok: true, value: { bytes: bytes.length } };
+  };
+}
+
+/** The bytes {@link picturingEngine} writes: a JPEG's start-of-image marker and a few more, distinct from any other. */
+const PICTURE = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 0x4d, 0x6f);
+
+/**
+ * A MuPDF peer that also draws `engine/pageImage` into the granted output directory, as the host does, and
+ * records what it was asked. The directory is the one the product SENT on `engine/open`, for
+ * {@link serialisingEngine}'s reason.
+ */
+function picturingEngine(): {
+  readonly answer: FakePeer;
+  readonly asked: { page: number; format: string; quality: number }[];
+} {
+  let output: string | null = null;
+  const asked: { page: number; format: string; quality: number }[] = [];
+  return {
+    asked,
+    answer: (channel, params) => {
+      if (channel === 'engine/open') {
+        output = (params as { outputDirectory: string }).outputDirectory;
+        return SESSION;
+      }
+      if (channel !== 'engine/pageImage') return ENGINE(channel, params);
+      if (output === null) throw new Error('engine/pageImage before engine/open');
+      const { page, format, quality, into } = params as {
+        page: number;
+        format: string;
+        quality: number;
+        into: string;
+      };
+      asked.push({ page, format, quality });
+      writeFileSync(join(output, into), PICTURE);
+      return { ok: true, value: { bytes: PICTURE.length } };
+    },
   };
 }
 

@@ -33,7 +33,9 @@ async function run(
     sent.push({ id, params });
     if (id !== 'app.review') throw new Error(`this case does not answer ${id}`);
     if (answer === 'rejected') return Promise.reject(new Error('the transport is gone'));
-    if (answer === 'refused') return Promise.resolve(err({ code: 'internal' as const }));
+    // WITH ITS INCIDENT, which `failureSchema` requires of `internal`: without one the envelope is malformed and
+    // the client throws, which is the `rejected` case again rather than a refusal.
+    if (answer === 'refused') return Promise.resolve(err({ code: 'internal' as const, incident: 'incident-1' }));
     return Promise.resolve(ok({ opened: answer === 'opened' }));
   });
   await rateUsCommand({

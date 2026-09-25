@@ -26,8 +26,12 @@ function sources(directory: string): string[] {
   });
 }
 
-/** A call of a method named `update` with no arguments, on any receiver. */
-const UPDATE_CALL = '.update()';
+/**
+ * A call of a method named `update` with no arguments, on any receiver, in each spelling JavaScript has for
+ * one: `.update()`, `.update?.()`, and the bracketed `['update']()`, spaced or not. With no arguments, so a
+ * hash's `.update(bytes)` is not one.
+ */
+const UPDATE_CALL = /(?:\.\s*update|\[\s*['"`]update['"`]\s*\])\s*(?:\?\.)?\s*\(\s*\)/u;
 
 describe('the one redraw', () => {
   const files = sources(SOURCE);
@@ -37,8 +41,18 @@ describe('the one redraw', () => {
       .map((line, at) => ({ file, line: at + 1, text: line.trim() }))
       // A COMMENT NAMING THE CALL IS NOT ONE: the redraw's own documentation says `update()`.
       .filter((entry) => !entry.text.startsWith('*') && !entry.text.startsWith('//'))
-      .filter((entry) => entry.text.includes(UPDATE_CALL)),
+      .filter((entry) => UPDATE_CALL.test(entry.text)),
   );
+
+  it('the pattern sees every spelling of the call, and not a call that passes something', () => {
+    // CONSTRUCTED, because the tree spells only the first: a pattern that saw one spelling would pass the
+    // control below and miss the optional call a second caller is likeliest to write.
+    for (const spelling of ['a.update();', 'a.update?.();', "a['update']();", 'a . update ( );']) {
+      expect(UPDATE_CALL.test(spelling), spelling).toBe(true);
+    }
+    expect(UPDATE_CALL.test("createHash('sha256').update(bytes);")).toBe(false);
+    expect(UPDATE_CALL.test('a.updateAppearance();')).toBe(false);
+  });
 
   it('the search can see: it finds the call inside redraw itself', () => {
     // THE POSITIVE CONTROL. A search that read no files, or read them wrong, would find nothing and

@@ -129,3 +129,16 @@ Two counts above were wrong when written, both found while building.
 
 And one thing the build added: **the instant is bounded** (`annotationInstantSchema`, 40 characters).
 `z.iso.datetime()` alone has a pattern and no length, and invariant L11's sweep reported it.
+
+## Correction, 2026-09-25 (the audit of 5b55d66..1e1bfad)
+
+*"Both survive a save and a reopen and read back through the getters"* holds for whole seconds only. A PDF
+date has no fraction, and MuPDF's setter TRUNCATES one: `…T09:38:07.900Z` is written `D:20260924093807Z`
+and reads back `…:07.000Z` (measured 2026-09-25). The renderer's clock supplies milliseconds, so a mark's
+creation time reads up to a second earlier than it was sent; `pageAnnotations.test.ts` now pins that.
+
+And the reading side's rule is narrower than the build wrote it. MuPDF's getter answers **one sentinel** —
+1969-12-31T23:59:59Z — for a mark with no `/CreationDate`, an empty one, an unreadable one, and one before
+1970 (*year out of range*), measured the same day. So *an instant before the epoch is no date* is the whole
+rule; the build's second check, on the key, decided nothing that one did not, and was removed. A genuine
+pre-1970 creation date is unreadable through this engine, which is MuPDF's limit rather than a choice here.

@@ -2393,10 +2393,16 @@ describe('App', () => {
 
   describe('the recent list', () => {
     /** A client answering `document.recent` with what a case wants. */
-    function withRecent(recent: unknown): { readonly client: ContractClient; readonly sent: Sent[] } {
+    function withRecent(
+      recent: unknown,
+      /** A channel answered by the case instead — a refusal or a rejection the defaults never give. */
+      answeredBy: Readonly<Record<string, () => Promise<unknown>>> = {},
+    ): { readonly client: ContractClient; readonly sent: Sent[] } {
       const sent: Sent[] = [];
       const client = createClient(channels, (id, params) => {
         sent.push({ id, params });
+        const own = answeredBy[id];
+        if (own !== undefined) return own();
         if (id === 'document.recent') return Promise.resolve(ok(recent));
         if (id === 'document.openRecent') {
           return Promise.resolve(
@@ -2482,6 +2488,37 @@ describe('App', () => {
 
       expect(sent.some((call) => call.id === 'document.clearRecent')).toBe(true);
       expect(screen.queryByRole('button', { name: 'annual.pdf' })).toBeNull();
+    });
+
+    it('*Clear list* that main REFUSED, or that never arrived, leaves every card where it was', async () => {
+      // The other half of *only when main has*: the case above cannot tell a list cleared on main's answer from
+      // one cleared on the press, since main answers yes there. Each failure shape is its own mount.
+      for (const failing of [
+        // WITH ITS INCIDENT, which `failureSchema` requires of `internal`: without one the envelope is malformed,
+        // the client throws, and this would be a second rejection rather than a refusal.
+        () => Promise.resolve(err({ code: 'internal' as const, incident: 'incident-1' })),
+        () => Promise.reject(new Error('the bridge is gone')),
+      ]) {
+        const { client, sent } = withRecent(
+          { entries: [row('handle-a', 'annual.pdf')], lastExitClean: true, lastSession: [] },
+          { 'document.clearRecent': failing },
+        );
+        const { unmount } = render(<App client={client} settings={freshSettings()} />);
+        await act(async () => {
+          await Promise.resolve();
+        });
+
+        await act(async () => {
+          screen.getByRole('button', { name: 'Clear list' }).click();
+          // A WHOLE TASK, not one microtask: the answer's handler runs a few promise hops after the press, and
+          // a card still on screen one hop in is what every version shows, including one that clears on refusal.
+          await new Promise((settle) => setTimeout(settle, 0));
+        });
+
+        expect(sent.some((call) => call.id === 'document.clearRecent')).toBe(true);
+        expect(screen.getByRole('button', { name: /annual\.pdf/u })).toBeTruthy();
+        unmount();
+      }
     });
 
     it('a card is NAMED by the file and DESCRIBED by when and where it was opened (ADR-0100)', async () => {

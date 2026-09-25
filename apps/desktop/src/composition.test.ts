@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { RECENT_PREVIEWS_SETTING_ID } from '@monstera/contract';
+import { RECENT_PREVIEWS_SETTING_ID, REVIEW_PROMPTS_SETTING_ID } from '@monstera/contract';
 import { asDocId } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -308,9 +308,36 @@ describe('the Store rating prompt, as the root wires it (E3)', () => {
     expect(browsed).toStrictEqual(['https://apps.microsoft.com/detail/9NHV3B1PV3XS']);
   });
 
-  it('CONTROL: a root with no engagement record is never due', async () => {
-    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
-    expect(await deps.handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
+  it('a record that is due asks — and the Settings toggle the page writes is the one the root reads', async () => {
+    // A RECORD E3 SAYS IS DUE: installed ten days ago, four sessions, never prompted. Without the due answer
+    // first, the toggle's `false` below would be the answer a record that is never due gives anyway.
+    const engagementFile = createEphemeralSettings();
+    engagementFile.write({ installDate: Date.now() - 10 * 86_400_000, sessions: 4, promptCount: 0 });
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo, engagementFile });
+    expect(await deps.handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: true } });
+
+    const again = createEphemeralSettings();
+    again.write({ installDate: Date.now() - 10 * 86_400_000, sessions: 4, promptCount: 0 });
+    const off = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo, engagementFile: again });
+    await off.handlers['settings.save']({ values: { [REVIEW_PROMPTS_SETTING_ID]: false } });
+    expect(await off.handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
+  });
+
+  it('CONTROL: a root with no engagement record opens nothing and records nothing', async () => {
+    // NOT *is never due*, which a fresh record also answers — one session, installed now. What only the
+    // absent record does is decline a rating without reaching for the Store: a root that built a record
+    // anyway would open the web listing here.
+    const browsed: string[] = [];
+    const deps = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
+      appInfo: { ...appInfo, installChannel: 'web' },
+      openInBrowser: (url) => {
+        browsed.push(url);
+        return Promise.resolve();
+      },
+    });
+    expect(await deps.handlers['app.review']({ action: 'rate' })).toStrictEqual({ ok: true, value: { opened: false } });
+    expect(browsed).toStrictEqual([]);
   });
 });
 

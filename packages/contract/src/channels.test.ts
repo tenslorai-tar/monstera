@@ -630,6 +630,11 @@ describe('the shipping contract, exercised through its own map', () => {
  * object's shape, an array's element, a union's options and a wrapper's inner type are all reached without
  * this knowing their names. A LAZY schema's getter is a function and is not followed — no channel declares
  * one, and the positive control below is what would say so if the walk stopped seeing.
+ *
+ * **It finds the schema by IDENTITY, and that is its stated limit.** A parameter that restated the location's
+ * shape field by field, or took `displayLocationSchema.extend(…)`, is a different object and is not found; the
+ * positive control cannot see that, because it looks for the object itself. Separating those needs a
+ * comparison of shapes, which would also report every `{ within, folder }` that means something else.
  */
 function reaches(schema: unknown, target: unknown, seen = new Set<unknown>()): boolean {
   if (schema === target) return true;

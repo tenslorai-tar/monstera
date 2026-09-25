@@ -174,7 +174,17 @@ describe('PropertiesPanel with marks selected', () => {
   });
 
   it('a foreign mark fainter than the floor shows AT the floor, not off the slider’s end', () => {
+    // THE READOUT, not the slider's value: happy-dom, like a browser, pulls a range input below its `min` up
+    // to it by itself, so the slider reads the floor whether or not the panel clamped. The `<output>` beside
+    // it is drawn from the panel's own number and is where a missing clamp shows.
+    const readout = (): string | null => document.querySelector('.m-properties__value')?.textContent ?? null;
+    mounted({ ...ONE, items: [{ ...SQUARE, style: { ...SQUARE.style, opacity: MIN_ANNOTATION_OPACITY } }] });
+    const atFloor = readout();
+    cleanup();
+
     mounted({ ...ONE, items: [{ ...SQUARE, style: { ...SQUARE.style, opacity: 0.05 } }] });
+    expect(atFloor).not.toBeNull();
+    expect(readout()).toBe(atFloor);
     expect(screen.getByRole<HTMLInputElement>('slider', { name: 'Opacity' }).value).toBe(String(MIN_ANNOTATION_OPACITY));
   });
 

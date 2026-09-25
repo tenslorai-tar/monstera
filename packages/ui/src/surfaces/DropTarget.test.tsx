@@ -77,14 +77,17 @@ describe('DropTarget (ADR-0099)', () => {
     expect(fire(dragEvent('dragover', ['text/plain'])).defaultPrevented).toBe(false);
   });
 
-  it('CONTROL: a drag that carries no files shows nothing and hands over nothing', () => {
+  it('CONTROL: a drag that carries no files shows nothing, hands over nothing, and its drop is LEFT ALONE', () => {
     const { overlay, received } = mounted();
 
     fire(dragEvent('dragenter', ['text/plain']));
-    fire(dragEvent('drop', ['text/plain']));
+    const drop = fire(dragEvent('drop', ['text/plain']));
 
     expect(overlay()).toBeNull();
     expect(received).toStrictEqual([]);
+    // WHAT THE GUARD ACTUALLY DECIDES: an empty file list is refused further down anyway, so `received` alone
+    // passes without the guard. Cancelling a text drop inside the page is what its absence would do.
+    expect(drop.defaultPrevented).toBe(false);
   });
 
   it('stays up while the drag crosses inner elements, and goes when it leaves the window', () => {

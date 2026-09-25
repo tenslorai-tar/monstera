@@ -127,5 +127,15 @@ describe('ReviewPrompt', () => {
     const opened = await drawn(true, true);
     await press('Rate now');
     expect(opened.said).toStrictEqual([]);
+    cleanup();
+
+    // THE OTHER THREE, each against main answering `opened: false` — the answer that made *Rate now* speak —
+    // so an answer that toasted on that answer, or unconditionally, reads here.
+    for (const name of ['Already reviewed', 'Later', 'Don’t ask again']) {
+      const other = await drawn(true, false);
+      await press(name);
+      expect(other.said, name).toStrictEqual([]);
+      cleanup();
+    }
   });
 });

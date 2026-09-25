@@ -1449,7 +1449,7 @@ with nothing selected they show the authoring settings.
 **The title bar projects the application's own commands** (amended 2026-09-23,
 [ADR-0095](DECISIONS/0095-the-title-bar-projects-the-applications-own-commands.md)).
 The owner's design puts Donate and Rate Us in that row, and each is an ordinary
-command opening a dialog. A placement names its `emphasis` — `primary` for the
+command — Donate opens a dialog, Rate Us the Store's review page. A placement names its `emphasis` — `primary` for the
 filled accent treatment, `normal` for the outline — because a bar deciding that
 from a command's id is the layout table above, one field narrower. **The
 document tabs, the command search and the layout switcher are not commands**,
