@@ -307,6 +307,23 @@ for (const look of LOOKS) {
   });
 }
 
+for (const look of LOOKS) {
+  test(`${look.name}: the start screen WITH the rating prompt is clean too, and the prompt takes no focus`, async ({
+    page,
+  }) => {
+    // E3's banner is a composed screen of its own — four buttons over the start screen's foot, one of them
+    // on the accent — and nothing about the screen without it measures its contrast or naming.
+    await bridgeUnder(page, look, { reviewDue: true });
+
+    await expectNoSeriousViolations(page, look, 'Is Monstera working for you?');
+    const region = page.getByRole('region', { name: /A rating in the Microsoft Store/u });
+    await expect(region.getByRole('button')).toHaveCount(4);
+    // NOT MODAL AND NOT FOCUSED: E3's *never interrupts editing*. Focus inside the region would be the banner
+    // taking the keyboard from whatever the reader was doing when it arrived.
+    expect(await region.evaluate((element) => element.contains(document.activeElement))).toBe(false);
+  });
+}
+
 /** A one-page document built here, so the case needs no fixture from the corpus (B10). */
 async function onePagePdf(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
