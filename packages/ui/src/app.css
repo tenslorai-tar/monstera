@@ -248,9 +248,23 @@ textarea {
 }
 
 /* The heading holds only the artwork, so a text line box would add its height under the image. */
+/* THE WORDMARK (ADR-0100): the product's name in Marcellus, bundled because §9.27's policy allows no remote
+   font, and set once at display size. Nothing else in the application uses this face. */
+@font-face {
+  font-family: 'Marcellus';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../../../assets/fonts/marcellus/Marcellus-Regular.ttf') format('truetype');
+}
+
 .m-start-title {
   margin: 0;
-  line-height: 0;
+  color: var(--text);
+  font-family: 'Marcellus', serif;
+  font-size: calc(var(--font-content-20) * 3);
+  font-weight: 400;
+  line-height: 1.1;
 }
 
 /* ADR-0002: the brand's height, and the width the image's own ratio gives it — never stretched. */

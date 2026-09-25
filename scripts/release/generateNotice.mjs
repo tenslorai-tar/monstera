@@ -755,6 +755,78 @@ export function compiledIntoPackages() {
 }
 
 /**
+ * @typedef {{
+ *   name: string,
+ *   version: string,
+ *   spdx: string,
+ *   role: string,
+ *   source: string,
+ *   file: string,
+ *   sha256: string,
+ *   texts: { committed: string, sha256: string }[],
+ * }} BundledAsset
+ */
+
+/** @returns {BundledAsset[]} */
+export function bundledAssets() {
+  /** @type {{ bundledAssets?: BundledAsset[] }} */
+  const declared = JSON.parse(readFileSync(join(HERE, 'nativeComponents.json'), 'utf8'));
+  return declared.bundledAssets ?? [];
+}
+
+/**
+ * Files the renderer ships that are neither code nor a package — the Marcellus wordmark font (ADR-0100) —
+ * with their full licence texts.
+ *
+ * ## Both the ASSET and its TEXT are pinned
+ *
+ * The SIL Open Font License asks that its text travel with the font, so the text is rendered in full. The
+ * font file is pinned by SHA-256 as well as the text: a different font dropped in under the same name —
+ * *Marcellus Pro* is a commercial family with other terms — would otherwise keep a notice that names the
+ * free one. A mismatch in either FAILS rather than renders.
+ *
+ * @param {BundledAsset[]} declared
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function renderBundledAssets(declared, root = ROOT) {
+  const lines = [];
+  for (const asset of declared) {
+    const assetPath = join(root, asset.file);
+    const actual = existsSync(assetPath) ? createHash('sha256').update(readFileSync(assetPath)).digest('hex') : 'missing';
+    if (actual !== asset.sha256) {
+      throw new Error(
+        `${asset.name}: ${asset.file} is not the file its pin records (${actual} against ${asset.sha256}). ` +
+          `A bundled asset changes only by re-reading it from its source and re-pinning it here.`,
+      );
+    }
+    lines.push('─'.repeat(78));
+    lines.push(`${asset.name} — ${asset.spdx}`);
+    lines.push(`  ${asset.role}`);
+    lines.push(`  Version: ${asset.version}`);
+    lines.push(`  Source:  ${asset.source}`);
+    lines.push(`  Shipped: ${asset.file}`);
+    lines.push('─'.repeat(78));
+    lines.push('');
+    if (asset.texts.length === 0) throw new Error(`${asset.name} is bundled with no licence text recorded.`);
+    for (const text of asset.texts) {
+      const path = join(root, text.committed);
+      const body = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      if (body.trim() === '') throw new Error(`${asset.name}: the licence text at ${text.committed} is missing or empty.`);
+      const pinned = createHash('sha256').update(readFileSync(path)).digest('hex');
+      if (pinned !== text.sha256) {
+        throw new Error(
+          `${asset.name}: ${text.committed} is not the text its pin records (${pinned} against ${text.sha256}).`,
+        );
+      }
+      lines.push(normaliseEndings(body).trimEnd());
+      lines.push('');
+    }
+  }
+  return lines;
+}
+
+/**
  * The libraries compiled INTO a bundled package's WebAssembly, with their full texts.
  *
  * ## Why a package's own licence is not enough
@@ -942,6 +1014,15 @@ export function renderNotice() {
     lines.push('═'.repeat(78));
     lines.push('');
     lines.push(...renderCompiledIntoPackages(compiled, shipped));
+  }
+
+  const assets = bundledAssets();
+  if (assets.length > 0) {
+    lines.push('═'.repeat(78));
+    lines.push('BUNDLED ASSETS — fonts shipped with the application, each under its own terms');
+    lines.push('═'.repeat(78));
+    lines.push('');
+    lines.push(...renderBundledAssets(assets));
   }
 
   return `${lines.join('\n')}\n`;

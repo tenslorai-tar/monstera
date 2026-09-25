@@ -55,6 +55,7 @@ import {
   familyLicence,
   licenceFileIn,
   normaliseEndings,
+  renderBundledAssets,
   renderCompiledIntoPackages,
   renderNotice,
   renderProgram,
@@ -528,6 +529,58 @@ try {
     'a committed text that no longer matches its pin fails, naming both digests',
     refusalOf(() => renderCompiledIntoPackages([declared], shipped, root)).includes(pin),
     `A committed licence edited by hand would render as the library's terms.`,
+  );
+  rmSync(root, { recursive: true, force: true });
+}
+
+// A BUNDLED ASSET — the wordmark font (ADR-0100) — is rendered with its full text, and BOTH the asset and
+// the text are pinned: a different font under the same file name would otherwise keep the free one's notice.
+{
+  const root = join(FIXTURE, 'assets');
+  rmSync(root, { recursive: true, force: true });
+  mkdirSync(join(root, 'fonts'), { recursive: true });
+  const font = 'a font, standing in by its bytes';
+  const licence = 'The font licence, committed beside it.\n';
+  writeFileSync(join(root, 'fonts', 'face.ttf'), font);
+  writeFileSync(join(root, 'fonts', 'OFL.txt'), licence);
+  /** @type {import('../release/generateNotice.mjs').BundledAsset} */
+  const declared = {
+    name: 'Face',
+    version: 'Regular',
+    spdx: 'OFL-1.1',
+    role: 'a fixture',
+    source: 'https://example.invalid/face',
+    file: 'fonts/face.ttf',
+    sha256: createHash('sha256').update(font).digest('hex'),
+    texts: [{ committed: 'fonts/OFL.txt', sha256: createHash('sha256').update(licence).digest('hex') }],
+  };
+  /** @param {() => unknown} render */
+  const refusalOf = (render) => {
+    try {
+      render();
+      return '';
+    } catch (error) {
+      return String(error);
+    }
+  };
+
+  check(
+    'CONTROL: a bundled asset whose file and text match their pins renders its full text',
+    renderBundledAssets([declared], root).join('\n').includes('The font licence, committed beside it.'),
+    `The two refusals below mean nothing unless the same declaration renders when it is right.`,
+  );
+  writeFileSync(join(root, 'fonts', 'face.ttf'), `${font}, and a different one`);
+  check(
+    'a bundled asset whose FILE no longer matches its pin fails — a swapped font keeps no notice',
+    refusalOf(() => renderBundledAssets([declared], root)).includes('is not the file its pin records'),
+    `A different font dropped in under the same name would render the free one's terms for it.`,
+  );
+  writeFileSync(join(root, 'fonts', 'face.ttf'), font);
+  writeFileSync(join(root, 'fonts', 'OFL.txt'), `${licence}An edit.\n`);
+  check(
+    'a bundled asset whose licence TEXT no longer matches its pin fails',
+    refusalOf(() => renderBundledAssets([declared], root)).includes('is not the text its pin records'),
+    `A licence text edited by hand would render as the font's terms.`,
   );
   rmSync(root, { recursive: true, force: true });
 }

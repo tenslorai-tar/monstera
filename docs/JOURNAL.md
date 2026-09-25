@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — The start screen's wordmark is set in Marcellus, and NOTICE carries its licence
+
+ADR-0100's third decision. **Fetched with the owner's standing approval for downloads** from the
+official Google Fonts repository: `ofl/marcellus/Marcellus-Regular.ttf` (46,004 bytes, SHA-256
+`1cf0cd10…2f81`) and its `OFL.txt` (`715ba726…1801`), from `main` at 23e54b5; the font file last changed
+upstream in 90abd17 on 2015-03-06. Its `METADATA.pb` names Astigmatic as designer and OFL as licence —
+the free release, not *Marcellus Pro*. Committed under `assets/fonts/marcellus/`, which `guardFiles.mjs`'
+binary allowlist admits (`.ttf`), and LF-normalised text, so the pinned digest holds across checkouts.
+
+`NOTICE` gains a **BUNDLED ASSETS** section, generated like the rest: `nativeComponents.json` declares
+the font with both the FILE and its TEXT pinned, and `renderBundledAssets` refuses to render either when
+its digest moves — a different font dropped in under the same name would otherwise keep the free one's
+notice. The OFL's full text is rendered, as the licence asks. `proof:licences` gained a control and one
+case for each pin (52 cases).
+
+The hero keeps the supplied artwork, now decorative, with *Monstera* beneath it as the level-1 heading
+in Marcellus, loaded through `font-src 'self'`. The rendered-screen case asks the page for the face's
+own status and requires `loaded` — `document.fonts.check` answers true for a list with nothing left to
+load, including one whose only face failed. With the `@font-face` renamed, it went red.
+
+---
+
 ## 2026-09-25 — A recent card shows its first page, and *Clear list* and the setting delete it
 
 ADR-0100's second decision, and the Privacy switch it put beside it. **Measured first**

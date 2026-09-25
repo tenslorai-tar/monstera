@@ -43,11 +43,12 @@ import { startScreenModel } from './projections.js';
  *
  * ## The hero is the supplied artwork, and it is not a command
  *
- * ADR-0002: the owner's artwork is used as supplied, so there is no text wordmark —
- * the artwork carries the name, and it is this heading's accessible name. The
- * derivative is `assets/brand/logo-hero.png`, generated from the wordmark master
- * and imported, so the bundle carries 17 KB rather than the master's 1.6 MB. "PDF
- * EDITOR" and the tagline stay beneath it.
+ * ADR-0002: the owner's artwork is used as supplied. The derivative is
+ * `assets/brand/logo-hero.png`, generated from the wordmark master and imported, so the
+ * bundle carries 17 KB rather than the master's 1.6 MB. Beneath it, v5-01 sets the name
+ * as a wordmark in Marcellus (ADR-0100, which amended §10.4's *no webfonts* for this one
+ * piece of artwork); that text is the heading, so the picture is decorative. "PDF EDITOR"
+ * and the tagline stay beneath both.
  *
  * ## A GRID of what this build can do, not a grid of what it will
  *
@@ -84,9 +85,11 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
   return (
     <div className="m-start-screen">
       <div className="m-start-hero">
-        <h1 className="m-start-title">
-          <img className="m-start-logo" src={heroLogo} alt={_(START_TITLE)} />
-        </h1>
+        {/* THE ARTWORK OVER THE WORDMARK, v5-01's order: the supplied mark as a picture (ADR-0002), and the
+            product's name set in Marcellus as the heading (ADR-0100) — so the heading's name is the word,
+            and the picture above it, which says the same, is not read twice. */}
+        <img className="m-start-logo" src={heroLogo} alt="" />
+        <h1 className="m-start-title">{_(START_TITLE)}</h1>
         <p className="m-start-product">{_(START_PRODUCT)}</p>
         <p className="m-start-tagline">{_(START_TAGLINE)}</p>
       </div>

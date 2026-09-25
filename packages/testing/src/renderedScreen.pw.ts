@@ -1440,8 +1440,20 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
       };
     });
 
-  const hero = page.getByRole('img', { name: 'Monstera' });
+  // THE ARTWORK IS DECORATIVE NOW (ADR-0100): the heading below it carries the name, so the picture is found by
+  // its place rather than by a name it no longer has.
+  const hero = page.locator('.m-start-logo');
   await expect(hero).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Monstera' })).toBeVisible();
+  // THE WORDMARK'S FACE ARRIVED: a rule naming Marcellus is satisfied by a fallback serif too, so the case asks
+  // the page whether the font itself loaded — the file, through `font-src 'self'`, decoded.
+  // The FACE'S OWN STATUS, not `document.fonts.check`, which answers true for a list with nothing left to load —
+  // including one whose only face failed.
+  const marcellus = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter((face) => face.family.replaceAll('"', '') === 'Marcellus').map((face) => face.status);
+  });
+  expect(marcellus).toStrictEqual(['loaded']);
   const drawn = await measure(hero);
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);

@@ -336,5 +336,17 @@
         { "name": "tessdata_fast", "version": "4.0.0", "spdx": "Apache-2.0", "texts": ["COPYING.txt"] }
       ]
     }
+  ],
+  "bundledAssets": [
+    {
+      "name": "Marcellus",
+      "version": "Regular 400 (google/fonts ofl/marcellus, last changed in commit 90abd17b4f97671435798b6147b698aa9087612f on 2015-03-06; fetched from main at 23e54b51ddffbc7713c583748e3bd86f62b1fa4a on 2026-09-25)",
+      "spdx": "OFL-1.1",
+      "role": "The start screen's wordmark, set as artwork (ADR-0100). The free Google Fonts release by Astigmatic, never Marcellus Pro, which is a separately licensed commercial family.",
+      "source": "https://github.com/google/fonts/tree/main/ofl/marcellus",
+      "file": "assets/fonts/marcellus/Marcellus-Regular.ttf",
+      "sha256": "1cf0cd10b17d35e852729962cc1ffaffed94514895972458345e2df34abb2f81",
+      "texts": [{ "committed": "assets/fonts/marcellus/OFL.txt", "sha256": "715ba72697e14daa9b29a333545f69bde7c497b9f77d0a2a4c4a5a752d961801" }]
+    }
   ]
 }
