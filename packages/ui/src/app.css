@@ -3945,6 +3945,24 @@ textarea {
  * and an invisible empty box over the corner of the document would swallow clicks on the page
  * beneath it for the whole session.
  */
+/* v5-07's Focus note: centred under the title bar, over the page's top margin, quiet, and never in the way of
+   a click — it is words, and the key it names is the control. */
+.m-focus-hint {
+  position: fixed;
+  inset-block-start: calc(var(--space-24) + var(--space-16));
+  inset-inline-start: 50%;
+  z-index: 2;
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+  transform: translateX(-50%);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  pointer-events: none;
+}
+
 /* WHAT THE WINDOW IS WAITING ON (`busyNote.ts`): centred at the foot, above the status bar by the toasts'
    offset, drawn as a toast is so it reads as the same family of message — and it carries no control. */
 /* SIZED TO ITS NOTE, centred by a transform rather than stretched across the window: an always-mounted region

@@ -52,6 +52,7 @@ export const THUMBNAIL_SIZE_OPTION_TITLES = {
   medium: THUMBNAIL_SIZE_MEDIUM,
   large: THUMBNAIL_SIZE_LARGE,
 } as const;
+export const FOCUS_HINT = messageKey('surface.focus.hint');
 export const ORGANIZE_GRID_SIZE_TITLE = messageKey('setting.appearance-organize-grid-size.title');
 export const ORGANIZE_GRID_MEDIUM = messageKey('setting.appearance-organize-grid-size.medium');
 export const ORGANIZE_GRID_LARGE = messageKey('setting.appearance-organize-grid-size.large');
@@ -1938,6 +1939,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [THUMBNAIL_SIZE_OPTION_TITLES.small]: 'Small',
   [THUMBNAIL_SIZE_OPTION_TITLES.medium]: 'Medium',
   [THUMBNAIL_SIZE_OPTION_TITLES.large]: 'Large',
+  // THE CHORD IS A VALUE, read off the shortcut map, as the start screen's F1 hint's is.
+  [FOCUS_HINT]: 'Focus mode · {chord} to return',
   [ORGANIZE_GRID_SIZE_TITLE]: 'Card size',
   [ORGANIZE_GRID_SIZE_OPTION_TITLES.medium]: 'Medium',
   [ORGANIZE_GRID_SIZE_OPTION_TITLES.large]: 'Large',

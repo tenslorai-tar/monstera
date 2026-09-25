@@ -892,6 +892,25 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — The v5 side-by-sides, and Focus mode's way-out note
+
+`packages/testing/src/v5.capture.ts` (run by hand through `scripts/test/capture.config.mjs`) sets each of the
+owner's thirteen v5 exports beside this build at the same screen, and writes the composites to `CAPTURE_OUT`,
+outside the repository, so neither the design nor a picture of it can be committed from here. What they show,
+beyond the rows already open: the Assistant panel's layout differs from v5-03 (the provider, model and
+*Asking about* are dropdowns at the top where the design has a segmented *Asking about* above the composer
+and a model chip and send arrow inside it); the right panel's default width is narrower than the design's;
+the ribbon's captions carry an ellipsis the design does not; and v5-14 draws a menu bar this build has no
+surface for — a question for the owner.
+
+**Focus mode's note** is the one closed here: v5-07's *"Focus mode · Esc to return"*, drawn over the page's
+top margin only while the shortcut map binds Escape to a command available in the context — Leave Focus,
+whose `when` is Focus itself — and in that command's own spelling of the chord (*Escape*), because a short
+form made in the surface would be a second spelling. `FocusHint.test.tsx` holds it and its two controls: the
+same command unavailable, and no command on the key.
+
+---
+
 ## 2026-09-25 — The Organize grid, and a store version nothing had ever moved
 
 v5-09's Organize canvas, built on ADR-0104 (committed on its own first). The grid is the thumbnail strip with

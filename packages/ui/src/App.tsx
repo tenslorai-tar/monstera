@@ -344,6 +344,7 @@ import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
 import { ToastStrip } from './primitives/Toast.js';
 import { ReviewPrompt } from './surfaces/ReviewPrompt.js';
 import { PageGrid } from './surfaces/PageGrid.js';
+import { FocusHint } from './surfaces/FocusHint.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING } from './settings/saving.js';
@@ -2648,6 +2649,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     >
     <main className="m-document-surface" data-layout={layoutMode}>
       {dropOpener === undefined ? null : <DropTarget onFiles={onDroppedFiles} />}
+      {/* v5-07's way-out note, over the page in Focus with a document open; it draws itself only while the key
+          it names works (`FocusHint`). */}
+      {open === undefined ? null : <FocusHint registry={registry} context={context} />}
       {/* THE TITLE BAR, drawn in every mode and with no document too: the
           command search and the layout switcher are the application's, not a
           document's. It carries the open documents, which is what the rest of
