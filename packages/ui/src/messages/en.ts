@@ -52,6 +52,20 @@ export const THUMBNAIL_SIZE_OPTION_TITLES = {
   medium: THUMBNAIL_SIZE_MEDIUM,
   large: THUMBNAIL_SIZE_LARGE,
 } as const;
+export const AUTOSAVE_TITLE = messageKey('setting.saving-autosave.title');
+export const AUTOSAVE_DESCRIPTION = messageKey('setting.saving-autosave.description');
+export const AUTOSAVE_OFF = messageKey('setting.saving-autosave.off');
+export const AUTOSAVE_1 = messageKey('setting.saving-autosave.1');
+export const AUTOSAVE_5 = messageKey('setting.saving-autosave.5');
+export const AUTOSAVE_10 = messageKey('setting.saving-autosave.10');
+/** `saving.autosave`'s members, each its own exported key as the other option sets are. */
+export const AUTOSAVE_OPTION_TITLES = {
+  off: AUTOSAVE_OFF,
+  '1': AUTOSAVE_1,
+  '5': AUTOSAVE_5,
+  '10': AUTOSAVE_10,
+} as const;
+export const SETTINGS_SAVING_NOTE = messageKey('dialog.settings.saving-note');
 export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
 export const DONATE_TITLE = messageKey('dialog.donate.title');
@@ -1912,6 +1926,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [THUMBNAIL_SIZE_OPTION_TITLES.small]: 'Small',
   [THUMBNAIL_SIZE_OPTION_TITLES.medium]: 'Medium',
   [THUMBNAIL_SIZE_OPTION_TITLES.large]: 'Large',
+  [AUTOSAVE_TITLE]: 'Save automatically',
+  [AUTOSAVE_DESCRIPTION]:
+    'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',
+  [AUTOSAVE_OPTION_TITLES.off]: 'Off',
+  [AUTOSAVE_OPTION_TITLES['1']]: 'Every minute',
+  [AUTOSAVE_OPTION_TITLES['5']]: 'Every 5 minutes',
+  [AUTOSAVE_OPTION_TITLES['10']]: 'Every 10 minutes',
+  [SETTINGS_SAVING_NOTE]: 'When Monstera writes your documents to their files.',
   [LAYOUT_MODE_TITLE]: 'Layout',
   [RIBBON_SECTION_TITLE]: 'Ribbon section',
   [LAYOUT_MODE_RIBBON]: 'Ribbon',

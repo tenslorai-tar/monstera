@@ -343,6 +343,8 @@ import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
 import { ToastStrip } from './primitives/Toast.js';
 import { ReviewPrompt } from './surfaces/ReviewPrompt.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
+import { autosaveEvery, createAutosave } from './autosave.js';
+import { AUTOSAVE_SETTING } from './settings/saving.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -817,6 +819,30 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
     [],
   );
   const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
+
+  // AUTOSAVE (`autosave.ts`), off unless the Saving page turns it on. The pass reads the tabs through a ref, so a
+  // version moving does not restart the timer; the ref is written in an effect, never during render.
+  const autosaveInterval = useSetting(settings, AUTOSAVE_SETTING);
+  const tabsNow = useRef(tabs);
+  useEffect(() => {
+    tabsNow.current = tabs;
+  }, [tabs]);
+  useEffect(() => {
+    const every = autosaveEvery(autosaveInterval);
+    if (every === null) return undefined;
+    // BUILT HERE, in the effect, because its `dirty` reads the ref — which an effect may and a render may not.
+    const autosave = createAutosave({
+      dirty: () => tabsNow.current.filter((tab) => isDirty(tab.version, tab.savedVersion)).map((tab) => tab.docId),
+      // SAVE'S OWN PATH, with no toast: the status bar says *Saved just now*, and a toast every few minutes is noise.
+      save: (docId) => saveDocument({ client, ask, toast: () => undefined, onSaved }, docId),
+    });
+    const timer = setInterval(() => {
+      void autosave.tick();
+    }, every);
+    return (): void => {
+      clearInterval(timer);
+    };
+  }, [ask, autosaveInterval, client, onSaved]);
 
   // A FAILED WRITE NEEDS A DIALOG, so the subscription lives where `ask` does.
   //

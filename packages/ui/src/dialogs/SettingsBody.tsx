@@ -30,6 +30,7 @@ import {
   SETTINGS_PAGES_LABEL,
   SETTINGS_PRIVACY_NOTE,
   SETTINGS_ADVANCED_NOTE,
+  SETTINGS_SAVING_NOTE,
   SETTINGS_RENDERING_NOTE,
   SETTINGS_RESET,
   SETTINGS_SEARCH,
@@ -48,9 +49,8 @@ import type { SettingCategory, SettingDefinition } from '../registries/settings.
 import { colourKindOf } from '../registries/settings.js';
 import { ACCENT_SETTING } from '../settings/accent.js';
 import { ACCENT_PRESETS, accentUsable } from '../settings/accentPresets.js';
-import { SETTINGS_PAGES } from '../settings/pages.js';
 import type { SettingsAnswer } from './settings.js';
-import { controlFor, DIALOG_SETTINGS } from './settings.js';
+import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
 
 /**
  * The Settings dialog, as the owner drew it on 2026-09-22
@@ -109,19 +109,9 @@ const PAGE_NOTES: Partial<Record<SettingCategory, MessageKey>> = {
   privacy: SETTINGS_PRIVACY_NOTE,
   updates: SETTINGS_UPDATES_NOTE,
   advanced: SETTINGS_ADVANCED_NOTE,
+  saving: SETTINGS_SAVING_NOTE,
 };
 
-/**
- * Pages listed although no setting sits on them, because what they hold is words or an action.
- *
- * **Named, rather than derived from {@link PAGE_NOTES}**, and that stopped being the same thing the
- * moment every page got a note: listing a page *because it has a note* would have put an empty
- * Viewing page back the instant one was written for it, which is exactly the screen the owner's
- * design calls out. A page earns its place by holding something to read or press, and these two
- * are the ones that do — Keyboard points at F1, and Updates says who updates this build. Privacy
- * left this list when *Show previews of recent files* gave it a setting (ADR-0100).
- */
-const PAGES_WITHOUT_SETTINGS: readonly SettingCategory[] = ['keyboard', 'updates'];
 
 /**
  * The value a number field holds while it is being typed, parsed for its schema.
@@ -497,15 +487,7 @@ export default function SettingsBody({
       return setting.id === AI_PROVIDERS[provider].keySetting;
     });
 
-  const pages = useMemo(
-    () =>
-      SETTINGS_PAGES.filter(
-        (page) =>
-          DIALOG_SETTINGS.some((setting) => setting.category === page.id) ||
-          PAGES_WITHOUT_SETTINGS.includes(page.id),
-      ),
-    [],
-  );
+  const pages = useMemo(() => listedPages(DIALOG_SETTINGS), []);
   const [chosen, setChosen] = useState<SettingCategory>(() => pages[0]?.id ?? 'appearance');
 
   /** Applying a change is REPORTING it: the command writes, and the dialog stays open (ADR-0094). */

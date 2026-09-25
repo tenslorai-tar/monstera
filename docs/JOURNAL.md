@@ -892,6 +892,23 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — Autosave, off by default
+
+The founding record's *"Autosave (interval setting; off by default)"*, on the Saving page, which it gives its
+first setting. Off by default because Monstera saves a document back to the file it came from: a timer
+would put a half-finished edit over the original without anyone asking.
+
+- **Save's own path, no second one.** A pass calls `saveDocument` for each document with unsaved changes,
+  so an autosave and a Ctrl+S read the answer the same way (B3a); only the toast is dropped.
+- **A refusal pauses that document until it is clean**, because the next pass would otherwise reopen the
+  save-problem dialog every interval. A manual save that works, or undoing back to the saved state, lifts it.
+- **The Settings listing's control had to be rebuilt.** The case that proved *a page with no rows and no
+  words is not listed* used Saving as that page, and Saving now has a row — so the real set no longer
+  contains such a page. The rule moved into `listedPages(settings)`, which the dialog calls, and the
+  control asks it of the set without Saving's setting.
+
+---
+
 ## 2026-09-25 — About says what the build is, how it updates, and where its source is
 
 BUILD-PROMPT D12 lists *"About (version, licences, source offer)"*, E4 asks About to say *"Updates are

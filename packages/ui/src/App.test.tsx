@@ -18,6 +18,7 @@ import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
 import { resetSharedPainter } from './searchHighlight.js';
 import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
+import { AUTOSAVE_SETTING } from './settings/saving.js';
 import { FULL_APP_TEST_TIMEOUT } from './fullAppTestLimit.js';
 
 // THIS FILE RENDERS THE WHOLE APP, whose tests' measured spread crosses Vitest's default limit.
@@ -1954,6 +1955,51 @@ describe('App', () => {
       await pressCommand('Save back to cloud', 'Home');
       await settle();
       expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
+    });
+
+    it('AUTOSAVE saves a changed document on its interval, and with the setting off it never does', async () => {
+      // `autosave.test.ts` holds the decision; this is that the shell RUNS it — the setting read, the timer set,
+      // the tabs' own dirty rule, and Save's channel. Only the interval is faked, so everything else is real.
+      for (const [interval, expected] of [
+        ['1', 1],
+        ['off', 0],
+      ] as const) {
+        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+        let version = 1;
+        const sent: Sent[] = [];
+        const client = createClient(channels, (id, params) => {
+          sent.push({ id, params });
+          if (id === 'document.execute') {
+            version += 1;
+            return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
+          }
+          if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version) }));
+          const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
+          if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+          return Promise.resolve(ok(answer));
+        });
+        const settings = freshSettings();
+        settings.set(AUTOSAVE_SETTING.id, interval);
+        const { unmount } = render(<App client={client} settings={settings} />);
+        await withDocumentOpen();
+
+        // A CHANGE, so there is something to save; a clean document is never autosaved.
+        await pressCommand('Rotate page', 'Organize');
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(document.title, interval).toBe('annual.pdf ● — Monstera PDF Editor');
+
+        await act(async () => {
+          vi.advanceTimersByTime(60_000);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(sent.filter((call) => call.id === 'document.save'), interval).toHaveLength(expected);
+        if (expected === 1) expect(document.title).toBe('annual.pdf — Monstera PDF Editor');
+        unmount();
+        vi.useRealTimers();
+      }
     });
 
     it('the SAVE control dispatches document.save, and does NOT rebuild the view', async () => {

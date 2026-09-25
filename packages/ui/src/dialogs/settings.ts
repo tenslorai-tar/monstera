@@ -4,9 +4,10 @@ import { z } from 'zod';
 
 import { SETTINGS_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
-import type { SettingDefinition } from '../registries/settings.js';
+import type { SettingCategory, SettingDefinition } from '../registries/settings.js';
 import { colourKindOf } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
+import { SETTINGS_PAGES, type SettingsPage } from '../settings/pages.js';
 
 /** The id the Settings command opens. */
 export const SETTINGS_DIALOG_ID = 'dialog.settings';
@@ -46,6 +47,29 @@ export function controlFor(setting: SettingDefinition): SettingControl | undefin
 export const DIALOG_SETTINGS: readonly SettingDefinition[] = ALL_SETTINGS.filter(
   (setting) => controlFor(setting) !== undefined && setting.remembered !== true,
 );
+
+/**
+ * Pages listed although no setting sits on them, because what they hold is words or an action.
+ *
+ * **Named, rather than derived from the page notes**, and that stopped being the same thing the moment
+ * every page got a note: listing a page *because it has a note* would have put an empty Viewing page back
+ * the instant one was written for it, which is exactly the screen the owner's design calls out. A page
+ * earns its place by holding something to read or press — Keyboard points at F1, and Updates says who
+ * updates this build. Privacy left this list when *Show previews of recent files* gave it a setting
+ * (ADR-0100).
+ */
+const PAGES_WITHOUT_SETTINGS: readonly SettingCategory[] = ['keyboard', 'updates'];
+
+/**
+ * The pages the dialog lists, in the design's order: each that holds a setting it shows, and the two that
+ * hold words. **A function of the settings**, so the rule can be asked of a set that leaves a page empty —
+ * which the application's own set no longer does, since Saving gained autosave.
+ */
+export function listedPages(settings: readonly SettingDefinition[]): readonly SettingsPage[] {
+  return SETTINGS_PAGES.filter(
+    (page) => settings.some((setting) => setting.category === page.id) || PAGES_WITHOUT_SETTINGS.includes(page.id),
+  );
+}
 
 /**
  * What the Settings dialog answers: what CHANGED, never the whole state.

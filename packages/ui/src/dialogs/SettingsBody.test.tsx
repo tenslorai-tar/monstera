@@ -14,7 +14,7 @@ import { THEME_SETTING } from '../settings/appearance.js';
 import { ANNOTATION_COLOUR_SETTING, ANNOTATION_OPACITY_SETTING, AZURE_DI_KEY_SETTING } from '../settings/editing.js';
 import { SETTINGS_PAGES } from '../settings/pages.js';
 import type { SettingsAnswer } from './settings.js';
-import { controlFor, DIALOG_SETTINGS } from './settings.js';
+import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
 import SettingsBody from './SettingsBody.js';
 
 /**
@@ -309,10 +309,17 @@ describe('SettingsBody', () => {
     ).map((page) => page.id);
 
     expect(listed).toStrictEqual(expected);
-    // AND THE CONTROL that makes the line above mean something: a page with neither rows nor words
-    // exists in the declared order and is absent from the list.
-    expect(expected).not.toContain('saving');
-    expect(listed).not.toContain('saving');
+  });
+
+  it('CONTROL: a page with neither rows nor words is NOT listed — asked of a set that leaves one empty', () => {
+    // The application's own set leaves no page empty since Saving gained autosave, so the case the line
+    // above needs — a declared page absent from the list — is built: every setting but Saving's.
+    const withoutSaving = DIALOG_SETTINGS.filter((setting) => setting.category !== 'saving');
+    expect(listedPages(withoutSaving).map((page) => page.id)).not.toContain('saving');
+    // Against the full set, which lists it — so the absence above is the rule and not a page never listed.
+    expect(listedPages(DIALOG_SETTINGS).map((page) => page.id)).toContain('saving');
+    // And the two word pages stay listed with no setting at all.
+    expect(listedPages([]).map((page) => page.id)).toStrictEqual(['keyboard', 'updates']);
   });
 
   it('a page with no setting of its own still says something — never an empty page', () => {
