@@ -7,6 +7,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
+import type { DropOpener } from './bridge.js';
 import { reportProblem } from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
@@ -2086,6 +2087,88 @@ describe('App', () => {
       await pick();
 
       expect(container.querySelector('.m-start-problem')?.getAttribute('role')).toBe('alert');
+    });
+  });
+
+  describe('a dropped file (ADR-0099)', () => {
+    /** A drop as Chromium delivers one: the window entered, then the drop, both listing `Files`. */
+    async function dropOn(files: readonly File[]): Promise<void> {
+      for (const type of ['dragenter', 'drop']) {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files, dropEffect: 'none' } });
+        await act(async () => {
+          window.dispatchEvent(event);
+          await Promise.resolve();
+        });
+      }
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    const FIRST = new File(['%PDF-1.7'], 'first.pdf');
+    const SECOND = new File(['%PDF-1.7'], 'second.pdf');
+
+    it('hands EACH dropped file to the preload in the drop’s order, and each opens as a tab', async () => {
+      const handed: File[] = [];
+      const names = new Map([
+        [FIRST, 'first.pdf'],
+        [SECOND, 'second.pdf'],
+      ]);
+      const dropOpener: DropOpener = (file) => {
+        handed.push(file);
+        const docId = asDocId(`00000000-0000-4000-8000-00000000000${String(handed.length)}`);
+        return Promise.resolve(
+          ok({ kind: 'opened' as const, docId, version: asDocVersion(1), byteLength: 1024, name: names.get(file) ?? '' }),
+        );
+      };
+      const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      render(<App client={client} settings={freshSettings()} dropOpener={dropOpener} />);
+
+      await dropOn([FIRST, SECOND]);
+
+      // THE FILE OBJECTS THEMSELVES, in order — the page hands over what the drop gave it and nothing it made.
+      expect(handed).toStrictEqual([FIRST, SECOND]);
+      // A TAB EACH, found by the close control the strip gives every open document.
+      const strip = within(screen.getByRole('navigation', { name: 'Open documents' }));
+      expect(strip.getByRole('button', { name: 'Close first.pdf' })).toBeDefined();
+      expect(strip.getByRole('button', { name: 'Close second.pdf' })).toBeDefined();
+    });
+
+    it('SAYS SO when the dropped item is not a file on this computer', async () => {
+      const dropOpener: DropOpener = () => Promise.resolve(ok({ kind: 'no-path' as const }));
+      const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      render(<App client={client} settings={freshSettings()} dropOpener={dropOpener} />);
+
+      await dropOn([FIRST]);
+
+      expect(
+        screen.getByText(
+          'That is not a file on this computer, so it cannot be opened. Drop a PDF from File Explorer instead.',
+        ),
+      ).toBeDefined();
+    });
+
+    it('CONTROL: with no preload behind it, the window is not a drop target at all', () => {
+      /** A file drag entering the window, and whether the drop target answered it. */
+      function enter(): Event {
+        const event = new Event('dragover', { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files: [], dropEffect: 'none' } });
+        act(() => {
+          window.dispatchEvent(event);
+        });
+        return event;
+      }
+      const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+
+      // WITH an opener the drag is accepted, which is what makes the case below mean something.
+      const accepting = render(<App client={client} settings={freshSettings()} dropOpener={() => Promise.reject(new Error('unused'))} />);
+      expect(enter().defaultPrevented).toBe(true);
+      accepting.unmount();
+
+      // WITHOUT one it is not: Chromium's default stands, and nothing looks like it took the file.
+      render(<App client={client} settings={freshSettings()} />);
+      expect(enter().defaultPrevented).toBe(false);
     });
   });
 

@@ -1,8 +1,10 @@
 import {
-  type ContractHandlers,
   type IncidentSink,
+  type MainHandlers,
+  PRELOAD_CHANNEL_IDS,
   channelIds,
   channels,
+  preloadChannels,
   wrapHandlers,
 } from '@monstera/contract';
 
@@ -93,13 +95,15 @@ export class UntrustedSenderError extends Error {
  */
 export function registerContractHandlers(
   target: IpcHandleTarget,
-  handlers: ContractHandlers,
+  handlers: MainHandlers,
   sink: IncidentSink,
   senderCheck: IpcSenderCheck,
 ): void {
-  const wrapped = wrapHandlers(channels, handlers, sink);
+  // THE PRELOAD'S CHANNEL IN THE SAME WRAP (ADR-0099), so it shares the one incident log and the one
+  // sender check rather than getting a second registration with a second counter.
+  const wrapped = wrapHandlers({ ...channels, ...preloadChannels }, handlers, sink);
 
-  for (const id of channelIds) {
+  for (const id of [...channelIds, ...PRELOAD_CHANNEL_IDS]) {
     // `args[0]`, and the params are NOT trusted here. `wrapHandler` parses them
     // against the channel's schema before the handler sees them, which is the
     // one place validation happens (C5). Casting or defaulting the value here

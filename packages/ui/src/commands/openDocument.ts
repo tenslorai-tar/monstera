@@ -1,6 +1,7 @@
-import type { ContractClient } from '@monstera/contract';
-import type { DocId, DocVersion } from '@monstera/shared';
+import type { ChannelResult, ContractClient, DroppedOpenOutcome } from '@monstera/contract';
+import type { DocId, DocVersion, Failure, Result } from '@monstera/shared';
 
+import type { DropOpener } from '../bridge.js';
 import { GROUP_FILE, OPEN_DOCUMENT_TITLE, RIBBON_OPEN } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 
@@ -29,7 +30,7 @@ import type { UiCommand } from '../registries/commands.js';
  * surface's decision and the strings are i18n keys, so a command producing a
  * sentence here would put user-facing text in the layer that dispatches.
  */
-export type OpenProblem = 'absent' | 'at-capacity';
+export type OpenProblem = 'absent' | 'at-capacity' | 'no-path';
 
 /** What opening needs from the shell: the client, and where each outcome goes. */
 export interface OpenDocumentDeps {
@@ -129,11 +130,36 @@ export type OpenOutcome = 'shown' | 'none';
  * nothing about where they will land next time.
  */
 export async function openDocument(deps: OpenDocumentDeps): Promise<OpenOutcome> {
-  const answer = await deps.client['document.open']({});
+  return settleOpen(deps, await deps.client['document.open']({}));
+}
+
+/**
+ * Opens the files a person dropped, in the order the drop listed them, each as its own tab
+ * ([ADR-0099](../../../../docs/DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md)).
+ *
+ * **One at a time, not in parallel**: each open is main's one route with its byte ceiling, so the second
+ * file's answer depends on what the first one took, and the tabs arrive in the order the files were listed.
+ */
+export async function openDroppedFiles(
+  deps: OpenDocumentDeps,
+  files: readonly File[],
+  open: DropOpener,
+): Promise<void> {
+  for (const file of files) settleOpen(deps, await open(file));
+}
+
+/**
+ * What an open's answer does on screen — the ONE place, for a pick and a drop alike, because main opens
+ * both through the same `openPath` and the page must not hold two opinions about the same outcomes.
+ */
+function settleOpen(
+  deps: OpenDocumentDeps,
+  answer: Result<ChannelResult<'document.open'> | DroppedOpenOutcome, Failure>,
+): OpenOutcome {
   // A failure here is `internal` — the channel declares no codes, because
   // every way this ends that a user can cause is a variant of the result.
   if (!answer.ok) return 'none';
-  if (answer.value.kind === 'absent' || answer.value.kind === 'at-capacity') {
+  if (answer.value.kind === 'absent' || answer.value.kind === 'at-capacity' || answer.value.kind === 'no-path') {
     deps.onProblem(answer.value.kind);
     return 'none';
   }

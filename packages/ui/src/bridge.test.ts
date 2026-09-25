@@ -1,7 +1,7 @@
 import { type MonsteraBridge, channelIds } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { BridgeUnavailableError, createRendererClient } from './bridge.js';
+import { BridgeUnavailableError, createDropOpener, createRendererClient } from './bridge.js';
 
 /**
  * The renderer client, over a recording transport.
@@ -25,6 +25,11 @@ function transport(reply: unknown): MonsteraBridge & { readonly calls: [string, 
     // THE FAKE SUBSCRIBES TO NOTHING. These cases are about `invoke`; an event case
     // drives `subscribeToEvent` with its own transport (ADR-0082).
     subscribe: () => () => undefined,
+    // Recorded under the preload's channel id, which is what the real member sends on.
+    openDropped: (file) => {
+      calls.push(['document.openDropped', file]);
+      return Promise.resolve(reply);
+    },
   };
 }
 
@@ -100,5 +105,29 @@ describe('the renderer contract client', () => {
 
     expect(busy.ok).toBe(false);
     expect(() => createRendererClient(undefined)).toThrow(BridgeUnavailableError);
+  });
+});
+
+describe('the drop opener (ADR-0099)', () => {
+  const FILE = new File(['%PDF-1.7'], 'dropped.pdf');
+
+  it('hands the bridge THE FILE and nothing else, and answers the validated envelope', async () => {
+    const bridge = transport({ ok: true, value: { kind: 'no-path' } });
+
+    const answer = await createDropOpener(bridge)(FILE);
+
+    // The object the drop gave, by identity: the page names no path because it holds none.
+    expect(bridge.calls).toStrictEqual([['document.openDropped', FILE]]);
+    expect(answer).toStrictEqual({ ok: true, value: { kind: 'no-path' } });
+  });
+
+  it('THROWS on a malformed envelope, as the client does, rather than yielding undefined', async () => {
+    await expect(createDropOpener(transport({ ok: true, value: { kind: 'teleported' } }))(FILE)).rejects.toThrow(
+      /Malformed response envelope for "document\.openDropped"/u,
+    );
+  });
+
+  it('refuses to exist without a bridge', () => {
+    expect(() => createDropOpener(undefined)).toThrow(BridgeUnavailableError);
   });
 });

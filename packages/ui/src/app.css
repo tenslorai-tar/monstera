@@ -274,12 +274,49 @@ textarea {
 }
 
 /* The primary slot (ADR-0068): §10.3's one button, centred under the hero. */
+/* v5-01's drop frame: the Open button and its hint inside a dashed box. A picture of the window-wide drop
+   target (ADR-0099), which is `.m-drop-overlay` below; this box receives nothing itself. */
 .m-start-primary {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: center;
   gap: var(--space-8);
-  justify-content: center;
+  inline-size: min(100%, 56ch);
   margin-block-start: var(--space-8);
+  padding: var(--space-32) var(--space-16);
+  border: 1px dashed var(--border-control);
+  border-radius: var(--radius-10);
+  background: var(--bg);
+}
+
+.m-start-drop-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+/* The whole window while a file is dragged over it. Pointer-transparent so the drag's events keep reaching
+   the window, and drawn from the accent the way a focus ring is. `4` is one above the toasts' 3, the
+   highest in the window's stacking context; a dialog still wins, by `.m-document-surface`'s isolation. */
+.m-drop-overlay {
+  position: fixed;
+  inset: var(--space-8);
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-10);
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+  pointer-events: none;
+}
+
+.m-drop-overlay__label {
+  margin: 0;
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--radius-6);
+  background: var(--accent);
+  /* No `color`: solved against the accent in effect by `useOnColor`, as the primary button's is (ADR-0003). */
+  font-size: var(--font-content-16);
 }
 
 /*

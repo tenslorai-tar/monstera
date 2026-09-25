@@ -87,9 +87,16 @@ export {
   // main's composition answers it, from one schema.
   type TextBlockStyle,
   textBlockStyleSchema,
+  // THE PRELOAD'S CHANNEL (ADR-0099): main registers it, and the page validates its answer with it.
+  type DroppedOpenOutcome,
+  type MainHandlers,
+  MAX_DROPPED_PATH_LENGTH,
+  type PreloadChannels,
+  type PreloadHandlers,
+  preloadChannels,
 } from './channels.js';
-export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
-export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
+export { acceptAnswer, createClient, wrapHandler, wrapHandlers } from './boundary.js';
+export { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS, type PreloadChannelId } from './bridge.js';
 export {
   AI_ANSWER_REFUSALS,
   EVENTS,

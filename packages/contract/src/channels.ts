@@ -12,7 +12,8 @@ import {
   cloudProviderSchema,
   cloudStateSchema,
 } from './cloudProviders.js';
-import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
+import type { PreloadChannelId } from './bridge.js';
+import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, subscriptionIdSchema } from './events.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
 import {
@@ -4949,3 +4950,53 @@ export type ContractClient = ClientApi<Channels>;
 
 /** Channel ids as a runtime array, for iterating registrations. */
 export const channelIds = Object.keys(channels) as readonly ChannelId[];
+
+/**
+ * The longest path a dropped file can have: Win32's extended-length limit, *"a maximum total path length
+ * of 32,767 characters"* in WCHARs (Microsoft Learn, *Maximum Path Length Limitation*, read 2026-09-25).
+ * The page calls the figure approximate, because the system may expand the `\\?\` prefix at run time, so
+ * this is a bound on the message and not a promise that every shorter path opens; `openPath` answers that.
+ * A JavaScript string's length counts the same
+ * UTF-16 units, so the bound is the platform's own rather than a guess at a typical path.
+ */
+export const MAX_DROPPED_PATH_LENGTH = 32_767;
+
+/**
+ * The channels only the preload sends ([ADR-0099](../../../docs/DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md)).
+ *
+ * ## Declared and validated like every channel, and never in the page's client
+ *
+ * `document.openDropped` takes a PATH, which no renderer-facing type may carry (L2). So it is not in
+ * {@link channels}, `ContractClient` cannot name it, and the bridge's `invoke` refuses its id at runtime —
+ * the type stops page code at compile time and the refusal stops page script, which the type cannot. Main
+ * registers it through the same wrapper and sender check as every other channel.
+ *
+ * The keys must be exactly `PRELOAD_CHANNEL_IDS`, so a preload channel declared here is one the bridge
+ * already refuses.
+ *
+ * ## It answers what `document.open` answers, and one thing more
+ *
+ * A dropped file is opened through the same `openPath` as a picked one, so every outcome is `document.open`'s.
+ * `no-path` is the drop's own: an empty or relative path, which is what `getPathForFile` answers for a
+ * `File` that did not come from the operating system — a page-built one, or an item dragged out of another
+ * program that is not a file on this computer. `cancelled` cannot happen here; it stays in the union because
+ * the union is `document.open`'s, and one copy of it is the point.
+ */
+export const preloadChannels = {
+  'document.openDropped': channel(
+    'Opens a file a person dropped on the window, from the path the preload resolved.',
+    z.object({ path: z.string().max(MAX_DROPPED_PATH_LENGTH) }).strict(),
+    z.discriminatedUnion('kind', [...openOutcomeSchema.options, z.object({ kind: z.literal('no-path') })]),
+  ),
+} as const satisfies Readonly<Record<PreloadChannelId, Channel>>;
+
+export type PreloadChannels = typeof preloadChannels;
+
+/** Main's side of the preload channels. Exhaustive like {@link ContractHandlers}. */
+export type PreloadHandlers = Handlers<PreloadChannels>;
+
+/** Everything main registers: the renderer's channels and the preload's, wrapped and checked together. */
+export type MainHandlers = ContractHandlers & PreloadHandlers;
+
+/** What `document.openDropped` answers. */
+export type DroppedOpenOutcome = ResultOf<PreloadChannels, 'document.openDropped'>;

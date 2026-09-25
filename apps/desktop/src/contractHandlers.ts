@@ -12,6 +12,8 @@ import {
   type ChannelResult,
   type ContractHandlers,
   type DocumentAccess,
+  type MainHandlers,
+  type PreloadHandlers,
   type OcrLanguage,
   type SpellingLanguage,
 } from '@monstera/contract';
@@ -35,6 +37,7 @@ import {
   translationRequest,
 } from '@monstera/kernel';
 import { writeFile } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 
 import { type DocId, err, lineText, ok } from '@monstera/shared';
 
@@ -272,8 +275,12 @@ export function createContractHandlers(deps: {
   readonly closeListening: () => boolean;
   /** Cloud storage (ADR-0091): sign-ins, listings, working copies and their links. REQUIRED, for `titleBarOverlay`'s reason. */
   readonly cloud: CloudStorage;
-}): ContractHandlers {
+}): MainHandlers {
   return {
+    // THE PRELOAD'S CHANNEL (ADR-0099). The page cannot send it — the bridge's `invoke` refuses its id —
+    // so the path here is one `webUtils.getPathForFile` resolved from a file the operating system handed
+    // to a drop.
+    'document.openDropped': openDroppedHandler(deps),
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
     // handler type is asynchronous because the real document channels are.
     'app.info': () => Promise.resolve(ok({ ...deps.appInfo })),
@@ -2459,6 +2466,21 @@ function openDocumentHandler(deps: OpenPathParts & { readonly pickDocument: Pick
     const picked = await deps.pickDocument();
     if (picked === null) return ok({ kind: 'cancelled' } as const);
     return ok((await openPath(deps, picked)).outcome);
+  };
+}
+
+/**
+ * Opens a dropped file through {@link openPath}, the one route every open takes.
+ *
+ * **An empty or relative path is refused by name** (`no-path`), before anything is minted or read.
+ * `getPathForFile` answers an empty string for a `File` that did not come from the operating system — one
+ * a page built, or an item dragged out of another program that is not a file here — and a relative path
+ * would resolve against whatever main's working directory happens to be, which is nothing a person chose.
+ */
+function openDroppedHandler(deps: OpenPathParts): PreloadHandlers['document.openDropped'] {
+  return async ({ path }) => {
+    if (path === '' || !isAbsolute(path)) return ok({ kind: 'no-path' } as const);
+    return ok((await openPath(deps, path)).outcome);
   };
 }
 

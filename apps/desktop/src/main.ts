@@ -1,4 +1,4 @@
-import { type ContractHandlers, type IncidentSink, checkEvent } from '@monstera/contract';
+import { type IncidentSink, type MainHandlers, checkEvent } from '@monstera/contract';
 import { Menu, app, ipcMain, session } from 'electron';
 
 import type { TitleBarOverlay } from './contractHandlers.js';
@@ -54,7 +54,7 @@ import { createMainWindow, senderCheckFor } from './window.js';
  */
 /** Everything the shell needs, built by the composition root. */
 export interface ShellDependencies {
-  readonly handlers: ContractHandlers;
+  readonly handlers: MainHandlers;
   readonly incidents: IncidentSink;
   readonly failures: ShellFailureSink;
   /**

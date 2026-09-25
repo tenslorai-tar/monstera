@@ -892,6 +892,40 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — A dropped file opens, and page script cannot send the drop's channel a path
+
+v5-01 says *"or drop a PDF anywhere in this window"*, and ADR-0099 decided how. **Reading the ADR
+against `preload.ts` before building found its premise half-true**: *"the page's client is typed over
+renderer channels only, so page code cannot name it"* holds for the type and not at runtime, because
+the bridge's `invoke` forwards any string. Page script could have sent `document.openDropped` a path
+it spelt. B4 first (834427c): §5 now says `invoke` refuses every id in the contract's
+`PRELOAD_CHANNEL_IDS`, ADR-0099 carries a dated correction, and nothing had been built on the gap.
+
+Built on that: the bridge's third member `openDropped(file)`; `preloadChannels` beside `channels`,
+keyed exactly by that list; main's one registration wraps both maps together, so the preload channel
+shares the incident log and the sender check; its handler refuses an empty or relative path by name
+(`no-path`) and otherwise calls `openPath`, the route every open takes. On the page, `acceptAnswer` is
+now the one envelope check, taken by `createClient` and by `createDropOpener`; a pick and a drop settle
+through one `settleOpen`; `DropTarget` makes the window a target for file drags only, with an overlay
+whose label colour `useOnColor` solves; and the start screen draws v5-01's dashed frame and its line.
+
+**Proven on a running window** (`proof:rendererpolicy`, 25 cases): the bridge carries exactly
+`invoke`, `openDropped` and `subscribe`, and page script's `invoke('document.openDropped', …)` is
+refused with the preload's own message. The harness registers no handlers, so the call rejects either
+way and only the message separates the rule from main's absence; an unregistered ordinary channel is
+the control. With the refusal removed from `preload.ts` and rebuilt, the case went red naming *"No
+handler registered for 'document.openDropped'"*. `DropTarget`'s depth count, removed, reddened its
+crossing case; `App.test.tsx`'s control asserts the drag is accepted with an opener and not without.
+
+`MAX_DROPPED_PATH_LENGTH` is Win32's 32,767, read from Microsoft Learn today; the page calls it
+approximate, so it bounds the message and promises nothing about opening.
+
+**Not built:** file associations, on the same row. **Not proven:** a real drop from File Explorer —
+Playwright's page bridge answers a drop with the shim's `document.open`, and no harness here drives an
+operating-system drag, so the path through `getPathForFile` is exercised only by its refusal.
+
+---
+
 ## 2026-09-25 — Stage audit of `22b709d..5b55d66` — findings PPPPPP-1 to PPPPPP-2
 
 35 commits, 135 files, 4 proofs added, 28 modified and 2 removed, 8 source files added, 43 changed

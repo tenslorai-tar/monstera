@@ -1,5 +1,5 @@
-import { BRIDGE_KEY, type MonsteraBridge } from '@monstera/contract/bridge';
-import { contextBridge, ipcRenderer } from 'electron';
+import { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS } from '@monstera/contract/bridge';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 /**
  * The preload bridge: the fourth contract surface, and the smallest one.
@@ -10,7 +10,7 @@ import { contextBridge, ipcRenderer } from 'electron';
  * `webUtils`."* Everything a preload can do wrong, it does by importing
  * something else — `fs`, `path`, `child_process`, or Electron's `app` — and
  * exposing a shred of it across the bridge. There is nothing here to review for
- * that: the imports are two names, and `scripts/security/preloadSurface.mjs`
+ * that: the imports are invariant 1's three names, and `scripts/security/preloadSurface.mjs`
  * derives the set from this file's own syntax and fails the build if it grows.
  *
  * That derivation is what makes this surface **provable without running
@@ -20,13 +20,14 @@ import { contextBridge, ipcRenderer } from 'electron';
  * call was made, not that the exposure is confined — the difference between a
  * flag being set and a flag being enforced.
  *
- * ## One function, and the shape is the contract's
+ * ## A transport, and the shape is the contract's
  *
  * `MonsteraBridge` lives in `@monstera/contract` because both sides of this
  * bridge need it and neither package may import the other. Exposing a transport
- * rather than per-channel methods is invariant 2 by construction: there is no
- * object here that could carry a filesystem path, so no allowlist has to be
- * remembered (B5).
+ * rather than per-channel methods is invariant 2 by construction: nothing the
+ * page receives could carry a filesystem path, so no allowlist has to be
+ * remembered (B5). The one path this file ever holds is resolved inside
+ * `openDropped` and sent to main in the same statement (ADR-0099).
  *
  * ## What `exposeInMainWorld` does with this
  *
@@ -60,12 +61,23 @@ import { contextBridge, ipcRenderer } from 'electron';
  * ([ADR-0020](../../../docs/DECISIONS/0020-the-preload-is-bundled.md)).
  */
 
+/** The contract's own list, so a preload channel declared there is refused here with no second edit. */
+const PRELOAD_ONLY: ReadonlySet<string> = new Set(PRELOAD_CHANNEL_IDS);
+
 const bridge: MonsteraBridge = {
   // Named `invoke` and passed through unchanged. No channel allowlist here: the
   // channel id is validated against the registry by `wrapHandler` on the other
   // side, and a second opinion about which channels exist is exactly the drift
   // deriving every surface from one registry exists to prevent (B3a).
-  invoke: (channel, params) => ipcRenderer.invoke(channel, params),
+  //
+  // ONE REFUSAL, and it is not an allowlist: the preload's own channels (ADR-0099's
+  // correction). They take a path, `invoke` forwards any string, and main cannot tell
+  // this call from `openDropped`'s — both arrive from the same frame — so this is the
+  // only place page script can be stopped from sending one a path it spelt.
+  invoke: (channel, params) =>
+    PRELOAD_ONLY.has(channel)
+      ? Promise.reject(new Error(`refused: ${channel} is sent by the preload only`))
+      : ipcRenderer.invoke(channel, params),
   // THE SECOND DIRECTION (ADR-0082), and the same shape: a channel id and an opaque
   // payload. The listener is wrapped so the renderer never receives Electron's
   // `IpcRendererEvent` — that object carries `sender` and `ports`, which is a surface
@@ -78,6 +90,14 @@ const bridge: MonsteraBridge = {
     return () => {
       ipcRenderer.removeListener(channel, listener);
     };
+  },
+  // A DROPPED FILE (ADR-0099). The path is resolved here and sent to main, and it is
+  // never returned: the page receives main's envelope, which carries a document id
+  // and a name. Anything that is not a `File` from the operating system resolves to
+  // an empty path, which main refuses by name — one place decides, and it is main.
+  openDropped: (file) => {
+    const path = file instanceof File ? webUtils.getPathForFile(file) : '';
+    return ipcRenderer.invoke('document.openDropped', { path });
   },
 };
 

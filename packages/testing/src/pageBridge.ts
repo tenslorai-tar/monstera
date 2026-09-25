@@ -125,6 +125,15 @@ export async function bridge(
           }
         ).__monsteraInvoke(channel, params),
       subscribe: () => () => undefined,
+      // A DROP OPENS WHAT A PICK OPENS HERE. The shim holds no files and no paths, and
+      // main's dropped handler ends in the same `openPath` as the picker's, so the page
+      // is served the shim's `document.open` answer — the same envelope shape.
+      openDropped: () =>
+        (
+          window as unknown as {
+            __monsteraInvoke: (c: string, p: unknown) => Promise<unknown>;
+          }
+        ).__monsteraInvoke('document.open', {}),
     };
     Object.defineProperty(window, key, { value: shape });
   }, BRIDGE_KEY);

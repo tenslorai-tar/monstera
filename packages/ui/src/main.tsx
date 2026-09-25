@@ -3,7 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App.js';
-import { createEventSubscriber, createRendererClient } from './bridge.js';
+import { createDropOpener, createEventSubscriber, createRendererClient } from './bridge.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
@@ -67,6 +67,8 @@ const client = createRendererClient();
 // THE SECOND DIRECTION (ADR-0082), built beside the client and over the same bridge: the
 // assistant's answer arrives as events rather than as an answer to its own `invoke`.
 const subscribe = createEventSubscriber();
+// A DROPPED FILE (ADR-0099), over the same bridge: the page hands over the `File`, and the path stays in the preload.
+const dropOpener = createDropOpener();
 const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
 
 // NOTHING HERE WAITS FOR MAIN, and that is the point of the shape.
@@ -91,7 +93,7 @@ void hydrateSettings(client, settings);
 createRoot(container).render(
   <StrictMode>
     <I18nProvider i18n={i18n}>
-      <App client={client} settings={settings} subscribe={subscribe} />
+      <App client={client} settings={settings} subscribe={subscribe} dropOpener={dropOpener} />
     </I18nProvider>
   </StrictMode>,
 );

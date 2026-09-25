@@ -198,29 +198,33 @@ export function createClient<TMap extends ChannelMap>(
   channels: TMap,
   invoke: (id: keyof TMap & string, params: unknown) => Promise<unknown>,
 ): ClientApi<TMap> {
-  const entries = Object.keys(channels).map((id) => {
-    const definition = channels[id];
-    if (definition === undefined) throw new Error(`No channel declared for "${id}"`);
-    const envelope = envelopeSchema(definition.result);
-
-    return [
-      id,
-      async (params: unknown): Promise<Result<unknown>> => {
-        const raw = await invoke(id, params);
-        const parsed = envelope.safeParse(raw);
-        if (!parsed.success) {
-          // A malformed envelope is main misbehaving, not a channel failure, so
-          // it throws rather than being reported as one. It is also the one
-          // error here whose text is ours: it names the channel and the schema,
-          // never a document.
-          throw new Error(`Malformed response envelope for "${id}": ${parsed.error.message}`, {
-            cause: parsed.error,
-          });
-        }
-        return parsed.data;
-      },
-    ];
-  });
+  const entries = Object.keys(channels).map((id) => [
+    id,
+    async (params: unknown): Promise<unknown> => acceptAnswer(channels, id, await invoke(id, params)),
+  ]);
 
   return Object.fromEntries(entries) as ClientApi<TMap>;
+}
+
+/**
+ * Validates one answer against its channel's envelope — `createClient`'s check, for the one caller that
+ * reaches main by another route: the page's `openDropped`, whose answer arrives through the bridge's third
+ * member rather than through `invoke` (ADR-0099).
+ *
+ * A malformed envelope is main misbehaving, not a channel failure, so it throws rather than being reported
+ * as one. It is also the one error here whose text is ours: it names the channel and the schema, never a
+ * document.
+ */
+export function acceptAnswer<TMap extends ChannelMap, K extends keyof TMap & string>(
+  channels: TMap,
+  id: K,
+  raw: unknown,
+): Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>> {
+  const definition = channels[id];
+  if (definition === undefined) throw new Error(`No channel declared for "${id}"`);
+  const parsed = envelopeSchema(definition.result).safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`Malformed response envelope for "${id}": ${parsed.error.message}`, { cause: parsed.error });
+  }
+  return parsed.data as Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>;
 }

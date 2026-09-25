@@ -713,6 +713,9 @@ export const FEATURE_ENCRYPT_SIGN_TITLE = messageKey('command.start-encrypt-sign
 export const FEATURE_EXPORT_TITLE = messageKey('command.start-export.title');
 export const START_ABSENT = messageKey('surface.start.absent');
 export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
+export const START_NO_PATH = messageKey('surface.start.no-path');
+export const START_DROP_HINT = messageKey('surface.start.drop-hint');
+export const DROP_OVERLAY = messageKey('surface.drop.overlay');
 export const RECENT_LABEL = messageKey('surface.recent.label');
 export const RECENT_EMPTY = messageKey('surface.recent.empty');
 export const RECENT_MISSING = messageKey('surface.recent.missing');
@@ -2184,6 +2187,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // makes the message actionable rather than a report.
   [START_ABSENT]: 'That file could not be opened. It may have been moved, renamed or deleted.',
   [START_AT_CAPACITY]: 'There is not enough room to open that document. Close another one first.',
+  // A DROPPED ITEM WITH NO FILE BEHIND IT: something dragged out of a browser or another program that is
+  // not a file on this computer. Says what to do instead.
+  [START_NO_PATH]: 'That is not a file on this computer, so it cannot be opened. Drop a PDF from File Explorer instead.',
+  // v5-01's line under Open PDF, word for word.
+  [START_DROP_HINT]: 'or drop a PDF anywhere in this window',
+  [DROP_OVERLAY]: 'Drop to open',
   [RECENT_LABEL]: 'Recent documents',
   [RECENT_EMPTY]: 'Nothing opened yet.',
   // NAMES WHAT HAPPENED rather than blaming the reader. A row goes stale

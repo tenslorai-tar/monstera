@@ -1,4 +1,5 @@
 import { useLingui } from '@lingui/react';
+import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
 import heroLogo from '../../../../assets/brand/logo-hero.png';
@@ -6,6 +7,8 @@ import type { OpenProblem } from '../commands/openDocument.js';
 import {
   START_ABSENT,
   START_AT_CAPACITY,
+  START_DROP_HINT,
+  START_NO_PATH,
   START_PRODUCT,
   START_TAGLINE,
   START_TITLE,
@@ -67,6 +70,13 @@ export interface StartScreenProps {
   readonly problem: OpenProblem | undefined;
 }
 
+/** What each problem says. A `Record`, so a problem added to `OpenProblem` is a compile error here until it has a sentence. */
+const PROBLEM_SENTENCE: Readonly<Record<OpenProblem, MessageKey>> = {
+  absent: START_ABSENT,
+  'at-capacity': START_AT_CAPACITY,
+  'no-path': START_NO_PATH,
+};
+
 export function StartScreen({ registry, context, problem }: StartScreenProps): ReactElement {
   const { _ } = useLingui();
   const { primary, shortcut } = startScreenModel(registry, context);
@@ -80,6 +90,8 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
         <p className="m-start-product">{_(START_PRODUCT)}</p>
         <p className="m-start-tagline">{_(START_TAGLINE)}</p>
       </div>
+      {/* v5-01'S DROP FRAME around the primary button. A drop anywhere in the window opens the file (ADR-0099,
+          `DropTarget`); this frame is where the design says so, and it is only a picture of that. */}
       <div className="m-start-primary">
         {primary.map((entry) => (
           <Button
@@ -96,6 +108,7 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
             }}
           />
         ))}
+        <p className="m-start-drop-hint">{_(START_DROP_HINT)}</p>
       </div>
       {problem === undefined ? null : (
         // `role="alert"`, not the polite region the status bar uses: this
@@ -103,7 +116,7 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
         // nothing else on screen that answers them. A polite region would queue
         // behind whatever a screen reader was saying about the button.
         <p className="m-start-problem" role="alert">
-          {_(problem === 'absent' ? START_ABSENT : START_AT_CAPACITY)}
+          {_(PROBLEM_SENTENCE[problem])}
         </p>
       )}
       {shortcut.length === 0 ? null : (

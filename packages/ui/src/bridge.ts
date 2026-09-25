@@ -1,13 +1,17 @@
 import {
   BRIDGE_KEY,
   type ContractClient,
+  type DroppedOpenOutcome,
   type EventHandler,
   type EventId,
   type MonsteraBridge,
+  acceptAnswer,
   channels,
   createClient,
+  preloadChannels,
   subscribeToEvent,
 } from '@monstera/contract';
+import type { Failure, Result } from '@monstera/shared';
 
 /**
  * The renderer's side of the contract, and the shape the preload must expose.
@@ -123,4 +127,21 @@ export function createEventSubscriber(
 ): EventSubscriber {
   if (bridge === undefined) throw new BridgeUnavailableError();
   return (id, handler) => subscribeToEvent(bridge.subscribe, id, handler);
+}
+
+/** Opens one dropped file, answering `document.openDropped`'s validated envelope. */
+export type DropOpener = (file: File) => Promise<Result<DroppedOpenOutcome, Failure>>;
+
+/**
+ * Opens a dropped file through the bridge's third member
+ * ([ADR-0099](../../../docs/DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md)).
+ *
+ * The page hands over the `File` and nothing else; the preload resolves its path and main opens it. The
+ * answer is validated by `acceptAnswer`, the check `createRendererClient`'s calls make, so a dropped
+ * document arrives in the same shape a picked one does. It throws for an absent bridge, for the reason
+ * above.
+ */
+export function createDropOpener(bridge: MonsteraBridge | undefined = globalThis[BRIDGE_KEY]): DropOpener {
+  if (bridge === undefined) throw new BridgeUnavailableError();
+  return async (file) => acceptAnswer(preloadChannels, 'document.openDropped', await bridge.openDropped(file));
 }

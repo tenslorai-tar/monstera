@@ -147,6 +147,11 @@ interface Readback {
    */
   readonly bridgeMembers: readonly string[];
   /**
+   * What page script's `invoke` was refused with: for the preload's own channel, and for an ordinary
+   * channel nothing registered, as the control that the first message is the preload's refusal.
+   */
+  readonly invokeRefusals: { readonly preloadChannel: string; readonly ordinaryChannel: string };
+  /**
    * What the preload threw, if anything.
    *
    * A preload that fails to load produces NO output on main's stderr and no
@@ -575,6 +580,35 @@ export async function reportRendererPolicy(): Promise<void> {
     'node surface',
   );
 
+  // PAGE SCRIPT SENDING THE PRELOAD'S CHANNEL (ADR-0099's correction). The answer is the REJECTION
+  // MESSAGE, because this harness registers no handlers: without the preload's refusal the call still
+  // rejects, as "no handler registered", so only the message says WHICH rule stopped it. An ordinary
+  // unregistered channel is read the same way, as the control that the message is the refusal's own.
+  const invokeRefusals = await evaluate(
+    webContents,
+    `(async () => {
+       const bridge = globalThis[${JSON.stringify(BRIDGE_KEY)}];
+       const reason = async (channel, params) => {
+         try {
+           await bridge.invoke(channel, params);
+           return 'answered';
+         } catch (error) {
+           return error instanceof Error ? error.message : String(error);
+         }
+       };
+       return {
+         preloadChannel: await reason('document.openDropped', { path: 'C:/Users/Public/Documents/any.pdf' }),
+         ordinaryChannel: await reason('document.notAChannel', {}),
+       };
+     })()`,
+    (value): value is { preloadChannel: string; ordinaryChannel: string } =>
+      typeof value === 'object' &&
+      value !== null &&
+      typeof (value as { preloadChannel?: unknown }).preloadChannel === 'string' &&
+      typeof (value as { ordinaryChannel?: unknown }).ordinaryChannel === 'string',
+    'invoke refusals',
+  );
+
   // ---------------------------------------------------------------------------
   // The shell: did the bundle run, and did its stylesheet arrive?
   // ---------------------------------------------------------------------------
@@ -804,6 +838,7 @@ export async function reportRendererPolicy(): Promise<void> {
     nodeSurface: surface.visible,
     bridgeExposed: surface.bridge,
     bridgeMembers: surface.bridgeMembers,
+    invokeRefusals,
     preloadError: received.find((failure) => failure.event === 'preload-error')?.detail ?? null,
     popupReturnedNull,
     windowCount,

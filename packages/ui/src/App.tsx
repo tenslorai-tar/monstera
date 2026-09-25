@@ -156,7 +156,7 @@ import {
   recogniseTextCommand,
 } from './commands/recogniseText.js';
 import { featureShortcutCommands } from './commands/featureShortcuts.js';
-import { type OpenProblem, openDocument, openDocumentCommand } from './commands/openDocument.js';
+import { type OpenProblem, openDocument, openDocumentCommand, openDroppedFiles } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
 import { showAboutCommand } from './commands/showAbout.js';
@@ -328,7 +328,7 @@ import {
   authorFor,
 } from './settings/editing.js';
 import { AssistantPanel } from './AssistantPanel.js';
-import type { EventSubscriber } from './bridge.js';
+import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
@@ -361,6 +361,7 @@ import { shortcutListModel } from './surfaces/projections.js';
 import { StartFooter } from './surfaces/StartFooter.js';
 import { TitleBar } from './surfaces/TitleBar.js';
 import { useWindowControlsOverlay } from './windowControlsOverlay.js';
+import { DropTarget } from './surfaces/DropTarget.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 import { ViewProblem } from './surfaces/ViewProblem.js';
 
@@ -453,6 +454,15 @@ export interface AppProps {
    * working without knowing this exists.
    */
   readonly subscribe?: EventSubscriber;
+  /**
+   * Opens a dropped file through the preload
+   * ([ADR-0099](../../../docs/DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md)).
+   *
+   * A prop for the client's reason. **Absent, the window is not a drop target at all** — a surface with no
+   * preload behind it has nothing to resolve a dropped file's path, and a drop that did nothing would be a
+   * control that renders and does nothing.
+   */
+  readonly dropOpener?: DropOpener;
 }
 
 /** A subscriber that never delivers: the state a surface with no `main` behind it is in. */
@@ -473,7 +483,7 @@ const NO_DOCUMENT_SUBSCRIBE = (): (() => void) => (): void => undefined;
  */
 const NOTE_MARGIN = 36;
 
-export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): ReactElement {
+export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: AppProps): ReactElement {
   /**
    * Every open document, in the order they were opened.
    *
@@ -2005,6 +2015,13 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
     [activate, client, opened],
   );
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
+  // A DROP OPENS THROUGH THE SAME DEPENDENCIES as the Open command, so its outcomes land where a pick's do.
+  const onDroppedFiles = useCallback(
+    (files: readonly File[]): void => {
+      if (dropOpener !== undefined) void openDroppedFiles(openDeps, files, dropOpener);
+    },
+    [dropOpener, openDeps],
+  );
 
   /**
    * *Set up AI…*, held here as well as registered, because the first run starts it by itself —
@@ -2550,6 +2567,7 @@ export function App({ client, settings, subscribe = NO_EVENTS }: AppProps): Reac
       )}
     >
     <main className="m-document-surface" data-layout={layoutMode}>
+      {dropOpener === undefined ? null : <DropTarget onFiles={onDroppedFiles} />}
       {/* THE TITLE BAR, drawn in every mode and with no document too: the
           command search and the layout switcher are the application's, not a
           document's. It carries the open documents, which is what the rest of

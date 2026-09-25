@@ -99,7 +99,9 @@ const RUNTIME_CASES = [
   'and its stylesheet arrived, so style-src self permits it too',
   'no Node surface is reachable from page script',
   'CONTROL: the contextBridge key IS reachable, so the probe could look',
-  'the bridge carries exactly invoke and subscribe, read from the running renderer',
+  'the bridge carries exactly invoke, openDropped and subscribe, read from the running renderer',
+  "page script's invoke of the PRELOAD'S channel is refused by the preload, by name",
+  'CONTROL: an ordinary unregistered channel is NOT refused that way, so the message is the rule',
   "popups are denied, in the renderer's view and in main's",
   'a permission outside the allowed set is refused',
   'CONTROL: the one permitted permission is GRANTED',
@@ -295,6 +297,7 @@ function pinnedPolicy(markdown) {
  *   nodeSurface: string[],
  *   bridgeExposed: boolean,
  *   bridgeMembers: string[],
+ *   invokeRefusals: { preloadChannel: string, ordinaryChannel: string },
  *   preloadError: string | null,
  *   failureListeners: Record<string, number>,
  *   failuresReceived: string[],
@@ -603,13 +606,35 @@ try {
     );
 
     check(
-      'the bridge carries exactly invoke and subscribe, read from the running renderer',
-      // ADR-0082 ADDED THE SECOND MEMBER, and the case above answers the same `true` for a
-      // bridge carrying one function and for one carrying a filesystem. This names them.
-      JSON.stringify(seen.bridgeMembers) === JSON.stringify(['invoke', 'subscribe']),
+      'the bridge carries exactly invoke, openDropped and subscribe, read from the running renderer',
+      // ADR-0082 ADDED THE SECOND MEMBER and ADR-0099 the third, and the case above answers the
+      // same `true` for a bridge carrying one function and for one carrying a filesystem. This
+      // names them — and `getPathForFile` is not among them, which is the path staying in the preload.
+      JSON.stringify(seen.bridgeMembers) === JSON.stringify(['invoke', 'openDropped', 'subscribe']),
       `the page sees ${JSON.stringify(seen.bridgeMembers)} on the bridge. §5 and invariant 1 ` +
-        `allow these two and nothing else: a third member is a surface nobody decided to ` +
-        `expose, and a missing one is a renderer that cannot ask or cannot listen.`,
+        `allow these three and nothing else: another member is a surface nobody decided to ` +
+        `expose, and a missing one is a renderer that cannot ask, listen or open a drop.`,
+    );
+
+    check(
+      "page script's invoke of the PRELOAD'S channel is refused by the preload, by name",
+      // THE MESSAGE, not the rejection: this harness registers no handlers, so the call rejects
+      // either way, and only the text says the preload's rule stopped it rather than main's
+      // absence. Without that rule, page script could send `document.openDropped` a path it spelt.
+      seen.invokeRefusals.preloadChannel.includes('document.openDropped is sent by the preload only'),
+      `the page's invoke of document.openDropped ended with ${JSON.stringify(seen.invokeRefusals.preloadChannel)}. ` +
+        `The bridge's invoke must refuse every id in PRELOAD_CHANNEL_IDS before it reaches ipcRenderer ` +
+        `(ADR-0099's correction, §5): main cannot tell that call from openDropped's, since both come from ` +
+        `the same frame.`,
+    );
+
+    check(
+      'CONTROL: an ordinary unregistered channel is NOT refused that way, so the message is the rule',
+      !seen.invokeRefusals.ordinaryChannel.includes('is sent by the preload only') &&
+        seen.invokeRefusals.ordinaryChannel !== 'answered',
+      `an unregistered channel ended with ${JSON.stringify(seen.invokeRefusals.ordinaryChannel)}. It must ` +
+        `reject (nothing is registered here) and must not carry the preload's refusal, or the case above ` +
+        `would pass for a bridge that refuses everything.`,
     );
 
     check(

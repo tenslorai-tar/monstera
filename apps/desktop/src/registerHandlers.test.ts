@@ -1,4 +1,4 @@
-import { type Incident, channelIds } from '@monstera/contract';
+import { type Incident, PRELOAD_CHANNEL_IDS, channelIds } from '@monstera/contract';
 import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { describe, expect, it } from 'vitest';
 
@@ -187,7 +187,8 @@ describe('main-process contract registration', () => {
     // Compared against the registry, not against a list written here. A literal
     // list would be the second place a channel is written down, which is the
     // defect this registration exists to avoid, reproduced in its own test.
-    expect([...ipc.seen.keys()].sort()).toEqual([...channelIds].sort());
+    // The preload's channels register with the rest (ADR-0099), from the contract's own list.
+    expect([...ipc.seen.keys()].sort()).toEqual([...channelIds, ...PRELOAD_CHANNEL_IDS].sort());
   });
 
   it('answers app.info with the values it was built with', async () => {
@@ -286,8 +287,8 @@ describe('sender check', () => {
 
     // Every channel, from the registry. A check applied to one channel and
     // forgotten on the next is exactly the "loop that already looks finished"
-    // trap, and a single-channel case cannot see it.
-    for (const id of channelIds) {
+    // trap, and a single-channel case cannot see it. The preload's channels too (ADR-0099).
+    for (const id of [...channelIds, ...PRELOAD_CHANNEL_IDS]) {
       expect(() => ipc.seen.get(id)?.({ senderId: 2 }, {})).toThrow(UntrustedSenderError);
     }
   });

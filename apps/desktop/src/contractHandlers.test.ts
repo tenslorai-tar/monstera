@@ -15,6 +15,7 @@ import {
   asDocVersion,
   asFileHandle,
 } from '@monstera/shared';
+import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, unconfiguredCloud } from './cloudSession.js';
@@ -466,6 +467,51 @@ describe('document.open', () => {
 
       expect(result.ok).toBe(true);
     });
+  });
+});
+
+describe('document.openDropped (ADR-0099)', () => {
+  // PLATFORM-ABSOLUTE, because CI runs this on Linux too and `isAbsolute` is the platform's: a literal
+  // `C:/…` is relative there, and every case below would take the refusal for the wrong reason.
+  const DROPPED = resolve('dropped', 'a.pdf');
+  const OPENED: OpenOutcome = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('a drop must never run the picker'));
+
+  it('opens the dropped path by the ONE route: that handle, the recent list and a session', async () => {
+    const { capabilities, handlers, opened, recent, sessioned } = harness(OPENED, NO_PICKER);
+
+    const result = await handlers['document.openDropped']({ path: DROPPED });
+
+    expect(result).toStrictEqual({ ok: true, value: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'a.pdf' } });
+    // THE HANDLE RESOLVES TO THE DROPPED PATH, not merely *a* handle was opened.
+    expect(capabilities.resolve(handleOpened(opened))).toBe(DROPPED);
+    expect(recent.list()).toStrictEqual([{ path: DROPPED, name: 'a.pdf' }]);
+    expect(sessioned).toStrictEqual([A_DOC]);
+  });
+
+  it('answers what the one route answers, and revokes the handle for a file that is gone', async () => {
+    const { capabilities, handlers, opened } = harness({ kind: 'absent' }, NO_PICKER);
+
+    const result = await handlers['document.openDropped']({ path: DROPPED });
+
+    expect(result).toStrictEqual({ ok: true, value: { kind: 'absent' } });
+    expect(capabilities.has(handleOpened(opened))).toBe(false);
+  });
+
+  it.each([
+    ['an EMPTY path, which is what getPathForFile answers for a File that no drop gave', ''],
+    ['a RELATIVE path, which would resolve against wherever main happens to be', join('dropped', 'a.pdf')],
+  ])('refuses %s by name, and asks the service for nothing', async (_label, path) => {
+    // AN OUTCOME THE SERVICE WOULD OPEN, so the refusal is the handler's decision and not the service's answer.
+    const { handlers, opened, recent } = harness(OPENED, NO_PICKER);
+
+    const result = await handlers['document.openDropped']({ path });
+
+    expect(result).toStrictEqual({ ok: true, value: { kind: 'no-path' } });
+    // THE CALL THAT WAS NOT MADE: a handler that opened the path and then answered `no-path` would pass the
+    // line above.
+    expect(opened).toStrictEqual([]);
+    expect(recent.list()).toStrictEqual([]);
   });
 });
 
