@@ -71,3 +71,19 @@ which is the whole thing this ADR keeps out.
 - The page's drop target is a presentation concern: a dashed frame on the start screen and a window-wide
   overlay while a drag is over it. It is drawn from tokens, and cancelled by Escape or by leaving the
   window.
+
+## Correction, 2026-09-25 — the page COULD name the channel, and `invoke` now refuses it
+
+The Decision's fourth bullet says *"the page's `ContractClient` is typed over renderer channels only, so
+page code cannot name it."* That is true of the **type** and false at **runtime**: the bridge's `invoke`
+takes any channel string and forwards it to `ipcRenderer.invoke` unchanged. Page script calling
+`window.monstera.invoke('document.openDropped', { path })` would have reached main's handler with a path
+it spelt — exactly the forgery the sixth bullet says cannot happen. The sixth bullet's reasoning about
+`getPathForFile` is right, and it only covers the route through `openDropped`.
+
+Found by reading this decision against `preload.ts` before building it, so nothing shipped with the gap.
+The remedy is the bridge's, and it is in §5 by amendment: **`invoke` refuses every id in the contract's
+preload-channel list**, and `openDropped` is the only code that sends one. Main cannot make this check
+itself — the preload's `ipcRenderer` and the page's `invoke` arrive from the same frame — so the preload
+is where it has to live. `proof:rendererpolicy` asserts it on a running window with a path that would
+open if the refusal were absent.
