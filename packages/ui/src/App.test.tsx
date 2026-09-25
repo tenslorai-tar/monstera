@@ -463,6 +463,16 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Open PDF…' })).toBeDefined();
   });
 
+  it('each feature card is NAMED by its title and DESCRIBED by its checked line (v5-01)', () => {
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} />);
+
+    const card = screen.getByRole('button', { name: 'Export anywhere' });
+    const described = document.getElementById(card.getAttribute('aria-describedby') ?? '');
+    // The build's claim, not the design's: *fidelity reports* is absent because only PDF/A reports one.
+    expect(described?.textContent).toBe('Export to Word, Excel, PowerPoint, images and PDF/A.');
+  });
+
   it('the control DISPATCHES document.open, and nothing else', async () => {
     // The wired-tools requirement, and the second half of the assertion is the
     // one that stops it being vacuous: a component that called every channel it

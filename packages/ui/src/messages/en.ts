@@ -711,6 +711,12 @@ export const FEATURE_OCR_TITLE = messageKey('command.start-ocr.title');
 export const FEATURE_SPLIT_MERGE_TITLE = messageKey('command.start-split-merge.title');
 export const FEATURE_ENCRYPT_SIGN_TITLE = messageKey('command.start-encrypt-sign.title');
 export const FEATURE_EXPORT_TITLE = messageKey('command.start-export.title');
+export const FEATURE_ANNOTATE_SUMMARY = messageKey('command.start-annotate.summary');
+export const FEATURE_FORMS_SUMMARY = messageKey('command.start-forms.summary');
+export const FEATURE_OCR_SUMMARY = messageKey('command.start-ocr.summary');
+export const FEATURE_SPLIT_MERGE_SUMMARY = messageKey('command.start-split-merge.summary');
+export const FEATURE_ENCRYPT_SIGN_SUMMARY = messageKey('command.start-encrypt-sign.summary');
+export const FEATURE_EXPORT_SUMMARY = messageKey('command.start-export.summary');
 export const START_ABSENT = messageKey('surface.start.absent');
 export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const START_NO_PATH = messageKey('surface.start.no-path');
@@ -2194,6 +2200,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FEATURE_SPLIT_MERGE_TITLE]: 'Split & merge',
   [FEATURE_ENCRYPT_SIGN_TITLE]: 'Encrypt & sign',
   [FEATURE_EXPORT_TITLE]: 'Export anywhere',
+  // v5-01's CARD LINES, each checked against the build on 2026-09-25 (JOURNAL). Where the design said more
+  // than the build does, the line says less: *image* stamps, since no built-in stamp exists; no language count
+  // for OCR, since the models are not packaged yet; and no *fidelity reports*, since only PDF/A reports one.
+  [FEATURE_ANNOTATE_SUMMARY]: 'Highlight, ink, shapes, notes and image stamps — saved as real PDF annotations.',
+  [FEATURE_FORMS_SUMMARY]: 'Fill any AcroForm, draw new fields, and export data as JSON, XFDF or FDF.',
+  [FEATURE_OCR_SUMMARY]: 'On-device text recognition makes scanned pages searchable and selectable.',
+  [FEATURE_SPLIT_MERGE_SUMMARY]: 'Reorder, extract, merge, and split by ranges or one file per page.',
+  [FEATURE_ENCRYPT_SIGN_SUMMARY]: 'AES-256 passwords, true redaction and PKCS#7 digital signatures.',
+  [FEATURE_EXPORT_SUMMARY]: 'Export to Word, Excel, PowerPoint, images and PDF/A.',
   // SAYS WHAT HAPPENED AND WHAT IS LIKELY. A file the picker offered and the
   // service could not read has almost always moved, and naming that is what
   // makes the message actionable rather than a report.

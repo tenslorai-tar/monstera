@@ -1,11 +1,17 @@
 import type { MessageKey } from '@monstera/shared';
 
 import {
+  FEATURE_ANNOTATE_SUMMARY,
   FEATURE_ANNOTATE_TITLE,
+  FEATURE_ENCRYPT_SIGN_SUMMARY,
   FEATURE_ENCRYPT_SIGN_TITLE,
+  FEATURE_EXPORT_SUMMARY,
   FEATURE_EXPORT_TITLE,
+  FEATURE_FORMS_SUMMARY,
   FEATURE_FORMS_TITLE,
+  FEATURE_OCR_SUMMARY,
   FEATURE_OCR_TITLE,
+  FEATURE_SPLIT_MERGE_SUMMARY,
   FEATURE_SPLIT_MERGE_TITLE,
 } from '../messages/en.js';
 import type { IconName } from '../primitives/icons.js';
@@ -19,6 +25,8 @@ import type { OpenOutcome } from './openDocument.js';
 export interface FeatureShortcut {
   readonly name: string;
   readonly title: MessageKey;
+  /** The card's line: what this build does, checked against the code, never what the design hoped. */
+  readonly summary: MessageKey;
   readonly icon: IconName;
   readonly section: SectionId;
 }
@@ -31,12 +39,12 @@ export interface FeatureShortcut {
  * D6 → Tools (OCR group), D2 → Organize, D7 → Protect, D10 → Home (Export group).
  */
 export const FEATURE_SHORTCUTS: readonly FeatureShortcut[] = [
-  { name: 'annotate', title: FEATURE_ANNOTATE_TITLE, icon: 'Highlighter', section: 'comment' },
-  { name: 'forms', title: FEATURE_FORMS_TITLE, icon: 'TextCursorInput', section: 'forms' },
-  { name: 'ocr', title: FEATURE_OCR_TITLE, icon: 'ScanText', section: 'tools' },
-  { name: 'split-merge', title: FEATURE_SPLIT_MERGE_TITLE, icon: 'Merge', section: 'organize' },
-  { name: 'encrypt-sign', title: FEATURE_ENCRYPT_SIGN_TITLE, icon: 'ShieldCheck', section: 'protect' },
-  { name: 'export', title: FEATURE_EXPORT_TITLE, icon: 'FileOutput', section: 'home' },
+  { name: 'annotate', title: FEATURE_ANNOTATE_TITLE, summary: FEATURE_ANNOTATE_SUMMARY, icon: 'Highlighter', section: 'comment' },
+  { name: 'forms', title: FEATURE_FORMS_TITLE, summary: FEATURE_FORMS_SUMMARY, icon: 'TextCursorInput', section: 'forms' },
+  { name: 'ocr', title: FEATURE_OCR_TITLE, summary: FEATURE_OCR_SUMMARY, icon: 'ScanText', section: 'tools' },
+  { name: 'split-merge', title: FEATURE_SPLIT_MERGE_TITLE, summary: FEATURE_SPLIT_MERGE_SUMMARY, icon: 'Merge', section: 'organize' },
+  { name: 'encrypt-sign', title: FEATURE_ENCRYPT_SIGN_TITLE, summary: FEATURE_ENCRYPT_SIGN_SUMMARY, icon: 'ShieldCheck', section: 'protect' },
+  { name: 'export', title: FEATURE_EXPORT_TITLE, summary: FEATURE_EXPORT_SUMMARY, icon: 'FileOutput', section: 'home' },
 ];
 
 /**
@@ -63,6 +71,7 @@ export function featureShortcutCommands(deps: {
       id: `start.${feature.name}`,
       icon: feature.icon,
       title: feature.title,
+      summary: feature.summary,
       placements: [{ surface: 'start-screen', slot: 'shortcut', order: (index + 1) * 10 }],
       when: (context: CommandContext) => context.docId === undefined,
       run: async (): Promise<void> => {

@@ -892,6 +892,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — The six start cards say what this build does, which is less than the design said
+
+v5-01 draws each feature shortcut as a card with a one-line claim. The owner's order was to verify
+every claim first; each was read against the code (commands, kernel support and the FEATURES rows):
+
+| card | the design's line | what the code supports | the line shipped |
+|---|---|---|---|
+| Annotate | …notes and **stamps** | an image stamp only; no built-in stamps (FEATURES: *"done except built-ins"*) | …notes and **image** stamps |
+| Forms | …export data as JSON or XFDF | JSON, XFDF **and FDF**, each importable | …as JSON, XFDF or FDF |
+| OCR | **13+ languages**, on-device | fourteen declared, but the models are **not packaged yet** (`composition.ts`: *"a packaged build has neither yet"*) | no count: on-device, searchable and selectable |
+| Split & merge | as written | reorder, extract, merge, split by range or per page | as written |
+| Encrypt & sign | as written | AES-256 (and older), `applyRedactions`, `adbe.pkcs7.detached` | as written |
+| Export | …with **honest fidelity reports** | only PDF/A reports what it changed | no report claimed |
+
+The design's footer also names **Help centre**, and no such command exists; it is item 6 of the
+owner's list, not built here, and the footer draws only what is registered. The cards are the `shortcut`
+slot's projection still — `UiCommand` gains an optional `summary` — named by the title and described
+by the line, so a screen reader says the title and then what it does. `App.test.tsx` reads one card's
+description as the shipped line.
+
+---
+
 ## 2026-09-25 — The start screen's wordmark is set in Marcellus, and NOTICE carries its licence
 
 ADR-0100's third decision. **Fetched with the owner's standing approval for downloads** from the

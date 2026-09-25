@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import type { ReactElement } from 'react';
+import { type ReactElement, useId } from 'react';
 
 import heroLogo from '../../../../assets/brand/logo-hero.png';
 import type { OpenProblem } from '../commands/openDocument.js';
@@ -14,7 +14,8 @@ import {
   START_TITLE,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
-import { ToolButton } from '../primitives/ToolButton.js';
+import { Icon } from '../primitives/Icon.js';
+import type { IconName } from '../primitives/icons.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import { startScreenModel } from './projections.js';
 
@@ -125,14 +126,15 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
       {shortcut.length === 0 ? null : (
         <div className="m-start-shortcuts">
           {shortcut.map((entry) =>
-            // A GLYPH OVER ITS CAPTION, the ribbon's own button: the registry refuses a start-screen placement with no
+            // v5-01's CARD: a glyph, the title and its one line. The registry refuses a start-screen placement with no
             // icon (`DRAWS_A_GLYPH`), so the `undefined` arm is one the type needs and no registration reaches.
             entry.command.icon === undefined ? null : (
-              <ToolButton
+              <ShortcutCard
                 key={entry.command.id}
-                label={entry.command.title}
+                title={entry.command.title}
+                summary={entry.command.summary}
                 icon={entry.command.icon}
-                onClick={() => {
+                onRun={() => {
                   void entry.command.run(context);
                 }}
               />
@@ -141,5 +143,48 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * One feature shortcut as v5-01 draws it. **Named by its title and described by its line**, so a screen reader
+ * says *Annotate & mark up* and then what it does, rather than one run-on name.
+ */
+function ShortcutCard({
+  title,
+  summary,
+  icon,
+  onRun,
+}: {
+  readonly title: MessageKey;
+  readonly summary: MessageKey | undefined;
+  readonly icon: IconName;
+  readonly onRun: () => void;
+}): ReactElement {
+  const { _ } = useLingui();
+  const titleId = useId();
+  const summaryId = useId();
+  return (
+    <button
+      type="button"
+      className="m-start-card"
+      aria-labelledby={titleId}
+      aria-describedby={summary === undefined ? undefined : summaryId}
+      onClick={onRun}
+    >
+      <span className="m-start-card__glyph">
+        <Icon name={icon} size="control" />
+      </span>
+      <span className="m-start-card__text">
+        <span className="m-start-card__title" id={titleId}>
+          {_(title)}
+        </span>
+        {summary === undefined ? null : (
+          <span className="m-start-card__summary" id={summaryId}>
+            {_(summary)}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }

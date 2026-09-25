@@ -341,11 +341,59 @@ textarea {
  * count would be a number that is wrong at some width, and this screen is the
  * first thing a reader sees at whatever size they happen to have.
  */
+/* v5-01's cards: three across under the drop frame, at its width, fewer as the window narrows. */
 .m-start-shortcuts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, max-content));
+  grid-template-columns: repeat(auto-fill, minmax(28ch, 1fr));
   gap: var(--space-8);
-  justify-content: center;
+  inline-size: min(100%, 110ch);
+}
+
+.m-start-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-16) var(--space-16) var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: var(--bg);
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+
+.m-start-card:hover,
+.m-start-card:focus-visible {
+  background: var(--surface2);
+}
+
+/* The glyph in the accent's soft tint, as a tool's badge. */
+.m-start-card__glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: calc(var(--space-32) + var(--space-4));
+  block-size: calc(var(--space-32) + var(--space-4));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.m-start-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-start-card__title {
+  font-weight: 600;
+}
+
+.m-start-card__summary {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  line-height: 1.4;
 }
 
 /* The footer slot's commands and the screen's own line beneath them, quieter than everything above. */

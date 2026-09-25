@@ -166,6 +166,15 @@ export interface UiCommand {
    */
   readonly ribbonTitle?: MessageKey;
   /**
+   * One line a start-screen shortcut CARD shows under its title — v5-01's six cards (ADR-0068's `shortcut`
+   * slot). Absent, the card draws the title alone.
+   *
+   * **Every word of it is a claim about this build**, on the first screen a person sees: each was checked
+   * against the code before it was written (JOURNAL, 2026-09-25), and where the design's line said more than
+   * the build does, the line says less.
+   */
+  readonly summary?: MessageKey;
+  /**
    * The glyph a surface draws for this command, from the one closed set.
    *
    * **Required wherever the command is drawn as a control** — on the ribbon, the
