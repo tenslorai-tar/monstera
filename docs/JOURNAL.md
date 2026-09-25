@@ -892,6 +892,37 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — A recent file says where it is and when it was opened
+
+v5-01's second line under each recent card: *Today · Documents › Leases*. ADR-0100 decided it, and
+**two of its statements were not true of the code**, both recorded as a dated correction there:
+
+- *"When it was last opened here, which main records already."* `recentFiles.ts` stored `{ path, name }`
+  and no time. `record` now stamps `openedAt` from an injected clock; an entry an older build wrote reads
+  back with none, as does a time that is not an instant the contract's own rule accepts.
+- *"A location is DISPLAY TEXT made in main."* Built that way it would put *Documents* and *Downloads* —
+  words Windows translates — into user-facing text outside the catalogue (B9). So `DisplayLocation` is a
+  branded structure: `within`, a known folder as a key the page translates, and `folder`, one folder's
+  name as the person wrote it. §10.3's sentence holds of it unchanged, so no amendment.
+
+`displayLocationOf` names the DEEPEST known root containing the file's folder (OneDrive can hold
+Documents), compares by `path.relative` so a folder that only starts like a known one is not inside it,
+shows a working copy as its cloud alone, and never a drive: 11 cases, built from platform paths because
+CI runs them on Linux. `knownRoots` takes Electron's three folders, the `OneDrive` variable — the one
+observed on this machine; the consumer and work-or-school variants are read and unobserved — and a
+working-copy root per cloud, from the one `cloudWorkingDirectory` constant that cloud storage also takes.
+
+*No channel's parameters take one* is a walk over every renderer and preload channel's parameter
+schema, generic over zod's definition objects, with a positive control that finds the location inside
+`document.recent`'s answer. Planted in `document.openRecent`'s parameters behind `.optional()`, it went
+red. The card is **named** by the file and **described** by the line, so a screen reader announces
+*annual.pdf* and not the two run together; `App.test.tsx` reads both.
+
+The dates are the reader's calendar days in local time, rounded across a clock change: 23:50 is
+*Yesterday* at 00:10. Older openings take `Intl`'s short month and day in the catalogue's locale.
+
+---
+
 ## 2026-09-25 — A dropped file opens, and page script cannot send the drop's channel a path
 
 v5-01 says *"or drop a PDF anywhere in this window"*, and ADR-0099 decided how. **Reading the ADR

@@ -20,6 +20,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
+import type { KnownRoot } from './displayLocation.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
@@ -69,6 +70,12 @@ function serviceAnswering(outcome: OpenOutcome): {
   return { documents, opened };
 }
 
+/** When every opening in {@link harness} happens. */
+const OPENED_AT = new Date('2026-09-25T08:00:00.000Z');
+
+/** One known folder, platform-absolute for `displayLocation.test.ts`'s reason. */
+const RECENT_ROOTS: readonly KnownRoot[] = [{ within: 'documents', path: resolve('home', 'Documents'), showsFolder: true }];
+
 function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   const capabilities = new CapabilityRegistry();
   const { documents, opened } = serviceAnswering(outcome);
@@ -84,7 +91,8 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
   // rather than assert that a call was made.
-  const recent = createRecentFiles(createEphemeralSettings());
+  // A FIXED CLOCK, so a case asserts the instant an opening was stamped with rather than that one was.
+  const recent = createRecentFiles(createEphemeralSettings(), () => OPENED_AT);
   const handlers = createContractHandlers({
     assistant: INERT_ASSISTANT,
     appInfo,
@@ -100,6 +108,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
     pickDocument,
     recent,
+    recentRoots: RECENT_ROOTS,
     // RETURNED, so cases about persistence read the same object the handlers
     // wrote rather than a second copy. `settings.save` answering `stored: true`
     // is a claim about a surface having accepted the values, and a test that
@@ -387,6 +396,7 @@ describe('document.open', () => {
           unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
           pickDocument: () => Promise.resolve(null),
           recent: createRecentFiles(createEphemeralSettings()),
+          recentRoots: [],
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
           chatHistory: NO_HISTORY,
@@ -485,7 +495,7 @@ describe('document.openDropped (ADR-0099)', () => {
     expect(result).toStrictEqual({ ok: true, value: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'a.pdf' } });
     // THE HANDLE RESOLVES TO THE DROPPED PATH, not merely *a* handle was opened.
     expect(capabilities.resolve(handleOpened(opened))).toBe(DROPPED);
-    expect(recent.list()).toStrictEqual([{ path: DROPPED, name: 'a.pdf' }]);
+    expect(recent.list()).toStrictEqual([{ path: DROPPED, name: 'a.pdf', openedAt: OPENED_AT.toISOString() }]);
     expect(sessioned).toStrictEqual([A_DOC]);
   });
 
@@ -527,7 +537,8 @@ describe('the recent list', () => {
     // The store holds the path — it is main's and never crosses — and the name
     // beside it. Asserting both is what separates *recorded something* from
     // *recorded the right thing*.
-    expect(recent.list()).toStrictEqual([{ path: 'C:/docs/a.pdf', name: 'a.pdf' }]);
+    // AND WHEN, from the injected clock: the time is recorded at the opening, not read from the file.
+    expect(recent.list()).toStrictEqual([{ path: 'C:/docs/a.pdf', name: 'a.pdf', openedAt: OPENED_AT.toISOString() }]);
   });
 
   it('does NOT record a document that failed to open', async () => {
@@ -564,6 +575,24 @@ describe('the recent list', () => {
     const handle = listed.value.entries[0]?.handle;
     expect(handle === undefined ? undefined : capabilities.resolve(handle)).toBe('C:/docs/a.pdf');
     expect(JSON.stringify(listed.value)).not.toContain('C:/docs');
+  });
+
+  it('answers WHERE each entry is and WHEN it was opened, and still no path (ADR-0100)', async () => {
+    const path = resolve('home', 'Documents', 'Leases', 'a.pdf');
+    const { handlers } = harness(
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
+      () => Promise.resolve(path),
+    );
+    await handlers['document.open']({});
+
+    const listed = await handlers['document.recent']({});
+
+    if (!listed.ok) throw new Error('document.recent refused');
+    const [entry] = listed.value.entries;
+    // THE KNOWN FOLDER AS A KEY and the folder's own name — not *Documents › Leases* as text, and not the path.
+    expect(entry?.location).toStrictEqual({ within: 'documents', folder: 'Leases' });
+    expect(entry?.openedAt).toBe(OPENED_AT.toISOString());
+    expect(JSON.stringify(listed.value)).not.toContain(resolve('home'));
   });
 
   it('reopens by the handle the list carried, without a picker', async () => {
@@ -622,6 +651,7 @@ describe('the recent list', () => {
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent,
+      recentRoots: [],
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
@@ -679,7 +709,8 @@ describe('log.reveal', () => {
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
-      settings: createEphemeralSettings(),
+      recentRoots: [],
+settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null),
@@ -729,7 +760,8 @@ describe('ai.checkKey', () => {
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
-      settings: createEphemeralSettings(),
+      recentRoots: [],
+settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null),
@@ -826,7 +858,8 @@ describe('ai.translatePage (ADR-0097)', () => {
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
-      settings: createEphemeralSettings(),
+      recentRoots: [],
+settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null),
@@ -949,7 +982,8 @@ describe('ai.history (ADR-0093)', () => {
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
-      settings,
+      recentRoots: [],
+settings,
       secrets: createEphemeralSecrets(),
       chatHistory: history,
       pickSettingsFile: () => Promise.resolve(null),
@@ -1026,7 +1060,8 @@ describe('cloud.saveBack', () => {
       unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
       pickDocument: () => Promise.resolve(null),
       recent: createRecentFiles(createEphemeralSettings()),
-      settings: createEphemeralSettings(),
+      recentRoots: [],
+settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
       pickSettingsFile: () => Promise.resolve(null),

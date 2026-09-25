@@ -4,6 +4,7 @@
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument } from '@cantoo/pdf-lib';
+import { displayLocationSchema } from '@monstera/contract';
 import { MINIMUM_WINDOW, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
@@ -249,7 +250,14 @@ test('a message with a PLACEHOLDER renders its value, in the production build', 
   // interpolated string this case is about moved with it onto the per-document
   // control.
   await bridge(page, {
-    recent: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf' }],
+    recent: [
+      {
+        handle: asFileHandle('handle-a'),
+        name: 'annual report.pdf',
+        location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
+        openedAt: new Date().toISOString(),
+      },
+    ],
     lastExitClean: false,
     lastSession: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf' }],
   });
@@ -272,9 +280,21 @@ for (const look of LOOKS) {
     // offer is a list of controls now, and a screen with one row would not
     // exercise the arrangement a reader meets after losing several.
     await bridgeUnder(page, look, {
+      // A LOCATION AND A DATE ON EACH, and different kinds, so the card's second line is measured as it reads:
+      // a known folder with a folder, and a cloud alone with no date.
       recent: [
-        { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
-        { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
+        {
+          handle: asFileHandle('handle-a'),
+          name: 'annual report.pdf',
+          location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
+          openedAt: new Date().toISOString(),
+        },
+        {
+          handle: asFileHandle('handle-b'),
+          name: 'notes.pdf',
+          location: displayLocationSchema.parse({ within: 'onedrive', folder: null }),
+          openedAt: null,
+        },
       ],
       lastExitClean: false,
       lastSession: [

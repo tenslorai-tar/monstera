@@ -2326,16 +2326,37 @@ describe('App', () => {
       return { client, sent };
     }
 
+    /** A listed entry as `document.recent` answers one, with no place or time — what these cases are not about. */
+    function row(handle: string, name: string): { handle: string; name: string; location: unknown; openedAt: null } {
+      return { handle, name, location: { within: null, folder: null }, openedAt: null };
+    }
+
+    it('a card is NAMED by the file and DESCRIBED by when and where it was opened (ADR-0100)', async () => {
+      const { client } = withRecent({
+        entries: [
+          { handle: 'handle-a', name: 'annual.pdf', location: { within: 'documents', folder: 'Leases' }, openedAt: new Date().toISOString() },
+        ],
+        lastExitClean: true,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // BY ITS NAME ALONE: read from content, the name would be the file and the line run together.
+      const card = screen.getByRole('button', { name: 'annual.pdf' });
+      const described = document.getElementById(card.getAttribute('aria-describedby') ?? '');
+      expect(described?.textContent).toBe('Today · Documents › Leases');
+    });
+
     it('OPENS BY THE HANDLE the list carried, and no path is anywhere in reach', async () => {
       // The renderer names a file here, which nothing else in this build does —
       // and what makes it safe is that the value is a capability main minted,
       // not a path. A row that sent a name, or an index, would be a renderer
       // choosing a file.
       const { client, sent } = withRecent({
-        entries: [
-          { handle: 'handle-a', name: 'annual.pdf' },
-          { handle: 'handle-b', name: 'notes.pdf' },
-        ],
+        entries: [row('handle-a', 'annual.pdf'), row('handle-b', 'notes.pdf')],
         lastExitClean: true,
         lastSession: [],
       });
@@ -2378,7 +2399,7 @@ describe('App', () => {
       // surface still inferring the offer from `entries[0]` would offer
       // `annual.pdf`, which is not in the session at all.
       const { client, sent } = withRecent({
-        entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
+        entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: false,
         lastSession: [
           { handle: 'handle-b', name: 'draft.pdf' },
@@ -2415,7 +2436,7 @@ describe('App', () => {
       // rows under it, which reads as a defect rather than as *nothing to
       // recover*.
       const { client } = withRecent({
-        entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
+        entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: false,
         lastSession: [],
       });
@@ -2439,7 +2460,7 @@ describe('App', () => {
       // is deliberate: a control whose input the correct build also refuses
       // for a second reason separates nothing.
       const { client } = withRecent({
-        entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
+        entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: true,
         lastSession: [{ handle: 'handle-b', name: 'draft.pdf' }],
       });
@@ -2476,7 +2497,7 @@ describe('App', () => {
         if (id === 'document.recent') {
           return Promise.resolve(
             ok({
-              entries: [{ handle: 'stale', name: 'annual.pdf' }],
+              entries: [{ handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null }],
               lastExitClean: true,
               lastSession: [],
             }),

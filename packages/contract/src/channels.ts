@@ -787,6 +787,38 @@ export const MAX_FLAT_FIELD_LABEL = 128;
  */
 export const MAX_DOCUMENT_NAME_LENGTH = 255;
 
+/** The folders a recent file's location may be named by: the three a person keeps files in, and each cloud's. */
+export const KNOWN_FOLDERS = ['documents', 'downloads', 'desktop', ...CLOUD_PROVIDER_IDS] as const;
+
+/** One of {@link KNOWN_FOLDERS}. */
+export type KnownFolder = (typeof KNOWN_FOLDERS)[number];
+
+/**
+ * Where a recent file is, as main describes it for display
+ * ([ADR-0100](../../../docs/DECISIONS/0100-a-recent-file-shows-where-it-is-and-a-preview-both-from-main.md)).
+ *
+ * ## A structure, not text, so the page translates the part that is words
+ *
+ * `within` is the known folder the file is under, as a KEY — the page says *Documents* or *OneDrive* in
+ * the reader's language — and `folder` is the name of the folder the file is in, which is the person's own
+ * text and is shown as it is. Neither is ever a drive or a path: at most those two, and either may be
+ * absent (a file directly in a known folder has no `folder`; a working copy's folder is an internal id and
+ * is not shown).
+ *
+ * **Branded**, so the page cannot build one: it only ever holds what main's answer parsed into. No
+ * channel's parameters take one, which `channels.test.ts` asserts by walking every parameter schema.
+ */
+export const displayLocationSchema = z
+  .object({
+    within: z.enum(KNOWN_FOLDERS).nullable(),
+    folder: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
+  })
+  .strict()
+  .brand<'DisplayLocation'>();
+
+/** See {@link displayLocationSchema}. */
+export type DisplayLocation = z.infer<typeof displayLocationSchema>;
+
 /**
  * How many recent documents may cross.
  *
@@ -1354,6 +1386,13 @@ export const channels = {
           z.object({
             handle: fileHandleSchema,
             name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+            /** Where it is, for display only (ADR-0100). */
+            location: displayLocationSchema,
+            /**
+             * When it was last opened HERE — not the file's modification time — or `null` for an entry an
+             * older build recorded without one.
+             */
+            openedAt: annotationInstantSchema.nullable(),
           }),
         )
         .max(MAX_RECENT_ENTRIES)

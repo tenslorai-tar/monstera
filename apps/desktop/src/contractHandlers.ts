@@ -55,6 +55,7 @@ import {
 import type { Assistant } from './assistant.js';
 import type { ChatHistory } from './chatHistory.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
+import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
@@ -204,6 +205,11 @@ export function createContractHandlers(deps: {
   readonly pickDocument: PickDocument;
   /** The recent-files list, which is also where the clean-exit marker lives. */
   readonly recent: RecentFiles;
+  /**
+   * The folders a recent file's location is named by (ADR-0100). REQUIRED, for `titleBarOverlay`'s reason:
+   * an optional one defaulting to none would show every file as *under no known folder* and look correct.
+   */
+  readonly recentRoots: readonly KnownRoot[];
   readonly settings: SettingsSurface;
   /**
    * Where a `secret` setting lives, which is not the settings file.
@@ -2555,6 +2561,7 @@ async function openPath(
 function recentHandler(deps: {
   readonly capabilities: CapabilityRegistry;
   readonly recent: RecentFiles;
+  readonly recentRoots: readonly KnownRoot[];
 }): ContractHandlers['document.recent'] {
   return () =>
     Promise.resolve(
@@ -2567,6 +2574,9 @@ function recentHandler(deps: {
         entries: deps.recent.list().map((entry) => ({
           handle: deps.capabilities.mint(entry.path),
           name: entry.name,
+          // DERIVED HERE, from the path that never crosses: a known folder and one folder's name (ADR-0100).
+          location: displayLocationOf(entry.path, deps.recentRoots),
+          openedAt: entry.openedAt,
         })),
         lastExitClean: deps.recent.lastExitClean(),
         // THE SAME MINTING, for the same reason. These entries are paths the

@@ -1,8 +1,9 @@
 import { useLingui } from '@lingui/react';
-import type { ContractClient } from '@monstera/contract';
+import type { ChannelResult, ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion, FileHandle } from '@monstera/shared';
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useId, useState } from 'react';
 
+import { recentLine } from './recentLine.js';
 import { Button } from './primitives/Button.js';
 import {
   RECENT_EMPTY,
@@ -158,15 +159,12 @@ export function RecentFiles({
             // share a name, and a name key would make React reuse one row's
             // state for the other.
             <li key={entry.handle}>
-              <button
-                type="button"
-                className="m-recent-item"
-                onClick={() => {
+              <RecentCard
+                entry={entry}
+                onOpen={() => {
                   void open(entry.handle);
                 }}
-              >
-                {entry.name}
-              </button>
+              />
             </li>
           ))}
         </ul>
@@ -181,6 +179,41 @@ interface RecentRow {
   readonly name: string;
 }
 
+/** An entry of the list, as `document.recent` answers it. */
+type ListedRow = ChannelResult<'document.recent'>['entries'][number];
+
+/**
+ * One recent file as v5-01 draws it: its name, and a second line saying when it was opened here and where it
+ * is, both from main (ADR-0100).
+ *
+ * **The name NAMES the button and the line DESCRIBES it.** Read from content, the accessible name would be
+ * both run together — *annual.pdf Today · Documents › Leases* — which is not what the control is called.
+ */
+function RecentCard({ entry, onOpen }: { readonly entry: ListedRow; readonly onOpen: () => void }): ReactElement {
+  const { _, i18n } = useLingui();
+  const nameId = useId();
+  const lineId = useId();
+  const line = recentLine(entry, new Date(), i18n.locale, (key, values) => _(key, values));
+  return (
+    <button
+      type="button"
+      className="m-recent-item"
+      aria-labelledby={nameId}
+      aria-describedby={line === null ? undefined : lineId}
+      onClick={onOpen}
+    >
+      <span className="m-recent-item__name" id={nameId}>
+        {entry.name}
+      </span>
+      {line === null ? null : (
+        <span className="m-recent-item__line" id={lineId}>
+          {line}
+        </span>
+      )}
+    </button>
+  );
+}
+
 /**
  * What the surface is showing.
  *
@@ -192,7 +225,7 @@ type RecentState =
   | { readonly kind: 'idle' }
   | {
       readonly kind: 'listed';
-      readonly entries: readonly RecentRow[];
+      readonly entries: readonly ListedRow[];
       readonly lastExitClean: boolean;
       /**
        * What was open when the previous run ended — main's record, not a guess.

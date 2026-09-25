@@ -80,3 +80,24 @@ tell a third party every time Monstera starts.
   removes an entry also removes its picture. A case lists a removal path and asserts the picture is gone.
 - `DisplayLocation` joins the branded types. A case asserts no channel's parameter schema accepts it.
 - `NOTICE` gains Marcellus's OFL text, and `proof:licences` sees a new bundled asset.
+
+## Correction, 2026-09-25 — two statements of Decision 1 were not true of the code, and the location is a structure
+
+**"When the file was last opened here, which main records already."** It did not. `recentFiles.ts`
+stored `{ path, name }` and nothing else, so there was no time to show. The build adds `openedAt`,
+stamped by `record` from an injected clock and read back through the contract's own instant rule; an
+entry a build before this one wrote has no time and is shown with none, rather than given one.
+
+**"A location is DISPLAY TEXT made in main … joined by *"›"*."** Built as text, it would put
+*Documents*, *Downloads* and *Desktop* — Windows' names, which Windows itself translates — into
+user-facing text outside the catalogue, which B9 forbids. So `DisplayLocation` is a branded
+**structure**: `within`, the known folder as a key the page translates, and `folder`, the one folder's
+name as the person wrote it. The page joins them with the catalogue's own separator. Everything else in
+Decision 1 holds: at most two parts, never a drive or a path, branded so the page cannot build one.
+`§10.3`'s wording — *"a branded `DisplayLocation` main writes and no channel accepts"* — is true of the
+structure as it was of the text, so the law needs no amendment.
+
+*"A case asserts no channel's parameter schema accepts it"* is `channels.test.ts`' walk over every
+renderer and preload channel's parameters, generic over zod's definition objects, with a positive control
+that finds the location inside `document.recent`'s answer. A location added to `document.openRecent`'s
+parameters, wrapped in `.optional()`, reddened it.

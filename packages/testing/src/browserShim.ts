@@ -640,7 +640,7 @@ export interface BrowserShimOptions {
    * must render — and a default list would make every case that never mentions
    * recent files show one.
    */
-  readonly recent?: readonly { readonly handle: FileHandle; readonly name: string }[];
+  readonly recent?: ChannelResult<'document.recent'>['entries'];
 
   /**
    * Whether the previous run exited cleanly. Defaults to `true`.

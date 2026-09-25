@@ -8,6 +8,8 @@ import {
   channelIds,
   channels,
   type ContractHandlers,
+  displayLocationSchema,
+  preloadChannels,
 } from './channels.js';
 import type { Incident } from './incident.js';
 import { AZURE_KEY_SETTING_ID } from './schemas.js';
@@ -83,7 +85,15 @@ const handlers: ContractHandlers = {
   'document.recent': () =>
     Promise.resolve(
       ok({
-        entries: [{ handle: asFileHandle('handle-1'), name: 'annual.pdf' }],
+        entries: [
+          {
+            handle: asFileHandle('handle-1'),
+            name: 'annual.pdf',
+            // BOTH HALVES SET, for this fixture's reason: `null` in either is what a boundary that dropped it produces.
+            location: displayLocationSchema.parse({ within: 'documents', folder: 'Leases' }),
+            openedAt: '2026-09-25T08:00:00.000Z',
+          },
+        ],
         lastExitClean: false,
         // TWO ENTRIES, and neither is the newest recent one. That is the whole
         // point of recording a session rather than inferring it: a fixture
@@ -606,6 +616,37 @@ describe('the shipping contract, exercised through its own map', () => {
     // which would take the whole feature out at the boundary with three green
     // refusals reading as rigour.
     expect(await scaled(0.5)).toBe(true);
+  });
+});
+
+/**
+ * Whether `target` is reachable inside `schema`, by walking zod's own definition objects.
+ *
+ * Generic on purpose: every property of a `_zod.def` that is an object or an array is followed, so an
+ * object's shape, an array's element, a union's options and a wrapper's inner type are all reached without
+ * this knowing their names. A LAZY schema's getter is a function and is not followed — no channel declares
+ * one, and the positive control below is what would say so if the walk stopped seeing.
+ */
+function reaches(schema: unknown, target: unknown, seen = new Set<unknown>()): boolean {
+  if (schema === target) return true;
+  if (typeof schema !== 'object' || schema === null || seen.has(schema)) return false;
+  seen.add(schema);
+  const def = (schema as { _zod?: { def?: unknown } })._zod?.def ?? schema;
+  const children = Array.isArray(def) ? def : Object.values(def as Record<string, unknown>);
+  return children.some((child) => reaches(child, target, seen));
+}
+
+describe('DisplayLocation is display-only (ADR-0100)', () => {
+  it('the walk can see: it finds the location inside document.recent’s ANSWER', () => {
+    // THE POSITIVE CONTROL. A walk that followed nothing would pass the case below for every channel.
+    expect(reaches(channels['document.recent'].result, displayLocationSchema)).toBe(true);
+  });
+
+  it('no channel’s PARAMETERS take one, renderer or preload', () => {
+    const taking = [...Object.entries(channels), ...Object.entries(preloadChannels)]
+      .filter(([, definition]) => reaches(definition.params, displayLocationSchema))
+      .map(([id]) => id);
+    expect(taking).toStrictEqual([]);
   });
 });
 

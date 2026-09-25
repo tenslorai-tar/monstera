@@ -716,6 +716,13 @@ export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const START_NO_PATH = messageKey('surface.start.no-path');
 export const START_DROP_HINT = messageKey('surface.start.drop-hint');
 export const DROP_OVERLAY = messageKey('surface.drop.overlay');
+export const RECENT_TODAY = messageKey('surface.recent.today');
+export const RECENT_YESTERDAY = messageKey('surface.recent.yesterday');
+export const RECENT_IN_DOCUMENTS = messageKey('surface.recent.in-documents');
+export const RECENT_IN_DOWNLOADS = messageKey('surface.recent.in-downloads');
+export const RECENT_IN_DESKTOP = messageKey('surface.recent.in-desktop');
+export const RECENT_WHERE_NESTED = messageKey('surface.recent.where-nested');
+export const RECENT_META = messageKey('surface.recent.meta');
 export const RECENT_LABEL = messageKey('surface.recent.label');
 export const RECENT_EMPTY = messageKey('surface.recent.empty');
 export const RECENT_MISSING = messageKey('surface.recent.missing');
@@ -2193,6 +2200,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // v5-01's line under Open PDF, word for word.
   [START_DROP_HINT]: 'or drop a PDF anywhere in this window',
   [DROP_OVERLAY]: 'Drop to open',
+  // A RECENT CARD'S SECOND LINE, v5-01's shape: *Today · Documents › Leases*. The known folders are
+  // Windows' own names for them; the folder after the arrow is the person's own and is never translated.
+  [RECENT_TODAY]: 'Today',
+  [RECENT_YESTERDAY]: 'Yesterday',
+  [RECENT_IN_DOCUMENTS]: 'Documents',
+  [RECENT_IN_DOWNLOADS]: 'Downloads',
+  [RECENT_IN_DESKTOP]: 'Desktop',
+  [RECENT_WHERE_NESTED]: '{within} › {folder}',
+  [RECENT_META]: '{when} · {where}',
   [RECENT_LABEL]: 'Recent documents',
   [RECENT_EMPTY]: 'Nothing opened yet.',
   // NAMES WHAT HAPPENED rather than blaming the reader. A row goes stale

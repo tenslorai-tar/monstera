@@ -41,6 +41,7 @@ import {
 import { removeRetiredCaches } from './retiredCaches.js';
 import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
+import { knownRoots } from './displayLocation.js';
 import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -142,6 +143,10 @@ startShell(() => {
   void removeRetiredCaches(app.getPath('userData'), (detail) => {
     log.write('retired-cache', detail);
   });
+
+  // WHERE CLOUD WORKING COPIES GO, named once: cloud storage writes there, and a recent file under it is
+  // shown as its cloud rather than as an internal folder id (ADR-0100).
+  const cloudWorkingDirectory = join(app.getPath('userData'), 'cloud');
 
   return createShellDependencies({
     appInfo: {
@@ -335,7 +340,7 @@ startShell(() => {
     // value is logged here or anywhere: `readCloudClients` answers values or `null`, and says nothing.
     cloud: {
       clients: readCloudClients(process.env, null),
-      workingDirectory: join(app.getPath('userData'), 'cloud'),
+      workingDirectory: cloudWorkingDirectory,
     },
     // The recent list, beside the settings and in its own document. Not IN the
     // settings file, and that is invariant L2 rather than tidiness:
@@ -343,6 +348,15 @@ startShell(() => {
     // stored there would be a path in the renderer with nothing having decided
     // to send it.
     recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
+    // WHERE a recent file is, for display (ADR-0100): the known folders are Electron's answers and the
+    // environment's, resolved here for the working directory's reason.
+    recentRoots: knownRoots({
+      documents: app.getPath('documents'),
+      downloads: app.getPath('downloads'),
+      desktop: app.getPath('desktop'),
+      env: process.env,
+      cloudWorkingDirectory,
+    }),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved above and handed down. Under

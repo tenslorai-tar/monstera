@@ -405,27 +405,52 @@ textarea {
   color: var(--muted);
 }
 
+/* v5-01's recent cards: four across at the design's width, fewer as the window narrows, each one card's width
+   rather than stretched, so a list of two does not become two banners. */
 .m-recent-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(24ch, 1fr));
+  gap: var(--space-8);
+  inline-size: min(100%, 110ch);
 }
 
 .m-recent-item {
-  background: none;
-  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding: var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: var(--bg);
   color: var(--text);
+  text-align: start;
   cursor: pointer;
-  padding: var(--space-2) var(--space-8);
 }
 
 .m-recent-item:hover,
 .m-recent-item:focus-visible {
   background: var(--surface2);
+}
+
+/* One line each, cut with an ellipsis: the full name is the button's accessible name all the same. */
+.m-recent-item__name,
+.m-recent-item__line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-recent-item__name {
+  font-weight: 600;
+}
+
+.m-recent-item__line {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
 }
 
 /*

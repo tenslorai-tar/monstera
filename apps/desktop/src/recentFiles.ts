@@ -1,3 +1,4 @@
+import { annotationInstantSchema } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
 import type { SettingsSurface } from './settingsFile.js';
@@ -41,11 +42,21 @@ export interface RecentEntry {
   readonly name: string;
 }
 
+/**
+ * An entry as the list holds it: the document, and WHEN it was last opened here
+ * ([ADR-0100](../../../docs/DECISIONS/0100-a-recent-file-shows-where-it-is-and-a-preview-both-from-main.md)'s
+ * correction). `null` for an entry a build before 2026-09-25 recorded, which kept no time — shown with no
+ * date rather than given one it never had.
+ */
+export interface ListedRecent extends RecentEntry {
+  readonly openedAt: string | null;
+}
+
 /** What the handlers and the shutdown path need. */
 export interface RecentFiles {
   /** The list, newest first. */
-  list(): readonly RecentEntry[];
-  /** Moves a document to the front, or adds it. */
+  list(): readonly ListedRecent[];
+  /** Moves a document to the front, or adds it, stamped with the time it was opened. */
   record(entry: RecentEntry): void;
   /** Drops one, for a file that is no longer there. */
   forget(path: string): void;
@@ -111,8 +122,9 @@ export const RECENT_FILE = 'recent.json';
  * @param file the document, from `createJsonFile`. Injected rather than opened
  *   here for `SettingsSurface`'s reason: the directory is Electron's question
  *   and this module answers a different one.
+ * @param now the clock an opening is stamped from, injected so a case can assert the instant recorded
  */
-export function createRecentFiles(file: SettingsSurface): RecentFiles {
+export function createRecentFiles(file: SettingsSurface, now: () => Date = () => new Date()): RecentFiles {
   const stored = file.read();
   // READ ONCE, at construction, and the marker is answered from THIS copy for
   // the rest of the run. The first thing below is a write that clears it.
@@ -165,7 +177,10 @@ export function createRecentFiles(file: SettingsSurface): RecentFiles {
       // must not fill the list with one document, and an entry whose name has
       // changed — the file was renamed and reopened by its new name — takes the
       // newer one.
-      entries = [entry, ...entries.filter((held) => held.path !== entry.path)].slice(0, MAX_RECENT);
+      entries = [
+        { path: entry.path, name: entry.name, openedAt: now().toISOString() },
+        ...entries.filter((held) => held.path !== entry.path),
+      ].slice(0, MAX_RECENT);
       persist(false);
     },
     forget: (path) => {
@@ -201,15 +216,18 @@ export function createRecentFiles(file: SettingsSurface): RecentFiles {
  * do about it. Entries are filtered individually rather than the list being
  * rejected whole, so one corrupt row does not cost the other nine.
  */
-function readEntries(value: unknown): readonly RecentEntry[] {
+function readEntries(value: unknown): readonly ListedRecent[] {
   if (!Array.isArray(value)) return [];
-  const entries: RecentEntry[] = [];
+  const entries: ListedRecent[] = [];
   for (const row of value) {
     if (typeof row !== 'object' || row === null) continue;
-    const { path, name } = row as { path?: unknown; name?: unknown };
+    const { path, name, openedAt } = row as { path?: unknown; name?: unknown; openedAt?: unknown };
     if (typeof path !== 'string' || typeof name !== 'string') continue;
     if (path === '' || name === '') continue;
-    entries.push({ path, name });
+    // THE CHANNEL'S OWN RULE for an instant, so a time this file holds is one `document.recent` can carry; an
+    // absent or unreadable one is no time at all, and costs the entry nothing else.
+    const instant = annotationInstantSchema.safeParse(openedAt);
+    entries.push({ path, name, openedAt: instant.success ? instant.data : null });
   }
   return entries.slice(0, MAX_RECENT);
 }

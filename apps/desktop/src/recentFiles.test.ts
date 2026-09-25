@@ -22,6 +22,10 @@ function aFile(initial: Readonly<Record<string, unknown>> = {}): SettingsSurface
   };
 }
 
+/** Two instants a fixed clock answers, a day apart. */
+const AT = new Date('2026-09-24T08:00:00.000Z');
+const LATER = new Date('2026-09-25T08:00:00.000Z');
+
 describe('the recent list', () => {
   it('AGREES WITH THE BOUNDARY about how many entries may cross', () => {
     // FOUND BY THE STAGE AUDIT of `87540a5..HEAD`, and the finding is the
@@ -66,12 +70,41 @@ describe('the recent list', () => {
     // The same file opened by a new name: one row, and the name a reader will
     // recognise. Keeping the first name would show them a file that no longer
     // exists under that name.
-    const recent = createRecentFiles(aFile());
+    const recent = createRecentFiles(aFile(), () => AT);
 
     recent.record({ path: 'C:/a.pdf', name: 'draft.pdf' });
     recent.record({ path: 'C:/a.pdf', name: 'final.pdf' });
 
-    expect(recent.list()).toStrictEqual([{ path: 'C:/a.pdf', name: 'final.pdf' }]);
+    expect(recent.list()).toStrictEqual([{ path: 'C:/a.pdf', name: 'final.pdf', openedAt: AT.toISOString() }]);
+  });
+
+  it('STAMPS each opening with the time it happened, and a reopening with the newer time (ADR-0100)', () => {
+    let now = AT;
+    const recent = createRecentFiles(aFile(), () => now);
+
+    recent.record({ path: 'C:/a.pdf', name: 'a.pdf' });
+    now = LATER;
+    recent.record({ path: 'C:/a.pdf', name: 'a.pdf' });
+
+    // THE SECOND TIME, not the first: *last opened here* is what the card says.
+    expect(recent.list()).toStrictEqual([{ path: 'C:/a.pdf', name: 'a.pdf', openedAt: LATER.toISOString() }]);
+  });
+
+  it('reads an entry an OLDER build wrote, with no time, as no time rather than dropping it', () => {
+    // And a time that is not an instant the channel accepts is no time either: the entry keeps its place.
+    const recent = createRecentFiles(
+      aFile({
+        entries: [
+          { path: 'C:/old.pdf', name: 'old.pdf' },
+          { path: 'C:/odd.pdf', name: 'odd.pdf', openedAt: 'last Tuesday' },
+        ],
+      }),
+    );
+
+    expect(recent.list()).toStrictEqual([
+      { path: 'C:/old.pdf', name: 'old.pdf', openedAt: null },
+      { path: 'C:/odd.pdf', name: 'odd.pdf', openedAt: null },
+    ]);
   });
 
   it('is bounded, and drops the OLDEST', () => {
@@ -101,10 +134,10 @@ describe('the recent list', () => {
 
   it('SURVIVES A RESTART, which is the whole point of the file', () => {
     const file = aFile();
-    createRecentFiles(file).record({ path: 'C:/a.pdf', name: 'a.pdf' });
+    createRecentFiles(file, () => AT).record({ path: 'C:/a.pdf', name: 'a.pdf' });
 
-    // A second store over the same document is what a second launch is.
-    expect(createRecentFiles(file).list()).toStrictEqual([{ path: 'C:/a.pdf', name: 'a.pdf' }]);
+    // A second store over the same document is what a second launch is — and the time comes back with it.
+    expect(createRecentFiles(file).list()).toStrictEqual([{ path: 'C:/a.pdf', name: 'a.pdf', openedAt: AT.toISOString() }]);
   });
 
   describe('the clean-exit marker', () => {

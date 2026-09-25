@@ -123,6 +123,7 @@ import {
   MAIN_DOCUMENT_BYTES_CEILING,
 } from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
+import type { KnownRoot } from './displayLocation.js';
 import {
   lazyBarcodeWriter,
   DocumentCommands,
@@ -553,6 +554,12 @@ export interface ShellComposition {
   /** The recent-files list. Required for `settings`' reason. */
   readonly recent: RecentFiles;
   /**
+   * The folders a recent file's location is named by (ADR-0100), resolved in `entry.ts` because they are
+   * Electron's answers. Absent, no folder is known and every location is the folder a file is in — every
+   * unit test's position.
+   */
+  readonly recentRoots?: readonly KnownRoot[];
+  /**
    * The Win32 surfaces the engine host is created through, or `null`.
    *
    * `null` wherever they do not exist — every unit test, every non-Windows run —
@@ -668,6 +675,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     cloud: cloudComposition,
     sendEvent,
     recent,
+    recentRoots = [],
     enginePlatform = null,
     pdfiumPlatform = null,
     composePlatform = null,
@@ -1356,6 +1364,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       unlockDocument,
       pickDocument,
       recent,
+      recentRoots,
       // CLOUD STORAGE (ADR-0091), over the same secret store and the same browser opener as
       // DocuSign's sign-in. A working copy is written by the save pipeline's streamed write, checked
       // against open documents like any copy, into a folder made for it.

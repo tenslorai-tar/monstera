@@ -89,6 +89,13 @@ export {
   textBlockStyleSchema,
   // THE PRELOAD'S CHANNEL (ADR-0099): main registers it, and the page validates its answer with it.
   type DroppedOpenOutcome,
+  // A RECENT FILE'S PLACE (ADR-0100): main builds it, the page shows it, and no channel takes one.
+  type DisplayLocation,
+  displayLocationSchema,
+  KNOWN_FOLDERS,
+  type KnownFolder,
+  // NTFS's component bound, which main's location derivation drops a longer folder name at.
+  MAX_DOCUMENT_NAME_LENGTH,
   type MainHandlers,
   MAX_DROPPED_PATH_LENGTH,
   type PreloadChannels,

@@ -113,6 +113,7 @@ function handlers() {
         throw new Error('registration cases must not reach the recent list');
       },
     },
+    recentRoots: [],
     settings: {
       read: () => {
         throw new Error('registration cases must not reach the settings surface');

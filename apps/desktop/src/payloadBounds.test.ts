@@ -148,6 +148,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
     pickDocument: () => Promise.resolve(null),
     recent: createRecentFiles(createEphemeralSettings()),
+    recentRoots: [],
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
     chatHistory: noChatHistory(),
