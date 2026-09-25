@@ -98,6 +98,7 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
   DocumentCommands,
   NetworkKeyMissing,
@@ -1112,6 +1113,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
           recentRoots: [],
           recentPictures: NO_RECENT_PICTURES,
+          reviewPrompt: NO_REVIEW_PROMPT,
           settings: { read: () => ({}), write: () => undefined },
           secrets: { available: () => false, read: () => ({}), write: () => undefined },
           chatHistory: noChatHistory(),
@@ -1654,6 +1656,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
         recentRoots: [],
         recentPictures: NO_RECENT_PICTURES,
+        reviewPrompt: NO_REVIEW_PROMPT,
         settings: { read: () => ({}), write: () => undefined },
         secrets: { available: () => false, read: () => ({}), write: () => undefined },
         chatHistory: noChatHistory(),

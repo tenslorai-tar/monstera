@@ -152,6 +152,9 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // here reaches it; without an answer of the channel's own shape the envelope fails validation
   // and each case carries an unhandled rejection.
   'window.closeListening': { acknowledged: true },
+  // E3's rating prompt asks once per mount. Not due is every case's position: a banner here would put four
+  // buttons in front of cases that are about something else.
+  'app.reviewPrompt': { due: false },
 };
 
 function recordingClient(answer: unknown): {
@@ -188,12 +191,15 @@ function commandCalls(calls: readonly string[]): readonly string[] {
   // close subscription exists (`windowClose.ts`), which is the shell wiring itself up rather than a
   // reader using a control. That it is sent AT ALL is `AppClose.test.tsx`' case, where the
   // announcement is the subject instead of noise to be removed.
+  // `app.reviewPrompt` joins them the same way: the shell asks main once whether the rating prompt is due
+  // (E3). What the prompt then sends is `ReviewPrompt.test.tsx`' subject.
   return calls.filter(
     (id) =>
       id !== 'document.recent' &&
       id !== 'settings.loadSecrets' &&
       id !== 'app.info' &&
-      id !== 'window.closeListening',
+      id !== 'window.closeListening' &&
+      id !== 'app.reviewPrompt',
   );
 }
 
@@ -500,6 +506,40 @@ describe('App', () => {
     });
 
     expect(commandCalls(calls)).toStrictEqual([]);
+  });
+
+  it('*Rate Us* is REGISTERED: the title bar draws it, and it sends the rating answer (E3)', async () => {
+    // `rateUs.test.ts` proves the command; this proves the shell registered it, which is the half a
+    // tested command beside a missing registration leaves out. The start screen draws the title bar.
+    const { client, calls } = recordingClient({ opened: true });
+    render(<App client={client} settings={freshSettings()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // NOT DUE here, so the prompt's *Rate now* is absent and this button is the only way to rate — the
+    // control for the mounting case below.
+    expect(screen.queryByRole('button', { name: 'Rate now' })).toBeNull();
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Rate Us' }).click();
+      await Promise.resolve();
+    });
+
+    expect(commandCalls(calls)).toStrictEqual(['app.review']);
+  });
+
+  it('the rating prompt is MOUNTED, and drawn only when main says one is due', async () => {
+    // What each answer sends is `ReviewPrompt.test.tsx`'; this is that the shell mounts it at all, against
+    // the not-due answer every other case here gets.
+    const client = createClient(channels, (id) =>
+      Promise.resolve(ok(id === 'app.reviewPrompt' ? { due: true } : (OTHER_ANSWERS[id] ?? { kind: 'cancelled' }))),
+    );
+    render(<App client={client} settings={freshSettings()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('button', { name: 'Rate now' })).toBeTruthy();
   });
 
   it('shows the page surface once a document is open, and stops showing the start screen', async () => {

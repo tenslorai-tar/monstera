@@ -57,6 +57,7 @@ import type { ChatHistory } from './chatHistory.js';
 import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
+import type { ReviewPrompt } from './engagement.js';
 import type { RecentFiles } from './recentFiles.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import type { SettingsSurface } from './settingsFile.js';
@@ -213,6 +214,8 @@ export function createContractHandlers(deps: {
   readonly recentRoots: readonly KnownRoot[];
   /** The recent list's pictures of first pages (ADR-0100). REQUIRED, for `recentRoots`' reason. */
   readonly recentPictures: RecentPictures;
+  /** The Store rating prompt (E3). REQUIRED, for `recentRoots`' reason. */
+  readonly reviewPrompt: ReviewPrompt;
   readonly settings: SettingsSurface;
   /**
    * Where a `secret` setting lives, which is not the settings file.
@@ -319,6 +322,9 @@ export function createContractHandlers(deps: {
     },
     // THE LIST'S OWN *Clear list*: the store empties itself and tells the pictures which paths left.
     'document.clearRecent': () => Promise.resolve(ok({ cleared: deps.recent.clear() })),
+    // THE STORE RATING PROMPT (E3): main's record decides, and an answer is recorded there alone.
+    'app.reviewPrompt': () => Promise.resolve(ok({ due: deps.reviewPrompt.due() })),
+    'app.review': async ({ action }) => ok({ opened: await deps.reviewPrompt.answer(action) }),
     'document.openRecent': openRecentHandler(deps),
     'document.close': closeHandler({ documents: deps.documents, recent: deps.recent }),
     'document.unsaved': unsavedHandler(deps.documents),

@@ -19,6 +19,7 @@ import {
   OPTIMIZE_SETTINGS,
   ENGINE_HOST_MAX_IN_FLIGHT,
   RECENT_PREVIEWS_SETTING_ID,
+  REVIEW_PROMPTS_SETTING_ID,
   type ClientApi,
   type IncidentSink,
   createClient,
@@ -126,6 +127,7 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
+import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import {
   lazyBarcodeWriter,
   DocumentCommands,
@@ -568,6 +570,16 @@ export interface ShellComposition {
    */
   readonly recentPictureFiles?: PictureFiles;
   /**
+   * The rating prompt's record (E3), `engagement.json` under `userData`, resolved in `entry.ts`. Absent, no
+   * prompt is ever due — every unit test's position, since a test that launched twice would be asked.
+   */
+  readonly engagementFile?: SettingsSurface;
+  /**
+   * Opens the Store application's review page for this product — `shell.openExternal` of the one constant
+   * `STORE_REVIEW_URI`, which only `entry.ts` may reach. Used by the Store build; absent, the web listing.
+   */
+  readonly openStoreReview?: () => Promise<boolean>;
+  /**
    * The Win32 surfaces the engine host is created through, or `null`.
    *
    * `null` wherever they do not exist — every unit test, every non-Windows run —
@@ -685,6 +697,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     recent,
     recentRoots = [],
     recentPictureFiles,
+    engagementFile,
+    openStoreReview,
     enginePlatform = null,
     pdfiumPlatform = null,
     composePlatform = null,
@@ -1399,6 +1413,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       recent,
       recentRoots,
       recentPictures,
+      // THE STORE RATING PROMPT (E3). The Store build opens the Store application's own review page; every other
+      // build opens the web listing, through the one HTTPS-only route pages already take. No record, no prompt.
+      reviewPrompt:
+        engagementFile === undefined
+          ? NO_REVIEW_PROMPT
+          : reviewPrompt(
+              createEngagement(engagementFile, {
+                now: () => new Date(),
+                enabled: () => settings.read()[REVIEW_PROMPTS_SETTING_ID] !== false,
+              }),
+              appInfo.installChannel === 'store' && openStoreReview !== undefined
+                ? openStoreReview
+                : () => openWebPage('store-listing', openInBrowser),
+            ),
       // CLOUD STORAGE (ADR-0091), over the same secret store and the same browser opener as
       // DocuSign's sign-in. A working copy is written by the save pipeline's streamed write, checked
       // against open documents like any copy, into a folder made for it.

@@ -33,11 +33,23 @@ describe('openWebPage', () => {
     expect(opened).toStrictEqual(['https://monsterapdf.com/donate']);
   });
 
+  it('opens the Store listing at the product id Partner Center assigned', async () => {
+    const { open, opened } = opener();
+
+    await expect(openWebPage('store-listing', open)).resolves.toBe(true);
+
+    // THE WHOLE ADDRESS, for the donation case's reason. The id is the owner's, given 2026-09-25.
+    expect(opened).toStrictEqual(['https://apps.microsoft.com/detail/9NHV3B1PV3XS']);
+  });
+
   it('a page this build has no address for OPENS NOTHING, rather than opening something wrong', async () => {
     const { open, opened } = opener();
 
-    // The Store listing needs a product id Partner Center assigns, and this build has none.
-    await expect(openWebPage('store-listing', open)).resolves.toBe(false);
+    // No shipped build lacks an address today, so the table is the case's: the donation page present, so
+    // a version that opened the wrong entry would reach the opener rather than agree by opening nothing.
+    await expect(
+      openWebPage('store-listing', open, { donate: 'https://monsterapdf.com/donate', 'store-listing': '' }),
+    ).resolves.toBe(false);
 
     // ASSERT THE CALL, not the answer: a version that handed `''` to the opener would also resolve
     // `false` if the opener refused it, and would have reached `shell.openExternal` on the way.
@@ -50,6 +62,8 @@ describe('openWebPage', () => {
     // the same function the application does, so an address added without a scheme fails here.
     const { open, opened } = opener();
     await openWebPage('donate', open);
+    await openWebPage('store-listing', open);
+    expect(opened).toHaveLength(2);
     for (const url of opened) expect(new URL(url).protocol).toBe('https:');
   });
 });

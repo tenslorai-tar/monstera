@@ -8,6 +8,7 @@ import { unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { NO_REVIEW_PROMPT } from './engagement.js';
 import {
   type IpcHandleTarget,
   type IpcSenderCheck,
@@ -124,6 +125,7 @@ function handlers() {
     },
     recentRoots: [],
     recentPictures: NO_RECENT_PICTURES,
+    reviewPrompt: NO_REVIEW_PROMPT,
     settings: {
       read: () => {
         throw new Error('registration cases must not reach the settings surface');

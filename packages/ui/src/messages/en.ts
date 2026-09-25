@@ -56,6 +56,15 @@ export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
 export const DONATE_TITLE = messageKey('dialog.donate.title');
 export const DONATE_COMMAND_TITLE = messageKey('command.donate.title');
+export const RATE_US_COMMAND_TITLE = messageKey('command.rate-us.title');
+export const REVIEW_PROMPT_MESSAGE = messageKey('surface.review-prompt.message');
+export const REVIEW_PROMPT_RATE = messageKey('surface.review-prompt.rate');
+export const REVIEW_PROMPT_REVIEWED = messageKey('surface.review-prompt.reviewed');
+export const REVIEW_PROMPT_LATER = messageKey('surface.review-prompt.later');
+export const REVIEW_PROMPT_NEVER = messageKey('surface.review-prompt.never');
+export const REVIEW_STORE_NOT_OPENED = messageKey('toast.review-store-not-opened');
+export const REVIEW_PROMPTS_SETTING_TITLE = messageKey('setting.advanced-review-prompts.title');
+export const REVIEW_PROMPTS_SETTING_DESCRIPTION = messageKey('setting.advanced-review-prompts.description');
 export const DONATE_LICENCE = messageKey('dialog.donate.licence');
 export const DONATE_WHERE = messageKey('dialog.donate.where');
 export const DONATE_OPEN = messageKey('dialog.donate.open');
@@ -1291,6 +1300,7 @@ export const SETTINGS_OCR_NOTE = messageKey('dialog.settings.ocr-note');
 export const SETTINGS_AI_NOTE = messageKey('dialog.settings.ai-note');
 export const SETTINGS_INTEGRATIONS_NOTE = messageKey('dialog.settings.integrations-note');
 export const SETTINGS_PRIVACY_NOTE = messageKey('dialog.settings.privacy-note');
+export const SETTINGS_ADVANCED_NOTE = messageKey('dialog.settings.advanced-note');
 export const SETTINGS_CATEGORY_SAVING = messageKey('dialog.settings.category.saving');
 export const SETTINGS_CATEGORY_OCR = messageKey('dialog.settings.category.ocr');
 export const SETTINGS_CATEGORY_KEYBOARD = messageKey('dialog.settings.category.keyboard');
@@ -1903,6 +1913,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_COMMAND_TITLE]: 'About',
   [DONATE_TITLE]: 'Support Monstera',
   [DONATE_COMMAND_TITLE]: 'Donate',
+  // v5-01's second title-bar button, word for word.
+  [RATE_US_COMMAND_TITLE]: 'Rate Us',
+  // E3's prompt: its four answers in E3's words, and a line that asks rather than pleads.
+  [REVIEW_PROMPT_MESSAGE]: 'Is Monstera working for you? A rating in the Microsoft Store helps other people find it.',
+  [REVIEW_PROMPT_RATE]: 'Rate now',
+  [REVIEW_PROMPT_REVIEWED]: 'Already reviewed',
+  [REVIEW_PROMPT_LATER]: 'Later',
+  [REVIEW_PROMPT_NEVER]: 'Don’t ask again',
+  [REVIEW_STORE_NOT_OPENED]: 'The Microsoft Store’s review page did not open.',
+  [REVIEW_PROMPTS_SETTING_TITLE]: 'Ask me to rate Monstera',
+  [REVIEW_PROMPTS_SETTING_DESCRIPTION]:
+    'Now and then, and never more than five times, a note at the bottom of the window asks for a Store rating.',
   // BOTH SENTENCES ARE CHECKABLE, which is why they are these two and not a plea.
   // The licence is ADR-0001's; the second is a fact about the code — the button
   // hands one address to the browser and nothing else leaves.
@@ -2971,6 +2993,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Providers and keys. A key is kept in the Windows credential vault, and is never exported or written to the log.',
   [SETTINGS_INTEGRATIONS_NOTE]: 'Other services Monstera can send a document to, and the keys they need.',
   [SETTINGS_PRIVACY_NOTE]: 'What Monstera keeps on this computer, and how to clear it.',
+  [SETTINGS_ADVANCED_NOTE]: 'Things most people never need to change.',
   [SETTINGS_CATEGORY_TITLES.saving]: 'Saving',
   [SETTINGS_CATEGORY_TITLES.ocr]: 'OCR',
   [SETTINGS_CATEGORY_TITLES.keyboard]: 'Keyboard',

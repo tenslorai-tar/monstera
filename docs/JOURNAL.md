@@ -892,6 +892,44 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-25 — Rate Us and the rating prompt
+
+The owner gave the Store identity on 2026-09-25 (product `9NHV3B1PV3XS`, package
+`TenslorInc.MonsteraPDFEditor`), which cleared row 274's block and let E3 land in one piece.
+
+- **One writer of each state.** `reviewedAt` is written only through `app.review`, which both the title
+  bar's *Rate Us* and the prompt's *Rate now* call, so a rating from either is one fact and a person who
+  rated from the title bar is not asked again. `optedOut` is **not** in the engagement record: E3's
+  *"a Settings toggle surfaces `optedOut`"* is read as the toggle being the value, so Settings → Advanced
+  → *Ask me to rate Monstera* is its only home, *Don't ask again* writes it through the page's settings
+  store, and main reads it before every prompt. A copy in `engagement.json` would be a second writer.
+- **Asking is recording.** `app.reviewPrompt` answering `due: true` counts the prompt as shown, because
+  the page shows it on that answer and on nothing else — the schedule has one owner and the page holds
+  no opinion about it.
+- **Rate records `reviewedAt` only when the page opened.** A refused open sent the person nowhere; stopping
+  the prompts then would end them for a rating that never had a chance to happen. On the page, a *Rate*
+  that opened nothing says so in a toast (`rateOnStore`, one function for both buttons), for each of
+  three ways it can fail — rejected, refused, or answered `opened: false`. Mutated to ignore
+  `opened: false`, the cases in both `rateUs.test.ts` and `ReviewPrompt.test.tsx` reddened.
+- **Not a toast and not a dialog.** A toast times out and cannot hold a choice (`Toast.tsx` says so); a
+  dialog is modal, which E3 forbids. The prompt is a region at the window's foot, on the side the toasts
+  are not, that takes no focus. It has E3's four answers and no ×, because *Later* already means close.
+- **Where the Store opens.** A Store build opens `ms-windows-store://review/?ProductId=…` through
+  `shell.openExternal` of one constant in `entry.ts`; every other build opens the web listing through
+  the HTTPS-only route. **The web listing answered 410 on 2026-09-25** — reserved, not published — so
+  outside a Store build *Rate Us* opens the Store's *gone* page until publication; that expiry is on
+  row 274.
+- **A test the product id broke, found by reading rather than by a run.** `webPages.test.ts` asserted
+  the listing had no address, which stopped being true when the product id went in, and no test had been
+  run against that change yet. The empty-address state
+  is kept — the table is where the next unassigned address goes — and a case now reaches it through an
+  `addresses` parameter the application never passes, with the donation page present so a wrong lookup
+  would reach the opener.
+- **The Advanced settings page now lists**, since it holds its first setting, and it got its line under
+  the title; `SettingsBody.test.tsx` requires one of every listed page and reddened until it had it.
+
+---
+
 ## 2026-09-25 — OPEN: the dark Edit-text case failed once on the Linux runner, and the mechanism is not known
 
 `main` went red at 940133c on `ubuntu-latest` only, at the accessibility gate: *"dark: EDIT TEXT outlines

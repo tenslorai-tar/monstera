@@ -651,6 +651,9 @@ export interface BrowserShimOptions {
    */
   readonly lastExitClean?: boolean;
 
+  /** Whether `app.reviewPrompt` answers due, for the screen that shows the rating banner. False by default. */
+  readonly reviewDue?: boolean;
+
   /**
    * What was open when the previous run ended. Defaults to nothing.
    *
@@ -1933,6 +1936,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // NO BROWSER TO OPEN A BROWSER IN: a shim page opens nothing outside itself, which is the same
     // answer a build with no address for the page gives.
     'app.openWebPage': () => Promise.resolve(ok({ opened: false })),
+    // THE RATING PROMPT (E3): never due unless a fixture says so, so no screen that is about something else
+    // carries the banner; and nothing opens, since the shim has no Store.
+    'app.reviewPrompt': () => Promise.resolve(ok({ due: options.reviewDue ?? false })),
+    'app.review': () => Promise.resolve(ok({ opened: false })),
     // NO PICKER IN A BROWSER: the export is cancelled, which is what main answers with no path.
     'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),

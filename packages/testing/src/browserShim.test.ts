@@ -198,6 +198,8 @@ describe('browser shim', () => {
       'app.info',
       'app.ocrLanguages',
       'app.openWebPage',
+      'app.review',
+      'app.reviewPrompt',
       'cloud.list',
       'cloud.open',
       'cloud.saveBack',

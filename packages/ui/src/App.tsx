@@ -159,6 +159,7 @@ import { featureShortcutCommands } from './commands/featureShortcuts.js';
 import { type OpenProblem, openDocument, openDocumentCommand, openDroppedFiles } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
+import { rateUsCommand } from './commands/rateUs.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { showSettingsCommand } from './commands/showSettings.js';
 import { SETTINGS_DIALOG } from './dialogs/settings.js';
@@ -339,6 +340,7 @@ import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
 import { ToastStrip } from './primitives/Toast.js';
+import { ReviewPrompt } from './surfaces/ReviewPrompt.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { PageList, type PageListProps } from './PageList.js';
@@ -2071,6 +2073,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
         ...featureShortcutCommands({ open: () => openDocument(openDeps), settings }),
         showAboutCommand({ client, ask }),
         donateCommand({ client, ask }),
+        rateUsCommand({ client, toast }),
         // RE-ASKS MAIN WHICH SECRETS ARE STORED when a key moved, so the cloud
         // tool appears the moment its key lands rather than on the next launch.
         showSettingsCommand({
@@ -2883,6 +2886,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener }: App
           would be the change itself and a screen reader would hear nothing. It is also
           outside the `open === undefined` guard because a toast outlives the document that
           raised it — the close path's *Save* confirms a save whose tab is already gone. */}
+      {/* E3's rating prompt: asked once per window, drawn only when main says it is due, and outside the
+          document guard because it is about the application rather than the file on screen. */}
+      <ReviewPrompt client={client} settings={settings} toast={toast} />
       <ToastStrip
         toasts={toasts}
         dismissLabel={TOAST_DISMISS}

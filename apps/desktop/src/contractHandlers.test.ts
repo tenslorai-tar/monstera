@@ -28,6 +28,7 @@ import { CloudOutcomeRefused, unconfiguredCloud } from './cloudSession.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
+import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
@@ -122,6 +123,18 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   recent.onDropped((paths) => {
     pictures.drop(paths);
   });
+  // THE RATING PROMPT over a real record, launched twice ten days after install so it is due, and an opener
+  // that RECORDS what it was asked to open rather than answering yes blind.
+  const engagementFile = createEphemeralSettings();
+  engagementFile.write({ installDate: OPENED_AT.getTime() - 10 * 86_400_000, sessions: 1 });
+  const storeOpened: string[] = [];
+  const prompt = reviewPrompt(
+    createEngagement(engagementFile, { now: () => OPENED_AT, enabled: () => true }),
+    () => {
+      storeOpened.push('store review');
+      return Promise.resolve(true);
+    },
+  );
   const handlers = createContractHandlers({
     assistant: INERT_ASSISTANT,
     appInfo,
@@ -139,6 +152,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     recent,
     recentRoots: RECENT_ROOTS,
     recentPictures: pictures,
+    reviewPrompt: prompt,
     // RETURNED, so cases about persistence read the same object the handlers
     // wrote rather than a second copy. `settings.save` answering `stored: true`
     // is a claim about a surface having accepted the values, and a test that
@@ -180,7 +194,20 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // every case here exercise that one.
     ocrLanguages: () => Promise.resolve(['eng' as const]),
   });
-  return { capabilities, handlers, opened, pictureFolder, recent, revealed, secrets, sessioned, settings, webPages };
+  return {
+    capabilities,
+    engagementFile,
+    handlers,
+    opened,
+    pictureFolder,
+    recent,
+    revealed,
+    secrets,
+    sessioned,
+    settings,
+    storeOpened,
+    webPages,
+  };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -217,6 +244,32 @@ describe('the barcode channels’ copies of the kernel’s set and bounds', () =
       count: ENGINE_BARCODES_MAX,
       text: ENGINE_BARCODE_TEXT_MAX,
     });
+  });
+});
+
+describe('the Store rating prompt (E3)', () => {
+  it('is DUE for a record ten days old on its second session, and asking counts as the prompt shown', async () => {
+    const { engagementFile, handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+
+    expect(await handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: true } });
+    expect(await handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
+    expect(engagementFile.read()['promptCount']).toBe(1);
+  });
+
+  it('RATE opens the Store page through the one opener and never asks again', async () => {
+    const { handlers, storeOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+
+    expect(await handlers['app.review']({ action: 'rate' })).toStrictEqual({ ok: true, value: { opened: true } });
+    expect(storeOpened).toStrictEqual(['store review']);
+    expect(await handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
+  });
+
+  it('LATER opens nothing, and the prompt waits', async () => {
+    const { handlers, storeOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+
+    expect(await handlers['app.review']({ action: 'later' })).toStrictEqual({ ok: true, value: { opened: false } });
+    expect(storeOpened).toStrictEqual([]);
+    expect(await handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
   });
 });
 
@@ -428,6 +481,7 @@ describe('document.open', () => {
           recent: createRecentFiles(createEphemeralSettings()),
           recentRoots: [],
           recentPictures: NO_RECENT_PICTURES,
+          reviewPrompt: NO_REVIEW_PROMPT,
           settings: createEphemeralSettings(),
           secrets: createEphemeralSecrets(),
           chatHistory: NO_HISTORY,
@@ -741,6 +795,7 @@ describe('the recent list', () => {
       recent,
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES,
+      reviewPrompt: NO_REVIEW_PROMPT,
       settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
@@ -800,6 +855,7 @@ describe('log.reveal', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES,
+      reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,
@@ -852,6 +908,7 @@ describe('ai.checkKey', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES,
+      reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
@@ -951,6 +1008,7 @@ describe('ai.translatePage (ADR-0097)', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES,
+      reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets,
       chatHistory: NO_HISTORY,
@@ -1076,6 +1134,7 @@ describe('ai.history (ADR-0093)', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES,
+      reviewPrompt: NO_REVIEW_PROMPT,
 settings,
       secrets: createEphemeralSecrets(),
       chatHistory: history,
@@ -1155,6 +1214,7 @@ describe('cloud.saveBack', () => {
       recent: createRecentFiles(createEphemeralSettings()),
       recentRoots: [],
       recentPictures: NO_RECENT_PICTURES,
+      reviewPrompt: NO_REVIEW_PROMPT,
 settings: createEphemeralSettings(),
       secrets: createEphemeralSecrets(),
       chatHistory: NO_HISTORY,

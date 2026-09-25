@@ -18,6 +18,7 @@ import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
+import { NO_REVIEW_PROMPT } from './engagement.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
@@ -151,6 +152,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     recent: createRecentFiles(createEphemeralSettings()),
     recentRoots: [],
     recentPictures: NO_RECENT_PICTURES,
+    reviewPrompt: NO_REVIEW_PROMPT,
     settings: createEphemeralSettings(),
     secrets: createEphemeralSecrets(),
     chatHistory: noChatHistory(),
@@ -251,6 +253,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // a thousand-page document's picture is the same size as a one-page one's.
   'document.recentPreview': 'answers one picture of page 1, bounded by MAX_RECENT_PREVIEW_BYTES',
   'document.clearRecent': 'takes nothing and answers a count bounded by the recent list’s cap',
+  // THE RATING PROMPT (E3): booleans and a three-way choice, about the application and never a document.
+  'app.reviewPrompt': 'takes nothing and answers a boolean',
+  'app.review': 'takes one of three answers and answers a boolean',
   // THE PRELOAD'S CHANNEL (ADR-0099): a path bounded by Win32's own limit in, `document.open`'s outcomes out.
   'document.openDropped': 'takes one bounded path and answers what document.open answers',
   // A `DocId` in, a boolean out. Nothing in either direction can grow with a

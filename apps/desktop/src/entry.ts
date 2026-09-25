@@ -43,6 +43,8 @@ import { readCloudClients } from './cloudClients.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { knownRoots } from './displayLocation.js';
 import { pictureDirectory } from './recentPictures.js';
+import { ENGAGEMENT_FILE } from './engagement.js';
+import { STORE_REVIEW_URI } from './webPages.js';
 import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -361,6 +363,13 @@ startShell(() => {
     // THE RECENT CARDS' PICTURES (ADR-0100), beside the recent list under `userData`: they are about
     // the same entries and go with them.
     recentPictureFiles: pictureDirectory(join(app.getPath('userData'), 'recent-pictures')),
+    // THE RATING PROMPT'S RECORD (E3), in its own document under `userData`, and the Store build's one way to
+    // the Store's review page: `shell.openExternal` of a constant, never of anything a page supplied.
+    engagementFile: createJsonFile(app.getPath('userData'), ENGAGEMENT_FILE),
+    openStoreReview: async () => {
+      await shell.openExternal(STORE_REVIEW_URI);
+      return true;
+    },
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved above and handed down. Under

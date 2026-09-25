@@ -852,6 +852,14 @@ export const MAX_RECENT_PREVIEW_BYTES = 256 * 1024;
 export const RECENT_PREVIEWS_SETTING_ID = 'privacy.recent-previews';
 
 /**
+ * Whether Monstera may ask for a Store rating (the founding record's E3: *"A Settings toggle surfaces
+ * `optedOut` so the choice is reversible and visible"*). On unless a person turns it off — here, or with the
+ * prompt's *Don't ask again*, which writes this same value. Main reads it before every prompt, so the
+ * opt-out has one home and one writer rather than a copy in the engagement record.
+ */
+export const REVIEW_PROMPTS_SETTING_ID = 'advanced.review-prompts';
+
+/**
  * A link's rectangle, in the page's own units.
  *
  * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters
@@ -4989,6 +4997,32 @@ export const channels = {
     'Puts the given text on the clipboard.',
     z.object({ text: z.string().min(1).max(MAX_CHAT_TEXT) }).strict(),
     z.object({ copied: z.boolean() }),
+  ),
+
+  /**
+   * Whether to ask for a Store rating now (the founding record's E3), answered by main's engagement record.
+   *
+   * **Asking is recording**: a `true` answer counts as a prompt shown — the next is three days away and the
+   * fifth is the last — because the page shows it on this answer and nothing else. `false` for a build that
+   * is not due, a person who reviewed, or one who turned the Settings toggle off.
+   */
+  'app.reviewPrompt': channel(
+    'Whether to ask for a Store rating now; a yes counts as the prompt shown.',
+    z.object({}).strict(),
+    z.object({ due: z.boolean() }),
+  ),
+
+  /**
+   * A person's answer to the rating prompt, or the title bar's *Rate Us* (E3). The ONE writer of the
+   * engagement record's `reviewedAt`: *rate* opens the Store's review page and records it — the Store cannot
+   * be asked whether a review was written, so this is the honest local record and says no more — *reviewed*
+   * records it without opening anything, and *later* restarts the three days. *Don't ask again* is the
+   * Settings toggle's value, written by the page's settings store, so it has one writer too.
+   */
+  'app.review': channel(
+    'A person’s answer to the rating prompt, or Rate Us.',
+    z.object({ action: z.enum(['rate', 'reviewed', 'later']) }).strict(),
+    z.object({ opened: z.boolean() }),
   ),
 
   /**

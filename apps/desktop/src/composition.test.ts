@@ -9,6 +9,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createShellDependencies } from './composition.js';
 import { harnessSurfaces } from './harnessComposition.js';
 import { type PictureFiles, pictureName } from './recentPictures.js';
+import { createEphemeralSettings } from './settingsFile.js';
 import type { AppInfo } from './contractHandlers.js';
 
 /**
@@ -277,6 +278,39 @@ describe('the composition root, with no engine host platform', () => {
       if (executed.ok) throw new Error('the command should not have succeeded');
       expect(executed.error.code).toBe('document-poisoned');
     }
+  });
+});
+
+describe('the Store rating prompt, as the root wires it (E3)', () => {
+  it('the STORE build rates through the Store application; every other build opens the web listing', async () => {
+    let deepLinks = 0;
+    const browsed: string[] = [];
+    const rootFor = (installChannel: AppInfo['installChannel']) =>
+      createShellDependencies({
+        ...harnessSurfaces('the composition test'),
+        appInfo: { ...appInfo, installChannel },
+        engagementFile: createEphemeralSettings(),
+        openStoreReview: () => {
+          deepLinks += 1;
+          return Promise.resolve(true);
+        },
+        openInBrowser: (url) => {
+          browsed.push(url);
+          return Promise.resolve();
+        },
+      });
+
+    await rootFor('store').handlers['app.review']({ action: 'rate' });
+    expect([deepLinks, browsed.length]).toStrictEqual([1, 0]);
+
+    await rootFor('web').handlers['app.review']({ action: 'rate' });
+    expect(deepLinks).toBe(1);
+    expect(browsed).toStrictEqual(['https://apps.microsoft.com/detail/9NHV3B1PV3XS']);
+  });
+
+  it('CONTROL: a root with no engagement record is never due', async () => {
+    const deps = createShellDependencies({ ...harnessSurfaces('the composition test'), appInfo });
+    expect(await deps.handlers['app.reviewPrompt']({})).toStrictEqual({ ok: true, value: { due: false } });
   });
 });
 
